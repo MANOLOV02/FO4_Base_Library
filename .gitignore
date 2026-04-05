@@ -1,0 +1,33 @@
+## FO4_Base_Library - Shared rendering library for Fallout 4 tools
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.rsuser
+
+# Build files
+*.ilk
+*.pdb
+*.obj
+*.log
+*.tmp
+*.cache
+
+# NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
