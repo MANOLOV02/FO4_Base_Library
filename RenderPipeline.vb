@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' Resolves and prepares the skeleton for a set of shapes before geometry extraction.
 ''' Default implementation uses Skeleton_Class. Apps can override for custom behavior.
 ''' </summary>
