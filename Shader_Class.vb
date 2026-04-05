@@ -1,4 +1,4 @@
-﻿' Version Uploaded of Wardrobe 3.1.0
+﻿' Version Uploaded of Fo4Library 3.2.0
 Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
@@ -894,7 +894,10 @@ if (bHide)
 
    	if (!bWireframe)
 	{
-		fragColor.a *= alpha;
+		// BGSM: apply material alpha (NifSkope fo4_default.frag does this)
+		// BGEM: alpha already baked as effectBaseColorAlpha² (NifSkope fo4_effectshader.frag does NOT)
+		if (!bIsEffectShader)
+			fragColor.a *= alpha;
 
 		if (bAlphaTest)
 			if (fragColor.a <= alphaThreshold) // GL_GREATER
@@ -1889,7 +1892,10 @@ if (bHide)
 
    	if (!bWireframe)
 	{
-		fragColor.a *= alpha;
+		// BGSM: apply material alpha (NifSkope sk_default.frag does this)
+		// BGEM: alpha already baked as effectBaseColorAlpha² (NifSkope sk_effectshader.frag does NOT)
+		if (!bIsEffectShader)
+			fragColor.a *= alpha;
 
 		if (bAlphaTest)
 			if (fragColor.a <= alphaThreshold) // GL_GREATER

@@ -1,4 +1,4 @@
-﻿' Version Uploaded of Wardrobe 3.1.0
+﻿' Version Uploaded of Fo4Library 3.2.0
 Imports System.Collections.Concurrent
 Imports System.ComponentModel
 Imports System.Drawing.Design
@@ -599,6 +599,18 @@ Public Class FO4UnifiedMaterial_Class
         End Get
         Set(value As Boolean)
             Underlying_Material.Decal = value
+        End Set
+    End Property
+
+
+    <Category("Rendering")>
+    <DefaultValue(False)>
+    Public Property DecalNoFade As Boolean
+        Get
+            Return Underlying_Material.DecalNoFade
+        End Get
+        Set(value As Boolean)
+            Underlying_Material.DecalNoFade = value
         End Set
     End Property
 
@@ -2008,6 +2020,7 @@ Public Class FO4UnifiedMaterial_Class
             End If
         End If
         Underlying_Material = mat
+
     End Sub
     Public Shared Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty, Mat As BGEM)
         If Nif.Valid = False Then Exit Sub

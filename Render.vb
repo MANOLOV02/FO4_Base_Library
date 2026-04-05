@@ -1,4 +1,4 @@
-Ôªø' Version Uploaded of Wardrobe 3.1.0
+' Version Uploaded of Fo4Library 3.2.0
 Imports System.Collections.Concurrent
 Imports System.ComponentModel
 Imports System.Drawing.Imaging
@@ -104,7 +104,7 @@ Public Class TextOverlayRenderer
         GL.BindVertexArray(vao)
         GL.BindBuffer(BufferTarget.ArrayBuffer, vbo)
 
-        ' Quad 0‚Äì1 with UVs
+        ' Quad 0ñ1 with UVs
         Dim vertices As Single() = {
             0F, 0F, 0F, 0F,
             1.0F, 0F, 1.0F, 0F,
@@ -225,6 +225,21 @@ Public Class PreviewControl
     Public WithEvents RenderTimer As New System.Windows.Forms.Timer
     Private DebugProc As DebugProc
     Public Property AllowMask As Boolean = False
+
+    ' -- Pull-based pipeline state --
+    Private _renderIntent As RenderIntent
+    ''' <summary>Tracks the original shapes reference from the last full reload, for identity comparison.</summary>
+    Private _lastLoadedShapesSource As IEnumerable(Of IRenderableShape)
+    ''' <summary>
+    ''' The declarative render intent for this control. Apps set properties + dirty flags,
+    ''' then call InvalidateRender(). The timer-driven pipeline consumes it.
+    ''' </summary>
+    Public ReadOnly Property Intent As RenderIntent
+        Get
+            If _renderIntent Is Nothing Then _renderIntent = New RenderIntent()
+            Return _renderIntent
+        End Get
+    End Property
     Public defaultWhiteTex As Integer
     Public defaultNormalTex As Integer
     Public defaultCubeMap As Integer
@@ -233,13 +248,13 @@ Public Class PreviewControl
 
 
     ''' <summary>
-    ''' Crea una textura 2D de w√óh p√≠xeles con el color indicado.
+    ''' Crea una textura 2D de w◊h pÌxeles con el color indicado.
     ''' </summary>
     ''' 
     Private Shared Function CreateColorTexture(w As Integer, h As Integer, r As Byte, g As Byte, b As Byte, a As Byte) As Integer
         If w <= 0 OrElse h <= 0 Then Throw New ArgumentOutOfRangeException("w/h deben ser > 0")
 
-        ' Evita overflow en el tama√±o del array
+        ' Evita overflow en el tamaÒo del array
         Dim total As Long = CLng(w) * CLng(h) * 4L
         If total > Integer.MaxValue Then Throw New OutOfMemoryException("Textura demasiado grande.")
 
@@ -255,7 +270,7 @@ Public Class PreviewControl
         Dim texID As Integer = GL.GenTexture()
         GL.BindTexture(TextureTarget.Texture2D, texID)
 
-        ' Alineaci√≥n segura
+        ' AlineaciÛn segura
         GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
 
         GL.TexImage2D(TextureTarget.Texture2D,
@@ -278,21 +293,21 @@ Public Class PreviewControl
     End Function
 
     ''' <summary>
-    ''' Inicializa defaultWhiteTex, defaultNormalTex y defaultCubeMap como 4√ó4.
+    ''' Inicializa defaultWhiteTex, defaultNormalTex y defaultCubeMap como 4◊4.
     ''' Llamar una vez tras crear el contexto GL.
     ''' </summary>
     Public Sub GenerateDefaultTextures()
-        ' 4√ó4 blanco puro
+        ' 4◊4 blanco puro
         defaultWhiteTex = CreateColorTexture(4, 4, 255, 255, 255, 255)
 
-        ' 4√ó4 normal map por defecto: (0.5,0.5,1) ? (128,128,255)
+        ' 4◊4 normal map por defecto: (0.5,0.5,1) ? (128,128,255)
         defaultNormalTex = CreateColorTexture(4, 4, 128, 128, 128, 128)
 
-        ' Cubemap 4√ó4 blanco en todas las caras
+        ' Cubemap 4◊4 blanco en todas las caras
         defaultCubeMap = GL.GenTexture()
         GL.BindTexture(TextureTarget.TextureCubeMap, defaultCubeMap)
 
-        ' Preparamos datos 4√ó4 blancos para cada cara
+        ' Preparamos datos 4◊4 blancos para cada cara
         Dim faceData(4 * 4 * 4 - 1) As Byte
         For i As Integer = 0 To faceData.Length - 1 Step 4
             faceData(i + 0) = 255
@@ -367,7 +382,7 @@ Public Class PreviewControl
     Public camera As New OrbitCamera()
     Private projection As Matrix4
     Public LastUpdateMs As Double = 0
-    ' Backing field for updateRequired ‚Äî Integer (not Boolean) so Volatile.Read/Write overloads resolve cleanly.
+    ' Backing field for updateRequired ó Integer (not Boolean) so Volatile.Read/Write overloads resolve cleanly.
     ' 0 = False, 1 = True. Use the property from all call sites; direct field access is intentionally avoided.
     Private _updateRequired As Integer = 1
     Public Property UpdateRequired As Boolean
@@ -418,29 +433,211 @@ Public Class PreviewControl
     Public Sub New(settings As GLControlSettings)
         MyBase.New(settings)
         RenderTimer = New System.Windows.Forms.Timer With {
-            .Interval = 16    ' 16 ms Àú 60 Hz
+            .Interval = 16    ' 16 ms ò 60 Hz
             }
         RenderTimer.Start()
     End Sub
-    ''' <summary>Render a set of resolved shapes. Core render entry point for all consumers.</summary>
+    ''' <summary>Simple render entry point: shapes + optional pose. No morphs, no modifiers.
+    ''' Synchronous bridge ó fills the intent and executes the pipeline immediately.</summary>
     Public Sub RenderShapes(shapes As IEnumerable(Of IRenderableShape), Optional pose As Poses_class = Nothing)
-        ' Simplified render for consumers that already resolved raw shapes and do not
-        ' need WM-specific preset/morph bookkeeping (NPC Manager, probes, etc.).
-        If Me.Disposing OrElse Me.IsDisposed Then Exit Sub
-        If Not Visible Then Exit Sub
-        Model.Last_Pose = pose
-        Model.Clean(True)
-        Model.LoadShapesParallel(shapes)
-        Model.Setup_GL()
-        If Not Config_App.Current.Setting_GPUSkinning Then
-            ' SetupMesh_GL uploads local-space geometry. CPU skinning expects VBOs in world space,
-            ' so force the same conversion pass used by the WM pipeline.
+        Dim i = Me.Intent
+        i.Shapes = shapes
+        i.Pose = pose
+        i.FloorOffset = 0
+        i.ResetCamera = True
+        i.RecalculateNormals = True
+        i.SkeletonResolver = Nothing
+        i.MorphResolver = Nothing
+        i.GeometryModifiers = Nothing
+        i.TexturePrefetchAction = Nothing
+        i.MarkDirty(RenderDirtyFlags.Shapes Or RenderDirtyFlags.Camera)
+        ExecuteRenderPipeline()
+    End Sub
+
+    ''' <summary>Full render entry point with pluggable resolvers (legacy push API).
+    ''' Synchronous bridge ó converts RenderRequest to intent and executes immediately.</summary>
+    Public Sub RenderShapes(request As RenderRequest)
+        If request Is Nothing OrElse request.Shapes Is Nothing Then Exit Sub
+        Dim i = Me.Intent
+        i.Shapes = request.Shapes
+        i.Pose = request.Pose
+        i.FloorOffset = request.FloorOffset
+        i.ResetCamera = request.ResetCamera
+        i.RecalculateNormals = request.RecalculateNormals
+        i.SkeletonResolver = request.SkeletonResolver
+        i.MorphResolver = request.MorphResolver
+        i.GeometryModifiers = request.GeometryModifiers
+        i.TexturePrefetchAction = Nothing
+        i.MarkDirty(RenderDirtyFlags.Shapes Or RenderDirtyFlags.Camera)
+        ExecuteRenderPipeline()
+    End Sub
+
+    ' ------------------------------------------------------------------
+    '  Pull-based unified pipeline
+    ' ------------------------------------------------------------------
+
+    ''' <summary>
+    ''' Signal that the render intent has pending work and execute the pipeline immediately.
+    ''' If called multiple times between frames, dirty flags accumulate via OR before execution.
+    ''' </summary>
+    Public Sub InvalidateRender()
+        ExecuteRenderPipeline()
+    End Sub
+
+    ''' <summary>
+    ''' The single hot path. Reads Intent.DirtyFlags and executes the minimum work needed.
+    ''' Three execution modes emerge from flag combinations:
+    '''   Shapes|Force ? full reload (clean, skeleton, geometry, morphs, GPU upload)
+    '''   Pose         ? incremental (skeleton, bone matrices, optional morphs)
+    '''   Morphs       ? lightweight (reapply morphs, update skin buffers)
+    ''' </summary>
+    Private Sub ExecuteRenderPipeline()
+        Dim intent = _renderIntent
+        If intent Is Nothing OrElse Not intent.HasWork Then Return
+        If Me.Disposing OrElse Me.IsDisposed OrElse Not Visible Then Return
+        If intent.Shapes Is Nothing OrElse Not intent.Shapes.Any() Then
+            intent.ClearDirty()
+            Return
+        End If
+
+        Dim flags = intent.DirtyFlags
+        Dim needsFullReload = (flags And (RenderDirtyFlags.Shapes Or RenderDirtyFlags.Force)) <> 0
+        Dim needsPoseUpdate = (flags And RenderDirtyFlags.Pose) <> 0
+        Dim needsMorphUpdate = (flags And RenderDirtyFlags.Morphs) <> 0
+        Dim needsTextureUpdate = (flags And RenderDirtyFlags.Textures) <> 0
+        Dim needsCameraReset = (flags And RenderDirtyFlags.Camera) <> 0
+
+        Model.FloorOffset = intent.FloorOffset
+
+        If needsFullReload Then
+            ' -- Full reload ------------------------------------------
+            Dim isNewShapeSet = (_lastLoadedShapesSource Is Nothing) OrElse
+                                Not ReferenceEquals(_lastLoadedShapesSource, intent.Shapes)
+            If isNewShapeSet Then
+                Model.Clean(True)
+                Model.Processing_Status_GL("Loading...")
+                Model.CleanTextures()
+            Else
+                Model.Clean(False)
+            End If
+            _lastLoadedShapesSource = intent.Shapes
+            Model.Last_Pose = intent.Pose
+
+            ' Texture prefetch (async, before geometry ó app provides the action)
+            If intent.TexturePrefetchAction IsNot Nothing Then
+                intent.TexturePrefetchAction.Invoke()
+                intent.TexturePrefetchAction = Nothing  ' one-shot
+            End If
+
+            ' Skeleton
+            PipelineStep_Skeleton(intent)
+
+            ' Geometry extraction (parallel)
+            Model.LoadShapesParallel(intent.Shapes)
+
+            ' Morphs
+            PipelineStep_Morphs(intent)
+
+            ' Geometry modifiers (zaps, etc.)
+            PipelineStep_GeometryModifiers(intent)
+
+            ' GPU upload
+            Model.Setup_GL()
+            If Not Config_App.Current.Setting_GPUSkinning Then
+                For Each mesh In Model.meshes
+                    mesh.UpdateSkinBuffers_GL()
+                Next
+            End If
+
+            ' Display
+            If needsCameraReset OrElse isNewShapeSet Then ResetCamera()
+            RefreshRender()
+
+        ElseIf needsPoseUpdate Then
+            ' -- Pose change (incremental) ----------------------------
+            PipelineStep_Skeleton(intent)
+            Model.Last_Pose = intent.Pose
+
+            ' Morphs (if also dirty ó preset+pose changed simultaneously)
+            If needsMorphUpdate Then
+                PipelineStep_Morphs(intent)
+            End If
+
+            ' Recompute bone matrices + GPU upload per mesh
+            For Each mesh In Model.meshes
+                SkinningHelper.RecomputeGPUBoneMatrices(
+                    mesh.MeshData.Shape, mesh.MeshData.Meshgeometry,
+                    Model.HasPose, Model.SingleBoneSkinning)
+
+                If Not Config_App.Current.Setting_GPUSkinning Then
+                    mesh.MeshData.Meshgeometry.dirtyVertexIndices =
+                        New HashSet(Of Integer)(Enumerable.Range(0, mesh.MeshData.Meshgeometry.Vertices.Length))
+                    Array.Fill(mesh.MeshData.Meshgeometry.dirtyVertexFlags, True)
+                End If
+
+                mesh.UpdateSkinBuffers_GL()
+                mesh.UpdateBoneMatricesSSBO()
+                mesh.ComputeBounds()
+            Next
+
+            Model.MarkRenderBucketsDirty()
+            If needsCameraReset Then ResetCamera()
+            RefreshRender()
+
+        ElseIf needsMorphUpdate Then
+            ' -- Morph-only (lightweight) -----------------------------
+            If needsTextureUpdate Then Model.Process_Textures_GL()
+
+            PipelineStep_Morphs(intent)
+
             For Each mesh In Model.meshes
                 mesh.UpdateSkinBuffers_GL()
             Next
+
+            Model.MarkRenderBucketsDirty()
+            RefreshRender()
+
+        ElseIf needsTextureUpdate Then
+            ' -- Texture-only -----------------------------------------
+            Model.Process_Textures_GL()
+            RefreshRender()
         End If
-        ResetCamera()
-        RefreshRender()
+
+        intent.ClearDirty()
+    End Sub
+
+    ''' <summary>Resolve skeleton via app-provided resolver or default fallback.</summary>
+    Private Sub PipelineStep_Skeleton(intent As RenderIntent)
+        If intent.SkeletonResolver IsNot Nothing Then
+            intent.SkeletonResolver.ResolveSkeleton(intent.Shapes, intent.Pose)
+        Else
+            Skeleton_Class.PrepareSkeletonForShapes(intent.Shapes, intent.Pose)
+        End If
+    End Sub
+
+    ''' <summary>Apply morphs via app-provided resolver. Skips if no resolver set.</summary>
+    Private Sub PipelineStep_Morphs(intent As RenderIntent)
+        If intent.MorphResolver Is Nothing Then Return
+        For Each mesh In Model.meshes
+            Dim plan = intent.MorphResolver.ResolveMorphPlan(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
+            If plan IsNot Nothing AndAlso plan.HasMorphs Then
+                MorphEngine.ApplyMorphPlan(
+                    mesh.MeshData.Meshgeometry, plan,
+                    intent.RecalculateNormals,
+                    allowMask:=AllowMask,
+                    maskedVertices:=mesh.MeshData.Shape.MaskedVertices)
+            End If
+        Next
+    End Sub
+
+    ''' <summary>Apply geometry modifiers in order. Skips if none set.</summary>
+    Private Sub PipelineStep_GeometryModifiers(intent As RenderIntent)
+        If intent.GeometryModifiers Is Nothing Then Return
+        For Each gmod In intent.GeometryModifiers
+            For Each mesh In Model.meshes
+                gmod.Apply(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
+            Next
+        Next
     End Sub
 
     Protected Overrides Sub OnLoad(e As EventArgs)
@@ -452,17 +649,17 @@ Public Class PreviewControl
         SharedSSEShader = New Shader_Class_SSE
         SharedFloorShader = New Floor_Shader_Class
 
-        ' 1) Aseguramos que el contexto GL est√° activo
+        ' 1) Aseguramos que el contexto GL est· activo
         Me.MakeCurrent()
 
-        ' 2) (Opcional) Debug Output para capturar s√≥lo errores
+        ' 2) (Opcional) Debug Output para capturar sÛlo errores
         GL.Enable(EnableCap.DebugOutput)
         GL.Enable(EnableCap.DebugOutputSynchronous)
         DebugProc = AddressOf DebugCallback
         GL.DebugMessageCallback(DebugProc, IntPtr.Zero)
         GL.DebugMessageControl(DebugSourceControl.DontCare, DebugTypeControl.DontCare, DebugSeverityControl.DebugSeverityHigh, 0, Array.Empty(Of Integer)(), True)
 
-        ' 3) Estado GL est√°ndar
+        ' 3) Estado GL est·ndar
         GL.Enable(EnableCap.DepthTest)
         GL.DepthFunc(DepthFunction.Lequal)
 
@@ -494,15 +691,15 @@ Public Class PreviewControl
             UpdateProjection(True)
         End If
     End Sub
-    ' === Frustum din√°mico ===
+    ' === Frustum din·mico ===
     Private lastNear As Single = 0.1F
     Private lastFar As Single = 1000.0F
 
-    ' Recalcula la proyecci√≥n en funci√≥n del tama√±o de escena y la distancia actual de la c√°mara.
+    ' Recalcula la proyecciÛn en funciÛn del tamaÒo de escena y la distancia actual de la c·mara.
     Public Sub UpdateProjection(Optional force As Boolean = False)
         If Me.Height <= 0 Then Return
 
-        ' Bounds de escena (si no hay meshes a√∫n, usa un AABB m√≠nimo)
+        ' Bounds de escena (si no hay meshes a˙n, usa un AABB mÌnimo)
         Dim minB As Vector3
         Dim maxB As Vector3
         If Model IsNot Nothing AndAlso Model.meshes IsNot Nothing AndAlso Model.meshes.Count > 0 Then
@@ -513,15 +710,15 @@ Public Class PreviewControl
         End If
 
         Dim size As Vector3 = maxB - minB
-        ' Ejes: X=ancho, Y=profundidad, Z=alto (tu c√≥digo ya usa esta convenci√≥n)
+        ' Ejes: X=ancho, Y=profundidad, Z=alto (tu cÛdigo ya usa esta convenciÛn)
         Dim halfW As Single = Math.Abs(size.X) * 0.5F
         Dim halfD As Single = Math.Abs(size.Y) * 0.5F
         Dim halfH As Single = Math.Abs(size.Z) * 0.5F
 
-        ' Radio: cuanto ‚Äúcrece‚Äù la escena alrededor del centro
+        ' Radio: cuanto ìcreceî la escena alrededor del centro
         Dim radius As Single = Math.Max(halfW, Math.Max(halfD, halfH))
 
-        ' Distancia actual c√°mara ? foco
+        ' Distancia actual c·mara ? foco
         Dim eyeToCenter As Single = Math.Max(1.0F, camera.distance)
 
         ' Margen para asegurar que no clippea por el far plane
@@ -529,13 +726,13 @@ Public Class PreviewControl
 
         ' Far plane sugerido: distancia + radio + margen
         Dim farZ As Single = eyeToCenter + radius * (1.0F + margin) + 1.0F
-        ' M√≠nimo razonable para escenas peque√±as
+        ' MÌnimo razonable para escenas pequeÒas
         farZ = Math.Max(1000.0F, farZ)
 
-        ' Near plane: suficientemente peque√±o, pero no exagerado para no perder precisi√≥n de Z
+        ' Near plane: suficientemente pequeÒo, pero no exagerado para no perder precisiÛn de Z
         Dim nearZ As Single = Math.Max(0.05F, farZ / 10000.0F)
 
-        ' Evitar recalcular si el cambio es m√≠nimo
+        ' Evitar recalcular si el cambio es mÌnimo
         If Not force AndAlso Math.Abs(farZ - lastFar) < 1.0F AndAlso Math.Abs(nearZ - lastNear) < 0.01F Then
             Return
         End If
@@ -627,7 +824,7 @@ Public Class PreviewControl
         ' Left drag sin Ctrl ni Alt: salimos de free-cam (si era el caso) y rotamos en orbit
         If e.Button = MouseButtons.Left AndAlso (Control.ModifierKeys And Keys.Control) = 0 AndAlso (Control.ModifierKeys And Keys.Alt) = 0 Then
             ' Si venimos de free-cam, restauramos el radio original
-            ' Ahora la rotaci√≥n orbital normal
+            ' Ahora la rotaciÛn orbital normal
             Dim dx = e.X - lastX
             Dim dy = e.Y - lastY
             lastX = e.X
@@ -650,13 +847,13 @@ Public Class PreviewControl
         End If
 
 
-        ' 2) Barrido con Ctrl + bot√≥n izquierdo
+        ' 2) Barrido con Ctrl + botÛn izquierdo
         If AllowMask AndAlso e.Button = MouseButtons.Left AndAlso (Control.ModifierKeys And Keys.Control) <> 0 Then
             Cursor.Current = Cursors.Hand
             Dim vw = Me.Width
             Dim vh = Me.Height
             Dim r2 As Single = BrushRadiusPx * BrushRadiusPx
-            ' ‚Äî Hoist de matrices: calcula viewProj una sola vez
+            ' ó Hoist de matrices: calcula viewProj una sola vez
             Dim viewMatrix As Matrix4 = camera.GetViewMatrix()
             Dim viewProj As Matrix4 = viewMatrix * projection
             Dim camPos = camera.GetEyePosition()
@@ -670,7 +867,7 @@ Public Class PreviewControl
                     If mesh.MeshData.Meshgeometry.VertexMask(i) = -1 And mesh.MeshData.Shape.ApplyZaps Then Continue For
                     If mesh.MeshData.Meshgeometry.VertexMask(i) = -1 Then If mesh.MeshData.Shape.MaskedVertices.Contains(i) Then mesh.MeshData.Meshgeometry.VertexMask(i) = 1 Else mesh.MeshData.Meshgeometry.VertexMask(i) = 0
                     If (mesh.MeshData.Meshgeometry.VertexMask(i) = 1 AndAlso Not InvertMasking) OrElse (mesh.MeshData.Meshgeometry.VertexMask(i) = 0 AndAlso InvertMasking) Then Continue For
-                    ' 2.1b) Filtrar solo v√©rtices de la cara delantera (normal-camera)
+                    ' 2.1b) Filtrar solo vÈrtices de la cara delantera (normal-camera)
                     Dim normal As Vector3 = norms(i)
                     Dim toCam As Vector3 = camPos - verts(i)
                     If Vector3.Dot(normal, toCam) <= 0 Then Continue For
@@ -678,7 +875,7 @@ Public Class PreviewControl
                     Dim clipPos As Vector4 = New Vector4(verts(i), 1.0F) * viewProj
 
 
-                    ' 2.2) Filtrado de frustum (W>0) ‚Äî opcional quitar para probar
+                    ' 2.2) Filtrado de frustum (W>0) ó opcional quitar para probar
                     If clipPos.W <= 0 Then Continue For
 
                     ' 2.3) De clip a NDC
@@ -740,10 +937,10 @@ Public Class PreviewControl
             .Enabled = Not Config_App.Current.Settings_Camara.FreezeCamera
         }
         AddHandler resetRotation.Click, Sub()
-                                             Dim cam = Config_App.Current.Settings_Camara
-                                             cam.ResetAngles = resetRotation.Checked
-                                             Config_App.Current.Settings_Camara = cam
-                                         End Sub
+                                            Dim cam = Config_App.Current.Settings_Camara
+                                            cam.ResetAngles = resetRotation.Checked
+                                            Config_App.Current.Settings_Camara = cam
+                                        End Sub
 
         Dim resetZoom As New ToolStripMenuItem("Reset to optimal zoom") With {
             .Checked = Config_App.Current.Settings_Camara.ResetZoom,
@@ -751,22 +948,22 @@ Public Class PreviewControl
             .Enabled = Not Config_App.Current.Settings_Camara.FreezeCamera
         }
         AddHandler resetZoom.Click, Sub()
-                                         Dim cam = Config_App.Current.Settings_Camara
-                                         cam.ResetZoom = resetZoom.Checked
-                                         Config_App.Current.Settings_Camara = cam
-                                     End Sub
+                                        Dim cam = Config_App.Current.Settings_Camara
+                                        cam.ResetZoom = resetZoom.Checked
+                                        Config_App.Current.Settings_Camara = cam
+                                    End Sub
 
         Dim freezeCamera As New ToolStripMenuItem("Freeze camera") With {
             .Checked = Config_App.Current.Settings_Camara.FreezeCamera,
             .CheckOnClick = True
         }
         AddHandler freezeCamera.Click, Sub()
-                                            Dim cam = Config_App.Current.Settings_Camara
-                                            cam.FreezeCamera = freezeCamera.Checked
-                                            Config_App.Current.Settings_Camara = cam
-                                            resetRotation.Enabled = Not freezeCamera.Checked
-                                            resetZoom.Enabled = Not freezeCamera.Checked
-                                        End Sub
+                                           Dim cam = Config_App.Current.Settings_Camara
+                                           cam.FreezeCamera = freezeCamera.Checked
+                                           Config_App.Current.Settings_Camara = cam
+                                           resetRotation.Enabled = Not freezeCamera.Checked
+                                           resetZoom.Enabled = Not freezeCamera.Checked
+                                       End Sub
 
         cameraSubMenu.DropDownItems.Add(resetRotation)
         cameraSubMenu.DropDownItems.Add(resetZoom)
@@ -862,30 +1059,30 @@ Public Class PreviewControl
         Dim minB As Vector3, maxB As Vector3
         GetSceneBounds(minB, maxB)
 
-        ' 2) Centro y tama√±o
+        ' 2) Centro y tamaÒo
         Dim center As Vector3 = (minB + maxB) * 0.5F
         Dim size As Vector3 = maxB - minB
 
         ' 3) Focus y orbit mode
         camera.FocusPosition = center
 
-        ' 4) Par√°metros de c√°mara
+        ' 4) Par·metros de c·mara
         Dim fovY As Single = MathHelper.DegreesToRadians(45.0F)
         Dim aspect As Single = Me.Width / CSng(Me.Height)
 
-        ' ** Usamos Z para altura, X para anchura y Y para profundidad (hacia la c√°mara) **
+        ' ** Usamos Z para altura, X para anchura y Y para profundidad (hacia la c·mara) **
         Dim halfH As Single = size.Z * 0.5F   ' vertical ? Z
         Dim halfW As Single = size.X * 0.5F   ' horizontal ? X
         Dim halfD As Single = size.Y * 0.5F   ' profundidad ? Y
 
-        ' 5) Calculamos distancias m√≠nimas sin margen
+        ' 5) Calculamos distancias mÌnimas sin margen
         Dim distH = halfH / CSng(Math.Tan(fovY * 0.5F))
         Dim fovX = 2.0F * CSng(Math.Atan(Math.Tan(fovY * 0.5F) * aspect))
         Dim distW = halfW / CSng(Math.Tan(fovX * 0.5F))
 
         ' 6) Margen uniforme (p.ej. 15% extra)
         Dim marginPct As Single = 0.1F
-        ' SUMAMOS la media profundidad para asegurar que el punto m√°s cercano tambi√©n entra en FOV
+        ' SUMAMOS la media profundidad para asegurar que el punto m·s cercano tambiÈn entra en FOV
         Dim baseDistance As Single = halfD + Math.Max(distH, distW)
         Dim idealDistance As Single = baseDistance * (1.0F + marginPct)
         camera.MaxDistance = idealDistance * 10
@@ -893,7 +1090,7 @@ Public Class PreviewControl
         camera.distance = Math.Clamp(idealDistance, camera.MinDistance, camera.MaxDistance)
         camera.Optimaldistance = camera.distance
 
-        ' 7) Reset √°ngulos y orientaci√≥n
+        ' 7) Reset ·ngulos y orientaciÛn
         camera.angleX = 0F
         camera.angleY = 0F
         camera.UpdateDirectionFromAngles()
@@ -905,11 +1102,16 @@ Public Class PreviewControl
         MyBase.Dispose(disposing)
     End Sub
     Private Sub RenderTimer_Tick(sender As Object, e As EventArgs) Handles RenderTimer.Tick
-        ' Also keep ticking while textures are loading (TexturesReady=False) or pending uploads exist
+        ' Pull-based: if the intent has pending work, execute the pipeline
+        If _renderIntent IsNot Nothing AndAlso _renderIntent.HasWork Then
+            ExecuteRenderPipeline()
+        End If
+
+        ' Then handle the normal repaint cycle (textures loading, camera interaction, etc.)
         Dim texturesPending As Boolean = (Model IsNot Nothing AndAlso Not Model.TexturesReady)
         If (UpdateRequired OrElse texturesPending) AndAlso RenderTimer.Enabled = True Then
             UpdateRequired = True  ' ensure OnPaint won't skip
-            Me.Invalidate()  ' disparar√° OnPaint
+            Me.Invalidate()  ' disparar· OnPaint
         End If
     End Sub
     Public Sub Clean()
@@ -972,7 +1174,9 @@ Public Class PreviewModel
     Public Property RecalculateNormals As Boolean = True
     Private ReadOnly OpaqueMeshes As New List(Of RenderableMesh)
     Private ReadOnly CutoutMeshes As New List(Of RenderableMesh)
+    Private ReadOnly DecalMeshes As New List(Of RenderableMesh)
     Private ReadOnly BlendedMeshes As New List(Of RenderableMesh)
+    Private ReadOnly DecalDepthBuffer As New List(Of MeshDepth)
     Private ReadOnly BlendedDepthBuffer As New List(Of MeshDepth)
     Private RenderBucketsDirty As Boolean = True
     Private Shared Function CompareMeshIdx(x As RenderableMesh, y As RenderableMesh) As Integer
@@ -986,7 +1190,9 @@ Public Class PreviewModel
     Private Sub RebuildRenderBuckets()
         OpaqueMeshes.Clear()
         CutoutMeshes.Clear()
+        DecalMeshes.Clear()
         BlendedMeshes.Clear()
+        DecalDepthBuffer.Clear()
         BlendedDepthBuffer.Clear()
 
         For Each mesh In meshes
@@ -997,7 +1203,13 @@ Public Class PreviewModel
             Dim hasAlphaBlend As Boolean = Not IsNothing(material) AndAlso material.HasAlphaBlend
             Dim hasAlphaTest As Boolean = Not IsNothing(material) AndAlso material.HasAlphaTest
 
-            If isWireframe OrElse hasAlphaBlend Then
+            Dim isDecal As Boolean = Not IsNothing(material) AndAlso material.MaterialBase.Decal
+
+            If isWireframe Then
+                BlendedMeshes.Add(mesh)
+            ElseIf isDecal Then
+                DecalMeshes.Add(mesh)
+            ElseIf hasAlphaBlend Then
                 BlendedMeshes.Add(mesh)
             ElseIf hasAlphaTest Then
                 CutoutMeshes.Add(mesh)
@@ -1008,6 +1220,7 @@ Public Class PreviewModel
 
         OpaqueMeshes.Sort(AddressOf CompareMeshIdx)
         CutoutMeshes.Sort(AddressOf CompareMeshIdx)
+        DecalMeshes.Sort(AddressOf CompareMeshIdx)
         BlendedMeshes.Sort(AddressOf CompareMeshIdx)
 
         RenderBucketsDirty = False
@@ -1062,8 +1275,8 @@ Public Class PreviewModel
 
 
 
-        ' A√±ade **s√≥lo** estas dos l√≠neas:
-        Private vboMask As Integer                                    ' VBO dedicado a m√°scara
+        ' AÒade **sÛlo** estas dos lÌneas:
+        Private vboMask As Integer                                    ' VBO dedicado a m·scara
 
         ' GPU Skinning: SSBO for bone matrices + VBOs for per-vertex bone indices/weights
         Private ssbo_BoneMatrices As Integer = 0  ' SSBO for bone matrices
@@ -1342,7 +1555,7 @@ Public Class PreviewModel
         Private ReadOnly ParentModel As PreviewModel
 
         Public Sub Clean()
-            ' ‚Äî Eliminar VAO y buffers de atributos ‚Äî
+            ' ó Eliminar VAO y buffers de atributos ó
             If vao > 0 Then GL.DeleteVertexArray(vao) : vao = 0
             If ebo > 0 Then GL.DeleteBuffer(ebo) : ebo = 0
             If vboPosition > 0 Then GL.DeleteBuffer(vboPosition) : vboPosition = 0
@@ -1358,7 +1571,7 @@ Public Class PreviewModel
             If vboBoneIndices > 0 Then GL.DeleteBuffer(vboBoneIndices) : vboBoneIndices = 0
             If vboBoneWeights > 0 Then GL.DeleteBuffer(vboBoneWeights) : vboBoneWeights = 0
 
-            ' ‚Äî Reducir flags de dirty-tracking a m√≠nima expresi√≥n ‚Äî
+            ' ó Reducir flags de dirty-tracking a mÌnima expresiÛn ó
             MeshData.Meshgeometry = Nothing
         End Sub
 
@@ -1386,7 +1599,7 @@ Public Class PreviewModel
                 Dim totalBytes As Integer = vertexCount * elementSize
                 Dim cpuSkin As Boolean = Not gpuMode AndAlso MeshData.Meshgeometry.PerVertexSkinMatrix IsNot Nothing
 
-                ' O3.1: Smart threshold ‚Äî full BufferSubData upload when >60% vertices are dirty
+                ' O3.1: Smart threshold ó full BufferSubData upload when >60% vertices are dirty
                 If MeshData.Meshgeometry.dirtyVertexIndices.Count > vertexCount * 0.6 Then
                     Dim posF(vertexCount - 1) As Vector3
                     Dim nrmF(vertexCount - 1) As Vector3
@@ -1394,7 +1607,7 @@ Public Class PreviewModel
                     Dim bitanF(vertexCount - 1) As Vector3
 
                     If cpuSkin Then
-                        ' CPU skinning: transform local ‚Üí world using PerVertexSkinMatrix
+                        ' CPU skinning: transform local ? world using PerVertexSkinMatrix
                         Dim mats = MeshData.Meshgeometry.PerVertexSkinMatrix
                         Dim lv = MeshData.Meshgeometry.Vertices
                         Dim ln = MeshData.Meshgeometry.Normals
@@ -1476,7 +1689,7 @@ Public Class PreviewModel
                     Return
                 End If
 
-                ' Sparse update path ‚Äî used when fewer vertices changed
+                ' Sparse update path ó used when fewer vertices changed
                 Dim mapMask As MapBufferAccessMask = MapBufferAccessMask.MapWriteBit Or MapBufferAccessMask.MapUnsynchronizedBit Or MapBufferAccessMask.MapFlushExplicitBit
 
                 ' Mapear buffers
@@ -1575,7 +1788,7 @@ Public Class PreviewModel
                 GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
 
                 MeshData.Meshgeometry.dirtyVertexIndices.Clear()
-                ' Recompute AABB after sparse update ‚Äî bounds are needed for frustum culling
+                ' Recompute AABB after sparse update ó bounds are needed for frustum culling
                 ' and blended-mesh depth sorting. Full update path already calls this above.
                 ComputeBounds()
             End If
@@ -1599,17 +1812,17 @@ Public Class PreviewModel
                 Exit Sub
             End If
 
-            Const maskSize As Integer = 4 ' bytes por m√°scara
+            Const maskSize As Integer = 4 ' bytes por m·scara
             Dim totalMaskBytes As Integer = vertexMask.Length * maskSize
             If totalMaskBytes <= 0 Then
                 dirtyMaskIndices.Clear()
                 Exit Sub
             End If
 
-            ' Usar misma l√≥gica de MapBufferRange y MapUnsynchronizedBit
+            ' Usar misma lÛgica de MapBufferRange y MapUnsynchronizedBit
             Dim mapMask As MapBufferAccessMask = MapBufferAccessMask.MapWriteBit Or MapBufferAccessMask.MapFlushExplicitBit Or MapBufferAccessMask.MapUnsynchronizedBit
 
-            ' Mapear buffer de m√°scara
+            ' Mapear buffer de m·scara
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboMask)
             Dim ptrM As IntPtr = GL.MapBufferRange(BufferTarget.ArrayBuffer, IntPtr.Zero, totalMaskBytes, mapMask)
             If ptrM = IntPtr.Zero Then
@@ -1618,7 +1831,7 @@ Public Class PreviewModel
                 Exit Sub
             End If
 
-            ' Un solo bucle para escribir m√°scaras sucias
+            ' Un solo bucle para escribir m·scaras sucias
             For Each i As Integer In dirtyMaskIndices
                 If i < 0 OrElse i >= vertexMask.Length OrElse i >= dirtyMaskFlags.Length Then Continue For
 
@@ -1629,7 +1842,7 @@ Public Class PreviewModel
                 dirtyMaskFlags(i) = False
             Next
 
-            ' Flush y desmapear buffer de m√°scara
+            ' Flush y desmapear buffer de m·scara
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboMask)
             GL.FlushMappedBufferRange(BufferTarget.ArrayBuffer, IntPtr.Zero, New IntPtr(totalMaskBytes))
             GL.UnmapBuffer(BufferTarget.ArrayBuffer)
@@ -1667,31 +1880,31 @@ Public Class PreviewModel
             Dim tanF() As Vector3 = Array.ConvertAll(MeshData.Meshgeometry.Tangents, Function(v) New Vector3(v.X, v.Y, v.Z))
             Dim bitanF() As Vector3 = Array.ConvertAll(MeshData.Meshgeometry.Bitangents, Function(v) New Vector3(v.X, v.Y, v.Z))
 
-            ' POSICIONES ‚Äî DynamicDraw
+            ' POSICIONES ó DynamicDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboPosition)
             GL.BufferData(BufferTarget.ArrayBuffer, posF.Length * 3 * 4, posF, BufferUsageHint.DynamicDraw)
             GL.EnableVertexAttribArray(0)
             GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, False, 0, 0)
 
-            ' NORMALES ‚Äî DynamicDraw
+            ' NORMALES ó DynamicDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboNormal)
             GL.BufferData(BufferTarget.ArrayBuffer, nrmF.Length * 3 * 4, nrmF, BufferUsageHint.DynamicDraw)
             GL.EnableVertexAttribArray(1)
             GL.VertexAttribPointer(1, 3, VertexAttribPointerType.Float, False, 0, 0)
 
-            ' TANGENTES ‚Äî DynamicDraw
+            ' TANGENTES ó DynamicDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboTangent)
             GL.BufferData(BufferTarget.ArrayBuffer, tanF.Length * 3 * 4, tanF, BufferUsageHint.DynamicDraw)
             GL.EnableVertexAttribArray(2)
             GL.VertexAttribPointer(2, 3, VertexAttribPointerType.Float, False, 0, 0)
 
-            ' BITANGENTES ‚Äî DynamicDraw
+            ' BITANGENTES ó DynamicDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboBitangent)
             GL.BufferData(BufferTarget.ArrayBuffer, bitanF.Length * 3 * 4, bitanF, BufferUsageHint.DynamicDraw)
             GL.EnableVertexAttribArray(3)
             GL.VertexAttribPointer(3, 3, VertexAttribPointerType.Float, False, 0, 0)
 
-            ' COLOR + ALPHA ‚Äî StaticDraw
+            ' COLOR + ALPHA ó StaticDraw
 
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboColorAlpha)
             GL.BufferData(BufferTarget.ArrayBuffer, MeshData.Meshgeometry.VertexColors.Length * 4 * 4, MeshData.Meshgeometry.VertexColors, BufferUsageHint.StaticDraw)
@@ -1700,7 +1913,7 @@ Public Class PreviewModel
             GL.EnableVertexAttribArray(5)
             GL.VertexAttribPointer(5, 1, VertexAttribPointerType.Float, False, 4 * 4, 3 * 4)
 
-            ' UV + WEIGHT ‚Äî StaticDraw
+            ' UV + WEIGHT ó StaticDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboUVMaskWeight)
             GL.BufferData(BufferTarget.ArrayBuffer, MeshData.Meshgeometry.Uvs_Weight.Length * 3 * 4, MeshData.Meshgeometry.Uvs_Weight, BufferUsageHint.StaticDraw)
             GL.EnableVertexAttribArray(6)
@@ -1708,7 +1921,7 @@ Public Class PreviewModel
             GL.EnableVertexAttribArray(8)
             GL.VertexAttribPointer(8, 1, VertexAttribPointerType.Float, False, 3 * 4, 2 * 4)
 
-            ' M√ÅSCARA ‚Äî DynamicDraw
+            ' M¡SCARA ó DynamicDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboMask)
             GL.BufferData(BufferTarget.ArrayBuffer, MeshData.Meshgeometry.VertexMask.Length * 4, MeshData.Meshgeometry.VertexMask, BufferUsageHint.DynamicDraw)
 
@@ -1817,6 +2030,39 @@ Public Class PreviewModel
             Return True
         End Function
 
+        Private Structure PolygonOffsetState
+            Public ReadOnly Enabled As Boolean
+            Public ReadOnly Factor As Single
+            Public ReadOnly Units As Single
+
+            Public Sub New(enabled As Boolean, factor As Single, units As Single)
+                Me.Enabled = enabled
+                Me.Factor = factor
+                Me.Units = units
+            End Sub
+
+            Public Shared ReadOnly Disabled As New PolygonOffsetState(False, 0.0F, 0.0F)
+        End Structure
+
+        ' Centralized tuning points for decal/depth-bias raster offset.
+        Private Const DecalPolygonOffsetFactor As Single = -1.0F
+        Private Const DecalPolygonOffsetUnits As Single = -1.0F
+        Private Const DecalDepthBiasPolygonOffsetFactor As Single = -2.0F
+        Private Const DecalDepthBiasPolygonOffsetUnits As Single = -4.0F
+
+        Private Shared Function ResolvePolygonOffset(materialBase As FO4UnifiedMaterial_Class) As PolygonOffsetState
+            If materialBase Is Nothing Then Return PolygonOffsetState.Disabled
+
+            If Not materialBase.Decal Then
+                Return PolygonOffsetState.Disabled
+            End If
+
+            If materialBase.DepthBias Then
+                Return New PolygonOffsetState(True, DecalDepthBiasPolygonOffsetFactor, DecalDepthBiasPolygonOffsetUnits)
+            End If
+
+            Return New PolygonOffsetState(True, DecalPolygonOffsetFactor, DecalPolygonOffsetUnits)
+        End Function
         Public Sub Render(projection As Matrix4, ByRef camera As OrbitCamera)
 
             If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide = True Then Exit Sub
@@ -1885,9 +2131,10 @@ Public Class PreviewModel
                 GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
             End If
 
-            ' (Opcional) restaurar estado si luego renderizas m√°s cosas:
+            ' (Opcional) restaurar estado si luego renderizas m·s cosas:
             GL.DepthMask(True)
             GL.Disable(EnableCap.Blend)
+            GL.Disable(EnableCap.PolygonOffsetFill)
             GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
             GL.CullFace(TriangleFace.Back)
 
@@ -2012,7 +2259,7 @@ Public Class PreviewModel
             Dim showVtxAlpha As Boolean = hasVtxData AndAlso (nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha)
 
             '===============================
-            ' ?? PROPIEDADES DE COLOR B√ÅSICO
+            ' ?? PROPIEDADES DE COLOR B¡SICO
             '===============================
             shader.SetVector3("color", Shader_Base_Class.Color_to_Vector(MeshData.Shape.Wirecolor))
             shader.SetFloat("WireAlpha", MeshData.Shape.WireAlpha)
@@ -2024,7 +2271,7 @@ Public Class PreviewModel
             shader.SetVector3("subColor", Shader_Base_Class.Color_to_Vector(MeshData.Shape.TintColor))
 
             '===============================
-            ' ?? TOGGLES DE VISUALIZACI√ìN
+            ' ?? TOGGLES DE VISUALIZACI”N
             '===============================
             shader.SetBool("bShowTexture", shape.ShowTexture)
             shader.SetBool("bShowMask", shape.ShowMask)
@@ -2036,11 +2283,11 @@ Public Class PreviewModel
             shader.SetBool("bHide", shape.RenderHide)
 
             '===============================
-            ' ?? ILUMINACI√ìN PRINCIPAL
+            ' ?? ILUMINACI”N PRINCIPAL
             '===============================
-            ' ?? ILUMINACI√ìN PRINCIPAL
+            ' ?? ILUMINACI”N PRINCIPAL
 
-            ' main ‚Äúfrontal‚Äù light
+            ' main ìfrontalî light
             Dim cam = ParentModel.ParentControl.camera
 
             shader.SetBool("bLightEnabled", True)
@@ -2120,7 +2367,7 @@ Public Class PreviewModel
             '===============================
             shader.SetVector2("uvOffset", New Vector2(materialBase.UOffset, materialBase.VOffset))
             shader.SetVector2("uvScale", New Vector2(materialBase.UScale, materialBase.VScale))
-            ' Umbral de alpha (solo necesario si us√°s discard por transparencia)
+            ' Umbral de alpha (solo necesario si us·s discard por transparencia)
             shader.SetFloat("alphaThreshold", materialBase.AlphaTestRef / 255)
 
             '===============================
@@ -2186,8 +2433,10 @@ Public Class PreviewModel
             shader.SetFloat("effectLightingInfluence", If(materialBase.EffectLightingEnabled, materialBase.LightingInfluence, 0.0F))
             shader.SetVector4("effectFalloffParams", New OpenTK.Mathematics.Vector4(materialBase.FalloffStartAngle, materialBase.FalloffStopAngle, materialBase.FalloffStartOpacity, materialBase.FalloffStopOpacity))
             shader.SetVector3("effectBaseColor", Shader_Base_Class.Color_to_Vector(materialBase.BaseColor))
-            shader.SetFloat("effectBaseColorAlpha", materialBase.BaseColor.A / 255.0F)
+            shader.SetFloat("effectBaseColorAlpha", materialBase.Alpha)
             shader.SetFloat("effectBaseColorScale", materialBase.BaseColorScale)
+
+            '
 
             ' === DebugMode ===
 
@@ -2223,7 +2472,7 @@ Public Class PreviewModel
                 GL.Enable(EnableCap.Blend)
                 GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
             ElseIf hasAlphaBlend Then
-                ' Blending est√°ndar
+                ' Blending est·ndar
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
                 GL.Enable(EnableCap.Blend)
                 Dim blend = material.Calculate_Blending()
@@ -2237,8 +2486,17 @@ Public Class PreviewModel
                 GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
                 GL.Disable(EnableCap.Blend)
             End If
+
+            Dim polygonOffset = ResolvePolygonOffset(materialBase)
+            If polygonOffset.Enabled Then
+                GL.Enable(EnableCap.PolygonOffsetFill)
+                GL.PolygonOffset(polygonOffset.Factor, polygonOffset.Units)
+            Else
+                GL.Disable(EnableCap.PolygonOffsetFill)
+            End If
+
             ' === Culling ===
-            ' Se resuelve en la etapa de draw seg√∫n el face mode efectivo del shape.
+            ' Se resuelve en la etapa de draw seg˙n el face mode efectivo del shape.
 
         End Sub
         Public Sub ExportMeshToOBJ(rutaArchivo As String)
@@ -2268,7 +2526,7 @@ Public Class PreviewModel
                     Next
                 End If
 
-                ' ?? Caras (tri√°ngulos)
+                ' ?? Caras (tri·ngulos)
                 Dim tieneUV As Boolean = MeshData.Meshgeometry.Uvs_Weight IsNot Nothing AndAlso MeshData.Meshgeometry.Uvs_Weight.Length = MeshData.Meshgeometry.Vertices.Length
                 Dim tieneNorm As Boolean = MeshData.Meshgeometry.Normals IsNot Nothing AndAlso MeshData.Meshgeometry.Normals.Length = MeshData.Meshgeometry.Vertices.Length
 
@@ -2315,10 +2573,14 @@ Public Class PreviewModel
         If Me.ParentControl.IsDisposed Then Exit Sub
         Me.ParentControl.Processing_Status(text)
     End Sub
+    ''' <summary>
+    ''' Extracts skinned geometry for each shape in parallel.
+    ''' IMPORTANT: Skeleton must be prepared BEFORE calling this method
+    ''' (via ISkeletonResolver, PrepareSkeletonForShapes, or equivalent).
+    ''' </summary>
     Public Sub LoadShapesParallel(shapes As IEnumerable(Of IRenderableShape))
         If Not shapes.Any() Then Exit Sub
         LoadedShapes = shapes.ToList()
-        Skeleton_Class.PrepareSkeletonForShapes(shapes, Last_Pose)
         Dim result As New ConcurrentBag(Of RenderableMesh)
         Parallel.ForEach(shapes, Sub(shape)
                                      'For Each shape In shapes
@@ -2357,12 +2619,13 @@ Public Class PreviewModel
             If IsNothing(shape.NifShape) Then Return Nothing
             Dim geom = SkinningHelper.ExtractSkinnedGeometry(shape, ApplyPose:=HasPose, SingleBoneSkinning, RecalculateNormals)
 
-            ' 2) Rellenar MeshData con la geometr√≠a final
+            ' 2) Rellenar MeshData con la geometrÌa final
             Dim mesh As New RenderableMesh.MeshData_Class With {
                 .Shape = shape,
                 .Meshgeometry = geom
                         }
             mesh.Material = New RenderableMesh.MaterialData(mesh)
+
             Dim Renderable = New RenderableMesh(mesh, Me)
 
             Return Renderable
@@ -2397,7 +2660,7 @@ Public Class PreviewModel
 
     Private ReadOnly Last_Loaded_Textures As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
-    ' O4.1: Background Texture Loading ‚Äî two-phase pipeline
+    ' O4.1: Background Texture Loading ó two-phase pipeline
     ' Phase 1 runs on a background thread (DDS I/O + decompression, no GL calls).
     ' Phase 2 runs on the GL thread each frame (upload a limited batch via PBO).
     ' Between phases, meshes are hidden (TexturesReady=False) and a status overlay is shown.
@@ -2461,7 +2724,7 @@ Public Class PreviewModel
         _backgroundLoadCts = New Threading.CancellationTokenSource()
         Dim ct = _backgroundLoadCts.Token
 
-        ' Mark textures as not ready ‚Äî meshes will be hidden until all uploads complete
+        ' Mark textures as not ready ó meshes will be hidden until all uploads complete
         TexturesReady = False
 
         ' Track which paths we are about to load
@@ -2492,12 +2755,12 @@ Public Class PreviewModel
                     ' Without this, textures stay as fallback until the user interacts (rotate/zoom).
                     If controlRef IsNot Nothing AndAlso Not controlRef.IsDisposed AndAlso controlRef.IsHandleCreated Then
                         controlRef.BeginInvoke(Sub()
-                                                   controlRef.updateRequired = True
+                                                   controlRef.UpdateRequired = True
                                                    controlRef.Invalidate()
                                                End Sub)
                     End If
                 Catch ex As OperationCanceledException
-                    ' Cancelled ‚Äî remove paths from pending set so they can be retried
+                    ' Cancelled ó remove paths from pending set so they can be retried
                     SyncLock _pendingBackgroundPaths
                         For Each p In pathsArray
                             _pendingBackgroundPaths.Remove(p)
@@ -2514,12 +2777,12 @@ Public Class PreviewModel
                 End Try
             End Sub, ct)
 
-        ' Return immediately ‚Äî meshes are hidden (TexturesReady=False) until
+        ' Return immediately ó meshes are hidden (TexturesReady=False) until
         ' ProcessPendingTextureUploads() uploads all textures and sets TexturesReady=True.
     End Sub
 
     ''' <summary>
-    ''' O4.1 Phase 2 ‚Äî Called on the GL thread each frame (from RenderAll).
+    ''' O4.1 Phase 2 ó Called on the GL thread each frame (from RenderAll).
     ''' Drains the pending texture upload queue, uploading up to MaxTextureUploadsPerFrame
     ''' textures per frame to avoid frame-time spikes.
     ''' Updates Textures_Dictionary with the new GL texture IDs and triggers a repaint.
@@ -2557,12 +2820,12 @@ Public Class PreviewModel
                             Textures_Dictionary(path) = result
                             Last_Loaded_Textures.Add(path)
                         Else
-                            ' Failed to upload ‚Äî mark as "attempted" to prevent re-enqueue loop
+                            ' Failed to upload ó mark as "attempted" to prevent re-enqueue loop
                             Textures_Dictionary.Remove(path)
                             Last_Loaded_Textures.Add(path)
                         End If
                     Catch ex As Exception
-                        ' Upload failed ‚Äî mark as "attempted" so Process_Textures_GL won't re-enqueue
+                        ' Upload failed ó mark as "attempted" so Process_Textures_GL won't re-enqueue
                         Debug.Print($"[O4.1] GL upload failed for '{path}': {ex.Message}")
                         Textures_Dictionary.Remove(path)
                         Last_Loaded_Textures.Add(path)
@@ -2587,7 +2850,7 @@ Public Class PreviewModel
                 If batch.Count = 0 Then
                     _pendingTextureUploads.TryDequeue(batch)
                 Else
-                    ' Batch still has remaining textures ‚Äî stop for this frame
+                    ' Batch still has remaining textures ó stop for this frame
                     Exit While
                 End If
             End While
@@ -2597,14 +2860,14 @@ Public Class PreviewModel
         ' and trigger a repaint so the new textures are visible immediately
         If anyUploaded Then
             MarkRenderBucketsDirty()
-            ParentControl.updateRequired = True
+            ParentControl.UpdateRequired = True
             ParentControl.Invalidate()
         End If
 
         ' If there are STILL pending textures (batch not fully processed or more batches),
         ' keep the render loop active so the next frame processes more uploads
         If Not _pendingTextureUploads.IsEmpty Then
-            ParentControl.updateRequired = True
+            ParentControl.UpdateRequired = True
         End If
 
         ' Check if all textures are now loaded (queue empty AND no background task running).
@@ -2617,7 +2880,7 @@ Public Class PreviewModel
             If _pendingTextureUploads.IsEmpty AndAlso (_backgroundLoadTask Is Nothing OrElse _backgroundLoadTask.IsCompleted) Then
                 If Not TexturesReady Then
                     TexturesReady = True
-                    ParentControl.updateRequired = True
+                    ParentControl.UpdateRequired = True
                     ParentControl.Invalidate()
                 End If
             End If
@@ -2649,7 +2912,7 @@ Public Class PreviewModel
             _pendingBackgroundPaths.Clear()
         End SyncLock
 
-        ' ‚Äî Eliminar texturas cargadas ‚Äî
+        ' ó Eliminar texturas cargadas ó
         Dim seen As New HashSet(Of UInteger)
         For Each texID In Textures_Dictionary.Values.Select(Function(pf) pf.Texture_ID)
             If texID > 0 AndAlso Not seen.Contains(texID) Then
@@ -2677,7 +2940,7 @@ Public Class PreviewModel
             For Each batch In _pendingTextureUploads
                 batch.Remove(Cual)
             Next
-            ' ‚Äî Eliminar texturas cargadas ‚Äî
+            ' ó Eliminar texturas cargadas ó
             Dim seen As New HashSet(Of UInteger)
             For Each texID In Textures_Dictionary.Values.Where(Function(pf) pf.Path.Equals(Cual, StringComparison.OrdinalIgnoreCase)).Select(Function(pf) pf.Texture_ID)
                 If texID > 0 AndAlso Not seen.Contains(texID) Then
@@ -2698,7 +2961,7 @@ Public Class PreviewModel
         TexturesReady = True
         If Not IsNothing(ParentControl.RenderTimer) Then ParentControl.RenderTimer.Stop()
         ParentControl.MakeCurrent()
-        ParentControl.updateRequired = True
+        ParentControl.UpdateRequired = True
         If ShowText Then Me.ParentControl.Processing_Status("Cleaned")
         ' Limpia meshes internamente
         For Each mesh In meshes
@@ -2708,7 +2971,9 @@ Public Class PreviewModel
         meshes.Clear()
         OpaqueMeshes.Clear()
         CutoutMeshes.Clear()
+        DecalMeshes.Clear()
         BlendedMeshes.Clear()
+        DecalDepthBuffer.Clear()
         BlendedDepthBuffer.Clear()
         MarkRenderBucketsDirty()
 
@@ -2723,16 +2988,52 @@ Public Class PreviewModel
         Public Mesh As RenderableMesh
         Public Depth As Single
     End Structure
+
+    Private Const OverlayDepthTieThreshold As Single = 0.001F
+
+    Private Shared Function GetOverlayBlendSortKey(mesh As RenderableMesh) As Integer
+        If mesh Is Nothing OrElse mesh.MeshData Is Nothing OrElse mesh.MeshData.Shape Is Nothing Then Return 2
+        If mesh.MeshData.Shape.Wireframe Then Return 4
+
+        Dim material = mesh.MeshData.Material
+        If material Is Nothing Then Return 2
+
+        Select Case material.MaterialBase.AlphaBlendMode
+            Case AlphaBlendModeType.None
+                Return 0
+            Case AlphaBlendModeType.Multiplicative
+                Return 1
+            Case AlphaBlendModeType.Standard, AlphaBlendModeType.Unknown
+                Return 2
+            Case AlphaBlendModeType.Additive
+                Return 3
+            Case Else
+                Return 2
+        End Select
+    End Function
+
+    Private Shared Function CompareOverlayMeshes(a As MeshDepth, b As MeshDepth) As Integer
+        Dim depthCompare As Integer = b.Depth.CompareTo(a.Depth)
+        If depthCompare <> 0 AndAlso Math.Abs(a.Depth - b.Depth) > OverlayDepthTieThreshold Then
+            Return depthCompare
+        End If
+
+        Dim blendCompare As Integer = GetOverlayBlendSortKey(a.Mesh).CompareTo(GetOverlayBlendSortKey(b.Mesh))
+        If blendCompare <> 0 Then Return blendCompare
+
+        Return a.Mesh.MeshData.Idx.CompareTo(b.Mesh.MeshData.Idx)
+    End Function
+
     Public Property FloorOffset As Double = -0.00F
     Public Sub RenderAll(projection As Matrix4, camera As OrbitCamera)
         ' O4.1: Process pending background texture uploads (Phase 2) each frame
         ProcessPendingTextureUploads()
 
-        ' Hide meshes while textures are still loading ‚Äî show status overlay instead
+        ' Hide meshes while textures are still loading ó show status overlay instead
         If Not TexturesReady Then
             If Floor IsNot Nothing AndAlso Floor.Enabled = True Then Floor.Render(projection, camera, FloorOffset)
             ParentControl.Processing_Status("Texturing...")
-            ParentControl.updateRequired = True
+            ParentControl.UpdateRequired = True
             Exit Sub
         End If
 
@@ -2743,7 +3044,7 @@ Public Class PreviewModel
         ' stop rendering all meshes whose VBOs are still valid just because the CPU-side shapedata
         ' was evicted by the LRU, which is an unnecessary regression in render quality.
 
-        If RenderBucketsDirty OrElse (OpaqueMeshes.Count + CutoutMeshes.Count + BlendedMeshes.Count) <> meshes.Count Then
+        If RenderBucketsDirty OrElse (OpaqueMeshes.Count + CutoutMeshes.Count + DecalMeshes.Count + BlendedMeshes.Count) <> meshes.Count Then
             RebuildRenderBuckets()
 
             ' O3.5: Sort opaque and cutout meshes by diffuse texture ID to minimize GL state changes.
@@ -2756,22 +3057,37 @@ Public Class PreviewModel
         Dim viewMatrix = camera.GetViewMatrix()
         Dim vp As Matrix4 = viewMatrix * projection
 
-        ' 1. OPAQUE ‚Äî sin blending, depth write habilitado
+        ' 1. OPAQUE ó sin blending, depth write habilitado
         For Each mesh In OpaqueMeshes
             ' O3.3: Skip meshes whose AABB is entirely outside the view frustum
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
             mesh.Render(projection, camera)
         Next
 
-        ' 2. CUTOUT ‚Äî alpha test, sin blending, depth write habilitado
+        ' 2. CUTOUT ó alpha test, sin blending, depth write habilitado
         For Each mesh In CutoutMeshes
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
             mesh.Render(projection, camera)
         Next
 
+        ' 3. DECAL ó overlay coplanar con bias de profundidad configurable
+        If DecalMeshes.Count > 0 Then
+            DecalDepthBuffer.Clear()
+
+            For Each mesh In DecalMeshes
+                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
+                Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
+                DecalDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
+            Next
+            DecalDepthBuffer.Sort(AddressOf CompareOverlayMeshes)
+            For Each item In DecalDepthBuffer
+                item.Mesh.Render(projection, camera)
+            Next
+        End If
+
         If BlendedMeshes.Count = 0 Then Exit Sub
 
-        ' 3. BLENDED ‚Äî requiere ordenamiento por profundidad
+        ' 4. BLENDED ó requiere ordenamiento por profundidad
         BlendedDepthBuffer.Clear()
 
         For Each mesh In BlendedMeshes
@@ -2780,9 +3096,7 @@ Public Class PreviewModel
             Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
             BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
         Next
-
-        BlendedDepthBuffer.Sort(Function(a, b) b.Depth.CompareTo(a.Depth))
-
+        BlendedDepthBuffer.Sort(AddressOf CompareOverlayMeshes)
         For Each item In BlendedDepthBuffer
             item.Mesh.Render(projection, camera)
         Next
@@ -2826,16 +3140,16 @@ Public Class FloorRenderer
 
             If p > endPos Then Exit For
 
-            ' l√≠nea paralela al eje Y, en X = p
+            ' lÌnea paralela al eje Y, en X = p
             verts.Add(p) : verts.Add(startPos) : verts.Add(0.0F)
             verts.Add(p) : verts.Add(endPos) : verts.Add(0.0F)
 
-            ' l√≠nea paralela al eje X, en Y = p
+            ' lÌnea paralela al eje X, en Y = p
             verts.Add(startPos) : verts.Add(p) : verts.Add(0.0F)
             verts.Add(endPos) : verts.Add(p) : verts.Add(0.0F)
         Next
 
-        ' asegurar borde final si no cay√≥ exacto
+        ' asegurar borde final si no cayÛ exacto
         If Math.Abs(endPos - (startPos + ((lineCountPerAxis - 1) * StepSize))) > 0.0001F Then
             Dim p As Single = endPos
 
@@ -2909,68 +3223,71 @@ Public Class FloorRenderer
     End Sub
 End Class
 
-    Public Class OrbitCamera
-        Private Const RotateScale As Single = 0.01F
-        Private Shared ReadOnly MaxElevation As Single = MathF.PI / 2.0F - 0.02F
+Public Class OrbitCamera
+    Private Const RotateScale As Single = 0.01F
+    Private Shared ReadOnly MaxElevation As Single = MathF.PI / 2.0F - 0.02F
 
-        Friend angleX As Single
-        Friend angleY As Single
-        Public distance As Single
-        Public Optimaldistance As Single = 0
+    Friend angleX As Single
+    Friend angleY As Single
+    Public distance As Single
+    Public Optimaldistance As Single = 0
 
-        Public Property FocusPosition As Vector3
-        Public Property MinDistance As Single = 20
-        Public Property MaxDistance As Single = 900
+    Public Property FocusPosition As Vector3
+    Public Property MinDistance As Single = 20
+    Public Property MaxDistance As Single = 900
 
-        Public Property Forward As Vector3
-        Public right As Vector3
-        Public upPlane As Vector3
+    Public Property Forward As Vector3
+    Public right As Vector3
+    Public upPlane As Vector3
 
-        Public Sub New()
-            angleX = 0
-            angleY = 0
-            distance = 167
-            FocusPosition = Vector3.Zero
-            UpdateDirectionFromAngles()
-        End Sub
+    Public Sub New()
+        angleX = 0
+        angleY = 0
+        distance = 167
+        FocusPosition = Vector3.Zero
+        UpdateDirectionFromAngles()
+    End Sub
 
-        Public Sub UpdateDirectionFromAngles()
-            Dim cosElev = CSng(Math.Cos(angleY))
-            Dim sinElev = CSng(Math.Sin(angleY))
-            Dim cosAz = CSng(Math.Cos(angleX))
-            Dim sinAz = CSng(Math.Sin(angleX))
-            Forward = Vector3.Normalize(New Vector3(cosElev * sinAz, cosElev * cosAz, sinElev))
-            right = Vector3.Normalize(Vector3.Cross(Forward, Vector3.UnitZ))
-            upPlane = Vector3.Normalize(Vector3.Cross(right, Forward))
-        End Sub
+    Public Sub UpdateDirectionFromAngles()
+        Dim cosElev = CSng(Math.Cos(angleY))
+        Dim sinElev = CSng(Math.Sin(angleY))
+        Dim cosAz = CSng(Math.Cos(angleX))
+        Dim sinAz = CSng(Math.Sin(angleX))
+        Forward = Vector3.Normalize(New Vector3(cosElev * sinAz, cosElev * cosAz, sinElev))
+        right = Vector3.Normalize(Vector3.Cross(Forward, Vector3.UnitZ))
+        upPlane = Vector3.Normalize(Vector3.Cross(right, Forward))
+    End Sub
 
-        Public Sub Rotate(dx As Single, dy As Single)
-            angleX += dx * RotateScale
-            angleY = Math.Clamp(angleY + dy * RotateScale, -MaxElevation, MaxElevation)
-            UpdateDirectionFromAngles()
-        End Sub
+    Public Sub Rotate(dx As Single, dy As Single)
+        angleX += dx * RotateScale
+        angleY = Math.Clamp(angleY + dy * RotateScale, -MaxElevation, MaxElevation)
+        UpdateDirectionFromAngles()
+    End Sub
 
-        ''' <summary>
-        ''' Pan en pixels de pantalla. Grab-and-drag: mouse derecha mueve modelo derecha.
-        ''' </summary>
-        Public Sub Pan(dxPixels As Single, dyPixels As Single)
-            Dim scale As Single = distance * RotateScale * 0.2F
-            FocusPosition += (dxPixels * scale) * right + (dyPixels * scale) * upPlane
-        End Sub
+    ''' <summary>
+    ''' Pan en pixels de pantalla. Grab-and-drag: mouse derecha mueve modelo derecha.
+    ''' </summary>
+    Public Sub Pan(dxPixels As Single, dyPixels As Single)
+        Dim scale As Single = distance * RotateScale * 0.2F
+        FocusPosition += (dxPixels * scale) * right + (dyPixels * scale) * upPlane
+    End Sub
 
-        Public Sub Zoom(delta As Single)
-            Dim factor As Single = MathF.Exp(-RotateScale * 5 * delta)
-            distance = Math.Clamp(distance * factor, MinDistance, MaxDistance)
-        End Sub
+    Public Sub Zoom(delta As Single)
+        Dim factor As Single = MathF.Exp(-RotateScale * 5 * delta)
+        distance = Math.Clamp(distance * factor, MinDistance, MaxDistance)
+    End Sub
 
-        Public Function GetViewMatrix() As Matrix4
-            Dim eye = FocusPosition + Forward * distance
-            Return Matrix4.LookAt(eye, FocusPosition, Vector3.UnitZ)
-        End Function
+    Public Function GetViewMatrix() As Matrix4
+        Dim eye = FocusPosition + Forward * distance
+        Return Matrix4.LookAt(eye, FocusPosition, Vector3.UnitZ)
+    End Function
 
-        Public Function GetEyePosition() As Vector3
-            Return FocusPosition + Forward * distance
-        End Function
-    End Class
+    Public Function GetEyePosition() As Vector3
+        Return FocusPosition + Forward * distance
+    End Function
+End Class
+
+
+
 
 

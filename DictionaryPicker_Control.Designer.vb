@@ -1,4 +1,4 @@
-﻿' Version Uploaded of Wardrobe 3.1.0
+﻿' Version Uploaded of Fo4Library 3.2.0
 <Global.Microsoft.VisualBasic.CompilerServices.DesignerGenerated()> _
 Partial Class DictionaryPicker_Control
     Inherits System.Windows.Forms.UserControl

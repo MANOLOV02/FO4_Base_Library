@@ -1,4 +1,4 @@
-﻿' Version Uploaded of Wardrobe 3.1.0
+﻿' Version Uploaded of Fo4Library 3.2.0
 Imports System.Collections.Concurrent
 Imports System.IO
 Imports System.Runtime.CompilerServices
@@ -7,7 +7,7 @@ Imports System.Threading
 Imports System.Timers
 Imports NiflySharp.Enums
 
-Public Module Extensiones
+Public Module Extensions
     Public Const MaterialsPrefix As String = "Materials\"
     Public Const TexturesPrefix As String = "Textures\"
 
@@ -148,12 +148,14 @@ Public Class FilesDictionary_class
         End Function
 
     End Class
-    Private Shared _sliderPresets As IPresetCollection = Nothing
     Private Shared _fO4Path As String = ""
     Private Shared _dictionary As New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
     ''' <summary>Stack of overridden entries per key. When a loose overrides a BA2 (or a BA2 overrides another), the loser is pushed here.</summary>
     Private Shared ReadOnly _overriddenEntries As New ConcurrentDictionary(Of String, ConcurrentStack(Of File_Location))(StringComparer.OrdinalIgnoreCase)
-    Private Shared ReadOnly Extensiones As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri"}
+    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri"}
+
+    ''' <summary>App-specific data store. Apps register their own data here (presets, high heels, etc.) keyed by type.</summary>
+    Private Shared ReadOnly _appData As New ConcurrentDictionary(Of Type, Object)
 
     ' O1.1: Lazy byte cache with WeakReference — allows GC to reclaim when memory is needed
     Private Shared ReadOnly _bytesCache As New ConcurrentDictionary(Of String, WeakReference(Of Byte()))(StringComparer.OrdinalIgnoreCase)
@@ -264,7 +266,7 @@ Public Class FilesDictionary_class
 
         Return Directory.
         EnumerateFiles(root, "*", opts).
-        Where(Function(path) Extensiones.Contains(IO.Path.GetExtension(path)))
+        Where(Function(path) SupportedExtensions.Contains(IO.Path.GetExtension(path)))
     End Function
     Public Shared Function GetMultipleFilesBytes(files As String()) As Byte()()
         If IsNothing(files) OrElse files.Length = 0 Then Return Array.Empty(Of Byte())()
@@ -333,15 +335,24 @@ Public Class FilesDictionary_class
     Private Shared totalCount As Integer
     Private Shared completed As Integer
 
-    ''' <summary>Preset/pose collection. Typed as IPresetCollection for cross-assembly safety.</summary>
-    Public Shared Property SliderPresets As IPresetCollection
-        Get
-            Return _sliderPresets
-        End Get
-        Set(value As IPresetCollection)
-            _sliderPresets = value
-        End Set
-    End Property
+    ''' <summary>Register app-specific extensions to include in dictionary scans (e.g. ".osp", ".xml").</summary>
+    Public Shared Sub RegisterExtensions(ParamArray extensions() As String)
+        For Each ext In extensions
+            SupportedExtensions.Add(ext)
+        Next
+    End Sub
+
+    ''' <summary>Store app-specific data by type. Apps use this to attach their own state to the dictionary lifecycle.</summary>
+    Public Shared Sub SetAppData(Of T As Class)(value As T)
+        _appData(GetType(T)) = value
+    End Sub
+
+    ''' <summary>Retrieve app-specific data by type. Returns Nothing if not set.</summary>
+    Public Shared Function GetAppData(Of T As Class)() As T
+        Dim val As Object = Nothing
+        If _appData.TryGetValue(GetType(T), val) Then Return DirectCast(val, T)
+        Return Nothing
+    End Function
 
     Public Shared Property FO4Path As String
         Get
