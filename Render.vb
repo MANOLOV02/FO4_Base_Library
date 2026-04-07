@@ -1177,7 +1177,6 @@ Public Class PreviewModel
     Private ReadOnly CutoutMeshes As New List(Of RenderableMesh)
     Private ReadOnly DecalMeshes As New List(Of RenderableMesh)
     Private ReadOnly BlendedMeshes As New List(Of RenderableMesh)
-    Private ReadOnly DecalDepthBuffer As New List(Of MeshDepth)
     Private ReadOnly BlendedDepthBuffer As New List(Of MeshDepth)
     Private RenderBucketsDirty As Boolean = True
     Private Shared Function CompareMeshIdx(x As RenderableMesh, y As RenderableMesh) As Integer
@@ -1193,7 +1192,6 @@ Public Class PreviewModel
         CutoutMeshes.Clear()
         DecalMeshes.Clear()
         BlendedMeshes.Clear()
-        DecalDepthBuffer.Clear()
         BlendedDepthBuffer.Clear()
 
         For Each mesh In meshes
@@ -2048,8 +2046,8 @@ Public Class PreviewModel
         ' Centralized tuning points for decal/depth-bias raster offset.
         Private Const DecalPolygonOffsetFactor As Single = -1.0F
         Private Const DecalPolygonOffsetUnits As Single = -1.0F
-        Private Const DecalDepthBiasPolygonOffsetFactor As Single = -2.0F
-        Private Const DecalDepthBiasPolygonOffsetUnits As Single = -4.0F
+        Private Const DecalDepthBiasPolygonOffsetFactor As Single = -1.0F
+        Private Const DecalDepthBiasPolygonOffsetUnits As Single = -1.0F
 
         Private Shared Function ResolvePolygonOffset(materialBase As FO4UnifiedMaterial_Class) As PolygonOffsetState
             If materialBase Is Nothing Then Return PolygonOffsetState.Disabled
@@ -2063,6 +2061,26 @@ Public Class PreviewModel
             End If
 
             Return New PolygonOffsetState(True, DecalPolygonOffsetFactor, DecalPolygonOffsetUnits)
+        End Function
+
+        Private Shared Function ResolveDepthTestEnabled(materialBase As FO4UnifiedMaterial_Class, hasAlphaBlend As Boolean) As Boolean
+            If materialBase Is Nothing Then Return hasAlphaBlend = False
+            If materialBase.Decal Then Return True
+
+            Return materialBase.ZBufferTest OrElse (hasAlphaBlend = False)
+        End Function
+
+        Private Shared Function ResolveDepthWriteEnabled(materialBase As FO4UnifiedMaterial_Class, hasAlphaBlend As Boolean, hasAlphaTest As Boolean, isWireframe As Boolean) As Boolean
+            If hasAlphaBlend OrElse isWireframe Then
+                Return False
+            End If
+
+            If hasAlphaTest Then
+                Return True
+            End If
+
+            If materialBase Is Nothing Then Return True
+            Return materialBase.ZBufferWrite
         End Function
         Public Sub Render(projection As Matrix4, ByRef camera As OrbitCamera)
 
@@ -2106,6 +2124,7 @@ Public Class PreviewModel
             GL.BindVertexArray(vao)
             Dim mat = MeshData.Material.MaterialBase
             Dim faceMode = ResolveEffectiveFaceMode(MeshData.Shape, mat)
+            Dim writeDepth As Boolean = ResolveDepthWriteEnabled(mat, MeshData.Material.HasAlphaBlend, MeshData.Material.HasAlphaTest, MeshData.Shape.Wireframe)
 
             Dim isTwoPassBlended As Boolean = False
             If MeshData.Material.HasAlphaBlend AndAlso Not MeshData.Shape.Wireframe AndAlso faceMode = EffectiveFaceMode.DrawBoth Then
@@ -2118,9 +2137,8 @@ Public Class PreviewModel
                 GL.CullFace(TriangleFace.Front)
                 GL.DepthMask(False)
                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
-
                 GL.CullFace(TriangleFace.Back)
-                GL.DepthMask(True)
+                GL.DepthMask(writeDepth)
                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
             Else
                 ApplyFaceMode(faceMode)
@@ -2445,9 +2463,8 @@ Public Class PreviewModel
 
             ' Alpha global
             shader.SetFloat("alpha", materialBase.Alpha)
-
             ' === Depth Test ===
-            If materialBase.ZBufferTest OrElse (hasAlphaBlend = False) Then
+            If ResolveDepthTestEnabled(materialBase, hasAlphaBlend) Then
                 GL.Enable(EnableCap.DepthTest)
                 GL.DepthFunc(DepthFunction.Lequal)   ' o el que uses por defecto
             Else
@@ -2455,17 +2472,8 @@ Public Class PreviewModel
             End If
 
             ' === Depth Write ===
-            Dim writeDepth As Boolean
-            If hasAlphaBlend Or MeshData.Shape.Wireframe Then
-                writeDepth = False
-            ElseIf hasAlphaTest Then
-                writeDepth = True
-            Else
-                writeDepth = materialBase.ZBufferWrite
-            End If
-
+            Dim writeDepth As Boolean = ResolveDepthWriteEnabled(materialBase, hasAlphaBlend, hasAlphaTest, MeshData.Shape.Wireframe)
             GL.DepthMask(writeDepth)
-
             ' === Blending / Alpha Test / Wireframe ===
             If MeshData.Shape.Wireframe Then
                 ' Pasada en modo wireframe
@@ -2974,7 +2982,6 @@ Public Class PreviewModel
         CutoutMeshes.Clear()
         DecalMeshes.Clear()
         BlendedMeshes.Clear()
-        DecalDepthBuffer.Clear()
         BlendedDepthBuffer.Clear()
         MarkRenderBucketsDirty()
 
@@ -2989,41 +2996,6 @@ Public Class PreviewModel
         Public Mesh As RenderableMesh
         Public Depth As Single
     End Structure
-
-    Private Const OverlayDepthTieThreshold As Single = 0.001F
-
-    Private Shared Function GetOverlayBlendSortKey(mesh As RenderableMesh) As Integer
-        If mesh Is Nothing OrElse mesh.MeshData Is Nothing OrElse mesh.MeshData.Shape Is Nothing Then Return 2
-        If mesh.MeshData.Shape.Wireframe Then Return 4
-
-        Dim material = mesh.MeshData.Material
-        If material Is Nothing Then Return 2
-
-        Select Case material.MaterialBase.AlphaBlendMode
-            Case AlphaBlendModeType.None
-                Return 0
-            Case AlphaBlendModeType.Multiplicative
-                Return 1
-            Case AlphaBlendModeType.Standard, AlphaBlendModeType.Unknown
-                Return 2
-            Case AlphaBlendModeType.Additive
-                Return 3
-            Case Else
-                Return 2
-        End Select
-    End Function
-
-    Private Shared Function CompareOverlayMeshes(a As MeshDepth, b As MeshDepth) As Integer
-        Dim depthCompare As Integer = b.Depth.CompareTo(a.Depth)
-        If depthCompare <> 0 AndAlso Math.Abs(a.Depth - b.Depth) > OverlayDepthTieThreshold Then
-            Return depthCompare
-        End If
-
-        Dim blendCompare As Integer = GetOverlayBlendSortKey(a.Mesh).CompareTo(GetOverlayBlendSortKey(b.Mesh))
-        If blendCompare <> 0 Then Return blendCompare
-
-        Return a.Mesh.MeshData.Idx.CompareTo(b.Mesh.MeshData.Idx)
-    End Function
 
     Public Property FloorOffset As Double = -0.00F
     Public Sub RenderAll(projection As Matrix4, camera As OrbitCamera)
@@ -3070,19 +3042,11 @@ Public Class PreviewModel
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
             mesh.Render(projection, camera)
         Next
-
-        ' 3. DECAL — overlay coplanar con bias de profundidad configurable
+        ' 3. DECAL — overlay coplanar ocluido por depth de escena
         If DecalMeshes.Count > 0 Then
-            DecalDepthBuffer.Clear()
-
             For Each mesh In DecalMeshes
                 If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
-                Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
-                DecalDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
-            Next
-            DecalDepthBuffer.Sort(AddressOf CompareOverlayMeshes)
-            For Each item In DecalDepthBuffer
-                item.Mesh.Render(projection, camera)
+                mesh.Render(projection, camera)
             Next
         End If
 
@@ -3097,7 +3061,7 @@ Public Class PreviewModel
             Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
             BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
         Next
-        BlendedDepthBuffer.Sort(AddressOf CompareOverlayMeshes)
+        BlendedDepthBuffer.Sort(Function(a, b) b.Depth.CompareTo(a.Depth))
         For Each item In BlendedDepthBuffer
             item.Mesh.Render(projection, camera)
         Next

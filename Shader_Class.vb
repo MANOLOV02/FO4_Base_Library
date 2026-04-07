@@ -580,14 +580,14 @@ void main(void)
 				if (bNormalMap)
 				{
 					normalMap = texture(texNormal, uv);
+				}
 
-					if (bSpecular)
-					{
-						// Specular Map
-						specMap = texture(texSpecular, uv);
-						specGloss = specMap.g;
-						specFactor = specMap.r;
-					}
+				if (bSpecular)
+				{
+					// FO4 dedicated specular map is independent from the normal map.
+					specMap = texture(texSpecular, uv);
+					specGloss = specMap.g;
+					specFactor = specMap.r;
 				}
 
 				if (bCubemap)
@@ -1489,30 +1489,46 @@ void main(void)
 				if (bNormalMap)
 				{
 					normalMap = texture(texNormal, uv);
+				}
 
-					if (bSpecular)
+				if (bSpecular)
+				{
+					if (bBacklight)
 					{
-						if (bBacklight)
+						// SSE: when backlight is active, slot 7 (texSpecular) contains the
+						// backlight texture, not specular. Specular comes from normalMap.a.
+						if (bNormalMap)
 						{
-							// SSE: when backlight is active, slot 7 (texSpecular) contains the
-							// backlight texture, not specular. Specular comes from normalMap.a.
 							specGloss = 1.0;
 							specFactor = normalMap.a;
-						}
-						else if (bHasSpecMap)
-						{
-							// Dedicated specular map: R=factor, G=glossiness
-							specMap = texture(texSpecular, uv);
-							specGloss = specMap.g;
-							specFactor = specMap.r;
 						}
 						else
 						{
-							// SSE default: specular intensity from normal map alpha,
-							// glossiness entirely from the material property (shininess uniform)
-							specGloss = 1.0;
-							specFactor = normalMap.a;
+							// No valid specular source in this path: keep the backlight texture
+							// bound for translucency, but suppress reflective highlights.
+							specGloss = 0.0;
+							specFactor = 0.0;
 						}
+					}
+					else if (bHasSpecMap)
+					{
+						// Dedicated specular map: R=factor, G=glossiness
+						specMap = texture(texSpecular, uv);
+						specGloss = specMap.g;
+						specFactor = specMap.r;
+					}
+					else if (bNormalMap)
+					{
+						// SSE fallback: specular intensity from normal map alpha,
+						// glossiness entirely from the material property (shininess uniform)
+						specGloss = 1.0;
+						specFactor = normalMap.a;
+					}
+					else
+					{
+						// Defensive fallback: do not invent a glossy response without a source.
+						specGloss = 0.0;
+						specFactor = 0.0;
 					}
 				}
 
@@ -1556,23 +1572,6 @@ void main(void)
 						// Transform from NIF local/object space to view space
 						// v_msnMatrix = mv_normalMatrix * skinNormalMat (per-vertex, from vertex shader)
 						normal = normalize(v_msnMatrix * normal);
-
-						if (bSpecular)
-						{
-							if (bHasSpecMap)
-							{
-								// MSN with dedicated specular map
-								specMap = texture(texSpecular, uv);
-								specGloss = specMap.g;
-								specFactor = specMap.r;
-							}
-							else
-							{
-								// MSN fallback: specular from normal map alpha
-								specGloss = 1.0;
-								specFactor = normalMap.a;
-							}
-						}
 					}
 					else
 					{
