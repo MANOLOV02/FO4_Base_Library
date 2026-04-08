@@ -84,6 +84,7 @@ Public Class FO4UnifiedMaterial_Class
 
     ' NIF ShaderType — not part of BGSM/BGEM file format, stored here as runtime field
     Private _NifShaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default
+    Private Shared ReadOnly GrayscaleTextureWidthCache As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
 
     <Browsable(False)>
     Public Property MaskWrites As MaskWriteFlags
@@ -2332,6 +2333,37 @@ Public Class FO4UnifiedMaterial_Class
     Shared Sub New()
 
     End Sub
+    Public Shared Function AreEquivalentGrayscaleScale(currentScale As Single, newScale As Single, texturePath As String) As Boolean
+        If currentScale = newScale Then Return True
+
+        Dim width = GetGrayscaleTextureWidth(texturePath)
+        If width <= 0 Then Return False
+
+        Return ScaleToGrayscaleSlot(currentScale, width) = ScaleToGrayscaleSlot(newScale, width)
+    End Function
+    Public Shared Function ScaleToGrayscaleSlot(scale As Single, width As Integer) As Integer
+        If width <= 0 Then Return 0
+        Return Math.Max(0, Math.Min(width, CInt(width * scale)))
+    End Function
+    Private Shared Function GetGrayscaleTextureWidth(texturePath As String) As Integer
+        If String.IsNullOrWhiteSpace(texturePath) Then Return 0
+
+        Dim normalized = CorrectTexturePath(texturePath)
+        If String.IsNullOrWhiteSpace(normalized) Then Return 0
+
+        Return GrayscaleTextureWidthCache.GetOrAdd(normalized,
+            Function(key)
+                Dim bmp As Bitmap = Nothing
+                Try
+                    bmp = CreateBitmapFromDDS(FilesDictionary_class.GetBytes(key))
+                    Return If(bmp IsNot Nothing, bmp.Width, 0)
+                Catch
+                    Return 0
+                Finally
+                    If bmp IsNot Nothing Then bmp.Dispose()
+                End Try
+            End Function)
+    End Function
     ''' <summary>
     ''' Compara dos instancias de FO4UnifiedMaterial_Class inspeccionando
     ''' cada propiedad y trazando su valor y resultado.
@@ -2354,7 +2386,12 @@ Public Class FO4UnifiedMaterial_Class
             Dim equal As Boolean
             Select Case prop.PropertyType
                 Case GetType(Single)
-                    equal = CType(valA, Single) = CType(valB, Single)
+                    If prop.Name.Equals(NameOf(GrayscaleToPaletteScale), StringComparison.Ordinal) Then
+                        Dim texturePath = If(String.IsNullOrWhiteSpace(a.GreyscaleTexture), b.GreyscaleTexture, a.GreyscaleTexture)
+                        equal = AreEquivalentGrayscaleScale(CType(valA, Single), CType(valB, Single), texturePath)
+                    Else
+                        equal = CType(valA, Single) = CType(valB, Single)
+                    End If
                 Case GetType(String)
                     equal = String.Equals(TryCast(valA, String), TryCast(valB, String), StringComparison.OrdinalIgnoreCase)
                 Case GetType(Type)
@@ -2371,6 +2408,10 @@ Public Class FO4UnifiedMaterial_Class
 
 
             If Not equal Then
+                If prop.Name.Equals(NameOf(GrayscaleToPaletteScale), StringComparison.Ordinal) Then
+                    Dim texturePath = If(String.IsNullOrWhiteSpace(a.GreyscaleTexture), b.GreyscaleTexture, a.GreyscaleTexture)
+                    Dim width = GetGrayscaleTextureWidth(texturePath)
+                End If
                 Return False
             End If
         Next

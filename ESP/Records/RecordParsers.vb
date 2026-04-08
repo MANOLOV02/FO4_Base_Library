@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Text
 
 Public Enum NPC_TemplateCategory As Integer
@@ -92,6 +92,7 @@ Public Class NPC_Data
     Public FaceTintLayers As New List(Of NPC_FaceTintLayerData)
     Public FaceMorphs As New List(Of NPC_FaceMorphData)
     Public BodyMorphRegionValues As New List(Of Single)
+    Public FacialMorphIntensity As Single = 1.0F
     Public PluginName As String = ""
 
     Public Overrides Function ToString() As String
@@ -122,6 +123,59 @@ Public Class RACE_MorphPresetDef
     Public MorphName As String = ""   ' MPPM = morph name in Chargen.tri
 End Class
 
+Public Enum TintSlot As UShort
+    ForeheadMask = 0
+    EyesMask = 1
+    NoseMask = 2
+    EarsMask = 3
+    CheeksMask = 4
+    MouthMask = 5
+    NeckMask = 6
+    LipColor = 7
+    CheekColor = 8
+    Eyeliner = 9
+    EyeSocketUpper = 10
+    EyeSocketLower = 11
+    SkinTone = 12
+    Paint = 13
+    LaughLines = 14
+    CheekColorLower = 15
+    Nose = 16
+    Chin = 17
+    Neck = 18
+    Forehead = 19
+    Dirt = 20
+    Scars = 21
+    FaceDetail = 22
+    Brows = 23
+    Wrinkles = 24
+    Beards = 25
+End Enum
+
+Public Class RACE_TintTemplateColor
+    Public ColorFormID As UInteger
+    Public Alpha As Single
+    Public TemplateIndex As UShort
+    Public BlendOperation As UInteger
+End Class
+
+Public Class RACE_TintTemplateOption
+    Public Slot As UShort
+    Public Index As UShort
+    Public Name As String = ""
+    Public Flags As UShort
+    Public Textures As New List(Of String)
+    Public BlendOperation As UInteger
+    Public TemplateColors As New List(Of RACE_TintTemplateColor)
+    Public DefaultValue As Single
+End Class
+
+Public Class RACE_TintTemplateGroup
+    Public GroupName As String = ""
+    Public Options As New List(Of RACE_TintTemplateOption)
+    Public CategoryIndex As UInteger
+End Class
+
 Public Class RACE_Data
     Public FormID As UInteger
     Public EditorID As String = ""
@@ -149,6 +203,19 @@ Public Class RACE_Data
     ''' <summary>Morph Group Slider indices (MPGS) - additional MSDK keys per group.</summary>
     Public MaleMorphGroupSliders As New List(Of UInteger)
     Public FemaleMorphGroupSliders As New List(Of UInteger)
+    Public MaleTintTemplateGroups As New List(Of RACE_TintTemplateGroup)
+    Public FemaleTintTemplateGroups As New List(Of RACE_TintTemplateGroup)
+
+    ''' <summary>Find a tint template option by its TETI index for the given gender.</summary>
+    Public Function FindTintOption(index As UShort, isFemale As Boolean) As RACE_TintTemplateOption
+        Dim groups = If(isFemale, FemaleTintTemplateGroups, MaleTintTemplateGroups)
+        For Each grp In groups
+            For Each opt In grp.Options
+                If opt.Index = index Then Return opt
+            Next
+        Next
+        Return Nothing
+    End Function
 End Class
 
 Public Class ARMO_Data
@@ -458,6 +525,10 @@ Public Module RecordParsers
                             npc.BodyMorphRegionValues.Add(BitConverter.ToSingle(sr.Data, i))
                         Next
                     End If
+                Case "FMIN"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        npc.FacialMorphIntensity = BitConverter.ToSingle(sr.Data, 0)
+                    End If
                 Case "FMRI"
                     If pendingFaceMorph IsNot Nothing Then npc.FaceMorphs.Add(pendingFaceMorph)
                     pendingFaceMorph = New NPC_FaceMorphData()
@@ -494,6 +565,8 @@ Public Module RecordParsers
         Dim pendingFaceMorphDef As RACE_FaceMorphDef = Nothing
         Dim pendingMorphValueDef As RACE_MorphValueDef = Nothing
         Dim pendingMorphPresetDef As RACE_MorphPresetDef = Nothing
+        Dim pendingTintGroup As RACE_TintTemplateGroup = Nothing
+        Dim pendingTintOption As RACE_TintTemplateOption = Nothing
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -643,6 +716,82 @@ Public Module RecordParsers
                             End If
                         Next
                     End If
+
+                ' --- Tint Template parsing (in HEAD section) ---
+                Case "TTGP"
+                    Dim name = ResolveDisplayString(rec, sr, pluginManager)
+                    If pendingTintOption IsNot Nothing Then
+                        ' TTGP after TETI = option name
+                        pendingTintOption.Name = name
+                    Else
+                        ' TTGP without pending option = new group
+                        ' Flush previous group
+                        If pendingTintGroup IsNot Nothing Then
+                            If inFemaleHead Then
+                                race.FemaleTintTemplateGroups.Add(pendingTintGroup)
+                            ElseIf inMaleHead Then
+                                race.MaleTintTemplateGroups.Add(pendingTintGroup)
+                            End If
+                        End If
+                        pendingTintGroup = New RACE_TintTemplateGroup With {.GroupName = name}
+                    End If
+                Case "TETI"
+                    ' Flush pending option into current group
+                    If pendingTintOption IsNot Nothing AndAlso pendingTintGroup IsNot Nothing Then
+                        pendingTintGroup.Options.Add(pendingTintOption)
+                    End If
+                    pendingTintOption = New RACE_TintTemplateOption()
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        pendingTintOption.Slot = BitConverter.ToUInt16(sr.Data, 0)
+                        pendingTintOption.Index = BitConverter.ToUInt16(sr.Data, 2)
+                    End If
+                Case "TTEF"
+                    If pendingTintOption IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
+                        pendingTintOption.Flags = BitConverter.ToUInt16(sr.Data, 0)
+                    End If
+                Case "TTET"
+                    If pendingTintOption IsNot Nothing Then
+                        pendingTintOption.Textures.Add(sr.AsString)
+                    End If
+                Case "TTEB"
+                    If pendingTintOption IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        pendingTintOption.BlendOperation = BitConverter.ToUInt32(sr.Data, 0)
+                    End If
+                Case "TTEC"
+                    ' Template Colors array - each entry: FormID(4) + Alpha(4) + TemplateIndex(2) + BlendOp(4) = 14 bytes
+                    If pendingTintOption IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 14 Then
+                        For idx = 0 To sr.Data.Length - 14 Step 14
+                            Dim rawFID = BitConverter.ToUInt32(sr.Data, idx)
+                            Dim tc As New RACE_TintTemplateColor With {
+                                .ColorFormID = ResolveFormIDReference(rec, rawFID, pluginManager),
+                                .Alpha = BitConverter.ToSingle(sr.Data, idx + 4),
+                                .TemplateIndex = BitConverter.ToUInt16(sr.Data, idx + 8),
+                                .BlendOperation = BitConverter.ToUInt32(sr.Data, idx + 10)
+                            }
+                            pendingTintOption.TemplateColors.Add(tc)
+                        Next
+                    End If
+                Case "TTED"
+                    If pendingTintOption IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        pendingTintOption.DefaultValue = BitConverter.ToSingle(sr.Data, 0)
+                    End If
+                Case "TTGE"
+                    ' Category index — end of group
+                    If pendingTintOption IsNot Nothing AndAlso pendingTintGroup IsNot Nothing Then
+                        pendingTintGroup.Options.Add(pendingTintOption)
+                        pendingTintOption = Nothing
+                    End If
+                    If pendingTintGroup IsNot Nothing Then
+                        If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                            pendingTintGroup.CategoryIndex = BitConverter.ToUInt32(sr.Data, 0)
+                        End If
+                        If inFemaleHead Then
+                            race.FemaleTintTemplateGroups.Add(pendingTintGroup)
+                        ElseIf inMaleHead Then
+                            race.MaleTintTemplateGroups.Add(pendingTintGroup)
+                        End If
+                        pendingTintGroup = Nothing
+                    End If
             End Select
         Next
 
@@ -660,6 +809,17 @@ Public Module RecordParsers
                 race.FemaleFaceMorphs.Add(pendingFaceMorphDef)
             ElseIf inMaleHead Then
                 race.MaleFaceMorphs.Add(pendingFaceMorphDef)
+            End If
+        End If
+        ' Flush pending tint template
+        If pendingTintOption IsNot Nothing AndAlso pendingTintGroup IsNot Nothing Then
+            pendingTintGroup.Options.Add(pendingTintOption)
+        End If
+        If pendingTintGroup IsNot Nothing Then
+            If inFemaleHead Then
+                race.FemaleTintTemplateGroups.Add(pendingTintGroup)
+            ElseIf inMaleHead Then
+                race.MaleTintTemplateGroups.Add(pendingTintGroup)
             End If
         End If
 
