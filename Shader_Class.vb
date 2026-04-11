@@ -704,11 +704,11 @@ void main(void)
 			float effScale = bGreyscaleColor ? 1.0 : effectBaseColorScale;
 			vec3 effBase = baseMap.rgb * vColor.rgb * effectBaseColor * effScale;
 
-			// BGEM alpha: baseColor.a squared (Bethesda engine convention) * vertex alpha * texture alpha
-			// color.a already has vColor.a * baseMap.a from the standard path
+			// BGEM alpha: baseColor.a * vertex alpha * texture alpha
+			// Bethesda Effect.hlsl: alpha *= PropertyColor.w (single multiply, not squared)
 			float bcAlpha = effectBaseColorAlpha;
 			float effTexAlpha = bEffectGreyscaleAlpha ? 1.0 : baseMap.a;
-			color.a = bcAlpha * bcAlpha * vColor.a * effTexAlpha;
+			color.a = bcAlpha * vColor.a * effTexAlpha;
 
 			// Falloff (calculated early - needed for cubemap and greyscale modulation)
 			float effFalloff = 1.0;
@@ -1677,11 +1677,11 @@ void main(void)
 			float effScale = bGreyscaleColor ? 1.0 : effectBaseColorScale;
 			vec3 effBase = baseMap.rgb * vColor.rgb * effectBaseColor * effScale;
 
-			// BGEM alpha: baseColor.a squared (Bethesda engine convention) * vertex alpha * texture alpha
-			// color.a already has vColor.a * baseMap.a from the standard path
+			// BGEM alpha: baseColor.a * vertex alpha * texture alpha
+			// Bethesda Effect.hlsl: alpha *= PropertyColor.w (single multiply, not squared)
 			float bcAlpha = effectBaseColorAlpha;
 			float effTexAlpha = bEffectGreyscaleAlpha ? 1.0 : baseMap.a;
-			color.a = bcAlpha * bcAlpha * vColor.a * effTexAlpha;
+			color.a = bcAlpha * vColor.a * effTexAlpha;
 
 			// Falloff (calculated early - needed for cubemap and greyscale modulation)
 			float effFalloff = 1.0;

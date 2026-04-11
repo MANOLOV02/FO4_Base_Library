@@ -2270,23 +2270,17 @@ Public Class PreviewModel
             Dim hasAlphaBlend = material.HasAlphaBlend
             Dim hasAlphaTest = material.HasAlphaTest
             Dim shape = Me.MeshData.Shape
-            Dim hasVtxData As Boolean = shape.ShowVertexColor AndAlso shape.NifShape IsNot Nothing AndAlso shape.NifShape.HasVertexColors
             Dim nifShader = shape.NifShader
-            ' Vertex colors (RGB) and vertex alpha are independent NIF shader flags:
-            ' SLSF2_Vertex_Colors controls RGB tinting, SLSF1_Vertex_Alpha controls transparency.
-            Dim showVtxColor As Boolean = hasVtxData AndAlso (nifShader IsNot Nothing AndAlso nifShader.HasVertexColors)
-            Dim showVtxAlpha As Boolean = hasVtxData AndAlso (nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha)
+            Dim nifshape = MeshData.Meshgeometry.TriShape
+            Dim hasVtxData As Boolean = nifshape IsNot Nothing AndAlso nifshape.HasVertexColors
+            Dim showVtxColor As Boolean = shape.ShowVertexColor AndAlso hasVtxData AndAlso (nifShader IsNot Nothing AndAlso nifShader.HasVertexColors)
+            Dim showVtxAlpha As Boolean = shape.ShowVertexColor AndAlso hasVtxData AndAlso (nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha)
 
             '===============================
             ' ?? PROPIEDADES DE COLOR BÁSICO
             '===============================
             shader.SetVector3("color", Shader_Base_Class.Color_to_Vector(MeshData.Shape.Wirecolor))
             shader.SetFloat("WireAlpha", MeshData.Shape.WireAlpha)
-            'If MeshData.Material.MaterialBase.SkinTint Then
-            '    MeshData.Shape.TintColor = MeshData.Material.MaterialBase.HairTintColor
-            'Else
-            '    MeshData.Shape.TintColor = Color.White
-            'End If
             shader.SetVector3("subColor", Shader_Base_Class.Color_to_Vector(MeshData.Shape.TintColor))
 
             '===============================

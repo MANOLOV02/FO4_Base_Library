@@ -398,11 +398,11 @@ Public Class SkinningHelper
             Dim srcColors = tri.VertexColors.ToArray()
             vtxColors = New Vector4(vertexCount - 1) {}
             Parallel.For(0, vertexCount, Sub(i)
-                                             vtxColors(i) = New Vector4(srcColors(i).R / 255.0F, srcColors(i).G / 255.0F, srcColors(i).B / 255.0F, 1.0F)
+                                             vtxColors(i) = New Vector4(srcColors(i).R, srcColors(i).G, srcColors(i).B, srcColors(i).A)
                                          End Sub)
         Else
             vtxColors = New Vector4(vertexCount - 1) {}
-            Array.Fill(vtxColors, New Vector4(0.1F, 0.1F, 0.1F, 1.0F))
+            Array.Fill(vtxColors, New Vector4(1.0F, 1.0F, 1.0F, 1.0F))
         End If
 
         Dim vtxMask = New Single(vertexCount - 1) {}

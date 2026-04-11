@@ -162,7 +162,7 @@ Public Class NifRenderableShape
     Public Property ShowTexture As Boolean = True Implements IRenderableShape.ShowTexture
     Public Property ShowMask As Boolean = False Implements IRenderableShape.ShowMask
     Public Property ShowWeight As Boolean = False Implements IRenderableShape.ShowWeight
-    Public Property ShowVertexColor As Boolean = False Implements IRenderableShape.ShowVertexColor
+    Public Property ShowVertexColor As Boolean = True Implements IRenderableShape.ShowVertexColor
     Public Property RenderHide As Boolean = False Implements IRenderableShape.RenderHide
     Public Property Wireframe As Boolean = False Implements IRenderableShape.Wireframe
     Public Property Wirecolor As Color = Color.LightGray Implements IRenderableShape.Wirecolor
