@@ -18,11 +18,19 @@ Public Enum NPC_TemplateCategory As Integer
 End Enum
 
 Public Class NPC_FaceTintLayerData
-    Public DataType As UShort
+    ''' <summary>TETI offset 0 (U16) — entry subclass discriminator (verified empirically on FO4 vanilla NPCs,
+    ''' 30+ layers across 3 NPCs): 1 = Palette, 2 = TextureSet. TEND layout depends on this value.</summary>
+    Public Discriminator As UShort
+    ''' <summary>TETI offset 2 (U16) — index into the RACE tint template option.</summary>
     Public Index As UShort
+    ''' <summary>TEND offset 0 — intensity / slider value (0..100).</summary>
     Public Value As Integer
+    ''' <summary>Palette entries only — TEND bytes 1..3 hold the final applied RGB color. Stays Color.Empty for TextureSet.</summary>
     Public Color As Color = Color.Empty
-    Public TemplateColorIndex As Short
+    ''' <summary>Raw bytes of the TETI subrecord, kept for diagnostic dumps.</summary>
+    Public RawTetiBytes As Byte() = Nothing
+    ''' <summary>Raw bytes of the TEND subrecord, kept for diagnostic dumps.</summary>
+    Public RawTendBytes As Byte() = Nothing
 End Class
 
 Public Class NPC_FaceMorphData
@@ -87,6 +95,8 @@ Public Class NPC_Data
     Public WeightFat As Single = 0
     Public TemplateFormID As UInteger
     Public TemplateFlags As UShort
+    ''' <summary>Raw ACBS Flags (uint32). Bit 2 (0x04) = Is CharGen Face Preset.</summary>
+    Public AcbsFlags As UInteger
     Public TemplateActorFormIDs As New Dictionary(Of NPC_TemplateCategory, UInteger)
     Public MorphValues As New Dictionary(Of UInteger, Single)
     Public FaceTintLayers As New List(Of NPC_FaceTintLayerData)
@@ -159,6 +169,15 @@ Public Class RACE_TintTemplateColor
     Public BlendOperation As UInteger
 End Class
 
+Public Enum RACE_TintEntryType
+    ''' <summary>Single texture + blendOp — grayscale mask tinted by a uniform color from TEND.</summary>
+    Mask = 0
+    ''' <summary>Gradient/lookup texture + CLFM color array — color chosen by template index.</summary>
+    Palette = 1
+    ''' <summary>Full material (diffuse+normal+specular) pre-colored — TEND carries only intensity.</summary>
+    TextureSet = 2
+End Enum
+
 Public Class RACE_TintTemplateOption
     Public Slot As UShort
     Public Index As UShort
@@ -166,8 +185,25 @@ Public Class RACE_TintTemplateOption
     Public Flags As UShort
     Public Textures As New List(Of String)
     Public BlendOperation As UInteger
+    Public HasBlendOperation As Boolean
+    Public BlendOpRawBytes As Byte() = Nothing
     Public TemplateColors As New List(Of RACE_TintTemplateColor)
     Public DefaultValue As Single
+    Public HasDefaultValue As Boolean
+
+    ''' <summary>Classify by subrecord structure. Verified empirically on HumanRace (162 female options,
+    ''' 131 male): the clusters are perfectly separable by Textures.Count + TemplateColors.Count alone:
+    '''   T=3  C=0   → TextureSet (diffuse+normal+specular triples, FaceDetail/Scars/Brow slots)
+    '''   T=1  C>0   → Palette    (1 gradient mask + TTEC color array, makeup/paint slots)
+    '''   T=1  C=0   → Mask       (anatomical region selectors, slots 0..6)
+    ''' HasDefaultValue is NOT a reliable discriminator — all Palette entries in HumanRace also have TTED.</summary>
+    Public ReadOnly Property EntryType As RACE_TintEntryType
+        Get
+            If Textures.Count >= 2 Then Return RACE_TintEntryType.TextureSet
+            If TemplateColors.Count > 0 Then Return RACE_TintEntryType.Palette
+            Return RACE_TintEntryType.Mask
+        End Get
+    End Property
 End Class
 
 Public Class RACE_TintTemplateGroup
@@ -267,6 +303,11 @@ Public Class HDPT_Data
     Public TextureSetFormID As UInteger
     Public UsesBodyTexture As Boolean
     Public ExtraPartFormIDs As New List(Of UInteger)
+    ' NAM0/NAM1 "Parts" array. NAM0 enum: 0=Race Morph, 1=Tri, 2=Chargen Morph.
+    ' NAM1 is the .tri file path. Multiple parts may exist per HDPT.
+    Public RaceMorphTriPath As String = ""    ' NAM0 = 0 (expression/race morphs, e.g. BaseFemaleHead.tri)
+    Public TriPath As String = ""             ' NAM0 = 1 (rarely used)
+    Public ChargenMorphTriPath As String = "" ' NAM0 = 2 (chargen sculpting, e.g. BaseFemaleHeadChargen.tri)
 End Class
 
 Public Class CLFM_Data
@@ -479,8 +520,8 @@ Public Module RecordParsers
                     If headPartFormID <> 0UI Then npc.HeadPartFormIDs.Add(headPartFormID)
                 Case "ACBS"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
-                        Dim flags = BitConverter.ToUInt32(sr.Data, 0)
-                        npc.IsFemale = (flags And 1UI) <> 0UI
+                        npc.AcbsFlags = BitConverter.ToUInt32(sr.Data, 0)
+                        npc.IsFemale = (npc.AcbsFlags And 1UI) <> 0UI
                     End If
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 16 Then
                         npc.TemplateFlags = BitConverter.ToUInt16(sr.Data, 14)
@@ -507,15 +548,25 @@ Public Module RecordParsers
                 Case "TETI"
                     If pendingTintLayer IsNot Nothing Then npc.FaceTintLayers.Add(pendingTintLayer)
                     pendingTintLayer = New NPC_FaceTintLayerData()
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
-                        pendingTintLayer.DataType = BitConverter.ToUInt16(sr.Data, 0)
-                        pendingTintLayer.Index = BitConverter.ToUInt16(sr.Data, 2)
+                    If sr.Data IsNot Nothing Then
+                        pendingTintLayer.RawTetiBytes = sr.Data
+                        If sr.Data.Length >= 4 Then
+                            pendingTintLayer.Discriminator = BitConverter.ToUInt16(sr.Data, 0)
+                            pendingTintLayer.Index = BitConverter.ToUInt16(sr.Data, 2)
+                        End If
                     End If
                 Case "TEND"
+                    ' TEND layout is discriminator-dependent (verified empirically):
+                    '   Discriminator=1 (Palette):     7 bytes — [0]=Value, [1]=R, [2]=G, [3]=B, [4..6]=pad
+                    '   Discriminator=2 (TextureSet):  1 byte  — [0]=Value
                     If pendingTintLayer Is Nothing Then pendingTintLayer = New NPC_FaceTintLayerData()
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then pendingTintLayer.Value = sr.Data(0)
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 5 Then pendingTintLayer.Color = ParseByteColor(sr.Data, 1)
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 7 Then pendingTintLayer.TemplateColorIndex = BitConverter.ToInt16(sr.Data, 5)
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
+                        pendingTintLayer.RawTendBytes = sr.Data
+                        pendingTintLayer.Value = sr.Data(0)
+                        If pendingTintLayer.Discriminator = 1 AndAlso sr.Data.Length >= 4 Then
+                            pendingTintLayer.Color = Color.FromArgb(255, sr.Data(1), sr.Data(2), sr.Data(3))
+                        End If
+                    End If
                     npc.FaceTintLayers.Add(pendingTintLayer)
                     pendingTintLayer = Nothing
                 Case "MRSV"
@@ -754,8 +805,15 @@ Public Module RecordParsers
                         pendingTintOption.Textures.Add(sr.AsString)
                     End If
                 Case "TTEB"
-                    If pendingTintOption IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
-                        pendingTintOption.BlendOperation = BitConverter.ToUInt32(sr.Data, 0)
+                    ' xEdit marks this subrecord as wbUnknown — format is not documented publicly.
+                    ' We store the raw bytes for empirical analysis and try a U32 BlendOp reading as
+                    ' a best-effort (the field may or may not be a plain U32 blend op).
+                    If pendingTintOption IsNot Nothing AndAlso sr.Data IsNot Nothing Then
+                        pendingTintOption.HasBlendOperation = True
+                        pendingTintOption.BlendOpRawBytes = sr.Data
+                        If sr.Data.Length >= 4 Then
+                            pendingTintOption.BlendOperation = BitConverter.ToUInt32(sr.Data, 0)
+                        End If
                     End If
                 Case "TTEC"
                     ' Template Colors array - each entry: FormID(4) + Alpha(4) + TemplateIndex(2) + BlendOp(4) = 14 bytes
@@ -774,6 +832,7 @@ Public Module RecordParsers
                 Case "TTED"
                     If pendingTintOption IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         pendingTintOption.DefaultValue = BitConverter.ToSingle(sr.Data, 0)
+                        pendingTintOption.HasDefaultValue = True
                     End If
                 Case "TTGE"
                     ' Category index — end of group
@@ -928,6 +987,10 @@ Public Module RecordParsers
             .EditorID = rec.EditorID
         }
 
+        ' NAM0 (4-byte uint32) introduces the type of the next NAM1 (string).
+        ' Pairs may repeat (typically Race Morph + Chargen Morph for face HDPTs).
+        Dim pendingPartType As Integer = -1
+
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL"
@@ -950,6 +1013,23 @@ Public Module RecordParsers
                     hdpt.TextureSetFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "PNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then hdpt.PartType = BitConverter.ToInt32(sr.Data, 0)
+                Case "NAM0"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        pendingPartType = BitConverter.ToInt32(sr.Data, 0)
+                    End If
+                Case "NAM1"
+                    Dim path = sr.AsString
+                    If Not String.IsNullOrEmpty(path) Then
+                        Select Case pendingPartType
+                            Case 0 ' Race Morph
+                                If hdpt.RaceMorphTriPath = "" Then hdpt.RaceMorphTriPath = path
+                            Case 1 ' Tri
+                                If hdpt.TriPath = "" Then hdpt.TriPath = path
+                            Case 2 ' Chargen Morph
+                                If hdpt.ChargenMorphTriPath = "" Then hdpt.ChargenMorphTriPath = path
+                        End Select
+                    End If
+                    pendingPartType = -1
             End Select
         Next
 

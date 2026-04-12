@@ -919,8 +919,28 @@ Public Class SkinningHelper
                 Next
             End If
         Else
-            ' Single-bone or no-bone path
-            Dim Mtot = GlobalTransform
+            ' Single-bone or no-bone path: ignora pose animada por diseño (single-bone
+            ' es un modo de preview rigido), pero debe respetar bindT(0) * localT(0)
+            ' del hueso 0. Si no lo hiciera, el shape salta cada vez que cambia la pose
+            ' porque se pierde el transform del hueso. Esta composicion tiene que
+            ' coincidir con lo que computa ExtractSkinnedGeometry en el caso single-bone.
+            Dim Mtot As Matrix4d
+            If bones.Length > 0 Then
+                Dim localT = boneTrans(0)
+                Dim boneName = bones(0).Name.String
+                Dim SkeletonBone As Skeleton_Class.HierarchiBone_class = Nothing
+                Dim bindT As Transform_Class
+                If Skeleton_Class.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
+                    bindT = SkeletonBone.OriginalGetGlobalTransform
+                Else
+                    bindT = Transform_Class.GetGlobalTransform(bones(0), shape.NifContent)
+                End If
+                Mtot = GlobalTransform * bindT.ComposeTransforms(localT).ToMatrix4d()
+            Else
+                ' Sin huesos: solo GlobalTransform.
+                Mtot = GlobalTransform
+            End If
+
             geo.GPUBoneMatrices(0) = New Matrix4(
                 CSng(Mtot.M11), CSng(Mtot.M12), CSng(Mtot.M13), CSng(Mtot.M14),
                 CSng(Mtot.M21), CSng(Mtot.M22), CSng(Mtot.M23), CSng(Mtot.M24),

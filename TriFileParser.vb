@@ -207,6 +207,9 @@ Public Class TriHeadMorph
     Public Property Multiplier As Single = 1.0F
     ''' <summary>Vertex deltas. Length = NumVertices. Index = vertex index.</summary>
     Public Property Vertices As Vector3()
+    ''' <summary>True if this morph came from the mod-morph (addMorph) section — sparse per-region data.
+    ''' Regular morphs (IsModMorph=False) are dense per-vertex chargen sliders like LipFeature1.</summary>
+    Public Property IsModMorph As Boolean = False
 End Class
 
 ''' <summary>Parser for Bethesda TriHead files (FRTRI003 header).</summary>
@@ -236,18 +239,26 @@ Public Module TriHeadParser
                 Dim numUV = br.ReadUInt32()
                 Dim flags = br.ReadUInt32()
                 Dim numMorphs = br.ReadUInt32()
-                Dim numModifiers = br.ReadUInt32()
-                Dim numModVertices = br.ReadUInt32()
+                Dim numModifiers = br.ReadUInt32()     ' aka addMorphNum (stat/mod-morph count)
+                Dim numModVertices = br.ReadUInt32()   ' aka addVertexNum (pool of absolute positions)
                 Dim unknown7 = br.ReadUInt32()
                 Dim unknown8 = br.ReadUInt32()
                 Dim unknown9 = br.ReadUInt32()
                 Dim unknown10 = br.ReadUInt32()
 
-                ' Skip base vertices (numVertices * 12 bytes)
-                br.ReadBytes(CInt(numVertices) * 12)
+                System.Diagnostics.Debug.WriteLine($"[TRIHEAD-HDR] verts={numVertices} tris={numTriangles} uvs={numUV} morphs={numMorphs} modifiers={numModifiers} modVerts={numModVertices}")
 
-                ' Skip mod vertices (numModVertices * 12 bytes)
-                br.ReadBytes(CInt(numModVertices) * 12)
+                ' Read base vertices (numVertices * 12 bytes) — we need these to compute mod-morph deltas later
+                Dim baseVerts(CInt(numVertices) - 1) As Vector3
+                For j = 0 To CInt(numVertices) - 1
+                    baseVerts(j) = New Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle())
+                Next
+
+                ' Read mod vertices (the shared absolute-position pool used by mod-morphs)
+                Dim modVertsPool(CInt(numModVertices) - 1) As Vector3
+                For j = 0 To CInt(numModVertices) - 1
+                    modVertsPool(j) = New Vector3(br.ReadSingle(), br.ReadSingle(), br.ReadSingle())
+                Next
 
                 ' Skip triangles (numTriangles * 3 * 4 bytes)
                 br.ReadBytes(CInt(numTriangles) * 12)
@@ -258,7 +269,7 @@ Public Module TriHeadParser
                 ' Skip tex triangles (numTriangles * 3 * 4 bytes)
                 br.ReadBytes(CInt(numTriangles) * 12)
 
-                ' Read morphs
+                ' Read regular morphs (dense, per-vertex int16 * multiplier deltas)
                 Dim result As New TriHeadFile With {
                     .NumVertices = numVertices,
                     .NumTriangles = numTriangles,
@@ -286,7 +297,46 @@ Public Module TriHeadParser
                     result.Morphs.Add(New TriHeadMorph With {
                         .Name = morphName,
                         .Multiplier = multiplier,
-                        .Vertices = verts
+                        .Vertices = verts,
+                        .IsModMorph = False
+                    })
+                Next
+
+                ' Read mod-morphs (sparse, per-region). Each references vertex indices that look up absolute
+                ' positions in modVertsPool sequentially. Convert to deltas (abs - base) so the morph engine
+                ' can treat them uniformly with regular morphs.
+                Dim modVertsIndex As Integer = 0
+                For i = 0 To CInt(numModifiers) - 1
+                    Dim nameLen = br.ReadUInt32()
+                    Dim morphName = ""
+                    If nameLen > 0 Then
+                        Dim nameBytes = br.ReadBytes(CInt(nameLen))
+                        morphName = Encoding.ASCII.GetString(nameBytes).TrimEnd(ChrW(0))
+                    End If
+
+                    Dim blockLength = br.ReadUInt32()
+                    Dim affectedIndices(CInt(blockLength) - 1) As UInteger
+                    For k = 0 To CInt(blockLength) - 1
+                        affectedIndices(k) = br.ReadUInt32()
+                    Next
+
+                    ' Build a dense delta array (same shape as regular morphs) so downstream code is uniform.
+                    ' Non-affected vertices get zero delta; affected vertices get (absolute - base).
+                    Dim deltas(CInt(numVertices) - 1) As Vector3
+                    For k = 0 To CInt(blockLength) - 1
+                        Dim vertIdx = CInt(affectedIndices(k))
+                        If modVertsIndex >= modVertsPool.Length Then Exit For
+                        If vertIdx >= 0 AndAlso vertIdx < numVertices Then
+                            deltas(vertIdx) = modVertsPool(modVertsIndex) - baseVerts(vertIdx)
+                        End If
+                        modVertsIndex += 1
+                    Next
+
+                    result.Morphs.Add(New TriHeadMorph With {
+                        .Name = morphName,
+                        .Multiplier = 1.0F,
+                        .Vertices = deltas,
+                        .IsModMorph = True
                     })
                 Next
 

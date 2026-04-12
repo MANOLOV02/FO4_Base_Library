@@ -996,9 +996,18 @@ Public Class PreviewControl
         AddHandler toggleSkinning.Click, Sub()
                                              Config_App.Current.Setting_GPUSkinning = toggleSkinning.Checked
                                              RaiseEvent SkinningModeToggled(Me)
-                                             ' Fallback if no consumer subscribed to the event
-                                             If Model.LoadedShapes.Count > 0 Then
-                                                 RenderShapes(Model.LoadedShapes, Model.Last_Pose)
+                                             ' Forzamos full reload preservando el Intent actual (MorphResolver,
+                                             ' GeometryModifiers, Shapes, Pose) que seteo el ultimo Update_Render.
+                                             ' NO usamos RenderShapes(shapes, pose) porque ese overload wipea
+                                             ' MorphResolver: sin el, PipelineStep_Morphs early-returns y los
+                                             ' zaps (que dependen de VertexMask, modificado por ApplyMorphPlan
+                                             ' en los zap channels) nunca se re-aplican.
+                                             If Model.LoadedShapes.Count > 0 AndAlso Intent.Shapes IsNot Nothing Then
+                                                 Dim sw = System.Diagnostics.Stopwatch.StartNew()
+                                                 Intent.MarkDirty(RenderDirtyFlags.Shapes Or RenderDirtyFlags.Force)
+                                                 InvalidateRender()
+                                                 sw.Stop()
+                                                 LastUpdateMs = sw.Elapsed.TotalMilliseconds
                                              End If
                                          End Sub
         menu.Items.Add(toggleSkinning)
@@ -1304,6 +1313,12 @@ Public Class PreviewModel
                     Return rel.material
                 End Get
             End Property
+
+            ''' <summary>Optional GL texture ID of a face tint overlay (TETI/TEND composed via FBO).
+            ''' When &gt; 0, the shader will sample this texture and blend it ON TOP of the face diffuse.
+            ''' Lives on MaterialData (not on the shared FO4UnifiedMaterial_Class) so it survives material
+            ''' cloning — each RenderableMesh keeps its own composed overlay.</summary>
+            Public Property FaceTintOverlay_ID As Integer = 0
 
             Public ReadOnly Property HasAlphaBlend
                 Get
@@ -1613,35 +1628,56 @@ Public Class PreviewModel
                         Dim lt = MeshData.Meshgeometry.Tangents
                         Dim lb = MeshData.Meshgeometry.Bitangents
                         Dim isMSN As Boolean = MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals
-                        ' Cache normal matrix for single-bone (all per-vertex matrices identical)
-                        Dim isSingle As Boolean = vertexCount > 1 AndAlso mats(0) = mats(vertexCount - 1)
-                        Dim singleNM3 As Matrix3d = Matrix3d.Identity
-                        If isSingle Then
-                            singleNM3 = New Matrix3d(mats(0)) : singleNM3.Invert() : singleNM3.Transpose()
-                        End If
+                        ' NOTA: antes habia una optimizacion "isSingle" que cacheaba un solo
+                        ' normal matrix cuando mats(0) == mats(vertexCount-1), asumiendo que
+                        ' todos los vertices tenian skinning uniforme. Falso positivo muy
+                        ' facil de disparar (primer y ultimo vertex comparten bone pero los
+                        ' del medio no), causando que las normales del medio usaran el nm3
+                        ' del vertex 0. Se removio — ahora siempre per-vertex para coincidir
+                        ' con el shader GPU que tambien computa skinNormalMat per-vertex.
                         Dim body As Action(Of Integer) = Sub(i)
                                                              Dim m = mats(i)
                                                              Dim wp = Vector3d.TransformPosition(lv(i), m)
                                                              posF(i) = New Vector3(CSng(wp.X), CSng(wp.Y), CSng(wp.Z))
-                                                             Dim nm3 As Matrix3d
-                                                             If isSingle Then
-                                                                 nm3 = singleNM3
-                                                             Else
-                                                                 nm3 = New Matrix3d(m) : nm3.Invert() : nm3.Transpose()
-                                                             End If
+                                                             Dim nm3 As Matrix3d = New Matrix3d(m)
+                                                             nm3.Invert()
+                                                             nm3.Transpose()
                                                              If isMSN Then
-                                                                 ' MSN: pack skinNormalMat columns into N/T/B VBOs
-                                                                 ' Vertex shader reads them back as mat3 columns
+                                                                 ' MSN: pack nm3.Row0/1/2 en los tres VBOs. El shader los lee y
+                                                                 ' reconstruye via mat3(vertexNormal, vertexTangent, vertexBitangent).
+                                                                 ' GLSL column-major: col0=vertexNormal, col1=vertexTangent, col2=vertexBitangent.
+                                                                 ' Target del shader es mat3(m)^-1 (lo que tambien computa el GPU path).
+                                                                 ' Como nm3 = (m^-1)^T, tenemos nm3.Row_i = math Col_i de m^-1, osea
+                                                                 ' packear las filas de nm3 da exactamente las columnas del target GLSL.
                                                                  nrmF(i) = New Vector3(CSng(nm3.Row0.X), CSng(nm3.Row0.Y), CSng(nm3.Row0.Z))
                                                                  tanF(i) = New Vector3(CSng(nm3.Row1.X), CSng(nm3.Row1.Y), CSng(nm3.Row1.Z))
                                                                  bitanF(i) = New Vector3(CSng(nm3.Row2.X), CSng(nm3.Row2.Y), CSng(nm3.Row2.Z))
                                                              Else
-                                                                 Dim nm As New Matrix4d(nm3.Row0.X, nm3.Row0.Y, nm3.Row0.Z, 0, nm3.Row1.X, nm3.Row1.Y, nm3.Row1.Z, 0, nm3.Row2.X, nm3.Row2.Y, nm3.Row2.Z, 0, 0, 0, 0, 1)
-                                                                 Dim wn = Vector3d.Normalize(Vector3d.TransformNormal(ln(i), nm))
+                                                                 ' Aplicar nm3 al normal/tangent/bitangent via dot products explicitos.
+                                                                 ' Convencion row-vector de OpenTK: result = v * nm3 donde
+                                                                 ' result.i = v.X*Row0.i + v.Y*Row1.i + v.Z*Row2.i
+                                                                 ' (dotted con las columnas matematicas de nm3).
+                                                                 Dim lnI = ln(i) : Dim ltI = lt(i) : Dim lbI = lb(i)
+                                                                 Dim r0 = nm3.Row0 : Dim r1 = nm3.Row1 : Dim r2 = nm3.Row2
+                                                                 Dim wn As New Vector3d(
+                                                                     lnI.X * r0.X + lnI.Y * r1.X + lnI.Z * r2.X,
+                                                                     lnI.X * r0.Y + lnI.Y * r1.Y + lnI.Z * r2.Y,
+                                                                     lnI.X * r0.Z + lnI.Y * r1.Z + lnI.Z * r2.Z)
+                                                                 wn = Vector3d.Normalize(wn)
                                                                  nrmF(i) = New Vector3(CSng(wn.X), CSng(wn.Y), CSng(wn.Z))
-                                                                 Dim wt = Vector3d.Normalize(Vector3d.TransformNormal(lt(i), nm))
+
+                                                                 Dim wt As New Vector3d(
+                                                                     ltI.X * r0.X + ltI.Y * r1.X + ltI.Z * r2.X,
+                                                                     ltI.X * r0.Y + ltI.Y * r1.Y + ltI.Z * r2.Y,
+                                                                     ltI.X * r0.Z + ltI.Y * r1.Z + ltI.Z * r2.Z)
+                                                                 wt = Vector3d.Normalize(wt)
                                                                  tanF(i) = New Vector3(CSng(wt.X), CSng(wt.Y), CSng(wt.Z))
-                                                                 Dim wb = Vector3d.Normalize(Vector3d.TransformNormal(lb(i), nm))
+
+                                                                 Dim wb As New Vector3d(
+                                                                     lbI.X * r0.X + lbI.Y * r1.X + lbI.Z * r2.X,
+                                                                     lbI.X * r0.Y + lbI.Y * r1.Y + lbI.Z * r2.Y,
+                                                                     lbI.X * r0.Z + lbI.Y * r1.Z + lbI.Z * r2.Z)
+                                                                 wb = Vector3d.Normalize(wb)
                                                                  bitanF(i) = New Vector3(CSng(wb.X), CSng(wb.Y), CSng(wb.Z))
                                                              End If
                                                          End Sub
@@ -1705,12 +1741,11 @@ Public Class PreviewModel
                 Dim buf(2) As Single
                 Dim sparseMats = If(cpuSkin, MeshData.Meshgeometry.PerVertexSkinMatrix, Nothing)
                 Dim sparseIsMSN As Boolean = cpuSkin AndAlso MeshData.Material?.MaterialBase IsNot Nothing AndAlso MeshData.Material.MaterialBase.ModelSpaceNormals
-                ' Cache normal matrix for single-bone (all matrices identical)
-                Dim singleBone As Boolean = cpuSkin AndAlso vertexCount > 1 AndAlso sparseMats(0) = sparseMats(vertexCount - 1)
-                Dim cachedNM3 As Matrix3d = Matrix3d.Identity
-                If singleBone Then
-                    cachedNM3 = New Matrix3d(sparseMats(0)) : cachedNM3.Invert() : cachedNM3.Transpose()
-                End If
+                ' NOTA: la optimizacion de cachear cachedNM3 basada en comparar sparseMats(0)
+                ' con sparseMats(vertexCount-1) se removio — daba falsos positivos para
+                ' shapes donde primer y ultimo vertex comparten bone pero el medio no, y
+                ' causaba que las normales del medio usaran el nm3 del vertex 0. El shader
+                ' GPU siempre computa skinNormalMat per-vertex; alineamos el CPU path.
 
                 For Each i As Integer In MeshData.Meshgeometry.dirtyVertexIndices
                     Dim offsetBytes As Int64 = CLng(i) * elementSize
@@ -1721,19 +1756,19 @@ Public Class PreviewModel
 
                     If cpuSkin Then
                         Dim m = sparseMats(i)
-                        Dim nm3 As Matrix3d
-                        If singleBone Then
-                            nm3 = cachedNM3
-                        Else
-                            nm3 = New Matrix3d(m) : nm3.Invert() : nm3.Transpose()
-                        End If
+                        Dim nm3 As Matrix3d = New Matrix3d(m)
+                        nm3.Invert()
+                        nm3.Transpose()
 
                         Dim wp = Vector3d.TransformPosition(MeshData.Meshgeometry.Vertices(i), m)
                         buf(0) = CSng(wp.X) : buf(1) = CSng(wp.Y) : buf(2) = CSng(wp.Z)
                         Marshal.Copy(buf, 0, baseP, 3)
 
                         If sparseIsMSN Then
-                            ' MSN: pack skinNormalMat columns into N/T/B VBOs
+                            ' MSN: packear las FILAS de nm3 en los VBOs. El shader reconstruye
+                            ' mat3(vertexNormal, vertexTangent, vertexBitangent) con convencion
+                            ' column-major, y como nm3.Row_i corresponde a la math Col_i del
+                            ' target mat3(m)^-1, queda correcto. Coincide con el GPU path.
                             buf(0) = CSng(nm3.Row0.X) : buf(1) = CSng(nm3.Row0.Y) : buf(2) = CSng(nm3.Row0.Z)
                             Marshal.Copy(buf, 0, baseN, 3)
                             buf(0) = CSng(nm3.Row1.X) : buf(1) = CSng(nm3.Row1.Y) : buf(2) = CSng(nm3.Row1.Z)
@@ -1741,14 +1776,34 @@ Public Class PreviewModel
                             buf(0) = CSng(nm3.Row2.X) : buf(1) = CSng(nm3.Row2.Y) : buf(2) = CSng(nm3.Row2.Z)
                             Marshal.Copy(buf, 0, baseB, 3)
                         Else
-                            Dim nm As New Matrix4d(nm3.Row0.X, nm3.Row0.Y, nm3.Row0.Z, 0, nm3.Row1.X, nm3.Row1.Y, nm3.Row1.Z, 0, nm3.Row2.X, nm3.Row2.Y, nm3.Row2.Z, 0, 0, 0, 0, 1)
-                            Dim wn = Vector3d.Normalize(Vector3d.TransformNormal(MeshData.Meshgeometry.Normals(i), nm))
+                            ' Convencion row-vector de OpenTK: result = v * nm3 donde
+                            ' result.i = v.X*Row0.i + v.Y*Row1.i + v.Z*Row2.i
+                            Dim lnI = MeshData.Meshgeometry.Normals(i)
+                            Dim ltI = MeshData.Meshgeometry.Tangents(i)
+                            Dim lbI = MeshData.Meshgeometry.Bitangents(i)
+                            Dim r0 = nm3.Row0 : Dim r1 = nm3.Row1 : Dim r2 = nm3.Row2
+
+                            Dim wn As New Vector3d(
+                                lnI.X * r0.X + lnI.Y * r1.X + lnI.Z * r2.X,
+                                lnI.X * r0.Y + lnI.Y * r1.Y + lnI.Z * r2.Y,
+                                lnI.X * r0.Z + lnI.Y * r1.Z + lnI.Z * r2.Z)
+                            wn = Vector3d.Normalize(wn)
                             buf(0) = CSng(wn.X) : buf(1) = CSng(wn.Y) : buf(2) = CSng(wn.Z)
                             Marshal.Copy(buf, 0, baseN, 3)
-                            Dim wt = Vector3d.Normalize(Vector3d.TransformNormal(MeshData.Meshgeometry.Tangents(i), nm))
+
+                            Dim wt As New Vector3d(
+                                ltI.X * r0.X + ltI.Y * r1.X + ltI.Z * r2.X,
+                                ltI.X * r0.Y + ltI.Y * r1.Y + ltI.Z * r2.Y,
+                                ltI.X * r0.Z + ltI.Y * r1.Z + ltI.Z * r2.Z)
+                            wt = Vector3d.Normalize(wt)
                             buf(0) = CSng(wt.X) : buf(1) = CSng(wt.Y) : buf(2) = CSng(wt.Z)
                             Marshal.Copy(buf, 0, baseT, 3)
-                            Dim wb = Vector3d.Normalize(Vector3d.TransformNormal(MeshData.Meshgeometry.Bitangents(i), nm))
+
+                            Dim wb As New Vector3d(
+                                lbI.X * r0.X + lbI.Y * r1.X + lbI.Z * r2.X,
+                                lbI.X * r0.Y + lbI.Y * r1.Y + lbI.Z * r2.Y,
+                                lbI.X * r0.Z + lbI.Y * r1.Z + lbI.Z * r2.Z)
+                            wb = Vector3d.Normalize(wb)
                             buf(0) = CSng(wb.X) : buf(1) = CSng(wb.Y) : buf(2) = CSng(wb.Z)
                             Marshal.Copy(buf, 0, baseB, 3)
                         End If
@@ -2435,6 +2490,17 @@ Public Class PreviewModel
                 If isFaceTint AndAlso tintMaskId <> 0 Then
                     shader.BindTexture("texTintMask", tintMaskId, TextureUnit.Texture9)
                 End If
+            End If
+
+            ' FaceTint overlay: NPC-specific composed tint texture (TETI/TEND layers composited via FBO).
+            ' Lives on MaterialData (per-mesh) instead of on FO4UnifiedMaterial_Class (which is shared/cloned).
+            Dim faceTintOverlayId = material.FaceTintOverlay_ID
+            If faceTintOverlayId <> 0 Then
+                shader.BindTexture("texFaceTintOverlay", faceTintOverlayId, TextureUnit.Texture10)
+                shader.SetBool("bHasFaceTintOverlay", True)
+            Else
+                shader.BindTexture("texFaceTintOverlay", Me.ParentModel.ParentControl.defaultWhiteTex, TextureUnit.Texture10)
+                shader.SetBool("bHasFaceTintOverlay", False)
             End If
 
             ' Effect Shader (BGEM) properties

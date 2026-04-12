@@ -246,6 +246,27 @@ Public Class FilesDictionary_class
         _bytesCache.Clear()
     End Sub
 
+    ''' <summary>Count of entries in _bytesCache (for memory diagnostics).</summary>
+    Public Shared Function BytesCacheCount() As Integer
+        Return _bytesCache.Count
+    End Function
+
+    ''' <summary>Count of total pooled archive readers (for memory diagnostics).</summary>
+    Public Shared Function ArchivePoolReaderCount() As Integer
+        Dim total = 0
+        For Each kvp In _archivePool
+            total += kvp.Value.Count
+        Next
+        Return total
+    End Function
+
+    ''' <summary>Dispose all pooled archive readers and clear the bytes cache.
+    ''' Call periodically during bulk load to keep memory from ballooning.</summary>
+    Public Shared Sub PurgeCachesAndReaders()
+        DisposeIdleReaders()
+        _bytesCache.Clear()
+    End Sub
+
     Private Shared ReadOnly _KeysByExtension As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
     Private Shared ReadOnly _KeysByDirectory As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
     Private Shared ReadOnly _KeysByDirectoryExtension As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
@@ -334,6 +355,23 @@ Public Class FilesDictionary_class
 
     Private Shared totalCount As Integer
     Private Shared completed As Integer
+
+    ''' <summary>
+    ''' Errores acumulados por workers durante Fill_DictionaryAsync. Se drenan en el
+    ''' UI thread después del await. NUNCA mostrar MsgBox desde un worker: bloquea
+    ''' el Parallel.ForEach indefinidamente si la UI no pumpea (ventana oculta atrás
+    ''' del form principal) y cuelga toda la app.
+    ''' </summary>
+    Private Shared ReadOnly _scanErrors As New System.Collections.Concurrent.ConcurrentQueue(Of String)
+
+    Public Shared Function DrainScanErrors() As List(Of String)
+        Dim result As New List(Of String)
+        Dim msg As String = Nothing
+        While _scanErrors.TryDequeue(msg)
+            result.Add(msg)
+        End While
+        Return result
+    End Function
 
     ''' <summary>Register app-specific extensions to include in dictionary scans (e.g. ".osp", ".xml").</summary>
     Public Shared Sub RegisterExtensions(ParamArray extensions() As String)
@@ -675,7 +713,10 @@ Public Class FilesDictionary_class
             RebuildSearchIndexesFromDictionary()
 
         Catch ex As Exception
-            MsgBox(ex.ToString)
+            ' No MsgBox desde acá: después del ConfigureAwait(False) estamos en el
+            ' ThreadPool, sin sync context de la UI. MsgBox desde worker cuelga.
+            _scanErrors.Enqueue("Fill_DictionaryAsync failed: " & ex.Message)
+            System.Diagnostics.Debug.WriteLine("Fill_DictionaryAsync error: " & ex.ToString())
         End Try
     End Function
     Private Shared Function GetPluginsTxtPath() As String
@@ -829,7 +870,8 @@ Public Class FilesDictionary_class
             End Using
 
         Catch ex As Exception
-            MsgBox("Error procesing Ba2 " + ba2 + " :" + ex.ToString)
+            _scanErrors.Enqueue("Error processing BA2 " & ba2 & ": " & ex.Message)
+            System.Diagnostics.Debug.WriteLine("ProcessBa2File error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
             progress.Report(($"Procesado: {Path.GetFileName(ba2)}", current, totalCount))
@@ -878,7 +920,8 @@ Public Class FilesDictionary_class
             End Function)
 
         Catch ex As Exception
-            MsgBox("Error procesing Loose file " + file + " :" + ex.ToString)
+            _scanErrors.Enqueue("Error processing loose file " & file & ": " & ex.Message)
+            System.Diagnostics.Debug.WriteLine("ProcessLooseFile error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
             progress.Report(($"Procesado: {Path.GetFileName(file)}", current, totalCount))

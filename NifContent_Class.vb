@@ -151,6 +151,94 @@ Public Class Skeleton_Class
         Next
         Return SkeletonDictionary.Count <> 0
     End Function
+
+    ''' <summary>Merge bones from an additional face skeleton NIF into the current SkeletonDictionary.
+    ''' The face skeleton (e.g. skeleton_female_faceBones.nif) references HEAD from the main body skeleton
+    ''' and adds face bones (skin_bone_*) as its descendants. We parse its NiNode tree, find bones already in
+    ''' the dict (HEAD, etc.) as anchor points, and add the new face bones as their children.
+    ''' Must be called AFTER LoadSkeleton so SkeletonDictionary has the body bones available.</summary>
+    ''' <param name="faceSkelBytes">Raw bytes of the face skeleton NIF file.</param>
+    ''' <returns>Number of new bones added to SkeletonDictionary (0 if the file failed to load or no new bones).</returns>
+    Public Shared Function MergeFaceSkeleton(faceSkelBytes As Byte()) As Integer
+        If faceSkelBytes Is Nothing OrElse faceSkelBytes.Length = 0 Then Return 0
+
+        SyncLock _skeletonLock
+            If HasSkeleton = False Then Return 0
+
+            Dim faceNif As New Nifcontent_Class_Manolo
+            Try
+                faceNif.Load_Manolo(faceSkelBytes)
+            Catch
+                Return 0
+            End Try
+
+            ' Build parent map for the face skeleton NIF
+            Dim parentMap As New Dictionary(Of Integer, NiNode)
+            For Each block In faceNif.Blocks.OfType(Of NiNode)()
+                For Each childRef In block.Children.References
+                    If childRef.Index >= 0 Then parentMap(childRef.Index) = block
+                Next
+            Next
+
+            ' Depth-first walk starting from each top-level NiNode in the face NIF.
+            ' For each node, if its name matches an existing bone in SkeletonDictionary (the body skeleton),
+            ' use that existing bone as the parent anchor and walk into its children to add face bones.
+            Dim addedCount As Integer = 0
+
+            Dim walkNode As Action(Of NiNode, HierarchiBone_class) = Nothing
+            walkNode = Sub(node As NiNode, parentBone As HierarchiBone_class)
+                           If node Is Nothing Then Return
+                           Dim name = If(node.Name?.String, "")
+                           Dim currentBone As HierarchiBone_class = Nothing
+
+                           If name <> "" Then
+                               ' If this node's name already exists in the main skeleton dict, REUSE that entry
+                               ' as the anchor. This is how the face skel links to HEAD/Head_skin in the body skel.
+                               If SkeletonDictionary.TryGetValue(name, currentBone) Then
+                                   ' Existing bone — just traverse into children to add their face-specific children
+                               Else
+                                   ' New face bone — attach as child of parentBone (could be null for top-level)
+                                   currentBone = New HierarchiBone_class With {
+                                       .BoneName = name,
+                                       .Parent = parentBone,
+                                       .DeltaTransform = Nothing,
+                                       .OriginalLocaLTransform = New Transform_Class(node)
+                                   }
+                                   If parentBone IsNot Nothing Then
+                                       parentBone.Childrens.Add(currentBone)
+                                   Else
+                                       SkeletonStructure.Add(currentBone)
+                                   End If
+                                   SkeletonDictionary(name) = currentBone
+                                   addedCount += 1
+                               End If
+                           End If
+
+                           ' Recurse into children
+                           For Each childRef In node.Children.References
+                               If childRef.Index < 0 OrElse childRef.Index >= faceNif.Blocks.Count Then Continue For
+                               Dim childNode = TryCast(faceNif.Blocks(childRef.Index), NiNode)
+                               If childNode IsNot Nothing Then walkNode(childNode, If(currentBone, parentBone))
+                           Next
+                       End Sub
+
+            ' Start the walk from each top-level NiNode (those whose parent is null or BSFadeNode)
+            For Each bon As NiNode In faceNif.Blocks.Where(Function(pf) pf.GetType Is GetType(NiNode))
+                Dim bonIndex As Integer
+                Dim par As NiNode = Nothing
+                If faceNif.GetBlockIndex(bon, bonIndex) Then
+                    parentMap.TryGetValue(bonIndex, par)
+                End If
+                If IsNothing(par) OrElse par.GetType Is GetType(NiflySharp.Blocks.BSFadeNode) Then
+                    ' Top-level: start walk. If par exists (it's BSFadeNode), start from it instead of bon.
+                    Dim startNode = If(par IsNot Nothing, par, bon)
+                    walkNode(startNode, Nothing)
+                End If
+            Next
+
+            Return addedCount
+        End SyncLock
+    End Function
     Public Shared Sub PrepareSkeletonForShapes(shapes As IEnumerable(Of IRenderableShape), Optional pose As Poses_class = Nothing)
         SyncLock _skeletonLock
             If HasSkeleton = False Then Exit Sub

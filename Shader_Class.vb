@@ -274,6 +274,7 @@ uniform sampler2D texEnvMask;
 uniform sampler2D texSpecular;
 uniform sampler2D texGreyscale;
 uniform sampler2D texGlowmap;
+uniform sampler2D texFaceTintOverlay;   // TETI/TEND composed tint layers, blended on top of diffuse
 
 uniform bool bLightEnabled;
 uniform bool bShowTexture;
@@ -297,6 +298,7 @@ uniform bool bGlowmap;
 uniform bool bGreyscaleColor;
 uniform bool bDoubleSided;
 uniform bool bHide;
+uniform bool bHasFaceTintOverlay;       // true when composed face tint texture is bound
 
 uniform bool bIsEffectShader;
 uniform bool bEffectFalloff;
@@ -571,6 +573,14 @@ void main(void)
 			baseMap = texture(texDiffuse, uv);
 			albedo *= baseMap.rgb;
 			color.a *= baseMap.a;
+
+			// FaceTint overlay: composited TETI/TEND tint layers, premultiplied alpha.
+			// ov.rgb is already color*alpha from the compositor, so this is premultiplied-over.
+			if (bHasFaceTintOverlay)
+			{
+				vec4 ov = texture(texFaceTintOverlay, uv);
+				albedo = albedo * (1.0 - ov.a) + ov.rgb;
+			}
 
 			// Diffuse texture without lighting
 			color.rgb = albedo;
@@ -1174,6 +1184,7 @@ uniform sampler2D texGlowmap;
 uniform sampler2D texLightmask;
 uniform sampler2D texDetailMask;
 uniform sampler2D texTintMask;
+uniform sampler2D texFaceTintOverlay;   // TETI/TEND composed tint layers, blended on top of diffuse
 
 uniform bool bLightEnabled;
 uniform bool bShowTexture;
@@ -1200,6 +1211,7 @@ uniform bool bGreyscaleColor;
 uniform bool bHasTintColor;
 uniform bool bHasDetailMask;
 uniform bool bHasTintMask;
+uniform bool bHasFaceTintOverlay;       // true when composed face tint texture is bound
 uniform bool bDoubleSided;
 uniform bool bHide;
 
@@ -1593,7 +1605,7 @@ void main(void)
 				}
 			}
 
-			// FaceTint: detail mask and tint mask with overlay blending (SSE)
+			// FaceTint: detail mask and tint mask with overlay blending (SSE legacy, for SSE facegen data)
 			if (bHasDetailMask)
 			{
 				vec3 dm = texture(texDetailMask, uv).rgb;
@@ -1611,6 +1623,13 @@ void main(void)
 					tm.g < 0.5 ? 2.0 * albedo.g * tm.g : 1.0 - 2.0 * (1.0 - tm.g) * (1.0 - albedo.g),
 					tm.b < 0.5 ? 2.0 * albedo.b * tm.b : 1.0 - 2.0 * (1.0 - tm.b) * (1.0 - albedo.b)
 				);
+			}
+
+			// FaceTint overlay (TETI/TEND composed at runtime via FBO, premultiplied-over)
+			if (bHasFaceTintOverlay)
+			{
+				vec4 ov = texture(texFaceTintOverlay, uv);
+				albedo = albedo * (1.0 - ov.a) + ov.rgb;
 			}
 
 			// Double-sided: flip normal for back faces
