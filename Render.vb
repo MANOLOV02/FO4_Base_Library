@@ -2099,10 +2099,10 @@ Public Class PreviewModel
         End Structure
 
         ' Centralized tuning points for decal/depth-bias raster offset.
-        Private Const DecalPolygonOffsetFactor As Single = -1.0F
-        Private Const DecalPolygonOffsetUnits As Single = -1.0F
-        Private Const DecalDepthBiasPolygonOffsetFactor As Single = -1.0F
-        Private Const DecalDepthBiasPolygonOffsetUnits As Single = -1.0F
+        Private Const DecalPolygonOffsetFactor As Single = 0.0F
+        Private Const DecalPolygonOffsetUnits As Single = 0.0F
+        Private Const DecalDepthBiasPolygonOffsetFactor As Single = 0.0F
+        Private Const DecalDepthBiasPolygonOffsetUnits As Single = 0.0F
 
         Private Shared Function ResolvePolygonOffset(materialBase As FO4UnifiedMaterial_Class) As PolygonOffsetState
             If materialBase Is Nothing Then Return PolygonOffsetState.Disabled
@@ -2316,6 +2316,17 @@ Public Class PreviewModel
             Dim glowTextureId = material.GlowTexture_ID
             Dim lightingTextureId = material.LightingTexture_ID
             Dim hasBacklightTexture As Boolean = materialBase.BackLighting
+
+            ' ShaderType EnvironmentMap: SmoothSpec slot is actually an environment
+            ' mask, not a specular map (e.g. eyeenvironmentmask_m.dds).
+            ' Done here in render (not in material properties) to avoid corrupting
+            ' save flows that read-modify-write the BGSM fields.
+            If materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.EnvironmentMap AndAlso
+               smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
+                envmapMaskTextureId = smoothSpecTextureId
+                smoothSpecTextureId = 0
+            End If
+
             Dim hasSpecMap As Boolean = (smoothSpecTextureId <> 0)
             Dim isSSE As Boolean = TypeOf shader Is Shader_Class_SSE
             ' SSE: specular can come from normalMap.a even without a dedicated spec map
@@ -2327,9 +2338,6 @@ Public Class PreviewModel
             Dim shape = Me.MeshData.Shape
             Dim nifShader = shape.NifShader
             Dim nifshape = MeshData.Meshgeometry.TriShape
-            Dim hasVtxData As Boolean = nifshape IsNot Nothing AndAlso nifshape.HasVertexColors
-            Dim showVtxColor As Boolean = shape.ShowVertexColor AndAlso hasVtxData AndAlso (nifShader IsNot Nothing AndAlso nifShader.HasVertexColors)
-            Dim showVtxAlpha As Boolean = shape.ShowVertexColor AndAlso hasVtxData AndAlso (nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha)
 
             '===============================
             ' ?? PROPIEDADES DE COLOR BÁSICO
@@ -2344,8 +2352,11 @@ Public Class PreviewModel
             shader.SetBool("bShowTexture", shape.ShowTexture)
             shader.SetBool("bShowMask", shape.ShowMask)
             shader.SetBool("bShowWeight", shape.ShowWeight)
-            shader.SetBool("bShowVertexColor", showVtxColor)
-            shader.SetBool("bShowVertexAlpha", showVtxAlpha)
+            ' Vertex color: gated by NIF data + user toggle.
+            ' Vertex alpha: not gated here (kept as before — original behavior).
+            Dim hasVtxColors As Boolean = nifshape IsNot Nothing AndAlso nifshape.HasVertexColors
+            shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVtxColors)
+            shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVtxColors)
             shader.SetBool("bApplyZap", shape.ApplyZaps)
             shader.SetBool("bWireframe", shape.Wireframe)
             shader.SetBool("bHide", shape.RenderHide)
@@ -2506,6 +2517,8 @@ Public Class PreviewModel
             ' Effect Shader (BGEM) properties
             Dim isBGEM As Boolean = materialBase.IsBGEM
             shader.SetBool("bIsEffectShader", isBGEM)
+            shader.SetBool("bDecal", materialBase.Decal)
+            shader.SetInt("shaderType", CInt(materialBase.NifShaderType))
             shader.SetBool("bEffectFalloff", materialBase.FalloffEnabled)
             shader.SetBool("bEffectFalloffColor", materialBase.FalloffColorEnabled)
             shader.SetBool("bEffectGreyscaleAlpha", materialBase.GrayscaleToPaletteAlpha)

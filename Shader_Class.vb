@@ -301,6 +301,8 @@ uniform bool bHide;
 uniform bool bHasFaceTintOverlay;       // true when composed face tint texture is bound
 
 uniform bool bIsEffectShader;
+uniform bool bDecal;
+uniform int shaderType;
 uniform bool bEffectFalloff;
 uniform bool bEffectFalloffColor;
 uniform bool bEffectGreyscaleAlpha;
@@ -531,14 +533,6 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 		emissive += backlight * light.diffuse;
 	}
 
-	// Rim lighting: bright edge when backlit
-	if (bRimlight)
-	{
-		vec3 rim = vec3(pow((1.0 - NdotV), rimlightPower));
-		rim *= smoothstep(-0.2, 1.0, dot(-lightDir, viewDir));
-		emissive += rim * light.diffuse * specMask;
-	}
-
 	// Diffuse
 	vec3 diff = vec3(OrenNayarFull(lightDir, viewDir, normal, roughness, NdotL0));
 	outDiffuse += diff * light.diffuse;
@@ -660,6 +654,28 @@ void main(void)
 			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
 			directionalLight(directional1, lightDirectional1, outDiffuse, outSpecular);
 			directionalLight(directional2, lightDirectional2, outDiffuse, outSpecular);
+
+			// Rim lighting (FO4): disabled for multi-light rig. With the back fill
+			// light dot(-L,V)~1 and low rimPower values (0.1) the smoothstep term
+			// cannot attenuate, producing a full-surface wash. NifSkope/OS also disable it.
+			//if (bRimlight)
+			//{
+			//	float rl0 = dot(-lightFrontal, viewDir);
+			//	float rl1 = dot(-lightDirectional0, viewDir);
+			//	float rl2 = dot(-lightDirectional1, viewDir);
+			//	float rl3 = dot(-lightDirectional2, viewDir);
+			//
+			//	float bestRl = rl0;
+			//	vec3 bestRlDiffuse = frontal.diffuse;
+			//	if (rl1 > bestRl) { bestRl = rl1; bestRlDiffuse = directional0.diffuse; }
+			//	if (rl2 > bestRl) { bestRl = rl2; bestRlDiffuse = directional1.diffuse; }
+			//	if (rl3 > bestRl) { bestRl = rl3; bestRlDiffuse = directional2.diffuse; }
+			//
+			//	float NdotV_rim = max(dot(normal, viewDir), FLT_EPSILON);
+			//	vec3 rim = vec3(pow((1.0 - NdotV_rim), rimlightPower));
+			//	rim *= smoothstep(-0.2, 1.0, bestRl);
+			//	emissive += rim * bestRlDiffuse;
+			//}
 
 			// Environment cubemap (BGSM only; BGEM has its own cubemap path)
 			if (bCubemap && bEnvMap && bShowTexture && !bIsEffectShader)
@@ -1216,6 +1232,8 @@ uniform bool bDoubleSided;
 uniform bool bHide;
 
 uniform bool bIsEffectShader;
+uniform bool bDecal;
+uniform int shaderType;
 uniform bool bEffectFalloff;
 uniform bool bEffectFalloffColor;
 uniform bool bEffectGreyscaleAlpha;
@@ -1448,15 +1466,6 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 		emissive += backlight * light.diffuse;
 	}
 
-	// Rim lighting: bright edge when backlit
-	if (bRimlight)
-	{
-		vec3 rimMask = bLightmask ? texture(texLightmask, uv).rgb : vec3(1.0);
-		vec3 rim = rimMask * pow(vec3(1.0 - NdotV), vec3(rimlightPower));
-		rim *= smoothstep(-0.2, 1.0, dot(-lightDir, viewDir));
-		emissive += rim * light.diffuse * specMask;
-	}
-
 	// Diffuse
 	vec3 diff = vec3(OrenNayarFull(lightDir, viewDir, normal, roughness, NdotL0));
 	outDiffuse += diff * light.diffuse;
@@ -1642,6 +1651,11 @@ void main(void)
 			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
 			directionalLight(directional1, lightDirectional1, outDiffuse, outSpecular);
 			directionalLight(directional2, lightDirectional2, outDiffuse, outSpecular);
+
+			// Rim lighting (SSE): disabled for multi-light rig. NifSkope SSE has
+			// it active but with a single frontal light where dot(-L,V)~0 naturally
+			// attenuates the effect. With our back fill light dot(-L,V)~1 and low
+			// rimPower values (0.1) produce a full-surface wash instead of edge glow.
 
 			// Environment cubemap (BGSM only; BGEM has its own cubemap path)
 			if (bCubemap && bEnvMap && bShowTexture && !bIsEffectShader)
