@@ -27,6 +27,12 @@ Public Class NPC_FaceTintLayerData
     Public Value As Integer
     ''' <summary>Palette entries only — TEND bytes 1..3 hold the final applied RGB color. Stays Color.Empty for TextureSet.</summary>
     Public Color As Color = Color.Empty
+    ''' <summary>Palette entries only — TEND bytes 5..6 (signed int16) index into the RACE TTEC TemplateColors
+    ''' array POSITIONALLY. -1 means "use the TEND RGB directly, no CLFM lookup" (the author picked a custom
+    ''' colour not in the palette or the TEND is a cached value). >= 0 means "look up TemplateColors[index]
+    ''' and use its CLFM colour + its authored BlendOperation" (the author picked a preset from the palette).
+    ''' Verified from wbDefinitionsFO4.pas TEND struct definition.</summary>
+    Public TemplateColorIndex As Integer = -1
     ''' <summary>Raw bytes of the TETI subrecord, kept for diagnostic dumps.</summary>
     Public RawTetiBytes As Byte() = Nothing
     ''' <summary>Raw bytes of the TEND subrecord, kept for diagnostic dumps.</summary>
@@ -37,6 +43,13 @@ Public Class NPC_FaceMorphData
     Public Index As UInteger
     ''' <summary>Raw float values from FMRS. Typically: PosX, PosY, PosZ, RotX, RotY, RotZ, Scale, plus optional unknowns.</summary>
     Public Values As New List(Of Single)
+    ''' <summary>Raw FMRI bytes (should be 4 = UInt32 index).</summary>
+    Public RawFmriBytes As Byte() = Nothing
+    ''' <summary>Raw FMRS bytes. xEdit says 7 floats + trailing "Unknown" byte array. Mod overrides may
+    ''' include different layouts — keeping the raw bytes lets us verify the structure.</summary>
+    Public RawFmrsBytes As Byte() = Nothing
+    ''' <summary>Name of the plugin that provides the WINNING FMRI entry, for diagnosing override issues.</summary>
+    Public SourcePlugin As String = ""
 
     Public ReadOnly Property PositionX As Single
         Get
@@ -131,6 +144,56 @@ Public Class RACE_MorphPresetDef
     Public Index As UInteger      ' MPPI = same as MSDK key in NPC record
     Public PresetName As String = ""  ' MPPN = display name (localized)
     Public MorphName As String = ""   ' MPPM = morph name in Chargen.tri
+    ''' <summary>MPPT = FormID reference to a TXST (TextureSet) record that holds the
+    ''' diffuse / normal / wrinkles / specular for this preset. When the NPC's MSDV
+    ''' selects this preset via its MPPI hash, the engine uses this TXST's textures
+    ''' to replace the corresponding region of the base face, gated by the parent
+    ''' Morph Group's MPPK mask. This is how Bethesda implements per-region texture
+    ''' swaps (e.g. "Arrugado" forehead -> SkinHeadFemaleOld TXST gated by Female
+    ''' Forehead Mask). Verified from wbDefinitionsFO4.pas:3535.</summary>
+    Public TextureFormID As UInteger = 0UI   ' MPPT -> TXST
+    Public Playable As Boolean = True        ' MPPF
+End Class
+
+''' <summary>RACE Morph Group - contains a list of MorphPresetDefs sharing a common
+''' face region mask (MPPK) and a group name (MPGN). Each group represents a face
+''' region (Forehead, Eyes, Nose, Ears, Cheeks, Mouth, Neck). The NPC picks at most
+''' one preset per group via its MSDV values, and the chosen preset's MPPT texture
+''' set overrides the base face textures in the region defined by MPPK.
+''' Verified from wbDefinitionsFO4.pas:3523 wbMorphGroups.</summary>
+Public Class RACE_MorphGroup
+    Public Name As String = ""           ' MPGN = "Forehead", "Eyes", etc.
+    Public MaskEnum As UShort = 0US      ' MPPK = u16 enum from wbDefinitionsFO4.pas:3538.
+                                          '   Male:   1171..1177 = Forehead..Neck Mask
+                                          '   Female: 1221..1227 = Forehead..Neck Mask
+                                          '   65535 = None
+                                          ' Bethesda comment: "Maps to Faceregion tint groups".
+                                          ' These are SEMANTIC IDs, not array indices. Each value
+                                          ' maps by convention to a Slot (0..6) in TETI.Slot of the
+                                          ' RACE's tint template options. Use TryGetMaskSlot below.
+    Public Presets As New List(Of RACE_MorphPresetDef)
+    Public SliderIndices As New List(Of UInteger)  ' MPGS = additional slider MSDK keys
+
+    ''' <summary>Translate the MPPK u16 enum to a TintSlot (0..6) for the region masks.
+    ''' Returns False if the value is 65535 (None) or out of range.
+    ''' MPPK base values from wbDefinitionsFO4.pas:3541,3549 — region masks are stored as a
+    ''' contiguous u16 range starting at MaleMaskBase / FemaleMaskBase, in the order
+    ''' Forehead, Eyes, Nose, Ears, Cheeks, Mouth, Neck = TintSlot 0..6.</summary>
+    Public Function TryGetMaskSlot(ByRef slot As TintSlot) As Boolean
+        Const MaleMaskBase As UShort = 1171US
+        Const FemaleMaskBase As UShort = 1221US
+        Const RegionCount As UShort = 7US
+        Dim offset As Integer
+        If MaskEnum >= MaleMaskBase AndAlso MaskEnum < MaleMaskBase + RegionCount Then
+            offset = CInt(MaskEnum) - CInt(MaleMaskBase)
+        ElseIf MaskEnum >= FemaleMaskBase AndAlso MaskEnum < FemaleMaskBase + RegionCount Then
+            offset = CInt(MaskEnum) - CInt(FemaleMaskBase)
+        Else
+            Return False
+        End If
+        slot = CType(offset, TintSlot)
+        Return True
+    End Function
 End Class
 
 Public Enum TintSlot As UShort
@@ -161,6 +224,22 @@ Public Enum TintSlot As UShort
     Wrinkles = 24
     Beards = 25
 End Enum
+
+''' <summary>One bone entry inside a RACE's BSMP/BSMB/BSMS sequence.
+''' xEdit defines: BSMB (string Name), BSMS (array of floats "Values"), BMMP (unknown).
+''' The BSMS Values array is NOT documented — we capture the raw floats and BMMP bytes for diagnostics.</summary>
+Public Class RACE_BoneDataEntry
+    Public BoneName As String = ""
+    Public Values As New List(Of Single)
+    Public RawBmmpBytes As Byte() = Nothing
+End Class
+
+''' <summary>Per-gender bone data block from a RACE record. Contains a sequence of bones under
+''' a single BSMP (Gender U32) header. There is typically one block per gender (Male / Female).</summary>
+Public Class RACE_BoneDataGender
+    Public Gender As UInteger   ' 0 = Male, 1 = Female per xEdit enum
+    Public Bones As New List(Of RACE_BoneDataEntry)
+End Class
 
 Public Class RACE_TintTemplateColor
     Public ColorFormID As UInteger
@@ -233,14 +312,29 @@ Public Class RACE_Data
     Public FemaleFaceMorphs As New List(Of RACE_FaceMorphDef)
     ''' <summary>Morph Values (MSID/MSM0/MSM1) - maps MSDK slider keys to TriHead morph names.</summary>
     Public MorphValues As New List(Of RACE_MorphValueDef)
-    ''' <summary>Morph Presets (MPPI/MPPM) from Morph Groups - maps MSDK preset keys to TriHead morph names.</summary>
+    ''' <summary>Morph Presets (MPPI/MPPM) from Morph Groups - FLAT list of every preset, kept for
+    ''' backward compatibility with NpcMorphResolver which matches MSDV keys to preset defs by Index.
+    ''' Each entry is ALSO present inside its owning MaleMorphGroups/FemaleMorphGroups entry.</summary>
     Public MaleMorphPresets As New List(Of RACE_MorphPresetDef)
     Public FemaleMorphPresets As New List(Of RACE_MorphPresetDef)
-    ''' <summary>Morph Group Slider indices (MPGS) - additional MSDK keys per group.</summary>
+    ''' <summary>Morph Groups (MPGN/MPPC/MPPK/MPGS wrapping a list of MPPI/MPPN/MPPM/MPPT/MPPF presets)
+    ''' — hierarchical structure that ties each preset to its owning face region (via MPPK mask enum)
+    ''' and to its per-preset TXST texture (via MPPT). This is how Bethesda implements per-region
+    ''' texture swaps (e.g. "Arrugado" forehead -> SkinHeadFemaleOld TXST masked by Female Forehead
+    ''' Mask). Parsed alongside the flat MorphPresets lists.</summary>
+    Public MaleMorphGroups As New List(Of RACE_MorphGroup)
+    Public FemaleMorphGroups As New List(Of RACE_MorphGroup)
+    ''' <summary>Morph Group Slider indices (MPGS) - additional MSDK keys per group (flat list).</summary>
     Public MaleMorphGroupSliders As New List(Of UInteger)
     Public FemaleMorphGroupSliders As New List(Of UInteger)
     Public MaleTintTemplateGroups As New List(Of RACE_TintTemplateGroup)
     Public FemaleTintTemplateGroups As New List(Of RACE_TintTemplateGroup)
+
+    ''' <summary>Per-gender bone data from the RACE's BSMP/BSMB/BSMS sequence (xEdit's wbBSMPSequence).
+    ''' Each entry has a list of bones, each with a name + a raw array of floats. The float array
+    ''' contents are UNDOCUMENTED by xEdit but this is the most likely source of the real per-bone
+    ''' morph data (min/max/default positions per slider axis). xEdit marks BMMP as wbUnknown.</summary>
+    Public BoneData As New List(Of RACE_BoneDataGender)
 
     ''' <summary>Find a tint template option by its TETI index for the given gender.</summary>
     Public Function FindTintOption(index As UShort, isFemale As Boolean) As RACE_TintTemplateOption
@@ -251,6 +345,21 @@ Public Class RACE_Data
             Next
         Next
         Return Nothing
+    End Function
+
+    ''' <summary>Collect every tint template option whose TETI.Slot matches the given slot for
+    ''' the given gender. Used to resolve a Morph Group's MPPK (region enum) to its actual mask
+    ''' textures: MPPK 1221 -> TintSlot.ForeheadMask -> all options with Slot=0 in female tints.
+    ''' Each returned option's TTET[0] is a path to the region mask DDS in face UV space.</summary>
+    Public Function FindTintOptionsBySlot(slot As TintSlot, isFemale As Boolean) As List(Of RACE_TintTemplateOption)
+        Dim result As New List(Of RACE_TintTemplateOption)
+        Dim groups = If(isFemale, FemaleTintTemplateGroups, MaleTintTemplateGroups)
+        For Each grp In groups
+            For Each opt In grp.Options
+                If opt.Slot = CUShort(slot) Then result.Add(opt)
+            Next
+        Next
+        Return result
     End Function
 End Class
 
@@ -556,15 +665,20 @@ Public Module RecordParsers
                         End If
                     End If
                 Case "TEND"
-                    ' TEND layout is discriminator-dependent (verified empirically):
-                    '   Discriminator=1 (Palette):     7 bytes — [0]=Value, [1]=R, [2]=G, [3]=B, [4..6]=pad
-                    '   Discriminator=2 (TextureSet):  1 byte  — [0]=Value
+                    ' TEND layout (verified from wbDefinitionsFO4.pas):
+                    '   Discriminator=1 (Palette)     : 7 bytes = Value(1) + Color(4 RGBA bytes) + TemplateColorIndex(2 signed int16)
+                    '   Discriminator=2 (TextureSet)  : 1 byte  = Value(1)
                     If pendingTintLayer Is Nothing Then pendingTintLayer = New NPC_FaceTintLayerData()
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
                         pendingTintLayer.RawTendBytes = sr.Data
                         pendingTintLayer.Value = sr.Data(0)
                         If pendingTintLayer.Discriminator = 1 AndAlso sr.Data.Length >= 4 Then
                             pendingTintLayer.Color = Color.FromArgb(255, sr.Data(1), sr.Data(2), sr.Data(3))
+                        End If
+                        ' Palette entries carry a signed Int16 TemplateColorIndex at bytes 5..6.
+                        ' -1 means "direct TEND RGB"; >= 0 means "positional lookup into TTEC TemplateColors".
+                        If pendingTintLayer.Discriminator = 1 AndAlso sr.Data.Length >= 7 Then
+                            pendingTintLayer.TemplateColorIndex = CInt(BitConverter.ToInt16(sr.Data, 5))
                         End If
                     End If
                     npc.FaceTintLayers.Add(pendingTintLayer)
@@ -616,6 +730,7 @@ Public Module RecordParsers
         Dim pendingFaceMorphDef As RACE_FaceMorphDef = Nothing
         Dim pendingMorphValueDef As RACE_MorphValueDef = Nothing
         Dim pendingMorphPresetDef As RACE_MorphPresetDef = Nothing
+        Dim pendingMorphGroup As RACE_MorphGroup = Nothing
         Dim pendingTintGroup As RACE_TintTemplateGroup = Nothing
         Dim pendingTintOption As RACE_TintTemplateOption = Nothing
 
@@ -697,9 +812,31 @@ Public Module RecordParsers
                     race.HairColorLookupTexture = sr.AsString
                 Case "HLTX"
                     race.HairColorExtendedLookupTexture = sr.AsString
+                Case "MPGN"
+                    ' Morph Group Name — start of a new Morph Group. Flush any pending preset
+                    ' into the previous pending group, then flush the previous group itself.
+                    If pendingMorphPresetDef IsNot Nothing AndAlso pendingMorphGroup IsNot Nothing Then
+                        pendingMorphGroup.Presets.Add(pendingMorphPresetDef)
+                        If inFemaleHead Then race.FemaleMorphPresets.Add(pendingMorphPresetDef)
+                        If inMaleHead Then race.MaleMorphPresets.Add(pendingMorphPresetDef)
+                        pendingMorphPresetDef = Nothing
+                    End If
+                    If pendingMorphGroup IsNot Nothing Then
+                        If inFemaleHead Then race.FemaleMorphGroups.Add(pendingMorphGroup)
+                        If inMaleHead Then race.MaleMorphGroups.Add(pendingMorphGroup)
+                    End If
+                    pendingMorphGroup = New RACE_MorphGroup()
+                    pendingMorphGroup.Name = sr.AsString
+                Case "MPPC"
+                    ' Morph Preset Count — metadata, not used to split entries (xEdit handles
+                    ' the RArray via SetCountPath but we can count presets directly).
                 Case "MPPI"
-                    ' Morph Group preset definition
+                    ' Morph Group preset definition — flush any pending preset into the current
+                    ' group (or the flat list if no group is active), then start a new preset.
                     If pendingMorphPresetDef IsNot Nothing Then
+                        If pendingMorphGroup IsNot Nothing Then
+                            pendingMorphGroup.Presets.Add(pendingMorphPresetDef)
+                        End If
                         If inFemaleHead Then
                             race.FemaleMorphPresets.Add(pendingMorphPresetDef)
                         ElseIf inMaleHead Then
@@ -718,16 +855,42 @@ Public Module RecordParsers
                     If pendingMorphPresetDef IsNot Nothing Then
                         pendingMorphPresetDef.MorphName = sr.AsString
                     End If
+                Case "MPPT"
+                    ' Texture FormID -> TXST for this preset. This is what the engine uses to
+                    ' replace the region's base textures when the NPC selects this preset.
+                    If pendingMorphPresetDef IsNot Nothing Then
+                        pendingMorphPresetDef.TextureFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    End If
+                Case "MPPF"
+                    If pendingMorphPresetDef IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
+                        pendingMorphPresetDef.Playable = (sr.Data(0) <> 0)
+                    End If
+                Case "MPPK"
+                    ' Mask enum (uint16) — identifies which face region this group applies to,
+                    ' by pointing at a tint template option Index in the RACE's slot 0..6 region
+                    ' masks. The actual mask texture lives in that tint option's TTET[0].
+                    If pendingMorphGroup IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
+                        pendingMorphGroup.MaskEnum = BitConverter.ToUInt16(sr.Data, 0)
+                    End If
                 Case "FMRI"
                     ' Face morph definition start (in RACE context, not NPC)
-                    ' Flush pending morph preset
+                    ' Flush pending morph preset into its owning group (if any) + flat list
                     If pendingMorphPresetDef IsNot Nothing Then
+                        If pendingMorphGroup IsNot Nothing Then
+                            pendingMorphGroup.Presets.Add(pendingMorphPresetDef)
+                        End If
                         If inFemaleHead Then
                             race.FemaleMorphPresets.Add(pendingMorphPresetDef)
                         ElseIf inMaleHead Then
                             race.MaleMorphPresets.Add(pendingMorphPresetDef)
                         End If
                         pendingMorphPresetDef = Nothing
+                    End If
+                    ' Flush pending morph group (all its presets are already folded in above).
+                    If pendingMorphGroup IsNot Nothing Then
+                        If inFemaleHead Then race.FemaleMorphGroups.Add(pendingMorphGroup)
+                        If inMaleHead Then race.MaleMorphGroups.Add(pendingMorphGroup)
+                        pendingMorphGroup = Nothing
                     End If
                     If pendingFaceMorphDef IsNot Nothing Then
                         If inFemaleHead Then
@@ -756,10 +919,14 @@ Public Module RecordParsers
                 Case "MSM1"
                     If pendingMorphValueDef IsNot Nothing Then pendingMorphValueDef.MaxName = sr.AsString
                 Case "MPGS"
-                    ' Morph Group Sliders - array of uint32 indices
+                    ' Morph Group Sliders - array of uint32 indices. Attach to the pending
+                    ' morph group AND keep the flat per-gender list for backward compat.
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         For idx = 0 To sr.Data.Length - 4 Step 4
                             Dim sliderKey = BitConverter.ToUInt32(sr.Data, idx)
+                            If pendingMorphGroup IsNot Nothing Then
+                                pendingMorphGroup.SliderIndices.Add(sliderKey)
+                            End If
                             If inFemaleHead Then
                                 race.FemaleMorphGroupSliders.Add(sliderKey)
                             ElseIf inMaleHead Then
@@ -851,16 +1018,56 @@ Public Module RecordParsers
                         End If
                         pendingTintGroup = Nothing
                     End If
+
+                ' --- Bone Data (BSMP/BSMB/BSMS/BMMP) — wbBSMPSequence in xEdit, end of RACE ---
+                Case "BSMP"
+                    ' Gender marker: starts a new bone data block for Male (0) or Female (1)
+                    Dim block As New RACE_BoneDataGender()
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        block.Gender = BitConverter.ToUInt32(sr.Data, 0)
+                    End If
+                    race.BoneData.Add(block)
+                Case "BSMB"
+                    ' Bone name (one per bone)
+                    If race.BoneData.Count > 0 Then
+                        Dim entry As New RACE_BoneDataEntry With {.BoneName = sr.AsString}
+                        race.BoneData(race.BoneData.Count - 1).Bones.Add(entry)
+                    End If
+                Case "BSMS"
+                    ' Array of floats (values per bone) - attach to the last bone in the last block
+                    If race.BoneData.Count > 0 AndAlso race.BoneData(race.BoneData.Count - 1).Bones.Count > 0 Then
+                        Dim lastBlock = race.BoneData(race.BoneData.Count - 1)
+                        Dim lastBone = lastBlock.Bones(lastBlock.Bones.Count - 1)
+                        If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                            For idx = 0 To sr.Data.Length - 4 Step 4
+                                lastBone.Values.Add(BitConverter.ToSingle(sr.Data, idx))
+                            Next
+                        End If
+                    End If
+                Case "BMMP"
+                    ' Unknown trailing data per bone — capture raw bytes for diagnostics
+                    If race.BoneData.Count > 0 AndAlso race.BoneData(race.BoneData.Count - 1).Bones.Count > 0 Then
+                        Dim lastBlock = race.BoneData(race.BoneData.Count - 1)
+                        Dim lastBone = lastBlock.Bones(lastBlock.Bones.Count - 1)
+                        lastBone.RawBmmpBytes = sr.Data
+                    End If
             End Select
         Next
 
         ' Flush pending
         If pendingMorphPresetDef IsNot Nothing Then
+            If pendingMorphGroup IsNot Nothing Then
+                pendingMorphGroup.Presets.Add(pendingMorphPresetDef)
+            End If
             If inFemaleHead Then
                 race.FemaleMorphPresets.Add(pendingMorphPresetDef)
             ElseIf inMaleHead Then
                 race.MaleMorphPresets.Add(pendingMorphPresetDef)
             End If
+        End If
+        If pendingMorphGroup IsNot Nothing Then
+            If inFemaleHead Then race.FemaleMorphGroups.Add(pendingMorphGroup)
+            If inMaleHead Then race.MaleMorphGroups.Add(pendingMorphGroup)
         End If
         If pendingMorphValueDef IsNot Nothing Then race.MorphValues.Add(pendingMorphValueDef)
         If pendingFaceMorphDef IsNot Nothing Then
