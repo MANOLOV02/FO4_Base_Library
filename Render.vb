@@ -616,18 +616,22 @@ Public Class PreviewControl
         End If
     End Sub
 
-    ''' <summary>Apply morphs via app-provided resolver. Skips if no resolver set.</summary>
+    ''' <summary>Apply morphs via app-provided resolver. If the resolver is Nothing or
+    ''' yields a null/empty plan for a given shape, <see cref="MorphEngine.ApplyMorphPlan"/>
+    ''' resets that shape's geometry to NifLocalVertices (raw, pre-skin) — this is the
+    ''' explicit "no morphs" contract, so callers can toggle morphs OFF simply by
+    ''' clearing the resolver instead of carrying stale deltas.</summary>
     Private Sub PipelineStep_Morphs(intent As RenderIntent)
-        If intent.MorphResolver Is Nothing Then Return
         For Each mesh In Model.meshes
-            Dim plan = intent.MorphResolver.ResolveMorphPlan(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
-            If plan IsNot Nothing AndAlso plan.HasMorphs Then
-                MorphEngine.ApplyMorphPlan(
-                    mesh.MeshData.Meshgeometry, plan,
-                    intent.RecalculateNormals,
-                    allowMask:=AllowMask,
-                    maskedVertices:=mesh.MeshData.Shape.MaskedVertices)
+            Dim plan As MorphPlan = Nothing
+            If intent.MorphResolver IsNot Nothing Then
+                plan = intent.MorphResolver.ResolveMorphPlan(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
             End If
+            MorphEngine.ApplyMorphPlan(
+                mesh.MeshData.Meshgeometry, plan,
+                intent.RecalculateNormals,
+                allowMask:=AllowMask,
+                maskedVertices:=mesh.MeshData.Shape.MaskedVertices)
         Next
     End Sub
 

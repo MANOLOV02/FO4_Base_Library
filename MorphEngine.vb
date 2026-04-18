@@ -67,12 +67,18 @@ Public Class MorphEngine
     ''' <summary>
     ''' Apply all channels in the plan to the geometry.
     ''' Deltas are applied in NIF local space (pre-skinning).
+    '''
+    ''' Contract for null/empty plans: if <paramref name="plan"/> is Nothing or has no
+    ''' channels, the method performs a RESET — geom.Vertices is rewritten from
+    ''' NifLocalVertices (raw, pre-skin), mask/dirty state is cleared, and TBN is
+    ''' recalculated for any vertex that changed. This lets callers toggle morphs OFF
+    ''' by passing a null plan (or a resolver that returns null) instead of keeping
+    ''' stale deltas pegged on the mesh.
     ''' </summary>
     Public Shared Sub ApplyMorphPlan(ByRef geom As SkinnedGeometry, plan As MorphPlan,
                                      recalculateNormals As Boolean,
                                      Optional allowMask As Boolean = False,
                                      Optional maskedVertices As HashSet(Of Integer) = Nothing)
-        If plan Is Nothing OrElse Not plan.HasMorphs Then Return
         Dim count = geom.NifLocalVertices.Length
         If count = 0 Then Return
 
@@ -104,34 +110,36 @@ Public Class MorphEngine
 
         geom.dirtyVertexIndices.Clear()
 
-        ' Apply each channel
-        For Each channel In plan.Channels
-            Dim t = channel.Weight
-            If Single.IsNaN(t) Then t = 0
-            If channel.Deltas Is Nothing Then Continue For
+        ' Apply each channel (skipped entirely for null/empty plan -> reset semantics)
+        If plan IsNot Nothing AndAlso plan.HasMorphs Then
+            For Each channel In plan.Channels
+                Dim t = channel.Weight
+                If Single.IsNaN(t) Then t = 0
+                If channel.Deltas Is Nothing Then Continue For
 
-            If channel.IsZap Then
-                ' Zap: mark vertices for removal
-                For Each morph In channel.Deltas
-                    Dim i = CInt(morph.index)
-                    If i >= 0 AndAlso i < count Then
-                        geom.VertexMask(i) = -t
-                        geom.dirtyMaskIndices.Add(i)
-                        geom.dirtyMaskFlags(i) = True
-                    End If
-                Next
-            Else
-                ' Position morph: move vertices in NIF local space
-                For Each morph In channel.Deltas
-                    Dim i = CInt(morph.index)
-                    If i >= 0 AndAlso i < count Then
-                        Dim delta = morph.PosDiff * t
-                        If delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z < 0.000001F Then Continue For
-                        verts(i) = verts(i) + delta
-                    End If
-                Next
-            End If
-        Next
+                If channel.IsZap Then
+                    ' Zap: mark vertices for removal
+                    For Each morph In channel.Deltas
+                        Dim i = CInt(morph.index)
+                        If i >= 0 AndAlso i < count Then
+                            geom.VertexMask(i) = -t
+                            geom.dirtyMaskIndices.Add(i)
+                            geom.dirtyMaskFlags(i) = True
+                        End If
+                    Next
+                Else
+                    ' Position morph: move vertices in NIF local space
+                    For Each morph In channel.Deltas
+                        Dim i = CInt(morph.index)
+                        If i >= 0 AndAlso i < count Then
+                            Dim delta = morph.PosDiff * t
+                            If delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z < 0.000001F Then Continue For
+                            verts(i) = verts(i) + delta
+                        End If
+                    Next
+                End If
+            Next
+        End If
 
         ' Track dirty vertices
         For i = 0 To count - 1
