@@ -86,11 +86,15 @@ Public Class PoseTransformData
     <JsonPropertyName("y")> Public Property Y As Single = 0
     <JsonPropertyName("z")> Public Property Z As Single = 0
     <JsonPropertyName("scale")> Public Property Scale As Single = 1
+    <JsonIgnore> Public Property ScaleX As Single = 1
+    <JsonIgnore> Public Property ScaleY As Single = 1
+    <JsonIgnore> Public Property ScaleZ As Single = 1
 
     <JsonIgnore>
     Public ReadOnly Property Isidentity As Boolean
         Get
-            Return X = 0 AndAlso Y = 0 AndAlso Z = 0 AndAlso Yaw = 0 AndAlso Pitch = 0 AndAlso Roll = 0 AndAlso Scale = 1
+            Return X = 0 AndAlso Y = 0 AndAlso Z = 0 AndAlso Yaw = 0 AndAlso Pitch = 0 AndAlso Roll = 0 AndAlso
+                   Scale = 1 AndAlso ScaleX = 1 AndAlso ScaleY = 1 AndAlso ScaleZ = 1
         End Get
     End Property
 End Class

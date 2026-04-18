@@ -59,6 +59,15 @@ Public Class Transform_Class
                 Debugger.Break()
                 Throw New Exception
         End Select
+        ' Non-uniform scale: R * S (column multiplication, NIF convention T*R*S).
+        ' When ScaleX=ScaleY=ScaleZ=1 (default), this is a no-op (multiply by 1).
+        If Origen.ScaleX <> 1.0F OrElse Origen.ScaleY <> 1.0F OrElse Origen.ScaleZ <> 1.0F Then
+            Dim r = Rotation
+            r.M11 *= Origen.ScaleX : r.M21 *= Origen.ScaleX : r.M31 *= Origen.ScaleX
+            r.M12 *= Origen.ScaleY : r.M22 *= Origen.ScaleY : r.M32 *= Origen.ScaleY
+            r.M13 *= Origen.ScaleZ : r.M23 *= Origen.ScaleZ : r.M33 *= Origen.ScaleZ
+            Rotation = r
+        End If
     End Sub
     Public Sub New(m As Matrix4d)
         ' 1) Extraer traslación (columna 4)

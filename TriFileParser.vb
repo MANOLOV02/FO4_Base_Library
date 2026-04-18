@@ -246,8 +246,6 @@ Public Module TriHeadParser
                 Dim unknown9 = br.ReadUInt32()
                 Dim unknown10 = br.ReadUInt32()
 
-                System.Diagnostics.Debug.WriteLine($"[TRIHEAD-HDR] verts={numVertices} tris={numTriangles} uvs={numUV} morphs={numMorphs} modifiers={numModifiers} modVerts={numModVertices}")
-
                 ' Read base vertices (numVertices * 12 bytes) — we need these to compute mod-morph deltas later
                 Dim baseVerts(CInt(numVertices) - 1) As Vector3
                 For j = 0 To CInt(numVertices) - 1

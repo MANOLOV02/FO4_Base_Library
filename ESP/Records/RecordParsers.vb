@@ -225,21 +225,66 @@ Public Enum TintSlot As UShort
     Beards = 25
 End Enum
 
-''' <summary>One bone entry inside a RACE's BSMP/BSMB/BSMS sequence.
-''' xEdit defines: BSMB (string Name), BSMS (array of floats "Values"), BMMP (unknown).
-''' The BSMS Values array is NOT documented — we capture the raw floats and BMMP bytes for diagnostics.</summary>
-Public Class RACE_BoneDataEntry
+''' <summary>Per-bone body weight morph data from a RACE record. Combines two sections from the
+''' xEdit Bone Data Set (wbDefinitionsFO4.pas:5901): the Weight Scale Data (BSMS 9 floats = 3 Vec3
+''' for Thin/Muscular/Fat absolute scales around 1.0) and the Bone Range Modifier Data (BSMS 4
+''' floats = MinY, MinZ, MaxY, MaxZ delta clamps around 0.0). A given bone typically appears in
+''' BOTH sections — we merge them into a single entry per bone name.
+'''
+''' X is always 1.0 in the scale section and absent from the range section, so the body weight
+''' morph affects only Y/Z (bone-local). X is the bone's long axis and does not deform.
+'''
+''' "Range Modifier" interpretation (evidence-based): the Y/Z range is a CLAMP on the weighted
+''' scale DELTA (scale - 1). Bethesda authors aggressive raw scale values in BSMS (e.g. Belly Fat
+''' Y=1.895) but the range modifier limits how far the delta can actually go (e.g. MaxY=0.15 caps
+''' growth at 15%). This keeps the weight morph within anatomically reasonable bounds regardless
+''' of how extreme the archetype values are.</summary>
+Public Class RACE_BoneData
     Public BoneName As String = ""
-    Public Values As New List(Of Single)
-    Public RawBmmpBytes As Byte() = Nothing
+    ' --- Weight Scale section (BSMS with 9 floats, absolute scales around 1.0) ---
+    Public HasWeightScale As Boolean = False
+    Public ThinX As Single = 1.0F
+    Public ThinY As Single = 1.0F
+    Public ThinZ As Single = 1.0F
+    Public MuscularX As Single = 1.0F
+    Public MuscularY As Single = 1.0F
+    Public MuscularZ As Single = 1.0F
+    Public FatX As Single = 1.0F
+    Public FatY As Single = 1.0F
+    Public FatZ As Single = 1.0F
+    ' --- Range Modifier section (BSMS with 4 floats, delta clamps around 0.0) ---
+    Public HasRangeModifier As Boolean = False
+    Public MinY As Single = 0.0F
+    Public MinZ As Single = 0.0F
+    Public MaxY As Single = 0.0F
+    Public MaxZ As Single = 0.0F
 End Class
 
-''' <summary>Per-gender bone data block from a RACE record. Contains a sequence of bones under
-''' a single BSMP (Gender U32) header. There is typically one block per gender (Male / Female).</summary>
+''' <summary>Per-gender bone data block from a RACE record. A "Bone Data Set" in xEdit terms
+''' contains TWO sub-sections for the same gender (Weight Scale Data opened by BSMP, and Bone
+''' Range Modifier Data opened by BMMP). Both sections list the same bones with different payload
+''' layouts. We merge entries by bone name into a single List(Of RACE_BoneData).</summary>
 Public Class RACE_BoneDataGender
-    Public Gender As UInteger   ' 0 = Male, 1 = Female per xEdit enum
-    Public Bones As New List(Of RACE_BoneDataEntry)
+    Public Gender As UInteger   ' 0 = Male, 1 = Female per xEdit wbSexEnum
+    Public Bones As New List(Of RACE_BoneData)
+
+    ''' <summary>Get existing bone by name or create it. Used by the parser to merge Weight Scale
+    ''' and Range Modifier sections into a single per-bone entry.</summary>
+    Public Function GetOrCreateBone(name As String) As RACE_BoneData
+        For Each b In Bones
+            If String.Equals(b.BoneName, name, StringComparison.Ordinal) Then Return b
+        Next
+        Dim nb As New RACE_BoneData With {.BoneName = name}
+        Bones.Add(nb)
+        Return nb
+    End Function
 End Class
+
+Public Enum RACE_BoneDataSection
+    None = 0
+    WeightScale = 1     ' opened by BSMP, BSMS payload is 9 floats (Thin/Muscular/Fat Vec3)
+    RangeModifier = 2   ' opened by BMMP, BSMS payload is 4 floats (MinY, MinZ, MaxY, MaxZ)
+End Enum
 
 Public Class RACE_TintTemplateColor
     Public ColorFormID As UInteger
@@ -308,6 +353,12 @@ Public Class RACE_Data
     Public FemaleDefaultFaceTextureFormID As UInteger
     Public HairColorLookupTexture As String = ""
     Public HairColorExtendedLookupTexture As String = ""
+    ''' <summary>PNAM - FaceGen Main clamp. Limits the effective range of face morph deltas.
+    ''' HumanRace default = 5.0. Exact usage TBD — possibly clamps slider*FMIN or output delta.</summary>
+    Public FaceGenMainClamp As Single = 0.0F
+    ''' <summary>UNAM - FaceGen Face clamp. Possibly a tighter clamp specific to face region morphs.
+    ''' HumanRace default = 3.0. Exact usage TBD.</summary>
+    Public FaceGenFaceClamp As Single = 0.0F
     Public MaleFaceMorphs As New List(Of RACE_FaceMorphDef)
     Public FemaleFaceMorphs As New List(Of RACE_FaceMorphDef)
     ''' <summary>Morph Values (MSID/MSM0/MSM1) - maps MSDK slider keys to TriHead morph names.</summary>
@@ -733,6 +784,12 @@ Public Module RecordParsers
         Dim pendingMorphGroup As RACE_MorphGroup = Nothing
         Dim pendingTintGroup As RACE_TintTemplateGroup = Nothing
         Dim pendingTintOption As RACE_TintTemplateOption = Nothing
+        ' Bone Data section state: BSMP opens WeightScale, BMMP opens RangeModifier WITHIN the same
+        ' gender block (does NOT create a new block). BSMB + BSMS pairs within each section have
+        ' different BSMS payload layouts: 9 floats in WeightScale, 4 floats in RangeModifier.
+        Dim currentBoneSection As RACE_BoneDataSection = RACE_BoneDataSection.None
+        Dim currentBoneDataGender As RACE_BoneDataGender = Nothing
+        Dim currentBoneDataEntry As RACE_BoneData = Nothing
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -1020,36 +1077,69 @@ Public Module RecordParsers
                     End If
 
                 ' --- Bone Data (BSMP/BSMB/BSMS/BMMP) — wbBSMPSequence in xEdit, end of RACE ---
+                Case "PNAM"
+                    ' FaceGen Main clamp (RACE context, outside head section — inside head section
+                    ' PNAM is a head part FormID but that's handled by the HDPT parser, not RACE)
+                    If Not inMaleHead AndAlso Not inFemaleHead AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then
+                        race.FaceGenMainClamp = BitConverter.ToSingle(sr.Data, 0)
+                    End If
+                Case "UNAM"
+                    ' FaceGen Face clamp (RACE context only)
+                    If Not inMaleHead AndAlso Not inFemaleHead AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        race.FaceGenFaceClamp = BitConverter.ToSingle(sr.Data, 0)
+                    End If
+
+                ' --- Bone Data (BSMP/BSMB/BSMS/BMMP) — wbBSMPSequence in xEdit, end of RACE ---
                 Case "BSMP"
-                    ' Gender marker: starts a new bone data block for Male (0) or Female (1)
+                    ' BSMP opens a new Bone Data Set (new gender block) AND simultaneously opens
+                    ' the Weight Scale sub-section within that set. Layout verified against
+                    ' wbDefinitionsFO4.pas:5901 wbBoneDataItem.
                     Dim block As New RACE_BoneDataGender()
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         block.Gender = BitConverter.ToUInt32(sr.Data, 0)
                     End If
                     race.BoneData.Add(block)
+                    currentBoneDataGender = block
+                    currentBoneSection = RACE_BoneDataSection.WeightScale
+                    currentBoneDataEntry = Nothing
+                Case "BMMP"
+                    ' BMMP opens the Range Modifier sub-section of the CURRENT bone data set
+                    ' (same gender, does NOT create a new block). The u32 payload is the gender
+                    ' enum again — we don't need it because we use the current block.
+                    If currentBoneDataGender IsNot Nothing Then
+                        currentBoneSection = RACE_BoneDataSection.RangeModifier
+                        currentBoneDataEntry = Nothing
+                    End If
                 Case "BSMB"
-                    ' Bone name (one per bone)
-                    If race.BoneData.Count > 0 Then
-                        Dim entry As New RACE_BoneDataEntry With {.BoneName = sr.AsString}
-                        race.BoneData(race.BoneData.Count - 1).Bones.Add(entry)
+                    ' Bone name. In either sub-section, this identifies which bone the next BSMS
+                    ' payload applies to. We merge both sections into a single RACE_BoneData per
+                    ' bone name inside the current gender block.
+                    If currentBoneDataGender IsNot Nothing AndAlso currentBoneSection <> RACE_BoneDataSection.None Then
+                        currentBoneDataEntry = currentBoneDataGender.GetOrCreateBone(sr.AsString)
                     End If
                 Case "BSMS"
-                    ' Array of floats (values per bone) - attach to the last bone in the last block
-                    If race.BoneData.Count > 0 AndAlso race.BoneData(race.BoneData.Count - 1).Bones.Count > 0 Then
-                        Dim lastBlock = race.BoneData(race.BoneData.Count - 1)
-                        Dim lastBone = lastBlock.Bones(lastBlock.Bones.Count - 1)
-                        If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
-                            For idx = 0 To sr.Data.Length - 4 Step 4
-                                lastBone.Values.Add(BitConverter.ToSingle(sr.Data, idx))
-                            Next
+                    ' BSMS payload layout depends on the current sub-section:
+                    '   WeightScale:   9 floats = 3 Vec3 (Thin, Muscular, Fat) absolute scales around 1.0
+                    '   RangeModifier: 4 floats (MinY, MinZ, MaxY, MaxZ) delta clamps around 0.0
+                    If currentBoneDataEntry IsNot Nothing AndAlso sr.Data IsNot Nothing Then
+                        If currentBoneSection = RACE_BoneDataSection.WeightScale AndAlso sr.Data.Length >= 36 Then
+                            currentBoneDataEntry.ThinX = BitConverter.ToSingle(sr.Data, 0)
+                            currentBoneDataEntry.ThinY = BitConverter.ToSingle(sr.Data, 4)
+                            currentBoneDataEntry.ThinZ = BitConverter.ToSingle(sr.Data, 8)
+                            currentBoneDataEntry.MuscularX = BitConverter.ToSingle(sr.Data, 12)
+                            currentBoneDataEntry.MuscularY = BitConverter.ToSingle(sr.Data, 16)
+                            currentBoneDataEntry.MuscularZ = BitConverter.ToSingle(sr.Data, 20)
+                            currentBoneDataEntry.FatX = BitConverter.ToSingle(sr.Data, 24)
+                            currentBoneDataEntry.FatY = BitConverter.ToSingle(sr.Data, 28)
+                            currentBoneDataEntry.FatZ = BitConverter.ToSingle(sr.Data, 32)
+                            currentBoneDataEntry.HasWeightScale = True
+                        ElseIf currentBoneSection = RACE_BoneDataSection.RangeModifier AndAlso sr.Data.Length >= 16 Then
+                            currentBoneDataEntry.MinY = BitConverter.ToSingle(sr.Data, 0)
+                            currentBoneDataEntry.MinZ = BitConverter.ToSingle(sr.Data, 4)
+                            currentBoneDataEntry.MaxY = BitConverter.ToSingle(sr.Data, 8)
+                            currentBoneDataEntry.MaxZ = BitConverter.ToSingle(sr.Data, 12)
+                            currentBoneDataEntry.HasRangeModifier = True
                         End If
-                    End If
-                Case "BMMP"
-                    ' Unknown trailing data per bone — capture raw bytes for diagnostics
-                    If race.BoneData.Count > 0 AndAlso race.BoneData(race.BoneData.Count - 1).Bones.Count > 0 Then
-                        Dim lastBlock = race.BoneData(race.BoneData.Count - 1)
-                        Dim lastBone = lastBlock.Bones(lastBlock.Bones.Count - 1)
-                        lastBone.RawBmmpBytes = sr.Data
                     End If
             End Select
         Next

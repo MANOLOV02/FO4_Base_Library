@@ -29,7 +29,8 @@ Imports System.Numerics
 '
 ' The ID field matches the uint32 FMRI read from NPC FMRI/FMRS subrecords.
 ' Applying FMRS means: look up by ID, iterate over BonesA, compute each bone's
-' delta transform by lerping Minima↔Defaults↔Maxima with the 7 FMRS floats.
+' delta transform by lerping Minima-Defaults-Maxima with the FMRS floats
+' (9 total in the record: PosXYZ, RotXYZ, Scale, + 2 trailing zeros we ignore).
 ' ============================================================================
 
 ''' <summary>A single bone entry inside a FacialBoneRegion, with its min/max transforms.</summary>
@@ -159,4 +160,3 @@ Public Class FacialBoneRegionsFile
     End Function
 End Class
 
-' Uses System.Numerics.Vector3 (aliased to avoid collision with OpenTK.Mathematics.Vector3)
