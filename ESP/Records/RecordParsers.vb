@@ -387,6 +387,20 @@ Public Class RACE_Data
     ''' morph data (min/max/default positions per slider axis). xEdit marks BMMP as wbUnknown.</summary>
     Public BoneData As New List(Of RACE_BoneDataGender)
 
+    ''' <summary>NNAM subrecord — xEdit spec at wbDefinitionsFO4.pas:11639/11657:
+    ''' struct { byte[4] Unknown, float X, float Y }. xEdit calls it "Neck Fat Adjustments Scale"
+    ''' but the 4-byte Unknown + the empirical symptom (Neck_skin residual diff in verts even when
+    ''' Fat=0) suggests the semantics are not purely fat-weighted. Hypothesis under investigation:
+    ''' the 4 bytes may be (thin, muscular, fat, pad) weights that blend the X/Y scale against
+    ''' MWGT triangle, so the scale applies regardless of which weight axis is dominant.
+    ''' Raw bytes kept alongside X/Y to allow diagnostic interpretation.</summary>
+    Public MaleNeckNNAMRaw As Byte() = Nothing
+    Public MaleNeckNNAMX As Single = 0.0F
+    Public MaleNeckNNAMY As Single = 0.0F
+    Public FemaleNeckNNAMRaw As Byte() = Nothing
+    Public FemaleNeckNNAMX As Single = 0.0F
+    Public FemaleNeckNNAMY As Single = 0.0F
+
     ''' <summary>Find a tint template option by its TETI index for the given gender.</summary>
     Public Function FindTintOption(index As UShort, isFemale As Boolean) As RACE_TintTemplateOption
         Dim groups = If(isFemale, FemaleTintTemplateGroups, MaleTintTemplateGroups)
@@ -424,6 +438,23 @@ Public Class ARMO_Data
     Public ArmorAddonFormIDs As New List(Of UInteger)
 End Class
 
+''' <summary>Per-bone scale delta from an ARMA record's BSMS subrecord. Per TES5Edit
+''' wbArmorAddonBoneDataItem: each ARMA can ship its own "Bone Scale Modifier Set" with
+''' per-gender per-bone Vec3 deltas that the engine adds on top of RACE.BSMS scaling.
+''' Used to shape outfits around the body (e.g. cinched waist, wider hip extension).</summary>
+Public Class ARMA_BoneScaleDelta
+    Public BoneName As String = ""
+    Public DeltaX As Single = 0.0F
+    Public DeltaY As Single = 0.0F
+    Public DeltaZ As Single = 0.0F
+End Class
+
+''' <summary>Per-gender ARMA bone scale modifier block (opened by BSMP in ARMA record).</summary>
+Public Class ARMA_BoneScaleGender
+    Public Gender As UInteger   ' 0 = Male, 1 = Female per xEdit wbSexEnum
+    Public Bones As New List(Of ARMA_BoneScaleDelta)
+End Class
+
 Public Class ARMA_Data
     Public FormID As UInteger
     Public EditorID As String = ""
@@ -444,6 +475,32 @@ Public Class ARMA_Data
     Public MaleColorRemapIndex As Nullable(Of Single)
     Public FemaleColorRemapIndex As Nullable(Of Single)
     Public AdditionalRaces As New List(Of UInteger)
+    ''' <summary>Per-gender bone scale modifier blocks from the ARMA's BSMP/BSMB/BSMS sequence
+    ''' (wbArmorAddonBoneDataItem in TES5Edit). Added on top of RACE.BSMS scaling by the engine.</summary>
+    Public BoneScaleData As New List(Of ARMA_BoneScaleGender)
+
+    ' --- DNAM trailing fields (byte 2+ of the priorities struct) ---
+    ''' <summary>DNAM[2] Male Weight Slider flags. Bit 0x02 = "Enabled" (armor ships separate
+    ''' weight morph variants / uses body weight scaling).</summary>
+    Public MaleWeightSliderFlags As Byte = 0
+    ''' <summary>DNAM[3] Female Weight Slider flags. Bit 0x02 = "Enabled".</summary>
+    Public FemaleWeightSliderFlags As Byte = 0
+    ''' <summary>DNAM[6] Detection Sound Value.</summary>
+    Public DetectionSoundValue As Byte = 0
+    ''' <summary>DNAM[8..11] Weapon Adjust (float).</summary>
+    Public WeaponAdjust As Single = 0.0F
+
+    ' --- ARMA record HEADER flags (per TES5Edit wbRecord(ARMA, ...)) ---
+    ''' <summary>Bit 6 of header flags: "No Underarmor Scaling". When set, the engine does NOT
+    ''' apply body weight scaling (RACE.BSMS) to the body under this armor. Parse consumers
+    ''' must honor this — applying RACE scaling under an armor that has this flag double-shapes
+    ''' the body relative to in-game.</summary>
+    Public NoUnderarmorScaling As Boolean = False
+    ''' <summary>Bit 9: "Has Sculpt Data". Indicates the armor mesh carries vertex-level sculpt
+    ''' morphs (NIF extra data). TBD on how to consume.</summary>
+    Public HasSculptData As Boolean = False
+    ''' <summary>Bit 30: "Hi-Res 1st Person Only".</summary>
+    Public HiRes1stPersonOnly As Boolean = False
 End Class
 
 Public Class OTFT_Data
@@ -716,7 +773,7 @@ Public Module RecordParsers
                         End If
                     End If
                 Case "TEND"
-                    ' TEND layout (verified from wbDefinitionsFO4.pas):
+                    ' TEND layout per prior assumption (to verify empirically via raw-byte log):
                     '   Discriminator=1 (Palette)     : 7 bytes = Value(1) + Color(4 RGBA bytes) + TemplateColorIndex(2 signed int16)
                     '   Discriminator=2 (TextureSet)  : 1 byte  = Value(1)
                     If pendingTintLayer Is Nothing Then pendingTintLayer = New NPC_FaceTintLayerData()
@@ -726,8 +783,6 @@ Public Module RecordParsers
                         If pendingTintLayer.Discriminator = 1 AndAlso sr.Data.Length >= 4 Then
                             pendingTintLayer.Color = Color.FromArgb(255, sr.Data(1), sr.Data(2), sr.Data(3))
                         End If
-                        ' Palette entries carry a signed Int16 TemplateColorIndex at bytes 5..6.
-                        ' -1 means "direct TEND RGB"; >= 0 means "positional lookup into TTEC TemplateColors".
                         If pendingTintLayer.Discriminator = 1 AndAlso sr.Data.Length >= 7 Then
                             pendingTintLayer.TemplateColorIndex = CInt(BitConverter.ToInt16(sr.Data, 5))
                         End If
@@ -1088,6 +1143,26 @@ Public Module RecordParsers
                     If Not inMaleHead AndAlso Not inFemaleHead AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         race.FaceGenFaceClamp = BitConverter.ToSingle(sr.Data, 0)
                     End If
+                Case "NNAM"
+                    ' "Neck Fat Adjustments Scale" per xEdit spec (wbDefinitionsFO4.pas:11639/11657):
+                    ' struct { byte[4] Unknown, float X, float Y }. Appears inside Male/Female head
+                    ' sections. Semantics of the 4-byte Unknown not documented by xEdit — captured
+                    ' raw for diagnostic analysis.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        Dim rawBytes(3) As Byte
+                        Array.Copy(sr.Data, 0, rawBytes, 0, 4)
+                        Dim fx = BitConverter.ToSingle(sr.Data, 4)
+                        Dim fy = BitConverter.ToSingle(sr.Data, 8)
+                        If inFemaleHead Then
+                            race.FemaleNeckNNAMRaw = rawBytes
+                            race.FemaleNeckNNAMX = fx
+                            race.FemaleNeckNNAMY = fy
+                        ElseIf inMaleHead Then
+                            race.MaleNeckNNAMRaw = rawBytes
+                            race.MaleNeckNNAMX = fx
+                            race.MaleNeckNNAMY = fy
+                        End If
+                    End If
 
                 ' --- Bone Data (BSMP/BSMB/BSMS/BMMP) — wbBSMPSequence in xEdit, end of RACE ---
                 Case "BSMP"
@@ -1212,6 +1287,19 @@ Public Module RecordParsers
             .EditorID = rec.EditorID
         }
 
+        ' Header flags per TES5Edit wbRecord(ARMA, ...): bit 6 = No Underarmor Scaling,
+        ' bit 9 = Has Sculpt Data, bit 30 = Hi-Res 1st Person Only.
+        Dim hdrFlags = rec.Header.Flags
+        arma.NoUnderarmorScaling = (hdrFlags And (1UI << 6)) <> 0
+        arma.HasSculptData = (hdrFlags And (1UI << 9)) <> 0
+        arma.HiRes1stPersonOnly = (hdrFlags And (1UI << 30)) <> 0
+
+        ' State for the trailing Bone Scale Modifier Set block (BSMP opens per-gender,
+        ' then interleaved BSMB/BSMS pairs per bone). Structure per TES5Edit
+        ' wbArmorAddonBoneDataItem in wbDefinitionsFO4.pas:5949.
+        Dim currentBoneScaleGender As ARMA_BoneScaleGender = Nothing
+        Dim currentBoneScaleBone As String = Nothing
+
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "BOD2", "BODT"
@@ -1219,9 +1307,22 @@ Public Module RecordParsers
                 Case "RNAM"
                     arma.RaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "DNAM"
+                    ' Full DNAM layout per TES5Edit: [0]=MalePriority, [1]=FemalePriority,
+                    ' [2]=Male weight-slider flags (0x02=Enabled), [3]=Female weight-slider flags,
+                    ' [4..5]=Unknown, [6]=DetectionSoundValue, [7]=Unknown, [8..11]=WeaponAdjust(float).
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
                         arma.MalePriority = sr.Data(0)
                         arma.FemalePriority = sr.Data(1)
+                    End If
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        arma.MaleWeightSliderFlags = sr.Data(2)
+                        arma.FemaleWeightSliderFlags = sr.Data(3)
+                    End If
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 7 Then
+                        arma.DetectionSoundValue = sr.Data(6)
+                    End If
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        arma.WeaponAdjust = BitConverter.ToSingle(sr.Data, 8)
                     End If
                 Case "MOD2"
                     arma.MaleMeshPath = sr.AsString
@@ -1253,6 +1354,32 @@ Public Module RecordParsers
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then arma.FemaleColorRemapIndex = BitConverter.ToSingle(sr.Data, 0)
                 Case "MODL"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then arma.AdditionalRaces.Add(ResolveFormIDReference(rec, sr, pluginManager))
+                Case "BSMP"
+                    ' Open a new per-gender Bone Scale Modifier block.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        currentBoneScaleGender = New ARMA_BoneScaleGender With {
+                            .Gender = BitConverter.ToUInt32(sr.Data, 0)
+                        }
+                        arma.BoneScaleData.Add(currentBoneScaleGender)
+                        currentBoneScaleBone = Nothing
+                    End If
+                Case "BSMB"
+                    ' Bone name for the next BSMS delta entry.
+                    If currentBoneScaleGender IsNot Nothing Then
+                        currentBoneScaleBone = sr.AsString
+                    End If
+                Case "BSMS"
+                    ' Vec3 bone scale delta for the previously-named bone.
+                    If currentBoneScaleGender IsNot Nothing AndAlso Not String.IsNullOrEmpty(currentBoneScaleBone) _
+                       AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        currentBoneScaleGender.Bones.Add(New ARMA_BoneScaleDelta With {
+                            .BoneName = currentBoneScaleBone,
+                            .DeltaX = BitConverter.ToSingle(sr.Data, 0),
+                            .DeltaY = BitConverter.ToSingle(sr.Data, 4),
+                            .DeltaZ = BitConverter.ToSingle(sr.Data, 8)
+                        })
+                        currentBoneScaleBone = Nothing
+                    End If
             End Select
         Next
 

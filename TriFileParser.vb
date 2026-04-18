@@ -194,6 +194,9 @@ Public Class TriHeadFile
     Public Property NumTriangles As UInteger
     Public Property NumMorphs As UInteger
     Public Property Morphs As New List(Of TriHeadMorph)
+    ''' <summary>Base vertex positions from the FRTRI003 header section. Kept for diagnostic
+    ''' logging (locate which vertex id corresponds to which anatomical region).</summary>
+    Public Property BaseVertices As Vector3()
 
     ''' <summary>Get a morph by name (case-insensitive).</summary>
     Public Function GetMorph(name As String) As TriHeadMorph
@@ -271,7 +274,8 @@ Public Module TriHeadParser
                 Dim result As New TriHeadFile With {
                     .NumVertices = numVertices,
                     .NumTriangles = numTriangles,
-                    .NumMorphs = numMorphs
+                    .NumMorphs = numMorphs,
+                    .BaseVertices = baseVerts
                 }
 
                 For i = 0 To CInt(numMorphs) - 1
