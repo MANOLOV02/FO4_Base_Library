@@ -79,6 +79,9 @@ Public Class FilesDictionary_class
         Public Property IsArchive As Boolean
         Public Property FilePath As String = ""
         Public Property SourceOrder As Integer = Integer.MinValue
+        ' Loose-file mtime captured at enumeration time (from WIN32_FIND_DATA) so the
+        ' worker doesn't need to issue a second syscall per file.
+        Public Property LooseLastWrite As Date = Date.MinValue
     End Class
     Public Class File_Location
 
@@ -149,10 +152,11 @@ Public Class FilesDictionary_class
 
     End Class
     Private Shared _fO4Path As String = ""
+    Private Shared _cacheDirectory As String = ""
     Private Shared _dictionary As New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
     ''' <summary>Stack of overridden entries per key. When a loose overrides a BA2 (or a BA2 overrides another), the loser is pushed here.</summary>
     Private Shared ReadOnly _overriddenEntries As New ConcurrentDictionary(Of String, ConcurrentStack(Of File_Location))(StringComparer.OrdinalIgnoreCase)
-    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri"}
+    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt"}
 
     ''' <summary>App-specific data store. Apps register their own data here (presets, high heels, etc.) keyed by type.</summary>
     Private Shared ReadOnly _appData As New ConcurrentDictionary(Of Type, Object)
@@ -279,15 +283,22 @@ Public Class FilesDictionary_class
             Return located_File.GetBytes
         End If
     End Function
-    Private Shared Function EnumerateSupportedLooseFiles(root As String) As IEnumerable(Of String)
-        Dim opts As New EnumerationOptions() With {
+    Private Shared ReadOnly _looseEnumOptions As New EnumerationOptions() With {
         .RecurseSubdirectories = True,
         .IgnoreInaccessible = True
     }
 
-        Return Directory.
-        EnumerateFiles(root, "*", opts).
-        Where(Function(path) SupportedExtensions.Contains(IO.Path.GetExtension(path)))
+    ' Two wins vs. the previous "*" + LINQ filter:
+    '   1. OS-level pattern matching per extension — the Win32 enumerator rejects
+    '      non-matching files (e.g. Sound/*.wav) before any managed allocation.
+    '   2. DirectoryInfo.EnumerateFiles returns FileInfo instances with metadata
+    '      pre-populated from the WIN32_FIND_DATA; reading fi.LastWriteTime does
+    '      NOT issue a second GetFileAttributes syscall.
+    Private Shared Function EnumerateSupportedLooseFiles(root As String) As IEnumerable(Of (FullPath As String, LastWrite As Date))
+        Dim rootInfo As New DirectoryInfo(root)
+        Return SupportedExtensions.
+            SelectMany(Function(ext) rootInfo.EnumerateFiles("*" & ext, _looseEnumOptions)).
+            Select(Function(fi) (fi.FullName, fi.LastWriteTime))
     End Function
     Public Shared Function GetMultipleFilesBytes(files As String()) As Byte()()
         If IsNothing(files) OrElse files.Length = 0 Then Return Array.Empty(Of Byte())()
@@ -373,6 +384,22 @@ Public Class FilesDictionary_class
         Return result
     End Function
 
+    ''' <summary>
+    ''' Per-archive scan outcome reported by Fill_DictionaryAsync workers. Apps drain
+    ''' this after the fill to log whether each BA2/BSA was loaded from the index
+    ''' cache or re-scanned from the archive.
+    ''' </summary>
+    Private Shared ReadOnly _scanReport As New System.Collections.Concurrent.ConcurrentQueue(Of (ArchiveName As String, CacheHit As Boolean))
+
+    Public Shared Function DrainScanReport() As List(Of (ArchiveName As String, CacheHit As Boolean))
+        Dim result As New List(Of (ArchiveName As String, CacheHit As Boolean))
+        Dim item As (ArchiveName As String, CacheHit As Boolean) = Nothing
+        While _scanReport.TryDequeue(item)
+            result.Add(item)
+        End While
+        Return result
+    End Function
+
     ''' <summary>Register app-specific extensions to include in dictionary scans (e.g. ".osp", ".xml").</summary>
     Public Shared Sub RegisterExtensions(ParamArray extensions() As String)
         For Each ext In extensions
@@ -400,6 +427,215 @@ Public Class FilesDictionary_class
             _fO4Path = value
         End Set
     End Property
+
+    ''' <summary>
+    ''' Directory where per-archive index caches ({name}.idx.bin) are stored.
+    ''' The app sets this before Fill_DictionaryAsync to enable caching. Empty = cache disabled.
+    ''' </summary>
+    Public Shared Property CacheDirectory As String
+        Get
+            Return _cacheDirectory
+        End Get
+        Set(value As String)
+            _cacheDirectory = If(value, "")
+        End Set
+    End Property
+
+    ' ================== Archive index cache ==================
+    ' Binary format "FD4I" v1 per-archive file at {CacheDirectory}\{name}.idx.bin
+    '   4B  magic        = 'F','D','4','I'
+    '   2B  version u16  = 1
+    '   8B  size i64
+    '   8B  mtimeUtc i64 (DateTime.ToBinary of LastWriteTimeUtc)
+    '   4B  ext_count u32
+    '   N x [u16 len + utf8 bytes]   lowercase, sorted ordinal ascending (canonical)
+    '   4B  entry_count u32
+    '   N x [i32 index + u16 dir_len + utf8 fullpath bytes]
+    Private Shared ReadOnly CacheMagic As Byte() = {&H46, &H44, &H34, &H49} ' "FD4I"
+    Private Const CacheFormatVersion As UShort = 1US
+    Private Const CacheFileSuffix As String = ".idx.bin"
+    Private Const CacheTempSuffix As String = ".idx.bin.tmp"
+
+    Private Shared _canonicalExtensionsSnapshot As List(Of String) = Nothing
+
+    Private Structure CachedEntry
+        Public Index As Integer
+        Public FullPath As String
+    End Structure
+
+    Private Shared Function IsCacheEnabled() As Boolean
+        Return Not String.IsNullOrEmpty(_cacheDirectory)
+    End Function
+
+    Private Shared Function GetCacheFilePath(archiveFileName As String) As String
+        If Not IsCacheEnabled() Then Return ""
+        Return Path.Combine(_cacheDirectory, archiveFileName & CacheFileSuffix)
+    End Function
+
+    Private Shared Function BuildCanonicalExtensionsSnapshot() As List(Of String)
+        Dim result As New List(Of String)(SupportedExtensions.Count)
+        For Each ext In SupportedExtensions
+            If Not String.IsNullOrEmpty(ext) Then result.Add(ext.ToLowerInvariant())
+        Next
+        result.Sort(StringComparer.Ordinal)
+        Return result
+    End Function
+
+    Private Shared Sub WriteUtf8String(bw As BinaryWriter, s As String)
+        If s Is Nothing Then s = ""
+        Dim bytes = Encoding.UTF8.GetBytes(s)
+        If bytes.Length > UInt16.MaxValue Then
+            Throw New InvalidDataException("Archive cache: string exceeds u16 length prefix.")
+        End If
+        bw.Write(CUShort(bytes.Length))
+        If bytes.Length > 0 Then bw.Write(bytes)
+    End Sub
+
+    Private Shared Function ReadUtf8String(br As BinaryReader) As String
+        Dim len As UShort = br.ReadUInt16()
+        If len = 0US Then Return ""
+        Dim bytes = br.ReadBytes(CInt(len))
+        If bytes.Length <> CInt(len) Then Throw New EndOfStreamException("Archive cache: short string read.")
+        Return Encoding.UTF8.GetString(bytes)
+    End Function
+
+    Private Shared Function TryLoadArchiveIndex(
+        cachePath As String,
+        expectedSize As Long,
+        expectedMtimeUtc As Date,
+        expectedExtsCanonical As List(Of String),
+        ByRef entries As List(Of CachedEntry)) As Boolean
+
+        entries = Nothing
+        If String.IsNullOrEmpty(cachePath) Then Return False
+        If Not File.Exists(cachePath) Then Return False
+
+        Try
+            Using fs As FileStream = File.OpenRead(cachePath)
+                Using br As New BinaryReader(fs, Encoding.UTF8, leaveOpen:=False)
+                    Dim magic = br.ReadBytes(4)
+                    If magic.Length <> 4 Then Return False
+                    For i As Integer = 0 To 3
+                        If magic(i) <> CacheMagic(i) Then Return False
+                    Next
+
+                    Dim version As UShort = br.ReadUInt16()
+                    If version <> CacheFormatVersion Then Return False
+
+                    Dim cachedSize As Long = br.ReadInt64()
+                    If cachedSize <> expectedSize Then Return False
+
+                    Dim cachedMtimeBinary As Long = br.ReadInt64()
+                    Dim cachedMtime = Date.FromBinary(cachedMtimeBinary)
+                    If cachedMtime <> expectedMtimeUtc Then Return False
+
+                    Dim extCount As UInteger = br.ReadUInt32()
+                    If extCount > 1024UI Then Return False
+                    If CInt(extCount) <> expectedExtsCanonical.Count Then Return False
+                    For i As Integer = 0 To CInt(extCount) - 1
+                        Dim ext = ReadUtf8String(br)
+                        If Not String.Equals(ext, expectedExtsCanonical(i), StringComparison.Ordinal) Then Return False
+                    Next
+
+                    Dim entryCount As UInteger = br.ReadUInt32()
+                    If entryCount > 10000000UI Then Return False
+                    Dim result As New List(Of CachedEntry)(CInt(entryCount))
+                    For i As Integer = 0 To CInt(entryCount) - 1
+                        Dim idx As Integer = br.ReadInt32()
+                        Dim fullPath = ReadUtf8String(br)
+                        result.Add(New CachedEntry With {.Index = idx, .FullPath = fullPath})
+                    Next
+
+                    entries = result
+                    Return True
+                End Using
+            End Using
+        Catch
+            entries = Nothing
+            Return False
+        End Try
+    End Function
+
+    Private Shared Sub SaveArchiveIndex(
+        cachePath As String,
+        archiveSize As Long,
+        archiveMtimeUtc As Date,
+        extsCanonical As List(Of String),
+        entries As List(Of CachedEntry))
+
+        If String.IsNullOrEmpty(cachePath) Then Return
+
+        Dim dir = Path.GetDirectoryName(cachePath)
+        If Not String.IsNullOrEmpty(dir) AndAlso Not Directory.Exists(dir) Then
+            Directory.CreateDirectory(dir)
+        End If
+
+        Dim temp = cachePath & ".tmp"
+        Try
+            Using fs As FileStream = File.Create(temp)
+                Using bw As New BinaryWriter(fs, Encoding.UTF8, leaveOpen:=False)
+                    bw.Write(CacheMagic)
+                    bw.Write(CacheFormatVersion)
+                    bw.Write(archiveSize)
+                    bw.Write(archiveMtimeUtc.ToBinary())
+                    bw.Write(CUInt(extsCanonical.Count))
+                    For Each ext In extsCanonical
+                        WriteUtf8String(bw, ext)
+                    Next
+                    bw.Write(CUInt(entries.Count))
+                    For Each e In entries
+                        bw.Write(e.Index)
+                        WriteUtf8String(bw, e.FullPath)
+                    Next
+                End Using
+            End Using
+
+            If File.Exists(cachePath) Then
+                File.Replace(temp, cachePath, Nothing, ignoreMetadataErrors:=True)
+            Else
+                File.Move(temp, cachePath)
+            End If
+        Catch
+            Try
+                If File.Exists(temp) Then File.Delete(temp)
+            Catch
+            End Try
+            Throw
+        End Try
+    End Sub
+
+    Private Shared Sub CleanupOrphanCacheFiles(scannedArchives As IEnumerable(Of String))
+        If Not IsCacheEnabled() Then Return
+        If Not Directory.Exists(_cacheDirectory) Then Return
+
+        Try
+            Dim validNames As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            For Each ba2 In scannedArchives
+                validNames.Add(Path.GetFileName(ba2) & CacheFileSuffix)
+            Next
+
+            For Each cacheFile In Directory.EnumerateFiles(_cacheDirectory, "*" & CacheFileSuffix)
+                Dim name = Path.GetFileName(cacheFile)
+                If Not validNames.Contains(name) Then
+                    Try
+                        File.Delete(cacheFile)
+                    Catch
+                    End Try
+                End If
+            Next
+
+            ' Clean leftover temp files from aborted writes.
+            For Each tmpFile In Directory.EnumerateFiles(_cacheDirectory, "*" & CacheTempSuffix)
+                Try
+                    File.Delete(tmpFile)
+                Catch
+                End Try
+            Next
+        Catch ex As Exception
+            _scanErrors.Enqueue("Cache cleanup failed: " & ex.Message)
+        End Try
+    End Sub
+    ' =========================================================
 
 
     Public Shared Property Dictionary As ConcurrentDictionary(Of String, File_Location)
@@ -652,12 +888,17 @@ Public Class FilesDictionary_class
             OrderBy(Function(p) p, StringComparer.OrdinalIgnoreCase).
             ToList()
 
-            ' O1.3: EnumerateSupportedLooseFiles already uses Directory.EnumerateFiles (lazy enumeration)
+            ' Loose enumeration yields (fullPath, mtime) tuples — mtime comes from the
+            ' native find-data, so we avoid a per-file GetFileAttributes syscall later.
             Dim looseFiles = EnumerateSupportedLooseFiles(Fo4DataPath).
-            OrderBy(Function(p) p, StringComparer.OrdinalIgnoreCase).
+            OrderBy(Function(p) p.FullPath, StringComparer.OrdinalIgnoreCase).
             ToList()
 
             Dim archivePriority = BuildArchivePriority(ba2Files)
+
+            ' Snapshot SupportedExtensions once per scan. Workers read this read-only,
+            ' so extensions registered AFTER the scan starts won't affect this run.
+            _canonicalExtensionsSnapshot = BuildCanonicalExtensionsSnapshot()
 
             totalCount = ba2Files.Count + looseFiles.Count
             completed = 0
@@ -679,11 +920,12 @@ Public Class FilesDictionary_class
             })
             Next
 
-            For Each file In looseFiles
+            For Each pair In looseFiles
                 workQueue.Enqueue(New DictionaryScanWorkItem With {
                 .IsArchive = False,
-                .FilePath = file,
-                .SourceOrder = Integer.MaxValue
+                .FilePath = pair.FullPath,
+                .SourceOrder = Integer.MaxValue,
+                .LooseLastWrite = pair.LastWrite
             })
             Next
 
@@ -699,7 +941,7 @@ Public Class FilesDictionary_class
                                    If item.IsArchive Then
                                        ProcessBa2File(item.FilePath, item.SourceOrder, progress)
                                    Else
-                                       ProcessLooseFile(item.FilePath, Fo4DataPath, progress)
+                                       ProcessLooseFile(item.FilePath, Fo4DataPath, item.LooseLastWrite, progress)
                                    End If
                                End While
                            End Sub)
@@ -711,6 +953,9 @@ Public Class FilesDictionary_class
             ' O1.3: Build all secondary indexes in a single batch pass after the parallel scan completes.
             ' This avoids lock contention on ConcurrentDictionary secondary indexes during parallel insert.
             RebuildSearchIndexesFromDictionary()
+
+            ' Remove cache files for archives that no longer exist in the data root.
+            CleanupOrphanCacheFiles(ba2Files)
 
         Catch ex As Exception
             ' No MsgBox desde acá: después del ConfigureAwait(False) estamos en el
@@ -837,23 +1082,27 @@ Public Class FilesDictionary_class
         Try
             ' O5.4: Intern the BA2 filename since it is stored in many File_Location instances
             Dim ba2FileName = String.Intern(Path.GetFileName(ba2))
-            Dim ba2Date = File.GetLastWriteTime(ba2)
+            Dim fi As New FileInfo(ba2)
+            Dim ba2Size As Long = fi.Length
+            Dim ba2DateLocal As Date = fi.LastWriteTime   ' preserved for File_Location.FileDate
+            Dim ba2DateUtc As Date = fi.LastWriteTimeUtc  ' cache signature component
+            Dim extsCanonical = _canonicalExtensionsSnapshot
+            Dim cachePath = GetCacheFilePath(ba2FileName)
 
-            Using fs As FileStream = File.OpenRead(ba2)
-                Using arc As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
-                    For Each fil In arc.EntriesFiles
-                        ' O5.4: Intern the standardized path — stored long-term as dictionary key and File_Location.FullPath
-                        Dim standardized = String.Intern(fil.FullPath.Correct_Path_Separator)
-                        Dim entry As New File_Location With {
+            ' Cache hit: populate dict from index without opening the archive.
+            Dim cachedEntries As List(Of CachedEntry) = Nothing
+            If extsCanonical IsNot Nothing AndAlso
+               TryLoadArchiveIndex(cachePath, ba2Size, ba2DateUtc, extsCanonical, cachedEntries) Then
+                For Each ce In cachedEntries
+                    Dim standardized = String.Intern(ce.FullPath)
+                    Dim entry As New File_Location With {
                         .BA2File = ba2FileName,
-                        .Index = fil.Index,
+                        .Index = ce.Index,
                         .FullPath = standardized,
                         .SourceOrder = sourceOrder,
-                        .FileDate = ba2Date
+                        .FileDate = ba2DateLocal
                     }
-
-                        ' O1.3: During scan, only populate _dictionary; indexes are built in batch after scan
-                        Dictionary.AddOrUpdate(
+                    Dictionary.AddOrUpdate(
                         standardized,
                         entry,
                         Function(key, existing)
@@ -865,9 +1114,64 @@ Public Class FilesDictionary_class
                                 Return existing
                             End If
                         End Function)
+                Next
+                _scanReport.Enqueue((ba2FileName, True))
+                Return
+            End If
+
+            ' Cache miss: open the archive, filter entries by SupportedExtensions,
+            ' populate dict and collect for cache write.
+            Dim collected As List(Of CachedEntry) = Nothing
+            If extsCanonical IsNot Nothing AndAlso IsCacheEnabled() Then
+                collected = New List(Of CachedEntry)
+            End If
+
+            Using fs As FileStream = File.OpenRead(ba2)
+                Using arc As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
+                    For Each fil In arc.EntriesFiles
+                        Dim rawPath = fil.FullPath.Correct_Path_Separator
+                        Dim extKey = NormalizeExtensionKey(IO.Path.GetExtension(rawPath))
+                        If extKey = "" OrElse Not SupportedExtensions.Contains(extKey) Then Continue For
+
+                        ' O5.4: Intern the standardized path — stored long-term as dictionary key and File_Location.FullPath
+                        Dim standardized = String.Intern(rawPath)
+                        Dim entry As New File_Location With {
+                            .BA2File = ba2FileName,
+                            .Index = fil.Index,
+                            .FullPath = standardized,
+                            .SourceOrder = sourceOrder,
+                            .FileDate = ba2DateLocal
+                        }
+
+                        ' O1.3: During scan, only populate _dictionary; indexes are built in batch after scan
+                        Dictionary.AddOrUpdate(
+                            standardized,
+                            entry,
+                            Function(key, existing)
+                                If Resolve_Conflict(existing, entry) Then
+                                    PushOverriddenEntry(standardized, existing)
+                                    Return entry
+                                Else
+                                    PushOverriddenEntry(standardized, entry)
+                                    Return existing
+                                End If
+                            End Function)
+
+                        If collected IsNot Nothing Then
+                            collected.Add(New CachedEntry With {.Index = fil.Index, .FullPath = standardized})
+                        End If
                     Next
                 End Using
             End Using
+            _scanReport.Enqueue((ba2FileName, False))
+
+            If collected IsNot Nothing Then
+                Try
+                    SaveArchiveIndex(cachePath, ba2Size, ba2DateUtc, extsCanonical, collected)
+                Catch ex As Exception
+                    _scanErrors.Enqueue("Error saving cache for " & ba2FileName & ": " & ex.Message)
+                End Try
+            End If
 
         Catch ex As Exception
             _scanErrors.Enqueue("Error processing BA2 " & ba2 & ": " & ex.Message)
@@ -892,7 +1196,7 @@ Public Class FilesDictionary_class
         Return result
     End Function
 
-    Private Shared Sub ProcessLooseFile(file As String, basePath As String, progress As IProgress(Of (String, Integer, Integer)))
+    Private Shared Sub ProcessLooseFile(file As String, basePath As String, lastWrite As Date, progress As IProgress(Of (String, Integer, Integer)))
         Try
             ' O5.4: Intern the standardized path — stored long-term as dictionary key and File_Location.FullPath
             Dim standardized = String.Intern(Path.GetRelativePath(basePath, file).Correct_Path_Separator)
@@ -902,7 +1206,7 @@ Public Class FilesDictionary_class
             .Index = -1,
             .FullPath = standardized,
             .SourceOrder = Integer.MaxValue,
-            .FileDate = IO.File.GetLastWriteTime(file)
+            .FileDate = lastWrite
         }
 
             ' O1.3: During scan, only populate _dictionary; indexes are built in batch after scan

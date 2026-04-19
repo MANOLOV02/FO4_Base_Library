@@ -104,7 +104,8 @@ Public Class EYES_Data
     End Property
 End Class
 
-''' <summary>Body part node entry.</summary>
+''' <summary>Body part node entry. Covers BPTN/BPNN/BPNT simple strings plus the BPND
+''' 'Node Data' struct (byte layout per TES5Edit wbDefinitionsFO4.pas:8051-8124).</summary>
 Public Class BPTD_Part
     Public PartName As String = ""
     Public NodeName As String = ""
@@ -117,6 +118,35 @@ Public Class BPTD_Part
     Public OnCrippleBloodImpactFormID As UInteger
     Public MeatCapTextureSetFormID As UInteger
     Public CollarTextureSetFormID As UInteger
+    ''' <summary>BPND flags byte (offset 64). Bit 0 Severable, 1 Hit Reaction, 2 Hit Reaction Default,
+    ''' 3 Explodable, 4 Cut Meat Cap Sever, 5 On Cripple, 6 Explodable Absolute Chance, 7 Show Cripple Geometry.</summary>
+    Public Flags As Byte
+    ''' <summary>BPND Part Type enum (offset 65). Values per wbDefinitionsFO4.pas:8079-8107:
+    ''' 0 Torso, 1 Head1, 2 Eye, 3 LookAt, 4 FlyGrab, 5 Head2, 6 LeftArm1, 7 LeftArm2, 8 RightArm1,
+    ''' 9 RightArm2, 10 LeftLeg1, 11 LeftLeg2, 12 LeftLeg3, 13 RightLeg1, 14 RightLeg2, 15 RightLeg3,
+    ''' 16 Brain, 17 Weapon, 18 Root, 19 COM, 20 Pelvis, 21 Camera, 22 OffsetRoot, 23 LeftFoot,
+    ''' 24 RightFoot, 25 FaceTargetSource.</summary>
+    Public PartType As Byte
+    Public HealthPercent As Byte
+    Public ActorValueFormID As UInteger
+    Public ToHitChance As Byte
+    Public ExplodableExplosionChance As Byte
+    Public NonLethalDismembermentChance As Byte
+    Public SeverableDebrisCount As Byte
+    Public ExplodableDebrisCount As Byte
+    Public SeverableDecalCount As Byte
+    Public ExplodableDecalCount As Byte
+    ''' <summary>BPND Geometry Segment Index (offset 78). Per wbDefinitionsFO4.pas:8117.
+    ''' Likely indexes into the body mesh NIF's dismember segments (BSDismemberSkinInstance
+    ''' partitions). Logged separately for future investigation as potential body-region source.</summary>
+    Public GeometrySegmentIndex As Byte
+    Public OnCrippleArtObjectFormID As UInteger
+    Public OnCrippleDebrisFormID As UInteger
+    Public OnCrippleExplosionFormID As UInteger
+    Public OnCrippleImpactDataSetFormID As UInteger
+    Public OnCrippleDebrisScale As Single = 1.0F
+    Public OnCrippleDebrisCount As Byte
+    Public OnCrippleDecalCount As Byte
 End Class
 
 ''' <summary>Fallout 4 BPTD record - Body Part Data.</summary>
@@ -384,6 +414,53 @@ Public Module ActorRecordParsers
                     If currentPart IsNot Nothing Then currentPart.CollarTextureSetFormID = ResolveFID(rec, sr, pluginManager)
                 Case "DNAM"
                     If currentPart IsNot Nothing Then currentPart.TwistVariablePrefix = sr.AsString
+                Case "BPND"
+                    ' Node Data struct per wbDefinitionsFO4.pas:8051-8124. Full layout (101 bytes):
+                    '   0  : Damage Mult (float)
+                    '   4-60 : 15 fields × 4 bytes (FormIDs + floats for Explodable/Severable/Cut/Gore/etc.)
+                    '   64 : Flags (U8)
+                    '   65 : Part Type (U8)
+                    '   66 : Health Percent (U8)
+                    '   67-70 : Actor Value FormID
+                    '   71 : To Hit Chance (U8)
+                    '   72 : Explodable Explosion Chance % (U8)
+                    '   73 : Non-Lethal Dismemberment Chance (U8)
+                    '   74 : Severable Debris Count (U8)
+                    '   75 : Explodable Debris Count (U8)
+                    '   76 : Severable Decal Count (U8)
+                    '   77 : Explodable Decal Count (U8)
+                    '   78 : Geometry Segment Index (U8) — indexes into body mesh dismember partitions
+                    '   79-82 : On Cripple Art Object FormID
+                    '   83-86 : On Cripple Debris FormID
+                    '   87-90 : On Cripple Explosion FormID
+                    '   91-94 : On Cripple Impact DataSet FormID
+                    '   95-98 : On Cripple Debris Scale (float)
+                    '   99  : On Cripple Debris Count (U8)
+                    '   100 : On Cripple Decal Count (U8)
+                    If currentPart IsNot Nothing AndAlso sr.Data IsNot Nothing Then
+                        Dim d = sr.Data
+                        If d.Length >= 66 Then
+                            currentPart.Flags = d(64)
+                            currentPart.PartType = d(65)
+                        End If
+                        If d.Length >= 67 Then currentPart.HealthPercent = d(66)
+                        If d.Length >= 71 Then currentPart.ActorValueFormID = BitConverter.ToUInt32(d, 67)
+                        If d.Length >= 72 Then currentPart.ToHitChance = d(71)
+                        If d.Length >= 73 Then currentPart.ExplodableExplosionChance = d(72)
+                        If d.Length >= 74 Then currentPart.NonLethalDismembermentChance = d(73)
+                        If d.Length >= 75 Then currentPart.SeverableDebrisCount = d(74)
+                        If d.Length >= 76 Then currentPart.ExplodableDebrisCount = d(75)
+                        If d.Length >= 77 Then currentPart.SeverableDecalCount = d(76)
+                        If d.Length >= 78 Then currentPart.ExplodableDecalCount = d(77)
+                        If d.Length >= 79 Then currentPart.GeometrySegmentIndex = d(78)
+                        If d.Length >= 83 Then currentPart.OnCrippleArtObjectFormID = BitConverter.ToUInt32(d, 79)
+                        If d.Length >= 87 Then currentPart.OnCrippleDebrisFormID = BitConverter.ToUInt32(d, 83)
+                        If d.Length >= 91 Then currentPart.OnCrippleExplosionFormID = BitConverter.ToUInt32(d, 87)
+                        If d.Length >= 95 Then currentPart.OnCrippleImpactDataSetFormID = BitConverter.ToUInt32(d, 91)
+                        If d.Length >= 99 Then currentPart.OnCrippleDebrisScale = BitConverter.ToSingle(d, 95)
+                        If d.Length >= 100 Then currentPart.OnCrippleDebrisCount = d(99)
+                        If d.Length >= 101 Then currentPart.OnCrippleDecalCount = d(100)
+                    End If
             End Select
         Next
 

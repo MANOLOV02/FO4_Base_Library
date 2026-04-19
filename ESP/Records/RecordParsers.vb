@@ -117,6 +117,14 @@ Public Class NPC_Data
     Public BodyMorphRegionValues As New List(Of Single)
     Public FacialMorphIntensity As Single = 1.0F
     Public PluginName As String = ""
+    ''' <summary>OMOD FormIDs from the FIRST combination of NPC_.ObjectTemplate (OBTS block).
+    ''' Used for robot rendering (Assaultron, Mr Handy, etc.) — vanilla robots declare no mesh
+    ''' in ARMO/ARMA; their mesh parts come from OMOD records referenced here. One OMOD per
+    ''' body part (Bot_TorsoAssaultron, Bot_ArmLeft, Bot_ArmRight, Bot_Legs, armor mods, etc).
+    ''' Spec: wbDefinitionsFO4.pas:5867-5898 (OBTS struct + ObjectTemplate RStruct).
+    ''' Future: expose multiple combinations as outfit-like variants (see
+    ''' project_robot_rendering_combinations.md). First iteration reads only combination #0.</summary>
+    Public ObjectTemplateOMODFormIDs As New List(Of UInteger)
 
     Public Overrides Function ToString() As String
         If FullName <> "" Then Return $"{FullName} [{EditorID}]"
@@ -164,13 +172,13 @@ End Class
 Public Class RACE_MorphGroup
     Public Name As String = ""           ' MPGN = "Forehead", "Eyes", etc.
     Public MaskEnum As UShort = 0US      ' MPPK = u16 enum from wbDefinitionsFO4.pas:3538.
-                                          '   Male:   1171..1177 = Forehead..Neck Mask
-                                          '   Female: 1221..1227 = Forehead..Neck Mask
-                                          '   65535 = None
-                                          ' Bethesda comment: "Maps to Faceregion tint groups".
-                                          ' These are SEMANTIC IDs, not array indices. Each value
-                                          ' maps by convention to a Slot (0..6) in TETI.Slot of the
-                                          ' RACE's tint template options. Use TryGetMaskSlot below.
+    '   Male:   1171..1177 = Forehead..Neck Mask
+    '   Female: 1221..1227 = Forehead..Neck Mask
+    '   65535 = None
+    ' Bethesda comment: "Maps to Faceregion tint groups".
+    ' These are SEMANTIC IDs, not array indices. Each value
+    ' maps by convention to a Slot (0..6) in TETI.Slot of the
+    ' RACE's tint template options. Use TryGetMaskSlot below.
     Public Presets As New List(Of RACE_MorphPresetDef)
     Public SliderIndices As New List(Of UInteger)  ' MPGS = additional slider MSDK keys
 
@@ -341,6 +349,10 @@ Public Class RACE_Data
     Public EditorID As String = ""
     Public FullName As String = ""
     Public SkinFormID As UInteger
+    ''' <summary>GNAM - Body Part Data FormID (BPTD record). Vanilla HumanRace = HumanRaceBodyPartData
+    ''' (0x0003279F). Maps bone names → part types (Torso/Head1/LeftArm1/etc per BPND.PartType enum).
+    ''' See TES5Edit wbDefinitionsFO4.pas:11594 for the RACE.GNAM → BPTD reference.</summary>
+    Public BodyPartDataFormID As UInteger
     Public MaleSkeletonPath As String = ""
     Public FemaleSkeletonPath As String = ""
     Public MaleBodyMeshes As New List(Of String)
@@ -444,6 +456,12 @@ Public Class ARMO_Data
     Public SlotMask As UInteger
     Public TemplateArmorFormID As UInteger
     Public ArmorAddonFormIDs As New List(Of UInteger)
+    ''' <summary>Male 'World Model' mesh filename (ARMO.MOD2 subrecord per wbDefinitionsFO4.pas:6164).
+    ''' Empty for most humanoid armors (mesh lives in ARMA.MaleMeshPath instead), but populated for
+    ''' robots / special armors where the mesh is authored at the ARMO level (e.g. Assaultron skin).</summary>
+    Public MaleWorldModelPath As String = ""
+    ''' <summary>Female 'World Model' mesh filename (ARMO.MOD4 subrecord). Analogous to the male path.</summary>
+    Public FemaleWorldModelPath As String = ""
 End Class
 
 ''' <summary>Per-bone scale delta from an ARMA record's BSMS subrecord. Per TES5Edit
@@ -706,6 +724,9 @@ Public Module RecordParsers
         Dim morphKeys As New List(Of UInteger)
         Dim pendingTintLayer As NPC_FaceTintLayerData = Nothing
         Dim pendingFaceMorph As NPC_FaceMorphData = Nothing
+        ' ObjectTemplate state: only parse the FIRST OBTS (combination #0) for robots.
+        ' Future iteration will capture all combinations as outfit-like variants.
+        Dim firstOBTSParsed As Boolean = False
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -821,6 +842,46 @@ Public Module RecordParsers
                     End If
                     npc.FaceMorphs.Add(pendingFaceMorph)
                     pendingFaceMorph = Nothing
+                Case "OBTS"
+                    ' Object Template combination struct (wbOBTSReq @ wbDefinitionsFO4.pas:5867).
+                    ' Layout (see memory project_robot_rendering_combinations.md):
+                    '   u32 IncludeCount @0
+                    '   u32 PropertyCount @4
+                    '   u8 LevelMin, u8 pad, u8 LevelMax, u8 pad @8-11
+                    '   s16 ParentCombinationIndex @12, u8 Default @14
+                    '   u32 KeywordCount @15, then KeywordCount × u32 FormID
+                    '   u8 MinLevelForRanks, u8 AltLevelsPerTier
+                    '   IncludeCount × 7 bytes each: u32 Mod FormID, u8 AttachPointIdx, u8 Optional, u8 DontUseAll
+                    '   Properties (skipped — not needed for 1st-combination mesh extraction)
+                    ' Only parse the first OBTS (combination #0) per user scope 2026-04-19.
+                    If Not firstOBTSParsed AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 17 Then
+                        Dim d = sr.Data
+                        ' Layout of OBTS (wbOBTSReq @ wbDefinitionsFO4.pas:5867). Offsets verified
+                        ' against xEdit runtime prefix rules: wbInterface.pas:13933-13948 maps
+                        ' arCount=-1→u32 prefix, arCount=-2→u16 prefix, arCount=-4→u8 prefix.
+                        '   u32 IncludeCount @0
+                        '   u32 PropertyCount @4
+                        '   u8  LevelMin @8, u8 pad, u8 LevelMax @10, u8 pad
+                        '   s16 ParentCombinationIndex @12, u8 Default @14
+                        '   u8  KeywordCount @15 (wbArray(..., -4) = 1-byte prefix)
+                        '   KeywordCount × u32 @16 (Keyword FormIDs)
+                        '   u8  MinLevelForRanks, u8 AltLevelsPerTier
+                        '   IncludeCount × 7 bytes: u32 Mod FormID + u8 AttachPointIdx + u8 Optional + u8 DontUseAll
+                        Dim includeCount = BitConverter.ToUInt32(d, 0)
+                        Dim offset As Integer = 15
+                        Dim kwCount As Integer = CInt(d(offset)) ' u8 prefix (arCount=-4)
+                        offset += 1 + kwCount * 4
+                        offset += 2 ' MinLevelForRanks + AltLevelsPerTier
+                        For i = 0 To CInt(includeCount) - 1
+                            If offset + 7 > d.Length Then Exit For
+                            Dim rawModFID = BitConverter.ToUInt32(d, offset)
+                            If rawModFID <> 0UI Then
+                                npc.ObjectTemplateOMODFormIDs.Add(ResolveFormIDReference(rec, rawModFID, pluginManager))
+                            End If
+                            offset += 7
+                        Next
+                        firstOBTSParsed = True
+                    End If
             End Select
         Next
 
@@ -860,6 +921,9 @@ Public Module RecordParsers
                     race.FullName = ResolveDisplayString(rec, sr, pluginManager)
                 Case "WNAM"
                     race.SkinFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "GNAM"
+                    ' Body Part Data FormID → BPTD record with bone→part-type map.
+                    race.BodyPartDataFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "ANAM"
                     Dim path = sr.AsString
                     If path <> "" Then
@@ -1291,6 +1355,13 @@ Public Module RecordParsers
                     armo.TemplateArmorFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MODL"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then armo.ArmorAddonFormIDs.Add(ResolveFormIDReference(rec, sr, pluginManager))
+                Case "MOD2"
+                    ' ARMO.Male 'World Model' mesh path — used by robots/special armors where the mesh
+                    ' is authored at ARMO level instead of ARMA (e.g. Assaultron skin).
+                    armo.MaleWorldModelPath = sr.AsString
+                Case "MOD4"
+                    ' ARMO.Female 'World Model' mesh path — analogous to MOD2 for females.
+                    armo.FemaleWorldModelPath = sr.AsString
             End Select
         Next
 

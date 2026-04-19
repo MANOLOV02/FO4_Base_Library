@@ -17,10 +17,13 @@ Public Module PluginConstants
     Public Const GROUP_HEADER_SIZE As Integer = 24
     Public Const SUBRECORD_HEADER_SIZE As Integer = 6
 
-    ' Signatures for NPC rendering (original subset - for backward compatibility)
+    ' Signatures for NPC rendering (original subset - for backward compatibility).
+    ' BPTD added 2026-04-19: RACE.GNAM references BPTD for bone→part-type mapping, consumed
+    ' by NPC_Manager to resolve MRSV regions. Without BPTD, PluginManager.GetRecord(BPTDFormID)
+    ' returns Nothing and downstream FMRS/body-weight pipelines cannot reach the data.
     Public ReadOnly SIGS_NPC_RENDERING As New HashSet(Of String)(
         {"NPC_", "RACE", "ARMO", "ARMA", "OTFT", "HDPT", "TXST", "CLFM", "LVLN", "LVLI", "FLST", "MSWP",
-         "CELL", "WRLD"},
+         "CELL", "WRLD", "BPTD", "OMOD"},
         StringComparer.Ordinal)
 
     ' Default filter kept for backward compatibility
