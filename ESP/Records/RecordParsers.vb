@@ -401,6 +401,14 @@ Public Class RACE_Data
     Public FemaleNeckNNAMX As Single = 0.0F
     Public FemaleNeckNNAMY As Single = 0.0F
 
+    ''' <summary>RACE.DATA struct per xEdit spec (wbDefinitionsFO4.pas:11439): first 2 floats are
+    ''' Male Height and Female Height — scale multipliers applied by the engine to the actor.
+    ''' HumanRace vanilla is suspected to have Female Height ≈ 0.98, which would explain the
+    ''' systematic 0.98 Z-ratio we observed between our skeleton dict (no height applied) and
+    ''' CK's FaceGen bake (height applied at bake time).</summary>
+    Public MaleHeight As Single = 1.0F
+    Public FemaleHeight As Single = 1.0F
+
     ''' <summary>Find a tint template option by its TETI index for the given gender.</summary>
     Public Function FindTintOption(index As UShort, isFemale As Boolean) As RACE_TintTemplateOption
         Dim groups = If(isFemale, FemaleTintTemplateGroups, MaleTintTemplateGroups)
@@ -1142,6 +1150,14 @@ Public Module RecordParsers
                     ' FaceGen Face clamp (RACE context only)
                     If Not inMaleHead AndAlso Not inFemaleHead AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         race.FaceGenFaceClamp = BitConverter.ToSingle(sr.Data, 0)
+                    End If
+                Case "DATA"
+                    ' RACE.DATA: first 2 floats are Male Height / Female Height (scale multipliers).
+                    ' Only read at RACE top level (not inside head sections).
+                    If Not inMaleHead AndAlso Not inFemaleHead AndAlso Not inMaleBody AndAlso Not inFemaleBody _
+                       AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
+                        race.MaleHeight = BitConverter.ToSingle(sr.Data, 0)
+                        race.FemaleHeight = BitConverter.ToSingle(sr.Data, 4)
                     End If
                 Case "NNAM"
                     ' "Neck Fat Adjustments Scale" per xEdit spec (wbDefinitionsFO4.pas:11639/11657):
