@@ -1,6 +1,20 @@
 Imports NiflySharp
 Imports NiflySharp.Blocks
 
+''' <summary>
+''' Renderable wrapper around a NIF shape.  Two kinds of access live here:
+'''
+''' - <see cref="NifShape"/> exposes the raw INiShape (BSTriShape / NiTriShape / BSLODTriShape /
+'''   any other supported subclass).  Use it for identity, parenting and partition operations
+'''   that already accept INiShape (Nifcontent_Class_Manolo.UpdateSkinPartitions, etc.).
+''' - <see cref="Geometry"/> is the polymorphic IShapeGeometry adapter.  Use it for any read or
+'''   write of vertex/triangle/skin data — it hides the BSTriShape vs NiTriBasedGeom split and
+'''   the INVERTIDAS tangent swap.
+'''
+''' Code that only needs identity (Name, Index, parent transform) can stick with NifShape.
+''' Code that touches geometry MUST go through Geometry — direct BSTriShape casts are no longer
+''' safe because the wrapped shape may be NiTriShape or BSLODTriShape.
+''' </summary>
 Public Interface IRenderableShape
     ' Identity
     ReadOnly Property ShapeName As String
@@ -9,7 +23,8 @@ Public Interface IRenderableShape
 
     ' NIF data
     ReadOnly Property NifContent As Nifcontent_Class_Manolo
-    ReadOnly Property NifShape As BSTriShape
+    ReadOnly Property NifShape As INiShape
+    ReadOnly Property Geometry As IShapeGeometry
     ReadOnly Property NifSkin As INiSkin
     ReadOnly Property NifShader As INiShader
     ReadOnly Property ShapeBones As IReadOnlyList(Of NiNode)

@@ -9,6 +9,12 @@ Imports System.Collections.Concurrent
 Imports System.Threading.Tasks
 
 ' --- STRUCTURE PARA ALMACENAR GEOMETRÍA SKINEADA ---
+'
+' Fully polymorphic — no BSTriShape-specific fields.  The packed BSVertexData/BSVertexDataSSE
+' buffers that used to be cached here were an optimization for BSTriShape in-place struct copy
+' during RemoveZaps; that path was eliminated in favor of adapter.ResizeVertices + individual
+' field setters + adapter.SetSkinning, which works uniformly across BSTriShape and NiTriShape
+' families.
 Public Structure SkinnedGeometry
     Public Vertices() As Vector3d
     Public BaseVertices() As Vector3d
@@ -29,9 +35,9 @@ Public Structure SkinnedGeometry
     Public VertexColors() As Vector4
     Public VertexMask() As Single
     Public Indices() As UInteger
-    Public VertexData As List(Of BSVertexData)
-    Public VertexDataSSE As List(Of BSVertexDataSSE)
-    Public TriShape As BSTriShape
+    Public Geometry As IShapeGeometry                 ' polymorphic adapter for the underlying shape (BSTriShape / NiTriShape / BSLODTriShape / BSSegmented / ...)
+    Public Skinning As ShapeSkinningData              ' polymorphic per-vertex bone idx[4]+weight[4]; sourced from BSVertexData inline for BSTriShape or NiSkinPartition/NiSkinData for NiTriShape family
+    Public TriangleProvenance As TriangleRemap        ' optional per-new-triangle source map; populated by zap/split/merge so InjectToTrishape can redistribute Segments/LOD sizes
     Public Boundingcenter As Vector3d
     Public Minv As Vector3d
     Public Maxv As Vector3d
@@ -89,33 +95,69 @@ Public Class SkinningHelper
     End Function
 
     ''' <summary>
+    ''' Flat-array overload of BlendBoneMatrices that reads <paramref name="wpv"/> bone slots
+    ''' starting at <paramref name="baseIdx"/> in the flat <paramref name="boneWeights"/> /
+    ''' <paramref name="boneIndices"/> arrays.  Same semantics and fallback as the per-vertex
+    ''' overload but avoids per-vertex slice allocation, which matters in the inner skinning
+    ''' loop (called once per vertex per Extract/Bake call).
+    ''' </summary>
+    Private Shared Function BlendBoneMatrices(boneWeights As System.Half(), boneIndices As Byte(), baseIdx As Integer, wpv As Integer, precomputed() As Matrix4d) As Matrix4d
+        If boneWeights Is Nothing OrElse boneIndices Is Nothing OrElse precomputed.Length = 0 OrElse wpv <= 0 Then
+            Return If(precomputed.Length > 0, precomputed(0), Matrix4d.Identity)
+        End If
+        Dim result As Matrix4d = Matrix4d.Zero
+        Dim sumW As Double = 0
+        Dim available As Integer = Math.Min(wpv, Math.Min(boneWeights.Length - baseIdx, boneIndices.Length - baseIdx))
+        For j = 0 To available - 1
+            Dim w = CType(boneWeights(baseIdx + j), Double)
+            sumW += w
+            Dim idx = boneIndices(baseIdx + j)
+            If idx >= 0 AndAlso idx < precomputed.Length Then result += precomputed(idx) * w
+        Next
+        If sumW = 0 Then
+            Dim idx0 As Byte = If(available > 0, boneIndices(baseIdx), CByte(0))
+            Return precomputed(Math.Max(0, Math.Min(CInt(idx0), precomputed.Length - 1)))
+        End If
+        Return result * (1.0 / sumW)
+    End Function
+
+    ''' <summary>
     ''' Extrae vértices, normales, tangentes y bitangentes del shape,
     ''' aplicando el mismo skinning que LoadShapeSafe.
     ''' </summary>
     '''   Public Shared Function ExtractSkinnedGeometry(shape As IRenderableShape, ApplyPose As Boolean, singleboneskinning As Boolean, RecalculateNormals As Boolean) As SkinnedGeometry
     Public Shared Function ExtractSkinnedGeometry(shape As IRenderableShape, ApplyPose As Boolean, singleboneskinning As Boolean, RecalculateNormals As Boolean) As SkinnedGeometry
-        Dim tri = CType(shape.NifShape, BSTriShape)
+        Dim shapeGeom = shape.Geometry
+        If shapeGeom Is Nothing Then Throw New InvalidOperationException("IRenderableShape.Geometry is null")
+        Dim backing = shapeGeom.BackingShape
         Dim bones = shape.ShapeBones.ToArray()
         Dim boneTrans = shape.ShapeBoneTransforms.ToArray()
 
         If boneTrans.Length <> bones.Length Then Throw New Exception("BonesTransform y Bones desincronizados")
         Dim Nifversion = shape.NifContent.Header.Version
         ' 1) Transformación global del shape
-        Dim shapeNode = TryCast(shape.NifContent.GetParentNode(tri), NiNode)
+        Dim shapeNode = TryCast(shape.NifContent.GetParentNode(backing), NiNode)
         If IsNothing(shapeNode) Then
             Debugger.Break()
             shapeNode = shape.NifContent.GetRootNode()
         End If
 
         Dim GlobalTransform = If(shapeNode IsNot Nothing, Transform_Class.GetGlobalTransform(shapeNode, shape.NifContent).ToMatrix4d(), Matrix4d.Identity)
-        ' 2) Datos brutos
-        Dim rawVerts = tri.VertexPositions.Select(Function(v) New Vector3d(v.X, v.Y, v.Z)).ToArray()
+
+        ' 2) Datos brutos — la INVERTIDAS swap y el byte-decode de TBN viven en el adapter:
+        '    GetTangents/GetBitangents devuelven ya en convención del renderer.
+        Dim srcVertexPositions = shapeGeom.GetVertexPositions()
+        Dim rawVerts(srcVertexPositions.Count - 1) As Vector3d
+        For i = 0 To srcVertexPositions.Count - 1
+            Dim v = srcVertexPositions(i)
+            rawVerts(i) = New Vector3d(v.X, v.Y, v.Z)
+        Next
         Dim rawNormals() As Vector3d
         Dim rawTangents() As Vector3d
         Dim rawBitangs() As Vector3d
 
-        If tri.HasNormals Then
-            Dim srcNormals = tri.Normals.ToArray()
+        If shapeGeom.HasNormals Then
+            Dim srcNormals = shapeGeom.GetNormals()
             rawNormals = New Vector3d(rawVerts.Length - 1) {}
             Parallel.For(0, rawVerts.Length, Sub(i)
                                                  Dim v As New Vector3d(srcNormals(i).X, srcNormals(i).Y, srcNormals(i).Z)
@@ -125,81 +167,38 @@ Public Class SkinningHelper
         Else
             rawNormals = New Vector3d(rawVerts.Length - 1) {}
         End If
-        ' Raw vertex data loaded early for direct BitangentX extraction (bypasses NiflySharp byte-cast bug)
-        Dim allVD = Array.Empty(Of BSVertexData)
-        Dim allVDSSE = Array.Empty(Of BSVertexDataSSE)
-        If Nifversion.IsSSE = False Then If Not IsNothing(tri.VertexData) Then allVD = tri.VertexData.ToArray()
-        If Nifversion.IsSSE = True Then If Not IsNothing(tri.VertexDataSSE) Then allVDSSE = tri.VertexDataSSE.ToArray()
 
-        If tri.HasTangents Then
-            If Nifversion.IsSSE AndAlso allVDSSE.Length = rawVerts.Length Then
-                ' SSE: INVERTIDAS swap same as FO4 — produces correct effective TBN: mat3(NIF_Bitangent, NIF_Tangent, N).
-                ' NIF_Tangent (ByteVector3) -> rawBitangs. NIF_Bitangent (float X + sbyte Y/Z) -> rawTangents.
-                Dim srcTangentsSSE = tri.Tangents.ToArray()
-                rawBitangs = New Vector3d(rawVerts.Length - 1) {}
-                Parallel.For(0, rawVerts.Length, Sub(i)
-                                                     Dim v As New Vector3d(srcTangentsSSE(i).X, srcTangentsSSE(i).Y, srcTangentsSSE(i).Z)
-                                                     Dim l = v.Length
-                                                     rawBitangs(i) = If(l > 0.000001, v / l, Vector3d.Zero)
-                                                 End Sub)
-                rawTangents = New Vector3d(rawVerts.Length - 1) {}
-                Parallel.For(0, rawVerts.Length, Sub(i)
-                                                     Dim bx = CDbl(allVDSSE(i).BitangentX)
-                                                     Dim by = CDbl(CType(CInt(allVDSSE(i).BitangentY) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim bz = CDbl(CType(CInt(allVDSSE(i).BitangentZ) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim tempVec As New Vector3d(bx, by, bz)
-                                                     Dim tempLen = tempVec.Length
-                                                     rawTangents(i) = If(tempLen > 0.000001, tempVec / tempLen, Vector3d.Zero)
-                                                 End Sub)
-            ElseIf Not Nifversion.IsSSE AndAlso tri.IsFullPrecision AndAlso allVD.Length = rawVerts.Length Then
-                ' FO4 full-precision: NIF_Bitangent uses float BitangentX (NiflySharp bug: cast to byte truncates).
-                ' INVERTIDAS swap: NIF_Bitangent -> rawTangents, NIF_Tangent -> rawBitangs.
-                ' Read NIF_Bitangent directly from BSVertexData for correct BitangentX.
-                Dim srcTangentsFO4 = tri.Tangents.ToArray()
-                rawBitangs = New Vector3d(rawVerts.Length - 1) {}
-                Parallel.For(0, rawVerts.Length, Sub(i)
-                                                     Dim v As New Vector3d(srcTangentsFO4(i).X, srcTangentsFO4(i).Y, srcTangentsFO4(i).Z)
-                                                     Dim l = v.Length
-                                                     rawBitangs(i) = If(l > 0.000001, v / l, Vector3d.Zero)
-                                                 End Sub)
-                rawTangents = New Vector3d(rawVerts.Length - 1) {}
-                Parallel.For(0, rawVerts.Length, Sub(i)
-                                                     Dim bx = CDbl(allVD(i).BitangentX)
-                                                     Dim by = CDbl(CType(CInt(allVD(i).BitangentY) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim bz = CDbl(CType(CInt(allVD(i).BitangentZ) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim tempVec As New Vector3d(bx, by, bz)
-                                                     Dim tempLen = tempVec.Length
-                                                     rawTangents(i) = If(tempLen > 0.000001, tempVec / tempLen, Vector3d.Zero)
-                                                 End Sub)
-            Else
-                ' FO4 half-precision: uses BitangentXHalf (Half). Read directly from BSVertexData for consistency.
-                ' INVERTIDAS swap: NIF_Bitangent -> rawTangents, NIF_Tangent -> rawBitangs.
-                rawBitangs = New Vector3d(rawVerts.Length - 1) {}
-                rawTangents = New Vector3d(rawVerts.Length - 1) {}
-                Parallel.For(0, rawVerts.Length, Sub(i)
-                                                     ' NIF_Bitangent -> rawTangents (INVERTIDAS swap)
-                                                     Dim bx = CDbl(CSng(allVD(i).BitangentXHalf))
-                                                     Dim by = CDbl(CType(CInt(allVD(i).BitangentY) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim bz = CDbl(CType(CInt(allVD(i).BitangentZ) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim tempVecT As New Vector3d(bx, by, bz)
-                                                     Dim tempLenT = tempVecT.Length
-                                                     rawTangents(i) = If(tempLenT > 0.000001, tempVecT / tempLenT, Vector3d.Zero)
-                                                     ' NIF_Tangent -> rawBitangs (INVERTIDAS swap); ByteVector3 has sbyte fields
-                                                     Dim tx = CDbl(CType(CInt(allVD(i).Tangent.X) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim ty = CDbl(CType(CInt(allVD(i).Tangent.Y) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim tz = CDbl(CType(CInt(allVD(i).Tangent.Z) And &HFF, Byte)) / 255.0 * 2.0 - 1.0
-                                                     Dim tempVecB As New Vector3d(tx, ty, tz)
-                                                     Dim tempLenB = tempVecB.Length
-                                                     rawBitangs(i) = If(tempLenB > 0.000001, tempVecB / tempLenB, Vector3d.Zero)
-                                                 End Sub)
-            End If
+        If shapeGeom.HasTangents Then
+            Dim srcTan = shapeGeom.GetTangents()
+            Dim srcBit = shapeGeom.GetBitangents()
+            rawTangents = New Vector3d(rawVerts.Length - 1) {}
+            rawBitangs = New Vector3d(rawVerts.Length - 1) {}
+            Parallel.For(0, rawVerts.Length, Sub(i)
+                                                 Dim t = srcTan(i)
+                                                 Dim b = srcBit(i)
+                                                 Dim tv As New Vector3d(t.X, t.Y, t.Z)
+                                                 Dim bv As New Vector3d(b.X, b.Y, b.Z)
+                                                 Dim tl = tv.Length
+                                                 Dim bl = bv.Length
+                                                 rawTangents(i) = If(tl > 0.000001, tv / tl, Vector3d.Zero)
+                                                 rawBitangs(i) = If(bl > 0.000001, bv / bl, Vector3d.Zero)
+                                             End Sub)
         Else
             rawTangents = Enumerable.Repeat(New Vector3d(0.0F, 0.0F, 0.0F), rawVerts.Length).ToArray()
             rawBitangs = Enumerable.Repeat(New Vector3d(0.0F, 0.0F, 0.0F), rawVerts.Length).ToArray()
         End If
 
+        ' Polymorphic per-vertex skinning data (BSTriShape inline, NiTriShape NiSkinPartition).
+        Dim shapeSkin As ShapeSkinningData = shapeGeom.GetSkinning()
+
         Dim vertexCount As Integer = rawVerts.Length
-        If Not ((rawNormals.Length = vertexCount OrElse tri.HasNormals = False) AndAlso (rawTangents.Length = vertexCount OrElse tri.HasNormals = False) AndAlso (rawBitangs.Length = vertexCount OrElse tri.HasNormals = False) AndAlso (tri.HasVertexColors = False Or tri.VertexColors.Count = vertexCount) AndAlso (tri.HasUVs = False OrElse tri.UVs.Count = vertexCount)) Then
+        Dim vertexColorsList = If(shapeGeom.HasVertexColors, shapeGeom.GetVertexColors(), Nothing)
+        Dim uvsList = If(shapeGeom.HasUVs, shapeGeom.GetUVs(), Nothing)
+        If Not ((rawNormals.Length = vertexCount OrElse Not shapeGeom.HasNormals) AndAlso
+                (rawTangents.Length = vertexCount OrElse Not shapeGeom.HasNormals) AndAlso
+                (rawBitangs.Length = vertexCount OrElse Not shapeGeom.HasNormals) AndAlso
+                (Not shapeGeom.HasVertexColors OrElse vertexColorsList.Count = vertexCount) AndAlso
+                (Not shapeGeom.HasUVs OrElse uvsList.Count = vertexCount)) Then
             Debugger.Break()
             Throw New Exception("¡Los atributos de los vértices no tienen la misma longitud!")
         End If
@@ -266,49 +265,47 @@ Public Class SkinningHelper
                         CSng(m.M41), CSng(m.M42), CSng(m.M43), CSng(m.M44))
                 Next
 
-                ' Multibone skinning inner loop — GPU path: store perVertexMtot + extract bone data, do NOT transform rawVerts/N/T/B
-                Dim skinningBody As Action(Of Integer) = Sub(i)
-                                                             Dim Boneweights As System.Half()
-                                                             Dim Boneindices As Byte()
-                                                             If Nifversion.IsSSE Then
-                                                                 Boneweights = allVDSSE(i).BoneWeights
-                                                                 Boneindices = allVDSSE(i).BoneIndices
-                                                             Else
-                                                                 Boneweights = allVD(i).BoneWeights
-                                                                 Boneindices = allVD(i).BoneIndices
-                                                             End If
-                                                             Dim Mtot = BlendBoneMatrices(Boneweights, Boneindices, precomputedBoneMatrices)
-                                                             ' Store double-precision Mtot for world-space cache / bake
-                                                             perVertexMtot(i) = Mtot
+                ' Multibone skinning inner loop — GPU path: store perVertexMtot + extract bone data, do NOT transform rawVerts/N/T/B.
+                ' Per-vertex bone influences come from the polymorphic ShapeSkinningData (BSTriShape inline or NiSkinPartition).
+                Dim skinFlatIdx = shapeSkin.BoneIndices
+                Dim skinFlatWgt = shapeSkin.BoneWeights
+                Dim skinWpv = If(shapeSkin.WeightsPerVertex > 0, shapeSkin.WeightsPerVertex, 4)
+                Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso shapeSkin.VertexCount = vertexCount)
 
-                                                             ' Extract per-vertex bone indices and weights into flat GPU arrays
+                Dim skinningBody As Action(Of Integer) = Sub(i)
+                                                             Dim Mtot As Matrix4d
                                                              Dim baseIdx = i * 4
-                                                             If Boneweights IsNot Nothing AndAlso Boneindices IsNot Nothing Then
-                                                                 Dim boneSlots = Math.Min(Boneweights.Length, Boneindices.Length) - 1
-                                                                 If boneSlots < 0 Then
-                                                                     ' Empty arrays: same fallback as Nothing — bind to bone 0 with full weight
-                                                                     gpuBoneIdx(baseIdx) = 0 : gpuBoneWgt(baseIdx) = 1.0F
-                                                                 Else
-                                                                     Dim localSumW As Double = 0
-                                                                     For j = 0 To boneSlots
-                                                                         localSumW += CType(Boneweights(j), Double)
-                                                                     Next
-                                                                     For j = 0 To 3
-                                                                         If j <= boneSlots Then
-                                                                             gpuBoneIdx(baseIdx + j) = Boneindices(j)
-                                                                             gpuBoneWgt(baseIdx + j) = CSng(If(localSumW > 0, CType(Boneweights(j), Double) / localSumW, 0))
-                                                                         Else
-                                                                             gpuBoneIdx(baseIdx + j) = 0
-                                                                             gpuBoneWgt(baseIdx + j) = 0.0F
-                                                                         End If
-                                                                     Next
-                                                                 End If
+
+                                                             If hasSkin Then
+                                                                 Dim baseSkin = i * skinWpv
+                                                                 Mtot = BlendBoneMatrices(skinFlatWgt, skinFlatIdx, baseSkin, skinWpv, precomputedBoneMatrices)
+
+                                                                 ' GPU arrays: copy up to 4 slots, normalize weights to sum=1.
+                                                                 Dim copySlots = Math.Min(4, skinWpv)
+                                                                 Dim localSumW As Double = 0
+                                                                 For j = 0 To copySlots - 1
+                                                                     localSumW += CType(skinFlatWgt(baseSkin + j), Double)
+                                                                 Next
+                                                                 For j = 0 To 3
+                                                                     If j < copySlots Then
+                                                                         gpuBoneIdx(baseIdx + j) = skinFlatIdx(baseSkin + j)
+                                                                         gpuBoneWgt(baseIdx + j) = CSng(If(localSumW > 0, CType(skinFlatWgt(baseSkin + j), Double) / localSumW, 0))
+                                                                     Else
+                                                                         gpuBoneIdx(baseIdx + j) = 0
+                                                                         gpuBoneWgt(baseIdx + j) = 0.0F
+                                                                     End If
+                                                                 Next
                                                              Else
+                                                                 ' No per-vertex skin data — bind to bone 0 with full weight (same fallback as before).
+                                                                 Mtot = If(precomputedBoneMatrices.Length > 0, precomputedBoneMatrices(0), Matrix4d.Identity)
                                                                  gpuBoneIdx(baseIdx) = 0 : gpuBoneWgt(baseIdx) = 1.0F
                                                                  gpuBoneIdx(baseIdx + 1) = 0 : gpuBoneWgt(baseIdx + 1) = 0.0F
                                                                  gpuBoneIdx(baseIdx + 2) = 0 : gpuBoneWgt(baseIdx + 2) = 0.0F
                                                                  gpuBoneIdx(baseIdx + 3) = 0 : gpuBoneWgt(baseIdx + 3) = 0.0F
                                                              End If
+
+                                                             ' Store double-precision Mtot for world-space cache / bake
+                                                             perVertexMtot(i) = Mtot
                                                          End Sub
 
                 If useParallel Then
@@ -379,14 +376,14 @@ Public Class SkinningHelper
         Dim center = (minV + maxV) * 0.5
 
         ' Pre-compute indices (avoid SelectMany creating thousands of temp arrays)
+        Dim trianglesList = shapeGeom.GetTriangles()
         Dim flatIndices As UInteger()
-        If Not IsNothing(tri.Triangles) Then
-            Dim srcTris = tri.Triangles.ToArray()
-            flatIndices = New UInteger(srcTris.Length * 3 - 1) {}
-            For ti = 0 To srcTris.Length - 1
-                flatIndices(ti * 3) = srcTris(ti).V1
-                flatIndices(ti * 3 + 1) = srcTris(ti).V2
-                flatIndices(ti * 3 + 2) = srcTris(ti).V3
+        If trianglesList IsNot Nothing AndAlso trianglesList.Count > 0 Then
+            flatIndices = New UInteger(trianglesList.Count * 3 - 1) {}
+            For ti = 0 To trianglesList.Count - 1
+                flatIndices(ti * 3) = trianglesList(ti).V1
+                flatIndices(ti * 3 + 1) = trianglesList(ti).V2
+                flatIndices(ti * 3 + 2) = trianglesList(ti).V3
             Next
         Else
             flatIndices = Array.Empty(Of UInteger)()
@@ -394,11 +391,10 @@ Public Class SkinningHelper
 
         ' Pre-compute vertex colors
         Dim vtxColors As Vector4()
-        If tri.HasVertexColors Then
-            Dim srcColors = tri.VertexColors.ToArray()
+        If shapeGeom.HasVertexColors Then
             vtxColors = New Vector4(vertexCount - 1) {}
             Parallel.For(0, vertexCount, Sub(i)
-                                             vtxColors(i) = New Vector4(srcColors(i).R, srcColors(i).G, srcColors(i).B, srcColors(i).A)
+                                             vtxColors(i) = New Vector4(vertexColorsList(i).R, vertexColorsList(i).G, vertexColorsList(i).B, vertexColorsList(i).A)
                                          End Sub)
         Else
             vtxColors = New Vector4(vertexCount - 1) {}
@@ -424,10 +420,9 @@ Public Class SkinningHelper
             .BoneMatsPose = matsPose,
             .Indices = flatIndices,
             .VertexColors = vtxColors,
-            .Eyedata = If(tri.HasEyeData, tri.EyeData.ToArray(), New Single(vertexCount - 1) {}),
-            .VertexData = allVD.ToList,
-            .VertexDataSSE = allVDSSE.ToList,
-            .TriShape = tri,
+            .Eyedata = If(shapeGeom.HasEyeData, shapeGeom.GetEyeData().ToArray(), New Single(vertexCount - 1) {}),
+            .Geometry = shapeGeom,
+            .Skinning = shapeSkin,
             .VertexMask = vtxMask,
             .dirtyVertexIndices = New HashSet(Of Integer)(Enumerable.Range(0, vertexCount)),
             .dirtyMaskIndices = New HashSet(Of Integer)(Enumerable.Range(0, vertexCount)),
@@ -444,14 +439,26 @@ Public Class SkinningHelper
              .WorldCacheValid = False
         }
 
-        If tri.HasUVs = True Then
-            geo.Uvs_Weight = If(Nifversion.IsSSE, allVDSSE.Select(Function(vd) New Vector3(vd.UV.U, vd.UV.V, If(vd.BoneWeights?.Length > 0, CType(vd.BoneWeights(0), Single), 0.0F))).ToArray(), allVD.Select(Function(vd) New Vector3(vd.UV.U, vd.UV.V, If(vd.BoneWeights?.Length > 0, CType(vd.BoneWeights(0), Single), 0.0F))).ToArray())
-        Else
-            geo.Uvs_Weight = If(Nifversion.IsSSE, allVDSSE.Select(Function(vd) New Vector3(0, 0, If(vd.BoneWeights?.Length > 0, CType(vd.BoneWeights(0), Single), 0.0F))).ToArray(), allVD.Select(Function(vd) New Vector3(0, 0, If(vd.BoneWeights?.Length > 0, CType(vd.BoneWeights(0), Single), 0.0F))).ToArray())
-        End If
+        ' Uvs_Weight packs per-vertex UV (X,Y) and the first bone weight (Z) — used by the
+        ' shader weight-paint visualization.  Sourced from the polymorphic skinning data so it
+        ' works for both BSTriShape (BoneWeights inline) and NiTriShape (NiSkinPartition).
+        Dim uvsWeight(vertexCount - 1) As Vector3
+        Dim wpvForUv = If(shapeSkin.WeightsPerVertex > 0, shapeSkin.WeightsPerVertex, 4)
+        Dim hasSkinForUv = (shapeSkin.BoneWeights IsNot Nothing AndAlso shapeSkin.VertexCount = vertexCount)
+        For i As Integer = 0 To vertexCount - 1
+            Dim u As Single = 0
+            Dim v As Single = 0
+            If shapeGeom.HasUVs AndAlso uvsList IsNot Nothing AndAlso i < uvsList.Count Then
+                u = uvsList(i).U
+                v = uvsList(i).V
+            End If
+            Dim w0 As Single = 0
+            If hasSkinForUv Then w0 = CType(shapeSkin.BoneWeights(i * wpvForUv), Single)
+            uvsWeight(i) = New Vector3(u, v, w0)
+        Next
+        geo.Uvs_Weight = uvsWeight
 
-
-        If RecalculateNormals OrElse tri.HasNormals = False OrElse tri.HasTangents = False Then
+        If RecalculateNormals OrElse Not shapeGeom.HasNormals OrElse Not shapeGeom.HasTangents Then
             Dim opts = Config_App.Current.Setting_TBN
             RecalculateNormalsTangentsBitangents(geo, opts)
         End If
@@ -524,12 +531,13 @@ Public Class SkinningHelper
         Dim worldT() As Vector3d = geom.Tangents
         Dim worldB() As Vector3d = geom.Bitangents
 
-        ' 5) Datos de skinning por vértice
-        Dim allVD = Array.Empty(Of BSVertexData)
-        Dim allVDSSE = Array.Empty(Of BSVertexDataSSE)
-        If geom.Version.IsSSE = False Then If Not IsNothing(geom.VertexData) Then allVD = geom.VertexData.ToArray()
-        If geom.Version.IsSSE = True Then If Not IsNothing(geom.VertexDataSSE) Then allVDSSE = geom.VertexDataSSE.ToArray()
-        Dim nifversion = geom.Version
+        ' 5) Datos de skinning por vértice — polimórficos via ShapeSkinningData
+        '    (BSTriShape inline o NiSkinPartition expandido).
+        Dim skinFlatIdx = geom.Skinning.BoneIndices
+        Dim skinFlatWgt = geom.Skinning.BoneWeights
+        Dim skinWpv = If(geom.Skinning.WeightsPerVertex > 0, geom.Skinning.WeightsPerVertex, 4)
+        Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso geom.Skinning.VertexCount = worldV.Length)
+
         'A - REVIERTE Skinning y Bakea
         ' Pre-compute inverted pose matrices and bind*invPose products (avoid redundant inversion per vertex)
         Dim bindTimesInvPose(matsBind.Length - 1) As Matrix4d
@@ -543,30 +551,22 @@ Public Class SkinningHelper
                 Parallel.For(0, worldV.Length, Sub(i)
                                                    If ApplyPose Then
                                                        Dim Mskin As Matrix4d = Matrix4d.Zero
-                                                       Dim Boneweights As System.Half()
-                                                       Dim Boneindices As Byte()
-                                                       If nifversion.IsSSE Then
-                                                           Boneweights = allVDSSE(i).BoneWeights
-                                                           Boneindices = allVDSSE(i).BoneIndices
-                                                       Else
-                                                           Boneweights = allVD(i).BoneWeights
-                                                           Boneindices = allVD(i).BoneIndices
-                                                       End If
                                                        Dim sumW As Double = 0
 
-                                                       If Boneweights IsNot Nothing AndAlso Boneindices IsNot Nothing Then
-                                                           Dim cnt = Math.Min(Boneweights.Length, Boneindices.Length) - 1
+                                                       If hasSkin Then
+                                                           Dim baseIdx = i * skinWpv
+                                                           Dim cnt = Math.Min(skinWpv, Math.Min(skinFlatWgt.Length - baseIdx, skinFlatIdx.Length - baseIdx)) - 1
                                                            For j = 0 To cnt
-                                                               sumW += CType(Boneweights(j), Double)
+                                                               sumW += CType(skinFlatWgt(baseIdx + j), Double)
                                                            Next
                                                            If sumW = 0F Then
-                                                               Dim idx0 = If(Boneindices.Length > 0, Boneindices(0), 0)
-                                                               idx0 = Math.Max(0, Math.Min(idx0, matsBind.Length - 1))
-                                                               Mskin = bindTimesInvPose(idx0)
+                                                               Dim idx0 = If(cnt >= 0, skinFlatIdx(baseIdx), CByte(0))
+                                                               Dim idx0c = Math.Max(0, Math.Min(CInt(idx0), matsBind.Length - 1))
+                                                               Mskin = bindTimesInvPose(idx0c)
                                                            Else
                                                                For j = 0 To cnt
-                                                                   Dim w = CType(Boneweights(j), Double) / sumW
-                                                                   Dim idx = Boneindices(j)
+                                                                   Dim w = CType(skinFlatWgt(baseIdx + j), Double) / sumW
+                                                                   Dim idx = skinFlatIdx(baseIdx + j)
                                                                    If idx >= 0 AndAlso idx < matsBind.Length Then
                                                                        Mskin += bindTimesInvPose(idx) * w
                                                                    End If
@@ -631,137 +631,188 @@ Public Class SkinningHelper
         InjectToTrishape(geom)
 
     End Sub
+    ''' <summary>
+    ''' Writes the SkinnedGeometry contents back to the underlying NIF shape.  Fully
+    ''' polymorphic via geom.Geometry — works identically for BSTriShape family and
+    ''' NiTriShape family.
+    '''
+    ''' Flow: ResizeVertices(newCount) establishes the target size on the underlying block
+    ''' (BSTriShape replaces its packed BSVertexData/SSE list, NiTriShape resizes
+    ''' NiTriShapeData.Vertices).  Then each per-field setter writes into the already-sized
+    ''' buffer.  SetSkinning rebuilds per-vertex bone data (BSTriShape inline,
+    ''' NiTriShape NiSkinData.BoneList).
+    '''
+    ''' Skin partition regeneration is NOT performed here — caller must call
+    ''' Nifcontent_Class_Manolo.UpdateSkinPartitions(geom.Geometry.BackingShape) before
+    ''' saving (BuildingForm, MorphingHelper.RemoveZaps callers and SplitShapeHelper already
+    ''' follow that contract).  See UpdateSkinPartitions docstring for the order contract.
+    ''' </summary>
     Public Shared Sub InjectToTrishape(ByRef geom As SkinnedGeometry)
         Dim nNew As Integer = geom.Vertices.Length
-        Dim tri = geom.TriShape
-        Dim posN(nNew - 1) As System.Numerics.Vector3
-        Dim uvN(nNew - 1) As System.Numerics.Vector3
-        Dim colN(nNew - 1) As NiflySharp.Structs.Color4
+        Dim shapeGeom = geom.Geometry
+        If shapeGeom Is Nothing Then Exit Sub
+
+        Dim posN As New List(Of System.Numerics.Vector3)(nNew)
+        Dim uvN As New List(Of TexCoord)(nNew)
+        Dim colN As New List(Of NiflySharp.Structs.Color4)(nNew)
 
         For i As Integer = 0 To nNew - 1
-            Dim v1 = geom.Vertices(i) : posN(i) = New System.Numerics.Vector3(CSng(v1.X), CSng(v1.Y), CSng(v1.Z))
-            Dim uv = geom.Uvs_Weight(i) : uvN(i) = New System.Numerics.Vector3(CSng(uv.X), CSng(uv.Y), 0)
-            Dim c = geom.VertexColors(i) : colN(i) = New NiflySharp.Structs.Color4(CSng(c.X), CSng(c.Y), CSng(c.Z), CSng(c.W))
+            Dim v1 = geom.Vertices(i) : posN.Add(New System.Numerics.Vector3(CSng(v1.X), CSng(v1.Y), CSng(v1.Z)))
+            Dim uv = geom.Uvs_Weight(i) : uvN.Add(New TexCoord(CSng(uv.X), CSng(uv.Y)))
+            Dim c = geom.VertexColors(i) : colN.Add(New NiflySharp.Structs.Color4(CSng(c.X), CSng(c.Y), CSng(c.Z), CSng(c.W)))
         Next
 
         Dim idxArr = geom.Indices
-        Dim tmpTris(idxArr.Length \ 3 - 1) As Triangle
-        Dim w2 As Integer = 0
-
+        Dim tmpTris As New List(Of Triangle)(idxArr.Length \ 3)
         For tr As Integer = 0 To idxArr.Length - 3 Step 3
-            Dim n1 = CInt(idxArr(tr))
-            Dim n2 = CInt(idxArr(tr + 1))
-            Dim n3 = CInt(idxArr(tr + 2))
-            tmpTris(w2) = New Triangle(n1, n2, n3)
-            w2 += 1
+            tmpTris.Add(New Triangle(CInt(idxArr(tr)), CInt(idxArr(tr + 1)), CInt(idxArr(tr + 2))))
         Next
 
-        If geom.Version.IsSSE Then
-            tri.SetVertexDataSSE(geom.VertexDataSSE)
-        Else
-            tri.SetVertexData(geom.VertexData)
-        End If
-        tri.SetVertexPositions(posN.ToList)
-        tri.SetTriangles(geom.Version, tmpTris.ToList)
-        ' N/T/B injection via shared helper (INVERTIDAS swap handled there)
-        If tri.HasNormals OrElse tri.HasTangents Then
+        ' Establish new vertex count on the block (no-op if unchanged).  For BSTriShape
+        ' this allocates a fresh zero-init packed list of the new size; for NiTriShape it
+        ' resizes NiTriShapeData.Vertices.  Subsequent Set* calls write into the sized
+        ' storage.
+        shapeGeom.ResizeVertices(nNew)
+
+        ' Per-field writes.  Order matters slightly: positions before normals/tangents so
+        ' adapter-internal TBN recalc (if any) has correct positions; skinning + triangles
+        ' last since they reference the established vertex/triangle space.
+        shapeGeom.SetVertexPositions(posN)
+        If shapeGeom.HasNormals OrElse shapeGeom.HasTangents Then
             InjectNormalsToTrishape(geom)
         End If
-        If tri.HasUVs Then tri.SetUVs(uvN.ToList)
-        If tri.HasVertexColors Then tri.SetVertexColors(colN.ToList)
-        If tri.HasEyeData Then tri.SetEyeData(geom.Eyedata.ToList)
+        If shapeGeom.HasUVs Then shapeGeom.SetUVs(uvN)
+        If shapeGeom.HasVertexColors Then shapeGeom.SetVertexColors(colN)
+        If shapeGeom.HasEyeData Then shapeGeom.SetEyeData(geom.Eyedata.ToList())
 
-        If geom.Vertices.Length = 0 Then
-            tri.HasVertices = False
-            tri.HasNormals = False
-            tri.HasTangents = False
-            tri.HasVertexColors = False
-            tri.HasEyeData = False
-            tri.HasUVs = False
-
+        ' Polymorphic skin write-back.  For BSTriShape writes BoneIndices/BoneWeights inline
+        ' into BSVertexData.  For NiTriShape rebuilds NiSkinData.BoneList[].VertexWeights
+        ' from the per-vertex Skinning data.  Critical for the NiTriShape family:
+        ' UpdateSkinPartitions later reads from NiSkinData to regenerate the partition.
+        If geom.Skinning.VertexCount = nNew Then
+            shapeGeom.SetSkinning(geom.Skinning)
         End If
 
+        ' Provenance-aware triangle write — redistributes BSMeshLOD/BSLOD LOD sizes and
+        ' BSSubIndex/BSSegmented Segments via the adapter when geom.TriangleProvenance is
+        ' present (zap/split populate it).  Must come AFTER SetSkinning because the
+        ' segment redistribution reads the post-write triangle list.
+        shapeGeom.SetTriangles(tmpTris, geom.TriangleProvenance)
 
+        ' Edge case: empty shape (all vertices zapped).  BSTriShape exposes writable flag
+        ' properties for this; NiTriShape handles empty state via the Has* setters on
+        ' NiGeometryData (automatically triggered when lists are empty).  Only BSTriShape
+        ' needs the explicit flag flip here.
+        If nNew = 0 Then
+            Dim bsTri = TryCast(shapeGeom.BackingShape, BSTriShape)
+            If bsTri IsNot Nothing Then
+                bsTri.HasVertices = False
+                bsTri.HasNormals = False
+                bsTri.HasTangents = False
+                bsTri.HasVertexColors = False
+                bsTri.HasEyeData = False
+                bsTri.HasUVs = False
+            End If
+        End If
     End Sub
 
     ''' <summary>
-    ''' Injects only normals, tangents and bitangents from geo into the BSTriShape.
-    ''' NiflySharp's SetNormals/SetTangents/SetBitangents enable HasNormals/HasTangents automatically.
-    ''' Uses the same INVERTIDAS swap convention as InjectToTrishape:
-    ''' geo.Bitangents -> NIF_Tangent, geo.Tangents -> NIF_Bitangent.
+    ''' Injects only normals, tangents and bitangents from geo into the underlying shape via
+    ''' the polymorphic adapter.  The INVERTIDAS swap (renderer Tangent/Bitangent ⇆ NIF
+    ''' Bitangent/Tangent) is encapsulated in IShapeGeometry.SetTangents/SetBitangents — this
+    ''' method passes geom.Tangents and geom.Bitangents straight through.
     ''' </summary>
     Public Shared Sub InjectNormalsToTrishape(ByRef geom As SkinnedGeometry)
-        Dim tri = geom.TriShape
-        If tri Is Nothing Then Exit Sub
+        Dim shapeGeom = geom.Geometry
+        If shapeGeom Is Nothing Then Exit Sub
         Dim nNew = geom.Vertices.Length
         If nNew = 0 Then Exit Sub
 
-        Dim norN(nNew - 1) As System.Numerics.Vector3
-        Dim tanN(nNew - 1) As System.Numerics.Vector3
-        Dim bitN(nNew - 1) As System.Numerics.Vector3
+        Dim norN As New List(Of System.Numerics.Vector3)(nNew)
+        Dim tanN As New List(Of System.Numerics.Vector3)(nNew)
+        Dim bitN As New List(Of System.Numerics.Vector3)(nNew)
         For i = 0 To nNew - 1
-            Dim n1 = geom.Normals(i) : norN(i) = New System.Numerics.Vector3(CSng(n1.X), CSng(n1.Y), CSng(n1.Z))
-            Dim t1 = geom.Bitangents(i) : tanN(i) = New System.Numerics.Vector3(CSng(t1.X), CSng(t1.Y), CSng(t1.Z))
-            Dim b1 = geom.Tangents(i) : bitN(i) = New System.Numerics.Vector3(CSng(b1.X), CSng(b1.Y), CSng(b1.Z))
+            Dim n1 = geom.Normals(i) : norN.Add(New System.Numerics.Vector3(CSng(n1.X), CSng(n1.Y), CSng(n1.Z)))
+            Dim t1 = geom.Tangents(i) : tanN.Add(New System.Numerics.Vector3(CSng(t1.X), CSng(t1.Y), CSng(t1.Z)))
+            Dim b1 = geom.Bitangents(i) : bitN.Add(New System.Numerics.Vector3(CSng(b1.X), CSng(b1.Y), CSng(b1.Z)))
         Next
-        tri.SetNormals(norN.ToList)
-        tri.SetTangents(tanN.ToList)
-        tri.SetBitangents(bitN.ToList)
+        shapeGeom.SetNormals(norN)
+        shapeGeom.SetTangents(tanN)
+        shapeGeom.SetBitangents(bitN)
     End Sub
 
     ''' <summary>
-    ''' Snapshots the separate per-vertex arrays from a BSTriShape.
-    ''' UVs are converted from TexCoord to Vector3(U,V,0) for SetUVs compatibility.
-    ''' Must be called BEFORE SetVertexDataSSE/SetVertexData.
+    ''' Snapshots the per-vertex separate arrays from a shape via the polymorphic adapter.
+    ''' UVs are converted from TexCoord to Vector3(U,V,0) — that packing is what
+    ''' ApplyShapeGeometry / WM merge/split helpers expect when concatenating arrays from
+    ''' multiple shapes before re-injecting.  The adapter takes care of the INVERTIDAS swap
+    ''' for BSTriShape, so the snapshot is in renderer convention regardless of family.
     ''' </summary>
-    Public Shared Function SnapshotSeparateArrays(shape As BSTriShape) As ShapeArrays
+    Public Shared Function SnapshotSeparateArrays(shape As IShapeGeometry) As ShapeArrays
+        If shape Is Nothing Then Return New ShapeArrays()
         Dim snap As New ShapeArrays With {
-            .Positions = shape.VertexPositions?.ToList()
+            .Positions = shape.GetVertexPositions()
         }
-        If shape.HasNormals Then snap.Normals = shape.Normals?.ToList()
+        If shape.HasNormals Then snap.Normals = shape.GetNormals()
         If shape.HasTangents Then
-            snap.Tangents = shape.Tangents?.ToList()
-            snap.Bitangents = shape.Bitangents?.ToList()
+            snap.Tangents = shape.GetTangents()
+            snap.Bitangents = shape.GetBitangents()
         End If
-        If shape.HasUVs Then snap.UVs = shape.UVs?.Select(
+        If shape.HasUVs Then snap.UVs = shape.GetUVs().Select(
             Function(u) New System.Numerics.Vector3(u.U, u.V, 0)).ToList()
-        If shape.HasVertexColors Then snap.VertexColors = shape.VertexColors?.ToList()
-        If shape.HasEyeData Then snap.EyeData = shape.EyeData?.ToList()
+        If shape.HasVertexColors Then snap.VertexColors = shape.GetVertexColors()
+        If shape.HasEyeData Then snap.EyeData = shape.GetEyeData()
+        ' Capture per-vertex skin uniformly for all families.  After the unified
+        ' InjectToTrishape / ApplyShapeGeometry refactor there's no packed-buffer fast
+        ' path for BSTriShape — skin always travels via ShapeArrays.Skinning and the
+        ' adapter's SetSkinning writes it back (inline BSVertexData for BS, NiSkinData
+        ' rebuild for NiTri).
+        If shape.IsSkinned Then snap.Skinning = shape.GetSkinning()
         Return snap
     End Function
 
     ''' <summary>
-    ''' Applies packed vertex data, separate per-vertex arrays, and triangles to a BSTriShape.
-    ''' Single authoritative point for updating shape geometry when vertex count changes.
-    ''' Same contract as InjectToTrishape but works with raw NIF arrays instead of SkinnedGeometry.
+    ''' Applies separate per-vertex arrays + triangles + optional skinning to the underlying
+    ''' shape via the polymorphic adapter.  Single authoritative point for updating shape
+    ''' geometry when vertex count changes.  Fully polymorphic — no BSTriShape-specific
+    ''' packed buffer parameters; the adapter internally handles BSTriShape packed resize
+    ''' via ResizeVertices and the per-field setters write into the established storage.
+    '''
+    ''' Skin partition update remains caller's responsibility (same as InjectToTrishape).
     ''' </summary>
     Public Shared Sub ApplyShapeGeometry(
-            shape As BSTriShape,
-            version As NiVersion,
-            isSSE As Boolean,
-            vertexDataSSE As List(Of BSVertexDataSSE),
-            vertexData As List(Of BSVertexData),
+            shape As IShapeGeometry,
             triangles As List(Of Triangle),
-            arrays As ShapeArrays)
+            arrays As ShapeArrays,
+            Optional provenance As TriangleRemap = Nothing)
         If shape Is Nothing Then Return
 
-        If isSSE Then
-            shape.SetVertexDataSSE(vertexDataSSE)
-        Else
-            shape.SetVertexData(vertexData)
-        End If
+        ' Establish new vertex count on the backing block before any per-field write.
+        ' Uses positions count as the new vertex count (canonical per the BSTriShape /
+        ' NiTriShape setters — SetVertexPositions silently no-ops if count doesn't match).
+        Dim newVc As Integer = If(arrays IsNot Nothing AndAlso arrays.Positions IsNot Nothing,
+                                   arrays.Positions.Count, shape.VertexCount)
+        shape.ResizeVertices(newVc)
 
         If arrays IsNot Nothing Then
             If arrays.Positions IsNot Nothing Then shape.SetVertexPositions(arrays.Positions)
             If arrays.Normals IsNot Nothing AndAlso shape.HasNormals Then shape.SetNormals(arrays.Normals)
             If arrays.Tangents IsNot Nothing AndAlso shape.HasTangents Then shape.SetTangents(arrays.Tangents)
             If arrays.Bitangents IsNot Nothing AndAlso shape.HasTangents Then shape.SetBitangents(arrays.Bitangents)
-            If arrays.UVs IsNot Nothing AndAlso shape.HasUVs Then shape.SetUVs(arrays.UVs)
+            If arrays.UVs IsNot Nothing AndAlso shape.HasUVs Then shape.SetUVs(arrays.UVs.Select(Function(v) New TexCoord(v.X, v.Y)).ToList())
             If arrays.VertexColors IsNot Nothing AndAlso shape.HasVertexColors Then shape.SetVertexColors(arrays.VertexColors)
             If arrays.EyeData IsNot Nothing AndAlso shape.HasEyeData Then shape.SetEyeData(arrays.EyeData)
+
+            ' Polymorphic skin write-back when caller populated it.  For BSTriShape this
+            ' writes BoneIndices/BoneWeights into the packed buffer that ResizeVertices
+            ' established; for NiTriShape it rebuilds NiSkinData.BoneList[].VertexWeights.
+            If arrays.Skinning.HasValue Then shape.SetSkinning(arrays.Skinning.Value)
         End If
 
-        shape.SetTriangles(version, triangles)
+        ' Provenance-aware triangle write: redistribute Segments / LOD sizes when caller
+        ' supplied a per-new-triangle source map (split / merge populate this).  Without
+        ' provenance the adapter leaves metadata stale.
+        shape.SetTriangles(triangles, provenance)
     End Sub
 
     ' =========================================================================
@@ -845,8 +896,8 @@ Public Class SkinningHelper
         If boneTrans.Length <> bones.Length Then Exit Sub
 
         ' Recompute GlobalTransform
-        Dim tri = CType(shape.NifShape, BSTriShape)
-        Dim shapeNode = TryCast(shape.NifContent.GetParentNode(tri), NiNode)
+        Dim backing = shape.Geometry?.BackingShape
+        Dim shapeNode = TryCast(shape.NifContent.GetParentNode(backing), NiNode)
         If IsNothing(shapeNode) Then shapeNode = shape.NifContent.GetRootNode()
         Dim GlobalTransform = If(shapeNode IsNot Nothing, Transform_Class.GetGlobalTransform(shapeNode, shape.NifContent).ToMatrix4d(), Matrix4d.Identity)
 
@@ -884,31 +935,24 @@ Public Class SkinningHelper
             ' Also update perVertexSkinMatrix for world-space cache
             ' (Recompute per-vertex blended matrices using the same precomputed bone matrices)
 
-            Dim Nifversion = shape.NifContent.Header.Version
-            Dim allVD = Array.Empty(Of BSVertexData)
-            Dim allVDSSE = Array.Empty(Of BSVertexDataSSE)
-            If Not Nifversion.IsSSE Then If tri.VertexData IsNot Nothing Then allVD = tri.VertexData.ToArray()
-            If Nifversion.IsSSE Then If tri.VertexDataSSE IsNot Nothing Then allVDSSE = tri.VertexDataSSE.ToArray()
-
             Dim vertexCount = geo.Vertices.Length
-            ' Capture arrays as locals for safe parallel access (geo is ByRef)
+            ' Capture arrays as locals for safe parallel access (geo is ByRef).
+            ' Reuse the polymorphic skin data filled by ExtractSkinnedGeometry — no need to
+            ' re-snapshot tri.VertexData/VertexDataSSE here, those arrays are already encoded
+            ' in geo.Skinning (and they're empty for NiTriShape, where the partition path was used).
             Dim perVertexSkinMatrix = geo.PerVertexSkinMatrix
-            Dim localAllVD = allVD
-            Dim localAllVDSSE = allVDSSE
-            Dim localIsSSE = Nifversion.IsSSE
+            Dim localFlatIdx = geo.Skinning.BoneIndices
+            Dim localFlatWgt = geo.Skinning.BoneWeights
+            Dim localWpv = If(geo.Skinning.WeightsPerVertex > 0, geo.Skinning.WeightsPerVertex, 4)
+            Dim localHasSkin = (localFlatIdx IsNot Nothing AndAlso localFlatWgt IsNot Nothing AndAlso geo.Skinning.VertexCount = vertexCount)
             Dim localPrecomputed = precomputedBoneMatrices
 
             Dim skinBody As Action(Of Integer) = Sub(i)
-                                                     Dim Boneweights As System.Half()
-                                                     Dim Boneindices As Byte()
-                                                     If localIsSSE Then
-                                                         Boneweights = localAllVDSSE(i).BoneWeights
-                                                         Boneindices = localAllVDSSE(i).BoneIndices
+                                                     If localHasSkin Then
+                                                         perVertexSkinMatrix(i) = BlendBoneMatrices(localFlatWgt, localFlatIdx, i * localWpv, localWpv, localPrecomputed)
                                                      Else
-                                                         Boneweights = localAllVD(i).BoneWeights
-                                                         Boneindices = localAllVD(i).BoneIndices
+                                                         perVertexSkinMatrix(i) = If(localPrecomputed.Length > 0, localPrecomputed(0), Matrix4d.Identity)
                                                      End If
-                                                     perVertexSkinMatrix(i) = BlendBoneMatrices(Boneweights, Boneindices, localPrecomputed)
                                                  End Sub
 
             If vertexCount >= 500 Then
@@ -958,7 +1002,11 @@ Public Class SkinningHelper
 End Class
 
 ''' <summary>
-''' Holds per-vertex arrays in the types expected by BSTriShape.Set* methods.
+''' Holds per-vertex arrays in the types expected by IShapeGeometry.Set* methods.
+''' Skinning is optional — populated by SnapshotSeparateArrays for round-trip on the
+''' NiTriShape family (where per-vertex skin lives in NiSkinData rather than inline);
+''' BSTriShape consumers can ignore it because their per-vertex skin travels inside
+''' BSVertexData/SSE structs already.
 ''' </summary>
 Public Class ShapeArrays
     Public Positions As List(Of System.Numerics.Vector3)
@@ -968,6 +1016,7 @@ Public Class ShapeArrays
     Public UVs As List(Of System.Numerics.Vector3)
     Public VertexColors As List(Of NiflySharp.Structs.Color4)
     Public EyeData As List(Of Single)
+    Public Skinning As ShapeSkinningData?
 
     ''' <summary>Returns a new ShapeArrays containing only elements at the given original indices.</summary>
     Public Function FilterByIndices(indices As HashSet(Of Integer)) As ShapeArrays
@@ -979,6 +1028,33 @@ Public Class ShapeArrays
         If UVs IsNot Nothing Then r.UVs = UVs.Where(Function(x, i) indices.Contains(i)).ToList()
         If VertexColors IsNot Nothing Then r.VertexColors = VertexColors.Where(Function(x, i) indices.Contains(i)).ToList()
         If EyeData IsNot Nothing Then r.EyeData = EyeData.Where(Function(x, i) indices.Contains(i)).ToList()
+
+        ' Per-vertex skinning compaction: keep only slots for surviving vertex indices,
+        ' preserve WeightsPerVertex layout (default 4).  Bone palette unchanged.
+        If Skinning.HasValue AndAlso Skinning.Value.BoneIndices IsNot Nothing Then
+            Dim sk = Skinning.Value
+            Dim wpv As Integer = If(sk.WeightsPerVertex > 0, sk.WeightsPerVertex, 4)
+            Dim ordered = indices.OrderBy(Function(x) x).ToList()
+            Dim newCount As Integer = ordered.Count
+            Dim newIdx(newCount * wpv - 1) As Byte
+            Dim newWgt(newCount * wpv - 1) As System.Half
+            For i As Integer = 0 To newCount - 1
+                Dim oldVert As Integer = ordered(i)
+                Dim oldBase As Integer = oldVert * wpv
+                Dim newBase As Integer = i * wpv
+                For j As Integer = 0 To wpv - 1
+                    newIdx(newBase + j) = sk.BoneIndices(oldBase + j)
+                    newWgt(newBase + j) = sk.BoneWeights(oldBase + j)
+                Next
+            Next
+            r.Skinning = New ShapeSkinningData() With {
+                .BoneIndices = newIdx,
+                .BoneWeights = newWgt,
+                .WeightsPerVertex = wpv,
+                .VertexCount = newCount,
+                .BoneRefIndices = sk.BoneRefIndices
+            }
+        End If
         Return r
     End Function
 
@@ -1012,6 +1088,44 @@ Public Class ShapeArrays
         If other.EyeData IsNot Nothing Then
             If EyeData Is Nothing Then EyeData = New List(Of Single)()
             EyeData.AddRange(other.EyeData)
+        End If
+        ' Skinning concat: flat BoneIndices + BoneWeights arrays concatenated with aligned
+        ' WeightsPerVertex.  Caller is responsible for bone-palette remap on the donor's
+        ' BoneIndices BEFORE Append (see MergeShapesHelper).  Both sides must agree on
+        ' WeightsPerVertex; if not, throw loud — a 4-wpv target + 5-wpv donor merge is
+        ' undefined behaviour in the NIF schema.
+        If other.Skinning.HasValue Then
+            If Not Skinning.HasValue Then
+                ' Target had no skinning; adopt donor's as the start.
+                Skinning = other.Skinning
+            Else
+                Dim a = Skinning.Value
+                Dim b = other.Skinning.Value
+                If a.WeightsPerVertex <> b.WeightsPerVertex AndAlso
+                   a.WeightsPerVertex > 0 AndAlso b.WeightsPerVertex > 0 Then
+                    Throw New NotSupportedException(
+                        $"ShapeArrays.Append: WeightsPerVertex mismatch ({a.WeightsPerVertex} vs " &
+                        $"{b.WeightsPerVertex}).  Cannot merge per-vertex skin with different slot " &
+                        "counts without re-padding.")
+                End If
+                Dim wpv As Integer = If(a.WeightsPerVertex > 0, a.WeightsPerVertex, b.WeightsPerVertex)
+                Dim aCount = a.VertexCount
+                Dim bCount = b.VertexCount
+                Dim combined As Integer = aCount + bCount
+                Dim newIdx(combined * wpv - 1) As Byte
+                Dim newWgt(combined * wpv - 1) As System.Half
+                If a.BoneIndices IsNot Nothing Then Array.Copy(a.BoneIndices, 0, newIdx, 0, aCount * wpv)
+                If a.BoneWeights IsNot Nothing Then Array.Copy(a.BoneWeights, 0, newWgt, 0, aCount * wpv)
+                If b.BoneIndices IsNot Nothing Then Array.Copy(b.BoneIndices, 0, newIdx, aCount * wpv, bCount * wpv)
+                If b.BoneWeights IsNot Nothing Then Array.Copy(b.BoneWeights, 0, newWgt, aCount * wpv, bCount * wpv)
+                Skinning = New ShapeSkinningData() With {
+                    .BoneIndices = newIdx,
+                    .BoneWeights = newWgt,
+                    .WeightsPerVertex = wpv,
+                    .VertexCount = combined,
+                    .BoneRefIndices = a.BoneRefIndices   ' target's palette reference wins
+                }
+            End If
         End If
     End Sub
 End Class

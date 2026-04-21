@@ -2341,7 +2341,7 @@ Public Class PreviewModel
             Dim hasAlphaTest = material.HasAlphaTest
             Dim shape = Me.MeshData.Shape
             Dim nifShader = shape.NifShader
-            Dim nifshape = MeshData.Meshgeometry.TriShape
+            Dim nifshape = MeshData.Meshgeometry.Geometry?.BackingShape
 
             '===============================
             ' ?? PROPIEDADES DE COLOR BÁSICO

@@ -435,6 +435,8 @@ Public Class Nifcontent_Class_Manolo
                 Return True
             Case GetType(NiTriShape)
                 Return True
+            Case GetType(NiTriStrips)
+                Return True
             Case Else
                 Debugger.Break()
                 Throw New Exception
@@ -692,7 +694,38 @@ Public Class Nifcontent_Class_Manolo
             ' TESTEAR QUE ANDA !!!!!
             Debugger.Break()
         End If
-        Return Me.CloneShape(srcShape, destShapeName, srcNif)
+
+        Dim destShape = Me.CloneShape(srcShape, destShapeName, srcNif)
+
+        ' NiflySharp DeepCopyHelper bug workaround: structs short-circuit at DeepCopy
+        ' (DeepCopyHelper.cs:37 `type.IsValueType → return original`), so reference-type
+        ' FIELDS inside struct elements of cloned lists stay aliased with the source.
+        ' Specifically for NiSkinData: BoneList is List<BoneData> (struct); cloned fine
+        ' element-wise, but each struct's VertexWeights (List<BoneVertData>) is SHARED
+        ' between source and clone.  Subsequent SetSkinning on the clone mutates the
+        ' source's BoneList too → UpdateSkinPartitions(source) reads stale/overwritten
+        ' weights and throws KeyNotFound on vertex indices that no longer exist in the
+        ' aliased list.  Same category of bug we handle for BSGeometrySegmentData.SubSegment
+        ' in SplitShapeHelper — fix by manually deep-cloning the nested reference fields.
+        If destShape IsNot Nothing Then
+            Dim destSkinInst = TryCast(GetBlock(Of NiSkinInstance)(destShape.SkinInstanceRef), NiSkinInstance)
+            If destSkinInst IsNot Nothing Then
+                Dim destSkinData = GetBlock(destSkinInst.Data)
+                If destSkinData IsNot Nothing AndAlso destSkinData.BoneList IsNot Nothing Then
+                    Dim newBoneList As New List(Of NiflySharp.Structs.BoneData)(destSkinData.BoneList.Count)
+                    For Each bone In destSkinData.BoneList
+                        Dim copy = bone   ' struct copy
+                        If bone.VertexWeights IsNot Nothing Then
+                            copy.VertexWeights = New List(Of NiflySharp.Structs.BoneVertData)(bone.VertexWeights)
+                        End If
+                        newBoneList.Add(copy)
+                    Next
+                    destSkinData.BoneList = newBoneList
+                End If
+            End If
+        End If
+
+        Return destShape
     End Function
 
 
@@ -763,8 +796,23 @@ Public Class Nifcontent_Class_Manolo
         End If
     End Sub
 
+    ''' <summary>
     ''' Shadows NifFile.UpdateSkinPartitions: compacts empty partitions first so the
     ''' unmodified NiflySharp code never encounters a null partBones entry.
+    '''
+    ''' ORDER CONTRACT (critical for correctness, especially NiTriShape family):
+    '''   1. Any caller mutating per-vertex data (positions, per-vertex skin) MUST do so
+    '''      via the IShapeGeometry adapter (SetVertexPositions, SetSkinning, SetTriangles)
+    '''      BEFORE calling this.
+    '''   2. For the NiTriShape family, the partition is regenerated from NiSkinData by
+    '''      NiflySharp's UpdateSkinPartitions.  If the caller calls UpdateSkinPartitions
+    '''      BEFORE SetSkinning, the partition is built from stale NiSkinData → saved NIF
+    '''      has partition inconsistent with NiSkinData → skinning in-game corrupt.
+    '''   3. SkinningHelper.InjectToTrishape + Wardrobe_Manager.BuildingForm follow this
+    '''      order correctly (InjectToTrishape calls adapter.SetSkinning;
+    '''      UpdateSkinPartitions is called later by BuildingForm).  Any new caller that
+    '''      batches these operations must respect the same order.
+    ''' </summary>
     Public Shadows Sub UpdateSkinPartitions(shape As INiShape)
         CompactEmptyPartitions(shape)
         MyBase.UpdateSkinPartitions(shape)

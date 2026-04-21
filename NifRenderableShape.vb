@@ -3,27 +3,43 @@ Imports NiflySharp.Blocks
 Imports NiflySharp.Structs
 
 ''' <summary>
-''' Lightweight IRenderableShape implementation that wraps a BSTriShape directly from a loaded NIF file.
-''' No SliderSet/OSP dependency. Used by NPC Manager and any consumer that renders raw NIFs.
+''' Lightweight IRenderableShape implementation that wraps any supported NIF shape directly
+''' from a loaded NIF file.  No SliderSet/OSP dependency.  Used by NPC Manager and any consumer
+''' that renders raw NIFs.
+'''
+''' Polymorphism: the constructor takes INiShape (BSTriShape, BSSubIndexTriShape,
+''' BSDynamicTriShape, BSSegmentedTriShape, BSMeshLODTriShape, NiTriShape, BSLODTriShape) and
+''' instantiates the matching IShapeGeometry adapter via ShapeGeometryFactory.  The factory
+''' filter mirrors Nifcontent_Class_Manolo.SupportedShape — anything that returns True there
+''' will produce a working renderable here.
 ''' </summary>
 Public Class NifRenderableShape
     Implements IRenderableShape
 
     Private ReadOnly _nif As Nifcontent_Class_Manolo
-    Private ReadOnly _tri As BSTriShape
+    Private ReadOnly _shape As INiShape
+    Private ReadOnly _geometry As IShapeGeometry
     Private ReadOnly _index As Integer
     Private _bones As IReadOnlyList(Of NiNode)
     Private _boneTransforms As IReadOnlyList(Of Transform_Class)
     Private _material As Nifcontent_Class_Manolo.RelatedMaterial_Class
 
-    Public Sub New(nif As Nifcontent_Class_Manolo, tri As BSTriShape, index As Integer)
+    Public Sub New(nif As Nifcontent_Class_Manolo, shape As INiShape, index As Integer)
+        If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
+        If shape Is Nothing Then Throw New ArgumentNullException(NameOf(shape))
         _nif = nif
-        _tri = tri
+        _shape = shape
+        _geometry = ShapeGeometryFactory.[For](shape, nif)
         _index = index
         ResolveSkinData()
-        _material = nif.GetRelatedMaterial(tri)
+        _material = nif.GetRelatedMaterial(shape)
     End Sub
 
+    ''' <summary>
+    ''' Resolves the shape's bone palette (NiNode list) and the per-bone bind transforms.
+    ''' Per-vertex bone weights/indices are NOT resolved here — those live in
+    ''' IShapeGeometry.GetSkinning() (BSTriShape inline or NiSkinPartition expansion).
+    ''' </summary>
     Private Sub ResolveSkinData()
         Dim skin = NifSkin
         If skin Is Nothing Then
@@ -44,7 +60,11 @@ Public Class NifRenderableShape
         End If
         _bones = boneNodes
 
-        ' Resolve bone transforms
+        ' Resolve bone transforms — per-bone bind matrices live in different blocks depending
+        ' on the skin instance type:
+        '   BSSkin_Instance         → BSSkin_BoneData.BoneList[].BoneTransform   (FO4 BSTriShape)
+        '   BSDismemberSkinInstance → NiSkinData.BoneList[].SkinTransform        (FO4/SSE NiTriShape and BSTriShape with BSDismember)
+        '   NiSkinInstance          → NiSkinData.BoneList[].SkinTransform        (legacy NiTriShape)
         Dim transforms As New List(Of Transform_Class)
         Select Case skin.GetType
             Case GetType(BSSkin_Instance)
@@ -85,7 +105,7 @@ Public Class NifRenderableShape
 
     Public ReadOnly Property ShapeName As String Implements IRenderableShape.ShapeName
         Get
-            Return If(_tri?.Name?.String, "")
+            Return If(_shape?.Name?.String, "")
         End Get
     End Property
 
@@ -107,23 +127,29 @@ Public Class NifRenderableShape
         End Get
     End Property
 
-    Public ReadOnly Property NifShape As BSTriShape Implements IRenderableShape.NifShape
+    Public ReadOnly Property NifShape As INiShape Implements IRenderableShape.NifShape
         Get
-            Return _tri
+            Return _shape
+        End Get
+    End Property
+
+    Public ReadOnly Property Geometry As IShapeGeometry Implements IRenderableShape.Geometry
+        Get
+            Return _geometry
         End Get
     End Property
 
     Public ReadOnly Property NifSkin As INiSkin Implements IRenderableShape.NifSkin
         Get
-            If _tri Is Nothing OrElse _tri.SkinInstanceRef Is Nothing OrElse _tri.SkinInstanceRef.Index = -1 Then Return Nothing
-            If _tri.SkinInstanceRef.Index >= _nif.Blocks.Count Then Return Nothing
-            Return TryCast(_nif.Blocks(_tri.SkinInstanceRef.Index), INiSkin)
+            If _shape Is Nothing OrElse _shape.SkinInstanceRef Is Nothing OrElse _shape.SkinInstanceRef.Index = -1 Then Return Nothing
+            If _shape.SkinInstanceRef.Index >= _nif.Blocks.Count Then Return Nothing
+            Return TryCast(_nif.Blocks(_shape.SkinInstanceRef.Index), INiSkin)
         End Get
     End Property
 
     Public ReadOnly Property NifShader As INiShader Implements IRenderableShape.NifShader
         Get
-            Return _nif.GetShader(_tri)
+            Return _nif.GetShader(_shape)
         End Get
     End Property
 
@@ -147,7 +173,7 @@ Public Class NifRenderableShape
 
     Public ReadOnly Property IsSkinned As Boolean Implements IRenderableShape.IsSkinned
         Get
-            Return _tri IsNot Nothing AndAlso _tri.IsSkinned
+            Return _shape IsNot Nothing AndAlso _shape.IsSkinned
         End Get
     End Property
 
@@ -171,17 +197,19 @@ Public Class NifRenderableShape
     Public Property ApplyZaps As Boolean = False Implements IRenderableShape.ApplyZaps
     Public Property MaskedVertices As New HashSet(Of Integer)() Implements IRenderableShape.MaskedVertices
 
-    ' --- Factory: Create all renderable shapes from a loaded NIF ---
+    ''' <summary>
+    ''' Factory: instantiates a NifRenderableShape for every shape in <paramref name="nif"/>
+    ''' that Nifcontent_Class_Manolo.SupportedShape and ShapeGeometryFactory both accept.
+    ''' Previously this filtered to BSTriShape-only via a TryCast — that filter is gone, so
+    ''' NiTriShape and BSLODTriShape are now rendered alongside the BSTriShape family.
+    ''' </summary>
     Public Shared Function FromNif(nif As Nifcontent_Class_Manolo) As List(Of NifRenderableShape)
         Dim result As New List(Of NifRenderableShape)
         Dim idx = 0
         For Each shape In nif.GetShapes()
-            If Nifcontent_Class_Manolo.SupportedShape(shape.GetType) Then
-                Dim tri = TryCast(shape, BSTriShape)
-                If tri IsNot Nothing Then
-                    result.Add(New NifRenderableShape(nif, tri, idx))
-                    idx += 1
-                End If
+            If Nifcontent_Class_Manolo.SupportedShape(shape.GetType) AndAlso ShapeGeometryFactory.IsSupported(shape) Then
+                result.Add(New NifRenderableShape(nif, shape, idx))
+                idx += 1
             End If
         Next
         Return result
