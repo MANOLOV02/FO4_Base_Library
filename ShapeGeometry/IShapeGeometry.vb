@@ -108,8 +108,12 @@ Public Interface IShapeGeometry
     ''' Provenance-aware triangle write.  When <paramref name="provenance"/> is provided
     ''' (length must equal <paramref name="triangles"/>.Count), the adapter redistributes
     ''' count-derived metadata using the per-new-triangle source map:
-    '''   - BSMeshLODTriShape / BSLODTriShape LOD0/1/2 sizes: lossy collapse to LOD2
-    '''     (matches BodySlide-and-Outfit-Studio Geometry.cpp:1522 canonical behaviour).
+    '''   - BSMeshLODTriShape / BSLODTriShape LOD0/1/2 sizes: tier-preserving reorder.
+    '''     Triangles are bucketed by their old-tier source (via provenance) and rewritten
+    '''     in [LOD0][LOD1][LOD2] order; LOD sizes reflect the new bucket counts.  Triangles
+    '''     with cross-shape or synthetic sources fall into LOD2 (the "always visible" tier).
+    '''     Previously collapsed everything to LOD2 (BS-OS Geometry.cpp:1522 canonical
+    '''     behaviour); the new approach keeps the LOD optimization across split/merge/zap.
     '''   - BSSubIndexTriShape / BSSegmentedTriShape Segments and SubSegmentDatas:
     '''     full redistribution preserving per-segment metadata (ParentArrayIndex,
     '''     SegmentSharedData, SubSegmentDatas).  Algorithm follows BS-OS Geometry.cpp:1248

@@ -358,54 +358,134 @@ Public Class BSTriShapeGeometry
         Dim meshLod = TryCast(_tri, BSMeshLODTriShape)
         Dim subIndex = TryCast(_tri, BSSubIndexTriShape)
         Dim oldSegments As List(Of BSGeometrySegmentData) = Nothing
+        Dim oldLOD0 As Integer = 0
+        Dim oldLOD1 As Integer = 0
         If subIndex IsNot Nothing AndAlso subIndex.Segments IsNot Nothing Then
             oldSegments = subIndex.Segments.ToList()
         End If
+        If meshLod IsNot Nothing Then
+            oldLOD0 = CInt(meshLod.LOD0Size)
+            oldLOD1 = CInt(meshLod.LOD1Size)
+        End If
 
-        _tri.SetTriangles(Version, triangles)
+        ' ─── BSMeshLODTriShape: tier-preserving reorder (no longer lossy) ───
+        ' Classify each new triangle by which old LOD tier its source fell in, then reorder
+        ' the new triangle list so all LOD0 come first, then LOD1, then LOD2.  Write the
+        ' reordered triangles to the block and set LOD sizes to the bucket counts.  Triangles
+        ' with cross-shape or synthetic provenance default to LOD2 (the fallback "rendered at
+        ' all distances" tier).  Preserves the LOD optimization across split/merge/zap instead
+        ' of collapsing everything to LOD2 (previous canonical BS-OS behaviour).
+        Dim writeTris As List(Of Triangle) = triangles
+        Dim newLOD0Count As Integer = 0
+        Dim newLOD1Count As Integer = 0
+        Dim newLOD2Count As Integer = 0
+        If meshLod IsNot Nothing AndAlso provenance IsNot Nothing Then
+            Dim reordered = ReorderTrianglesByLODTier(triangles, provenance, oldLOD0, oldLOD1)
+            writeTris = reordered.Triangles
+            newLOD0Count = reordered.LOD0Count
+            newLOD1Count = reordered.LOD1Count
+            newLOD2Count = reordered.LOD2Count
+        End If
+
+        _tri.SetTriangles(Version, writeTris)
         SyncDynamicIfNeeded()
 
         ' Redistribute count-derived metadata when caller provided provenance.  Without
         ' provenance the metadata stays as-is (likely stale — caller's responsibility).
         If provenance Is Nothing Then Return
 
-        ' ─── BSMeshLODTriShape: lossy collapse to LOD2 ───
-        ' Matches BodySlide-and-Outfit-Studio Geometry.cpp:1522 BSMeshLODTriShape::
-        ' notifyVerticesDelete (lodSize0=lodSize1=0; lodSize2=numTriangles).  This is the
-        ' canonical behaviour — even nifly itself doesn't try to be smart about LOD
-        ' redistribution because the LOD bucket of a triangle isn't recoverable from a
-        ' triangle-level provenance map (we'd need a triangle reorder pass too).  Lossy is
-        ' OK because LOD2 is "always rendered at all distances" so no triangles disappear
-        ' visually — only the LOD optimization is lost.
         If meshLod IsNot Nothing Then
-            ' DEBUGGER.BREAK: TO TEST — first time this path executes, step through and
-            ' verify lodSize2 equals new triangle count post-write.  Remove this line after
-            ' validating with a real BSMeshLODTriShape NIF (rare in BodySlide outfits;
-            ' common in distant-LOD meshes).  See memory: pending_tests_shape_metadata.md
-            Debugger.Break()
-            meshLod.LOD0Size = 0UI
-            meshLod.LOD1Size = 0UI
-            meshLod.LOD2Size = CUInt(triangles.Count)
+            meshLod.LOD0Size = CUInt(newLOD0Count)
+            meshLod.LOD1Size = CUInt(newLOD1Count)
+            meshLod.LOD2Size = CUInt(newLOD2Count)
             Return
         End If
 
         ' ─── BSSubIndexTriShape: full Segments + SubSegmentDatas redistribution ───
+        ' (BSSubIndex and BSMeshLOD are mutually exclusive — a shape is either one or the
+        ' other, never both.  No LOD reorder applied to BSSubIndex triangles.)
         If subIndex IsNot Nothing AndAlso oldSegments IsNot Nothing AndAlso oldSegments.Count > 0 Then
-            ' DEBUGGER.BREAK: TO TEST — first time this path executes, step through and
-            ' verify Segments[].StartIndex/NumPrimitives + SubSegment[].StartIndex/
-            ' NumPrimitives are consistent and cover the new triangle list correctly.
-            ' Remove after validation against an FO4 outfit with subindex + zap slider.
-            ' See memory: pending_tests_shape_metadata.md
-            Debugger.Break()
             Dim newSegments = RedistributeSegments(oldSegments, provenance, triangles.Count)
             subIndex.Segments = newSegments
             ' Align the parallel _segmentData (SSF + PerSegmentData records) so the NIF
-            ' block stays internally consistent.  Our redistribute preserves segment AND
-            ' sub-segment counts, but SegmentStarts (list of per-segment StartIndex in
-            ' vertex-index units) and NumSegments / TotalSegments fields need refresh.
+            ' block stays internally consistent.
             AlignSubIndexSegmentData(subIndex, newSegments)
         End If
     End Sub
+
+    ''' <summary>
+    ''' Result of <see cref="ReorderTrianglesByLODTier"/>: triangles reordered into
+    ''' [LOD0 tier][LOD1 tier][LOD2 tier] order, plus the count per bucket so the caller can
+    ''' set the corresponding <c>LOD0Size</c>/<c>LOD1Size</c>/<c>LOD2Size</c> fields.
+    ''' </summary>
+    Friend Structure LODReorderResult
+        Public Triangles As List(Of Triangle)
+        Public LOD0Count As Integer
+        Public LOD1Count As Integer
+        Public LOD2Count As Integer
+    End Structure
+
+    ''' <summary>
+    ''' Re-bucket triangles by the LOD tier their OLD index fell in (per provenance), then
+    ''' emit them in [LOD0][LOD1][LOD2] order so the shape's <c>LOD0Size/1/2Size</c> fields
+    ''' reference contiguous ranges.  Called from <see cref="SetTriangles"/> for
+    ''' BSMeshLODTriShape and reused by <c>NiTriShapeGeometry</c> for BSLODTriShape.
+    '''
+    ''' Classification:
+    ''' <list type="bullet">
+    '''   <item>Same-shape non-synthetic source (Shape=Nothing, OldIdx≥0) → bucket by old range.</item>
+    '''   <item>Cross-shape (Shape IsNot Nothing, e.g. merge donor) → LOD2 (default fallback).</item>
+    '''   <item>Synthetic (Shape=Nothing, OldIdx&lt;0) → LOD2.</item>
+    ''' </list>
+    '''
+    ''' LOD2 is the fallback tier because it's "always rendered at all distances" — any
+    ''' triangle we can't place in a specific tier stays visible at all LODs, preserving
+    ''' geometric correctness at the cost of some LOD optimization for those triangles.
+    ''' </summary>
+    Friend Shared Function ReorderTrianglesByLODTier(
+            triangles As List(Of Triangle),
+            provenance As TriangleRemap,
+            oldLOD0Size As Integer,
+            oldLOD1Size As Integer) As LODReorderResult
+
+        Dim oldLOD0End As Integer = oldLOD0Size
+        Dim oldLOD1End As Integer = oldLOD0Size + oldLOD1Size
+
+        Dim bucket0 As New List(Of Triangle)()
+        Dim bucket1 As New List(Of Triangle)()
+        Dim bucket2 As New List(Of Triangle)(triangles.Count)
+
+        For i = 0 To triangles.Count - 1
+            Dim src = provenance.Sources(i)
+            Dim tier As Integer = 2  ' default: cross-shape / synthetic → LOD2
+            If src.Shape Is Nothing AndAlso src.OldIdx >= 0 Then
+                If src.OldIdx < oldLOD0End Then
+                    tier = 0
+                ElseIf src.OldIdx < oldLOD1End Then
+                    tier = 1
+                Else
+                    tier = 2
+                End If
+            End If
+            Select Case tier
+                Case 0 : bucket0.Add(triangles(i))
+                Case 1 : bucket1.Add(triangles(i))
+                Case Else : bucket2.Add(triangles(i))
+            End Select
+        Next
+
+        Dim reordered As New List(Of Triangle)(triangles.Count)
+        reordered.AddRange(bucket0)
+        reordered.AddRange(bucket1)
+        reordered.AddRange(bucket2)
+
+        Return New LODReorderResult With {
+            .Triangles = reordered,
+            .LOD0Count = bucket0.Count,
+            .LOD1Count = bucket1.Count,
+            .LOD2Count = bucket2.Count
+        }
+    End Function
 
     ''' <summary>
     ''' Keeps BSSubIndexTriShape._segmentData (BSGeometrySegmentSharedData) consistent with
@@ -542,27 +622,39 @@ Public Class BSTriShapeGeometry
                                                   newTriCount As Integer) As List(Of BSGeometrySegmentData)
         Dim result As New List(Of BSGeometrySegmentData)(oldSegments.Count)
         Dim cumulativeTriIdx As Integer = 0
-        ' Track new triangles NOT covered by any old segment (cross-shape entries from
-        ' merge, or synthetic triangles with oldIdx=-1).  Emitted as a final "catch-all"
-        ' segment so dismember engine doesn't read out of bounds.
-        Dim coveredNewIndices As New HashSet(Of Integer)()
 
+        ' ─── Phase 1: index provenance by old triangle idx — O(N) ───
+        ' Build a map oldTriIdx → count of new survivors coming from that old idx.  Also
+        ' count synthetic entries (Shape=Nothing AND OldIdx<0) in one pass for the fallback
+        ' segment at the end.  Previously the segment loop did O(N*M) — for each segment it
+        ' rescanned all provenance entries.  Dict lookup drops it to O(N + sum of segment
+        ' ranges) which is O(N + oldTotal) ≈ O(N + M) for typical NIFs.
+        Dim survivorsByOld As New Dictionary(Of Integer, Integer)(provenance.Sources.Count)
+        Dim syntheticUncovered As Integer = 0
+        For i = 0 To provenance.Sources.Count - 1
+            Dim src = provenance.Sources(i)
+            If src.Shape IsNot Nothing Then Continue For  ' cross-shape: handled by MergeMetadataAfterApply
+            If src.OldIdx < 0 Then
+                syntheticUncovered += 1
+                Continue For
+            End If
+            Dim existing As Integer
+            If survivorsByOld.TryGetValue(src.OldIdx, existing) Then
+                survivorsByOld(src.OldIdx) = existing + 1
+            Else
+                survivorsByOld(src.OldIdx) = 1
+            End If
+        Next
+
+        ' ─── Phase 2: emit new segments by scanning each old range — O(oldTotal) ───
         For Each oldSeg In oldSegments
             Dim oldStartTri As Integer = CInt(oldSeg.StartIndex \ 3UI)
             Dim oldEndTri As Integer = oldStartTri + CInt(oldSeg.NumPrimitives)
 
-            ' Count survivors from this old segment: new triangles whose source falls in range.
             Dim survivors As Integer = 0
-            For newIdx = 0 To provenance.Sources.Count - 1
-                Dim src = provenance.Sources(newIdx)
-                ' Skip cross-shape provenance for redistribution (merge case — handled
-                ' by fallback segment below + MergeMetadataAfterApply append) and synthetic
-                ' triangles (oldIdx = -1, covered by fallback).
-                If src.Shape IsNot Nothing OrElse src.OldIdx < 0 Then Continue For
-                If src.OldIdx >= oldStartTri AndAlso src.OldIdx < oldEndTri Then
-                    survivors += 1
-                    coveredNewIndices.Add(newIdx)
-                End If
+            For oldIdx = oldStartTri To oldEndTri - 1
+                Dim cnt As Integer
+                If survivorsByOld.TryGetValue(oldIdx, cnt) Then survivors += cnt
             Next
 
             Dim newSeg As New BSGeometrySegmentData() With {
@@ -572,10 +664,10 @@ Public Class BSTriShapeGeometry
                 .ParentArrayIndex = oldSeg.ParentArrayIndex
             }
 
-            ' SubSegments: same algorithm, scoped to the parent segment range.  Realigned
-            ' cumulatively starting from the new parent's StartIndex.
+            ' SubSegments: same algorithm, scoped to the parent segment range, reuses the
+            ' survivorsByOld dict (already built) so each sub-seg is O(subRange) — no N rescan.
             If oldSeg.SubSegment IsNot Nothing AndAlso oldSeg.SubSegment.Count > 0 Then
-                newSeg.SubSegment = RedistributeSubSegments(oldSeg.SubSegment, provenance, CInt(newSeg.StartIndex \ 3UI))
+                newSeg.SubSegment = RedistributeSubSegments(oldSeg.SubSegment, survivorsByOld, CInt(newSeg.StartIndex \ 3UI))
                 newSeg.NumSubSegments = CUInt(newSeg.SubSegment.Count)
             Else
                 newSeg.SubSegment = New List(Of BSGeometrySubSegment)()
@@ -599,23 +691,11 @@ Public Class BSTriShapeGeometry
 
         ' Synthetic-only fallback: new triangles with (Shape=Nothing AND OldIdx<0) are
         ' synthetic entries in same-shape provenance (e.g. a future caller that appends
-        ' generated triangles to an existing shape).  Bundle those — and ONLY those — into
-        ' a catch-all segment so the shape stays dismember-legal.
-        '
-        ' Cross-shape entries (Shape IsNot Nothing, from merge) are NOT covered here:
-        ' MergeShapesHelper.MergeMetadataAfterApply is responsible for appending donor
-        ' segments with proper StartIndex offset.  Emitting a fallback AND appending donor
-        ' segments would double-count those triangles (PrimSum > TC — a dismember-illegal
-        ' NIF that was discovered by ShapeTypeValidator test C).
-        Dim syntheticUncovered As Integer = 0
-        For newIdx = 0 To provenance.Sources.Count - 1
-            If coveredNewIndices.Contains(newIdx) Then Continue For
-            Dim src = provenance.Sources(newIdx)
-            If src.Shape Is Nothing AndAlso src.OldIdx < 0 Then
-                syntheticUncovered += 1
-            End If
-        Next
-
+        ' generated triangles to an existing shape).  Bundle those into a catch-all segment
+        ' so the shape stays dismember-legal.  Cross-shape entries are NOT covered here —
+        ' MergeShapesHelper.MergeMetadataAfterApply appends donor segments with proper
+        ' offset; emitting a fallback + donor-append would double-count (PrimSum > TC bug
+        ' caught by ShapeTypeValidator test C).
         If syntheticUncovered > 0 AndAlso cumulativeTriIdx + syntheticUncovered <= newTriCount Then
             Dim fallback As New BSGeometrySegmentData() With {
                 .Flags = 0,
@@ -637,8 +717,15 @@ Public Class BSTriShapeGeometry
     ''' cumulative starting from <paramref name="newParentStartTri"/> (in triangle units —
     ''' multiplied by 3 for storage as vertex-index units).
     ''' </summary>
+    ''' <summary>
+    ''' Sub-segment redistribution.  Signature differs from the public overload by accepting
+    ''' the pre-built <paramref name="survivorsByOld"/> dictionary instead of walking
+    ''' provenance again — the outer <see cref="RedistributeSegments"/> builds that dict
+    ''' once and reuses it across all parent segments and their sub-segments.  Each sub-seg
+    ''' is then O(subRange) instead of O(N).
+    ''' </summary>
     Private Shared Function RedistributeSubSegments(oldSubSegments As List(Of BSGeometrySubSegment),
-                                                     provenance As TriangleRemap,
+                                                     survivorsByOld As Dictionary(Of Integer, Integer),
                                                      newParentStartTri As Integer) As List(Of BSGeometrySubSegment)
         Dim result As New List(Of BSGeometrySubSegment)(oldSubSegments.Count)
         Dim cumulativeTriIdx As Integer = newParentStartTri
@@ -648,10 +735,9 @@ Public Class BSTriShapeGeometry
             Dim oldEndTri As Integer = oldStartTri + CInt(oldSub.NumPrimitives)
 
             Dim survivors As Integer = 0
-            For newIdx = 0 To provenance.Sources.Count - 1
-                Dim src = provenance.Sources(newIdx)
-                If src.Shape IsNot Nothing OrElse src.OldIdx < 0 Then Continue For
-                If src.OldIdx >= oldStartTri AndAlso src.OldIdx < oldEndTri Then survivors += 1
+            For oldIdx = oldStartTri To oldEndTri - 1
+                Dim cnt As Integer
+                If survivorsByOld.TryGetValue(oldIdx, cnt) Then survivors += cnt
             Next
 
             result.Add(New BSGeometrySubSegment() With {

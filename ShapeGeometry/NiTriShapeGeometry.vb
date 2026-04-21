@@ -379,20 +379,42 @@ Public Class NiTriShapeGeometry
         Dim bsLod = TryCast(_shape, BSLODTriShape)
         Dim bsSeg = TryCast(_shape, BSSegmentedTriShape)
         Dim oldSegments As List(Of BSGeometrySegmentData) = Nothing
+        Dim oldLOD0 As Integer = 0
+        Dim oldLOD1 As Integer = 0
         If bsSeg IsNot Nothing Then oldSegments = ReadSegmentedSegments(bsSeg)
+        If bsLod IsNot Nothing Then
+            oldLOD0 = CInt(bsLod.LOD0Size)
+            oldLOD1 = CInt(bsLod.LOD1Size)
+        End If
+
+        ' ─── BSLODTriShape: tier-preserving reorder (no longer lossy) ───
+        ' Classify each new triangle by which old LOD tier its source fell in, then reorder
+        ' [LOD0][LOD1][LOD2].  Same algorithm as BSMeshLODTriShape — delegates to the shared
+        ' helper in BSTriShapeGeometry to avoid duplication.
+        Dim writeTris As List(Of Triangle) = triangles
+        Dim newLOD0Count As Integer = 0
+        Dim newLOD1Count As Integer = 0
+        Dim newLOD2Count As Integer = 0
+        If bsLod IsNot Nothing AndAlso provenance IsNot Nothing Then
+            Dim reordered = BSTriShapeGeometry.ReorderTrianglesByLODTier(triangles, provenance, oldLOD0, oldLOD1)
+            writeTris = reordered.Triangles
+            newLOD0Count = reordered.LOD0Count
+            newLOD1Count = reordered.LOD1Count
+            newLOD2Count = reordered.LOD2Count
+        End If
 
         ' Write triangles to the underlying data block (NiTriShapeData triangle list or
         ' NiTriStripsData strip flatten).
         Dim triData = TryCast(d, NiTriShapeData)
         If triData IsNot Nothing Then
-            triData.Triangles = triangles
+            triData.Triangles = writeTris
         Else
             Dim stripData = TryCast(d, NiTriStripsData)
             If stripData IsNot Nothing Then
                 ' NiTriStripsData round-trip: emit one 3-point strip per triangle (degenerate
                 ' encoding — loses GPU strip-batching but preserves geometry exactly).
-                Dim strips As New List(Of List(Of UShort))(triangles.Count)
-                For Each t In triangles
+                Dim strips As New List(Of List(Of UShort))(writeTris.Count)
+                For Each t In writeTris
                     strips.Add(New List(Of UShort) From {t.V1, t.V2, t.V3})
                 Next
                 WriteStrips(stripData, strips)
@@ -402,19 +424,10 @@ Public Class NiTriShapeGeometry
         ' Redistribute count-derived metadata when provenance was provided.
         If provenance Is Nothing Then Return
 
-        ' ─── BSLODTriShape: lossy collapse to LOD2 ───
-        ' Same canonical behaviour as BSMeshLODTriShape (BS-OS Geometry.cpp:1522).
-        ' BSLODTriShape uses identical LOD0/1/2Size fields per nif.xml — sibling format
-        ' targeted at Skyrim/SSE rather than FO4.
         If bsLod IsNot Nothing Then
-            ' DEBUGGER.BREAK: TO TEST — first time a BSLODTriShape goes through provenance-
-            ' aware SetTriangles, step through and verify LOD2Size equals new tri count.
-            ' Remove after validation against an SSE LOD-mesh sample.  See memory:
-            ' pending_tests_shape_metadata.md
-            Debugger.Break()
-            bsLod.LOD0Size = 0UI
-            bsLod.LOD1Size = 0UI
-            bsLod.LOD2Size = CUInt(triangles.Count)
+            bsLod.LOD0Size = CUInt(newLOD0Count)
+            bsLod.LOD1Size = CUInt(newLOD1Count)
+            bsLod.LOD2Size = CUInt(newLOD2Count)
             Return
         End If
 
