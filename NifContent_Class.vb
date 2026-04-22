@@ -47,24 +47,47 @@ Public Class Nifcontent_Class_Manolo
             Throw New Exception(ex.Message)
         End Try
 
-        BaseMaterials.Clear()
-
-        If Me.Header.Version.IsSK AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then
-            Dim opt As New NifFileOptimizeOptions With {.TargetVersion = NiVersion.GetSSE}
-            Dim xx = Me.OptimizeFor(opt)
-        End If
-
-        For Each shap In Me.GetShapes
-            If SupportedShape(shap.GetType) Then
-                BaseMaterials(shap.Name.String) = GetRelatedMaterial(shap)
-            End If
-        Next
+        Read_MaterialsDictionary()
 
         If HasUnknownBlocks Then
             Debugger.Break()
             Throw New Exception("Unknown blocks")
         End If
     End Sub
+    Private Sub Read_MaterialsDictionary()
+        BaseMaterials.Clear()
+        For Each shap In Me.GetShapes
+            If SupportedShape(shap.GetType) Then
+                BaseMaterials(shap.Name.String) = GetRelatedMaterial(shap)
+            End If
+        Next
+    End Sub
+    Public Function Optimize(Game As Config_App.Game_Enum) As NifFileOptimizeResult
+        Dim opt As NifFileOptimizeOptions
+        Select Case Game
+            Case Config_App.Game_Enum.Fallout4
+                opt = New NifFileOptimizeOptions With {.TargetVersion = NiVersion.GetFO4}
+            Case Config_App.Game_Enum.Skyrim
+                opt = New NifFileOptimizeOptions With {.TargetVersion = NiVersion.GetSSE}
+            Case Else
+                Debugger.Break()
+                Throw New Exception
+        End Select
+        Dim result = Me.OptimizeFor(opt)
+
+        ' Rebuild BaseMaterials only when OptimizeFor actually renamed duplicates.
+        ' `result.DuplicatesRenamed = true` means `RenameDuplicateShapes` appended
+        ' "_1"/"_2" etc. to shape names; the dict built in Load_Manolo is keyed by
+        ' the original names and would KeyNotFoundException on subsequent
+        ' `BaseMaterials(shape.Name.String)` lookups (e.g. via RelatedNifMaterial).
+        ' When no rename happened, the dict keys are still valid.
+        If Not IsNothing(result) AndAlso result.DuplicatesRenamed Then
+            Read_MaterialsDictionary()
+        End If
+
+        Return result
+    End Function
+
     Public Shared Function SupportedShape(shapetype As Type) As Boolean
         Select Case shapetype
             Case GetType(NiParticles)

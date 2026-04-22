@@ -517,33 +517,21 @@ Public Class NiTriShapeGeometry
         Next
 
         ' ─── Rebuild ───
-        ' Always allocate a fresh List<BoneVertData> per bone (defensive, not optimization).
-        ' DeepCopyHelper has a value-type short-circuit (DeepCopyHelper.cs:37) that skips
-        ' recursing into struct fields.  NiSkinData.BoneList is List<BoneData> where BoneData
-        ' is a struct holding `public List<BoneVertData> VertexWeights`.  After NifFile.CloneShape,
-        ' each BoneData struct in the clone's BoneList is value-copied but its VertexWeights
-        ' reference ALIASES the source's list.  If we used `.Clear()` on the existing list
-        ' we'd wipe the source shape's skinning; creating a new list here breaks the alias
-        ' and guarantees this adapter only mutates its own shape's data.
+        ' Clear each bone's VertexWeights list in place. This used to require a fresh
+        ' `New List(Of BoneVertData)()` because DeepCopyHelper short-circuited on value
+        ' types (leaving clone's BoneData.VertexWeights aliased to source). NiflySharp
+        ' fix in Helpers/DeepCopyHelper.cs (IsValueTypeSelfContained guard) now deep-
+        ' copies struct reference fields, so `.Clear()` is safe — we only affect this
+        ' shape's list.
         For b = 0 To numBones - 1
-            Dim bone = skinData.BoneList(b)
-            bone.VertexWeights = New List(Of BoneVertData)()
-            skinData.BoneList(b) = bone   ' re-store the struct
+            skinData.BoneList(b).VertexWeights.Clear()
         Next
 
         ' Pivot per-vertex slots → per-bone (vertex, weight) entries.  Skip slots with
         ' zero weight (no influence) so the per-bone lists stay sparse.
-        '
-        ' NiflySharp UpdateSkinPartitions workaround: NifFile.cs:2447 does
-        '   foreach (var tb in vertBoneWeights[tri[i]])
-        ' without TryGetValue — if a vertex has no entry in any BoneList[b].VertexWeights
-        ' (e.g. orphan vertex with all-zero weights), this throws KeyNotFoundException at
-        ' partition rebuild time.  Seen on LE daedric armor NIFs where the source has
-        ' weight-zero verts.  To avoid the crash we record per-vertex "did we write at
-        ' least one entry" and add a dummy (bone 0, weight 0) entry for any vertex that
-        ' would otherwise be absent.  Weight 0 has no render effect but ensures the
-        ' vertex key exists in the dict.
-        Dim vertHasEntry(n - 1) As Boolean
+        ' Orphan verts (no non-zero weight in any bone) no longer need a dummy (bone 0,
+        ' weight 0) entry: Fix #5 in NiflySharp NifFile.cs:UpdateSkinPartitions now uses
+        ' TryGetValue and tolerates missing keys (bones/weights zeroed for those verts).
         For i = 0 To n - 1
             Dim vBase As Integer = i * wpv
             For j = 0 To wpv - 1
@@ -555,29 +543,8 @@ Public Class NiTriShapeGeometry
                     .Index = CUShort(i),
                     .Weight = w
                 })
-                vertHasEntry(i) = True
             Next
         Next
-
-        ' Second pass: ensure every vertex has at least one entry in SOME bone's list.
-        ' Dummy (bone 0, weight 0) is inert renderer-side but satisfies NiflySharp's
-        ' Dictionary lookup in UpdateSkinPartitions.
-        Dim missingCount As Integer = 0
-        If numBones > 0 Then
-            Dim bone0 = skinData.BoneList(0)
-            Dim appended As Boolean = False
-            For i = 0 To n - 1
-                If Not vertHasEntry(i) Then
-                    bone0.VertexWeights.Add(New BoneVertData() With {
-                        .Index = CUShort(i),
-                        .Weight = 0.0F
-                    })
-                    appended = True
-                    missingCount += 1
-                End If
-            Next
-            If appended Then skinData.BoneList(0) = bone0
-        End If
 
         ' Update per-bone NumVertices to match the rebuilt list (NiflySharp reads this on
         ' write; if stale, the binary output will be truncated/corrupt).  Degenerate bones
