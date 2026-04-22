@@ -125,8 +125,14 @@ Public Class SkinningHelper
     ''' Extrae vértices, normales, tangentes y bitangentes del shape,
     ''' aplicando el mismo skinning que LoadShapeSafe.
     ''' </summary>
-    '''   Public Shared Function ExtractSkinnedGeometry(shape As IRenderableShape, ApplyPose As Boolean, singleboneskinning As Boolean, RecalculateNormals As Boolean) As SkinnedGeometry
-    Public Shared Function ExtractSkinnedGeometry(shape As IRenderableShape, ApplyPose As Boolean, singleboneskinning As Boolean, RecalculateNormals As Boolean) As SkinnedGeometry
+    ''' <param name="skeleton">SkeletonInstance to read bind/pose transforms from. If Nothing,
+    ''' falls back to <see cref="SkeletonInstance.Default"/>. Pose application is implicit:
+    ''' bones whose <see cref="HierarchiBone_class.DeltaTransform"/> is set get pose-folded;
+    ''' bones with DeltaTransform=Nothing collapse to bind. Callers that want a "render bind
+    ''' regardless of stored pose" call <see cref="SkeletonInstance.Reset"/> on the instance
+    ''' first (they are responsible for the side effect on shared instances).</param>
+    Public Shared Function ExtractSkinnedGeometry(shape As IRenderableShape, singleboneskinning As Boolean, RecalculateNormals As Boolean, Optional skeleton As SkeletonInstance = Nothing) As SkinnedGeometry
+        Dim effectiveSkel As SkeletonInstance = If(skeleton, SkeletonInstance.Default)
         Dim shapeGeom = shape.Geometry
         If shapeGeom Is Nothing Then Throw New InvalidOperationException("IRenderableShape.Geometry is null")
         Dim backing = shapeGeom.BackingShape
@@ -212,9 +218,9 @@ Public Class SkinningHelper
             Dim boneName = bones(k).Name.String
             Dim bindT As Transform_Class
             Dim poseT As Transform_Class
-            Dim SkeletonBone As Skeleton_Class.HierarchiBone_class = Nothing
+            Dim SkeletonBone As HierarchiBone_class = Nothing
 
-            If Skeleton_Class.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
+            If effectiveSkel.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
                 bindT = SkeletonBone.OriginalGetGlobalTransform
             Else
                 bindT = Transform_Class.GetGlobalTransform(bones(k), shape.NifContent)
@@ -222,7 +228,7 @@ Public Class SkinningHelper
 
             matsBind(k) = bindT.ComposeTransforms(localT).ToMatrix4d()
 
-            If ApplyPose AndAlso Not singleboneskinning AndAlso Not IsNothing(SkeletonBone) Then
+            If Not singleboneskinning AndAlso Not IsNothing(SkeletonBone) Then
                 poseT = SkeletonBone.GetGlobalTransform()
                 matsPose(k) = poseT.ComposeTransforms(localT).ToMatrix4d()
             Else
@@ -504,7 +510,14 @@ Public Class SkinningHelper
         nm4.M31 = nm3.M31 : nm4.M32 = nm3.M32 : nm4.M33 = nm3.M33
         Return nm4
     End Function
-    Public Shared Sub BakeFromMemoryUsingOriginal(Shape As IRenderableShape, ByRef geom As SkinnedGeometry, ApplyPose As Boolean, inverse As Boolean, ApplyMorph As Boolean, RemoveZaps As Boolean, singleBoneSkinning As Boolean,
+    ''' <summary>
+    ''' Bake current pose into geometry: vertices/normals/tangents/bitangents are transformed
+    ''' by the per-bone skin matrices stored in <paramref name="geom"/>. If the underlying
+    ''' SkeletonInstance has no DeltaTransforms, matsBind == matsPose and the bake collapses
+    ''' to identity (no-op outcome, callers paid the parallel-loop cost). Callers that want
+    ''' "bake skipped when no pose" must check upstream and avoid invoking this method.
+    ''' </summary>
+    Public Shared Sub BakeFromMemoryUsingOriginal(Shape As IRenderableShape, ByRef geom As SkinnedGeometry, inverse As Boolean, ApplyMorph As Boolean, RemoveZaps As Boolean, singleBoneSkinning As Boolean,
                                                    Optional geometryModifier As IGeometryModifier = Nothing)
         ' 2) Matrices calculadas en ExtractSkinnedGeometry
         Dim matsBind() As Matrix4d = geom.BoneMatsBind
@@ -539,86 +552,100 @@ Public Class SkinningHelper
         Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso geom.Skinning.VertexCount = worldV.Length)
 
         'A - REVIERTE Skinning y Bakea
-        ' Pre-compute inverted pose matrices and bind*invPose products (avoid redundant inversion per vertex)
-        Dim bindTimesInvPose(matsBind.Length - 1) As Matrix4d
-        For k = 0 To matsBind.Length - 1
-            bindTimesInvPose(k) = matsBind(k) * Matrix4d.Invert(matsPose(k))
-        Next
+        ' Per-vertex linear blend (arithmetic mean) of matsBind y matsPose — coincide
+        ' EXACTAMENTE con la fórmula del shader (Σw·bone[k]). La versión anterior calculaba
+        ' Mskin = Σw·(matsBind·invMatsPose) e invertía: ése es la "media armónica" de
+        ' matrices y NO equivale a Σw·matsPose para vértices con peso repartido entre
+        ' huesos. Como resultado, render-with-bind(v_baked) ≠ render-with-pose(v_orig)
+        ' cuando wpv>1 (típico en bodies). Round-trip seguía siendo identidad porque la
+        ' fórmula es invertible consigo misma, pero no preservaba la pose visualmente.
 
         Select Case True
             Case Not singleBoneSkinning AndAlso matsBind.Length > 0
-                ' Multibone — vertices are already in local space, skip revert, only bake if needed
+                ' Multibone — vertices in shape-local; transform per-vertex con blend lineal
                 Parallel.For(0, worldV.Length, Sub(i)
-                                                   If ApplyPose Then
-                                                       Dim Mskin As Matrix4d = Matrix4d.Zero
-                                                       Dim sumW As Double = 0
+                                                   Dim MposeBlend As Matrix4d = Matrix4d.Zero
+                                                   Dim MbindBlend As Matrix4d = Matrix4d.Zero
+                                                   Dim sumW As Double = 0
 
-                                                       If hasSkin Then
-                                                           Dim baseIdx = i * skinWpv
-                                                           Dim cnt = Math.Min(skinWpv, Math.Min(skinFlatWgt.Length - baseIdx, skinFlatIdx.Length - baseIdx)) - 1
-                                                           For j = 0 To cnt
-                                                               sumW += CType(skinFlatWgt(baseIdx + j), Double)
-                                                           Next
-                                                           If sumW = 0F Then
-                                                               Dim idx0 = If(cnt >= 0, skinFlatIdx(baseIdx), CByte(0))
-                                                               Dim idx0c = Math.Max(0, Math.Min(CInt(idx0), matsBind.Length - 1))
-                                                               Mskin = bindTimesInvPose(idx0c)
-                                                           Else
-                                                               For j = 0 To cnt
-                                                                   Dim w = CType(skinFlatWgt(baseIdx + j), Double) / sumW
-                                                                   Dim idx = skinFlatIdx(baseIdx + j)
-                                                                   If idx >= 0 AndAlso idx < matsBind.Length Then
-                                                                       Mskin += bindTimesInvPose(idx) * w
-                                                                   End If
-                                                               Next
-                                                           End If
+                                                   If hasSkin Then
+                                                       Dim baseIdx = i * skinWpv
+                                                       Dim cnt = Math.Min(skinWpv, Math.Min(skinFlatWgt.Length - baseIdx, skinFlatIdx.Length - baseIdx)) - 1
+                                                       For j = 0 To cnt
+                                                           sumW += CType(skinFlatWgt(baseIdx + j), Double)
+                                                       Next
+                                                       If sumW = 0F Then
+                                                           Dim idx0 = If(cnt >= 0, skinFlatIdx(baseIdx), CByte(0))
+                                                           Dim idx0c = Math.Max(0, Math.Min(CInt(idx0), matsBind.Length - 1))
+                                                           MposeBlend = matsPose(idx0c)
+                                                           MbindBlend = matsBind(idx0c)
                                                        Else
-                                                           Mskin = bindTimesInvPose(0)
+                                                           For j = 0 To cnt
+                                                               Dim w = CType(skinFlatWgt(baseIdx + j), Double) / sumW
+                                                               Dim idx = skinFlatIdx(baseIdx + j)
+                                                               If idx >= 0 AndAlso idx < matsBind.Length Then
+                                                                   MposeBlend += matsPose(idx) * w
+                                                                   MbindBlend += matsBind(idx) * w
+                                                               End If
+                                                           Next
                                                        End If
-
-                                                       Dim skinMat = Mskin
-                                                       If Not inverse Then skinMat.Invert()
-                                                       Dim totalSkinMat As Matrix4d = InverseGlobal * skinMat * GlobalTransform
-                                                       Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
-
-                                                       ' Bake (local -> new-local)
-                                                       worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                                                       worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
-                                                       worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
-                                                       worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
+                                                   Else
+                                                       MposeBlend = matsPose(0)
+                                                       MbindBlend = matsBind(0)
                                                    End If
+
+                                                   ' v_baked tal que v_baked·MbindBlend = v_orig·MposeBlend
+                                                   '   ⇒ v_baked = v_orig · MposeBlend · inv(MbindBlend)
+                                                   ' Inverse=True invierte la dirección (unbake).
+                                                   Dim skinMat As Matrix4d
+                                                   If Not inverse Then
+                                                       skinMat = MposeBlend * Matrix4d.Invert(MbindBlend)
+                                                   Else
+                                                       skinMat = MbindBlend * Matrix4d.Invert(MposeBlend)
+                                                   End If
+                                                   Dim totalSkinMat As Matrix4d = InverseGlobal * skinMat * GlobalTransform
+                                                   Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
+
+                                                   ' Bake (local -> new-local)
+                                                   worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
+                                                   worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
+                                                   worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
+                                                   worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
                                                End Sub)
 
             Case singleBoneSkinning AndAlso matsBind.Length > 0
-                ' Single-bone — vertices are already in local space, skip revert, only bake if needed
-                If ApplyPose Then
-                    Dim skinMat = bindTimesInvPose(0)
-                    If Not inverse Then skinMat.Invert()
-                    Dim totalSkinMat As Matrix4d = InverseGlobal * skinMat * GlobalTransform
-                    Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
-
-                    Parallel.For(0, worldV.Length, Sub(i)
-                                                       ' Bake (local -> new-local)
-                                                       worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                                                       worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
-                                                       worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
-                                                       worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
-                                                   End Sub)
+                ' Single-bone — vertices are already in local space, transform per-vertex.
+                ' Por diseño matsPose(0)=matsBind(0) en single-bone (no aplica pose), así que
+                ' skinMat colapsa a identidad. Mantenemos la fórmula explícita para que la
+                ' lógica sea legible (no es un caso optimizado, sólo correcto).
+                Dim skinMat As Matrix4d
+                If Not inverse Then
+                    skinMat = matsPose(0) * Matrix4d.Invert(matsBind(0))
+                Else
+                    skinMat = matsBind(0) * Matrix4d.Invert(matsPose(0))
                 End If
+                Dim totalSkinMat As Matrix4d = InverseGlobal * skinMat * GlobalTransform
+                Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
+
+                Parallel.For(0, worldV.Length, Sub(i)
+                                                   ' Bake (local -> new-local)
+                                                   worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
+                                                   worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
+                                                   worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
+                                                   worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
+                                               End Sub)
 
             Case Else
-                ' Sin huesos — vertices are already in local space, skip revert, only bake if needed
-                If ApplyPose Then
-                    Dim totalSkinMat = GlobalTransform
-                    Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
-                    Parallel.For(0, worldV.Length, Sub(i)
-                                                       ' Bake (local -> new-local)
-                                                       worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                                                       worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
-                                                       worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
-                                                       worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
-                                                   End Sub)
-                End If
+                ' Sin huesos — only the global transform applies
+                Dim totalSkinMat = GlobalTransform
+                Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
+                Parallel.For(0, worldV.Length, Sub(i)
+                                                   ' Bake (local -> new-local)
+                                                   worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
+                                                   worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
+                                                   worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
+                                                   worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
+                                               End Sub)
         End Select
 
         If ApplyMorph Then
@@ -888,8 +915,13 @@ Public Class SkinningHelper
     ' │ The resulting matrices are uploaded to the SSBO and consumed by the   │
     ' │ vertex shader's bone blend loop. See Shader_Class.vb sync contract.   │
     ' └─────────────────────────────────────────────────────────────────────────┘
-    Public Shared Sub RecomputeGPUBoneMatrices(shape As IRenderableShape, ByRef geo As SkinnedGeometry, ApplyPose As Boolean, singleboneskinning As Boolean)
+    ''' <param name="skeleton">SkeletonInstance to read bind/pose transforms from. Same fallback
+    ''' contract as <see cref="ExtractSkinnedGeometry"/>: Nothing → SkeletonInstance.Default.
+    ''' Pose application is implicit via DeltaTransforms; callers wanting bind call
+    ''' <see cref="SkeletonInstance.Reset"/> first.</param>
+    Public Shared Sub RecomputeGPUBoneMatrices(shape As IRenderableShape, ByRef geo As SkinnedGeometry, singleboneskinning As Boolean, Optional skeleton As SkeletonInstance = Nothing)
         If geo.GPUBoneMatrices Is Nothing Then Exit Sub
+        Dim effectiveSkel As SkeletonInstance = If(skeleton, SkeletonInstance.Default)
 
         Dim bones = shape.ShapeBones.ToArray()
         Dim boneTrans = shape.ShapeBoneTransforms.ToArray()
@@ -902,28 +934,42 @@ Public Class SkinningHelper
         Dim GlobalTransform = If(shapeNode IsNot Nothing, Transform_Class.GetGlobalTransform(shapeNode, shape.NifContent).ToMatrix4d(), Matrix4d.Identity)
 
         If Not singleboneskinning AndAlso bones.Length > 0 Then
-            ' Multi-bone path: recompute bone matrices once, use for both SSBO and per-vertex blending
+            ' Multi-bone path: recompute bone matrices once, use for both SSBO and per-vertex blending.
+            ' Keep geo.BoneMatsBind/BoneMatsPose in sync too — BakeFromMemoryUsingOriginal reads
+            ' them to compute bindTimesInvPose, and if they're stale from the previous Extract
+            ' the first bake after a pose change collapses to identity.
             Dim precomputedBoneMatrices(bones.Length - 1) As Matrix4d
+            If geo.BoneMatsBind Is Nothing OrElse geo.BoneMatsBind.Length <> bones.Length Then
+                ReDim geo.BoneMatsBind(bones.Length - 1)
+            End If
+            If geo.BoneMatsPose Is Nothing OrElse geo.BoneMatsPose.Length <> bones.Length Then
+                ReDim geo.BoneMatsPose(bones.Length - 1)
+            End If
             For k = 0 To bones.Length - 1
                 Dim localT = boneTrans(k)
                 Dim boneName = bones(k).Name.String
-                Dim SkeletonBone As Skeleton_Class.HierarchiBone_class = Nothing
+                Dim SkeletonBone As HierarchiBone_class = Nothing
                 Dim poseT As Transform_Class
                 Dim bindT As Transform_Class
 
-                If Skeleton_Class.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
+                If effectiveSkel.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
                     bindT = SkeletonBone.OriginalGetGlobalTransform
                 Else
                     bindT = Transform_Class.GetGlobalTransform(bones(k), shape.NifContent)
                 End If
 
-                If ApplyPose AndAlso Not IsNothing(SkeletonBone) Then
+                If Not IsNothing(SkeletonBone) Then
                     poseT = SkeletonBone.GetGlobalTransform()
                 Else
                     poseT = bindT
                 End If
 
-                Dim m = GlobalTransform * poseT.ComposeTransforms(localT).ToMatrix4d()
+                Dim matBind = bindT.ComposeTransforms(localT).ToMatrix4d()
+                Dim matPose = poseT.ComposeTransforms(localT).ToMatrix4d()
+                geo.BoneMatsBind(k) = matBind
+                geo.BoneMatsPose(k) = matPose
+
+                Dim m = GlobalTransform * matPose
                 precomputedBoneMatrices(k) = m
                 geo.GPUBoneMatrices(k) = New Matrix4(
                     CSng(m.M11), CSng(m.M12), CSng(m.M13), CSng(m.M14),
@@ -972,9 +1018,9 @@ Public Class SkinningHelper
             If bones.Length > 0 Then
                 Dim localT = boneTrans(0)
                 Dim boneName = bones(0).Name.String
-                Dim SkeletonBone As Skeleton_Class.HierarchiBone_class = Nothing
+                Dim SkeletonBone As HierarchiBone_class = Nothing
                 Dim bindT As Transform_Class
-                If Skeleton_Class.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
+                If effectiveSkel.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
                     bindT = SkeletonBone.OriginalGetGlobalTransform
                 Else
                     bindT = Transform_Class.GetGlobalTransform(bones(0), shape.NifContent)

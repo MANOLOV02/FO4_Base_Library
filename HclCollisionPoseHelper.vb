@@ -26,9 +26,12 @@ Imports NiflySharp.Structs
 Imports OpenTK.Mathematics
 
 Public NotInheritable Class HclCollisionPoseHelper_Class
-    Public Shared Function BuildCapsulesFromLiveSkeleton(config As HclClothConfigGraph_Class) As List(Of HclLiveCapsuleCollider_Class)
+    ''' <param name="skeleton">SkeletonInstance to read live bone transforms from. If Nothing,
+    ''' falls back to <see cref="SkeletonInstance.Default"/> (transitional back-compat).</param>
+    Public Shared Function BuildCapsulesFromLiveSkeleton(config As HclClothConfigGraph_Class, Optional skeleton As SkeletonInstance = Nothing) As List(Of HclLiveCapsuleCollider_Class)
+        Dim effectiveSkel As SkeletonInstance = If(skeleton, SkeletonInstance.Default)
         Dim lookup As New Dictionary(Of String, Transform_Class)(StringComparer.OrdinalIgnoreCase)
-        For Each kvp In Skeleton_Class.SkeletonDictionary
+        For Each kvp In effectiveSkel.SkeletonDictionary
             If kvp.Value Is Nothing Then Continue For
             lookup(kvp.Key) = CloneTransformLocal(kvp.Value.GetGlobalTransform())
         Next

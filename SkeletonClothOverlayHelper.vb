@@ -9,7 +9,7 @@ Imports OpenTK.Mathematics
 ' ESTADO: ACTIVO — ruta principal de bone injection para physics en el render.
 ' -----------------------------------------------------------------------------
 ' InjectMissingBonesIntoLiveSkeleton: llamado desde
-'   Skeleton_Class.PrepareSkeletonForShapes → NifContent_Class.
+'   SkeletonInstance.PrepareForShapes (per-instance cloth-bone injection).
 ' Parsea el hkaSkeleton del BSClothExtraData e inyecta los huesos de física
 ' que no existen en el esqueleto del juego como HierarchiBone_class temporales.
 '
@@ -48,10 +48,14 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         End Try
     End Function
 
+    ''' <param name="targetSkeleton">SkeletonInstance into which missing bones get injected.
+    ''' Reads <see cref="SkeletonInstance.SkeletonDictionary"/> to detect already-present bones,
+    ''' writes new entries into <see cref="SkeletonInstance.SkeletonStructure"/> /
+    ''' <see cref="SkeletonInstance.SkeletonDictionary"/> / <see cref="SkeletonInstance.InjectedBones"/>.</param>
     Public Shared Sub InjectMissingBonesIntoLiveSkeleton(shape As IRenderableShape,
-                                                         injectedBones As System.Collections.Generic.HashSet(Of String),
+                                                         targetSkeleton As SkeletonInstance,
                                                          Optional cachedSkeleton As HkaSkeletonGraph_Class = Nothing)
-        If IsNothing(shape) OrElse Not Skeleton_Class.HasSkeleton Then Exit Sub
+        If IsNothing(shape) OrElse targetSkeleton Is Nothing OrElse Not targetSkeleton.HasSkeleton Then Exit Sub
         If Not shape.HasPhysics Then Exit Sub
         If IsNothing(shape.NifContent) Then Exit Sub
 
@@ -85,14 +89,14 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
                 Dim shapeBoneName = shapeBone.Name.String
                 If String.IsNullOrWhiteSpace(shapeBoneName) Then Continue For
                 shapeBoneName = shapeBoneName.Trim()
-                If Skeleton_Class.SkeletonDictionary.ContainsKey(shapeBoneName) Then Continue For
+                If targetSkeleton.SkeletonDictionary.ContainsKey(shapeBoneName) Then Continue For
 
                 Dim targetIndex As Integer = -1
                 If Not hkxBoneLookup.TryGetValue(shapeBoneName, targetIndex) Then
                     Debugger.Break()
                     Continue For
                 End If
-                EnsureLiveInjectedBone(targetIndex, skeleton, injectedBones, shapeName, shapeBoneName)
+                EnsureLiveInjectedBone(targetIndex, skeleton, targetSkeleton, shapeName, shapeBoneName)
             Next
         Catch ex As Exception
             Debugger.Break()
@@ -145,37 +149,38 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
     ' Public wrapper — creates the visited set on first call
     Private Shared Function EnsureLiveInjectedBone(index As Integer,
                                                    skeleton As HkaSkeletonGraph_Class,
-                                                   injectedBones As System.Collections.Generic.HashSet(Of String),
+                                                   targetSkeleton As SkeletonInstance,
                                                    shapeName As String,
-                                                   Optional requestedName As String = Nothing) As Skeleton_Class.HierarchiBone_class
-        Return EnsureLiveInjectedBone(index, skeleton, injectedBones, shapeName, requestedName, New HashSet(Of Integer))
+                                                   Optional requestedName As String = Nothing) As HierarchiBone_class
+        Return EnsureLiveInjectedBone(index, skeleton, targetSkeleton, shapeName, requestedName, New HashSet(Of Integer))
     End Function
 
     ' Private recursive overload with visited set to prevent stack overflow on circular HKX parent chains
     Private Shared Function EnsureLiveInjectedBone(index As Integer,
                                                    skeleton As HkaSkeletonGraph_Class,
-                                                   injectedBones As System.Collections.Generic.HashSet(Of String),
+                                                   targetSkeleton As SkeletonInstance,
                                                    shapeName As String,
                                                    requestedName As String,
-                                                   visited As HashSet(Of Integer)) As Skeleton_Class.HierarchiBone_class
+                                                   visited As HashSet(Of Integer)) As HierarchiBone_class
         If Not visited.Add(index) Then Return Nothing ' cycle detected — break recursion
         If IsNothing(skeleton) OrElse IsNothing(skeleton.Bones) OrElse index < 0 OrElse index >= skeleton.Bones.Count Then Return Nothing
+        If targetSkeleton Is Nothing Then Return Nothing
 
         Dim boneName = skeleton.Bones(index).Name
         If String.IsNullOrWhiteSpace(boneName) Then Return Nothing
         Dim dictionaryKey = If(String.IsNullOrWhiteSpace(requestedName), boneName, requestedName.Trim())
 
-        Dim existing As Skeleton_Class.HierarchiBone_class = Nothing
-        If Skeleton_Class.SkeletonDictionary.TryGetValue(dictionaryKey, existing) Then Return existing
-        If Not dictionaryKey.Equals(boneName, StringComparison.OrdinalIgnoreCase) AndAlso Skeleton_Class.SkeletonDictionary.TryGetValue(boneName, existing) Then Return existing
+        Dim existing As HierarchiBone_class = Nothing
+        If targetSkeleton.SkeletonDictionary.TryGetValue(dictionaryKey, existing) Then Return existing
+        If Not dictionaryKey.Equals(boneName, StringComparison.OrdinalIgnoreCase) AndAlso targetSkeleton.SkeletonDictionary.TryGetValue(boneName, existing) Then Return existing
 
-        Dim parentBone As Skeleton_Class.HierarchiBone_class = Nothing
+        Dim parentBone As HierarchiBone_class = Nothing
         Dim parentIndex = If(index < skeleton.ParentIndices.Count, CInt(skeleton.ParentIndices(index)), -1)
         If parentIndex >= 0 Then
-            parentBone = EnsureLiveInjectedBone(parentIndex, skeleton, injectedBones, shapeName, Nothing, visited)
+            parentBone = EnsureLiveInjectedBone(parentIndex, skeleton, targetSkeleton, shapeName, Nothing, visited)
         End If
 
-        Dim nuevo As New Skeleton_Class.HierarchiBone_class With {
+        Dim nuevo As New HierarchiBone_class With {
             .BoneName = dictionaryKey,
             .Parent = parentBone,
             .DeltaTransform = Nothing,
@@ -183,13 +188,13 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         }
 
         If IsNothing(parentBone) Then
-            Skeleton_Class.SkeletonStructure.Add(nuevo)
+            targetSkeleton.SkeletonStructure.Add(nuevo)
         Else
             parentBone.Childrens.Add(nuevo)
         End If
 
-        Skeleton_Class.SkeletonDictionary.Add(dictionaryKey, nuevo)
-        If Not IsNothing(injectedBones) Then injectedBones.Add(dictionaryKey)
+        targetSkeleton.SkeletonDictionary.Add(dictionaryKey, nuevo)
+        targetSkeleton.InjectedBones.Add(dictionaryKey)
         Return nuevo
     End Function
 

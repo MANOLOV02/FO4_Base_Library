@@ -1,18 +1,29 @@
 ﻿''' <summary>
-''' Resolves and prepares the skeleton for a set of shapes before geometry extraction.
-''' Default implementation uses Skeleton_Class. Apps can override for custom behavior.
+''' Resolves and prepares the skeleton(s) for a set of shapes before geometry extraction.
+''' The caller is responsible for fully preparing each <see cref="SkeletonInstance"/>
+''' (load + cloth-bone injection + ApplyPose) BEFORE invoking the render. The resolver
+''' only orchestrates loading/cloth-injection of the global default for legacy single-actor
+''' callers and exposes the per-shape lookup the pipeline uses for skinning.
 ''' </summary>
 Public Interface ISkeletonResolver
-    Sub ResolveSkeleton(shapes As IEnumerable(Of IRenderableShape), pose As Poses_class)
+    ''' <summary>Called once per frame BEFORE geometry extraction. Resolvers that own the
+    ''' default instance use this to load + cloth-inject; resolvers receiving a pre-prepared
+    ''' instance (Single/Multi) leave this as no-op.</summary>
+    Sub ResolveSkeleton(shapes As IEnumerable(Of IRenderableShape))
+    ''' <summary>Returns the SkeletonInstance that this shape's skinning should use.
+    ''' Default implementations return <see cref="SkeletonInstance.Default"/>.
+    ''' Multi-actor resolvers return a different instance per shape (or per shape group).</summary>
+    Function ResolveFor(shape As IRenderableShape) As SkeletonInstance
 End Interface
 
 ''' <summary>
 ''' Aggregates all decisions for a render pass (legacy push API).
 ''' Kept for backward compatibility — internally converted to RenderIntent.
+''' Pose is NOT a field here: the caller applies it directly to the SkeletonInstance(s)
+''' before invoking RenderShapes(request) and signals via RenderDirtyFlags.Pose.
 ''' </summary>
 Public Class RenderRequest
     Public Property Shapes As IEnumerable(Of IRenderableShape)
-    Public Property Pose As Poses_class = Nothing
     Public Property SkeletonResolver As ISkeletonResolver = Nothing
     Public Property MorphResolver As IMorphResolver = Nothing
     Public Property GeometryModifiers As List(Of IGeometryModifier) = Nothing
@@ -22,8 +33,12 @@ Public Class RenderRequest
 End Class
 
 ''' <summary>
-''' Default skeleton resolver that uses the global Skeleton_Class.
-''' Loads skeleton from a dictionary key and prepares it for shapes with cloth bone injection.
+''' Default skeleton resolver that uses <see cref="SkeletonInstance.Default"/> (the global
+''' single-actor instance). Loads the skeleton from a dictionary key (idempotent) and
+''' performs cloth-bone injection on each ResolveSkeleton call. Pose application is the
+''' CALLER's responsibility — call <c>SkeletonInstance.Default.ApplyPose(pose)</c> before
+''' invoking the render. Apps that need multi-actor skeletons use
+''' <see cref="SingleInstanceSkeletonResolver"/> or <see cref="MultiInstanceSkeletonResolver"/>.
 ''' </summary>
 Public Class DefaultSkeletonResolver
     Implements ISkeletonResolver
@@ -34,12 +49,81 @@ Public Class DefaultSkeletonResolver
         _skeletonKey = skeletonKey
     End Sub
 
-    Public Sub ResolveSkeleton(shapes As IEnumerable(Of IRenderableShape), pose As Poses_class) Implements ISkeletonResolver.ResolveSkeleton
+    Public Sub ResolveSkeleton(shapes As IEnumerable(Of IRenderableShape)) Implements ISkeletonResolver.ResolveSkeleton
         If Not String.IsNullOrEmpty(_skeletonKey) Then
-            Skeleton_Class.LoadSkeletonFromKey(_skeletonKey)
+            SkeletonInstance.Default.LoadFromKey(_skeletonKey)
         End If
-        Skeleton_Class.PrepareSkeletonForShapes(shapes, pose)
+        SkeletonInstance.Default.PrepareForShapes(shapes)
     End Sub
+
+    Public Function ResolveFor(shape As IRenderableShape) As SkeletonInstance Implements ISkeletonResolver.ResolveFor
+        Return SkeletonInstance.Default
+    End Function
+End Class
+
+''' <summary>
+''' Resolver that returns the same caller-supplied <see cref="SkeletonInstance"/> for every shape.
+''' The caller is fully responsible for the instance state (LoadFromKey + PrepareForShapes +
+''' MergeAdditionalSkeleton + ApplyPose) BEFORE handing it over. <see cref="ResolveSkeleton"/>
+''' is a no-op. Use this for single-actor scenes that want a distinct instance from
+''' <see cref="SkeletonInstance.Default"/> (e.g. NPC previews with per-NPC bone multipliers).
+''' </summary>
+Public Class SingleInstanceSkeletonResolver
+    Implements ISkeletonResolver
+
+    Private ReadOnly _instance As SkeletonInstance
+
+    Public Sub New(instance As SkeletonInstance)
+        If instance Is Nothing Then Throw New ArgumentNullException(NameOf(instance))
+        _instance = instance
+    End Sub
+
+    Public ReadOnly Property Instance As SkeletonInstance
+        Get
+            Return _instance
+        End Get
+    End Property
+
+    Public Sub ResolveSkeleton(shapes As IEnumerable(Of IRenderableShape)) Implements ISkeletonResolver.ResolveSkeleton
+        ' No-op: instance is pre-prepared (load + merges + cloth-inject + ApplyPose) by caller.
+    End Sub
+
+    Public Function ResolveFor(shape As IRenderableShape) As SkeletonInstance Implements ISkeletonResolver.ResolveFor
+        Return _instance
+    End Function
+End Class
+
+''' <summary>
+''' Resolver that maps each shape to its own <see cref="SkeletonInstance"/>. Use this when
+''' rendering shapes that need DIFFERENT skeletons and/or poses in the same scene — e.g. two
+''' NPCs with distinct race bone-multipliers, body+robot extension+face merges, or any
+''' multi-actor composition. The caller fully prepares each instance (load + merges +
+''' ApplyPose) BEFORE handing the map over.
+''' </summary>
+Public Class MultiInstanceSkeletonResolver
+    Implements ISkeletonResolver
+
+    Private ReadOnly _map As IReadOnlyDictionary(Of IRenderableShape, SkeletonInstance)
+    Private ReadOnly _fallback As SkeletonInstance
+
+    ''' <param name="map">Shape → SkeletonInstance lookup. Shapes not in the map fall back to
+    ''' <paramref name="fallback"/> (or <see cref="SkeletonInstance.Default"/> if Nothing).</param>
+    ''' <param name="fallback">Optional default instance for shapes not present in <paramref name="map"/>.</param>
+    Public Sub New(map As IReadOnlyDictionary(Of IRenderableShape, SkeletonInstance), Optional fallback As SkeletonInstance = Nothing)
+        If map Is Nothing Then Throw New ArgumentNullException(NameOf(map))
+        _map = map
+        _fallback = fallback
+    End Sub
+
+    Public Sub ResolveSkeleton(shapes As IEnumerable(Of IRenderableShape)) Implements ISkeletonResolver.ResolveSkeleton
+        ' No-op: each instance is pre-prepared by the caller.
+    End Sub
+
+    Public Function ResolveFor(shape As IRenderableShape) As SkeletonInstance Implements ISkeletonResolver.ResolveFor
+        Dim inst As SkeletonInstance = Nothing
+        If _map.TryGetValue(shape, inst) AndAlso inst IsNot Nothing Then Return inst
+        Return If(_fallback, SkeletonInstance.Default)
+    End Function
 End Class
 
 ' ──────────────────────────────────────────────────────────────────────
@@ -73,11 +157,15 @@ End Enum
 ''' Apps set WHAT changed (dirty flags) and provide resolvers for HOW to handle it.
 ''' One instance per PreviewControl. Mutate, then call ctrl.InvalidateRender().
 ''' The timer-driven pipeline consumes it on the next tick.
+'''
+''' Pose state lives in the per-shape <see cref="SkeletonInstance"/> (via
+''' <see cref="SkeletonInstance.ApplyPose"/>) — not in this intent. Callers signal pose
+''' changes via <see cref="MarkDirty"/>(<see cref="RenderDirtyFlags.Pose"/>) optionally
+''' restricted to specific shapes via <see cref="DirtyShapes"/>.
 ''' </summary>
 Public Class RenderIntent
     ' ── Input state (set by apps) ──
     Public Property Shapes As IEnumerable(Of IRenderableShape)
-    Public Property Pose As Poses_class
     Public Property FloorOffset As Double = 0
     Public Property ResetCamera As Boolean = True
     Public Property RecalculateNormals As Boolean = True
@@ -90,7 +178,7 @@ Public Class RenderIntent
     ' ── Optional callback for async texture prefetch before geometry load ──
     Public Property TexturePrefetchAction As Action
 
-    ' ── Dirty flags ──
+    ' ── Dirty flags + per-shape granularity ──
     Private _dirty As RenderDirtyFlags = RenderDirtyFlags.None
 
     Public ReadOnly Property DirtyFlags As RenderDirtyFlags
@@ -99,14 +187,43 @@ Public Class RenderIntent
         End Get
     End Property
 
+    ''' <summary>Optional subset of shapes affected by the current Pose/Morphs/Textures dirty
+    ''' flags. Empty means "all shapes" (default — backward compatible). Populate to limit
+    ''' recompute to specific shapes (typical multi-actor case where only one actor changed
+    ''' pose). Cleared by <see cref="ClearDirty"/>.</summary>
+    Public ReadOnly Property DirtyShapes As New HashSet(Of IRenderableShape)
+
+    ''' <summary>True iff <paramref name="shape"/> should be processed for the current dirty
+    ''' flags: empty <see cref="DirtyShapes"/> means all shapes pass; otherwise only shapes
+    ''' present in the set pass.</summary>
+    Public Function IsShapeDirty(shape As IRenderableShape) As Boolean
+        If DirtyShapes.Count = 0 Then Return True
+        Return DirtyShapes.Contains(shape)
+    End Function
+
     ''' <summary>Accumulate dirty flags (OR semantics — never clears existing flags).</summary>
     Public Sub MarkDirty(flags As RenderDirtyFlags)
         _dirty = _dirty Or flags
     End Sub
 
-    ''' <summary>Clear all dirty flags after pipeline execution.</summary>
+    ''' <summary>Mark dirty flags AND restrict the affected shapes. Useful for multi-actor
+    ''' setups where only a subset of shapes changed pose/morphs. Subsequent calls accumulate
+    ''' both flags (OR) and shapes (UnionWith).</summary>
+    Public Sub MarkDirty(flags As RenderDirtyFlags, ParamArray shapes As IRenderableShape())
+        _dirty = _dirty Or flags
+        If shapes IsNot Nothing Then DirtyShapes.UnionWith(shapes)
+    End Sub
+
+    ''' <summary>Mark dirty flags AND restrict the affected shapes (collection overload).</summary>
+    Public Sub MarkDirty(flags As RenderDirtyFlags, shapes As IEnumerable(Of IRenderableShape))
+        _dirty = _dirty Or flags
+        If shapes IsNot Nothing Then DirtyShapes.UnionWith(shapes)
+    End Sub
+
+    ''' <summary>Clear all dirty flags + shape subset after pipeline execution.</summary>
     Public Sub ClearDirty()
         _dirty = RenderDirtyFlags.None
+        DirtyShapes.Clear()
     End Sub
 
     ''' <summary>True if any dirty flag is set — the pipeline has work to do.</summary>

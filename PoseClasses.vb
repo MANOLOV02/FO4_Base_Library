@@ -58,9 +58,9 @@ Public Class Poses_class
             Dim sc As Single
             If Source = Pose_Source_Enum.ScreenArcher Then
                 Dim Converter = New Transform_Class(tr.Value, Source)
-                Dim bon As Skeleton_Class.HierarchiBone_class = Nothing
+                Dim bon As HierarchiBone_class = Nothing
 
-                If Skeleton_Class.HasSkeleton AndAlso Skeleton_Class.SkeletonDictionary.TryGetValue(tr.Key, bon) Then
+                If SkeletonInstance.Default.HasSkeleton AndAlso SkeletonInstance.Default.SkeletonDictionary.TryGetValue(tr.Key, bon) Then
                     Converter = bon.OriginalLocaLTransform.Inverse.ComposeTransforms(Converter)
                 End If
                 rot = Transform_Class.Matrix33ToBSRotation(Converter.Rotation)

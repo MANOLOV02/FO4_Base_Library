@@ -438,11 +438,13 @@ Public Class PreviewControl
         RenderTimer.Start()
     End Sub
     ''' <summary>Simple render entry point: shapes + optional pose. No morphs, no modifiers.
-    ''' Synchronous bridge — fills the intent and executes the pipeline immediately.</summary>
+    ''' Synchronous bridge — applies pose to <see cref="SkeletonInstance.Default"/> (single-actor
+    ''' convenience), fills the intent and executes the pipeline immediately.</summary>
     Public Sub RenderShapes(shapes As IEnumerable(Of IRenderableShape), Optional pose As Poses_class = Nothing)
+        ' Apply pose to the default instance — pose state lives there post-refactor.
+        SkeletonInstance.Default.ApplyPose(pose)
         Dim i = Me.Intent
         i.Shapes = shapes
-        i.Pose = pose
         i.FloorOffset = 0
         i.ResetCamera = True
         i.RecalculateNormals = True
@@ -455,12 +457,12 @@ Public Class PreviewControl
     End Sub
 
     ''' <summary>Full render entry point with pluggable resolvers (legacy push API).
-    ''' Synchronous bridge — converts RenderRequest to intent and executes immediately.</summary>
+    ''' Synchronous bridge — caller is expected to have applied pose to its SkeletonInstance(s)
+    ''' BEFORE invoking. Converts RenderRequest to intent and executes immediately.</summary>
     Public Sub RenderShapes(request As RenderRequest)
         If request Is Nothing OrElse request.Shapes Is Nothing Then Exit Sub
         Dim i = Me.Intent
         i.Shapes = request.Shapes
-        i.Pose = request.Pose
         i.FloorOffset = request.FloorOffset
         i.ResetCamera = request.ResetCamera
         i.RecalculateNormals = request.RecalculateNormals
@@ -521,7 +523,6 @@ Public Class PreviewControl
                 Model.Clean(False)
             End If
             _lastLoadedShapesSource = intent.Shapes
-            Model.Last_Pose = intent.Pose
 
             ' Texture prefetch (async, before geometry — app provides the action)
             If intent.TexturePrefetchAction IsNot Nothing Then
@@ -532,8 +533,8 @@ Public Class PreviewControl
             ' Skeleton
             PipelineStep_Skeleton(intent)
 
-            ' Geometry extraction (parallel)
-            Model.LoadShapesParallel(intent.Shapes)
+            ' Geometry extraction (parallel) — resolver consulted per shape for SkeletonInstance
+            Model.LoadShapesParallel(intent.Shapes, intent.SkeletonResolver)
 
             ' Morphs
             PipelineStep_Morphs(intent)
@@ -556,18 +557,21 @@ Public Class PreviewControl
         ElseIf needsPoseUpdate Then
             ' -- Pose change (incremental) ----------------------------
             PipelineStep_Skeleton(intent)
-            Model.Last_Pose = intent.Pose
 
             ' Morphs (if also dirty — preset+pose changed simultaneously)
             If needsMorphUpdate Then
                 PipelineStep_Morphs(intent)
             End If
 
-            ' Recompute bone matrices + GPU upload per mesh
+            ' Recompute bone matrices + GPU upload — only for shapes the caller marked dirty.
+            ' Empty DirtyShapes (default) means "all shapes" (back-compat single-actor flow).
             For Each mesh In Model.meshes
+                If Not intent.IsShapeDirty(mesh.MeshData.Shape) Then Continue For
+                Dim meshSkel As SkeletonInstance = If(intent.SkeletonResolver IsNot Nothing, intent.SkeletonResolver.ResolveFor(mesh.MeshData.Shape), Nothing)
+                ' Pose is implicit in the SkeletonInstance: the caller applied it via ApplyPose.
                 SkinningHelper.RecomputeGPUBoneMatrices(
                     mesh.MeshData.Shape, mesh.MeshData.Meshgeometry,
-                    Model.HasPose, Model.SingleBoneSkinning)
+                    Model.SingleBoneSkinning, meshSkel)
 
                 If Not Config_App.Current.Setting_GPUSkinning Then
                     mesh.MeshData.Meshgeometry.dirtyVertexIndices =
@@ -590,7 +594,9 @@ Public Class PreviewControl
 
             PipelineStep_Morphs(intent)
 
+            ' Upload only meshes whose morph plan was reapplied.
             For Each mesh In Model.meshes
+                If Not intent.IsShapeDirty(mesh.MeshData.Shape) Then Continue For
                 mesh.UpdateSkinBuffers_GL()
             Next
 
@@ -607,22 +613,27 @@ Public Class PreviewControl
         intent.ClearDirty()
     End Sub
 
-    ''' <summary>Resolve skeleton via app-provided resolver or default fallback.</summary>
+    ''' <summary>Resolve skeleton via app-provided resolver or default fallback. Pose state
+    ''' lives in the SkeletonInstance(s) and gets re-applied by PrepareForShapes after
+    ''' cloth-inject (idempotent — guarantees DeltaTransforms reflect the requested pose
+    ''' even when cloth-inject re-creates bones).</summary>
     Private Sub PipelineStep_Skeleton(intent As RenderIntent)
         If intent.SkeletonResolver IsNot Nothing Then
-            intent.SkeletonResolver.ResolveSkeleton(intent.Shapes, intent.Pose)
+            intent.SkeletonResolver.ResolveSkeleton(intent.Shapes)
         Else
-            Skeleton_Class.PrepareSkeletonForShapes(intent.Shapes, intent.Pose)
+            SkeletonInstance.Default.PrepareForShapes(intent.Shapes)
         End If
     End Sub
 
-    ''' <summary>Apply morphs via app-provided resolver. If the resolver is Nothing or
-    ''' yields a null/empty plan for a given shape, <see cref="MorphEngine.ApplyMorphPlan"/>
+    ''' <summary>Apply morphs via app-provided resolver — only for shapes marked dirty.
+    ''' Empty <see cref="RenderIntent.DirtyShapes"/> means "all shapes" (back-compat). If the
+    ''' resolver is Nothing or yields a null/empty plan for a shape, <see cref="MorphEngine.ApplyMorphPlan"/>
     ''' resets that shape's geometry to NifLocalVertices (raw, pre-skin) — this is the
     ''' explicit "no morphs" contract, so callers can toggle morphs OFF simply by
     ''' clearing the resolver instead of carrying stale deltas.</summary>
     Private Sub PipelineStep_Morphs(intent As RenderIntent)
         For Each mesh In Model.meshes
+            If Not intent.IsShapeDirty(mesh.MeshData.Shape) Then Continue For
             Dim plan As MorphPlan = Nothing
             If intent.MorphResolver IsNot Nothing Then
                 plan = intent.MorphResolver.ResolveMorphPlan(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
@@ -1182,7 +1193,6 @@ Public Class PreviewModel
     Private ReadOnly ParentControl As PreviewControl
     Public Floor As FloorRenderer
     Public Property LoadedShapes As New List(Of IRenderableShape)
-    Public Property Last_Pose As Poses_class = Nothing
     Public Property Cleaned As Boolean = True
     Public Property SingleBoneSkinning As Boolean = False
     Public Property RecalculateNormals As Boolean = True
@@ -2204,7 +2214,9 @@ Public Class PreviewModel
                 GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
             End If
 
-            ' GPU Skinning: unbind SSBO after draw
+            ' GPU Skinning: unbind SSBO after draw — prevents contamination of binding 0
+            ' for subsequent meshes that may not have their own SSBO (ssbo_BoneMatrices=0 path
+            ' skips BindBufferBase, so a stale binding from this draw would leak into them).
             If ssbo_BoneMatrices > 0 Then
                 GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
             End If
@@ -2664,13 +2676,16 @@ Public Class PreviewModel
     ''' IMPORTANT: Skeleton must be prepared BEFORE calling this method
     ''' (via ISkeletonResolver, PrepareSkeletonForShapes, or equivalent).
     ''' </summary>
-    Public Sub LoadShapesParallel(shapes As IEnumerable(Of IRenderableShape))
+    ''' <param name="resolver">Optional resolver consulted per shape (<see cref="ISkeletonResolver.ResolveFor"/>)
+    ''' to pick a per-shape <see cref="SkeletonInstance"/>. If Nothing, all shapes use
+    ''' <see cref="SkeletonInstance.Default"/>.</param>
+    Public Sub LoadShapesParallel(shapes As IEnumerable(Of IRenderableShape), Optional resolver As ISkeletonResolver = Nothing)
         If Not shapes.Any() Then Exit Sub
         LoadedShapes = shapes.ToList()
         Dim result As New ConcurrentBag(Of RenderableMesh)
         Parallel.ForEach(shapes, Sub(shape)
                                      'For Each shape In shapes
-                                     Dim mesh = LoadShapeSafe(shape)
+                                     Dim mesh = LoadShapeSafe(shape, resolver)
 
                                      If mesh IsNot Nothing Then result.Add(mesh)
                                      'Next
@@ -2689,21 +2704,20 @@ Public Class PreviewModel
     Public Sub BakeOrInvertPose(Shape As IRenderableShape, inverse As Boolean)
         Dim mesh = Me.meshes.FirstOrDefault(Function(pf) pf.MeshData.Shape Is Shape)
         If mesh Is Nothing Then Return
-        SkinningHelper.BakeFromMemoryUsingOriginal(Shape, mesh.MeshData.Meshgeometry, ApplyPose:=HasPose, inverse:=inverse, ApplyMorph:=False, RemoveZaps:=False, SingleBoneSkinning)
+        ' Source of truth for "is a pose applied?" is the SkeletonInstance assigned to this
+        ' shape by the resolver — its Pose property reflects the last ApplyPose() call.
+        Dim resolver = ParentControl.Intent.SkeletonResolver
+        Dim skel As SkeletonInstance = If(resolver IsNot Nothing, resolver.ResolveFor(Shape), SkeletonInstance.Default)
+        If skel Is Nothing OrElse skel.Pose Is Nothing OrElse skel.Pose.Source = Poses_class.Pose_Source_Enum.None Then Return
+        SkinningHelper.BakeFromMemoryUsingOriginal(Shape, mesh.MeshData.Meshgeometry, inverse:=inverse, ApplyMorph:=False, RemoveZaps:=False, SingleBoneSkinning)
     End Sub
 
-    Public ReadOnly Property HasPose
-        Get
-            If Skeleton_Class.HasSkeleton AndAlso Not IsNothing(Last_Pose) AndAlso Last_Pose.Source <> Poses_class.Pose_Source_Enum.None Then Return True
-            Return False
-        End Get
-    End Property
-
-    Private Function LoadShapeSafe(shape As IRenderableShape) As RenderableMesh
+    Private Function LoadShapeSafe(shape As IRenderableShape, Optional resolver As ISkeletonResolver = Nothing) As RenderableMesh
         Try
             ' 1) Obtener shape y datos de skin (siempre BSTriShape)
             If IsNothing(shape.NifShape) Then Return Nothing
-            Dim geom = SkinningHelper.ExtractSkinnedGeometry(shape, ApplyPose:=HasPose, SingleBoneSkinning, RecalculateNormals)
+            Dim skel As SkeletonInstance = If(resolver IsNot Nothing, resolver.ResolveFor(shape), Nothing)
+            Dim geom = SkinningHelper.ExtractSkinnedGeometry(shape, SingleBoneSkinning, RecalculateNormals, skel)
 
             ' 2) Rellenar MeshData con la geometría final
             Dim mesh As New RenderableMesh.MeshData_Class With {
