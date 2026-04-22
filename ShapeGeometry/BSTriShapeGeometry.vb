@@ -115,13 +115,11 @@ Public Class BSTriShapeGeometry
 
     ' ─────────────── Read ───────────────
     Public Function GetVertexPositions() As List(Of SysNumerics.Vector3) Implements IShapeGeometry.GetVertexPositions
-        EnsureNumVerticesSynced()
         Return If(_tri.VertexPositions?.ToList(), New List(Of SysNumerics.Vector3)())
     End Function
 
     Public Function GetNormals() As List(Of SysNumerics.Vector3) Implements IShapeGeometry.GetNormals
         If Not _tri.HasNormals Then Return New List(Of SysNumerics.Vector3)()
-        EnsureNumVerticesSynced()
         Return If(_tri.Normals?.ToList(), New List(Of SysNumerics.Vector3)())
     End Function
 
@@ -175,11 +173,6 @@ Public Class BSTriShapeGeometry
     ''' </summary>
     Public Function GetBitangents() As List(Of SysNumerics.Vector3) Implements IShapeGeometry.GetBitangents
         If Not _tri.HasTangents Then Return New List(Of SysNumerics.Vector3)()
-        ' SSE + FO4-full-precision branch below routes through _tri.Tangents → UpdateRawTangents,
-        ' which uses the stale _numVertices field — sync before that call.  FO4-half-precision
-        ' reads the packed VertexData list directly (via vd.Count check) so sync is redundant
-        ' there but harmless.
-        EnsureNumVerticesSynced()
         Dim n As Integer = _tri.VertexCount
         Dim result As New List(Of SysNumerics.Vector3)(n)
 
@@ -210,19 +203,16 @@ Public Class BSTriShapeGeometry
 
     Public Function GetUVs() As List(Of TexCoord) Implements IShapeGeometry.GetUVs
         If Not _tri.HasUVs Then Return New List(Of TexCoord)()
-        EnsureNumVerticesSynced()
         Return If(_tri.UVs?.ToList(), New List(Of TexCoord)())
     End Function
 
     Public Function GetVertexColors() As List(Of Color4) Implements IShapeGeometry.GetVertexColors
         If Not _tri.HasVertexColors Then Return New List(Of Color4)()
-        EnsureNumVerticesSynced()
         Return If(_tri.VertexColors?.ToList(), New List(Of Color4)())
     End Function
 
     Public Function GetEyeData() As List(Of Single) Implements IShapeGeometry.GetEyeData
         If Not _tri.HasEyeData Then Return New List(Of Single)()
-        EnsureNumVerticesSynced()
         Return If(_tri.EyeData?.ToList(), New List(Of Single)())
     End Function
 
@@ -556,46 +546,6 @@ Public Class BSTriShapeGeometry
     Public Shared ReadOnly SubIndexSegmentDataField As Reflection.FieldInfo =
         GetType(BSSubIndexTriShape).GetField("_segmentData",
                                              Reflection.BindingFlags.NonPublic Or Reflection.BindingFlags.Instance)
-
-    ''' <summary>
-    ''' NiflySharp BSTriShape bug workaround (ShapeTypeValidator test A regression discovered
-    ''' 2026-04-20): when an SSE-skinned BSTriShape is serialized, <c>BSTriShape.BeforeSync</c>
-    ''' ([BSTriShape.cs:72-79](NiflySharp/NiflySharp/Blocks/BSTriShape.cs#L72)) sets
-    ''' <c>_numVertices = 0</c> because the vertex data is stored in NiSkinPartition instead of
-    ''' in the block itself.  NiflySharp writes that zero to disk but never restores it after
-    ''' save.  Subsequent load sees <c>_numVertices=0</c> on disk while the in-memory
-    ''' <c>_vertexData_List_BSVDSSE</c> is reconstructed from the partition (real count).
-    '''
-    ''' Result: <c>VertexCount</c> property (which reads list.Count) returns the real count,
-    ''' but <c>UpdateRawNormals/UVs/VertexColors/VertexPositions/Tangents/Bitangents</c> all
-    ''' use the stale <c>_numVertices</c> field and return empty lists.  This silently breaks
-    ''' the renderer (bounds calc gets Vector3(MaxValue) sentinel → scene size=-Infinity →
-    ''' nearZ=Infinity → Matrix4.CreatePerspectiveFieldOfView throws).
-    '''
-    ''' Fix: before any read that goes through the UpdateRaw* path, reflection-sync
-    ''' <c>_numVertices</c> with <c>VertexCount</c> (list.Count).  Non-destructive (no-op if
-    ''' already in sync).  Consistent with the existing reflection precedent for
-    ''' _segmentData / triParts (NiflySharp fields we need but aren't publicly exposed).
-    ''' </summary>
-    Private Shared ReadOnly NumVerticesField As Reflection.FieldInfo =
-        GetType(BSTriShape).GetField("_numVertices",
-                                      Reflection.BindingFlags.NonPublic Or Reflection.BindingFlags.Instance)
-
-    ''' <summary>
-    ''' Ensures <c>_numVertices</c> matches the actual packed-vertex list count.  Idempotent
-    ''' — no-op when already in sync.  Must be called before any getter that routes through
-    ''' NiflySharp's <c>UpdateRaw*</c> methods (VertexPositions / Normals / UVs /
-    ''' VertexColors / Tangents / Bitangents) because those methods use the field, not the
-    ''' list.
-    ''' </summary>
-    Private Sub EnsureNumVerticesSynced()
-        If NumVerticesField Is Nothing Then Return
-        Dim listCount As Integer = _tri.VertexCount  ' reads list.Count (see BSTriShape.cs:315)
-        Dim fieldVal As UShort = CUShort(NumVerticesField.GetValue(_tri))
-        If listCount > 0 AndAlso CInt(fieldVal) <> listCount Then
-            NumVerticesField.SetValue(_tri, CUShort(listCount))
-        End If
-    End Sub
 
     ''' <summary>
     ''' Rebuilds a BSGeometrySegmentData list after a triangle-count change.  For each
