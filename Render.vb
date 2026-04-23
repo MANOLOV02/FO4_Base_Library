@@ -498,6 +498,13 @@ Public Class PreviewControl
         If intent Is Nothing OrElse Not intent.HasWork Then Return
         If Me.Disposing OrElse Me.IsDisposed OrElse Not Visible Then Return
         If intent.Shapes Is Nothing OrElse Not intent.Shapes.Any() Then
+            Model.FloorOffset = 0
+            Model.Clean(False)
+            Model.CleanTextures()
+            Model.LoadedShapes.Clear()
+            _lastLoadedShapesSource = Nothing
+            intent.TexturePrefetchAction = Nothing
+            Model.Processing_Status_GL("Empty")
             intent.ClearDirty()
             Return
         End If

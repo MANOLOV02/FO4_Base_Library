@@ -1258,15 +1258,10 @@ Public Class RecalcTBN
             Dim i1 As Integer = CInt(indices(3 * t + 1))
             Dim i2 As Integer = CInt(indices(3 * t + 2))
 
-            ' Adjacencia
-            Try
-                v2t(i0).Add(t)
-                v2t(i1).Add(t)
-                v2t(i2).Add(t)
-            Catch ex As Exception
-                Debugger.Break()
-                Exit For
-            End Try
+            If i0 >= nVerts OrElse i1 >= nVerts OrElse i2 >= nVerts Then Continue For
+            v2t(i0).Add(t)
+            v2t(i1).Add(t)
+            v2t(i2).Add(t)
 
 
             ' UV del tri
