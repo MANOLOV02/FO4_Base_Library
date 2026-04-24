@@ -1,5 +1,6 @@
 ﻿' Version Uploaded of Fo4Library 3.2.0
 
+Imports NiflySharp
 Imports NiflySharp.Blocks
 Imports NiflySharp.Structs
 Imports OpenTK.Mathematics
@@ -45,6 +46,28 @@ Public Class Transform_Class
     Sub New()
 
     End Sub
+
+    Public Sub New(Origen As INiShape)
+        Rotation = Origen.Rotation
+        Translation = Origen.Translation
+        Scale = Origen.Scale
+    End Sub
+
+    Public Shared Function GetGlobalTransform(shape As INiShape, Current_nif As Nifcontent_Class_Manolo) As Transform_Class
+        If shape Is Nothing Then Return New Transform_Class()
+
+        Dim globalTransform As Transform_Class = New Transform_Class(shape)
+        Dim current As NiNode = TryCast(Current_nif.GetParentNode(shape), NiNode)
+
+        While current IsNot Nothing
+            globalTransform = New Transform_Class(current).ComposeTransforms(globalTransform)
+            current = TryCast(Current_nif.GetParentNode(current), NiNode)
+        End While
+
+        Return globalTransform
+    End Function
+
+
     Public Sub New(Origen As PoseTransformData, Tipo As Poses_class.Pose_Source_Enum)
         Select Case Tipo
             Case Poses_class.Pose_Source_Enum.BodySlide, Poses_class.Pose_Source_Enum.WardrobeManager, Poses_class.Pose_Source_Enum.None

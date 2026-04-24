@@ -15,6 +15,7 @@ Imports OpenTK.Windowing.Common
 Imports OpenTK.Windowing.Common.Input
 Imports FO4_Base_Library.PreviewModel
 Imports Windows.Win32.System.Diagnostics
+Imports NiflySharp.Enums
 
 
 Public Class TextOverlayRenderer
@@ -740,6 +741,7 @@ Public Class PreviewControl
 
         ' Radio: cuanto “crece” la escena alrededor del centro
         Dim radius As Single = Math.Max(halfW, Math.Max(halfD, halfH))
+        If Double.IsInfinity(radius) Then radius = 1
 
         ' Distancia actual cámara ? foco
         Dim eyeToCenter As Single = Math.Max(1.0F, camera.distance)
@@ -2377,9 +2379,18 @@ Public Class PreviewModel
             shader.SetBool("bShowWeight", shape.ShowWeight)
             ' Vertex color: gated by NIF data + user toggle.
             ' Vertex alpha: not gated here (kept as before — original behavior).
-            Dim hasVtxColors As Boolean = nifshape IsNot Nothing AndAlso nifshape.HasVertexColors
-            shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVtxColors)
-            shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVtxColors)
+            Dim hasVertexColorData As Boolean = nifshape IsNot Nothing AndAlso nifshape.HasVertexColors
+            Dim shaderUsesVertexColors As Boolean = nifShader IsNot Nothing AndAlso nifShader.HasVertexColors
+            Dim shaderUsesVertexAlpha As Boolean = nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha
+
+            ' Tree_Anim interpretation of vertex alpha (anim param vs transparency).
+            ' Triggered by either the BGSM.Tree flag OR the BSLightingShaderType.TreeAnim shader type;
+            ' vanilla content often sets only one of them for vegetation/grass.
+            Dim isTreeAnim As Boolean = materialBase.Tree OrElse
+                                        materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
+
+            shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso shaderUsesVertexColors)
+            shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso shaderUsesVertexColors AndAlso shaderUsesVertexAlpha AndAlso Not isTreeAnim)
             shader.SetBool("bApplyZap", shape.ApplyZaps)
             shader.SetBool("bWireframe", shape.Wireframe)
             shader.SetBool("bHide", shape.RenderHide)
@@ -2453,6 +2464,7 @@ Public Class PreviewModel
             Else
                 shader.BindTexture("texGlowmap", Me.ParentModel.ParentControl.defaultWhiteTex, TextureUnit.Texture6)
             End If
+
 
             ' texLightmask is SSE-only (rimlight/softlight masking); FO4 does not use it
             ' For FaceTint, slot 6 (LightingTexture) is the tint mask, not lightmask

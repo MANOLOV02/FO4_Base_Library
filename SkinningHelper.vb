@@ -29,7 +29,7 @@ Public Structure SkinnedGeometry
     Public Bitangents() As Vector3d
     Public Uvs_Weight() As Vector3
     Public Eyedata() As Single
-    Public ShapeGlobal As Matrix4d
+    Public ParentGlobalTransform As Matrix4d
     Public BoneMatsBind() As Matrix4d   ' bind-pose matrices
     Public BoneMatsPose() As Matrix4d  ' pose matrices
     Public VertexColors() As Vector4
@@ -345,8 +345,9 @@ Public Class SkinningHelper
                 Next
 
             Case Else
-                ' Sin huesos — GPU path: GlobalTransform is the single "bone", do NOT transform rawVerts/N/T/B
-                Dim Mtot = GlobalTransform
+                ' Sin huesos — usar shape transform + padres, como Outfit Studio
+                Dim Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
+
                 Array.Fill(perVertexMtot, Mtot)
 
                 ' GPU Skinning: single bone matrix (GlobalTransform) for SSBO
@@ -421,7 +422,7 @@ Public Class SkinningHelper
             .Normals = rawNormals,
             .Tangents = rawTangents,
             .Bitangents = rawBitangs,
-            .ShapeGlobal = GlobalTransform,
+            .ParentGlobalTransform = GlobalTransform,
             .BoneMatsBind = matsBind,
             .BoneMatsPose = matsPose,
             .Indices = flatIndices,
@@ -524,7 +525,7 @@ Public Class SkinningHelper
         Dim matsPose() As Matrix4d = geom.BoneMatsPose
 
         ' 3) Transformación global e inversa
-        Dim GlobalTransform As Matrix4d = geom.ShapeGlobal
+        Dim GlobalTransform As Matrix4d = geom.ParentGlobalTransform
         Dim InverseGlobal As Matrix4d = GlobalTransform
         InverseGlobal.Invert()
 
@@ -636,16 +637,19 @@ Public Class SkinningHelper
                                                End Sub)
 
             Case Else
-                ' Sin huesos — only the global transform applies
-                Dim totalSkinMat = GlobalTransform
+                ' Sin huesos:
+                ' no hay skin/pose que bakear. La geometria ya esta en espacio local del shape.
+                ' Mantener identidad evita meter el transform del shape/padres dentro de los vertices.
+                Dim totalSkinMat As Matrix4d = Matrix4d.Identity
                 Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
+
                 Parallel.For(0, worldV.Length, Sub(i)
-                                                   ' Bake (local -> new-local)
                                                    worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
                                                    worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
                                                    worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
                                                    worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
                                                End Sub)
+
         End Select
 
         If ApplyMorph Then
@@ -1027,8 +1031,8 @@ Public Class SkinningHelper
                 End If
                 Mtot = GlobalTransform * bindT.ComposeTransforms(localT).ToMatrix4d()
             Else
-                ' Sin huesos: solo GlobalTransform.
-                Mtot = GlobalTransform
+                ' Sin huesos: shape transform + padres, igual que en ExtractSkinnedGeometry
+                Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
             End If
 
             geo.GPUBoneMatrices(0) = New Matrix4(

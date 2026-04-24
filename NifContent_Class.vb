@@ -212,10 +212,9 @@ Public Class Nifcontent_Class_Manolo
         End Select
 
         ' Lógica común (antes duplicada en cada Case)
-        Dim fullpath = shadName.Correct_Path_Separator
-        If fullpath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then
-            fullpath = fullpath.Substring(prefix.Length)
-        End If
+        Dim fullpath = FO4UnifiedMaterial_Class.CorrectMaterialPath(shadName)
+        fullpath = fullpath.StripPrefix(prefix)
+
 
         Dim material As New FO4UnifiedMaterial_Class
         If fullpath = "" Then
@@ -235,9 +234,10 @@ Public Class Nifcontent_Class_Manolo
     End Function
 
     Public Sub SetRelatedMaterial(shap As INiShape, MatPath As String, mat As FO4UnifiedMaterial_Class)
-        MatPath = MatPath.Correct_Path_Separator
         Dim prefix = MaterialsPrefix
+        MatPath = FO4UnifiedMaterial_Class.CorrectMaterialPath(MatPath)
         MatPath = MatPath.StripPrefix(prefix)
+
 
         Dim shad = GetShader(shap)
 
@@ -257,7 +257,7 @@ Public Class Nifcontent_Class_Manolo
                 Select Case shad.GetType
                     Case GetType(BSLightingShaderProperty)
                         Dim typed = CType(shad, BSLightingShaderProperty)
-                        saveAction = Sub() FO4UnifiedMaterial_Class.Save_To_Shader(Me, shap, typed, mat.Underlying_Material, mat.NifShaderType)
+                        saveAction = Sub() FO4UnifiedMaterial_Class.Save_To_Shader(Me, shap, typed, mat.Underlying_Material, mat.NifShaderType, mat.EnvmapMaskTexture)
                     Case GetType(BSEffectShaderProperty)
                         Dim typed = CType(shad, BSEffectShaderProperty)
                         saveAction = Sub() FO4UnifiedMaterial_Class.Save_To_Shader(Me, shap, typed, mat.Underlying_Material)

@@ -84,6 +84,11 @@ Public Class FO4UnifiedMaterial_Class
 
     ' NIF ShaderType — not part of BGSM/BGEM file format, stored here as runtime field
     Private _NifShaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default
+    ' Env mask path for BGSM — NIF texture set slot 5. Not serialized in the .bgsm binary
+    ' (BGSM has no envmapMaskTexture field; path lives only in the NIF texture set).
+    ' Evidence: BodySlide MaterialFile.cpp:91-113 (BGSM binary has 9 strings, none for envmask),
+    ' PreviewWindow.cpp:434-449 (BodySlide never assigns texFiles[5] from BGSM).
+    Private _EnvmapMaskPath As String = ""
     Private Shared ReadOnly GrayscaleTextureWidthCache As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
 
     <Browsable(False)>
@@ -447,10 +452,15 @@ Public Class FO4UnifiedMaterial_Class
     <Editor(GetType(DictionaryFilePickerEditor), GetType(UITypeEditor))>
     Public Property EnvmapMaskTexture As String
         Get
-            ' BGSM: GlowTexture (slot 5) is dual-purpose: glow when Glowmap=true, envmask when Glowmap=false
-            ' NifSkope glproperty.cpp:996 — case 5 (Env Mask): tex[5] = GlowTexture
+            ' BGSM has no native envmapMaskTexture field in its binary.
+            ' Two runtime sources: (a) NIF texture set slot 5 captured in _EnvmapMaskPath,
+            ' (b) BGSM.GlowTexture used as on-disk container for roundtrip save/load
+            '     (WM SSE embedded convention — sacrifices glow field to persist envmask
+            '     across .bgsm Save/Deserialize; works on every BGSM version).
+            ' Prefer (a) when populated; fallback to (b) to survive .bgsm serialization.
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
+                    If Not String.IsNullOrEmpty(_EnvmapMaskPath) Then Return _EnvmapMaskPath
                     Return CType(Underlying_Material, BGSM).GlowTexture
                 Case GetType(BGEM)
                     Return CType(Underlying_Material, BGEM).EnvmapMaskTexture
@@ -460,6 +470,10 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As String)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
+                    ' Write to both storages so the roundtrip preserves the path:
+                    ' runtime source for render, BGSM.GlowTexture as on-disk container.
+                    ' Tradeoff: overwrites glow map field. Accepted convention in WM SSE embedded.
+                    _EnvmapMaskPath = value
                     CType(Underlying_Material, BGSM).GlowTexture = value
                 Case GetType(BGEM)
                     CType(Underlying_Material, BGEM).EnvmapMaskTexture = value
@@ -1164,7 +1178,7 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As String)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    CType(Underlying_Material, BGSM).RootMaterialPath = value
+                    CType(Underlying_Material, BGSM).RootMaterialPath = CorrectMaterialPath(value).StripPrefix(MaterialsPrefix)
                 Case GetType(BGEM)
                     ' No action
                 Case Else
@@ -1920,6 +1934,7 @@ Public Class FO4UnifiedMaterial_Class
                 .SpecularColor = ColorToUInteger(NifColorToColor(shad.SpecularColor)),
                 .SpecularMult = shad.SpecularStrength,
                 .Glowmap = shad.HasGlowmap,
+                .Tree = shad.HasTreeAnim,
                 .SubsurfaceLighting = shad.HasSoftlight,
                 .RimLighting = shad.HasRimlight,
                 .RimPower = shad.RimlightPower,
@@ -1934,11 +1949,33 @@ Public Class FO4UnifiedMaterial_Class
                 .Smoothness = If(Nif.Header.Version.IsSSE,
                                   CSng(Math.Max(0.0, (Math.Log(Math.Max(CDbl(shad.Glossiness), 2.0), 2.0) - 1.0) / 10.0)),
                                   shad.Smoothness),
-                .SubsurfaceLightingRolloff = shad.SubsurfaceRolloff
+                .SubsurfaceLightingRolloff = shad.SubsurfaceRolloff,
+                .ExternalEmittance = shad.HasExternalEmittance,
+                .EnvironmentMappingEye = shad.HasEyeEnvironmentMapping,
+                .RootMaterialPath = If(shad.RootMaterialName, ""),
+                .ScreenSpaceReflections = shad.UseScreenSpaceReflections,
+                .WetnessControlScreenSpaceReflections = shad.WetnessControl_UseSSR,
+                .RefractionPower = shad.RefractionStrength,
+                .WetnessControlSpecScale = shad.Wetness.SpecScale,
+                .WetnessControlSpecPowerScale = shad.Wetness.SpecPower,
+                .WetnessControlSpecMinvar = shad.Wetness.MinVar,
+                .WetnessControlEnvMapScale = shad.Wetness.EnvMapScale,
+                .WetnessControlFresnelPower = shad.Wetness.FresnelPower,
+                .WetnessControlMetalness = shad.Wetness.Metalness,
+                .CastShadows = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Cast_Shadows)),
+                .HideSecret = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Localmap_Hide_Secret)),
+                .Decal = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Decal)),
+                .DecalNoFade = ShaderHelper.HasFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.No_Fade)),
+                .ZBufferWrite = ShaderHelper.HasFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.ZBuffer_Write)),
+                .ZBufferTest = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.ZBuffer_Test)),
+                .Refraction = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Refraction)),
+                .AnisoLighting = ShaderHelper.HasFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Anisotropic_Lighting)),
+                .Tessellate = (Not Nif.Header.Version.IsSSE) AndAlso ((shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate) <> 0),
+                .SkewSpecularAlpha = (Not Nif.Header.Version.IsSSE) AndAlso ((shad.ShaderFlags_F4SPF2 And NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha) <> 0)
             }
             If Not IsNothing(shad.TextureSetRef) AndAlso shad.TextureSetRef.Index <> -1 Then
                 Dim texset = TryCast(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
-                ReadBgsmTexturesFromTextureSet(mat, texset, Nif.Header.Version.IsSSE)
+                ReadBgsmTexturesFromTextureSet(mat, texset, Nif.Header.Version.IsSSE, _EnvmapMaskPath)
             End If
         Else
             mat = New BGSM
@@ -1999,7 +2036,16 @@ Public Class FO4UnifiedMaterial_Class
             .FalloffStartOpacity = shad.FalloffStartOpacity,
             .FalloffStopOpacity = shad.FalloffStopOpacity,
             .LightingInfluence = shad.LightingInfluence / 255.0F,
-            .SoftDepth = shad.SoftFalloffDepth
+            .SoftDepth = shad.SoftFalloffDepth,
+            .Glowmap = shad.HasGlowmap,
+            .EnvmapMinLOD = shad.EnvMapMinLOD,
+            .BloodEnabled = ShaderHelper.HasFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Weapon_Blood)),
+            .SoftEnabled = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Soft_Effect)),
+            .Decal = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Decal)),
+            .DecalNoFade = ShaderHelper.HasFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.No_Fade)),
+            .ZBufferWrite = ShaderHelper.HasFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.ZBuffer_Write)),
+            .ZBufferTest = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.ZBuffer_Test)),
+            .Refraction = ShaderHelper.HasFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Refraction))
                        }
         Else
             mat = New BGEM
@@ -2091,6 +2137,16 @@ Public Class FO4UnifiedMaterial_Class
         shad.HasGreyscaleToPaletteAlpha = Mat.GrayscaleToPaletteAlpha
         shad.HasGreyscaleToPaletteColor = Mat.GrayscaleToPaletteColor
 
+        shad.HasGlowmap = Mat.Glowmap
+        shad.EnvMapMinLOD = Mat.EnvmapMinLOD
+        ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Weapon_Blood), Mat.BloodEnabled)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Soft_Effect), Mat.SoftEnabled)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Decal), Mat.Decal)
+        ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.No_Fade), Mat.DecalNoFade)
+        ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.ZBuffer_Write), Mat.ZBufferWrite)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.ZBuffer_Test), Mat.ZBufferTest)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Refraction), Mat.Refraction)
+
         ' Shader flags for Falloff and EffectLighting
         ShaderHelper.SetFlagSF1(shad, ShaderHelper.FalloffFlagValue(shad), Mat.FalloffEnabled)
         If Nif.Header.Version.IsSSE Then
@@ -2125,7 +2181,7 @@ Public Class FO4UnifiedMaterial_Class
         alp.Flags.SourceBlendMode = func(0)
         alp.Flags.DestinationBlendMode = func(1)
     End Sub
-    Public Shared Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Mat As BGSM, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default)
+    Public Shared Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Mat As BGSM, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "")
         If Nif.Valid = False Then Exit Sub
         shad.DoubleSided = Mat.TwoSided
         shad.UVOffset = New TexCoord(Mat.UOffset, Mat.VOffset)
@@ -2156,12 +2212,51 @@ Public Class FO4UnifiedMaterial_Class
         shad.SpecularColor = UIntegerToNifColor3(Mat.SpecularColor)
         shad.SpecularStrength = Mat.SpecularMult
         shad.HasGlowmap = Mat.Glowmap
+        shad.HasTreeAnim = Mat.Tree
         shad.HasSoftlight = Mat.SubsurfaceLighting
         shad.HasRimlight = Mat.RimLighting
         shad.RimlightPower = Mat.RimPower
         shad.HasGreyscaleToPaletteColor = Mat.GrayscaleToPaletteColor
         shad.GrayscaleToPaletteScale = Mat.GrayscaleToPaletteScale
         shad.FresnelPower = Mat.FresnelPower
+
+        shad.HasExternalEmittance = Mat.ExternalEmittance
+        shad.HasEyeEnvironmentMapping = Mat.EnvironmentMappingEye
+        shad.RootMaterialName = Mat.RootMaterialPath
+        shad.UseScreenSpaceReflections = Mat.ScreenSpaceReflections
+        shad.WetnessControl_UseSSR = Mat.WetnessControlScreenSpaceReflections
+        shad.RefractionStrength = Mat.RefractionPower
+
+        Dim wet = shad.Wetness
+        wet.SpecScale = Mat.WetnessControlSpecScale
+        wet.SpecPower = Mat.WetnessControlSpecPowerScale
+        wet.MinVar = Mat.WetnessControlSpecMinvar
+        wet.EnvMapScale = Mat.WetnessControlEnvMapScale
+        wet.FresnelPower = Mat.WetnessControlFresnelPower
+        wet.Metalness = Mat.WetnessControlMetalness
+        shad.Wetness = wet
+
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Cast_Shadows), Mat.CastShadows)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Localmap_Hide_Secret), Mat.HideSecret)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Decal), Mat.Decal)
+        ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.No_Fade), Mat.DecalNoFade)
+        ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.ZBuffer_Write), Mat.ZBufferWrite)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.ZBuffer_Test), Mat.ZBufferTest)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Refraction), Mat.Refraction)
+        ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Anisotropic_Lighting), Mat.AnisoLighting)
+
+        If Not Nif.Header.Version.IsSSE Then
+            If Mat.Tessellate Then
+                shad.ShaderFlags_F4SPF1 = shad.ShaderFlags_F4SPF1 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate
+            Else
+                shad.ShaderFlags_F4SPF1 = shad.ShaderFlags_F4SPF1 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate
+            End If
+            If Mat.SkewSpecularAlpha Then
+                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha
+            Else
+                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha
+            End If
+        End If
 
         If IsNothing(shad.TextureSetRef) OrElse shad.TextureSetRef.Index = -1 Then
             Dim texset1 = New BSShaderTextureSet
@@ -2170,7 +2265,7 @@ Public Class FO4UnifiedMaterial_Class
         End If
 
         Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
-        WriteBgsmTexturesToTextureSet(Mat, texset, Nif.Header.Version.IsSSE)
+        WriteBgsmTexturesToTextureSet(Mat, texset, Nif.Header.Version.IsSSE, envmapMaskPath)
 
         If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
             shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
@@ -2212,16 +2307,28 @@ Public Class FO4UnifiedMaterial_Class
     Private Const textset_FlowTexture As Integer = 5
     Private Const textset_LightingTexture As Integer = 6
     Private Const textset_SmoothSpecTextureAs As Integer = 7
-    Private Shared Sub ReadBgsmTexturesFromTextureSet(mat As BGSM, texset As BSShaderTextureSet, Optional isSSE As Boolean = False)
+    Private Shared Sub ReadBgsmTexturesFromTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSSE As Boolean, ByRef envmapMaskPath As String)
         If IsNothing(mat) OrElse IsNothing(texset) Then Exit Sub
 
         EnsureShaderTextureSetSlots(texset)
 
         mat.DiffuseTexture = texset.Textures(textset_dDiffuseTexture).Content
         mat.NormalTexture = texset.Textures(textset_NormalTexture).Content
-        mat.DisplacementTexture = texset.Textures(textset_DisplacementTexture).Content  ' Slot 3 (FO4=displacement, SSE FaceTint=detail mask)
+        ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, PreviewWindow.cpp:439, fo4_default.frag:15).
+        ' SSE legacy kept on DisplacementTexture until evidence says otherwise.
+        If isSSE Then
+            mat.DisplacementTexture = texset.Textures(textset_DisplacementTexture).Content
+        Else
+            mat.GreyscaleTexture = texset.Textures(textset_DisplacementTexture).Content
+        End If
         mat.EnvmapTexture = texset.Textures(textset_EnvmapTexture).Content
-        mat.FlowTexture = texset.Textures(textset_FlowTexture).Content                 ' Slot 5 (FO4=flow, SSE=env mask)
+        ' Slot 5: FO4 = EnvMask (lives only in NIF texture set, not in BGSM binary).
+        ' SSE legacy kept on FlowTexture.
+        If isSSE Then
+            mat.FlowTexture = texset.Textures(textset_FlowTexture).Content
+        Else
+            envmapMaskPath = texset.Textures(textset_FlowTexture).Content
+        End If
         mat.SmoothSpecTexture = texset.Textures(textset_SmoothSpecTextureAs).Content
 
         ' Slot 2: glow OR lightmask (SSE dual-purpose)
@@ -2231,7 +2338,8 @@ Public Class FO4UnifiedMaterial_Class
             mat.GlowTexture = ""
         Else
             mat.GlowTexture = slot2
-            If Not isSSE Then mat.LightingTexture = texset.Textures(textset_LightingTexture).Content
+            ' Slot 6: FO4 has no sampler here; BGSM.LightingTexture is the 8th binary string,
+            ' not slot 6. Do not cross-assign. SSE dual-purpose handled below.
         End If
 
         ' Slot 6: lightmask OR tintmask (SSE dual-purpose)
@@ -2240,16 +2348,28 @@ Public Class FO4UnifiedMaterial_Class
         End If
     End Sub
 
-    Private Shared Sub WriteBgsmTexturesToTextureSet(mat As BGSM, texset As BSShaderTextureSet, Optional isSSE As Boolean = False)
+    Private Shared Sub WriteBgsmTexturesToTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSSE As Boolean, envmapMaskPath As String)
         If IsNothing(mat) OrElse IsNothing(texset) Then Exit Sub
 
         EnsureShaderTextureSetSlots(texset)
 
         texset.Textures(textset_dDiffuseTexture).Content = mat.DiffuseTexture
         texset.Textures(textset_NormalTexture).Content = mat.NormalTexture
-        texset.Textures(textset_DisplacementTexture).Content = mat.DisplacementTexture  ' Slot 3 (FO4=displacement, SSE FaceTint=detail mask)
+        ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, PreviewWindow.cpp:439, fo4_default.frag:15).
+        ' SSE legacy kept on DisplacementTexture until evidence says otherwise.
+        If isSSE Then
+            texset.Textures(textset_DisplacementTexture).Content = mat.DisplacementTexture
+        Else
+            texset.Textures(textset_DisplacementTexture).Content = mat.GreyscaleTexture
+        End If
         texset.Textures(textset_EnvmapTexture).Content = mat.EnvmapTexture
-        texset.Textures(textset_FlowTexture).Content = mat.FlowTexture                 ' Slot 5 (FO4=flow, SSE=env mask)
+        ' Slot 5: FO4 = EnvMask (runtime path, no BGSM binary field).
+        ' SSE legacy writes FlowTexture here.
+        If isSSE Then
+            texset.Textures(textset_FlowTexture).Content = mat.FlowTexture
+        Else
+            texset.Textures(textset_FlowTexture).Content = If(envmapMaskPath, "")
+        End If
         texset.Textures(textset_SmoothSpecTextureAs).Content = mat.SmoothSpecTexture
 
         ' Slot 2/6: glow vs lightmask remapping (SSE dual-purpose)
@@ -2258,7 +2378,10 @@ Public Class FO4UnifiedMaterial_Class
             texset.Textures(textset_LightingTexture).Content = ""
         Else
             texset.Textures(textset_GlowTexture).Content = mat.GlowTexture
-            texset.Textures(textset_LightingTexture).Content = mat.LightingTexture
+            ' Slot 6: FO4 has no sampler here. Only SSE writes LightingTexture to slot 6.
+            If isSSE Then
+                texset.Textures(textset_LightingTexture).Content = mat.LightingTexture
+            End If
         End If
     End Sub
     Public Sub Deserialize(Memory As Byte(), type As Type)
@@ -2278,6 +2401,10 @@ Public Class FO4UnifiedMaterial_Class
             End Using
             ms.Close()
         End Using
+        ' Sync envmask runtime source from the on-disk container (see EnvmapMaskTexture getter comment).
+        If type Is GetType(BGSM) Then
+            _EnvmapMaskPath = If(CType(Underlying_Material, BGSM).GlowTexture, "")
+        End If
     End Sub
 
     Public Sub Deserialize(Diccionario As String, type As Type)
@@ -2318,18 +2445,47 @@ Public Class FO4UnifiedMaterial_Class
     Public Shared Function ColorToUInteger(c As Color) As UInteger
         Return CType((CUInt(c.R) << 16) Or (CUInt(c.G) << 8) Or CUInt(c.B), UInteger)
     End Function
+    Private Shared Function NormalizeGameRelativePath(rawPath As String, rootPrefix As String) As String
+        If String.IsNullOrWhiteSpace(rawPath) Then Return ""
+
+        Dim normalized As String = rawPath.Correct_Path_Separator.Trim().Trim(""""c)
+        Dim rootLower As String = rootPrefix.ToLowerInvariant()
+        Dim lowered As String = normalized.ToLowerInvariant()
+
+        ' Caso 1: viene absoluto o con prefijo extra, por ejemplo:
+        ' C:\...\Data\materials\foo.bgsm
+        ' D:\mods\textures\bar.dds
+        Dim idx As Integer = lowered.IndexOf("\" & rootLower, StringComparison.OrdinalIgnoreCase)
+        If idx >= 0 Then
+            normalized = normalized.Substring(idx + 1)
+        Else
+            ' Caso 2: ya viene relativo pero con slash inicial: \materials\foo.bgsm
+            normalized = normalized.TrimStart("\"c)
+
+            ' Caso 3: viene relativo sin prefijo: foo\bar.bgsm
+            If Not normalized.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) Then
+                normalized = rootPrefix & normalized
+            End If
+        End If
+
+        normalized = normalized.TrimStart("\"c)
+
+        If Not normalized.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase) Then
+            normalized = rootPrefix & normalized.StripPrefix(rootPrefix)
+        End If
+
+        Return normalized.ToLowerInvariant()
+    End Function
 
     Public Shared Function CorrectTexturePath(Texture As String) As String
-        If String.IsNullOrEmpty(Texture) Then Return ""
-        Dim t As String = Texture.Correct_Path_Separator.StripPrefix(TexturesPrefix).ToLowerInvariant()
-        Return TexturesPrefix.ToLowerInvariant() & t
+        Return NormalizeGameRelativePath(Texture, TexturesPrefix)
     End Function
 
     Public Shared Function CorrectMaterialPath(Texture As String) As String
-        If String.IsNullOrEmpty(Texture) Then Return ""
-        Dim t As String = Texture.Correct_Path_Separator.StripPrefix(MaterialsPrefix).ToLowerInvariant()
-        Return MaterialsPrefix.ToLowerInvariant() & t
+        Return NormalizeGameRelativePath(Texture, MaterialsPrefix)
     End Function
+
+
     Shared Sub New()
 
     End Sub
@@ -2489,8 +2645,7 @@ Public Class DictionaryFilePickerEditor
         End If
 
         Dim filtered = FilesDictionary_class.GetFilteredKeys(FilesDictionary_class.TexturesDictionary_Filter)
-        Dim initialKey As String = TryCast(value, String).Correct_Path_Separator
-        initialKey = TexturesPrefix & initialKey.StripPrefix(TexturesPrefix)
+        Dim initialKey As String = FO4UnifiedMaterial_Class.CorrectTexturePath(TryCast(value, String))
 
         Using frm As New DictionaryFilePicker_Form(filtered, FilesDictionary_class.TexturesDictionary_Filter.RootPrefix, FilesDictionary_class.TexturesDictionary_Filter.AllowedExtensions, initialKey)
             If frm.ShowDialog() = DialogResult.OK Then
