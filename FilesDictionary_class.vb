@@ -169,6 +169,18 @@ Public Class FilesDictionary_class
     Private Shared ReadOnly MaxPooledReadersPerArchive As Integer = 2
     Private Shared _poolCleanupTimer As System.Timers.Timer
 
+    ' Track archives mounted at runtime via RegisterArchive (vs. those discovered by Fill_DictionaryAsync).
+    ' Key: archive file name (matches File_Location.BA2File). Value: unused (used as a set).
+    Private Shared ReadOnly _registeredArchives As New ConcurrentDictionary(Of String, Byte)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>
+    ''' SourceOrder for archives mounted via RegisterArchive after the initial scan.
+    ''' Higher than any value assigned by BuildArchivePriority but lower than Integer.MaxValue
+    ''' (which is reserved for loose files), so runtime-registered archives win over scan-time
+    ''' archives but loose still overrides everything.
+    ''' </summary>
+    Public Const ArchiveSourceOrder_RuntimeRegistered As Integer = Integer.MaxValue - 1
+
     Private Shared Sub InitPoolCleanupTimer()
         If _poolCleanupTimer IsNot Nothing Then Return
         _poolCleanupTimer = New System.Timers.Timer(30000) ' 30 seconds
@@ -780,6 +792,85 @@ Public Class FilesDictionary_class
         End If
     End Sub
 
+    ''' <summary>
+    ''' Mounts a BA2/BSA archive at runtime, populating Dictionary with all of its supported entries.
+    ''' Use this when adding archives generated after Fill_DictionaryAsync has run (e.g. WM Pack output).
+    ''' Idempotent: a second call on the same archive name is a no-op (call UnregisterArchive first if
+    ''' the archive content changed and needs to be re-read).
+    ''' </summary>
+    ''' <param name="archivePath">Absolute or Data-relative path to the .ba2 or .bsa file.</param>
+    ''' <param name="sourceOrder">Resolve_Conflict priority. Default makes runtime-registered archives
+    ''' win over any scan-time archive while still letting loose files override them.</param>
+    Public Shared Sub RegisterArchive(archivePath As String,
+                                      Optional sourceOrder As Integer = ArchiveSourceOrder_RuntimeRegistered)
+        If String.IsNullOrWhiteSpace(archivePath) Then Throw New ArgumentException("archivePath is empty.", NameOf(archivePath))
+
+        Dim absolutePath As String = If(Path.IsPathRooted(archivePath),
+                                        archivePath,
+                                        Path.Combine(FO4Path, archivePath))
+        If Not File.Exists(absolutePath) Then
+            Throw New FileNotFoundException("Archive not found: " & absolutePath, absolutePath)
+        End If
+
+        Dim archiveFileName = Path.GetFileName(absolutePath)
+        If Not _registeredArchives.TryAdd(archiveFileName, 0) Then Exit Sub
+
+        Dim added As New ConcurrentBag(Of String)()
+        Dim noopProgress As IProgress(Of (String, Integer, Integer)) =
+            New Progress(Of (String, Integer, Integer))(Sub(_x)
+                                                            ' no-op: runtime register doesn't surface progress
+                                                        End Sub)
+
+        ProcessBa2File(absolutePath, sourceOrder, noopProgress, added)
+
+        ' Index only the keys touched by this archive instead of rebuilding the entire search index.
+        For Each key In added
+            IndexDictionaryKey(key)
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' Unmounts an archive registered at runtime (or discovered by the initial scan): removes its
+    ''' entries from Dictionary, restoring any previously overridden entry from the override stack,
+    ''' and disposes pooled readers for the archive file.
+    ''' Safe to call on archives that aren't currently mounted (no-op).
+    ''' </summary>
+    ''' <param name="archivePath">Absolute or Data-relative path to the .ba2 or .bsa file.</param>
+    Public Shared Sub UnregisterArchive(archivePath As String)
+        If String.IsNullOrWhiteSpace(archivePath) Then Throw New ArgumentException("archivePath is empty.", NameOf(archivePath))
+
+        Dim absolutePath As String = If(Path.IsPathRooted(archivePath),
+                                        archivePath,
+                                        Path.Combine(FO4Path, archivePath))
+        Dim archiveFileName = Path.GetFileName(absolutePath)
+
+        ' Snapshot keys to remove before mutating the dictionary.
+        Dim toRemove As New List(Of String)
+        For Each kvp In _dictionary
+            If kvp.Value IsNot Nothing AndAlso
+               kvp.Value.BA2File.Equals(archiveFileName, StringComparison.OrdinalIgnoreCase) Then
+                toRemove.Add(kvp.Key)
+            End If
+        Next
+
+        For Each key In toRemove
+            RemoveDictionaryEntry(key)
+        Next
+
+        ' Drop pooled readers for this archive (their backing FileStream may be invalid after rewrite).
+        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream)) = Nothing
+        If _archivePool.TryRemove(absolutePath, bag) Then
+            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream) = Nothing
+            While bag.TryTake(entry)
+                Try : entry.Reader.Dispose() : Catch : End Try
+                Try : entry.Stream.Dispose() : Catch : End Try
+            End While
+        End If
+
+        Dim removedFlag As Byte = 0
+        _registeredArchives.TryRemove(archiveFileName, removedFlag)
+    End Sub
+
     ''' <summary>Returns the overridden entries for a key (from most recent to oldest), or empty if none.</summary>
     Public Shared Function GetOverriddenEntries(fullPath As String) As File_Location()
         Dim normalized = NormalizeDictionaryKey(fullPath)
@@ -1078,7 +1169,10 @@ Public Class FilesDictionary_class
 
         Return result
     End Function
-    Private Shared Sub ProcessBa2File(ba2 As String, sourceOrder As Integer, progress As IProgress(Of (String, Integer, Integer)))
+    Private Shared Sub ProcessBa2File(ba2 As String,
+                                      sourceOrder As Integer,
+                                      progress As IProgress(Of (String, Integer, Integer)),
+                                      Optional addedKeys As ConcurrentBag(Of String) = Nothing)
         Try
             ' O5.4: Intern the BA2 filename since it is stored in many File_Location instances
             Dim ba2FileName = String.Intern(Path.GetFileName(ba2))
@@ -1114,6 +1208,7 @@ Public Class FilesDictionary_class
                                 Return existing
                             End If
                         End Function)
+                    addedKeys?.Add(standardized)
                 Next
                 _scanReport.Enqueue((ba2FileName, True))
                 Return
@@ -1156,6 +1251,7 @@ Public Class FilesDictionary_class
                                     Return existing
                                 End If
                             End Function)
+                        addedKeys?.Add(standardized)
 
                         If collected IsNot Nothing Then
                             collected.Add(New CachedEntry With {.Index = fil.Index, .FullPath = standardized})

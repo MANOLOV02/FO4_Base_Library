@@ -2380,17 +2380,14 @@ Public Class PreviewModel
             ' Vertex color: gated by NIF data + user toggle.
             ' Vertex alpha: not gated here (kept as before — original behavior).
             Dim hasVertexColorData As Boolean = nifshape IsNot Nothing AndAlso nifshape.HasVertexColors
-            Dim shaderUsesVertexColors As Boolean = nifShader IsNot Nothing AndAlso nifShader.HasVertexColors
             Dim shaderUsesVertexAlpha As Boolean = nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha
 
             ' Tree_Anim interpretation of vertex alpha (anim param vs transparency).
             ' Triggered by either the BGSM.Tree flag OR the BSLightingShaderType.TreeAnim shader type;
             ' vanilla content often sets only one of them for vegetation/grass.
-            Dim isTreeAnim As Boolean = materialBase.Tree OrElse
-                                        materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
-
-            shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso shaderUsesVertexColors)
-            shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso shaderUsesVertexColors AndAlso shaderUsesVertexAlpha AndAlso Not isTreeAnim)
+            Dim isTreeAnim As Boolean = materialBase.Tree OrElse materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
+            shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVertexColorData)
+            shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso Not isTreeAnim)
             shader.SetBool("bApplyZap", shape.ApplyZaps)
             shader.SetBool("bWireframe", shape.Wireframe)
             shader.SetBool("bHide", shape.RenderHide)

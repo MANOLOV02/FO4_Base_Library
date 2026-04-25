@@ -233,17 +233,24 @@ Public Class BSTriShapeGeometry
         Dim outIdx(n * wpv - 1) As Byte
         Dim outWgt(n * wpv - 1) As SysHalf
 
+        ' BSVertexData/BSVertexDataSSE hold BoneWeights/BoneIndices as [InlineArray(4)]
+        ' structs. BoneInlineArrayExt copies the 4 struct slots straight into the
+        ' destination slice - no intermediate buffer, one memcopy per field per vertex.
         If Version.IsSSE Then
             Dim vd = _tri.VertexDataSSE
             If vd Is Nothing OrElse vd.Count <> n Then Return ShapeSkinningData.Empty
             For i = 0 To n - 1
-                CopyVertexInfluences(vd(i).BoneIndices, vd(i).BoneWeights, outIdx, outWgt, i, wpv)
+                Dim v = vd(i)
+                v.BoneIndices.CopyTo(outIdx, i * wpv, wpv)
+                v.BoneWeights.CopyTo(outWgt, i * wpv, wpv)
             Next
         Else
             Dim vd = _tri.VertexData
             If vd Is Nothing OrElse vd.Count <> n Then Return ShapeSkinningData.Empty
             For i = 0 To n - 1
-                CopyVertexInfluences(vd(i).BoneIndices, vd(i).BoneWeights, outIdx, outWgt, i, wpv)
+                Dim v = vd(i)
+                v.BoneIndices.CopyTo(outIdx, i * wpv, wpv)
+                v.BoneWeights.CopyTo(outWgt, i * wpv, wpv)
             Next
         End If
 
@@ -722,20 +729,26 @@ Public Class BSTriShapeGeometry
         Const wpv As Integer = 4
         Dim inputWpv As Integer = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, wpv)
 
+        ' Copy directly from the input slice into each vertex's [InlineArray(4)] structs.
+        ' Inputs wider than 4 are truncated; shorter inputs leave trailing slots at zero
+        ' (the struct is reset to default before CopyFrom so prior contents don't bleed through).
+        Dim copy As Integer = Math.Min(wpv, inputWpv)
         If Version.IsSSE Then
             Dim vd = _tri.VertexDataSSE
             If vd Is Nothing OrElse vd.Count <> n Then Return
             For i = 0 To n - 1
                 Dim v = vd(i)   ' struct copy (BSVertexDataSSE is a struct)
-                Dim newIdx(wpv - 1) As Byte
-                Dim newWgt(wpv - 1) As SysHalf
-                Dim copy As Integer = Math.Min(wpv, inputWpv)
-                For j = 0 To copy - 1
-                    newIdx(j) = skinning.BoneIndices(i * inputWpv + j)
-                    newWgt(j) = skinning.BoneWeights(i * inputWpv + j)
-                Next
-                v.BoneIndices = newIdx
-                v.BoneWeights = newWgt
+                ' Extract bone fields to direct locals before CopyFrom: VB.NET cannot guarantee
+                ' that ByRef-Me extensions over a NESTED struct field of a local target the
+                ' original field (silent temp-copy drops the write). With top-level locals the
+                ' ByRef is unambiguous. The locals start zero-initialised so slots beyond `copy`
+                ' (when inputWpv < 4) end up at zero without an extra padding pass.
+                Dim bi As BoneIndices4
+                Dim bw As BoneWeights4
+                bi.CopyFrom(skinning.BoneIndices, i * inputWpv, copy)
+                bw.CopyFrom(skinning.BoneWeights, i * inputWpv, copy)
+                v.BoneIndices = bi
+                v.BoneWeights = bw
                 vd(i) = v   ' write back the modified struct
             Next
         Else
@@ -743,15 +756,13 @@ Public Class BSTriShapeGeometry
             If vd Is Nothing OrElse vd.Count <> n Then Return
             For i = 0 To n - 1
                 Dim v = vd(i)
-                Dim newIdx(wpv - 1) As Byte
-                Dim newWgt(wpv - 1) As SysHalf
-                Dim copy As Integer = Math.Min(wpv, inputWpv)
-                For j = 0 To copy - 1
-                    newIdx(j) = skinning.BoneIndices(i * inputWpv + j)
-                    newWgt(j) = skinning.BoneWeights(i * inputWpv + j)
-                Next
-                v.BoneIndices = newIdx
-                v.BoneWeights = newWgt
+                ' See comment in the SSE branch above — same nested-ByRef caveat.
+                Dim bi As BoneIndices4
+                Dim bw As BoneWeights4
+                bi.CopyFrom(skinning.BoneIndices, i * inputWpv, copy)
+                bw.CopyFrom(skinning.BoneWeights, i * inputWpv, copy)
+                v.BoneIndices = bi
+                v.BoneWeights = bw
                 vd(i) = v
             Next
         End If
@@ -799,17 +810,9 @@ Public Class BSTriShapeGeometry
     ''' vertex into the flat output arrays at vertex offset <paramref name="vIdx"/>.  Pads
     ''' missing slots with index=0, weight=0 — same convention as ShapeSkinningData.Empty.
     ''' </summary>
-    Private Shared Sub CopyVertexInfluences(srcIdx As Byte(), srcWgt As SysHalf(), outIdx As Byte(), outWgt As SysHalf(), vIdx As Integer, wpv As Integer)
-        Dim base As Integer = vIdx * wpv
-        Dim haveIdx As Integer = If(srcIdx Is Nothing, 0, srcIdx.Length)
-        Dim haveWgt As Integer = If(srcWgt Is Nothing, 0, srcWgt.Length)
-        Dim copy As Integer = Math.Min(wpv, Math.Min(haveIdx, haveWgt))
-        For j = 0 To copy - 1
-            outIdx(base + j) = srcIdx(j)
-            outWgt(base + j) = srcWgt(j)
-        Next
-        ' Remaining slots already default to 0 via Dim allocation.
-    End Sub
+    ' CopyVertexInfluences helper removed: the two callers (GetSkinning) now iterate
+    ' directly over BoneIndices4/BoneWeights4 InlineArray structs without going through
+    ' temporary Byte()/SysHalf() arrays.
 
     ''' <summary>
     ''' Reads the bone-palette block indices from the shape's skin instance Bones reference list.
