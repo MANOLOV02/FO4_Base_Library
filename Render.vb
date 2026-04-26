@@ -2362,7 +2362,7 @@ Public Class PreviewModel
             Dim hasAlphaTest = material.HasAlphaTest
             Dim shape = Me.MeshData.Shape
             Dim nifShader = shape.NifShader
-            Dim nifshape = MeshData.Meshgeometry.Geometry?.BackingShape
+            Dim shapeGeom = MeshData.Meshgeometry.Geometry
 
             '===============================
             ' ?? PROPIEDADES DE COLOR BÁSICO
@@ -2379,7 +2379,7 @@ Public Class PreviewModel
             shader.SetBool("bShowWeight", shape.ShowWeight)
             ' Vertex color: gated by NIF data + user toggle.
             ' Vertex alpha: not gated here (kept as before — original behavior).
-            Dim hasVertexColorData As Boolean = nifshape IsNot Nothing AndAlso nifshape.HasVertexColors
+            Dim hasVertexColorData As Boolean = shapeGeom IsNot Nothing AndAlso shapeGeom.HasVertexColors
             Dim shaderUsesVertexAlpha As Boolean = nifShader IsNot Nothing AndAlso nifShader.HasVertexAlpha
 
             ' Tree_Anim interpretation of vertex alpha (anim param vs transparency).
@@ -2730,7 +2730,7 @@ Public Class PreviewModel
 
     Private Function LoadShapeSafe(shape As IRenderableShape, Optional resolver As ISkeletonResolver = Nothing) As RenderableMesh
         Try
-            ' 1) Obtener shape y datos de skin (siempre BSTriShape)
+            ' 1) Obtener shape + geometría skinned (polimórfico via IShapeGeometry).
             If IsNothing(shape.NifShape) Then Return Nothing
             Dim skel As SkeletonInstance = If(resolver IsNot Nothing, resolver.ResolveFor(shape), Nothing)
             Dim geom = SkinningHelper.ExtractSkinnedGeometry(shape, SingleBoneSkinning, RecalculateNormals, skel)
