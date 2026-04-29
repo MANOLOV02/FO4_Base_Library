@@ -6,6 +6,7 @@ Imports NiflySharp
 Imports NiflySharp.Blocks
 Imports NiflySharp.Enums
 Imports NiflySharp.Structs
+Imports OpenTK.Mathematics
 
 
 
@@ -371,6 +372,58 @@ Public Class Nifcontent_Class_Manolo
         End If
 
         Dim destShape = Me.CloneShape(srcShape, destShapeName, srcNif)
+
+        ' Cross-file clone: NiflySharp.NifFile.CloneShape parents the cloned shape to destRoot
+        ' (NifFile.cs:758-762), losing intermediate NiNodes between srcShape and srcRoot. Para
+        ' shapes UNSKINNED la posición global se compone como shape.T/R/S × parent_chain — si
+        ' había NiNodes intermedios con transform no-identidad, después del clone esa contribución
+        ' desaparece y el shape aparece desplazado.
+        '
+        ' Fix (Opción C): bakear SOLO los NiNodes intermedios entre srcShape y srcRoot. NO se
+        ' bakea el srcRoot porque su transform suele representar contexto del NIF (heel offset,
+        ' floor offset, body-height) que es accidental al fichero source y no se debe arrastrar
+        ' al destino. Si srcShape cuelga directo de srcRoot (NIF flat), no se hace nada — el
+        ' Clone ya preservó srcShape.T/R/S y eso basta.
+        '
+        ' Math: queremos render(destShape) = M_srcShape × M_intermediates (sin srcRoot, sin
+        ' destRoot). Como render(destShape) = destShape.localT × destParentChain, despejando:
+        '   destShape.localT = M_srcShape × M_intermediates × destParentChain^-1
+        ' donde M_srcShape × M_intermediates = GetGlobalTransform(srcShape) × srcRoot^-1.
+        '
+        ' Skinned: NO se bakea. La posición de un skinned viene del bone palette + parent-only
+        ' GlobalTransform (SkinningHelper.vb:151 ignora shape.T/R/S). OS hace lo mismo
+        ' (Anim.cpp:692-704). Si un skinned post-merge aparece mal posicionado, el problema
+        ' es otro (xformGlobalToSkin equivalente, no este bake).
+        '
+        ' Same-file (srcNif == Me): NiflySharp parentea al mismo padre que srcShape (NifFile.cs:752),
+        ' la posición se preserva sin baking.
+        If destShape IsNot Nothing AndAlso Not destShape.IsSkinned AndAlso Not Object.ReferenceEquals(srcNif, Me) Then
+            Dim srcParent = TryCast(srcNif.GetParentNode(srcShape), NiNode)
+            Dim srcRoot = srcNif.GetRootNode()
+            ' Sólo bakear si hay NiNodes intermedios. Si srcParent IS srcRoot (flat NIF), skip.
+            If srcParent IsNot Nothing AndAlso Not Object.ReferenceEquals(srcParent, srcRoot) Then
+                Dim oldShapeToWorld As Matrix4d = Transform_Class.GetGlobalTransform(srcShape, srcNif).ToMatrix4d()
+                Dim srcRootMat As Matrix4d = If(srcRoot IsNot Nothing,
+                    Transform_Class.GetGlobalTransform(srcRoot, srcNif).ToMatrix4d(),
+                    Matrix4d.Identity)
+                Dim srcRootInv As Matrix4d = srcRootMat
+                srcRootInv.Invert()
+                ' shapeWithoutRoot = M_srcShape × M_intermediates (sin srcRoot)
+                Dim shapeWithoutRoot As Matrix4d = oldShapeToWorld * srcRootInv
+
+                Dim destParentNode = TryCast(Me.GetParentNode(destShape), NiNode)
+                Dim destParentToWorld As Matrix4d = If(destParentNode IsNot Nothing,
+                    Transform_Class.GetGlobalTransform(destParentNode, Me).ToMatrix4d(),
+                    Matrix4d.Identity)
+                Dim destParentInverse As Matrix4d = destParentToWorld
+                destParentInverse.Invert()
+                Dim newLocalMat As Matrix4d = shapeWithoutRoot * destParentInverse
+                Dim newLocal As New Transform_Class(newLocalMat)
+                destShape.Translation = newLocal.Translation
+                destShape.Rotation = newLocal.Rotation
+                destShape.Scale = newLocal.Scale
+            End If
+        End If
 
         ' NiflySharp DeepCopyHelper bug workaround: structs short-circuit at DeepCopy
         ' (DeepCopyHelper.cs:37 `type.IsValueType → return original`), so reference-type

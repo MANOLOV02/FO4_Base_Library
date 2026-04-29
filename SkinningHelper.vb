@@ -252,8 +252,15 @@ Public Class SkinningHelper
         Dim gpuBoneWgt(vertexCount * 4 - 1) As Single
         Dim gpuBoneMats() As Matrix4 = Nothing
 
+        ' Branching predicate: shape.IsSkinned (parity con Outfit Studio Anim.cpp:692, 706,
+        ' GLSurface.cpp:1247 — IsSkinned() es !skinInstanceRef.IsEmpty()). NO usamos bones.Length
+        ' como predicado primario porque depende de que ResolveSkinData haya resuelto la palette;
+        ' un shape con SkinInstanceRef válido pero bones no resueltos (post-merge, índices
+        ' inválidos, etc.) es IsSkinned=True con bones.Length=0 y debe tratarse como skinned
+        ' degenerado, no como unskinned. bones.Length>0 sigue como guard secundario para
+        ' acceso seguro a matsBind/matsPose.
         Select Case True
-            Case Not singleboneskinning AndAlso bones.Length > 0
+            Case shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Length > 0
                 ' Pre-compute bone matrices (shapeGlobalTransform * matsPose(k))
                 Dim precomputedBoneMatrices(bones.Length - 1) As Matrix4d
                 For k = 0 To bones.Length - 1
@@ -322,7 +329,7 @@ Public Class SkinningHelper
                     Next
                 End If
 
-            Case singleboneskinning AndAlso bones.Length > 0
+            Case shape.IsSkinned AndAlso singleboneskinning AndAlso bones.Length > 0
                 ' Single-bone: pre-compute once — GPU path: do NOT transform rawVerts/N/T/B
                 Dim Mtot = GlobalTransform * matsPose(0)
                 Array.Fill(perVertexMtot, Mtot)
@@ -345,12 +352,26 @@ Public Class SkinningHelper
                 Next
 
             Case Else
-                ' Sin huesos — usar shape transform + padres, como Outfit Studio
-                Dim Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
+                ' Dos sub-casos colapsados acá:
+                '  (A) shape.IsSkinned=False  → genuinamente unskinned. Mtot = shape.T/R/S × parent_chain
+                '      (paridad con Outfit Studio: Anim.cpp:692-704 GetTransformShapeToGlobal).
+                '  (B) shape.IsSkinned=True AndAlso bones.Length=0 → skinned degenerado (skin instance
+                '      presente pero palette de huesos no resoluble, p.ej. post-merge con bone refs
+                '      colgados). OS devuelve MatTransform() = identity en este caso (Anim.cpp:711).
+                '      NO aplicamos shape.T/R/S+parents porque los vértices están en skin-space, no
+                '      en shape-local; mezclar parent chain ahí los manda "a cualquier parte".
+                Dim Mtot As Matrix4d
+                If shape.IsSkinned Then
+                    ' (B) Degenerado: identity, igual que OS.
+                    Mtot = Matrix4d.Identity
+                Else
+                    ' (A) Unskinned puro: shape.T/R/S × parent chain.
+                    Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
+                End If
 
                 Array.Fill(perVertexMtot, Mtot)
 
-                ' GPU Skinning: single bone matrix (GlobalTransform) for SSBO
+                ' GPU Skinning: single bone matrix for SSBO
                 gpuBoneMats = New Matrix4(0) {}
                 gpuBoneMats(0) = New Matrix4(
                     CSng(Mtot.M11), CSng(Mtot.M12), CSng(Mtot.M13), CSng(Mtot.M14),
@@ -561,8 +582,10 @@ Public Class SkinningHelper
         ' cuando wpv>1 (típico en bodies). Round-trip seguía siendo identidad porque la
         ' fórmula es invertible consigo misma, pero no preservaba la pose visualmente.
 
+        ' Branching predicate: Shape.IsSkinned (paridad OS bake — OutfitProject.cpp:1620).
+        ' matsBind.Length>0 sigue como guard secundario para acceso a arrays de matrices.
         Select Case True
-            Case Not singleBoneSkinning AndAlso matsBind.Length > 0
+            Case Shape.IsSkinned AndAlso Not singleBoneSkinning AndAlso matsBind.Length > 0
                 ' Multibone — vertices in shape-local; transform per-vertex con blend lineal
                 Parallel.For(0, worldV.Length, Sub(i)
                                                    Dim MposeBlend As Matrix4d = Matrix4d.Zero
@@ -614,7 +637,7 @@ Public Class SkinningHelper
                                                    worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
                                                End Sub)
 
-            Case singleBoneSkinning AndAlso matsBind.Length > 0
+            Case Shape.IsSkinned AndAlso singleBoneSkinning AndAlso matsBind.Length > 0
                 ' Single-bone — vertices are already in local space, transform per-vertex.
                 ' Por diseño matsPose(0)=matsBind(0) en single-bone (no aplica pose), así que
                 ' skinMat colapsa a identidad. Mantenemos la fórmula explícita para que la
@@ -637,9 +660,11 @@ Public Class SkinningHelper
                                                End Sub)
 
             Case Else
-                ' Sin huesos:
-                ' no hay skin/pose que bakear. La geometria ya esta en espacio local del shape.
-                ' Mantener identidad evita meter el transform del shape/padres dentro de los vertices.
+                ' Cubre dos casos: (A) IsSkinned=False (genuinamente unskinned) — la geometría ya
+                ' está en shape-local; el transform del shape va guardado en NiAVObject.T/R/S, no
+                ' se mete en los vértices (paridad OS OutfitProject.cpp:1645-1648 unskinned bake).
+                ' (B) IsSkinned=True con matsBind.Length=0 (degenerado): no hay skin que invertir;
+                ' identity preserva los vértices tal cual.
                 Dim totalSkinMat As Matrix4d = Matrix4d.Identity
                 Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
 
@@ -937,7 +962,9 @@ Public Class SkinningHelper
         If IsNothing(shapeNode) Then shapeNode = shape.NifContent.GetRootNode()
         Dim GlobalTransform = If(shapeNode IsNot Nothing, Transform_Class.GetGlobalTransform(shapeNode, shape.NifContent).ToMatrix4d(), Matrix4d.Identity)
 
-        If Not singleboneskinning AndAlso bones.Length > 0 Then
+        ' Branching predicate: shape.IsSkinned (consistente con ExtractSkinnedGeometry).
+        ' bones.Length>0 secundario para acceso seguro a array.
+        If shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Length > 0 Then
             ' Multi-bone path: recompute bone matrices once, use for both SSBO and per-vertex blending.
             ' Keep geo.BoneMatsBind/BoneMatsPose in sync too — BakeFromMemoryUsingOriginal reads
             ' them to compute bindTimesInvPose, and if they're stale from the previous Extract
@@ -1013,13 +1040,15 @@ Public Class SkinningHelper
                 Next
             End If
         Else
-            ' Single-bone or no-bone path: ignora pose animada por diseño (single-bone
-            ' es un modo de preview rigido), pero debe respetar bindT(0) * localT(0)
-            ' del hueso 0. Si no lo hiciera, el shape salta cada vez que cambia la pose
-            ' porque se pierde el transform del hueso. Esta composicion tiene que
-            ' coincidir con lo que computa ExtractSkinnedGeometry en el caso single-bone.
+            ' Tres sub-casos: (1) skinned single-bone, (2) skinned degenerado (IsSkinned=True
+            ' AndAlso bones=0), (3) unskinned puro. La rama (2) matchea OS Anim.cpp:711 →
+            ' identity. La rama (3) matchea OS Anim.cpp:692-704 → shape.T/R/S × parent_chain.
             Dim Mtot As Matrix4d
-            If bones.Length > 0 Then
+            If shape.IsSkinned AndAlso bones.Length > 0 Then
+                ' (1) Skinned single-bone: ignora pose animada por diseño (single-bone es modo
+                ' preview rigido), pero debe respetar bindT(0) * localT(0) del hueso 0. Si no
+                ' lo hiciera, el shape salta cada vez que cambia la pose porque se pierde el
+                ' transform del hueso. Coincide con ExtractSkinnedGeometry caso single-bone.
                 Dim localT = boneTrans(0)
                 Dim boneName = bones(0).Name.String
                 Dim SkeletonBone As HierarchiBone_class = Nothing
@@ -1030,8 +1059,12 @@ Public Class SkinningHelper
                     bindT = Transform_Class.GetGlobalTransform(bones(0), shape.NifContent)
                 End If
                 Mtot = GlobalTransform * bindT.ComposeTransforms(localT).ToMatrix4d()
+            ElseIf shape.IsSkinned Then
+                ' (2) Skinned degenerado (skin instance presente, palette no resuelta).
+                ' Identity, igual que OS Anim.cpp:711 (shapeSkinning lookup miss → MatTransform()).
+                Mtot = Matrix4d.Identity
             Else
-                ' Sin huesos: shape transform + padres, igual que en ExtractSkinnedGeometry
+                ' (3) Unskinned puro: shape.T/R/S + parent chain.
                 Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
             End If
 
