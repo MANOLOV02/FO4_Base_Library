@@ -10,10 +10,9 @@ Option Explicit On
 ' HclClothPackageParser (built but not connected al render todavía).
 '
 ' PENDIENTES CONOCIDOS:
-'  - ReadArrayHeader hardcodea offsets para punteros de 64-bit (FO4 PointerSize=8).
-'    Para Skyrim SSE (PointerSize=4): Count estaría en +4, CapacityAndFlags en +8.
-'    El campo PointerSize del header se lee pero NUNCA se usa aquí.
-'    Ver: ReadArrayHeader, ReadObjectReferenceArray.
+'  - Los layouts HCL específicos siguen verificados empíricamente para FO4 64-bit.
+'    El soporte genérico 32/64-bit de este archivo cubre hkArray, root container,
+'    skeleton y animation/binding; no implica soporte completo de cloth Skyrim.
 '  - ParseSimClothData (línea ~272): sin callers externos. Exploración supersedida
 '    por HclStructuredGraphParser_Class. Pendiente eliminar.
 '  - GetLocalFixupsInRange / GetGlobalFixupsInRange: LINQ scan lineal O(n)
@@ -33,7 +32,7 @@ Public NotInheritable Class HkxObjectGraphParser_Class
     End Function
 End Class
 
-Public Class HkxObjectGraph_Class
+Public Partial Class HkxObjectGraph_Class
     Public ReadOnly Property Packfile As HkxPackfile_Class
     Public ReadOnly Property ContentsSection As HkxPackfileSection_Class
     Public ReadOnly Property Objects As New List(Of HkxVirtualObjectGraph_Class)
@@ -42,6 +41,24 @@ Public Class HkxObjectGraph_Class
     Private ReadOnly _globalFixupsBySource As New Dictionary(Of Integer, HkxGlobalFixupEntry_Class)
     Private ReadOnly _objectsByOffset As New Dictionary(Of Integer, HkxVirtualObjectGraph_Class)
     Private ReadOnly _objectsByClassName As New Dictionary(Of String, List(Of HkxVirtualObjectGraph_Class))(StringComparer.OrdinalIgnoreCase)
+
+    Private ReadOnly Property PointerSizeValue As Integer
+        Get
+            Return Math.Max(1, CInt(Packfile.Header.PointerSize))
+        End Get
+    End Property
+
+    Private ReadOnly Property ArrayHeaderSizeValue As Integer
+        Get
+            Return PointerSizeValue + 8
+        End Get
+    End Property
+
+    Private ReadOnly Property BaseObjectFieldOffset As Integer
+        Get
+            Return PointerSizeValue * 2
+        End Get
+    End Property
 
     Public Sub New(packfile As HkxPackfile_Class)
         If IsNothing(packfile) Then Throw New ArgumentNullException(NameOf(packfile))
@@ -187,9 +204,19 @@ Public Class HkxObjectGraph_Class
         Return BitConverter.ToInt16(Packfile.RawBytes, ContentsSection.AbsoluteDataStart + relativeOffset)
     End Function
 
+    Public Function ReadByte(relativeOffset As Integer) As Byte
+        EnsureReadable(relativeOffset, 1)
+        Return Packfile.RawBytes(ContentsSection.AbsoluteDataStart + relativeOffset)
+    End Function
+
     Public Function ReadInt32(relativeOffset As Integer) As Integer
         EnsureReadable(relativeOffset, 4)
         Return BitConverter.ToInt32(Packfile.RawBytes, ContentsSection.AbsoluteDataStart + relativeOffset)
+    End Function
+
+    Public Function ReadUInt32(relativeOffset As Integer) As UInteger
+        EnsureReadable(relativeOffset, 4)
+        Return BitConverter.ToUInt32(Packfile.RawBytes, ContentsSection.AbsoluteDataStart + relativeOffset)
     End Function
 
     Public Function ReadSingle(relativeOffset As Integer) As Single
@@ -197,16 +224,22 @@ Public Class HkxObjectGraph_Class
         Return BitConverter.ToSingle(Packfile.RawBytes, ContentsSection.AbsoluteDataStart + relativeOffset)
     End Function
 
+    Public Function ReadBytes(relativeOffset As Integer, byteCount As Integer) As Byte()
+        If byteCount <= 0 Then Return Array.Empty(Of Byte)()
+        EnsureReadable(relativeOffset, byteCount)
+
+        Dim result(byteCount - 1) As Byte
+        Buffer.BlockCopy(Packfile.RawBytes, ContentsSection.AbsoluteDataStart + relativeOffset, result, 0, byteCount)
+        Return result
+    End Function
+
     Public Function ReadArrayHeader(fieldRelativeOffset As Integer) As HkxObjectArrayHeader_Class
-        ' REVISAR: offsets +8 y +12 son correctos SOLO para PointerSize=8 (FO4 64-bit).
-        ' Para Skyrim SSE (PointerSize=4): Count en +4, CapacityAndFlags en +8.
-        ' Packfile.Header.PointerSize está disponible pero no se usa aquí todavía.
         Dim pointer = ResolveLocalPointer(fieldRelativeOffset)
         Return New HkxObjectArrayHeader_Class With {
             .FieldRelativeOffset = fieldRelativeOffset,
             .DataRelativeOffset = If(pointer, -1),
-            .Count = ReadInt32(fieldRelativeOffset + 8),
-            .CapacityAndFlags = ReadInt32(fieldRelativeOffset + 12)
+            .Count = ReadInt32(fieldRelativeOffset + PointerSizeValue),
+            .CapacityAndFlags = ReadInt32(fieldRelativeOffset + PointerSizeValue + 4)
         }
     End Function
 
@@ -227,7 +260,7 @@ Public Class HkxObjectGraph_Class
         Dim header = ReadArrayHeader(fieldRelativeOffset)
         If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
 
-        Dim stride = Math.Max(1, CInt(Packfile.Header.PointerSize))
+        Dim stride = PointerSizeValue
         For i = 0 To header.Count - 1
             Dim obj = ResolveGlobalObject(header.DataRelativeOffset + (i * stride))
             If Not IsNothing(obj) Then result.Add(obj)
@@ -259,6 +292,24 @@ Public Class HkxObjectGraph_Class
         Next
 
         Return result
+    End Function
+
+    Public Function ReadUInt32Array(fieldRelativeOffset As Integer) As List(Of UInteger)
+        Dim result As New List(Of UInteger)
+        Dim header = ReadArrayHeader(fieldRelativeOffset)
+        If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
+
+        For i = 0 To header.Count - 1
+            result.Add(ReadUInt32(header.DataRelativeOffset + (i * 4)))
+        Next
+
+        Return result
+    End Function
+
+    Public Function ReadByteArray(fieldRelativeOffset As Integer) As Byte()
+        Dim header = ReadArrayHeader(fieldRelativeOffset)
+        If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return Array.Empty(Of Byte)()
+        Return ReadBytes(header.DataRelativeOffset, header.Count)
     End Function
 
     ' Reads hkArray of hkVector4 (16 bytes/element) into a list.
@@ -299,7 +350,8 @@ Public Class HkxObjectGraph_Class
             .SourceObject = rootObject
         }
 
-        For Each variantOffset In ReadStructureOffsets(rootObject.RelativeOffset, 24)
+        Dim namedVariantStride = PointerSizeValue * 3
+        For Each variantOffset In ReadStructureOffsets(rootObject.RelativeOffset, namedVariantStride)
             result.NamedVariants.Add(ReadNamedVariant(variantOffset))
         Next
 
@@ -435,17 +487,26 @@ Public Class HkxObjectGraph_Class
     Public Function ParseSkeleton(source As HkxVirtualObjectGraph_Class) As HkaSkeletonGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkaSkeleton", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        Dim nameFieldOffset = BaseObjectFieldOffset
+        Dim parentIndicesOffset = nameFieldOffset + PointerSizeValue
+        Dim bonesOffset = parentIndicesOffset + ArrayHeaderSizeValue
+        Dim referencePoseOffset = bonesOffset + ArrayHeaderSizeValue
+        Dim floatSlotsOffset = referencePoseOffset + ArrayHeaderSizeValue
+        Dim localFramesOffset = floatSlotsOffset + ArrayHeaderSizeValue
+        Dim partitionsOffset = localFramesOffset + ArrayHeaderSizeValue
+        Dim partitionNamesOffset = partitionsOffset + ArrayHeaderSizeValue
+
         Dim result As New HkaSkeletonGraph_Class With {
             .SourceObject = source,
-            .Name = ResolveLocalString(source.RelativeOffset + &H10),
-            .ParentIndices = ReadInt16Array(source.RelativeOffset + &H18),
-            .ParentIndicesField = CreateArrayField(source, &H18, "ParentIndices"),
-            .BonesField = CreateArrayField(source, &H28, "Bones"),
-            .ReferencePoseField = CreateArrayField(source, &H38, "ReferencePose"),
-            .FloatSlotsField = CreateArrayField(source, &H48, "FloatSlots"),
-            .LocalFramesField = CreateArrayField(source, &H58, "LocalFrames"),
-            .PartitionsField = CreateArrayField(source, &H68, "Partitions"),
-            .PartitionNamesField = CreateArrayField(source, &H78, "PartitionNames")
+            .Name = ResolveLocalString(source.RelativeOffset + nameFieldOffset),
+            .ParentIndices = ReadInt16Array(source.RelativeOffset + parentIndicesOffset),
+            .ParentIndicesField = CreateArrayField(source, parentIndicesOffset, "ParentIndices"),
+            .BonesField = CreateArrayField(source, bonesOffset, "Bones"),
+            .ReferencePoseField = CreateArrayField(source, referencePoseOffset, "ReferencePose"),
+            .FloatSlotsField = CreateArrayField(source, floatSlotsOffset, "FloatSlots"),
+            .LocalFramesField = CreateArrayField(source, localFramesOffset, "LocalFrames"),
+            .PartitionsField = CreateArrayField(source, partitionsOffset, "Partitions"),
+            .PartitionNamesField = CreateArrayField(source, partitionNamesOffset, "PartitionNames")
         }
 
         result.Bones = ReadSkeletonBones(result.BonesField)
@@ -458,13 +519,14 @@ Public Class HkxObjectGraph_Class
         If IsNothing(field) OrElse IsNothing(field.Header) Then Return result
         If field.Header.Count <= 0 OrElse field.Header.DataRelativeOffset < 0 Then Return result
 
-        Const boneStride As Integer = 16
+        Dim boneStride = If(PointerSizeValue = 8, 16, PointerSizeValue + 4)
         For i = 0 To field.Header.Count - 1
             Dim entryOffset = field.Header.DataRelativeOffset + (i * boneStride)
             result.Add(New HkaBoneGraph_Class With {
                 .Index = i,
                 .EntryRelativeOffset = entryOffset,
-                .Name = ResolveLocalString(entryOffset)
+                .Name = ResolveLocalString(entryOffset),
+                .LockTranslation = ReadByte(entryOffset + PointerSizeValue) <> 0
             })
         Next
 
@@ -528,8 +590,8 @@ Public Class HkxObjectGraph_Class
         Return New HkxNamedVariantGraph_Class With {
             .RelativeOffset = namedVariantRelativeOffset,
             .Name = ResolveLocalString(namedVariantRelativeOffset),
-            .ClassName = ResolveLocalString(namedVariantRelativeOffset + 8),
-            .VariantObject = ResolveGlobalObject(namedVariantRelativeOffset + 16)
+            .ClassName = ResolveLocalString(namedVariantRelativeOffset + PointerSizeValue),
+            .VariantObject = ResolveGlobalObject(namedVariantRelativeOffset + (PointerSizeValue * 2))
         }
     End Function
 
@@ -630,17 +692,20 @@ Public Class HkxObjectGraph_Class
         For Each lf In localFixups
             Dim relOff = lf.SourceRelativeOffset - source.RelativeOffset
             If relOff < skip Then Continue For
-            If relOff < 0 OrElse relOff + 16 > scanSize Then Continue For
+            If relOff < 0 OrElse relOff + ArrayHeaderSizeValue > scanSize Then Continue For
 
-            ' Heuristic: if +0x010 is the name ptr (relOff=16) skip treating it as array
-            If relOff = &H10 Then skip = &H18 : Continue For
+            ' Heuristic: if the first derived-field slot is the name ptr, do not treat it as hkArray.
+            If relOff = BaseObjectFieldOffset Then
+                skip = relOff + PointerSizeValue
+                Continue For
+            End If
 
             Dim header = ReadArrayHeader(source.RelativeOffset + relOff)
             result.ArrayFields.Add(New HkxObjectArrayField_Class With {
                 .FieldName = $"arr@+0x{relOff:X}",
                 .Header = header
             })
-            skip = relOff + 16  ' each hkArray = ptr(8) + count(4) + cap(4)
+            skip = relOff + ArrayHeaderSizeValue
         Next
 
         For Each gf In globalFixups
@@ -979,6 +1044,7 @@ Public Class HkaBoneGraph_Class
     Public Property Index As Integer
     Public Property EntryRelativeOffset As Integer
     Public Property Name As String
+    Public Property LockTranslation As Boolean
 End Class
 
 

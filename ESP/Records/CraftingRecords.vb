@@ -74,6 +74,27 @@ Public Class OMOD_Data
             Return Encoding.ASCII.GetString(bytes, 0, 4).TrimEnd(ChrW(0))
         End Get
     End Property
+
+    ''' <summary>If this OMOD targets ARMO (FormType="ARMO") and contains a Property with index 7
+    ''' (AddonIndex per wbArmorPropertyEnum @ wbDefinitionsFO4.pas:5710), return its Value 1 cast
+    ''' to Int. Returns -1 if no such property exists. Used by CollectArmoCandidates to resolve
+    ''' which ARMA addon (Lite/Mid/Heavy) to render when an OMOD swap is active.
+    '''
+    ''' Note: the property's Value 1 is stored as a single in OMOD_Property.Value1 (we reinterpret
+    ''' its 4 bytes as Int32). FunctionType=0 is SET (per wbObjectModFuncEnum); other ops on
+    ''' AddonIndex are not vanilla but we treat any function as SET for tolerance.</summary>
+    Public Function GetAddonIndexOverride() As Integer
+        Const AddonIndexProperty As UShort = 7US
+        For Each prop In Properties
+            If prop.PropertyIndex <> AddonIndexProperty Then Continue For
+            ' Value 1 is stored as Single (parser writes BitConverter.ToSingle in
+            ' ParseOMOD_DATA). For Int interpretation, reinterpret the 4 bytes.
+            Dim asBytes = BitConverter.GetBytes(prop.Value1)
+            Dim asInt = BitConverter.ToInt32(asBytes, 0)
+            Return asInt
+        Next
+        Return -1
+    End Function
 End Class
 
 ''' <summary>INNR naming rule entry.</summary>

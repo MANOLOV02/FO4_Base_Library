@@ -769,6 +769,8 @@ Public Class PreviewControl
         lastNear = nearZ
         lastFar = farZ
         UpdateRequired = True
+        Dim ulog As Action(Of String) = UpdateProjectionLogger
+        If ulog IsNot Nothing Then ulog($"[UpdateProjection] ctrl=({Me.Width}x{Me.Height}) aspect={aspect:F3} fovY=45deg near={nearZ:F2} far={farZ:F2} sceneSize=({size.X:F2},{size.Y:F2},{size.Z:F2}) eyeToCenter={eyeToCenter:F2}")
     End Sub
     Private Sub RenderScene()
         If Me.IsDisposed Then Exit Sub
@@ -776,6 +778,10 @@ Public Class PreviewControl
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
         If Model.Can_Render Then
+            Dim slog As Action(Of String) = RenderSceneLogger
+            If slog IsNot Nothing Then
+                slog($"[RenderScene] ctrl=({Me.Width}x{Me.Height}) cam.focus=({camera.FocusPosition.X:F2},{camera.FocusPosition.Y:F2},{camera.FocusPosition.Z:F2}) cam.distance={camera.distance:F2} cam.forward=({camera.Forward.X:F2},{camera.Forward.Y:F2},{camera.Forward.Z:F2}) FloorOffset={Model.FloorOffset:F2}")
+            End If
             Model.RenderAll(projection, camera)
         End If
     End Sub
@@ -1086,16 +1092,32 @@ Public Class PreviewControl
             max = Vector3.ComponentMax(max, mesh.MeshData.Meshgeometry.Maxv)
         Next
     End Sub
+    ''' <summary>Optional diagnostic logger called from CenterCamera at each step. Set by the
+    ''' app (NPC_Manager) to forward into NpcPreviewLog. Null = no logging (default). NOT a
+    ''' library bug — it's a debug injection point used only when the app explicitly hooks it.</summary>
+    Public Shared CenterCameraLogger As Action(Of String) = Nothing
+    ''' <summary>Optional diagnostic logger for UpdateProjection — emits the actual aspect/near/far
+    ''' used to build the projection matrix at draw time. Useful to detect if the projection in
+    ''' use at draw differs from what CenterCamera assumed when computing the camera distance.</summary>
+    Public Shared UpdateProjectionLogger As Action(Of String) = Nothing
+    ''' <summary>Diagnostic — emits camera state at each RenderScene tick (FocusPosition, distance,
+    ''' Forward). Optional, default null.</summary>
+    Public Shared RenderSceneLogger As Action(Of String) = Nothing
+
     Public Sub CenterCamera()
         If Me.IsInDesignMode Then Return
+
+        Dim log As Action(Of String) = CenterCameraLogger
 
         ' 1) AABB
         Dim minB As Vector3, maxB As Vector3
         GetSceneBounds(minB, maxB)
+        If log IsNot Nothing Then log($"[CenterCamera] AABB min=({minB.X:F2},{minB.Y:F2},{minB.Z:F2}) max=({maxB.X:F2},{maxB.Y:F2},{maxB.Z:F2})")
 
         ' 2) Centro y tamaño
         Dim center As Vector3 = (minB + maxB) * 0.5F
         Dim size As Vector3 = maxB - minB
+        If log IsNot Nothing Then log($"[CenterCamera] center=({center.X:F2},{center.Y:F2},{center.Z:F2}) size=({size.X:F2},{size.Y:F2},{size.Z:F2})")
 
         ' 3) Focus y orbit mode
         camera.FocusPosition = center
@@ -1103,6 +1125,7 @@ Public Class PreviewControl
         ' 4) Parámetros de cámara
         Dim fovY As Single = MathHelper.DegreesToRadians(45.0F)
         Dim aspect As Single = Me.Width / CSng(Me.Height)
+        If log IsNot Nothing Then log($"[CenterCamera] ctrlSize=({Me.Width}x{Me.Height}) aspect={aspect:F3} fovY=45deg")
 
         ' ** Usamos Z para altura, X para anchura y Y para profundidad (hacia la cámara) **
         Dim halfH As Single = size.Z * 0.5F   ' vertical ? Z
@@ -1113,22 +1136,27 @@ Public Class PreviewControl
         Dim distH = halfH / CSng(Math.Tan(fovY * 0.5F))
         Dim fovX = 2.0F * CSng(Math.Atan(Math.Tan(fovY * 0.5F) * aspect))
         Dim distW = halfW / CSng(Math.Tan(fovX * 0.5F))
+        If log IsNot Nothing Then log($"[CenterCamera] halfH={halfH:F2} halfW={halfW:F2} halfD={halfD:F2} distH={distH:F2} distW={distW:F2} fovX={CSng(MathHelper.RadiansToDegrees(fovX)):F2}deg")
 
         ' 6) Margen uniforme (p.ej. 15% extra)
         Dim marginPct As Single = 0.1F
         ' SUMAMOS la media profundidad para asegurar que el punto más cercano también entra en FOV
         Dim baseDistance As Single = halfD + Math.Max(distH, distW)
         Dim idealDistance As Single = baseDistance * (1.0F + marginPct)
+        Dim oldMin = camera.MinDistance, oldMax = camera.MaxDistance
         camera.MaxDistance = idealDistance * 10
         camera.MinDistance = idealDistance / 10
-        camera.distance = Math.Clamp(idealDistance, camera.MinDistance, camera.MaxDistance)
+        Dim clampedDist = Math.Clamp(idealDistance, camera.MinDistance, camera.MaxDistance)
+        camera.distance = clampedDist
         camera.Optimaldistance = camera.distance
+        If log IsNot Nothing Then log($"[CenterCamera] baseDist={baseDistance:F2} ideal={idealDistance:F2} (margin {marginPct * 100:F0}%) → clamp[{camera.MinDistance:F2}..{camera.MaxDistance:F2}] → distance={clampedDist:F2}")
 
         ' 7) Reset ángulos y orientación
         camera.angleX = 0F
         camera.angleY = 0F
         camera.UpdateDirectionFromAngles()
         UpdateProjection(True)
+        If log IsNot Nothing Then log($"[CenterCamera] DONE focus=({camera.FocusPosition.X:F2},{camera.FocusPosition.Y:F2},{camera.FocusPosition.Z:F2}) distance={camera.distance:F2}")
     End Sub
 
     Protected Overrides Sub Dispose(disposing As Boolean)

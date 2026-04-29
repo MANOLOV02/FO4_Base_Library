@@ -448,6 +448,32 @@ Public Class RACE_Data
     End Function
 End Class
 
+''' <summary>Pareja (Addon Index, ARMA FormID) preservando el INDX que xEdit
+''' (wbDefinitionsFO4.pas:6187-6192) reporta. El AddonIndex es la clave que los OMODs usan en
+''' su Property "AddonIndex" (wbArmorPropertyEnum idx 7) para seleccionar QUÉ addon de esta lista
+''' renderizar — Lite/Mid/Heavy típicamente. ParseARMO conserva la pareja para que el resolver
+''' pueda buscar por índice.</summary>
+Public Class ARMO_AddonEntry
+    Public AddonIndex As UShort
+    Public ArmaFormID As UInteger
+End Class
+
+''' <summary>Combination del Object Template del ARMO (wbDefinitionsFO4.pas:5867 wbOBTSReq dentro
+''' de wbObjectTemplate 5888-5898). Cada Combination tiene Includes (referencias a OMOD records),
+''' una lista de keywords que filtra cuándo se aplica esta combination, y un flag Default.
+''' El engine selecciona la combination matcheando los keywords del LVLI.LLKC contra esta lista.</summary>
+Public Class ARMO_Combination
+    Public IsDefault As Boolean
+    ''' <summary>Parent Combination Index (s16 @ offset 12 del OBTS payload, wbDefinitionsFO4.pas:5874).
+    ''' Display name de xEdit es "Parent Combination Index" pero el handler `wbOBTEAddonIndexToStr` indica
+    ''' que el valor representa un AddonIndex selector. Default -1 = "esta combination no fuerza addon
+    ''' index — el override viene del OMOD include vía AddonIndex Property". ≥0 = la combination directamente
+    ''' selecciona ese AddonIndex group de los Models de la ARMO sin necesidad de OMOD Property.</summary>
+    Public ParentCombinationIndex As Integer = -1
+    Public Keywords As New List(Of UInteger)
+    Public IncludeOMODFormIDs As New List(Of UInteger)
+End Class
+
 Public Class ARMO_Data
     Public FormID As UInteger
     Public EditorID As String = ""
@@ -455,7 +481,19 @@ Public Class ARMO_Data
     Public RaceFormID As UInteger
     Public SlotMask As UInteger
     Public TemplateArmorFormID As UInteger
+    ''' <summary>Lista plana de FormIDs ARMA — derivada de Models, en orden de aparición.
+    ''' Mantenida por compat con consumers existentes; los nuevos consumers deben usar
+    ''' <see cref="ArmorAddons"/> para conocer el AddonIndex (INDX) asociado a cada FormID.</summary>
     Public ArmorAddonFormIDs As New List(Of UInteger)
+    ''' <summary>Lista de (AddonIndex, ARMA FormID) preservando el INDX del Models array.
+    ''' wbDefinitionsFO4.pas:6187-6192. Necesario para resolver OMOD AddonIndex Property override.</summary>
+    Public ArmorAddons As New List(Of ARMO_AddonEntry)
+    ''' <summary>Base addon index (FNAM byte 2-3 per wbDefinitionsFO4.pas:6198-6202).
+    ''' Si el FNAM no está o el valor es 0xFFFF (-1 unsigned), queda en -1 → fallback a 0.</summary>
+    Public BaseAddonIndex As Integer = -1
+    ''' <summary>Combinations del Object Template (OBTE/OBTS). Permite resolver qué addon
+    ''' renderizar via OMOD AddonIndex Property cuando hay keyword match con el LVLI contextual.</summary>
+    Public Combinations As New List(Of ARMO_Combination)
     ''' <summary>Male 'World Model' mesh filename (ARMO.MOD2 subrecord per wbDefinitionsFO4.pas:6164).
     ''' Empty for most humanoid armors (mesh lives in ARMA.MaleMeshPath instead), but populated for
     ''' robots / special armors where the mesh is authored at the ARMO level (e.g. Assaultron skin).</summary>
@@ -607,12 +645,26 @@ Public Class LVLI_Entry
     Public ChanceNone As Byte
 End Class
 
+''' <summary>Filter Keyword Chance entry from LVLI.LLKC subrecord (wbDefinitionsFO4.pas:10322-10327).
+''' Used by LVLIs that resolve to ARMO with multi-addon (Lite/Mid/Heavy) to declare which
+''' OBTE/OBTS Combination keyword to match. The engine "tags" the resolved ARMO with the keyword
+''' having Chance > 0, then ARMO.Combinations is searched for that keyword to apply OMOD swaps.</summary>
+Public Class LVLI_FilterKeyword
+    Public KeywordFormID As UInteger
+    Public Chance As UInteger
+End Class
+
 Public Class LVLI_Data
     Public FormID As UInteger
     Public EditorID As String = ""
     Public ChanceNone As Byte
     Public Flags As Byte
     Public Entries As New List(Of LVLI_Entry)
+    ''' <summary>LLKC entries — keywords con chance que el engine usa para enriquecer el item
+    ''' resuelto. Caso típico: outfit Gunner Boss → LVLI con LLKC `if_tmp_armor_Heavy chance=100`
+    ''' → ARMO recibe ese keyword → busca su OBTS combination con keyword match → aplica
+    ''' OMOD AddonIndex swap → renderiza addon Heavy.</summary>
+    Public FilterKeywords As New List(Of LVLI_FilterKeyword)
 
     Public ReadOnly Property UseAll As Boolean
         Get
@@ -663,6 +715,47 @@ Public Module RecordParsers
     Private Function ResolveFormIDReference(rec As PluginRecord, sr As SubrecordData, pluginManager As PluginManager) As UInteger
         If sr.Data Is Nothing OrElse sr.Data.Length < 4 Then Return 0UI
         Return ResolveFormIDReference(rec, sr.AsUInt32, pluginManager)
+    End Function
+
+    ''' <summary>Parse the OBTS payload (Object Mod Template Item, wbOBTSReq @ wbDefinitionsFO4.pas:5867).
+    ''' Layout (offsets verified against xEdit wbInterface.pas:13933-13948 prefix rules:
+    ''' arCount=-1→u32 prefix, arCount=-2→u16 prefix, arCount=-4→u8 prefix):
+    '''   u32 IncludeCount @0
+    '''   u32 PropertyCount @4
+    '''   u8  LevelMin @8, u8 pad, u8 LevelMax @10, u8 pad
+    '''   s16 ParentCombinationIndex @12, u8 Default @14
+    '''   u8  KeywordCount @15 (wbArray(..., -4) = 1-byte prefix)
+    '''   KeywordCount × u32 @16+ (Keyword FormIDs)
+    '''   u8  MinLevelForRanks, u8 AltLevelsPerTier
+    '''   IncludeCount × 7 bytes: u32 Mod FormID + u8 AttachPointIdx + u8 Optional + u8 DontUseAll
+    '''   PropertyCount × 24 bytes: skipped here (caller resolves Properties via OMOD lookup if needed).
+    '''
+    ''' Returns a parsed combination, or Nothing if the payload is malformed (length checks).
+    ''' Used by both NPC_.OBTS (robot rendering) and ARMO.OBTS (multi-addon keyword swap).</summary>
+    Friend Function ParseOBTSPayload(d As Byte(), rec As PluginRecord, pluginManager As PluginManager) As ARMO_Combination
+        If d Is Nothing OrElse d.Length < 17 Then Return Nothing
+        Dim combo As New ARMO_Combination()
+        Dim includeCount = BitConverter.ToUInt32(d, 0)
+        ' Offset 12: s16 'Parent Combination Index' (wbDefinitionsFO4.pas:5874). -1 = no override.
+        combo.ParentCombinationIndex = CInt(BitConverter.ToInt16(d, 12))
+        combo.IsDefault = (d(14) <> 0)
+        Dim offset As Integer = 15
+        Dim kwCount As Integer = CInt(d(offset))
+        offset += 1
+        For i = 0 To kwCount - 1
+            If offset + 4 > d.Length Then Exit For
+            Dim rawKw = BitConverter.ToUInt32(d, offset)
+            If rawKw <> 0UI Then combo.Keywords.Add(ResolveFormIDReference(rec, rawKw, pluginManager))
+            offset += 4
+        Next
+        offset += 2 ' MinLevelForRanks + AltLevelsPerTier
+        For i = 0 To CInt(includeCount) - 1
+            If offset + 7 > d.Length Then Exit For
+            Dim rawModFID = BitConverter.ToUInt32(d, offset)
+            If rawModFID <> 0UI Then combo.IncludeOMODFormIDs.Add(ResolveFormIDReference(rec, rawModFID, pluginManager))
+            offset += 7
+        Next
+        Return combo
     End Function
 
     Private Function ParseNormalizedFloatColor(data As Byte()) As Color
@@ -843,44 +936,17 @@ Public Module RecordParsers
                     npc.FaceMorphs.Add(pendingFaceMorph)
                     pendingFaceMorph = Nothing
                 Case "OBTS"
-                    ' Object Template combination struct (wbOBTSReq @ wbDefinitionsFO4.pas:5867).
-                    ' Layout (see memory project_robot_rendering_combinations.md):
-                    '   u32 IncludeCount @0
-                    '   u32 PropertyCount @4
-                    '   u8 LevelMin, u8 pad, u8 LevelMax, u8 pad @8-11
-                    '   s16 ParentCombinationIndex @12, u8 Default @14
-                    '   u32 KeywordCount @15, then KeywordCount × u32 FormID
-                    '   u8 MinLevelForRanks, u8 AltLevelsPerTier
-                    '   IncludeCount × 7 bytes each: u32 Mod FormID, u8 AttachPointIdx, u8 Optional, u8 DontUseAll
-                    '   Properties (skipped — not needed for 1st-combination mesh extraction)
-                    ' Only parse the first OBTS (combination #0) per user scope 2026-04-19.
-                    If Not firstOBTSParsed AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 17 Then
-                        Dim d = sr.Data
-                        ' Layout of OBTS (wbOBTSReq @ wbDefinitionsFO4.pas:5867). Offsets verified
-                        ' against xEdit runtime prefix rules: wbInterface.pas:13933-13948 maps
-                        ' arCount=-1→u32 prefix, arCount=-2→u16 prefix, arCount=-4→u8 prefix.
-                        '   u32 IncludeCount @0
-                        '   u32 PropertyCount @4
-                        '   u8  LevelMin @8, u8 pad, u8 LevelMax @10, u8 pad
-                        '   s16 ParentCombinationIndex @12, u8 Default @14
-                        '   u8  KeywordCount @15 (wbArray(..., -4) = 1-byte prefix)
-                        '   KeywordCount × u32 @16 (Keyword FormIDs)
-                        '   u8  MinLevelForRanks, u8 AltLevelsPerTier
-                        '   IncludeCount × 7 bytes: u32 Mod FormID + u8 AttachPointIdx + u8 Optional + u8 DontUseAll
-                        Dim includeCount = BitConverter.ToUInt32(d, 0)
-                        Dim offset As Integer = 15
-                        Dim kwCount As Integer = CInt(d(offset)) ' u8 prefix (arCount=-4)
-                        offset += 1 + kwCount * 4
-                        offset += 2 ' MinLevelForRanks + AltLevelsPerTier
-                        For i = 0 To CInt(includeCount) - 1
-                            If offset + 7 > d.Length Then Exit For
-                            Dim rawModFID = BitConverter.ToUInt32(d, offset)
-                            If rawModFID <> 0UI Then
-                                npc.ObjectTemplateOMODFormIDs.Add(ResolveFormIDReference(rec, rawModFID, pluginManager))
-                            End If
-                            offset += 7
-                        Next
-                        firstOBTSParsed = True
+                    ' NPC_ flow: only consume the FIRST OBTS (combination #0) for robot rendering
+                    ' per project_robot_rendering_combinations.md. ARMO multi-addon OBTS is parsed
+                    ' separately in ParseARMO. Helper ParseOBTSPayload encapsulates the binary layout.
+                    If Not firstOBTSParsed Then
+                        Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
+                        If combo IsNot Nothing Then
+                            For Each modFID In combo.IncludeOMODFormIDs
+                                npc.ObjectTemplateOMODFormIDs.Add(modFID)
+                            Next
+                            firstOBTSParsed = True
+                        End If
                     End If
             End Select
         Next
@@ -1343,6 +1409,13 @@ Public Module RecordParsers
             .EditorID = rec.EditorID
         }
 
+        ' ARMO Models layout (wbDefinitionsFO4.pas:6187-6192):
+        '   wbRArray('Models', wbRStruct('Model', [INDX u16 'Addon Index', MODL FormIDCk(ARMA)]))
+        ' xEdit emits as INTERLEAVED subrecords: INDX → MODL → INDX → MODL → ...
+        ' We track the most recent INDX seen and pair it with the next MODL.
+        Dim pendingAddonIndex As UShort = 0US
+        Dim hasPendingIndex As Boolean = False
+
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL"
@@ -1353,8 +1426,39 @@ Public Module RecordParsers
                     armo.RaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "TNAM"
                     armo.TemplateArmorFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "INDX"
+                    ' Addon Index (u16) — paired with the next MODL.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
+                        pendingAddonIndex = BitConverter.ToUInt16(sr.Data, 0)
+                        hasPendingIndex = True
+                    End If
                 Case "MODL"
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then armo.ArmorAddonFormIDs.Add(ResolveFormIDReference(rec, sr, pluginManager))
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then
+                        Dim armaFid = ResolveFormIDReference(rec, sr, pluginManager)
+                        armo.ArmorAddonFormIDs.Add(armaFid)
+                        ' Preserve (Index, FormID) pair. If no INDX preceded this MODL, fall back to
+                        ' the position in the list (vanilla typically lists INDX explicitly).
+                        Dim idx As UShort = If(hasPendingIndex, pendingAddonIndex, CUShort(armo.ArmorAddons.Count))
+                        armo.ArmorAddons.Add(New ARMO_AddonEntry With {
+                            .AddonIndex = idx,
+                            .ArmaFormID = armaFid
+                        })
+                        hasPendingIndex = False
+                    End If
+                Case "FNAM"
+                    ' wbDefinitionsFO4.pas:6198-6203: FNAM struct = u16 ArmorRating + u16 BaseAddonIndex + u8 StaggerRating + 3 unused.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        Dim baseIdx As UShort = BitConverter.ToUInt16(sr.Data, 2)
+                        ' Convention: 0xFFFF means "no override"; treat as -1 → fallback to 0 in resolver.
+                        If baseIdx = &HFFFFUS Then
+                            armo.BaseAddonIndex = -1
+                        Else
+                            armo.BaseAddonIndex = CInt(baseIdx)
+                        End If
+                    End If
+                Case "OBTS"
+                    Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
+                    If combo IsNot Nothing Then armo.Combinations.Add(combo)
                 Case "MOD2"
                     ' ARMO.Male 'World Model' mesh path — used by robots/special armors where the mesh
                     ' is authored at ARMO level instead of ARMA (e.g. Assaultron skin).
@@ -1659,6 +1763,24 @@ Public Module RecordParsers
                         .Count = entry.Count,
                         .ChanceNone = entry.ChanceNone
                     })
+                Case "LLKC"
+                    ' Filter Keyword Chance: array of (Keyword FormID u32, Chance u32) per
+                    ' wbDefinitionsFO4.pas:10322-10327. xEdit collapses into a single subrecord
+                    ' with all entries inside.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
+                        Dim count = sr.Data.Length \ 8
+                        For i = 0 To count - 1
+                            Dim off = i * 8
+                            Dim rawKw = BitConverter.ToUInt32(sr.Data, off)
+                            Dim chance = BitConverter.ToUInt32(sr.Data, off + 4)
+                            If rawKw <> 0UI Then
+                                lvli.FilterKeywords.Add(New LVLI_FilterKeyword With {
+                                    .KeywordFormID = ResolveFormIDReference(rec, rawKw, pluginManager),
+                                    .Chance = chance
+                                })
+                            End If
+                        Next
+                    End If
             End Select
         Next
 

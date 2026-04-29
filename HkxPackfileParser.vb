@@ -10,15 +10,13 @@ Option Explicit On
 '
 ' Lo que está bien:
 '  - Lectura de header, secciones, classnames, local/global/virtual fixups.
-'  - Validaciones de bounds y magic correctas.
-'  - PointerSize y Endianness se leen del header.
+'  - Validaciones de bounds, magic y variante de packfile soportada.
+'  - Detección de variantes Bethesda: Skyrim LE/SE y Fallout 4 (little-endian).
 '
 ' PENDIENTES CONOCIDOS:
-'  - Reserved = reader.ReadBytes(16): lee 16 bytes más allá del header de 64 bytes
-'    (posiblemente dentro del primer section header). Inofensivo porque ReadSections
-'    reposiciona el stream explícitamente. El campo Reserved almacena basura.
-'  - PointerSize se lee pero NO se propaga al HkxObjectGraph_Class. Todos los parseos
-'    de arrays asumen 64-bit. Para Skyrim SSE (PointerSize=4) el grafo falla.
+'  - El grafo HCL sigue basado en offsets verificados sobre FO4 64-bit.
+'    El soporte 32/64-bit genérico de este parser se usa principalmente para
+'    arrays/base object layouts compartidos (root container, skeleton, animation).
 '  - Solo soporta little-endian (Endianness=1). Big-endian lanza excepción; correcto.
 ' =============================================================================
 
@@ -26,6 +24,13 @@ Imports System.IO
 Imports System.Linq
 Imports System.Text
 Imports NiflySharp.Blocks
+
+Public Enum HkxPackfileFormat_Enum
+    Unknown = 0
+    Skyrim32 = 1
+    Skyrim64 = 2
+    Fallout64 = 3
+End Enum
 
 Public NotInheritable Class HkxPackfileParser_Class
     Private Const HeaderFixedSize As Integer = &H40
@@ -89,10 +94,8 @@ Public NotInheritable Class HkxPackfileParser_Class
             .MaxPredicate = reader.ReadByte(),
             .PredicateArraySizePlusPadding = reader.ReadByte(),
             .SectionHeaderRelativeOffset = reader.ReadUInt16(),
-            .Reserved = reader.ReadBytes(16)
+            .Reserved = Array.Empty(Of Byte)()
         }
-        header.SectionHeadersAbsoluteOffset = HeaderFixedSize + CInt(header.SectionHeaderRelativeOffset)
-
         If header.Magic0 <> HavokMagic0 OrElse header.Magic1 <> HavokMagic1 Then
             Throw New InvalidDataException("Unsupported HKX magic. The payload is not a Havok packfile.")
         End If
@@ -100,6 +103,22 @@ Public NotInheritable Class HkxPackfileParser_Class
         If header.Endianness <> 1 Then
             Throw New InvalidDataException($"Unsupported HKX endianness flag: {header.Endianness}.")
         End If
+
+        Select Case True
+            Case header.FileVersion = 11 AndAlso header.PointerSize = 8
+                header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64
+            Case header.FileVersion = 8 AndAlso header.PointerSize = 8
+                header.PackfileFormat = HkxPackfileFormat_Enum.Skyrim64
+            Case header.FileVersion = 8 AndAlso header.PointerSize = 4
+                header.PackfileFormat = HkxPackfileFormat_Enum.Skyrim32
+            Case Else
+                Throw New InvalidDataException($"Unsupported HKX variant: FileVersion={header.FileVersion}, PointerSize={header.PointerSize}.")
+        End Select
+
+        header.SectionHeadersAbsoluteOffset =
+            If(header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64,
+               HeaderFixedSize + CInt(header.SectionHeaderRelativeOffset),
+               HeaderFixedSize)
 
         If header.SectionCount <= 0 OrElse header.SectionCount > 64 Then
             Throw New InvalidDataException($"Invalid HKX section count: {header.SectionCount}.")
@@ -114,8 +133,14 @@ Public NotInheritable Class HkxPackfileParser_Class
 
     Private Shared Sub ReadSections(reader As BinaryReader, packfile As HkxPackfile_Class, fileLength As Integer)
         reader.BaseStream.Position = packfile.Header.SectionHeadersAbsoluteOffset
+        Dim sectionHeaderSize = If(packfile.Header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64, &H40, &H30)
+        Dim trailingBytes = Math.Max(0, sectionHeaderSize - &H30)
 
         For i = 0 To packfile.Header.SectionCount - 1
+            If reader.BaseStream.Position + sectionHeaderSize > fileLength Then
+                Throw New InvalidDataException($"Section header #{i} is truncated.")
+            End If
+
             Dim section As New HkxPackfileSection_Class With {
                 .Index = i,
                 .Name = ReadFixedAscii(reader, 19),
@@ -127,7 +152,7 @@ Public NotInheritable Class HkxPackfileParser_Class
                 .ExportsRelativeOffset = reader.ReadInt32(),
                 .ImportsRelativeOffset = reader.ReadInt32(),
                 .EndRelativeOffset = reader.ReadInt32(),
-                .PaddingMarker = reader.ReadBytes(16)
+                .PaddingMarker = reader.ReadBytes(trailingBytes)
             }
 
             If section.AbsoluteDataStart < 0 OrElse section.AbsoluteDataStart > fileLength Then
@@ -392,6 +417,7 @@ Public Class HkxPackfileHeader_Class
     Public Property PredicateArraySizePlusPadding As Byte
     Public Property SectionHeaderRelativeOffset As UShort
     Public Property SectionHeadersAbsoluteOffset As Integer
+    Public Property PackfileFormat As HkxPackfileFormat_Enum
     Public Property Reserved As Byte()
 End Class
 
