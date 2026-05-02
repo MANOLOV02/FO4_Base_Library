@@ -87,21 +87,25 @@ Public Class WEAP_Data
     ' Melee speed
     Public MeleeSpeed As UInteger
 
-    ' Flags
+    ' Flags - bits per position en wbDefinitionsFO4.pas:13284-13316 (wbFlags array of strings).
+    ' Sin gaps hasta bit 23, después unknowns. Verificación cruzada con xEdit display.
     Public ReadOnly Property IsAutomatic As Boolean
         Get
-            Return (WeaponFlags And &H80UI) <> 0
+            ' Spec WEAP.DNAM bit 15 (0x00008000) — antes 0x80 era "Unknown 8".
+            Return (WeaponFlags And &H8000UI) <> 0
         End Get
     End Property
 
     Public ReadOnly Property IsBoltAction As Boolean
         Get
-            Return (WeaponFlags And &H100UI) <> 0
+            ' Spec WEAP.DNAM bit 22 (0x00400000) — antes 0x100 era "Crit Effect - on Death".
+            Return (WeaponFlags And &H400000UI) <> 0
         End Get
     End Property
 
     Public ReadOnly Property IsNPCsUseAmmo As Boolean
         Get
+            ' Spec WEAP.DNAM bit 1 (0x02) — pos coincide con valor, OK.
             Return (WeaponFlags And &H2UI) <> 0
         End Get
     End Property
@@ -161,21 +165,26 @@ Public Class ALCH_Data
     ' Effects
     Public Effects As New List(Of MagicEffect_Entry)
 
+    ' Flags - bits per position en wbDefinitionsFO4.pas:6080-6098 (wbFlags array of strings).
+    ' Hay GAP grande: tras "Food Item" (pos 1) hay 14 "Unknown" hasta "Medicine" (pos 16) y "Poison" (pos 17).
     Public ReadOnly Property IsFood As Boolean
         Get
+            ' Spec ALCH.ENIT pos 1 (0x02) — coincide.
             Return (ENITFlags And &H2UI) <> 0
         End Get
     End Property
 
     Public ReadOnly Property IsMedicine As Boolean
         Get
-            Return (ENITFlags And &H4UI) <> 0
+            ' Spec ALCH.ENIT pos 16 (0x00010000) — antes 0x04 era "Unknown 3".
+            Return (ENITFlags And &H10000UI) <> 0
         End Get
     End Property
 
     Public ReadOnly Property IsPoison As Boolean
         Get
-            Return (ENITFlags And &H8UI) <> 0
+            ' Spec ALCH.ENIT pos 17 (0x00020000) — antes 0x08 era "Unknown 4".
+            Return (ENITFlags And &H20000UI) <> 0
         End Get
     End Property
 End Class
@@ -226,21 +235,26 @@ Public Class BOOK_Data
     Public TextOffsetX As UInteger
     Public TextOffsetY As UInteger
 
+    ' Flags - bits per position en wbDefinitionsFO4.pas:6276-6282 (wbFlags array of strings).
+    ' GAP en pos 3 (Unknown 3) entre AddSpell (pos 2) y AddPerk (pos 4) — mismo patrón que HDPT.
     Public ReadOnly Property CanBeTaken As Boolean
         Get
+            ' Spec BOOK.DNAM pos 1 (0x02 "Can't be Taken") — chequea =0 para "puede tomarse".
             Return (BookFlags And &H2) = 0
         End Get
     End Property
 
     Public ReadOnly Property IsAddSpell As Boolean
         Get
+            ' Spec BOOK.DNAM pos 2 (0x04 "Add Spell") — coincide.
             Return (BookFlags And &H4) <> 0
         End Get
     End Property
 
     Public ReadOnly Property IsAddPerk As Boolean
         Get
-            Return (BookFlags And &H8) <> 0
+            ' Spec BOOK.DNAM pos 4 (0x10 "Add Perk") — antes 0x08 era "Unknown 3".
+            Return (BookFlags And &H10) <> 0
         End Get
     End Property
 End Class

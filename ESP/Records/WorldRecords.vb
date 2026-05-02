@@ -50,9 +50,14 @@ Public Class CELL_Data
         End Get
     End Property
 
+    ''' <summary>"Player Followers Can't Travel Here" flag (CELL.DATA pos 13 = 0x2000) per
+    ''' wbDefinitionsFO4.pas:6336. NOTA: el bit 0x80 que usaba antes era "Show Sky", no fast-travel
+    ''' (probablemente port heredado de Skyrim). En FO4 vanilla no existe un flag explícito
+    ''' "Player CantFastTravel"; este flag SÓLO afecta a followers (companions), no al player.
+    ''' Si el consumer necesitaba "player fast-travel disabled" debe revisar su lógica de negocio.</summary>
     Public ReadOnly Property CantFastTravel As Boolean
         Get
-            Return (CellFlags And &H80US) <> 0
+            Return (CellFlags And &H2000US) <> 0
         End Get
     End Property
 End Class

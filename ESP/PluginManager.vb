@@ -19,26 +19,32 @@ Public Class PluginManager
     ''' <summary>Records grouped by signature type.</summary>
     Public Property RecordsByType As New Dictionary(Of String, List(Of PluginRecord))
 
-    ''' <summary>Load all plugins from the Fallout 4 Data path using loadorder.txt.</summary>
+    ''' <summary>Load only ACTIVATED plugins from the Fallout 4 Data path. Order source priority:
+    ''' 1) loadorder.txt (LOOT/Vortex managed; full ordered list with implicits + actives).
+    ''' 2) Plugins.txt with `*activated` markers + hardcoded implicits prepended.
+    ''' Plugins NOT in the active set are ignored (no Data folder scan). Replicates engine load:
+    ''' un .esp suelto en Data sin estar activado NO se carga in-game; tampoco acá.</summary>
     Public Sub LoadAllPlugins(dataPath As String, Optional progress As IProgress(Of String) = Nothing)
-        Dim loadOrder = ReadLoadOrder()
+        LoadAllPlugins(dataPath, ReadActiveLoadOrder(), progress)
+    End Sub
+
+    ''' <summary>Load an explicit, caller-supplied set of plugins in the given order. Used when the
+    ''' app wants to load inactive plugins too (e.g. NPC_Manager preflight: user tickea inactivos),
+    ''' or to load a subset for inspection. The caller is responsible for ordering — implicit
+    ''' masters (Fallout4.esm + DLCs) must come first if the caller wants engine-correct FormID
+    ''' resolution. <see cref="ReadActiveLoadOrder"/> already produces a correctly-ordered list
+    ''' that the caller can extend with extra inactive entries before passing in.</summary>
+    Public Sub LoadAllPlugins(dataPath As String,
+                              pluginsToLoad As IEnumerable(Of String),
+                              Optional progress As IProgress(Of String) = Nothing)
         Dim pluginFiles As New List(Of String)
 
         _localizedStrings = New LocalizedStringResolver(dataPath)
 
-        For Each pluginName In loadOrder
+        For Each pluginName In pluginsToLoad
             Dim fullPath = Path.Combine(dataPath, pluginName)
             If File.Exists(fullPath) Then
                 pluginFiles.Add(fullPath)
-            End If
-        Next
-
-        For Each f In Directory.EnumerateFiles(dataPath, "*.es?", SearchOption.TopDirectoryOnly)
-            Dim ext = Path.GetExtension(f).ToLowerInvariant()
-            If ext = ".esm" OrElse ext = ".esp" OrElse ext = ".esl" Then
-                If Not pluginFiles.Any(Function(p) String.Equals(Path.GetFileName(p), Path.GetFileName(f), StringComparison.OrdinalIgnoreCase)) Then
-                    pluginFiles.Add(f)
-                End If
             End If
         Next
 
@@ -141,6 +147,15 @@ Public Class PluginManager
     End Function
 
     Private Sub MergeRecords(reader As PluginReader)
+        ' Regla canónica del engine FO4: el override REEMPLAZA al record entero.
+        ' Si el override no incluye un subrecord que el master sí tenía, el subrecord
+        ' queda EFECTIVAMENTE BORRADO en el record final — NO se hereda. Eso es lo que
+        ' permite a un mod tipo CBBEHeadRearFix.esp "limpiar" un TNAM que CBBE.esp puso.
+        ' Lo que xEdit muestra como "valor heredado" en columnas de override es display-only;
+        ' el binario del override no contiene ese subrecord.
+        ' Intento previo de subrecord-level merge: REVERTIDO. Era un invento mío que rompía
+        ' el caso CBBEHeadRearFix (heredaba TNAM=SkinHeadRearCBBE de CBBE.esp pisando la
+        ' decisión del modder de borrarlo).
         For Each kvp In reader.Records
             Dim globalFormID = ResolveFormID(kvp.Key, reader)
             kvp.Value.Header.FormID = globalFormID
@@ -176,27 +191,144 @@ Public Class PluginManager
         Return result
     End Function
 
-    ''' <summary>Read load order from Fallout4's loadorder.txt.</summary>
-    Public Shared Function ReadLoadOrder() As List(Of String)
-        Dim result As New List(Of String)
+    ''' <summary>Read the ordered list of ACTIVE plugins for the current game (FO4 or SSE).
+    ''' Replicates engine load order: (1) implicit base masters always loaded by the engine
+    ''' (game .esm + DLCs); these never appear in Plugins.txt but the engine always loads them.
+    ''' (2) Creation Club entries from Fallout4.ccc (FO4 only) — engine treats these as
+    ''' force-active, same as DLCs (xEdit Core/wbLoadOrder.pas:495-501; the .ccc file lives next
+    ''' to the .exe, not in LocalAppData). (3) entries from Plugins.txt marked with `*` (active
+    ''' flag). Plugins NOT in Plugins.txt or without `*` are skipped — un .esp suelto en Data
+    ''' sin estar activado no se carga in-game; no debe cargarse acá.
+    '''
+    ''' Note on loadorder.txt: archivo opcional generado por LOOT/Vortex con todos los plugins
+    ''' (activos e inactivos) en orden completo. NO indica activación, así que NO podemos usarlo
+    ''' como única fuente. Plugins.txt + .ccc + implicits son las fuentes autoritativas de
+    ''' activación. Si loadorder.txt existe, lo usamos como ORDEN para los actives; si no,
+    ''' usamos el orden canónico (implicits → CC → Plugins.txt).</summary>
+    Public Shared Function ReadActiveLoadOrder() As List(Of String)
+        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
+        Dim appDataSubdir As String = If(isFO4, "Fallout4", "Skyrim Special Edition")
         Dim appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-        Dim loadOrderPath = Path.Combine(appData, "Fallout4", "loadorder.txt")
+        Dim pluginsTxt = Path.Combine(appData, appDataSubdir, "Plugins.txt")
+        If Not File.Exists(pluginsTxt) Then pluginsTxt = Path.Combine(appData, appDataSubdir, "plugins.txt")
 
-        If Not File.Exists(loadOrderPath) Then
-            loadOrderPath = Path.Combine(appData, "Fallout4", "plugins.txt")
+        ' Implicit masters: el engine carga estos siempre primero, no aparecen en Plugins.txt.
+        ' Spec verificada contra ejecución vanilla y herramientas LOOT/xEdit.
+        Dim implicits As List(Of String)
+        If isFO4 Then
+            implicits = New List(Of String) From {
+                "Fallout4.esm",
+                "DLCRobot.esm",
+                "DLCworkshop01.esm",
+                "DLCCoast.esm",
+                "DLCworkshop02.esm",
+                "DLCworkshop03.esm",
+                "DLCNukaWorld.esm",
+                "DLCUltraHighResolution.esm"
+            }
+        Else
+            implicits = New List(Of String) From {
+                "Skyrim.esm",
+                "Update.esm",
+                "Dawnguard.esm",
+                "HearthFires.esm",
+                "Dragonborn.esm"
+            }
         End If
 
-        If Not File.Exists(loadOrderPath) Then Return result
+        ' Creation Club content: Fallout4.ccc lives next to Fallout4.exe (xEdit
+        ' xeMainForm.pas:5067-5080 derives it as ExtractFilePath(ExcludeTrailingPathDelimiter(wbDataPath))).
+        ' Each non-empty non-comment line is a plugin name the engine force-loads after the DLCs.
+        ' Skyrim has its own Skyrim.ccc; same shape. Only attempted if FO4ExePath resolved.
+        Dim ccEntries As New List(Of String)
+        Dim exePath = Config_App.Current.FO4ExePath
+        If Not String.IsNullOrEmpty(exePath) AndAlso File.Exists(exePath) Then
+            Dim cccName = If(isFO4, "Fallout4.ccc", "Skyrim.ccc")
+            Dim cccPath = Path.Combine(Path.GetDirectoryName(exePath), cccName)
+            If File.Exists(cccPath) Then
+                For Each line In File.ReadAllLines(cccPath, Encoding.UTF8)
+                    Dim trimmed = line.Trim()
+                    If trimmed.Length = 0 Then Continue For
+                    If trimmed.StartsWith("#") OrElse trimmed.StartsWith(";") Then Continue For
+                    ccEntries.Add(trimmed)
+                Next
+            End If
+        End If
 
-        For Each line In File.ReadAllLines(loadOrderPath, Encoding.UTF8)
-            Dim trimmed = line.Trim()
-            If trimmed.Length = 0 Then Continue For
-            If trimmed.StartsWith("#") OrElse trimmed.StartsWith(";") Then Continue For
-            If trimmed.StartsWith("*") Then trimmed = trimmed.Substring(1).Trim()
-            If trimmed.Length > 0 Then result.Add(trimmed)
+        ' Build active set: implicits + CC + Plugins.txt actives.
+        Dim activeSet As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        For Each m In implicits
+            activeSet.Add(m)
+        Next
+        For Each m In ccEntries
+            activeSet.Add(m)
         Next
 
-        Return result
+        Dim activeFromPluginsTxt As New List(Of String)
+        If File.Exists(pluginsTxt) Then
+            For Each line In File.ReadAllLines(pluginsTxt, Encoding.UTF8)
+                Dim trimmed = line.Trim()
+                If trimmed.Length = 0 Then Continue For
+                If trimmed.StartsWith("#") OrElse trimmed.StartsWith(";") Then Continue For
+                If Not trimmed.StartsWith("*") Then Continue For   ' inactive entries: skip
+                trimmed = trimmed.Substring(1).Trim()
+                If trimmed.Length > 0 Then
+                    activeFromPluginsTxt.Add(trimmed)
+                    activeSet.Add(trimmed)
+                End If
+            Next
+        End If
+
+        ' Use loadorder.txt as ordering source if available (LOOT/Vortex managed).
+        ' Filter to only active plugins; preserves the ordering decisions made by the manager.
+        Dim loadorderTxt = Path.Combine(appData, appDataSubdir, "loadorder.txt")
+        Dim ordered As New List(Of String)
+        If File.Exists(loadorderTxt) Then
+            For Each line In File.ReadAllLines(loadorderTxt, Encoding.UTF8)
+                Dim trimmed = line.Trim()
+                If trimmed.Length = 0 Then Continue For
+                If trimmed.StartsWith("#") OrElse trimmed.StartsWith(";") Then Continue For
+                If trimmed.StartsWith("*") Then trimmed = trimmed.Substring(1).Trim()
+                If trimmed.Length = 0 Then Continue For
+                If activeSet.Contains(trimmed) Then ordered.Add(trimmed)
+            Next
+            ' Append any actives that loadorder.txt didn't list (rare edge: just-installed plugin
+            ' or LOOT not aware of CC entries). Insert implicits at the front, CC after them, and
+            ' Plugins.txt extras at the end — same canonical order as the no-loadorder.txt path.
+            Dim insertPos As Integer = 0
+            For Each p In implicits
+                If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then
+                    ordered.Insert(insertPos, p)
+                    insertPos += 1
+                End If
+            Next
+            For Each p In ccEntries
+                If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then
+                    ordered.Insert(insertPos, p)
+                    insertPos += 1
+                End If
+            Next
+            For Each p In activeFromPluginsTxt
+                If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
+            Next
+            Return ordered
+        End If
+
+        ' Fallback: implicits + CC + Plugins.txt activos en orden literal.
+        ordered.AddRange(implicits)
+        For Each p In ccEntries
+            If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
+        Next
+        For Each p In activeFromPluginsTxt
+            If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
+        Next
+        Return ordered
+    End Function
+
+    ''' <summary>Backward-compat alias. Old callers expected "all plugins from loadorder.txt"
+    ''' but the right semantic is "active load order". Returns same list as ReadActiveLoadOrder.</summary>
+    Public Shared Function ReadLoadOrder() As List(Of String)
+        Return ReadActiveLoadOrder()
     End Function
 End Class
 

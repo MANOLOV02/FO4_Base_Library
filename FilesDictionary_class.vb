@@ -961,7 +961,15 @@ Public Class FilesDictionary_class
         Return results.OrderBy(Function(k) k, StringComparer.OrdinalIgnoreCase).ToList()
     End Function
 
-    Public Shared Async Function Fill_DictionaryAsync(Fo4DataPath As String, progress As IProgress(Of (Stepn As String, Value As Integer, Max As Integer))) As Task
+    ''' <param name="includeInactiveArchives">When True, archives belonging to plugins that are
+    ''' NOT in the active load order (Plugins.txt + .ccc + implicit DLCs) are still indexed in the
+    ''' Dictionary, but ordered with the LOWEST SourceOrder so any active plugin's archive (and
+    ''' loose files) wins on conflict. WM uses this so the user can inspect/clone material from
+    ''' inactive mods. NPC_Manager uses False (default): only archives of active plugins are
+    ''' indexed. False matches the engine; True is a WM-specific extension.</param>
+    Public Shared Async Function Fill_DictionaryAsync(Fo4DataPath As String,
+                                                      progress As IProgress(Of (Stepn As String, Value As Integer, Max As Integer)),
+                                                      Optional includeInactiveArchives As Boolean = False) As Task
         Try
             FO4Path = Fo4DataPath
             Dictionary.Clear()
@@ -985,13 +993,19 @@ Public Class FilesDictionary_class
             OrderBy(Function(p) p.FullPath, StringComparer.OrdinalIgnoreCase).
             ToList()
 
-            Dim archivePriority = BuildArchivePriority(ba2Files)
+            Dim archivePriority = BuildArchivePriority(ba2Files, includeInactiveArchives, Fo4DataPath)
 
             ' Snapshot SupportedExtensions once per scan. Workers read this read-only,
             ' so extensions registered AFTER the scan starts won't affect this run.
             _canonicalExtensionsSnapshot = BuildCanonicalExtensionsSnapshot()
 
-            totalCount = ba2Files.Count + looseFiles.Count
+            ' totalCount counts only archives we will actually index (those present in the priority
+            ' map), so the progress bar matches reality when orphan/inactive archives are skipped.
+            Dim indexableArchiveCount As Integer = 0
+            For Each ba2 In ba2Files
+                If archivePriority.ContainsKey(Path.GetFileName(ba2)) Then indexableArchiveCount += 1
+            Next
+            totalCount = indexableArchiveCount + looseFiles.Count
             completed = 0
             progress.Report(("Escaneando archivos...", completed, totalCount))
 
@@ -1001,7 +1015,11 @@ Public Class FilesDictionary_class
                 Dim ba2Name = Path.GetFileName(ba2)
                 Dim sourceOrder As Integer = Integer.MinValue
                 If archivePriority.TryGetValue(ba2Name, sourceOrder) = False Then
-                    sourceOrder = Integer.MinValue
+                    ' Archive not in priority map = doesn't belong to any active plugin (and, if
+                    ' includeInactiveArchives is False, doesn't belong to any inactive one either,
+                    ' since BuildArchivePriority skips inactives in that mode). Skip indexing it
+                    ' so an orphan/inactive .ba2 can't override vanilla paths.
+                    Continue For
                 End If
 
                 workQueue.Enqueue(New DictionaryScanWorkItem With {
@@ -1055,45 +1073,6 @@ Public Class FilesDictionary_class
             System.Diagnostics.Debug.WriteLine("Fill_DictionaryAsync error: " & ex.ToString())
         End Try
     End Function
-    Private Shared Function GetPluginsTxtPath() As String
-        If Config_App.Current.Game = Config_App.Game_Enum.Fallout4 Then
-            Return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Fallout4", "loadorder.txt")
-        Else
-            Return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Skyrim Special Edition", "loadorder.txt")
-        End If
-    End Function
-
-    Private Shared Function ReadPluginsLoadOrder() As List(Of String)
-        Dim result As New List(Of String)
-        Dim pluginsTxt = GetPluginsTxtPath()
-
-        If File.Exists(pluginsTxt) = False Then Return result
-
-        For Each rawLine In File.ReadLines(pluginsTxt, Encoding.UTF8)
-            Dim line = rawLine.Trim()
-
-            If line = "" Then Continue For
-            If line.StartsWith("#", StringComparison.OrdinalIgnoreCase) Then Continue For
-            If line.StartsWith(";", StringComparison.OrdinalIgnoreCase) Then Continue For
-
-            If line.StartsWith("*", StringComparison.OrdinalIgnoreCase) Then
-                line = line.Substring(1).Trim()
-            End If
-
-            If line = "" Then Continue For
-
-            Dim ext = Path.GetExtension(line)
-            If ext.Equals(".esp", StringComparison.OrdinalIgnoreCase) OrElse
-           ext.Equals(".esm", StringComparison.OrdinalIgnoreCase) OrElse
-           ext.Equals(".esl", StringComparison.OrdinalIgnoreCase) Then
-
-                result.Add(Path.GetFileName(line))
-            End If
-        Next
-
-        Return result
-    End Function
-
     Private Shared Function ArchiveBelongsToPlugin(archiveFileName As String, pluginFileName As String) As Boolean
         Dim archiveBase = Path.GetFileNameWithoutExtension(archiveFileName)
         Dim pluginBase = Path.GetFileNameWithoutExtension(pluginFileName)
@@ -1102,7 +1081,18 @@ Public Class FilesDictionary_class
         Return False
     End Function
 
-    Private Shared Function BuildArchivePriority(ba2Files As List(Of String)) As Dictionary(Of String, Integer)
+    ''' <summary>Build the SourceOrder priority map for archives. Higher value = wins on conflict
+    ''' (see Resolve_Conflict at line 1304). Order of assignment (lowest → highest):
+    '''   1. Inactive plugin archives (only when <paramref name="includeInactive"/> is True; WM
+    '''      uses this so loose/inspect can see inactive mod content but actives never lose).
+    '''   2. Implicit base + DLC archives.
+    '''   3. Active plugin archives (Plugins.txt + .ccc), in load order.
+    '''   4. Orphan archives (BA2/BSA whose plugin doesn't exist anywhere) — last, sorted by mtime.
+    ''' Archives whose plugin is inactive AND <paramref name="includeInactive"/> is False are
+    ''' excluded from the result entirely; the caller skips indexing them.</summary>
+    Private Shared Function BuildArchivePriority(ba2Files As List(Of String),
+                                                 includeInactive As Boolean,
+                                                 dataPath As String) As Dictionary(Of String, Integer)
         Dim result As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
 
         Dim archiveNames = ba2Files.
@@ -1117,6 +1107,28 @@ Public Class FilesDictionary_class
         Dim pending As New HashSet(Of String)(archiveNames, StringComparer.OrdinalIgnoreCase)
         Dim nextOrder As Integer = 0
 
+        ' Group 1: archives of inactive plugins. Only included in the map if the caller asked for
+        ' it (WM mode). Order within this group: loadorder.txt if present (skipping anything that
+        ' is in the active set), alphabetical fallback for anything on disk that loadorder.txt
+        ' didn't list. Inactives are processed FIRST so they get the lowest SourceOrder — every
+        ' active plugin's archive (and loose files) wins on conflict.
+        If includeInactive Then
+            Dim inactivePlugins = EnumerateInactivePlugins(dataPath)
+            For Each plugin In inactivePlugins
+                Dim matches = pending.
+                Where(Function(name) ArchiveBelongsToPlugin(name, plugin)).
+                OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
+                ToList()
+                For Each match In matches
+                    result(match) = nextOrder
+                    nextOrder += 1
+                    pending.Remove(match)
+                Next
+            Next
+        End If
+
+        ' Group 2: implicit base + DLC archives (always loaded by the engine regardless of any
+        ' Plugins.txt / loadorder.txt state; matched by archive name prefix).
         Dim baseAndDlcOrder As String() = {
         "Fallout4",
         "DLCRobot",
@@ -1141,7 +1153,12 @@ Public Class FilesDictionary_class
             Next
         Next
 
-        Dim pluginsLoadOrder = ReadPluginsLoadOrder()
+        ' Group 3: active plugin archives. Use the canonical active-load-order from PluginManager
+        ' (single source of truth: includes implicit DLCs, Creation Club entries from
+        ' Fallout4.ccc/Skyrim.ccc, and Plugins.txt actives). Pre-2026-05-01 this read loadorder.txt
+        ' directly via a duplicated parser that missed CC content entirely, leaving cc*.ba2 at
+        ' fallback (mtime) priority — wrong against the engine.
+        Dim pluginsLoadOrder = PluginManager.ReadActiveLoadOrder()
 
         For Each plugin In pluginsLoadOrder
             Dim matches = pending.
@@ -1156,15 +1173,66 @@ Public Class FilesDictionary_class
             Next
         Next
 
-        Dim fallbackMatches = pending.
-        OrderBy(Function(name) File.GetLastWriteTimeUtc(fullPathsByName(name))).
-        ThenBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
-        ToList()
+        ' Group 4: orphans. Archives in Data\ that don't belong to any plugin we know about.
+        ' Only included when the caller wants to see inactive content (WM): in NPC mode (engine
+        ' parity) an orphan archive simply isn't indexed — same as the engine ignoring it.
+        If includeInactive Then
+            Dim fallbackMatches = pending.
+            OrderBy(Function(name) File.GetLastWriteTimeUtc(fullPathsByName(name))).
+            ThenBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
+            ToList()
 
-        For Each match In fallbackMatches
-            result(match) = nextOrder
-            nextOrder += 1
-            pending.Remove(match)
+            For Each match In fallbackMatches
+                result(match) = nextOrder
+                nextOrder += 1
+                pending.Remove(match)
+            Next
+        End If
+
+        Return result
+    End Function
+
+    ''' <summary>Enumerate plugins on disk in <paramref name="dataPath"/> that are NOT in the
+    ''' active load order. Order: loadorder.txt order for entries it lists (filtered to inactives
+    ''' present on disk), then alphabetical for anything on disk that loadorder.txt didn't list.</summary>
+    Private Shared Function EnumerateInactivePlugins(dataPath As String) As List(Of String)
+        Dim result As New List(Of String)
+        If String.IsNullOrEmpty(dataPath) OrElse Not Directory.Exists(dataPath) Then Return result
+
+        Dim active = New HashSet(Of String)(PluginManager.ReadActiveLoadOrder(), StringComparer.OrdinalIgnoreCase)
+
+        Dim diskPlugins As New List(Of String)
+        For Each ext In {"*.esp", "*.esm", "*.esl"}
+            For Each fp In Directory.EnumerateFiles(dataPath, ext, SearchOption.TopDirectoryOnly)
+                diskPlugins.Add(Path.GetFileName(fp))
+            Next
+        Next
+        Dim diskSet = New HashSet(Of String)(diskPlugins, StringComparer.OrdinalIgnoreCase)
+
+        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
+        Dim appDataSubdir As String = If(isFO4, "Fallout4", "Skyrim Special Edition")
+        Dim loadorderTxt = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                         appDataSubdir, "loadorder.txt")
+
+        Dim emitted As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        If File.Exists(loadorderTxt) Then
+            For Each line In File.ReadAllLines(loadorderTxt, Encoding.UTF8)
+                Dim trimmed = line.Trim()
+                If trimmed.Length = 0 Then Continue For
+                If trimmed.StartsWith("#") OrElse trimmed.StartsWith(";") Then Continue For
+                If trimmed.StartsWith("*") Then trimmed = trimmed.Substring(1).Trim()
+                If trimmed.Length = 0 Then Continue For
+                If active.Contains(trimmed) Then Continue For
+                If Not diskSet.Contains(trimmed) Then Continue For
+                If emitted.Add(trimmed) Then result.Add(trimmed)
+            Next
+        End If
+
+        Dim leftovers = diskPlugins.
+            Where(Function(p) Not active.Contains(p) AndAlso Not emitted.Contains(p)).
+            OrderBy(Function(p) p, StringComparer.OrdinalIgnoreCase)
+        For Each p In leftovers
+            If emitted.Add(p) Then result.Add(p)
         Next
 
         Return result

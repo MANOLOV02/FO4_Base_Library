@@ -103,9 +103,13 @@ Public Class NPC_Data
     Public TextureLightingColor As Color = Color.Empty
     Public HeadPartFormIDs As New List(Of UInteger)
     Public IsFemale As Boolean
-    Public WeightThin As Single = 0
-    Public WeightMuscular As Single = 0
-    Public WeightFat As Single = 0
+    ''' <summary>Raw NPC.MWGT slots. Nothing means the slot was the engine "Default" sentinel
+    ''' (Single.MaxValue) — caller must resolve via RACE.{Male|Female}DefaultWeight{X} per the
+    ''' substitution rule documented in the body-weight resolver. Do NOT read these directly
+    ''' for rendering — go through the resolver to get the materialized 3 floats.</summary>
+    Public WeightThin As Single? = Nothing
+    Public WeightMuscular As Single? = Nothing
+    Public WeightFat As Single? = Nothing
     Public TemplateFormID As UInteger
     Public TemplateFlags As UShort
     ''' <summary>Raw ACBS Flags (uint32). Bit 2 (0x04) = Is CharGen Face Preset.</summary>
@@ -421,6 +425,17 @@ Public Class RACE_Data
     Public MaleHeight As Single = 1.0F
     Public FemaleHeight As Single = 1.0F
 
+    ''' <summary>RACE.DATA Male/Female Default Weight (Thin, Muscular, Fat) per xEdit spec at
+    ''' wbDefinitionsFO4.pas:11442-11451 (wbFromVersion(109, ...)). Used to substitute NPC.MWGT
+    ''' slots that come as the engine "Default" sentinel (Single.MaxValue). Nothing means the
+    ''' field was not present in the record (DATA.Length &lt; 32, pre-v109 RACE).</summary>
+    Public MaleDefaultWeightThin As Single? = Nothing
+    Public MaleDefaultWeightMuscular As Single? = Nothing
+    Public MaleDefaultWeightFat As Single? = Nothing
+    Public FemaleDefaultWeightThin As Single? = Nothing
+    Public FemaleDefaultWeightMuscular As Single? = Nothing
+    Public FemaleDefaultWeightFat As Single? = Nothing
+
     ''' <summary>Find a tint template option by its TETI index for the given gender.</summary>
     Public Function FindTintOption(index As UShort, isFemale As Boolean) As RACE_TintTemplateOption
         Dim groups = If(isFemale, FemaleTintTemplateGroups, MaleTintTemplateGroups)
@@ -702,6 +717,21 @@ End Class
 
 Public Module RecordParsers
 
+    ''' <summary>Read a 32-bit float from the buffer, treating Bethesda/CK's "Default" sentinel
+    ''' as a missing value. xEdit (wbInterface.pas:17146-17153 + wbDataFormat.pas:3301-3304)
+    ''' uses Single.MaxValue (0x7F7FFFFF) and -Single.MaxValue (0xFF7FFFFF) as wire encodings of
+    ''' "field not assigned, fall back to default". NaN/Infinity are treated as the same case
+    ''' since they cannot represent a valid weight/scale value either. Returns Nothing when the
+    ''' slot is the sentinel; the caller decides what default to substitute.</summary>
+    Friend Function ReadOptionalFloat(data As Byte(), offset As Integer) As Single?
+        If data Is Nothing OrElse data.Length < offset + 4 Then Return Nothing
+        Dim raw = BitConverter.ToUInt32(data, offset)
+        If raw = &H7F7FFFFFUI OrElse raw = &HFF7FFFFFUI Then Return Nothing
+        Dim v = BitConverter.ToSingle(data, offset)
+        If Single.IsNaN(v) OrElse Single.IsInfinity(v) Then Return Nothing
+        Return v
+    End Function
+
     Private Function ResolveDisplayString(rec As PluginRecord, sr As SubrecordData, pluginManager As PluginManager, Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
         If pluginManager Is Nothing Then Return sr.AsString
         Return pluginManager.ResolveFieldString(rec, sr, kind)
@@ -866,10 +896,14 @@ Public Module RecordParsers
                         npc.TemplateFlags = BitConverter.ToUInt16(sr.Data, 14)
                     End If
                 Case "MWGT"
+                    ' wbDefinitionsFO4.pas:10757-10761 — { float Thin, float Muscular, float Fat }.
+                    ' Each slot may carry the "Default" sentinel (Single.MaxValue, see ReadOptionalFloat
+                    ' for the encoding) → ReadOptionalFloat returns Nothing and the body-weight resolver
+                    ' substitutes from RACE.{Male|Female}DefaultWeight{X} per the documented rule.
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
-                        npc.WeightThin = BitConverter.ToSingle(sr.Data, 0)
-                        npc.WeightMuscular = BitConverter.ToSingle(sr.Data, 4)
-                        npc.WeightFat = BitConverter.ToSingle(sr.Data, 8)
+                        npc.WeightThin = ReadOptionalFloat(sr.Data, 0)
+                        npc.WeightMuscular = ReadOptionalFloat(sr.Data, 4)
+                        npc.WeightFat = ReadOptionalFloat(sr.Data, 8)
                     End If
                 Case "MSDK"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
@@ -1282,12 +1316,25 @@ Public Module RecordParsers
                         race.FaceGenFaceClamp = BitConverter.ToSingle(sr.Data, 0)
                     End If
                 Case "DATA"
-                    ' RACE.DATA: first 2 floats are Male Height / Female Height (scale multipliers).
+                    ' RACE.DATA struct per xEdit spec wbDefinitionsFO4.pas:11439-11451:
+                    '   +0  float MaleHeight
+                    '   +4  float FemaleHeight
+                    '   +8  Male Default Weight   { float Thin, float Muscular, float Fat }   (v109+)
+                    '   +20 Female Default Weight { float Thin, float Muscular, float Fat }   (v109+)
+                    '   +32 uint Flags  ...
                     ' Only read at RACE top level (not inside head sections).
                     If Not inMaleHead AndAlso Not inFemaleHead AndAlso Not inMaleBody AndAlso Not inFemaleBody _
                        AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                         race.MaleHeight = BitConverter.ToSingle(sr.Data, 0)
                         race.FemaleHeight = BitConverter.ToSingle(sr.Data, 4)
+                        If sr.Data.Length >= 32 Then
+                            race.MaleDefaultWeightThin = ReadOptionalFloat(sr.Data, 8)
+                            race.MaleDefaultWeightMuscular = ReadOptionalFloat(sr.Data, 12)
+                            race.MaleDefaultWeightFat = ReadOptionalFloat(sr.Data, 16)
+                            race.FemaleDefaultWeightThin = ReadOptionalFloat(sr.Data, 20)
+                            race.FemaleDefaultWeightMuscular = ReadOptionalFloat(sr.Data, 24)
+                            race.FemaleDefaultWeightFat = ReadOptionalFloat(sr.Data, 28)
+                        End If
                     End If
                 Case "NNAM"
                     ' "Neck Fat Adjustments Scale" per xEdit spec (wbDefinitionsFO4.pas:11639/11657):
@@ -1615,7 +1662,14 @@ Public Module RecordParsers
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
                         hdpt.Flags = sr.Data(0)
-                        hdpt.UsesBodyTexture = (hdpt.Flags And &H40) <> 0
+                        ' xEdit wbDefinitionsFO4.pas:7365-7372 declara los flags en `wbFlags(array)`
+                        ' que mapea POR POSICIÓN del array a número de bit, NO por el valor en
+                        ' los comentarios `{0x...}` (los comentarios son engañosos / copy-paste viejo).
+                        ' Posiciones: 0=Playable, 1=Male, 2=Female, 3=IsExtraPart, 4=UseSolidTint,
+                        ' 5=UsesBodyTexture. Por lo tanto bit real de UsesBodyTexture es 0x20 (no 0x40).
+                        ' Verificado contra Fallout4.esm vanilla: byte 0x35 = bits 0+2+4+5 = Playable
+                        ' + Female + UseSolidTint + UsesBodyTexture, coincide con xEdit display.
+                        hdpt.UsesBodyTexture = (hdpt.Flags And &H20) <> 0
                     End If
                 Case "HNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then

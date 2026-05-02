@@ -55,13 +55,20 @@ Public Class FaceRegionSwapInput
     ''' <summary>Region mask DDS bytes. Grayscale weight in .r (BC1 in vanilla, all three
     ''' channels are equal).</summary>
     Public Property RegionMaskDdsBytes As Byte()
+    ''' <summary>Optional cache key (typically the normalized texture path) for the region mask.
+    ''' When provided together with a <see cref="FaceTintTextureCache"/> on the compositor call,
+    ''' the decoded GL texture is reused across calls instead of re-decoded every frame.</summary>
+    Public Property RegionMaskCacheKey As String = Nothing
     ''' <summary>MPPT TXST.TX00 — replacement diffuse for the region. May be Nothing if the
     ''' TXST has no diffuse slot filled (then the diffuse channel is left untouched).</summary>
     Public Property SwapDiffuseDdsBytes As Byte()
+    Public Property SwapDiffuseCacheKey As String = Nothing
     ''' <summary>MPPT TXST.TX01 — replacement normal for the region. Optional.</summary>
     Public Property SwapNormalDdsBytes As Byte()
+    Public Property SwapNormalCacheKey As String = Nothing
     ''' <summary>MPPT TXST.TX07 — replacement smooth-spec for the region. Optional.</summary>
     Public Property SwapSpecularDdsBytes As Byte()
+    Public Property SwapSpecularCacheKey As String = Nothing
     ''' <summary>Optional debug label written to the log when this swap runs.</summary>
     Public Property DebugName As String = ""
 
@@ -76,16 +83,33 @@ Public Class FaceRegionSwapInput
             Case Else : Return Nothing
         End Select
     End Function
+
+    ''' <summary>Companion to <see cref="GetSwapBytes"/>: returns the cache key authored alongside
+    ''' the bytes for that channel. Nothing when the caller did not provide one.</summary>
+    Public Function GetSwapCacheKey(channel As FaceTintChannel) As String
+        Select Case channel
+            Case FaceTintChannel.Diffuse : Return SwapDiffuseCacheKey
+            Case FaceTintChannel.Normal : Return SwapNormalCacheKey
+            Case FaceTintChannel.Specular : Return SwapSpecularCacheKey
+            Case Else : Return Nothing
+        End Select
+    End Function
 End Class
 
 Public Class FaceTintLayerInput
     Public Property Kind As FaceTintLayerKind = FaceTintLayerKind.PaletteMask
     ''' <summary>For PaletteMask: greyscale mask in .r (the diffuse mask). For TextureSetDiffuse: pre-coloured RGBA detail.</summary>
     Public Property LayerDdsBytes As Byte()
+    ''' <summary>Optional cache key for <see cref="LayerDdsBytes"/> (typically the normalized texture
+    ''' path). Enables GL-texture reuse across compositor calls when a <see cref="FaceTintTextureCache"/>
+    ''' is supplied to the compositor. Nothing disables caching for this layer.</summary>
+    Public Property LayerCacheKey As String = Nothing
     ''' <summary>TextureSet only — pre-coloured RGBA normal map (TTET[1]). Optional, may be empty.</summary>
     Public Property NormalDdsBytes As Byte()
+    Public Property NormalCacheKey As String = Nothing
     ''' <summary>TextureSet only — pre-coloured RGBA specular map (TTET[2]). Optional, may be empty.</summary>
     Public Property SpecularDdsBytes As Byte()
+    Public Property SpecularCacheKey As String = Nothing
     ''' <summary>PaletteMask only — uniform tint colour applied through the mask.</summary>
     Public Property R As Byte
     Public Property G As Byte
@@ -115,6 +139,21 @@ Public Class FaceTintLayerInput
             Case FaceTintChannel.Diffuse : Return LayerDdsBytes
             Case FaceTintChannel.Normal : Return NormalDdsBytes
             Case FaceTintChannel.Specular : Return SpecularDdsBytes
+            Case Else : Return Nothing
+        End Select
+    End Function
+
+    ''' <summary>Companion to <see cref="GetChannelBytes"/>: returns the cache key authored
+    ''' alongside the bytes for that channel. Nothing when the caller did not provide one.</summary>
+    Public Function GetChannelCacheKey(channel As FaceTintChannel) As String
+        If Kind = FaceTintLayerKind.PaletteMask Then
+            If channel = FaceTintChannel.Diffuse Then Return LayerCacheKey
+            Return Nothing
+        End If
+        Select Case channel
+            Case FaceTintChannel.Diffuse : Return LayerCacheKey
+            Case FaceTintChannel.Normal : Return NormalCacheKey
+            Case FaceTintChannel.Specular : Return SpecularCacheKey
             Case Else : Return Nothing
         End Select
     End Function
@@ -281,7 +320,7 @@ void main() {
     ''' <paramref name="logger"/> is optional — when supplied, the compositor reports per-layer
     ''' disposition (DRAWN / no-channel-bytes / dds-load-failed) and an end-of-call summary.
     ''' Diagnostic only; null in production builds.</summary>
-    Public Function ComposeOntoFaceTexture(originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional logger As Action(Of String) = Nothing) As Integer
+    Public Function ComposeOntoFaceTexture(originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional logger As Action(Of String) = Nothing, Optional cache As FaceTintTextureCache = Nothing) As Integer
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If layers Is Nothing OrElse layers.Count = 0 Then Return 0
 
@@ -313,42 +352,61 @@ void main() {
             ' mask (N/S passes on TextureSet layers). The library helper decompresses the full
             ' batch in a single native call and uploads each to GL via PBO, returning a dict
             ' of Texture_Loaded_Class { Texture_ID, DGXFormat_Original, DGXFormat_Final, ... }.
-            ' Synthetic keys identify each entry; we map layerIndex -> key for lookup below.
+            '
+            ' When a FaceTintTextureCache is supplied, layers carrying a cache key reuse the
+            ' decoded GL texture from previous calls instead of decoding+uploading every time.
+            ' Layers with no cache key (legacy callers) fall through to a synthetic per-call
+            ' key and follow the original allocate-and-delete lifecycle.
             Dim loadKeys As New List(Of String)
             Dim loadBytes As New List(Of Byte())
+            Dim loadCacheable As New List(Of Boolean)
             Dim layerChannelKey As New Dictionary(Of Integer, String)
             Dim layerMaskKey As New Dictionary(Of Integer, String)
+            Dim addRequest = Sub(reqKey As String, b As Byte(), cacheable As Boolean)
+                                 loadKeys.Add(reqKey)
+                                 loadBytes.Add(b)
+                                 loadCacheable.Add(cacheable)
+                             End Sub
             For i As Integer = 0 To layers.Count - 1
                 Dim layer = layers(i)
                 If layer Is Nothing Then Continue For
                 Dim channelBytes = layer.GetChannelBytes(channel)
                 If channelBytes Is Nothing OrElse channelBytes.Length = 0 Then Continue For
-                Dim kC = $"l{i}c"
-                loadKeys.Add(kC)
-                loadBytes.Add(channelBytes)
+
+                ' Channel entry: prefer the caller-supplied cache key (typically the texture
+                ' path) so multiple calls with the same source share a GL texture; fall back
+                ' to a synthetic key when the caller didn't tag this layer.
+                Dim chanCacheKey As String = layer.GetChannelCacheKey(channel)
+                Dim kC As String = If(Not String.IsNullOrEmpty(chanCacheKey), chanCacheKey, $"l{i}c")
+                addRequest(kC, channelBytes, Not String.IsNullOrEmpty(chanCacheKey))
                 layerChannelKey(i) = kC
+
                 If layer.Kind = FaceTintLayerKind.TextureSetDiffuse AndAlso channel <> FaceTintChannel.Diffuse _
                    AndAlso layer.LayerDdsBytes IsNot Nothing AndAlso layer.LayerDdsBytes.Length > 0 Then
-                    Dim kM = $"l{i}m"
-                    loadKeys.Add(kM)
-                    loadBytes.Add(layer.LayerDdsBytes)
+                    Dim maskCacheKey As String = layer.LayerCacheKey
+                    Dim kM As String = If(Not String.IsNullOrEmpty(maskCacheKey), maskCacheKey, $"l{i}m")
+                    addRequest(kM, layer.LayerDdsBytes, Not String.IsNullOrEmpty(maskCacheKey))
                     layerMaskKey(i) = kM
                 End If
             Next
             If loadKeys.Count > 0 Then
-                batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
-                ' Library default is Repeat wrap; compositor samples a fullscreen quad over UV [0,1]
-                ' and seams at the edges would bleed, so force ClampToEdge on each loaded texture.
-                If batchLoaded IsNot Nothing Then
-                    For Each kvp In batchLoaded
-                        Dim e = kvp.Value
-                        If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                            GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
-                            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                        End If
-                    Next
-                    GL.BindTexture(TextureTarget.Texture2D, 0)
+                If cache IsNot Nothing Then
+                    batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
+                Else
+                    batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
+                    ' Library default is Repeat wrap; compositor samples a fullscreen quad over UV [0,1]
+                    ' and seams at the edges would bleed, so force ClampToEdge on each loaded texture.
+                    If batchLoaded IsNot Nothing Then
+                        For Each kvp In batchLoaded
+                            Dim e = kvp.Value
+                            If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
+                                GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
+                                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+                                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+                            End If
+                        Next
+                        GL.BindTexture(TextureTarget.Texture2D, 0)
+                    End If
                 End If
             End If
 
@@ -487,14 +545,15 @@ void main() {
             If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
             resultTex = 0
         Finally
-            ' Free every GL texture that the batch loader created for this pass. The
-            ' Texture_Loaded_Class entries are one-off — we own them and must release here.
+            ' Free every GL texture that the batch loader created for this pass — except the
+            ' ones the cache adopted. Cached entries survive across calls and will be released
+            ' by FaceTintTextureCache.Clear() when the caller invalidates the cache.
             If batchLoaded IsNot Nothing Then
                 For Each kvp In batchLoaded
                     Dim e = kvp.Value
-                    If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                        Try : GL.DeleteTexture(e.Texture_ID) : Catch : End Try
-                    End If
+                    If e Is Nothing OrElse e.Texture_ID = 0 Then Continue For
+                    If cache IsNot Nothing AndAlso cache.IsCached(kvp.Key) Then Continue For
+                    Try : GL.DeleteTexture(e.Texture_ID) : Catch : End Try
                 Next
             End If
 
@@ -604,7 +663,8 @@ void main() {
                                                      width As Integer, height As Integer,
                                                      swaps As IList(Of FaceRegionSwapInput),
                                                      channel As FaceTintChannel,
-                                                     Optional logger As Action(Of String) = Nothing) As Integer
+                                                     Optional logger As Action(Of String) = Nothing,
+                                                     Optional cache As FaceTintTextureCache = Nothing) As Integer
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If swaps Is Nothing OrElse swaps.Count = 0 Then Return 0
 
@@ -639,6 +699,7 @@ void main() {
             ' simple and matches the pattern used by ComposeOntoFaceTexture.
             Dim loadKeys As New List(Of String)
             Dim loadBytes As New List(Of Byte())
+            Dim loadCacheable As New List(Of Boolean)
             Dim swapTexKey As New Dictionary(Of Integer, String)
             Dim swapMaskKey As New Dictionary(Of Integer, String)
             For i As Integer = 0 To swaps.Count - 1
@@ -647,27 +708,34 @@ void main() {
                 Dim sb = sw.GetSwapBytes(channel)
                 If sb Is Nothing OrElse sb.Length = 0 Then Continue For
                 If sw.RegionMaskDdsBytes Is Nothing OrElse sw.RegionMaskDdsBytes.Length = 0 Then Continue For
-                Dim kS = $"s{i}t"
-                Dim kM = $"s{i}m"
-                loadKeys.Add(kS) : loadBytes.Add(sb) : swapTexKey(i) = kS
-                loadKeys.Add(kM) : loadBytes.Add(sw.RegionMaskDdsBytes) : swapMaskKey(i) = kM
+
+                Dim swCacheKey As String = sw.GetSwapCacheKey(channel)
+                Dim mkCacheKey As String = sw.RegionMaskCacheKey
+                Dim kS As String = If(Not String.IsNullOrEmpty(swCacheKey), swCacheKey, $"s{i}t")
+                Dim kM As String = If(Not String.IsNullOrEmpty(mkCacheKey), mkCacheKey, $"s{i}m")
+                loadKeys.Add(kS) : loadBytes.Add(sb) : loadCacheable.Add(Not String.IsNullOrEmpty(swCacheKey)) : swapTexKey(i) = kS
+                loadKeys.Add(kM) : loadBytes.Add(sw.RegionMaskDdsBytes) : loadCacheable.Add(Not String.IsNullOrEmpty(mkCacheKey)) : swapMaskKey(i) = kM
             Next
             If loadKeys.Count = 0 Then
                 If logger IsNot Nothing Then logger($"  no swap contributes to channel {CInt(channel)}, skip")
                 Return 0
             End If
 
-            batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
-            If batchLoaded IsNot Nothing Then
-                For Each kvp In batchLoaded
-                    Dim e = kvp.Value
-                    If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                        GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
-                        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                    End If
-                Next
-                GL.BindTexture(TextureTarget.Texture2D, 0)
+            If cache IsNot Nothing Then
+                batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
+            Else
+                batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
+                If batchLoaded IsNot Nothing Then
+                    For Each kvp In batchLoaded
+                        Dim e = kvp.Value
+                        If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
+                            GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
+                            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+                            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+                        End If
+                    Next
+                    GL.BindTexture(TextureTarget.Texture2D, 0)
+                End If
             End If
 
             ' Allocate two ping-pong colour attachments matching the face texture size.
@@ -766,12 +834,13 @@ void main() {
             If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
             resultTex = 0
         Finally
+            ' Cached entries survive across calls; only delete the per-call ones.
             If batchLoaded IsNot Nothing Then
                 For Each kvp In batchLoaded
                     Dim e = kvp.Value
-                    If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                        Try : GL.DeleteTexture(e.Texture_ID) : Catch : End Try
-                    End If
+                    If e Is Nothing OrElse e.Texture_ID = 0 Then Continue For
+                    If cache IsNot Nothing AndAlso cache.IsCached(kvp.Key) Then Continue For
+                    Try : GL.DeleteTexture(e.Texture_ID) : Catch : End Try
                 Next
             End If
 
@@ -1099,3 +1168,133 @@ void main() {
         GL.BindVertexArray(0)
     End Sub
 End Module
+
+''' <summary>Process-lifetime cache of decoded DDS → GL textures, keyed by an opaque string
+''' the caller supplies (typically the normalized texture path). Allows the compositor to
+''' reuse GPU texture objects across calls instead of decoding + uploading + deleting on every
+''' invocation.
+'''
+''' Lifecycle:
+'''  - The caller owns one cache instance for the lifetime of the GL context.
+'''  - The compositor reads from / writes into it through <see cref="GetOrLoadBatch"/> on every
+'''    call when a cache is supplied.
+'''  - Cache entries are NOT deleted by the compositor's per-call Finally block — they survive
+'''    for reuse. Pingpong / FBO textures and ad-hoc allocations (no cache key) follow the
+'''    original allocate-and-delete path unchanged.
+'''  - The caller MUST call <see cref="Clear"/> when the underlying byte sources change
+'''    (FilesDictionary rebuild, BA2 mount/unmount, plugin reload) and BEFORE GL context
+'''    teardown. Failing to clear before context teardown leaks GL texture handles owned by
+'''    the cache.
+'''
+''' Thread safety: callers must invoke from the GL thread (same as the compositor itself).
+''' No internal locking.</summary>
+Public NotInheritable Class FaceTintTextureCache
+
+    ''' <summary>Backing dictionary. Keys are opaque caller-supplied strings (we just compare
+    ''' them); values are the same Texture_Loaded_Class entries the compositor would otherwise
+    ''' allocate and discard per-call.</summary>
+    Private ReadOnly _entries As New Dictionary(Of String, PreviewModel.Texture_Loaded_Class)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Number of cached GL textures currently alive.</summary>
+    Public ReadOnly Property Count As Integer
+        Get
+            Return _entries.Count
+        End Get
+    End Property
+
+    ''' <summary>Resolve a batch of (key → bytes) requests, splitting into hits and misses.
+    ''' Misses go through <c>DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory</c> in a
+    ''' single native call (matching the original compositor batch behaviour) and the resulting
+    ''' entries are stored. Hits are returned from cache untouched.
+    '''
+    ''' Returns a brand-new dictionary keyed by the caller's request keys, containing every
+    ''' resolved entry. Entries marked with <paramref name="isCacheable"/>=False are *not* added
+    ''' to the persistent cache and the caller is expected to delete them after use, matching
+    ''' the legacy per-call lifecycle. Entries marked True remain in the cache and outlive the
+    ''' call.
+    '''
+    ''' The compositor uses isCacheable=True for entries whose request key was supplied by the
+    ''' caller (texture path) and False for synthetic per-call keys. This lets the same batch
+    ''' loader call serve both lifetimes uniformly.</summary>
+    Public Function GetOrLoadBatch(keys As IList(Of String), bytes As IList(Of Byte()), isCacheable As IList(Of Boolean), wrapClampToEdge As Boolean) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
+        Dim result As New Dictionary(Of String, PreviewModel.Texture_Loaded_Class)(StringComparer.OrdinalIgnoreCase)
+        If keys Is Nothing OrElse keys.Count = 0 Then Return result
+
+        Dim missKeys As New List(Of String)
+        Dim missBytes As New List(Of Byte())
+        Dim missCacheable As New List(Of Boolean)
+
+        For i As Integer = 0 To keys.Count - 1
+            Dim k = keys(i)
+            If String.IsNullOrEmpty(k) Then Continue For
+            Dim b = bytes(i)
+            If b Is Nothing OrElse b.Length = 0 Then Continue For
+
+            Dim cacheable As Boolean = (i < isCacheable.Count) AndAlso isCacheable(i)
+            If cacheable Then
+                Dim hit As PreviewModel.Texture_Loaded_Class = Nothing
+                If _entries.TryGetValue(k, hit) AndAlso hit IsNot Nothing AndAlso hit.Texture_ID <> 0 Then
+                    result(k) = hit
+                    Continue For
+                End If
+            End If
+
+            missKeys.Add(k)
+            missBytes.Add(b)
+            missCacheable.Add(cacheable)
+        Next
+
+        If missKeys.Count > 0 Then
+            Dim loaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(missKeys.ToArray(), missBytes.ToArray(), True, True)
+            If loaded IsNot Nothing Then
+                If wrapClampToEdge Then
+                    For Each kvp In loaded
+                        Dim e = kvp.Value
+                        If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
+                            OpenTK.Graphics.OpenGL4.GL.BindTexture(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, e.Texture_ID)
+                            OpenTK.Graphics.OpenGL4.GL.TexParameter(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL4.TextureParameterName.TextureWrapS, CInt(OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge))
+                            OpenTK.Graphics.OpenGL4.GL.TexParameter(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL4.TextureParameterName.TextureWrapT, CInt(OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge))
+                        End If
+                    Next
+                    OpenTK.Graphics.OpenGL4.GL.BindTexture(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, 0)
+                End If
+
+                For i As Integer = 0 To missKeys.Count - 1
+                    Dim k = missKeys(i)
+                    Dim entry As PreviewModel.Texture_Loaded_Class = Nothing
+                    If Not loaded.TryGetValue(k, entry) Then Continue For
+                    If entry Is Nothing OrElse entry.Texture_ID = 0 Then Continue For
+                    result(k) = entry
+                    If missCacheable(i) Then _entries(k) = entry
+                Next
+            End If
+        End If
+
+        Return result
+    End Function
+
+    ''' <summary>True iff the key has a usable cached entry. Used by the compositor's Finally
+    ''' block to decide whether a per-call entry is owned by the cache (do not delete) or by
+    ''' the call (delete as before).</summary>
+    Public Function IsCached(key As String) As Boolean
+        If String.IsNullOrEmpty(key) Then Return False
+        Dim e As PreviewModel.Texture_Loaded_Class = Nothing
+        If Not _entries.TryGetValue(key, e) Then Return False
+        Return e IsNot Nothing AndAlso e.Texture_ID <> 0
+    End Function
+
+    ''' <summary>Delete every cached GL texture and forget its key. MUST be called on the GL
+    ''' thread. Call this before the GL context is torn down or whenever the underlying byte
+    ''' sources change (FilesDictionary rebuild) so a stale entry cannot leak into a new asset
+    ''' set.</summary>
+    Public Sub Clear()
+        For Each kvp In _entries
+            Dim e = kvp.Value
+            If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
+                Try : OpenTK.Graphics.OpenGL4.GL.DeleteTexture(e.Texture_ID) : Catch : End Try
+            End If
+        Next
+        _entries.Clear()
+    End Sub
+End Class
+
