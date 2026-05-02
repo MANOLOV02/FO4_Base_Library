@@ -30,6 +30,15 @@ Public Class RenderRequest
     Public Property RecalculateNormals As Boolean = True
     Public Property ResetCamera As Boolean = True
     Public Property FloorOffset As Double = 0
+    ''' <summary>When True, full reload preserves the GL texture cache + Textures_Dictionary +
+    ''' raw bytes cache across the swap. Pending background uploads are still cancelled (the
+    ''' part that's unsafe to skip when the shape set changes). Default False = legacy
+    ''' behaviour (full clear on every reload). Set to True when callers know the new shape
+    ''' set will mostly reuse textures from the previous one (e.g. NPC preset swap, outfit
+    ''' change on the same actor). Trade-off: skips refresh of loose .dds/.bgsm files
+    ''' modified on disk during the session, and lets unused textures linger in GPU memory
+    ''' until the next non-preserving reload or control disposal.</summary>
+    Public Property PreserveTextureCache As Boolean = False
 End Class
 
 ''' <summary>
@@ -178,6 +187,12 @@ Public Class RenderIntent
     ' ── Optional callback for async texture prefetch before geometry load ──
     Public Property TexturePrefetchAction As Action
 
+    ''' <summary>When True, full reload preserves the GL texture cache + Textures_Dictionary +
+    ''' raw bytes cache across the swap. See <see cref="RenderRequest.PreserveTextureCache"/>
+    ''' for trade-off details. Reset to False by <see cref="ClearDirty"/> — it's per-render
+    ''' state, not an accumulating mode flag.</summary>
+    Public Property PreserveTextureCache As Boolean = False
+
     ' ── Dirty flags + per-shape granularity ──
     Private _dirty As RenderDirtyFlags = RenderDirtyFlags.None
 
@@ -220,10 +235,13 @@ Public Class RenderIntent
         If shapes IsNot Nothing Then DirtyShapes.UnionWith(shapes)
     End Sub
 
-    ''' <summary>Clear all dirty flags + shape subset after pipeline execution.</summary>
+    ''' <summary>Clear all dirty flags + shape subset after pipeline execution. Also resets
+    ''' <see cref="PreserveTextureCache"/> back to False so the next render starts from the
+    ''' safe default — opt-in must be explicit per-render.</summary>
     Public Sub ClearDirty()
         _dirty = RenderDirtyFlags.None
         DirtyShapes.Clear()
+        PreserveTextureCache = False
     End Sub
 
     ''' <summary>True if any dirty flag is set — the pipeline has work to do.</summary>

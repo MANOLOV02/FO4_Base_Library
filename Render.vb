@@ -471,6 +471,7 @@ Public Class PreviewControl
         i.MorphResolver = request.MorphResolver
         i.GeometryModifiers = request.GeometryModifiers
         i.TexturePrefetchAction = Nothing
+        i.PreserveTextureCache = request.PreserveTextureCache
         i.MarkDirty(RenderDirtyFlags.Shapes Or RenderDirtyFlags.Camera)
         ExecuteRenderPipeline()
     End Sub
@@ -526,7 +527,16 @@ Public Class PreviewControl
             If isNewShapeSet Then
                 Model.Clean(True)
                 Model.Processing_Status_GL("Loading...")
-                Model.CleanTextures()
+                ' Caller opt-in: preserve already-uploaded GL textures across the swap. Pending
+                ' uploads are still cancelled — those were keyed on the OLD shape set and racing
+                ' them with the new set is unsafe. Already-resident textures get reused if the
+                ' new set asks for the same paths, otherwise they linger until disposal or the
+                ' next non-preserving reload.
+                If intent.PreserveTextureCache Then
+                    Model.CancelPendingTextureUploads()
+                Else
+                    Model.CleanTextures()
+                End If
             Else
                 Model.Clean(False)
             End If
@@ -3032,6 +3042,33 @@ Public Class PreviewModel
     End Sub
 
     Public Sub CleanTextures()
+        CancelPendingTextureUploads()
+
+        ' — Eliminar texturas cargadas —
+        Dim seen As New HashSet(Of UInteger)
+        For Each texID In Textures_Dictionary.Values.Select(Function(pf) pf.Texture_ID)
+            If texID > 0 AndAlso Not seen.Contains(texID) Then
+                GL.DeleteTexture(texID)
+                seen.Add(texID)
+            End If
+        Next
+        ' Limpia diccionario
+        Textures_Dictionary.Clear()
+        Last_Loaded_Textures.Clear()
+        ' Clear the raw-bytes cache so that loose .dds/.bgsm files modified on disk
+        ' while the app is running are re-read fresh on the next load, not returned stale.
+        FilesDictionary_class.ClearBytesCache()
+    End Sub
+
+    ''' <summary>Cancels any in-flight background texture load + drains the pending upload queue
+    ''' + clears the pending-paths tracker. Does NOT touch <see cref="Textures_Dictionary"/>,
+    ''' <see cref="Last_Loaded_Textures"/>, or the raw-bytes cache — already-uploaded GL textures
+    ''' stay live and reusable. Used by the shape-set-swap path when the caller opted into
+    ''' <see cref="RenderIntent.PreserveTextureCache"/>: cancelling pending uploads is unsafe to
+    ''' skip because the in-flight loads were keyed on the previous shape set's texture paths and
+    ''' could race with the new set's loads, but tearing down the GPU-resident cache is wasteful
+    ''' when the caller knows the new set will mostly reuse the same textures.</summary>
+    Public Sub CancelPendingTextureUploads()
         ' O4.1: Cancel any in-flight background texture load and drain the pending queue
         If _backgroundLoadCts IsNot Nothing Then
             _backgroundLoadCts.Cancel()
@@ -3055,21 +3092,6 @@ Public Class PreviewModel
         SyncLock _pendingBackgroundPaths
             _pendingBackgroundPaths.Clear()
         End SyncLock
-
-        ' — Eliminar texturas cargadas —
-        Dim seen As New HashSet(Of UInteger)
-        For Each texID In Textures_Dictionary.Values.Select(Function(pf) pf.Texture_ID)
-            If texID > 0 AndAlso Not seen.Contains(texID) Then
-                GL.DeleteTexture(texID)
-                seen.Add(texID)
-            End If
-        Next
-        ' Limpia diccionario
-        Textures_Dictionary.Clear()
-        Last_Loaded_Textures.Clear()
-        ' Clear the raw-bytes cache so that loose .dds/.bgsm files modified on disk
-        ' while the app is running are re-read fresh on the next load, not returned stale.
-        FilesDictionary_class.ClearBytesCache()
     End Sub
     Public Sub CleanSingleTexture(Cual As String)
         Try
