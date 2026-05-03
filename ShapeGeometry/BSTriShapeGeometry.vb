@@ -485,74 +485,392 @@ Public Class BSTriShapeGeometry
     End Function
 
     ''' <summary>
-    ''' Keeps BSSubIndexTriShape._segmentData (BSGeometrySegmentSharedData) consistent with
-    ''' _segment after a triangle-count change.  Preserves SSFFile and PerSegmentData
-    ''' records (material / userSlotID per segment+subsegment) because those reference
-    ''' semantic identity that survives triangle compaction.  Only count-derived fields are
-    ''' refreshed:
-    '''   - NumSegments = parent segment count
-    '''   - TotalSegments = parent count + sum of sub-segment counts (matches
-    '''     PerSegmentData list size, which we don't resize because count stays stable
-    '''     when redistribute preserves structure)
-    '''   - SegmentStarts[i] = newSegments[i].StartIndex (per-parent starts)
+    ''' Semantic representation of a BSSubIndexTriShape sub-segment that survives
+    ''' triangle-list mutations.  Mirrors nifly's NifSubSegmentInfo (Geometry.hpp:392).
+    ''' </summary>
+    Public Class NifSubSegmentInfo
+        ''' <summary>
+        ''' Unique non-negative integer identifying this sub-segment among all parents
+        ''' and sub-segments of the shape.  Used as a value in triParts.  Not stored in
+        ''' the file.
+        ''' </summary>
+        Public Property PartID As Integer = 0
+        Public Property UserSlotID As UInteger = 0
+        Public Property Material As UInteger = &HFFFFFFFFUI
+        Public Property ExtraData As New List(Of Single)
+    End Class
+
+    ''' <summary>
+    ''' Semantic representation of a BSSubIndexTriShape parent segment.  Mirrors nifly's
+    ''' NifSegmentInfo (Geometry.hpp:404).
+    ''' </summary>
+    Public Class NifSegmentInfo
+        Public Property PartID As Integer = 0
+        Public Property Subs As New List(Of NifSubSegmentInfo)
+    End Class
+
+    ''' <summary>
+    ''' Semantic representation of an entire BSSubIndexTriShape segmentation.  Mirrors
+    ''' nifly's NifSegmentationInfo (Geometry.hpp:416).  The intent: extract segmentation
+    ''' as semantic data with stable per-triangle partID assignments, mutate triangles
+    ''' arbitrarily (split/merge/zap), then re-apply the segmentation by passing the new
+    ''' triParts mapping.  Identical contract to nifly so cross-app behavior matches.
+    ''' </summary>
+    Public Class NifSegmentationInfo
+        Public Property Segs As New List(Of NifSegmentInfo)
+        Public Property SsfFile As String = ""
+    End Class
+
+    ''' <summary>
+    ''' Result of <see cref="GetSegmentation(IShapeGeometry)"/>: semantic segmentation
+    ''' info paired with the per-triangle partition map.  Returned as a record so callers
+    ''' don't have to deal with VB.NET ByRef-Out parameter idioms.
+    ''' </summary>
+    Public Structure SegmentationSnapshot
+        Public Info As NifSegmentationInfo
+        Public TriParts As List(Of Integer)
+
+        ''' <summary>True when the source shape had no segmentation data
+        ''' (non-BSSubIndex, or BSSubIndex with zero parent segments).</summary>
+        Public ReadOnly Property IsEmpty As Boolean
+            Get
+                Return Info Is Nothing OrElse Info.Segs.Count = 0
+            End Get
+        End Property
+    End Structure
+
+    ''' <summary>
+    ''' Adapter-friendly extraction of BSSubIndexTriShape segmentation as semantic info +
+    ''' per-triangle partID assignments.  Returns an empty snapshot if the shape isn't
+    ''' BSSubIndex (NiTriShape, plain BSTriShape, BSMeshLOD without dismember).
+    ''' </summary>
+    Public Shared Function GetSegmentation(geom As IShapeGeometry) As SegmentationSnapshot
+        Dim subIndex = TryCast(geom?.BackingShape, BSSubIndexTriShape)
+        If subIndex Is Nothing Then
+            Return New SegmentationSnapshot With {
+                .Info = New NifSegmentationInfo(),
+                .TriParts = New List(Of Integer)()
+            }
+        End If
+        Return GetSegmentation(subIndex)
+    End Function
+
+    ''' <summary>
+    ''' Adapter-friendly application of segmentation info + triParts to a shape.  No-op if
+    ''' the shape isn't BSSubIndex.  Mutates Segments + SegmentData atomically — see the
+    ''' BSSubIndexTriShape overload below for the full algorithm.
+    ''' </summary>
+    Public Shared Sub SetSegmentation(geom As IShapeGeometry,
+                                       inf As NifSegmentationInfo,
+                                       inTriParts As List(Of Integer))
+        Dim subIndex = TryCast(geom?.BackingShape, BSSubIndexTriShape)
+        If subIndex Is Nothing Then Return
+        SetSegmentation(subIndex, inf, inTriParts, geom.Version)
+    End Sub
+
+    ''' <summary>
+    ''' Extracts BSSubIndexTriShape segmentation as semantic info + per-triangle partID
+    ''' assignments.  Replicates BS-OS Geometry.cpp:1365-1406
+    ''' (BSSubIndexTriShape::GetSegmentation) line-by-line.
     '''
-    ''' Protection against structural drift: throws if our preserved count doesn't match
-    ''' the existing PerSegmentData size — that would indicate a latent bug where
-    ''' redistribute lost a sub-segment.
+    ''' Walks Segments[] in order; for each parent segment populates triParts[id] for
+    ''' triangles in [startIndex/3, startIndex/3 + numPrimitives) with a fresh partID,
+    ''' then for each sub-segment of that parent does the same with the next partID.
+    ''' arrayIndex tracks the position in the flat PerSegmentData array (parent slot +
+    ''' child slots) so userSlotID / material / extraData can be pulled into NifSubSegmentInfo.
+    ''' </summary>
+    Public Shared Function GetSegmentation(subIndex As BSSubIndexTriShape) As SegmentationSnapshot
+        Dim result As New SegmentationSnapshot With {
+            .Info = New NifSegmentationInfo(),
+            .TriParts = New List(Of Integer)()
+        }
+
+        Dim sd As BSGeometrySegmentSharedData = subIndex.SegmentData
+        If sd.SSFFile IsNot Nothing Then result.Info.SsfFile = If(sd.SSFFile.Content, "")
+
+        Dim segments = subIndex.Segments
+        If segments IsNot Nothing Then
+            For si = 0 To segments.Count - 1
+                result.Info.Segs.Add(New NifSegmentInfo())
+            Next
+        End If
+
+        Dim numTris As Integer = subIndex.TriangleCount
+        result.TriParts.Capacity = numTris
+        For k = 0 To numTris - 1 : result.TriParts.Add(-1) : Next
+
+        If segments Is Nothing Then Return result
+
+        Dim partID As Integer = 0
+        Dim arrayIndex As Integer = 0
+
+        For si = 0 To segments.Count - 1
+            Dim seg = segments(si)
+            Dim startIndex As Integer = CInt(seg.StartIndex \ 3UI)
+            Dim endIndex As Integer = Math.Min(numTris, startIndex + CInt(seg.NumPrimitives))
+
+            For id = startIndex To endIndex - 1
+                result.TriParts(id) = partID
+            Next
+
+            result.Info.Segs(si).PartID = partID
+            partID += 1
+
+            Dim subs = seg.SubSegment
+            If subs IsNot Nothing AndAlso subs.Count > 0 Then
+                For j = 0 To subs.Count - 1
+                    Dim sub_ = subs(j)
+                    startIndex = CInt(sub_.StartIndex \ 3UI)
+                    endIndex = Math.Min(numTris, startIndex + CInt(sub_.NumPrimitives))
+                    For id = startIndex To endIndex - 1
+                        result.TriParts(id) = partID
+                    Next
+
+                    Dim subInfo As New NifSubSegmentInfo() With {.PartID = partID}
+                    partID += 1
+                    arrayIndex += 1
+
+                    ' Pull metadata from PerSegmentData at arrayIndex.  BS-OS
+                    ' Geometry.cpp:1399-1402 reads at arrayIndex (post-increment); we
+                    ' replicate exactly.  If PerSegmentData is malformed (size inconsistent
+                    ' with parent+child layout) the next line throws on bounds — corrupt
+                    ' input must surface, not be hidden.
+                    Dim rec = sd.PerSegmentData(arrayIndex)
+                    ' BS-OS clamps userSlotID < 30 to 0 on read (Geometry.cpp:1400).
+                    ' Replicate the same clamp so round-trips preserve canonical values.
+                    subInfo.UserSlotID = If(rec.UserIndex < 30UI, 0UI, rec.UserIndex)
+                    subInfo.Material = rec.BoneID
+                    If rec.CutOffsets IsNot Nothing Then
+                        subInfo.ExtraData = New List(Of Single)(rec.CutOffsets)
+                    End If
+                    result.Info.Segs(si).Subs.Add(subInfo)
+                Next
+            End If
+            arrayIndex += 1
+        Next
+
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' Reconstructs BSSubIndexTriShape segmentation from semantic info + per-triangle
+    ''' partID assignments.  Replicates BS-OS Geometry.cpp:1408-1514
+    ''' (BSSubIndexTriShape::SetSegmentation) line-by-line.
+    '''
+    ''' Algorithm: renumber partIDs to be monotonically increasing in the order parent /
+    ''' child appears in inf, sort triangle indices by partID (stable), compute partTriInds
+    ''' (start triangle index per partition), build segments + dataRecords + arrayIndices
+    ''' from inf.  Triangles get reordered to match the partition order (stable sort) so
+    ''' the final StartIndex / NumPrimitives ranges are contiguous per partition.
+    '''
+    ''' Authoritative entry point — mutates Segments + SegmentData atomically via the
+    ''' public NiflySharp setters (no reflection), never leaves a stale combination that
+    ''' would corrupt PerSegmentData when NiflySharp's Sync resizes against an out-of-date
+    ''' NumSegments / TotalSegments.
+    ''' </summary>
+    Public Shared Sub SetSegmentation(subIndex As BSSubIndexTriShape,
+                                       inf As NifSegmentationInfo,
+                                       inTriParts As List(Of Integer),
+                                       nifVersion As NiVersion)
+        Dim numTris As Integer = subIndex.TriangleCount
+        If inTriParts.Count <> numTris Then
+            Throw New ArgumentException(
+                $"inTriParts size ({inTriParts.Count}) must match shape triangle count ({numTris}).")
+        End If
+
+        ' Renumber partition IDs so they're monotonically increasing in inf order
+        ' (Geometry.cpp:1413-1426).
+        Dim newPartID As Integer = 0
+        Dim oldToNewPartIDs As New List(Of Integer)()
+        For Each seg In inf.Segs
+            EnsureCapacity(oldToNewPartIDs, seg.PartID + 1)
+            oldToNewPartIDs(seg.PartID) = newPartID
+            newPartID += 1
+            For Each sub_ In seg.Subs
+                EnsureCapacity(oldToNewPartIDs, sub_.PartID + 1)
+                oldToNewPartIDs(sub_.PartID) = newPartID
+                newPartID += 1
+            Next
+        Next
+
+        Dim triParts As Integer() = New Integer(numTris - 1) {}
+        For i = 0 To numTris - 1
+            If inTriParts(i) >= 0 Then
+                triParts(i) = oldToNewPartIDs(inTriParts(i))
+            End If
+        Next
+
+        ' Sort triangle indices by partition ID (stable) — Geometry.cpp:1433-1442.
+        Dim triInds As Integer() = New Integer(numTris - 1) {}
+        For i = 0 To numTris - 1 : triInds(i) = i : Next
+        Array.Sort(triInds, Function(a, b) triParts(a).CompareTo(triParts(b)))
+
+        ' Reorder triangles in the shape to match the new partition order.
+        Dim oldTris = subIndex.Triangles
+        Dim newTris As New List(Of Triangle)(numTris)
+        For i = 0 To numTris - 1
+            newTris.Add(oldTris(triInds(i)))
+        Next
+        subIndex.SetTriangles(nifVersion, newTris)
+
+        ' Find first triangle of each partition: partTriInds[p] = index of first triangle
+        ' of partition p (Geometry.cpp:1452-1458).
+        Dim partTriInds As Integer() = New Integer(newPartID) {}
+        Dim nextPartID As Integer = 0
+        For i = 0 To numTris - 1
+            Do While triParts(triInds(i)) >= nextPartID
+                partTriInds(nextPartID) = i
+                nextPartID += 1
+            Loop
+        Next
+        Do While nextPartID <= newPartID
+            partTriInds(nextPartID) = numTris
+            nextPartID += 1
+        Loop
+
+        ' Build segments + PerSegmentData + arrayIndices in canonical interleaved order
+        ' (Geometry.cpp:1460-1506).
+        Dim newSegments As New List(Of BSGeometrySegmentData)()
+        Dim newPerSegmentData As New List(Of BSGeometryPerSegmentSharedData)()
+        Dim arrayIndices As New List(Of UInteger)()
+        Dim parentArrayIndex As UInteger = 0
+        Dim segmentIndex As UInteger = 0
+        Dim partID As Integer = 0
+
+        For Each seg In inf.Segs
+            Dim childCount As Integer = seg.Subs.Count
+            Dim segNumPrim As Integer = partTriInds(partID + childCount + 1) - partTriInds(partID)
+            Dim segStartIndex As UInteger = CUInt(partTriInds(partID)) * 3UI
+
+            Dim newSeg As New BSGeometrySegmentData() With {
+                .Flags = 0,
+                .StartIndex = segStartIndex,
+                .NumPrimitives = CUInt(segNumPrim),
+                .ParentArrayIndex = &HFFFFFFFFUI,
+                .NumSubSegments = CUInt(childCount),
+                .SubSegment = New List(Of BSGeometrySubSegment)(childCount)
+            }
+            partID += 1
+
+            ' Parent dataRecord — Geometry.cpp:1476-1479: userSlotID = segmentIndex,
+            ' material = 0xFFFFFFFF (default), no extraData.
+            newPerSegmentData.Add(New BSGeometryPerSegmentSharedData() With {
+                .UserIndex = segmentIndex,
+                .BoneID = &HFFFFFFFFUI,
+                .NumCutOffsets = 0UI,
+                .CutOffsets = New List(Of Single)()
+            })
+            arrayIndices.Add(parentArrayIndex)
+
+            Dim subSegmentNumber As UInteger = 1UI
+            For Each sub_ In seg.Subs
+                Dim subNumPrim As Integer = partTriInds(partID + 1) - partTriInds(partID)
+                Dim subStartIndex As UInteger = CUInt(partTriInds(partID)) * 3UI
+
+                newSeg.SubSegment.Add(New BSGeometrySubSegment() With {
+                    .StartIndex = subStartIndex,
+                    .NumPrimitives = CUInt(subNumPrim),
+                    .ParentArrayIndex = parentArrayIndex,
+                    .Unused = 0UI
+                })
+                partID += 1
+
+                ' Sub dataRecord — Geometry.cpp:1492-1501: userSlotID gets renumbered to
+                ' subSegmentNumber if the original was < 30 (canonical body-part slot
+                ' range), otherwise preserved as-is.
+                Dim subUserSlot As UInteger
+                If sub_.UserSlotID < 30UI Then
+                    subUserSlot = subSegmentNumber
+                    subSegmentNumber += 1UI
+                Else
+                    subUserSlot = sub_.UserSlotID
+                End If
+
+                Dim cutOffsets As New List(Of Single)(If(sub_.ExtraData, New List(Of Single)))
+                newPerSegmentData.Add(New BSGeometryPerSegmentSharedData() With {
+                    .UserIndex = subUserSlot,
+                    .BoneID = sub_.Material,
+                    .NumCutOffsets = CUInt(cutOffsets.Count),
+                    .CutOffsets = cutOffsets
+                })
+            Next
+
+            newSegments.Add(newSeg)
+            parentArrayIndex += CUInt(childCount) + 1UI
+            segmentIndex += 1UI
+        Next
+
+        ' Atomic write-back via NiflySharp's public SegmentData property
+        ' (BSSubIndexTriShape.cs:10).  No reflection needed — the property's setter writes
+        ' the struct value directly into _segmentData.
+        Dim sd As BSGeometrySegmentSharedData = subIndex.SegmentData
+        sd.NumSegments = CUInt(newSegments.Count)
+        sd.TotalSegments = parentArrayIndex
+        sd.SegmentStarts = arrayIndices
+        sd.PerSegmentData = newPerSegmentData
+        ' SSFFile preserved unless caller supplied one in inf.
+        If Not String.IsNullOrEmpty(inf.SsfFile) Then
+            If sd.SSFFile Is Nothing Then sd.SSFFile = New NiString2()
+            sd.SSFFile.Content = inf.SsfFile
+        End If
+        subIndex.SegmentData = sd
+        subIndex.Segments = newSegments
+    End Sub
+
+    ''' <summary>
+    ''' Internal preserve-policy update used by <see cref="SetTriangles"/> after
+    ''' RedistributeSegments produces a list with the same structural count as the
+    ''' original (zap and split paths — RedistributeSegments preserves parent and
+    ''' subSegment counts even when individual NumPrimitives drop to 0).  Updates only
+    ''' count-derived fields and SegmentStarts; preserves PerSegmentData and SSFFile.
+    '''
+    ''' Fast path for zap/split where the structural layout is invariant.  Merge uses
+    ''' the full <see cref="GetSegmentation"/>/<see cref="SetSegmentation"/> round-trip
+    ''' instead because parent and sub counts grow.
+    '''
+    ''' Always rewrites SegmentStarts as cumulative parentArrayIndex per BS-OS
+    ''' Geometry.cpp:1478/1504 (parentArrayIndex += childCount + 1 between iterations).
     ''' </summary>
     Private Shared Sub AlignSubIndexSegmentData(subIndex As BSSubIndexTriShape, newSegments As List(Of BSGeometrySegmentData))
-        ' BSGeometrySegmentSharedData is a value struct on BSSubIndexTriShape.SegmentData.
-        ' VB.NET won't let us mutate struct fields through a property-read, so we need to
-        ' access via reflection to get the field ref (similar pattern to SetSkinning's
-        ' NiSkinData.BoneList struct mutation via write-back).
-        Dim sdField = SubIndexSegmentDataField
-        If sdField Is Nothing Then
-            Throw New InvalidOperationException(
-                "BSSubIndexTriShape._segmentData reflection field lookup failed.  NiflySharp " &
-                "internal field name may have changed — update SubIndexSegmentDataField accordingly.")
-        End If
-        Dim sd As BSGeometrySegmentSharedData = CType(sdField.GetValue(subIndex), BSGeometrySegmentSharedData)
+        Dim sd As BSGeometrySegmentSharedData = subIndex.SegmentData
 
         Dim totalSubSegments As UInteger = 0
         Dim starts As New List(Of UInteger)(newSegments.Count)
+        Dim parentArrayIndex As UInteger = 0
         For Each seg In newSegments
-            starts.Add(seg.StartIndex)
-            totalSubSegments += CUInt(If(seg.SubSegment Is Nothing, 0, seg.SubSegment.Count))
+            starts.Add(parentArrayIndex)
+            Dim childCount As UInteger = CUInt(If(seg.SubSegment Is Nothing, 0, seg.SubSegment.Count))
+            parentArrayIndex += childCount + 1UI
+            totalSubSegments += childCount
         Next
         Dim newTotal As UInteger = CUInt(newSegments.Count) + totalSubSegments
 
-        ' Guard against PerSegmentData size drift.  Redistribute preserves count, so if the
-        ' existing PerSegmentData size already differed from the computed total, something
-        ' else mutated the shape first and we'd mask the inconsistency by overwriting.
-        If sd.PerSegmentData IsNot Nothing AndAlso
-           sd.TotalSegments <> 0 AndAlso
-           sd.PerSegmentData.Count <> CInt(sd.TotalSegments) Then
+        If sd.PerSegmentData IsNot Nothing AndAlso sd.PerSegmentData.Count <> CInt(newTotal) Then
             Throw New InvalidOperationException(
-                $"BSSubIndexTriShape.SegmentData.PerSegmentData count ({sd.PerSegmentData.Count}) " &
-                $"doesn't match SegmentData.TotalSegments ({sd.TotalSegments}) BEFORE redistribute.  " &
-                "Shape is already structurally corrupt; refusing to mutate further.")
+                $"AlignSubIndexSegmentData preserve-policy invariant violated: existing " &
+                $"PerSegmentData count ({sd.PerSegmentData.Count}) differs from new total ({newTotal}).  " &
+                "RedistributeSegments must preserve parent and sub-segment counts in this code path; " &
+                "if counts change, route the update through SetSegmentation instead.")
         End If
 
         sd.NumSegments = CUInt(newSegments.Count)
         sd.TotalSegments = newTotal
         sd.SegmentStarts = starts
-        ' PerSegmentData preserved intact — count should be unchanged because redistribute
-        ' preserves sub-segment counts.  SSFFile preserved intact — SSF data file reference
-        ' is independent of triangle counts.
 
-        sdField.SetValue(subIndex, sd)
+        subIndex.SegmentData = sd
     End Sub
 
     ''' <summary>
-    ''' Reflection field accessor for BSSubIndexTriShape._segmentData (protected, no public
-    ''' accessor in auto-gen).  Null if NiflySharp renames the field — AlignSubIndexSegmentData
-    ''' throws explicitly in that case instead of NRE.
+    ''' Grows <paramref name="list"/> with default values until its Count is at least
+    ''' <paramref name="minCount"/>.  Local helper so SetSegmentation's partID renumber
+    ''' loop reads cleaner than the Do/Loop While idiom that VB.NET requires for
+    ''' incremental capacity expansion.
     ''' </summary>
-    ' Public visibility so ShapeTypeValidator (in Wardrobe_Manager, different assembly) can
-    ' reuse this reflection helper for round-trip comparisons — single source of truth.
-    Public Shared ReadOnly SubIndexSegmentDataField As Reflection.FieldInfo =
-        GetType(BSSubIndexTriShape).GetField("_segmentData",
-                                             Reflection.BindingFlags.NonPublic Or Reflection.BindingFlags.Instance)
+    Private Shared Sub EnsureCapacity(list As List(Of Integer), minCount As Integer)
+        Do While list.Count < minCount
+            list.Add(0)
+        Loop
+    End Sub
 
     ''' <summary>
     ''' Rebuilds a BSGeometrySegmentData list after a triangle-count change.  For each
