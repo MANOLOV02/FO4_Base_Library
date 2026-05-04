@@ -169,9 +169,17 @@ End Class
 
 ''' <summary>RACE Morph Group - contains a list of MorphPresetDefs sharing a common
 ''' face region mask (MPPK) and a group name (MPGN). Each group represents a face
-''' region (Forehead, Eyes, Nose, Ears, Cheeks, Mouth, Neck). The NPC picks at most
-''' one preset per group via its MSDV values, and the chosen preset's MPPT texture
-''' set overrides the base face textures in the region defined by MPPK.
+''' region (Forehead, Eyes, Nose, Ears, Cheeks, Mouth, Neck).
+'''
+''' Selection model — IMPORTANT: the NPC record has NO explicit "selected preset per group"
+''' index. The NPC just carries MSDK/MSDV pairs (key→value); whether a key is a "preset"
+''' or a "slider" is determined by lookup against this RACE record. Multiple presets from
+''' the same group can be present simultaneously in the NPC and the engine appears to apply
+''' all of them (verified: F4SEPlugins/CharGenInterface.cpp:120-138 walks morphSetData with
+''' no per-group dedup; our render in MainForm.BuildFaceRegionSwaps:2929-2933 mirrors that).
+''' The "one preset per group" convention is how the vanilla chargen UI presents the choice
+''' to the user (radio buttons), not a hard schema/engine rule.
+'''
 ''' Verified from wbDefinitionsFO4.pas:3523 wbMorphGroups.</summary>
 Public Class RACE_MorphGroup
     Public Name As String = ""           ' MPGN = "Forehead", "Eyes", etc.
@@ -367,6 +375,11 @@ Public Class RACE_Data
     Public FemaleFaceDetailTextureFormIDs As New List(Of UInteger)
     Public MaleDefaultFaceTextureFormID As UInteger
     Public FemaleDefaultFaceTextureFormID As UInteger
+    ''' <summary>AHCM - Male Hair Colors (RArray of CLFM FormIDs). The chargen UI / editor combo
+    ''' filters hair colors per race+gender from these lists. wbDefinitionsFO4.pas:11646.</summary>
+    Public MaleHairColorFormIDs As New List(Of UInteger)
+    ''' <summary>AHCF - Female Hair Colors (RArray of CLFM FormIDs). wbDefinitionsFO4.pas:11664.</summary>
+    Public FemaleHairColorFormIDs As New List(Of UInteger)
     Public HairColorLookupTexture As String = ""
     Public HairColorExtendedLookupTexture As String = ""
     ''' <summary>PNAM - FaceGen Main clamp. Limits the effective range of face morph deltas.
@@ -377,7 +390,10 @@ Public Class RACE_Data
     Public FaceGenFaceClamp As Single = 0.0F
     Public MaleFaceMorphs As New List(Of RACE_FaceMorphDef)
     Public FemaleFaceMorphs As New List(Of RACE_FaceMorphDef)
-    ''' <summary>Morph Values (MSID/MSM0/MSM1) - maps MSDK slider keys to TriHead morph names.</summary>
+    ''' <summary>Morph Values (MSID/MSM0/MSM1) - maps MSDK slider keys to TriHead morph names.
+    ''' Single race-wide table per wbDefinitionsFO4.pas:11702 — declared OUTSIDE the per-gender
+    ''' NAM0/MNAM/FNAM head blocks. Entries are shared across genders; assignment of a slider to
+    ''' a gender happens via MorphGroup.SliderIndices (MPGS) inside the gendered MorphGroups.</summary>
     Public MorphValues As New List(Of RACE_MorphValueDef)
     ''' <summary>Morph Presets (MPPI/MPPM) from Morph Groups - FLAT list of every preset, kept for
     ''' backward compatibility with NpcMorphResolver which matches MSDV keys to preset defs by Index.
@@ -604,6 +620,11 @@ Public Class HDPT_Data
     Public RaceMorphTriPath As String = ""    ' NAM0 = 0 (expression/race morphs, e.g. BaseFemaleHead.tri)
     Public TriPath As String = ""             ' NAM0 = 1 (rarely used)
     Public ChargenMorphTriPath As String = "" ' NAM0 = 2 (chargen sculpting, e.g. BaseFemaleHeadChargen.tri)
+    ''' <summary>RNAM "Valid Races" → FormID a un FLST con la lista de RACEs autorizadas para usar
+    ''' este HDPT (vanilla: HumanRace-only, GhoulRace-only, HeadPartsChildren). 0 = sin restricción
+    ''' (HDPT aplicable a cualquier raza). Spec: wbDefinitionsFO4.pas:7398 wbFormIDCk(RNAM, 'Valid
+    ''' Races', [FLST]). Usado por el editor de NPC para filtrar el combo "Add Head Part".</summary>
+    Public ValidRacesFormID As UInteger
 End Class
 
 Public Class CLFM_Data
@@ -1092,6 +1113,14 @@ Public Module RecordParsers
                     race.MaleDefaultFaceTextureFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "DFTF"
                     race.FemaleDefaultFaceTextureFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "AHCM"
+                    ' Male Hair Colors RArray (CLFM FormIDs). wbDefinitionsFO4.pas:11646.
+                    Dim hcId = ResolveFormIDReference(rec, sr, pluginManager)
+                    If hcId <> 0UI Then race.MaleHairColorFormIDs.Add(hcId)
+                Case "AHCF"
+                    ' Female Hair Colors RArray (CLFM FormIDs). wbDefinitionsFO4.pas:11664.
+                    Dim hcId = ResolveFormIDReference(rec, sr, pluginManager)
+                    If hcId <> 0UI Then race.FemaleHairColorFormIDs.Add(hcId)
                 Case "HNAM"
                     race.HairColorLookupTexture = sr.AsString
                 Case "HLTX"
@@ -1192,7 +1221,10 @@ Public Module RecordParsers
                         pendingFaceMorphDef.Name = ResolveDisplayString(rec, sr, pluginManager)
                     End If
                 Case "MSID"
-                    ' Morph Value definition start
+                    ' Morph Value definition start. The "Morph Values" RArray is OUTSIDE the
+                    ' gendered head blocks (wbDefinitionsFO4.pas:11702), so the table is
+                    ' race-wide; gender assignment of any given slider happens via the MPGS
+                    ' arrays inside the gendered MorphGroups.
                     If pendingMorphValueDef IsNot Nothing Then race.MorphValues.Add(pendingMorphValueDef)
                     pendingMorphValueDef = New RACE_MorphValueDef()
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
@@ -1682,6 +1714,10 @@ Public Module RecordParsers
                     hdpt.TextureSetFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "PNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then hdpt.PartType = BitConverter.ToInt32(sr.Data, 0)
+                Case "RNAM"
+                    ' "Valid Races" — FormID a un FLST. Vanilla HumanRace HDPTs apuntan a un FLST
+                    ' que contiene HumanRace + variantes; HDPTs sin RNAM (FormID=0) son universales.
+                    hdpt.ValidRacesFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "NAM0"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         pendingPartType = BitConverter.ToInt32(sr.Data, 0)

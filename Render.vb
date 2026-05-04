@@ -719,6 +719,7 @@ Public Class PreviewControl
     Public Sub ApplyResize(Force As Boolean)
         If Me.IsInDesignMode Then Return
         If Force OrElse (Me.Width <> lastW OrElse Me.Height <> lastH) Then
+            MakeCurrent
             GL.Viewport(0, 0, Me.Width, Me.Height)
             lastW = Me.Width
             lastH = Me.Height
@@ -784,6 +785,7 @@ Public Class PreviewControl
     End Sub
     Private Sub RenderScene()
         If Me.IsDisposed Then Exit Sub
+        ApplyResize(False)
         Me.MakeCurrent()
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)

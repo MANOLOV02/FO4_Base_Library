@@ -49,6 +49,13 @@ Public Class FacialBoneRegion
     Public Property ID As UInteger                 ' Matches NPC FMRI
     Public Property Name As String = ""            ' English display name (FMRN)
     Public Property AssociatedTintGroup As String = ""
+    ''' <summary>Name of the MorphGroup this region semantically belongs to ("Eyes", "Forehead",
+    ''' "Nose", "Mouth", etc.). Empty when the region is standalone. Used by the editor to group
+    ''' regions in the Bone Regions tab the same way CK chargen presents them.</summary>
+    Public Property AssociatedMorphGroup As String = ""
+    ''' <summary>HDPT.PartType label this region is associated with ("Facial Hair", "Eyes", etc.).
+    ''' Editor-side hint for filtering — the render does not consult it.</summary>
+    Public Property AssociatedHeadPartType As String = ""
     Public Property DefaultPosition As Vector3
     Public Property DefaultRotation As Vector3
     Public Property DefaultScale As Vector3
@@ -98,6 +105,14 @@ Public Class FacialBoneRegionsFile
 
         If elem.TryGetProperty("AssociatedTintGroup", prop) AndAlso prop.ValueKind = JsonValueKind.String Then
             region.AssociatedTintGroup = prop.GetString()
+        End If
+
+        If elem.TryGetProperty("AssociatedMorphGroup", prop) AndAlso prop.ValueKind = JsonValueKind.String Then
+            region.AssociatedMorphGroup = prop.GetString()
+        End If
+
+        If elem.TryGetProperty("AssociatedHeadPartType", prop) AndAlso prop.ValueKind = JsonValueKind.String Then
+            region.AssociatedHeadPartType = prop.GetString()
         End If
 
         If elem.TryGetProperty("Defaults", prop) AndAlso prop.ValueKind = JsonValueKind.Object Then
