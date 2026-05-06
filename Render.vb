@@ -628,6 +628,18 @@ Public Class PreviewControl
             RefreshRender()
         End If
 
+        ' If the caller registered a PostTextureUploadAction but the pipeline didn't actually
+        ' kick off a background load (texture cache reuse / PreserveTextureCache / no new
+        ' shapes), TexturesReady never transitioned False→True so the watchdog hook below
+        ' never fires. Run the action synchronously here instead — same observable outcome,
+        ' just with zero defer. The watchdog deadline armed by LoadTexturesAsync is the only
+        ' code path that ever sets _postTextureUploadDeadlineUtc; if it's still Nothing here
+        ' it means no async load began, so the success action is safe to fire immediately.
+        If Model.TexturesReady AndAlso intent.PostTextureUploadAction IsNot Nothing _
+           AndAlso Not Model.HasPendingPostTextureDeadline Then
+            Model.FlushPostTextureUploadHookSyncSuccess()
+        End If
+
         intent.ClearDirty()
     End Sub
 
@@ -719,7 +731,7 @@ Public Class PreviewControl
     Public Sub ApplyResize(Force As Boolean)
         If Me.IsInDesignMode Then Return
         If Force OrElse (Me.Width <> lastW OrElse Me.Height <> lastH) Then
-            MakeCurrent
+            MakeCurrent()
             GL.Viewport(0, 0, Me.Width, Me.Height)
             lastW = Me.Width
             lastH = Me.Height
@@ -1238,6 +1250,32 @@ Public Class PreviewModel
     Public Textures_Dictionary As New Dictionary(Of String, Texture_Loaded_Class)(StringComparer.OrdinalIgnoreCase)
     Public Can_Render As Boolean = False
     Public Property TexturesReady As Boolean = True
+
+    ''' <summary>UTC deadline for the post-texture-upload watchdog. Set when a background
+    ''' upload begins (TexturesReady False→pending). When <see cref="ProcessPendingTextureUploads"/>
+    ''' detects this deadline has passed without all uploads completing, it fires
+    ''' <see cref="RenderIntent.PostTextureUploadTimeoutAction"/> instead of waiting forever.
+    ''' Cleared (Nothing) once either the success or timeout action has fired so the next render
+    ''' starts with a clean slate.</summary>
+    Private _postTextureUploadDeadlineUtc As DateTime?
+
+    ''' <summary>True iff <see cref="LoadTexturesAsync"/> armed a watchdog deadline whose
+    ''' callbacks have not yet fired. Used by <see cref="PreviewControl.ExecuteRenderPipeline"/>
+    ''' to distinguish "no async load needed, fire hook synchronously" from "async load in
+    ''' progress, let the watchdog handle it".</summary>
+    Public ReadOnly Property HasPendingPostTextureDeadline As Boolean
+        Get
+            Return _postTextureUploadDeadlineUtc.HasValue
+        End Get
+    End Property
+
+    ''' <summary>Synchronous success-path dispatch of the post-texture-upload hook for the case
+    ''' when the pipeline did NOT trigger an async load (texture cache reuse / no new shapes).
+    ''' Same one-shot semantics as the watchdog success path: clear callbacks first, invoke
+    ''' inside Try, MarkRenderBucketsDirty after.</summary>
+    Public Sub FlushPostTextureUploadHookSyncSuccess()
+        InvokePostTextureUploadHook(success:=True)
+    End Sub
     Public meshes As New List(Of RenderableMesh)
     Private ReadOnly ParentControl As PreviewControl
     Public Floor As FloorRenderer
@@ -2816,6 +2854,15 @@ Public Class PreviewModel
 
     Private ReadOnly Last_Loaded_Textures As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
+    ''' <summary>Per-path upload-failure counter. A path is retried up to
+    ''' <see cref="MaxTextureUploadAttempts"/> times before being marked as a permanent
+    ''' dead end (added to <see cref="Last_Loaded_Textures"/>). Covers the case where the
+    ''' path is genuinely unloadable (corrupt DDS, format the driver refuses, etc.) so the
+    ''' retry loop can't run forever and starve TexturesReady.</summary>
+    Private ReadOnly _uploadFailureCount As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
+    Private Const MaxTextureUploadAttempts As Integer = 5
+
     ' O4.1: Background Texture Loading — two-phase pipeline
     ' Phase 1 runs on a background thread (DDS I/O + decompression, no GL calls).
     ' Phase 2 runs on the GL thread each frame (upload a limited batch via PBO).
@@ -2851,6 +2898,21 @@ Public Class PreviewModel
     ''' </summary>
     Private ReadOnly _pendingBackgroundPaths As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
+    ''' <summary>Increment the per-path failure counter. Once it reaches
+    ''' <see cref="MaxTextureUploadAttempts"/> the path is added to <see cref="Last_Loaded_Textures"/>
+    ''' so <see cref="Process_Textures_GL"/> stops re-enqueuing it. Below the cap the path stays
+    ''' eligible for retry on the next Process_Textures_GL pass.</summary>
+    Private Sub RegisterUploadFailure(path As String, reason As String)
+        Dim count As Integer = 0
+        _uploadFailureCount.TryGetValue(path, count)
+        count += 1
+        _uploadFailureCount(path) = count
+        If count >= MaxTextureUploadAttempts Then
+            Last_Loaded_Textures.Add(path)
+            Debug.Print($"[O4.1] '{path}' marked dead after {count} upload failures (last: {reason})")
+        End If
+    End Sub
+
     Public Sub Process_Textures_GL()
         If Me.ParentControl.IsDisposed Then Exit Sub
 
@@ -2882,6 +2944,16 @@ Public Class PreviewModel
 
         ' Mark textures as not ready — meshes will be hidden until all uploads complete
         TexturesReady = False
+
+        ' Arm the post-texture-upload watchdog if the caller registered a timeout action with
+        ' a positive deadline. If timeout is 0 or no action was registered, leave the deadline
+        ' Nothing — the success path still works without watchdog.
+        Dim intent = ParentControl.Intent
+        If intent.PostTextureUploadAction IsNot Nothing AndAlso intent.PostTextureUploadTimeoutMs > 0 Then
+            _postTextureUploadDeadlineUtc = DateTime.UtcNow.AddMilliseconds(intent.PostTextureUploadTimeoutMs)
+        Else
+            _postTextureUploadDeadlineUtc = Nothing
+        End If
 
         ' Track which paths we are about to load
         Dim pathsArray = texturas.ToArray()
@@ -2975,16 +3047,15 @@ Public Class PreviewModel
                         If result IsNot Nothing AndAlso result.Loaded AndAlso result.Texture_ID > 0 Then
                             Textures_Dictionary(path) = result
                             Last_Loaded_Textures.Add(path)
+                            _uploadFailureCount.Remove(path)
                         Else
-                            ' Failed to upload — mark as "attempted" to prevent re-enqueue loop
                             Textures_Dictionary.Remove(path)
-                            Last_Loaded_Textures.Add(path)
+                            RegisterUploadFailure(path, "silent")
                         End If
                     Catch ex As Exception
-                        ' Upload failed — mark as "attempted" so Process_Textures_GL won't re-enqueue
                         Debug.Print($"[O4.1] GL upload failed for '{path}': {ex.Message}")
                         Textures_Dictionary.Remove(path)
-                        Last_Loaded_Textures.Add(path)
+                        RegisterUploadFailure(path, ex.Message)
                     End Try
 
                     ' Remove from pending tracking
@@ -3036,11 +3107,58 @@ Public Class PreviewModel
             If _pendingTextureUploads.IsEmpty AndAlso (_backgroundLoadTask Is Nothing OrElse _backgroundLoadTask.IsCompleted) Then
                 If Not TexturesReady Then
                     TexturesReady = True
+                    ' Fire the post-texture-upload hook BEFORE the repaint so any GL state the
+                    ' callback mutates (e.g. re-uploading a diffuse with bake passes applied)
+                    ' is visible in the same frame the textures become ready. The hook is the
+                    ' single point where post-upload work is sequenced relative to the False→True
+                    ' transition — replaces the per-app polling timer that competed with the
+                    ' pipeline order. Watchdog deadline (if armed) is cleared on success too so
+                    ' a stale deadline can't fire after a healthy completion.
+                    InvokePostTextureUploadHook(success:=True)
                     ParentControl.UpdateRequired = True
                     ParentControl.Invalidate()
                 End If
             End If
         End If
+
+        ' Watchdog: if a deadline was armed and we're still not ready by the time it elapses,
+        ' fire the timeout action instead of leaving the caller waiting forever. This covers
+        ' BA2 corruption, FilesDictionary misses that drop a path, and cancelled background
+        ' loads that left an upload queue in an inconsistent state. Done AFTER the success
+        ' branch so a healthy late completion in the same frame still wins over the deadline.
+        If Not TexturesReady AndAlso _postTextureUploadDeadlineUtc.HasValue _
+           AndAlso DateTime.UtcNow >= _postTextureUploadDeadlineUtc.Value Then
+            InvokePostTextureUploadHook(success:=False)
+        End If
+    End Sub
+
+    ''' <summary>One-shot dispatch of the post-texture-upload hook. Reads the appropriate
+    ''' callback (success vs timeout) from the active <see cref="RenderIntent"/>, clears BOTH
+    ''' callbacks + the deadline so neither can fire again, then invokes inside a Try so an
+    ''' exception in app code can't break the render loop. After the callback returns, the
+    ''' render buckets are marked dirty in case the callback replaced any
+    ''' <c>Textures_Dictionary[path].Texture_ID</c> entry — the texture-sort buckets keyed by
+    ''' Texture_ID would otherwise reference dead GL handles.</summary>
+    Private Sub InvokePostTextureUploadHook(success As Boolean)
+        Dim intent = ParentControl.Intent
+        Dim hook As Action(Of PreviewModel) = If(success, intent.PostTextureUploadAction, intent.PostTextureUploadTimeoutAction)
+        ' Clear BEFORE invoking so a re-entrant render kicked off inside the callback (typical:
+        ' the callback runs RefreshFaceTintLivePreview which calls InvalidateRender) cannot see
+        ' the already-firing hook and double-dispatch.
+        intent.PostTextureUploadAction = Nothing
+        intent.PostTextureUploadTimeoutAction = Nothing
+        _postTextureUploadDeadlineUtc = Nothing
+        If hook Is Nothing Then Return
+        Try
+            hook.Invoke(Me)
+        Catch ex As Exception
+            Debug.Print($"[Render] PostTextureUpload {(If(success, "success", "timeout"))} hook threw: {ex.Message}")
+        End Try
+        ' The callback may have replaced one or more entry.Texture_ID values (face/body skin
+        ' softlight passes do this when baking QNAM into the diffuse). Sort order in
+        ' OpaqueMeshes / CutoutMeshes / DecalMeshes / BlendedMeshes is keyed by Texture_ID at
+        ' line 3210 — rebuild on next paint so the new IDs replace the dead handles.
+        MarkRenderBucketsDirty()
     End Sub
 
     Public Sub CleanTextures()
@@ -3057,6 +3175,7 @@ Public Class PreviewModel
         ' Limpia diccionario
         Textures_Dictionary.Clear()
         Last_Loaded_Textures.Clear()
+        _uploadFailureCount.Clear()
         ' Clear the raw-bytes cache so that loose .dds/.bgsm files modified on disk
         ' while the app is running are re-read fresh on the next load, not returned stale.
         FilesDictionary_class.ClearBytesCache()
@@ -3119,6 +3238,7 @@ Public Class PreviewModel
             ' Limpia diccionario
             Textures_Dictionary.Remove(Cual)
             Last_Loaded_Textures.Remove(Cual)
+            _uploadFailureCount.Remove(Cual)
         Catch ex As Exception
             Debugger.Break()
         End Try

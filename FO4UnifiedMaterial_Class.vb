@@ -2403,7 +2403,26 @@ Public Class FO4UnifiedMaterial_Class
         End Using
         ' Sync envmask runtime source from the on-disk container (see EnvmapMaskTexture getter comment).
         If type Is GetType(BGSM) Then
-            _EnvmapMaskPath = If(CType(Underlying_Material, BGSM).GlowTexture, "")
+            Dim bgsm = CType(Underlying_Material, BGSM)
+            _EnvmapMaskPath = If(bgsm.GlowTexture, "")
+
+            ' Derive _NifShaderType from BGSM semantic flags. Symmetric to the setter at line
+            ' 118-130 (which goes shader→flags). The flags Facegen/SkinTint/Hair are written by
+            ' BGSM.Deserialize from disk bytes (Material-Editor-master/MaterialLib/BGSM.cs:448-453);
+            ' without this derivation _NifShaderType stays at the class default (Default), even
+            ' when the BGSM declares the material as a Facegen/SkinTint/Hair material. That
+            ' default-pinning is the bug behind the Ghoul/Child face shapes losing their FaceTint
+            ' classification when ApplyTextureSetOverrides replaces the NIF-derived material with
+            ' a freshly-deserialized BGSM (NPC_Manager MainForm.vb:7843).
+            If bgsm.Facegen Then
+                _NifShaderType = NiflySharp.Enums.BSLightingShaderType.FaceTint
+            ElseIf bgsm.SkinTint Then
+                _NifShaderType = NiflySharp.Enums.BSLightingShaderType.SkinTint
+            ElseIf bgsm.Hair Then
+                _NifShaderType = NiflySharp.Enums.BSLightingShaderType.HairTint
+            Else
+                _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default
+            End If
         End If
     End Sub
 

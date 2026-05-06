@@ -159,34 +159,67 @@ Public Class FaceTintLayerInput
     End Function
 End Class
 
+''' <summary>Per-GL-context state for the FaceTintCompositor: shader programs, fullscreen
+''' quad VAO/VBO, and uniform locations. GL handles are per-context (NOT shared across
+''' GLControls / contexts), so each owning host (e.g. <c>NpcRenderHost</c>) must hold its
+''' own instance and pass it to every compositor call. Caller MUST invoke <see cref="Dispose"/>
+''' from the GL thread with the owning context current before context teardown — otherwise
+''' the GL handles leak.</summary>
+Public NotInheritable Class FaceTintCompositorState
+    ' Tint compositor program + fullscreen quad VAO/VBO. Created lazily by EnsureCompositorInitialized.
+    Friend _program As Integer = 0
+    Friend _uPrevLoc As Integer = -1
+    Friend _uLayerLoc As Integer = -1
+    Friend _uLayerDiffuseAlphaLoc As Integer = -1
+    Friend _uHasDiffuseMaskLoc As Integer = -1
+    Friend _uColorLoc As Integer = -1
+    Friend _uOpacityLoc As Integer = -1
+    Friend _uBlendOpLoc As Integer = -1
+    Friend _uLayerKindLoc As Integer = -1
+    Friend _uChannelLoc As Integer = -1
+    Friend _quadVao As Integer = 0
+    Friend _quadVbo As Integer = 0
+
+    ' Region-swap program (separate from the tint compositor). Created lazily by
+    ' EnsureRegionSwapInitialized. Shares _quadVao/_quadVbo with the tint compositor.
+    Friend _swapProgram As Integer = 0
+    Friend _uSwapPrevLoc As Integer = -1
+    Friend _uSwapTexLoc As Integer = -1
+    Friend _uSwapMaskLoc As Integer = -1
+
+    ' Uniform-blend program. Created lazily by EnsureUniformBlendInitialized.
+    Friend _uniformBlendProgram As Integer = 0
+    Friend _uUbPrevLoc As Integer = -1
+    Friend _uUbColorLoc As Integer = -1
+    Friend _uUbBlendOpLoc As Integer = -1
+
+    ''' <summary>Release all GL handles owned by this state. Caller MUST invoke from the GL
+    ''' thread with the owning context current. Idempotent — safe to call when handles are 0.</summary>
+    Public Sub Dispose()
+        If _program <> 0 Then
+            Try : GL.DeleteProgram(_program) : Catch : End Try
+            _program = 0
+        End If
+        If _swapProgram <> 0 Then
+            Try : GL.DeleteProgram(_swapProgram) : Catch : End Try
+            _swapProgram = 0
+        End If
+        If _uniformBlendProgram <> 0 Then
+            Try : GL.DeleteProgram(_uniformBlendProgram) : Catch : End Try
+            _uniformBlendProgram = 0
+        End If
+        If _quadVao <> 0 Then
+            Try : GL.DeleteVertexArray(_quadVao) : Catch : End Try
+            _quadVao = 0
+        End If
+        If _quadVbo <> 0 Then
+            Try : GL.DeleteBuffer(_quadVbo) : Catch : End Try
+            _quadVbo = 0
+        End If
+    End Sub
+End Class
+
 Public Module FaceTintCompositor
-
-    ' Cached compositor program + fullscreen quad VAO. Created lazily on first use.
-    Private _program As Integer = 0
-    Private _uPrevLoc As Integer = -1
-    Private _uLayerLoc As Integer = -1
-    Private _uLayerDiffuseAlphaLoc As Integer = -1
-    Private _uHasDiffuseMaskLoc As Integer = -1
-    Private _uColorLoc As Integer = -1
-    Private _uOpacityLoc As Integer = -1
-    Private _uBlendOpLoc As Integer = -1
-    Private _uLayerKindLoc As Integer = -1
-    Private _uChannelLoc As Integer = -1
-    Private _quadVao As Integer = 0
-    Private _quadVbo As Integer = 0
-
-    ' Cached region-swap program (separate from the tint compositor). Created lazily on
-    ' first use. Used by ApplyRegionSwapsOntoFaceTexture to apply Morph Group MPPT TXST
-    ' swaps gated by the MPPK region mask, before any tint layers run.
-    Private _swapProgram As Integer = 0
-    Private _uSwapPrevLoc As Integer = -1
-    Private _uSwapTexLoc As Integer = -1
-    Private _uSwapMaskLoc As Integer = -1
-
-    Private _uniformBlendProgram As Integer = 0
-    Private _uUbPrevLoc As Integer = -1
-    Private _uUbColorLoc As Integer = -1
-    Private _uUbBlendOpLoc As Integer = -1
 
     Private Const VertexShaderSource As String = "#version 430
 layout(location = 0) in vec2 aPos;
@@ -301,8 +334,8 @@ void main() {
 }"
 
     ''' <summary>Backward-compat wrapper that composes onto the diffuse channel without skin tinting.</summary>
-    Public Function ComposeOntoFaceDiffuse(originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput)) As Integer
-        Return ComposeOntoFaceTexture(originalTexId, width, height, layers, FaceTintChannel.Diffuse, logger:=Nothing)
+    Public Function ComposeOntoFaceDiffuse(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput)) As Integer
+        Return ComposeOntoFaceTexture(state, originalTexId, width, height, layers, FaceTintChannel.Diffuse, logger:=Nothing)
     End Function
 
     ''' <summary>Compose all layers that contribute to the requested channel onto a copy of the
@@ -320,12 +353,13 @@ void main() {
     ''' <paramref name="logger"/> is optional — when supplied, the compositor reports per-layer
     ''' disposition (DRAWN / no-channel-bytes / dds-load-failed) and an end-of-call summary.
     ''' Diagnostic only; null in production builds.</summary>
-    Public Function ComposeOntoFaceTexture(originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional logger As Action(Of String) = Nothing, Optional cache As FaceTintTextureCache = Nothing) As Integer
+    Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional logger As Action(Of String) = Nothing, Optional cache As FaceTintTextureCache = Nothing) As Integer
+        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If layers Is Nothing OrElse layers.Count = 0 Then Return 0
 
-        EnsureCompositorInitialized()
-        If _program = 0 OrElse _quadVao = 0 Then Return 0
+        EnsureCompositorInitialized(state)
+        If state._program = 0 OrElse state._quadVao = 0 Then Return 0
 
         ' Save GL state we are about to clobber.
         Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
@@ -347,6 +381,14 @@ void main() {
         Dim batchLoaded As Dictionary(Of String, PreviewModel.Texture_Loaded_Class) = Nothing
 
         Try
+            ' Drain pre-existing GL errors so the post-composite check below only flags
+            ' failures caused by THIS pass.
+            Dim drainGuard As Integer = 0
+            Do While GL.GetError() <> ErrorCode.NoError
+                drainGuard += 1
+                If drainGuard > 32 Then Exit Do
+            Loop
+
             ' === Batch preload every DDS byte buffer this pass needs, in ONE wrapper call. ===
             ' Per layer: its own channel bytes + its TTET[0] diffuse bytes when we need a spatial
             ' mask (N/S passes on TextureSet layers). The library helper decompresses the full
@@ -437,8 +479,8 @@ void main() {
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)   ' the shader does its own blending against uPrev
 
-            GL.UseProgram(_program)
-            GL.BindVertexArray(_quadVao)
+            GL.UseProgram(state._program)
+            GL.BindVertexArray(state._quadVao)
 
             Dim writeIdx As Integer = 0
             Dim readTexId As Integer = originalTexId  ' first iteration reads from the unmodified face diffuse
@@ -486,37 +528,39 @@ void main() {
 
                 GL.ActiveTexture(TextureUnit.Texture0)
                 GL.BindTexture(TextureTarget.Texture2D, readTexId)
-                GL.Uniform1(_uPrevLoc, 0)
+                GL.Uniform1(state._uPrevLoc, 0)
 
                 GL.ActiveTexture(TextureUnit.Texture1)
                 GL.BindTexture(TextureTarget.Texture2D, layerTex)
-                GL.Uniform1(_uLayerLoc, 1)
+                GL.Uniform1(state._uLayerLoc, 1)
 
                 ' Unit 2 always has a valid binding (fallback to layerTex) so the sampler
                 ' is never undefined; uHasDiffuseMask tells the shader whether to read it.
                 GL.ActiveTexture(TextureUnit.Texture2)
                 GL.BindTexture(TextureTarget.Texture2D, If(diffuseMaskTex <> 0, diffuseMaskTex, layerTex))
-                GL.Uniform1(_uLayerDiffuseAlphaLoc, 2)
-                GL.Uniform1(_uHasDiffuseMaskLoc, If(diffuseMaskTex <> 0, 1, 0))
+                GL.Uniform1(state._uLayerDiffuseAlphaLoc, 2)
+                GL.Uniform1(state._uHasDiffuseMaskLoc, If(diffuseMaskTex <> 0, 1, 0))
 
-                GL.Uniform3(_uColorLoc,
+                GL.Uniform3(state._uColorLoc,
                             CSng(layer.R) / 255.0F,
                             CSng(layer.G) / 255.0F,
                             CSng(layer.B) / 255.0F)
-                GL.Uniform1(_uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, layer.Opacity)))
-                GL.Uniform1(_uBlendOpLoc, layer.BlendOp)
-                GL.Uniform1(_uLayerKindLoc, CInt(layer.Kind))
-                GL.Uniform1(_uChannelLoc, CInt(channel))
+                GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, layer.Opacity)))
+                GL.Uniform1(state._uBlendOpLoc, layer.BlendOp)
+                GL.Uniform1(state._uLayerKindLoc, CInt(layer.Kind))
+                GL.Uniform1(state._uChannelLoc, CInt(channel))
 
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawnLayers += 1
                 If logger IsNot Nothing Then
                     Dim fmtStr As String = DescribeFormat(chanEntry.DGXFormat_Original, chanEntry.DGXFormat_Final)
+                    Dim dxgiOrig As Integer = chanEntry.DGXFormat_Original
+                    Dim dxgiFinal As Integer = chanEntry.DGXFormat_Final
                     Dim maskNote As String = ""
                     If maskEntry IsNot Nothing AndAlso diffuseMaskTex <> 0 Then
-                        maskNote = $" mask={DescribeFormat(maskEntry.DGXFormat_Original, maskEntry.DGXFormat_Final)}"
+                        maskNote = $" mask={DescribeFormat(maskEntry.DGXFormat_Original, maskEntry.DGXFormat_Final)} mask_dxgi=({maskEntry.DGXFormat_Original}->{maskEntry.DGXFormat_Final})"
                     End If
-                    logger($"  layer '{layerName}' DRAWN kind={CInt(layer.Kind)} blendOp={layer.BlendOp} opacity={layer.Opacity:F2} takesSkinTone={layer.TakesSkinTone} fmt={fmtStr}{maskNote}")
+                    logger($"  layer '{layerName}' DRAWN kind={CInt(layer.Kind)} blendOp={layer.BlendOp} opacity={layer.Opacity:F2} takesSkinTone={layer.TakesSkinTone} fmt={fmtStr} dxgi=({dxgiOrig}->{dxgiFinal}){maskNote}")
                 End If
 
                 ' Unbind sampler slots; textures themselves are freed in the Finally block.
@@ -541,6 +585,14 @@ void main() {
             If logger IsNot Nothing Then logger($"  drew {drawnLayers} of {totalLayers} layers on channel {CInt(channel)}")
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+
+            ' Certify GL produced a clean result. A silent error here means resultTex points
+            ' at a texture with undefined contents — caller must NOT cache it.
+            Dim postErr = GL.GetError()
+            If postErr <> ErrorCode.NoError Then
+                If logger IsNot Nothing Then logger($"  GL error after compose: 0x{Hex(CInt(postErr))} ({postErr}) — refusing to return tex")
+                resultTex = 0
+            End If
         Catch ex As Exception
             If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
             resultTex = 0
@@ -659,18 +711,20 @@ void main() {
     ''' base outside). Swaps are applied in list order; if multiple swaps overlap on the
     ''' same region (shouldn't happen in vanilla — one preset per group at a time) the
     ''' last one wins inside the overlap.</summary>
-    Public Function ApplyRegionSwapsOntoFaceTexture(originalTexId As Integer,
+    Public Function ApplyRegionSwapsOntoFaceTexture(state As FaceTintCompositorState,
+                                                     originalTexId As Integer,
                                                      width As Integer, height As Integer,
                                                      swaps As IList(Of FaceRegionSwapInput),
                                                      channel As FaceTintChannel,
                                                      Optional logger As Action(Of String) = Nothing,
                                                      Optional cache As FaceTintTextureCache = Nothing) As Integer
+        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If swaps Is Nothing OrElse swaps.Count = 0 Then Return 0
 
-        EnsureCompositorInitialized()
-        EnsureRegionSwapInitialized()
-        If _swapProgram = 0 OrElse _quadVao = 0 Then Return 0
+        EnsureCompositorInitialized(state)
+        EnsureRegionSwapInitialized(state)
+        If state._swapProgram = 0 OrElse state._quadVao = 0 Then Return 0
 
         ' Save GL state we are about to clobber.
         Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
@@ -692,6 +746,13 @@ void main() {
         Dim batchLoaded As Dictionary(Of String, PreviewModel.Texture_Loaded_Class) = Nothing
 
         Try
+            ' Drain pre-existing GL errors so the post-pass check only flags THIS pass.
+            Dim drainGuard As Integer = 0
+            Do While GL.GetError() <> ErrorCode.NoError
+                drainGuard += 1
+                If drainGuard > 32 Then Exit Do
+            Loop
+
             ' === Batch preload every DDS this pass needs in ONE wrapper call. ===
             ' Per swap: its own swap channel bytes + its region mask bytes. Mask is the
             ' same DDS for every channel (D/N/S) so a higher-level cache could share it
@@ -765,8 +826,8 @@ void main() {
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)
 
-            GL.UseProgram(_swapProgram)
-            GL.BindVertexArray(_quadVao)
+            GL.UseProgram(state._swapProgram)
+            GL.BindVertexArray(state._quadVao)
 
             Dim writeIdx As Integer = 0
             Dim readTexId As Integer = originalTexId
@@ -796,15 +857,15 @@ void main() {
 
                 GL.ActiveTexture(TextureUnit.Texture0)
                 GL.BindTexture(TextureTarget.Texture2D, readTexId)
-                GL.Uniform1(_uSwapPrevLoc, 0)
+                GL.Uniform1(state._uSwapPrevLoc, 0)
 
                 GL.ActiveTexture(TextureUnit.Texture1)
                 GL.BindTexture(TextureTarget.Texture2D, sEntry.Texture_ID)
-                GL.Uniform1(_uSwapTexLoc, 1)
+                GL.Uniform1(state._uSwapTexLoc, 1)
 
                 GL.ActiveTexture(TextureUnit.Texture2)
                 GL.BindTexture(TextureTarget.Texture2D, mEntry.Texture_ID)
-                GL.Uniform1(_uSwapMaskLoc, 2)
+                GL.Uniform1(state._uSwapMaskLoc, 2)
 
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawn += 1
@@ -830,6 +891,12 @@ void main() {
             If logger IsNot Nothing Then logger($"  drew {drawn} of {swaps.Count} swaps on channel {CInt(channel)}")
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
+
+            Dim postErr = GL.GetError()
+            If postErr <> ErrorCode.NoError Then
+                If logger IsNot Nothing Then logger($"  GL error after region swap: 0x{Hex(CInt(postErr))} ({postErr}) — refusing to return tex")
+                resultTex = 0
+            End If
         Catch ex As Exception
             If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
             resultTex = 0
@@ -917,16 +984,18 @@ void main() {
     ''' mask — the blend covers the entire texture.
     '''
     ''' blendOp follows the BGSCharacterTint enum: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight.</summary>
-    Public Function ApplyUniformBlendOntoFaceTexture(originalTexId As Integer,
+    Public Function ApplyUniformBlendOntoFaceTexture(state As FaceTintCompositorState,
+                                                      originalTexId As Integer,
                                                       width As Integer, height As Integer,
                                                       r As Single, g As Single, b As Single,
                                                       blendOp As Integer,
                                                       Optional logger As Action(Of String) = Nothing) As Integer
+        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
 
-        EnsureCompositorInitialized()
-        EnsureUniformBlendInitialized()
-        If _uniformBlendProgram = 0 OrElse _quadVao = 0 Then Return 0
+        EnsureCompositorInitialized(state)
+        EnsureUniformBlendInitialized(state)
+        If state._uniformBlendProgram = 0 OrElse state._quadVao = 0 Then Return 0
 
         Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
         Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
@@ -966,15 +1035,15 @@ void main() {
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)
 
-            GL.UseProgram(_uniformBlendProgram)
-            GL.BindVertexArray(_quadVao)
+            GL.UseProgram(state._uniformBlendProgram)
+            GL.BindVertexArray(state._quadVao)
 
             GL.ActiveTexture(TextureUnit.Texture0)
             GL.BindTexture(TextureTarget.Texture2D, originalTexId)
-            GL.Uniform1(_uUbPrevLoc, 0)
+            GL.Uniform1(state._uUbPrevLoc, 0)
 
-            GL.Uniform3(_uUbColorLoc, r, g, b)
-            GL.Uniform1(_uUbBlendOpLoc, blendOp)
+            GL.Uniform3(state._uUbColorLoc, r, g, b)
+            GL.Uniform1(state._uUbBlendOpLoc, blendOp)
 
             GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
             resultTex = outTex
@@ -1006,8 +1075,8 @@ void main() {
         Return resultTex
     End Function
 
-    Private Sub EnsureUniformBlendInitialized()
-        If _uniformBlendProgram <> 0 Then Return
+    Private Sub EnsureUniformBlendInitialized(state As FaceTintCompositorState)
+        If state._uniformBlendProgram <> 0 Then Return
 
         Dim vs = GL.CreateShader(ShaderType.VertexShader)
         GL.ShaderSource(vs, VertexShaderSource)
@@ -1030,30 +1099,30 @@ void main() {
             Return
         End If
 
-        _uniformBlendProgram = GL.CreateProgram()
-        GL.AttachShader(_uniformBlendProgram, vs)
-        GL.AttachShader(_uniformBlendProgram, fs)
-        GL.LinkProgram(_uniformBlendProgram)
-        GL.DetachShader(_uniformBlendProgram, vs)
-        GL.DetachShader(_uniformBlendProgram, fs)
+        state._uniformBlendProgram = GL.CreateProgram()
+        GL.AttachShader(state._uniformBlendProgram, vs)
+        GL.AttachShader(state._uniformBlendProgram, fs)
+        GL.LinkProgram(state._uniformBlendProgram)
+        GL.DetachShader(state._uniformBlendProgram, vs)
+        GL.DetachShader(state._uniformBlendProgram, fs)
         GL.DeleteShader(vs)
         GL.DeleteShader(fs)
 
         Dim linkOk As Integer
-        GL.GetProgram(_uniformBlendProgram, GetProgramParameterName.LinkStatus, linkOk)
+        GL.GetProgram(state._uniformBlendProgram, GetProgramParameterName.LinkStatus, linkOk)
         If linkOk = 0 Then
-            GL.DeleteProgram(_uniformBlendProgram)
-            _uniformBlendProgram = 0
+            GL.DeleteProgram(state._uniformBlendProgram)
+            state._uniformBlendProgram = 0
             Return
         End If
 
-        _uUbPrevLoc = GL.GetUniformLocation(_uniformBlendProgram, "uPrev")
-        _uUbColorLoc = GL.GetUniformLocation(_uniformBlendProgram, "uColor")
-        _uUbBlendOpLoc = GL.GetUniformLocation(_uniformBlendProgram, "uBlendOp")
+        state._uUbPrevLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uPrev")
+        state._uUbColorLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uColor")
+        state._uUbBlendOpLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uBlendOp")
     End Sub
 
-    Private Sub EnsureRegionSwapInitialized()
-        If _swapProgram <> 0 Then Return
+    Private Sub EnsureRegionSwapInitialized(state As FaceTintCompositorState)
+        If state._swapProgram <> 0 Then Return
 
         Dim vs = GL.CreateShader(ShaderType.VertexShader)
         GL.ShaderSource(vs, VertexShaderSource)
@@ -1076,30 +1145,30 @@ void main() {
             Return
         End If
 
-        _swapProgram = GL.CreateProgram()
-        GL.AttachShader(_swapProgram, vs)
-        GL.AttachShader(_swapProgram, fs)
-        GL.LinkProgram(_swapProgram)
-        GL.DetachShader(_swapProgram, vs)
-        GL.DetachShader(_swapProgram, fs)
+        state._swapProgram = GL.CreateProgram()
+        GL.AttachShader(state._swapProgram, vs)
+        GL.AttachShader(state._swapProgram, fs)
+        GL.LinkProgram(state._swapProgram)
+        GL.DetachShader(state._swapProgram, vs)
+        GL.DetachShader(state._swapProgram, fs)
         GL.DeleteShader(vs)
         GL.DeleteShader(fs)
 
         Dim linkOk As Integer
-        GL.GetProgram(_swapProgram, GetProgramParameterName.LinkStatus, linkOk)
+        GL.GetProgram(state._swapProgram, GetProgramParameterName.LinkStatus, linkOk)
         If linkOk = 0 Then
-            GL.DeleteProgram(_swapProgram)
-            _swapProgram = 0
+            GL.DeleteProgram(state._swapProgram)
+            state._swapProgram = 0
             Return
         End If
 
-        _uSwapPrevLoc = GL.GetUniformLocation(_swapProgram, "uPrev")
-        _uSwapTexLoc = GL.GetUniformLocation(_swapProgram, "uSwap")
-        _uSwapMaskLoc = GL.GetUniformLocation(_swapProgram, "uMask")
+        state._uSwapPrevLoc = GL.GetUniformLocation(state._swapProgram, "uPrev")
+        state._uSwapTexLoc = GL.GetUniformLocation(state._swapProgram, "uSwap")
+        state._uSwapMaskLoc = GL.GetUniformLocation(state._swapProgram, "uMask")
     End Sub
 
-    Private Sub EnsureCompositorInitialized()
-        If _program <> 0 AndAlso _quadVao <> 0 Then Return
+    Private Sub EnsureCompositorInitialized(state As FaceTintCompositorState)
+        If state._program <> 0 AndAlso state._quadVao <> 0 Then Return
 
         Dim vs = GL.CreateShader(ShaderType.VertexShader)
         GL.ShaderSource(vs, VertexShaderSource)
@@ -1122,32 +1191,32 @@ void main() {
             Return
         End If
 
-        _program = GL.CreateProgram()
-        GL.AttachShader(_program, vs)
-        GL.AttachShader(_program, fs)
-        GL.LinkProgram(_program)
-        GL.DetachShader(_program, vs)
-        GL.DetachShader(_program, fs)
+        state._program = GL.CreateProgram()
+        GL.AttachShader(state._program, vs)
+        GL.AttachShader(state._program, fs)
+        GL.LinkProgram(state._program)
+        GL.DetachShader(state._program, vs)
+        GL.DetachShader(state._program, fs)
         GL.DeleteShader(vs)
         GL.DeleteShader(fs)
 
         Dim linkOk As Integer
-        GL.GetProgram(_program, GetProgramParameterName.LinkStatus, linkOk)
+        GL.GetProgram(state._program, GetProgramParameterName.LinkStatus, linkOk)
         If linkOk = 0 Then
-            GL.DeleteProgram(_program)
-            _program = 0
+            GL.DeleteProgram(state._program)
+            state._program = 0
             Return
         End If
 
-        _uPrevLoc = GL.GetUniformLocation(_program, "uPrev")
-        _uLayerLoc = GL.GetUniformLocation(_program, "uLayer")
-        _uLayerDiffuseAlphaLoc = GL.GetUniformLocation(_program, "uLayerDiffuseAlpha")
-        _uHasDiffuseMaskLoc = GL.GetUniformLocation(_program, "uHasDiffuseMask")
-        _uColorLoc = GL.GetUniformLocation(_program, "uColor")
-        _uOpacityLoc = GL.GetUniformLocation(_program, "uOpacity")
-        _uBlendOpLoc = GL.GetUniformLocation(_program, "uBlendOp")
-        _uLayerKindLoc = GL.GetUniformLocation(_program, "uLayerKind")
-        _uChannelLoc = GL.GetUniformLocation(_program, "uChannel")
+        state._uPrevLoc = GL.GetUniformLocation(state._program, "uPrev")
+        state._uLayerLoc = GL.GetUniformLocation(state._program, "uLayer")
+        state._uLayerDiffuseAlphaLoc = GL.GetUniformLocation(state._program, "uLayerDiffuseAlpha")
+        state._uHasDiffuseMaskLoc = GL.GetUniformLocation(state._program, "uHasDiffuseMask")
+        state._uColorLoc = GL.GetUniformLocation(state._program, "uColor")
+        state._uOpacityLoc = GL.GetUniformLocation(state._program, "uOpacity")
+        state._uBlendOpLoc = GL.GetUniformLocation(state._program, "uBlendOp")
+        state._uLayerKindLoc = GL.GetUniformLocation(state._program, "uLayerKind")
+        state._uChannelLoc = GL.GetUniformLocation(state._program, "uChannel")
 
         Dim quadVerts() As Single = {
             -1.0F, -1.0F,
@@ -1157,10 +1226,10 @@ void main() {
              1.0F, -1.0F,
              1.0F, 1.0F
         }
-        _quadVao = GL.GenVertexArray()
-        _quadVbo = GL.GenBuffer()
-        GL.BindVertexArray(_quadVao)
-        GL.BindBuffer(BufferTarget.ArrayBuffer, _quadVbo)
+        state._quadVao = GL.GenVertexArray()
+        state._quadVbo = GL.GenBuffer()
+        GL.BindVertexArray(state._quadVao)
+        GL.BindBuffer(BufferTarget.ArrayBuffer, state._quadVbo)
         GL.BufferData(BufferTarget.ArrayBuffer, quadVerts.Length * 4, quadVerts, BufferUsageHint.StaticDraw)
         GL.EnableVertexAttribArray(0)
         GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, False, 2 * 4, 0)

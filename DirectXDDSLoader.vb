@@ -108,6 +108,38 @@ Public Module DirectXDDSLoader
     ' Change BC1 Alpha Preference
     Const PreferBC1Alpha As Boolean = True
 
+    ''' <summary>Optional sink for GL upload diagnostics. The library logs to Debug.WriteLine
+    ''' by default; an app may wire a richer sink (e.g. NpcPreviewLog) by assigning here.
+    ''' Never throws; never invoked from a hot path that the sink could stall.</summary>
+    Public TextureLogSink As Action(Of String) = Nothing
+
+    Private Sub LogTexDiag(msg As String)
+        System.Diagnostics.Debug.WriteLine(msg)
+        Dim sink = TextureLogSink
+        If sink IsNot Nothing Then
+            Try : sink(msg) : Catch : End Try
+        End If
+    End Sub
+
+    ''' <summary>Drain any pending GL error so subsequent CheckGlOk calls only report errors
+    ''' attributable to this upload. Caller MUST hold the GL context current.</summary>
+    Private Sub DrainGlErrors()
+        Dim guard As Integer = 0
+        Do While GL.GetError() <> ErrorCode.NoError
+            guard += 1
+            If guard > 32 Then Exit Do
+        Loop
+    End Sub
+
+    ''' <summary>Returns True iff GL has no error after the last operation. Logs via
+    ''' <see cref="LogTexDiag"/> on failure. Use after each upload op to certify success.</summary>
+    Private Function CheckGlOk(opLabel As String) As Boolean
+        Dim e = GL.GetError()
+        If e = ErrorCode.NoError Then Return True
+        LogTexDiag($"GL error after {opLabel}: 0x{Hex(CInt(e))} ({e})")
+        Return False
+    End Function
+
     Public Function CreateOpenGL_FromTextureLoaded_PBO(tex As TextureLoaded) As Integer
         If tex Is Nothing OrElse Not tex.Loaded Then
             Return 0
@@ -353,6 +385,10 @@ Public Module DirectXDDSLoader
         End If
 
         Try
+            ' Drain any pre-existing GL error so the post-upload check below only flags
+            ' errors caused by THIS upload, not leftovers from another caller.
+            DrainGlErrors()
+
             texID = GL.GenTexture()
             GL.BindTexture(target, texID)
 
@@ -484,6 +520,14 @@ Public Module DirectXDDSLoader
                 GL.TexParameter(target, CType(GL_TEXTURE_SWIZZLE_A, TextureParameterName), CInt(GL_RED))
             ElseIf needsAlphaOneSwizzle Then
                 GL.TexParameter(target, CType(GL_TEXTURE_SWIZZLE_A, TextureParameterName), CInt(GL_ONE))
+            End If
+
+            ' Certify upload success. A silent GL error here means the texture is allocated
+            ' but its contents are undefined (driver typically zeros it = solid black). We
+            ' refuse to return a poisoned ID so the caller can retry instead of caching it.
+            If Not CheckGlOk("CreateOpenGL_FromTextureLoaded_PBO upload, DXGI=" & tex.DxgiCodeFinal.ToString()) Then
+                GL.DeleteTexture(texID)
+                Return 0
             End If
 
             Return texID
@@ -635,7 +679,7 @@ Public Module DirectXDDSLoader
             .Cubemap = tex.IsCubemap,
             .DGXFormat_Original = tex.DxgiCodeOriginal,
             .DGXFormat_Final = tex.DxgiCodeFinal,
-            .Loaded = (id > 0),
+            .Loaded = (tex.Loaded AndAlso id > 0),
             .Path = path
         }
 
@@ -675,7 +719,7 @@ Public Module DirectXDDSLoader
                     .Cubemap = tex.IsCubemap,
                     .DGXFormat_Original = tex.DxgiCodeOriginal,
                     .DGXFormat_Final = tex.DxgiCodeFinal,
-                    .Loaded = tex.Loaded,
+                    .Loaded = (tex.Loaded AndAlso id > 0),
                     .Path = fullpaths(i)
                     }
             End If

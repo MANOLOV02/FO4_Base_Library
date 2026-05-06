@@ -187,6 +187,40 @@ Public Class RenderIntent
     ' ── Optional callback for async texture prefetch before geometry load ──
     Public Property TexturePrefetchAction As Action
 
+    ''' <summary>One-shot callback invoked exactly once after the next False→True transition of
+    ''' <see cref="PreviewModel.TexturesReady"/> caused by background uploads completing.
+    ''' Receives the <see cref="PreviewModel"/> so the callback can read / mutate
+    ''' <c>Textures_Dictionary</c> entries that just got their GL TexIDs assigned.
+    ''' <para>Use case: post-texture-bake passes (face tint compositor, skin softlight, body
+    ''' morph diffuse bake) that mutate already-uploaded GL textures. Symmetric counterpart of
+    ''' <see cref="TexturePrefetchAction"/> (which fires BEFORE texture loading starts).</para>
+    ''' <para>Mutation contract: the callback MAY replace <c>Textures_Dictionary[path].Texture_ID</c>
+    ''' (delete old, gen new). The pipeline calls <see cref="PreviewModel.MarkRenderBucketsDirty"/>
+    ''' immediately after the callback returns, so any mesh sort by Texture_ID is rebuilt next
+    ''' frame.</para>
+    ''' <para>Lifecycle: NOT cleared by <see cref="ClearDirty"/> — survives across the pipeline
+    ''' execution that triggers texture loading, until either the False→True transition fires it
+    ''' or <see cref="PostTextureUploadTimeoutMs"/> elapses, whichever comes first. After firing
+    ''' (or timing out) the property is reset to Nothing automatically; the caller registers a
+    ''' fresh action per render that needs post-texture work.</para>
+    ''' <para>Edge: if textures are already ready when the pipeline finishes (no background load
+    ''' needed because cache reuse / PreserveTextureCache), the hook fires immediately at the end
+    ''' of the pipeline — same observable behaviour as a zero-delay False→True transition.</para></summary>
+    Public Property PostTextureUploadAction As Action(Of PreviewModel)
+
+    ''' <summary>Watchdog timeout (ms) for <see cref="PostTextureUploadAction"/>. If the
+    ''' False→True transition has not happened by this deadline (BA2 corrupt, FilesDictionary
+    ''' miss, cancelled background load that left a path orphaned), the pipeline invokes
+    ''' <see cref="PostTextureUploadTimeoutAction"/> instead of the success action and clears
+    ''' both. 0 disables the watchdog (action waits forever).</summary>
+    Public Property PostTextureUploadTimeoutMs As Integer = 7200
+
+    ''' <summary>Fallback callback invoked instead of <see cref="PostTextureUploadAction"/> when
+    ''' the watchdog deadline elapses without textures becoming ready. Typical use: reveal hidden
+    ''' shapes so the user sees an untinted preview rather than a permanently-blank canvas.
+    ''' Like the success action, this is one-shot and reset to Nothing after firing.</summary>
+    Public Property PostTextureUploadTimeoutAction As Action(Of PreviewModel)
+
     ''' <summary>When True, full reload preserves the GL texture cache + Textures_Dictionary +
     ''' raw bytes cache across the swap. See <see cref="RenderRequest.PreserveTextureCache"/>
     ''' for trade-off details. Reset to False by <see cref="ClearDirty"/> — it's per-render
@@ -237,7 +271,13 @@ Public Class RenderIntent
 
     ''' <summary>Clear all dirty flags + shape subset after pipeline execution. Also resets
     ''' <see cref="PreserveTextureCache"/> back to False so the next render starts from the
-    ''' safe default — opt-in must be explicit per-render.</summary>
+    ''' safe default — opt-in must be explicit per-render.
+    ''' <para>Does NOT touch <see cref="PostTextureUploadAction"/>,
+    ''' <see cref="PostTextureUploadTimeoutAction"/> or <see cref="PostTextureUploadTimeoutMs"/>:
+    ''' those have their own one-shot lifecycle managed by the post-texture-upload watchdog
+    ''' inside the render loop, because the False→True transition that fires them happens
+    ''' asynchronously after this method has already returned (background texture load completes
+    ''' over several frames).</para></summary>
     Public Sub ClearDirty()
         _dirty = RenderDirtyFlags.None
         DirtyShapes.Clear()

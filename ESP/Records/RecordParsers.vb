@@ -380,6 +380,12 @@ Public Class RACE_Data
     Public MaleHairColorFormIDs As New List(Of UInteger)
     ''' <summary>AHCF - Female Hair Colors (RArray of CLFM FormIDs). wbDefinitionsFO4.pas:11664.</summary>
     Public FemaleHairColorFormIDs As New List(Of UInteger)
+    ''' <summary>HCLF - Default Hair Color Male (slot 0 of RACE.HCLF fixed 2-entry array). Used as
+    ''' fallback when NPC.HCLF is absent and template chain doesn't supply one. wbDefinitionsFO4.pas:11575.
+    ''' Each slot can be NULL (FormID=0) per wbFormIDCk([NULL, CLFM]).</summary>
+    Public MaleDefaultHairColorFormID As UInteger
+    ''' <summary>HCLF - Default Hair Color Female (slot 1 of RACE.HCLF fixed 2-entry array).</summary>
+    Public FemaleDefaultHairColorFormID As UInteger
     Public HairColorLookupTexture As String = ""
     Public HairColorExtendedLookupTexture As String = ""
     ''' <summary>PNAM - FaceGen Main clamp. Limits the effective range of face morph deltas.
@@ -1121,6 +1127,22 @@ Public Module RecordParsers
                     ' Female Hair Colors RArray (CLFM FormIDs). wbDefinitionsFO4.pas:11664.
                     Dim hcId = ResolveFormIDReference(rec, sr, pluginManager)
                     If hcId <> 0UI Then race.FemaleHairColorFormIDs.Add(hcId)
+                Case "HCLF"
+                    ' Default Hair Colors fixed 2-entry array [Male=offset 0, Female=offset 4].
+                    ' wbDefinitionsFO4.pas:11575 declares wbArray(HCLF, 'Default Hair Colors', ...,
+                    ' ['Male', 'Female']). Each slot is wbFormIDCk([NULL, CLFM]) — i.e. either a
+                    ' CLFM FormID or NULL (FormID=0). Records may carry only the Male slot (4 bytes)
+                    ' or both (8 bytes); read defensively per the actual subrecord length. Used as
+                    ' last-resort fallback when NPC.HCLF is absent and template chain doesn't
+                    ' supply one — see ApplyRaceFallbacks in MainForm.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        Dim maleRaw = BitConverter.ToUInt32(sr.Data, 0)
+                        race.MaleDefaultHairColorFormID = ResolveFormIDReference(rec, maleRaw, pluginManager)
+                    End If
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
+                        Dim femaleRaw = BitConverter.ToUInt32(sr.Data, 4)
+                        race.FemaleDefaultHairColorFormID = ResolveFormIDReference(rec, femaleRaw, pluginManager)
+                    End If
                 Case "HNAM"
                     race.HairColorLookupTexture = sr.AsString
                 Case "HLTX"
