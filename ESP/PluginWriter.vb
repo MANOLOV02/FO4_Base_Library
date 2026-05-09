@@ -6,20 +6,31 @@ Imports System.Text
 ''' Used by Wardrobe_Manager Pack to emit dummy "light master" plugins that anchor
 ''' BA2/BSA archive auto-discovery (engine loads "Foo - Main.ba2" + "Foo - Textures.ba2"
 ''' iff a plugin "Foo.esp" exists in Data).
+'''
+''' Also used by NPC_Manager Save ESP to emit auto-generated plugins containing NPC_
+''' overrides with proper master cleanup (xEdit CleanMasters algorithm).
 ''' </summary>
 Public Module PluginWriter
 
     ' TES4 record header version field (per xEdit / wbInterface.pas).
     ' These are spec constants of the binary format, not game data.
-    Private Const TES4_RECORD_VERSION_FO4 As UShort = &H83US   ' 131
-    Private Const TES4_RECORD_VERSION_SSE As UShort = &H2BUS   ' 43
+    Friend Const TES4_RECORD_VERSION_FO4 As UShort = &H83US   ' 131
+    Friend Const TES4_RECORD_VERSION_SSE As UShort = &H2BUS   ' 43
 
     ' HEDR subrecord version (float).
-    Private Const HEDR_VERSION_FO4 As Single = 0.95F
-    Private Const HEDR_VERSION_SSE As Single = 1.71F
+    Friend Const HEDR_VERSION_FO4 As Single = 0.95F
+    Friend Const HEDR_VERSION_SSE As Single = 1.71F
 
     ' Convention: object IDs below 0x800 are reserved for the engine's own use.
-    Private Const NEXT_OBJECT_ID_DEFAULT As UInteger = &H800UI
+    Friend Const NEXT_OBJECT_ID_DEFAULT As UInteger = &H800UI
+
+    ' ========================================================================
+    ' NPC_Manager Save ESP — author CNAM canonical string.
+    ' Used to (a) tag plugins emitted by NPC_Manager and (b) detect existing
+    ' auto-generated plugins on Data\ scan ("Update existing" workflow).
+    ' Single source of truth — do not duplicate the literal anywhere else.
+    ' ========================================================================
+    Public Const NPC_MANAGER_AUTHOR_CNAM As String = "NPC Manager - Auto generated"
 
     ''' <summary>
     ''' Writes a "light master" dummy plugin: TES4 record only (no records of any other type),
@@ -116,7 +127,7 @@ Public Module PluginWriter
         End Try
     End Function
 
-    Private Sub WriteSubrecordHeader(bw As BinaryWriter, signature As String, dataSize As Integer)
+    Friend Sub WriteSubrecordHeader(bw As BinaryWriter, signature As String, dataSize As Integer)
         If signature.Length <> 4 Then Throw New InvalidDataException($"Subrecord signature must be 4 chars: '{signature}'.")
         If dataSize < 0 OrElse dataSize > UShort.MaxValue Then
             Throw New InvalidDataException($"Subrecord '{signature}' data size {dataSize} exceeds u16 (XXXX extension not implemented).")

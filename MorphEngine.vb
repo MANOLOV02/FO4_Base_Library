@@ -65,6 +65,48 @@ End Interface
 Public Class MorphEngine
 
     ''' <summary>
+    ''' Pure-math entry point: apply position-morph channels to a vertex buffer and return
+    ''' the result, without any of the runtime concerns (dirty flags, mask, world cache,
+    ''' TBN recalc) that <see cref="ApplyMorphPlan"/> handles for the live render pipeline.
+    '''
+    ''' Semantics:
+    '''   out[i] = baseVerts[i] + Σ channel.Weight × channel.Deltas[i].PosDiff   for non-zap channels
+    ''' Zap channels (channel.IsZap = True) are skipped here — they only make sense for the
+    ''' renderable mesh (mask flag), not for an offline bake of vertex positions.
+    '''
+    ''' Vertex storage uses <see cref="Vector3d"/> (double) to match the runtime pipeline
+    ''' (SkinnedGeometry.NifLocalVertices). Morph deltas are <see cref="Vector3"/> (float)
+    ''' from the .tri file format; they get implicitly widened to double on the add.
+    '''
+    ''' Use this from offline bakes / file builders / anything that needs the morph math
+    ''' without spinning up a SkinnedGeometry. The runtime renderer goes through ApplyMorphPlan,
+    ''' which delegates the inner loop here so the two paths can never drift.
+    ''' </summary>
+    Public Shared Function ApplyChannelsToVertexArray(baseVerts As Vector3d(), plan As MorphPlan) As Vector3d()
+        If baseVerts Is Nothing Then Return Nothing
+        Dim count = baseVerts.Length
+        Dim verts = baseVerts.ToArray()
+        If count = 0 Then Return verts
+        If plan Is Nothing OrElse Not plan.HasMorphs Then Return verts
+
+        For Each channel In plan.Channels
+            If channel.IsZap Then Continue For
+            If channel.Deltas Is Nothing Then Continue For
+            Dim t = channel.Weight
+            If Single.IsNaN(t) Then t = 0
+            For Each morph In channel.Deltas
+                Dim i = CInt(morph.index)
+                If i >= 0 AndAlso i < count Then
+                    Dim delta = morph.PosDiff * t
+                    If delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z < 0.000001F Then Continue For
+                    verts(i) = verts(i) + New Vector3d(delta.X, delta.Y, delta.Z)
+                End If
+            Next
+        Next
+        Return verts
+    End Function
+
+    ''' <summary>
     ''' Apply all channels in the plan to the geometry.
     ''' Deltas are applied in NIF local space (pre-skinning).
     '''
@@ -82,10 +124,7 @@ Public Class MorphEngine
         Dim count = geom.NifLocalVertices.Length
         If count = 0 Then Return
 
-        ' Start from NIF local space (pre-skinning)
-        Dim verts = geom.NifLocalVertices.ToArray()
-
-        ' Apply mask if provided
+        ' Apply mask if provided (kept here, runtime concern)
         If allowMask AndAlso maskedVertices IsNot Nothing Then
             For i = 0 To count - 1
                 If maskedVertices.Contains(i) Then
@@ -110,34 +149,25 @@ Public Class MorphEngine
 
         geom.dirtyVertexIndices.Clear()
 
-        ' Apply each channel (skipped entirely for null/empty plan -> reset semantics)
+        ' Position-morph application: pure math in ApplyChannelsToVertexArray.
+        Dim verts = ApplyChannelsToVertexArray(geom.NifLocalVertices, plan)
+
+        ' Zap channels — mask flag setup (mismo paso ANTES en el bucle anterior; preserva
+        ' comportamiento exacto del runtime para el toggle on/off de zaps).
         If plan IsNot Nothing AndAlso plan.HasMorphs Then
             For Each channel In plan.Channels
+                If Not channel.IsZap Then Continue For
+                If channel.Deltas Is Nothing Then Continue For
                 Dim t = channel.Weight
                 If Single.IsNaN(t) Then t = 0
-                If channel.Deltas Is Nothing Then Continue For
-
-                If channel.IsZap Then
-                    ' Zap: mark vertices for removal
-                    For Each morph In channel.Deltas
-                        Dim i = CInt(morph.index)
-                        If i >= 0 AndAlso i < count Then
-                            geom.VertexMask(i) = -t
-                            geom.dirtyMaskIndices.Add(i)
-                            geom.dirtyMaskFlags(i) = True
-                        End If
-                    Next
-                Else
-                    ' Position morph: move vertices in NIF local space
-                    For Each morph In channel.Deltas
-                        Dim i = CInt(morph.index)
-                        If i >= 0 AndAlso i < count Then
-                            Dim delta = morph.PosDiff * t
-                            If delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z < 0.000001F Then Continue For
-                            verts(i) = verts(i) + delta
-                        End If
-                    Next
-                End If
+                For Each morph In channel.Deltas
+                    Dim i = CInt(morph.index)
+                    If i >= 0 AndAlso i < count Then
+                        geom.VertexMask(i) = -t
+                        geom.dirtyMaskIndices.Add(i)
+                        geom.dirtyMaskFlags(i) = True
+                    End If
+                Next
             Next
         End If
 

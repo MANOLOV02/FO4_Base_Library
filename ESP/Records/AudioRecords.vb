@@ -369,10 +369,12 @@ Public Module AudioRecordParsers
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         r.DecayTimeMs = BitConverter.ToUInt16(sr.Data, 0)
                         r.HFReferenceHz = BitConverter.ToUInt16(sr.Data, 2)
-                        r.RoomFilter = CSByte(sr.Data(4))
-                        r.RoomHFFilter = CSByte(sr.Data(5))
-                        r.Reflections = CSByte(sr.Data(6))
-                        r.ReverbAmp = CSByte(sr.Data(7))
+                        ' s8 fields per xEdit. Direct CSByte overflows when high bit is set
+                        ' (e.g. RoomFilter raw=0x9C means -100 dB). Use ReadInt8 helper.
+                        r.RoomFilter = RecordParsers.ReadInt8(sr.Data(4))
+                        r.RoomHFFilter = RecordParsers.ReadInt8(sr.Data(5))
+                        r.Reflections = RecordParsers.ReadInt8(sr.Data(6))
+                        r.ReverbAmp = RecordParsers.ReadInt8(sr.Data(7))
                         r.DecayHFRatio = sr.Data(8) / 100.0F
                         r.ReflectDelayMs = sr.Data(9)
                         r.ReverbDelayMs = sr.Data(10)

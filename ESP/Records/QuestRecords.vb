@@ -454,10 +454,12 @@ Public Module QuestRecordParsers
                     End If
                 Case "PSDT"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 9 Then
-                        p.ScheduleMonth = CSByte(sr.Data(0))
+                        ' Month/Hour are s8 per xEdit (sentinel -1 = "Any"). ReadInt8 handles
+                        ' bit-pattern reinterpret; direct CSByte(0xFF) overflows.
+                        p.ScheduleMonth = RecordParsers.ReadInt8(sr.Data(0))
                         p.ScheduleDayOfWeek = sr.Data(1)
                         p.ScheduleDate = sr.Data(2)
-                        p.ScheduleHour = CSByte(sr.Data(3))
+                        p.ScheduleHour = RecordParsers.ReadInt8(sr.Data(3))
                         p.ScheduleMinute = sr.Data(4)
                         p.ScheduleDuration = BitConverter.ToUInt32(sr.Data, 5)
                     End If

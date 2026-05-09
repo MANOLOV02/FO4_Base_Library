@@ -1,6 +1,39 @@
 ﻿Imports System.Drawing
 Imports System.Text
 
+' ============================================================================
+' Bethesda plugin (.esp/.esm) record parsers — Fallout 4 / Skyrim SSE.
+'
+' This file and related files in the same project (PluginReader.vb,
+' PluginWriter.vb, PluginManager.vb, PluginStructures.vb, NpcVmadScanner.vb,
+' NpcSubrecordWriter.vb, SaveNpcEspWriter.vb, ActorRecords.vb, AudioRecords.vb,
+' QuestRecords.vb, WorldRecords.vb, ItemRecords.vb, etc.) parse and write the
+' binary record formats documented in TES5Edit (xEdit).
+'
+' Reference / acknowledgement
+' ---------------------------
+' xEdit is the authoritative open-source reference for the Bethesda plugin
+' format. The Pascal definitions in xEdit (TES5Edit/Core/wbDefinitionsFO4.pas,
+' wbDefinitionsCommon.pas, wbImplementation.pas, wbInterface.pas) are used
+' here as the spec for record / subrecord layouts, struct field offsets and
+' types, FormID positions, MAST cleanup semantics, and ESP/ESM/ESL flag
+' conventions. file:line citations in comments throughout this codebase point
+' back to those Pascal sources for traceability.
+'
+' xEdit:
+'     Copyright (c) ElminsterAU and the xEdit Team
+'     Licensed under the Mozilla Public License 2.0
+'     See: TES5Edit/LICENSE.txt in this workspace, or
+'          https://mozilla.org/MPL/2.0/
+'
+' This file is an INDEPENDENT VB.NET implementation written from the format
+' spec exposed by xEdit. No xEdit Pascal source code is reproduced verbatim
+' here — only binary-format facts (offsets, sizes, type tags) and field names
+' from the Bethesda format itself, neither of which are copyrightable. xEdit
+' is referenced solely as documentation of the format produced by Bethesda
+' Game Studios' Creation Kit.
+' ============================================================================
+
 Public Enum NPC_TemplateCategory As Integer
     Traits = 0
     Stats = 1
@@ -88,6 +121,284 @@ Public Class NPC_FaceMorphData
     End Property
 End Class
 
+' ============================================================================
+' NPC_ extended subrecord types (type-safe parser, full spec coverage)
+' Spec reference: memory/npc_subrecord_spec.md + wbDefinitionsFO4.pas:10617-10819
+' Each helper class corresponds to one subrecord struct in the xEdit definition.
+' ============================================================================
+
+''' <summary>NPC_.ACBS struct (24 bytes typical, 20 bytes minimum). wbDefinitionsFO4.pas:10629-10677.
+''' Required subrecord. Holds actor flags, level (or level mult), level bracket and template
+''' inheritance flags.</summary>
+Public Class NPC_AcbsData
+    ''' <summary>+0 u32 Flags. Bit 0x01 Female, 0x02 Essential, 0x04 IsCharGenFacePreset, 0x08 Respawn,
+    ''' 0x10 AutoCalcStats, 0x20 Unique, 0x40 DoesntAffectStealth, 0x80 PCLevelMult, 0x800 Protected,
+    ''' 0x4000 Summonable, 0x10000 DoesntBleed, 0x80000 OppositeGenderAnims, 0x100000 SimpleActor,
+    ''' 0x800000 NoActivationHellos, 0x20000000 IsGhost, 0x80000000 Invulnerable.</summary>
+    Public Flags As UInteger
+    ''' <summary>+4 s16 XP Value Offset.</summary>
+    Public XpValueOffset As Short
+    ''' <summary>+6 u16. UNION wbACBSLevelDecider (wbDefinitionsCommon.pas:4089): if Flags &amp; 0x80
+    ''' (PCLevelMult) is set this is "Level Mult" raw u16 (xEdit divides by 1000 for display);
+    ''' otherwise this is a fixed Level u16. Stored raw — callers decide which interpretation by
+    ''' inspecting Flags bit 0x80.</summary>
+    Public LevelOrLevelMult As UShort
+    ''' <summary>+8 u16 Calc Min Level.</summary>
+    Public CalcMinLevel As UShort
+    ''' <summary>+10 u16 Calc Max Level.</summary>
+    Public CalcMaxLevel As UShort
+    ''' <summary>+12 s16 Disposition Base.</summary>
+    Public DispositionBase As Short
+    ''' <summary>+14 u16 Template Flags (bitmask wbTemplateFlags). Mirrors NPC_Data.TemplateFlags
+    ''' but lives natively here. Same value.</summary>
+    Public TemplateFlags As UShort
+    ''' <summary>+16 u16 Bleedout Override.</summary>
+    Public BleedoutOverride As UShort
+    ''' <summary>+18 bytearray[2] Unknown / padding. Preserved verbatim.</summary>
+    Public Unknown18 As Byte() = New Byte() {0, 0}
+    ''' <summary>Bytes after offset 20 if subrecord length &gt; 20. Some FO4 NPCs emit 24-byte ACBS;
+    ''' the extra 4 bytes are preserved verbatim for round-trip equivalence.</summary>
+    Public TrailingBytes As Byte() = Array.Empty(Of Byte)()
+End Class
+
+''' <summary>NPC_.SNAM (Faction) entry. wbDefinitionsCommon.pas:7070-7078. FO4 layout: 8 bytes —
+''' formid Faction (4) + s8 Rank (1) + 3 unused bytes.</summary>
+Public Class NPC_FactionEntry
+    Public FactionFormID As UInteger
+    Public Rank As SByte
+    ''' <summary>3 unused bytes (FO4 only). Preserved verbatim.</summary>
+    Public Unused As Byte() = New Byte() {0, 0, 0}
+End Class
+
+''' <summary>NPC_.PRPS (Properties) entry. wbDefinitionsFO4.pas:10725 + 5634-5640. 8 bytes:
+''' formid ActorValue (AVIF) + f32 value.</summary>
+Public Class NPC_PropertyEntry
+    Public ActorValueFormID As UInteger
+    Public Value As Single
+End Class
+
+''' <summary>NPC_.PRKR (Perk) entry. wbDefinitionsFO4.pas:10716-10724. 8 bytes per entry:
+''' formid Perk (PERK) + u8 Rank + 3 unused bytes.</summary>
+Public Class NPC_PerkEntry
+    Public PerkFormID As UInteger
+    Public Rank As Byte
+    Public Unused As Byte() = New Byte() {0, 0, 0}
+End Class
+
+''' <summary>NPC_.CNTO + COED (Inventory item). wbDefinitionsFO4.pas:3696-3705. CNTO mandatory,
+''' COED optional per entry. CNTO is 8 bytes (formid + s32 count). COED is 12 bytes when present
+''' (formid Owner + union global/rank + f32 condition).</summary>
+Public Class NPC_InventoryItem
+    Public ItemFormID As UInteger
+    Public Count As Integer = 1
+    Public HasCoed As Boolean = False
+    Public CoedOwnerFormID As UInteger
+    ''' <summary>COED +4 union: GlobalVariableFormID when Owner is NPC_, or RequiredRank as s32
+    ''' when Owner is FACT, or 4 unused bytes when Owner is NULL. Stored as raw u32; semantic
+    ''' depends on CoedOwnerFormID resolution.</summary>
+    Public CoedOwnerExtra As UInteger
+    Public CoedItemCondition As Single
+End Class
+
+''' <summary>NPC_.AIDT (AI Data) struct. wbDefinitionsFO4.pas:6570-6587. 20 bytes pre-v29, 24 bytes
+''' v29+. FO4 vanilla emits 24 bytes.</summary>
+Public Class NPC_AiData
+    Public Aggression As Byte
+    Public Confidence As Byte
+    Public EnergyLevel As Byte
+    Public Morality As Byte
+    Public Mood As Byte
+    Public Assistance As Byte
+    Public AggroRadiusBehavior As Byte
+    Public AggroUnknown7 As Byte
+    Public WarnRadius As UInteger
+    Public WarnAttackRadius As UInteger
+    Public AttackRadius As UInteger
+    ''' <summary>Set when payload &gt;= 24 bytes (v29+). Determines whether NoSlowApproach + 3 unused
+    ''' are present. False ⇒ subrecord written as 20 bytes; True ⇒ 24 bytes.</summary>
+    Public HasV29Fields As Boolean = False
+    Public NoSlowApproach As Byte
+    Public Unknown21 As Byte() = New Byte() {0, 0, 0}
+End Class
+
+''' <summary>NPC_.DNAM (Calculated Stats). wbDefinitionsFO4.pas:10741-10747. 8 bytes:
+''' u16 health + u16 actionPoints + u16 farAwayModelDistance + u8 gearedUpWeapons + 1 unused.</summary>
+Public Class NPC_CalculatedStats
+    Public CalculatedHealth As UShort
+    Public CalculatedActionPoints As UShort
+    Public FarAwayModelDistance As UShort
+    Public GearedUpWeapons As Byte
+    Public Unused7 As Byte
+End Class
+
+''' <summary>NPC_.QNAM (Texture Lighting). wbDefinitionsFO4.pas:10776. 16 bytes = 4 floats RGBA.
+''' Stored as raw floats (NOT as Color) to preserve precision — TextureLightingColor in NPC_Data
+''' is the Color projection used by the renderer.</summary>
+Public Class NPC_TextureLightingFloats
+    Public R As Single
+    Public G As Single
+    Public B As Single
+    Public A As Single = 1.0F
+End Class
+
+''' <summary>NPC_.TETI subrecord raw fields (4 bytes). wbDefinitionsFO4.pas:10781-10784.</summary>
+Public Class NPC_TetiStruct
+    ''' <summary>+0 u16 Data Type. xEdit enum: 1 = "Value/Color" (Palette/Mask), 2 = "Value"
+    ''' (TextureSet). Mirror of NPC_FaceTintLayerData.Discriminator.</summary>
+    Public DataType As UShort
+    ''' <summary>+2 u16 Index. Index into the RACE TintTemplateGroup options. Mirror of
+    ''' NPC_FaceTintLayerData.Index.</summary>
+    Public Index As UShort
+End Class
+
+''' <summary>NPC_.TEND subrecord. wbDefinitionsFO4.pas:10786-10790. xEdit declares this as
+''' wbStruct(..., aOptionalFromElement:=1) so members from index 1 onward (Color, TemplateColorIndex)
+''' may be absent. Three valid lengths produced by vanilla / xEdit:
+'''
+'''   1 byte  : Value only (TextureSet entries, Discriminator=2)
+'''   5 bytes : Value + Color (Color = wbByteColors → R u8 + G u8 + B u8 + wbUnused(1) padding)
+'''   7 bytes : Value + Color + TemplateColorIndex (Palette/Mask, Discriminator=1)
+'''
+''' Per xEdit ParseValuesFromContainer (wbImplementation.pas:22356-22389), missing trailing
+''' members are flagged "OptionalAndMissing" on read and NOT serialized on write. So TEND is
+''' never 8 bytes; that was a parser bug. The "ColorA" we used to read at offset 4 was the
+''' wbUnused(1) padding inside wbByteColors, not an alpha channel.</summary>
+Public Class NPC_TendStruct
+    ''' <summary>+0 u8 raw value. xEdit shows divide-by-100 (so 100 → 1.0 opacity).</summary>
+    Public RawValue As Byte
+    ''' <summary>+1 u8 Red (present when payload &gt;= 5 bytes).</summary>
+    Public ColorR As Byte
+    ''' <summary>+2 u8 Green.</summary>
+    Public ColorG As Byte
+    ''' <summary>+3 u8 Blue.</summary>
+    Public ColorB As Byte
+    ''' <summary>+4 wbUnused(1) byte. Padding internal to wbByteColors. Preserved for
+    ''' byte-equivalent re-emission (vanilla typically writes 0 but mods may differ).</summary>
+    Public ColorPad As Byte
+    ''' <summary>+5 s16 TemplateColorIndex (present when payload &gt;= 7 bytes).</summary>
+    Public TemplateColorIndex As Short
+    ''' <summary>True when the source payload had at least 5 bytes (Color present).</summary>
+    Public HasColor As Boolean
+    ''' <summary>True when the source payload had at least 7 bytes (TemplateColorIndex present).</summary>
+    Public HasTemplateColorIndex As Boolean
+End Class
+
+''' <summary>NPC_.OBTS combination header — wraps the OBTS payload (already parsed into
+''' ARMO_Combination via shared helper) plus the optional OBTF "Editor Only" marker and FULL
+''' name that precede each combination in the OBTE/OBTF/FULL/OBTS sequence.
+''' wbDefinitionsFO4.pas:5888-5898 (wbObjectTemplate RStruct).</summary>
+Public Class NPC_ObjectTemplateCombination
+    Public IsEditorOnly As Boolean = False
+    Public DisplayName As String = ""
+    Public Combination As ARMO_Combination = Nothing
+    ''' <summary>Raw bytes of the OBTS subrecord. Parser preserves verbatim so the full Includes +
+    ''' Properties array can be re-emitted byte-for-byte even when our parser only extracts the
+    ''' subset we render. Property arrays in particular have variable-length entries (24 bytes)
+    ''' that our minimal parser doesn't structure today; raw preservation keeps round-trip safe.</summary>
+    Public RawObtsBytes As Byte() = Nothing
+End Class
+
+''' <summary>NPC_.ATKD struct (44 bytes) + companions ATKE/ATKW/ATKS/ATKT.
+''' wbDefinitionsFO4.pas:4440-4491. Each Attack is the sequence ATKD + ATKE + optional
+''' ATKW/ATKS + optional ATKT.</summary>
+Public Class NPC_AttackData
+    Public DamageMult As Single
+    Public AttackChance As Single
+    Public AttackSpellFormID As UInteger
+    Public AttackFlags As UInteger
+    Public AttackAngle As Single
+    Public StrikeAngle As Single
+    Public Stagger As Single
+    Public Knockdown As Single
+    Public RecoveryTime As Single
+    Public ActionPointsMult As Single
+    Public StaggerOffset As Integer
+    Public AttackEvent As String = ""
+    Public WeaponSlotFormID As UInteger
+    Public RequiredSlotFormID As UInteger
+    Public Description As String = ""
+    Public HasWeaponSlot As Boolean = False
+    Public HasRequiredSlot As Boolean = False
+    Public HasDescription As Boolean = False
+End Class
+
+''' <summary>NPC_.DEST destruction stage. wbDefinitionsFO4.pas:4641+. Each stage is opened by DSTD
+''' and closed by DSTF, with optional DSTA/DMDL/DMDT/DMDS/DMDC/DMDF in between.</summary>
+Public Class NPC_DestructionStage
+    Public HealthPercent As Byte
+    Public Index As Byte
+    Public ModelDamageStage As Byte
+    Public Flags As Byte
+    Public SelfDamagePerSecond As Integer
+    Public ExplosionFormID As UInteger
+    Public DebrisFormID As UInteger
+    Public DebrisCount As Integer
+    Public SequenceName As String = ""
+    Public ModelFilename As String = ""
+    Public ModelTextureData As Byte() = Nothing
+    Public MaterialSwapFormID As UInteger
+    Public ColorRemappingIndex As Single
+    Public HasColorRemappingIndex As Boolean = False
+    Public ModelFlags As Byte
+    Public HasModelFlags As Boolean = False
+End Class
+
+''' <summary>NPC_.DAMC resistance entry. 8 bytes: formid DMGT + u32 value.</summary>
+Public Class NPC_DamageResistance
+    Public DamageTypeFormID As UInteger
+    Public Value As UInteger
+End Class
+
+''' <summary>NPC_.DEST struct + DAMC + Stages. wbDefinitionsFO4.pas:4641+.</summary>
+Public Class NPC_DestructionData
+    Public Health As Integer
+    Public DestStageCount As Byte
+    Public Flags As Byte
+    Public Unknown6 As Byte() = New Byte() {0, 0}
+    Public Resistances As New List(Of NPC_DamageResistance)
+    Public Stages As New List(Of NPC_DestructionStage)
+End Class
+
+''' <summary>NPC_.CS2H + CS2K + CS2D entry (Actor Sounds). wbDefinitionsCommon.pas:7117-7129.
+''' Each entry is keyword (CS2K) + sound (CS2D) pair.</summary>
+Public Class NPC_ActorSound
+    Public KeywordFormID As UInteger
+    Public SoundFormID As UInteger
+End Class
+
+''' <summary>VMAD opaque payload. wbDefinitionsFO4.pas:4383-4388.
+'''
+''' Strategy: keep the VMAD subrecord as raw bytes plus a parallel list of FormID positions
+''' inside that buffer (extracted by NpcVmadFormIdScanner). This preserves the entire VMAD
+''' (versions, scripts, properties, recursive structs) byte-for-byte while exposing exactly
+''' the FormIDs the engine resolves through the plugin's MAST list — required for cleanup MAST
+''' equivalence with xEdit's CleanMasters algorithm.
+'''
+''' Each FormID position records: byte offset inside RawBytes, the resolved global FormID, and
+''' the raw u32 value as stored. The writer can rewrite the high byte at the recorded offset
+''' when the MAST list reorder produces a new master index.</summary>
+Public Class NPC_VmadData
+    Public RawBytes As Byte() = Array.Empty(Of Byte)()
+    ''' <summary>Detected version (s16 @ +0). 6 vanilla.</summary>
+    Public Version As Short
+    ''' <summary>Detected object format (s16 @ +2). 2 vanilla. Decides Object property layout.</summary>
+    Public ObjectFormat As Short
+    ''' <summary>Script count (u16 @ +4).</summary>
+    Public ScriptCount As UShort
+    ''' <summary>Sorted list of FormID positions inside RawBytes.</summary>
+    Public FormIdPositions As New List(Of NPC_VmadFormIdRef)
+End Class
+
+''' <summary>One FormID reference inside a VMAD payload.</summary>
+Public Class NPC_VmadFormIdRef
+    ''' <summary>Byte offset inside NPC_VmadData.RawBytes where the u32 FormID begins.</summary>
+    Public Offset As Integer
+    ''' <summary>Raw 4 bytes as stored (high byte = master index in source plugin).</summary>
+    Public RawFormID As UInteger
+    ''' <summary>Resolved global FormID (master index swapped to load-order index).</summary>
+    Public ResolvedFormID As UInteger
+End Class
+
 Public Class NPC_Data
     Public FormID As UInteger
     Public EditorID As String = ""
@@ -101,7 +412,26 @@ Public Class NPC_Data
     Public FacialHairColorFormID As UInteger
     Public HasTextureLighting As Boolean
     Public TextureLightingColor As Color = Color.Empty
-    Public HeadPartFormIDs As New List(Of UInteger)
+    ' --- Lazy collections ---
+    ' All List(Of T) / Dictionary(Of T) members are lazy-instantiated on first access.
+    ' Rationale: ParseNPCLight populates only ~5 fields, but constructing an NPC_Data
+    ' with eager `As New List` initializers allocates ~21 empty collections per instance.
+    ' Bulk-parsing 50k+ NPCs at startup → ~1M GC allocations and the UI thread starves
+    ' while it tries to initialize OpenGL (the visible symptom: "stuck on ApplyResize").
+    ' Lazy properties keep the API contract (npc.Factions.Add(...) still works), the
+    ' caller cannot tell the difference, and unused collections never allocate.
+
+    Private _headPartFormIDs As List(Of UInteger)
+    Public Property HeadPartFormIDs As List(Of UInteger)
+        Get
+            If _headPartFormIDs Is Nothing Then _headPartFormIDs = New List(Of UInteger)
+            Return _headPartFormIDs
+        End Get
+        Set(value As List(Of UInteger))
+            _headPartFormIDs = value
+        End Set
+    End Property
+
     Public IsFemale As Boolean
     ''' <summary>Raw NPC.MWGT slots. Nothing means the slot was the engine "Default" sentinel
     ''' (Single.MaxValue) — caller must resolve via RACE.{Male|Female}DefaultWeight{X} per the
@@ -114,11 +444,60 @@ Public Class NPC_Data
     Public TemplateFlags As UShort
     ''' <summary>Raw ACBS Flags (uint32). Bit 2 (0x04) = Is CharGen Face Preset.</summary>
     Public AcbsFlags As UInteger
-    Public TemplateActorFormIDs As New Dictionary(Of NPC_TemplateCategory, UInteger)
-    Public MorphValues As New Dictionary(Of UInteger, Single)
-    Public FaceTintLayers As New List(Of NPC_FaceTintLayerData)
-    Public FaceMorphs As New List(Of NPC_FaceMorphData)
-    Public BodyMorphRegionValues As New List(Of Single)
+    Private _templateActorFormIDs As Dictionary(Of NPC_TemplateCategory, UInteger)
+    Public Property TemplateActorFormIDs As Dictionary(Of NPC_TemplateCategory, UInteger)
+        Get
+            If _templateActorFormIDs Is Nothing Then _templateActorFormIDs = New Dictionary(Of NPC_TemplateCategory, UInteger)
+            Return _templateActorFormIDs
+        End Get
+        Set(value As Dictionary(Of NPC_TemplateCategory, UInteger))
+            _templateActorFormIDs = value
+        End Set
+    End Property
+
+    Private _morphValues As Dictionary(Of UInteger, Single)
+    Public Property MorphValues As Dictionary(Of UInteger, Single)
+        Get
+            If _morphValues Is Nothing Then _morphValues = New Dictionary(Of UInteger, Single)
+            Return _morphValues
+        End Get
+        Set(value As Dictionary(Of UInteger, Single))
+            _morphValues = value
+        End Set
+    End Property
+
+    Private _faceTintLayers As List(Of NPC_FaceTintLayerData)
+    Public Property FaceTintLayers As List(Of NPC_FaceTintLayerData)
+        Get
+            If _faceTintLayers Is Nothing Then _faceTintLayers = New List(Of NPC_FaceTintLayerData)
+            Return _faceTintLayers
+        End Get
+        Set(value As List(Of NPC_FaceTintLayerData))
+            _faceTintLayers = value
+        End Set
+    End Property
+
+    Private _faceMorphs As List(Of NPC_FaceMorphData)
+    Public Property FaceMorphs As List(Of NPC_FaceMorphData)
+        Get
+            If _faceMorphs Is Nothing Then _faceMorphs = New List(Of NPC_FaceMorphData)
+            Return _faceMorphs
+        End Get
+        Set(value As List(Of NPC_FaceMorphData))
+            _faceMorphs = value
+        End Set
+    End Property
+
+    Private _bodyMorphRegionValues As List(Of Single)
+    Public Property BodyMorphRegionValues As List(Of Single)
+        Get
+            If _bodyMorphRegionValues Is Nothing Then _bodyMorphRegionValues = New List(Of Single)
+            Return _bodyMorphRegionValues
+        End Get
+        Set(value As List(Of Single))
+            _bodyMorphRegionValues = value
+        End Set
+    End Property
     Public FacialMorphIntensity As Single = 1.0F
     Public PluginName As String = ""
     ''' <summary>OMOD FormIDs from the FIRST combination of NPC_.ObjectTemplate (OBTS block).
@@ -128,7 +507,318 @@ Public Class NPC_Data
     ''' Spec: wbDefinitionsFO4.pas:5867-5898 (OBTS struct + ObjectTemplate RStruct).
     ''' Future: expose multiple combinations as outfit-like variants (see
     ''' project_robot_rendering_combinations.md). First iteration reads only combination #0.</summary>
-    Public ObjectTemplateOMODFormIDs As New List(Of UInteger)
+    Private _objectTemplateOMODFormIDs As List(Of UInteger)
+    Public Property ObjectTemplateOMODFormIDs As List(Of UInteger)
+        Get
+            If _objectTemplateOMODFormIDs Is Nothing Then _objectTemplateOMODFormIDs = New List(Of UInteger)
+            Return _objectTemplateOMODFormIDs
+        End Get
+        Set(value As List(Of UInteger))
+            _objectTemplateOMODFormIDs = value
+        End Set
+    End Property
+
+    ' ========================================================================
+    ' Type-safe extended fields (full xEdit spec coverage, used by Save ESP).
+    ' Spec: memory/npc_subrecord_spec.md + wbDefinitionsFO4.pas:10617-10819.
+    ' Pre-existing fields above remain unchanged for backward compat with the
+    ' renderer / editors. All round-trip-required data is captured below.
+    ' ========================================================================
+
+    ''' <summary>VMAD raw payload + FormID position table. wbDefinitionsFO4.pas:10625.</summary>
+    Public Vmad As NPC_VmadData = Nothing
+    ''' <summary>OBND Object Bounds 6×s16 (X1,Y1,Z1,X2,Y2,Z2). wbDefinitionsCommon.pas:5654.</summary>
+    Public ObjectBoundsRaw As Byte() = Nothing
+    ''' <summary>PTRN Preview Transform → TRNS. wbDefinitionsFO4.pas:5626. 0 = absent.</summary>
+    Public PreviewTransformFormID As UInteger
+    Public HasPreviewTransform As Boolean = False
+    ''' <summary>STCP Animation Sound → STAG. wbDefinitionsFO4.pas:5627.</summary>
+    Public AnimationSoundFormID As UInteger
+    Public HasAnimationSound As Boolean = False
+    ''' <summary>ACBS struct. Required. wbDefinitionsFO4.pas:10629-10677.</summary>
+    Public Acbs As NPC_AcbsData = Nothing
+    ''' <summary>SNAM Factions. Order preserved.</summary>
+    Private _factions As List(Of NPC_FactionEntry)
+    Public Property Factions As List(Of NPC_FactionEntry)
+        Get
+            If _factions Is Nothing Then _factions = New List(Of NPC_FactionEntry)
+            Return _factions
+        End Get
+        Set(value As List(Of NPC_FactionEntry))
+            _factions = value
+        End Set
+    End Property
+    ''' <summary>INAM Death Item → LVLI.</summary>
+    Public DeathItemFormID As UInteger
+    Public HasDeathItem As Boolean = False
+    ''' <summary>VTCK Voice → VTYP.</summary>
+    Public VoiceFormID As UInteger
+    Public HasVoice As Boolean = False
+    ''' <summary>LTPT Legendary Template → LVLN/NPC_.</summary>
+    Public LegendaryTemplateFormID As UInteger
+    Public HasLegendaryTemplate As Boolean = False
+    ''' <summary>LTPC Legendary Chance → GLOB.</summary>
+    Public LegendaryChanceFormID As UInteger
+    Public HasLegendaryChance As Boolean = False
+    ''' <summary>SPLO array (Actor Effects). Counted by SPCT. wbDefinitionsFO4.pas:10702-10703.</summary>
+    Private _actorEffectFormIDs As List(Of UInteger)
+    Public Property ActorEffectFormIDs As List(Of UInteger)
+        Get
+            If _actorEffectFormIDs Is Nothing Then _actorEffectFormIDs = New List(Of UInteger)
+            Return _actorEffectFormIDs
+        End Get
+        Set(value As List(Of UInteger))
+            _actorEffectFormIDs = value
+        End Set
+    End Property
+    ''' <summary>True if SPCT subrecord was present (even with count 0). Determines whether SPCT
+    ''' must be re-emitted on write.</summary>
+    Public HasSpctCounter As Boolean = False
+    ''' <summary>DEST + DAMC + Stages. wbDefinitionsFO4.pas:10704.</summary>
+    Public Destruction As NPC_DestructionData = Nothing
+    ''' <summary>ANAM Far Away Model → ARMO.</summary>
+    Public FarAwayModelFormID As UInteger
+    Public HasFarAwayModel As Boolean = False
+    ''' <summary>ATKR Attack Race → RACE.</summary>
+    Public AttackRaceFormID As UInteger
+    Public HasAttackRace As Boolean = False
+    ''' <summary>Attacks. Each entry = ATKD + ATKE + optional ATKW/ATKS/ATKT.</summary>
+    Private _attacks As List(Of NPC_AttackData)
+    Public Property Attacks As List(Of NPC_AttackData)
+        Get
+            If _attacks Is Nothing Then _attacks = New List(Of NPC_AttackData)
+            Return _attacks
+        End Get
+        Set(value As List(Of NPC_AttackData))
+            _attacks = value
+        End Set
+    End Property
+    ''' <summary>SPOR Spectator Override Package List → FLST.</summary>
+    Public SpectatorOverrideFormID As UInteger
+    Public HasSpectatorOverride As Boolean = False
+    ''' <summary>OCOR Observe Dead Body Override → FLST.</summary>
+    Public ObserveDeadBodyOverrideFormID As UInteger
+    Public HasObserveDeadBodyOverride As Boolean = False
+    ''' <summary>GWOR Guard Warn Override → FLST.</summary>
+    Public GuardWarnOverrideFormID As UInteger
+    Public HasGuardWarnOverride As Boolean = False
+    ''' <summary>ECOR Combat Override → FLST.</summary>
+    Public CombatOverrideFormID As UInteger
+    Public HasCombatOverride As Boolean = False
+    ''' <summary>FCPL Follower Command Package List → FLST.</summary>
+    Public FollowerCommandFormID As UInteger
+    Public HasFollowerCommand As Boolean = False
+    ''' <summary>RCLR Follower Elevator Package List → FLST.</summary>
+    Public FollowerElevatorFormID As UInteger
+    Public HasFollowerElevator As Boolean = False
+    ''' <summary>PRKR Perks. Count from PRKZ.</summary>
+    Private _perks As List(Of NPC_PerkEntry)
+    Public Property Perks As List(Of NPC_PerkEntry)
+        Get
+            If _perks Is Nothing Then _perks = New List(Of NPC_PerkEntry)
+            Return _perks
+        End Get
+        Set(value As List(Of NPC_PerkEntry))
+            _perks = value
+        End Set
+    End Property
+    Public HasPrkzCounter As Boolean = False
+    ''' <summary>PRPS Properties.</summary>
+    Private _properties As List(Of NPC_PropertyEntry)
+    Public Property Properties As List(Of NPC_PropertyEntry)
+        Get
+            If _properties Is Nothing Then _properties = New List(Of NPC_PropertyEntry)
+            Return _properties
+        End Get
+        Set(value As List(Of NPC_PropertyEntry))
+            _properties = value
+        End Set
+    End Property
+    ''' <summary>FTYP Forced Loc Ref Type → LCRT.</summary>
+    Public ForcedLocRefTypeFormID As UInteger
+    Public HasForcedLocRefType As Boolean = False
+    ''' <summary>NTRM Native Terminal → TERM.</summary>
+    Public NativeTerminalFormID As UInteger
+    Public HasNativeTerminal As Boolean = False
+    ''' <summary>CNTO + COED Inventory items. Count from COCT.</summary>
+    Private _inventory As List(Of NPC_InventoryItem)
+    Public Property Inventory As List(Of NPC_InventoryItem)
+        Get
+            If _inventory Is Nothing Then _inventory = New List(Of NPC_InventoryItem)
+            Return _inventory
+        End Get
+        Set(value As List(Of NPC_InventoryItem))
+            _inventory = value
+        End Set
+    End Property
+    Public HasCoctCounter As Boolean = False
+    ''' <summary>AIDT struct.</summary>
+    Public AiData As NPC_AiData = Nothing
+    ''' <summary>PKID AI Packages → PACK.</summary>
+    Private _aiPackageFormIDs As List(Of UInteger)
+    Public Property AiPackageFormIDs As List(Of UInteger)
+        Get
+            If _aiPackageFormIDs Is Nothing Then _aiPackageFormIDs = New List(Of UInteger)
+            Return _aiPackageFormIDs
+        End Get
+        Set(value As List(Of UInteger))
+            _aiPackageFormIDs = value
+        End Set
+    End Property
+    ''' <summary>Keywords (KSIZ + KWDA).</summary>
+    Private _keywordFormIDs As List(Of UInteger)
+    Public Property KeywordFormIDs As List(Of UInteger)
+        Get
+            If _keywordFormIDs Is Nothing Then _keywordFormIDs = New List(Of UInteger)
+            Return _keywordFormIDs
+        End Get
+        Set(value As List(Of UInteger))
+            _keywordFormIDs = value
+        End Set
+    End Property
+    Public HasKsizCounter As Boolean = False
+    ''' <summary>APPR Attach Parent Slots → KYWD array.</summary>
+    Private _attachParentSlotFormIDs As List(Of UInteger)
+    Public Property AttachParentSlotFormIDs As List(Of UInteger)
+        Get
+            If _attachParentSlotFormIDs Is Nothing Then _attachParentSlotFormIDs = New List(Of UInteger)
+            Return _attachParentSlotFormIDs
+        End Get
+        Set(value As List(Of UInteger))
+            _attachParentSlotFormIDs = value
+        End Set
+    End Property
+    ''' <summary>Object Template combinations (full set, not just #0).</summary>
+    Private _objectTemplateCombinations As List(Of NPC_ObjectTemplateCombination)
+    Public Property ObjectTemplateCombinations As List(Of NPC_ObjectTemplateCombination)
+        Get
+            If _objectTemplateCombinations Is Nothing Then _objectTemplateCombinations = New List(Of NPC_ObjectTemplateCombination)
+            Return _objectTemplateCombinations
+        End Get
+        Set(value As List(Of NPC_ObjectTemplateCombination))
+            _objectTemplateCombinations = value
+        End Set
+    End Property
+    ''' <summary>True if the Object Template RStruct was present (OBTE marker seen). Determines
+    ''' whether OBTE/STOP must be re-emitted on write.</summary>
+    Public HasObjectTemplate As Boolean = False
+    ''' <summary>CNAM Class → CLAS.</summary>
+    Public ClassFormID As UInteger
+    Public HasClass As Boolean = False
+    ''' <summary>SHRT Short Name (lstring).</summary>
+    Public ShortName As String = ""
+    Public HasShortName As Boolean = False
+    ''' <summary>DATA empty marker (required separator). True ⇒ emit zero-length DATA on write.</summary>
+    Public HasDataMarker As Boolean = False
+    ''' <summary>DNAM struct.</summary>
+    Public CalculatedStats As NPC_CalculatedStats = Nothing
+    ''' <summary>ZNAM Combat Style → CSTY.</summary>
+    Public CombatStyleFormID As UInteger
+    Public HasCombatStyle As Boolean = False
+    ''' <summary>GNAM Gift Filter → FLST.</summary>
+    Public GiftFilterFormID As UInteger
+    Public HasGiftFilter As Boolean = False
+    ''' <summary>NAM5 (required Unknown). Variable bytearray, opaque, preserved verbatim.</summary>
+    Public Nam5Raw As Byte() = Nothing
+    ''' <summary>NAM6 Height Min (f32).</summary>
+    Public HeightMin As Single
+    Public HasHeightMin As Boolean = False
+    ''' <summary>NAM7 Unused (required f32). Preserved verbatim semantics.</summary>
+    Public Nam7Raw As Byte() = Nothing
+    ''' <summary>NAM4 Height Max (f32).</summary>
+    Public HeightMax As Single
+    Public HasHeightMax As Boolean = False
+    ''' <summary>NAM8 Sound Level (u32 enum).</summary>
+    Public SoundLevel As UInteger
+    Public HasSoundLevel As Boolean = False
+    ''' <summary>Actor Sounds (CS2H + (CS2K + CS2D) pairs + CS2E + CS2F).</summary>
+    Private _actorSounds As List(Of NPC_ActorSound)
+    Public Property ActorSounds As List(Of NPC_ActorSound)
+        Get
+            If _actorSounds Is Nothing Then _actorSounds = New List(Of NPC_ActorSound)
+            Return _actorSounds
+        End Get
+        Set(value As List(Of NPC_ActorSound))
+            _actorSounds = value
+        End Set
+    End Property
+    Public HasCs2hCounter As Boolean = False
+    Public Cs2fByte As Byte = 0
+    Public HasCs2eMarker As Boolean = False
+    ''' <summary>CSCR Inherits Sounds From → NPC_.</summary>
+    Public InheritsSoundsFromFormID As UInteger
+    Public HasInheritsSoundsFrom As Boolean = False
+    ''' <summary>PFRN Power Armor Stand → FURN.</summary>
+    Public PowerArmorStandFormID As UInteger
+    Public HasPowerArmorStand As Boolean = False
+    ''' <summary>DPLT Default Package List → FLST.</summary>
+    Public DefaultPackageListFormID As UInteger
+    Public HasDefaultPackageList As Boolean = False
+    ''' <summary>CRIF Crime Faction → FACT.</summary>
+    Public CrimeFactionFormID As UInteger
+    Public HasCrimeFaction As Boolean = False
+    ''' <summary>QNAM raw 4 floats RGBA. Mirror of HasTextureLighting / TextureLightingColor but
+    ''' float-precision so writer can re-emit byte-equivalent.</summary>
+    Public TextureLightingFloats As NPC_TextureLightingFloats = Nothing
+    ''' <summary>MSDK keys in original order. Parallel to NPC_Data.MorphValues but ordered for
+    ''' deterministic writeback (dict iteration order is non-deterministic in older runtimes).</summary>
+    Private _morphKeysOrdered As List(Of UInteger)
+    Public Property MorphKeysOrdered As List(Of UInteger)
+        Get
+            If _morphKeysOrdered Is Nothing Then _morphKeysOrdered = New List(Of UInteger)
+            Return _morphKeysOrdered
+        End Get
+        Set(value As List(Of UInteger))
+            _morphKeysOrdered = value
+        End Set
+    End Property
+    ''' <summary>Raw TETI/TEND structs in original order. Backed-by NPC_FaceTintLayers list above
+    ''' for renderer compat; this is the byte-precise capture for round-trip.</summary>
+    Private _tintLayerStructs As List(Of (Teti As NPC_TetiStruct, Tend As NPC_TendStruct))
+    Public Property TintLayerStructs As List(Of (Teti As NPC_TetiStruct, Tend As NPC_TendStruct))
+        Get
+            If _tintLayerStructs Is Nothing Then _tintLayerStructs = New List(Of (Teti As NPC_TetiStruct, Tend As NPC_TendStruct))
+            Return _tintLayerStructs
+        End Get
+        Set(value As List(Of (Teti As NPC_TetiStruct, Tend As NPC_TendStruct)))
+            _tintLayerStructs = value
+        End Set
+    End Property
+    ''' <summary>FMRS variable trailing bytes (after the 7 named floats). Parallel to FaceMorphs;
+    ''' index N here matches FaceMorphs(N). Empty array when no trailing bytes.</summary>
+    Private _faceMorphTrailingBytes As List(Of Byte())
+    Public Property FaceMorphTrailingBytes As List(Of Byte())
+        Get
+            If _faceMorphTrailingBytes Is Nothing Then _faceMorphTrailingBytes = New List(Of Byte())
+            Return _faceMorphTrailingBytes
+        End Get
+        Set(value As List(Of Byte()))
+            _faceMorphTrailingBytes = value
+        End Set
+    End Property
+    ''' <summary>FMIN. Mirror of FacialMorphIntensity for explicit "present in source" tracking.</summary>
+    Public HasFmin As Boolean = False
+    ''' <summary>ATTX Activate Text Override (lstring).</summary>
+    Public ActivateTextOverride As String = ""
+    Public HasActivateTextOverride As Boolean = False
+    ''' <summary>MWGT raw 12 bytes — preserves Single.MaxValue sentinel encoding for round-trip.
+    ''' WeightThin/Muscular/Fat are the resolver-friendly Nullable view; this is the byte-equivalent
+    ''' source of truth for writeback.</summary>
+    Public MwgtRaw As Byte() = Nothing
+    Public HasMwgt As Boolean = False
+
+    ' Has-flags for subrecords whose default value (0 / "") collides semantically with "absent".
+    ' Required for byte-equivalent round-trip when re-emitting an override: an absent subrecord
+    ' must NOT be emitted vs a present-with-zero-FormID one which MUST be emitted as length-4 zero.
+    Public HasFull As Boolean = False
+    Public HasTemplate As Boolean = False
+    Public HasRace As Boolean = False
+    Public HasSkin As Boolean = False
+    Public HasDefaultOutfit As Boolean = False
+    Public HasSleepOutfit As Boolean = False
+    Public HasHairColor As Boolean = False
+    Public HasFacialHairColor As Boolean = False
+    Public HasHeadTexture As Boolean = False
 
     Public Overrides Function ToString() As String
         If FullName <> "" Then Return $"{FullName} [{EditorID}]"
@@ -750,6 +1440,15 @@ Public Module RecordParsers
     ''' "field not assigned, fall back to default". NaN/Infinity are treated as the same case
     ''' since they cannot represent a valid weight/scale value either. Returns Nothing when the
     ''' slot is the sentinel; the caller decides what default to substitute.</summary>
+    ''' <summary>Reinterpret a raw byte as a signed 8-bit value (s8 / SByte). Direct CSByte(b)
+    ''' overflows when bit 7 is set because VB does a checked narrowing conversion that requires
+    ''' the value to fit in [-128, 127]. We need bit-pattern reinterpret: 0xFF → -1, 0x80 → -128.
+    ''' Used wherever xEdit declares a field as `itS8` (Faction.Rank, REVB filters, PSDT schedule,
+    ''' WRLD rank, etc.).</summary>
+    Friend Function ReadInt8(b As Byte) As SByte
+        Return If(b < 128, CSByte(b), CSByte(CInt(b) - 256))
+    End Function
+
     Friend Function ReadOptionalFloat(data As Byte(), offset As Integer) As Single?
         If data Is Nothing OrElse data.Length < offset + 4 Then Return Nothing
         Dim raw = BitConverter.ToUInt32(data, offset)
@@ -864,43 +1563,42 @@ Public Module RecordParsers
         Return entry
     End Function
 
-    Public Function ParseNPC(rec As PluginRecord, pluginName As String, Optional pluginManager As PluginManager = Nothing) As NPC_Data
+    ''' <summary>Light-weight parser for NPC tree population. Reads ONLY the fields needed to
+    ''' display the NPC in lists/trees and resolve template inheritance chains: EditorID,
+    ''' FullName, ACBS Flags (for IsFemale + TemplateFlags), Race FormID, Template FormID,
+    ''' TPTA template actor slots. Everything else (VMAD, AIDT, Attacks, DEST, OBTS combinations,
+    ''' Factions, Perks, Properties, Inventory, etc.) is skipped.
+    '''
+    ''' Use this for bulk operations (loading thousands of NPCs at startup, walking template
+    ''' chains). For preview / save / edit, use the full ParseNPC which captures every subrecord
+    ''' for byte-equivalent round-trip.</summary>
+    Public Function ParseNPCLight(rec As PluginRecord, pluginName As String, Optional pluginManager As PluginManager = Nothing) As NPC_Data
         Dim npc As New NPC_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID,
             .PluginName = pluginName
         }
 
-        Dim morphKeys As New List(Of UInteger)
-        Dim pendingTintLayer As NPC_FaceTintLayerData = Nothing
-        Dim pendingFaceMorph As NPC_FaceMorphData = Nothing
-        ' ObjectTemplate state: only parse the FIRST OBTS (combination #0) for robots.
-        ' Future iteration will capture all combinations as outfit-like variants.
-        Dim firstOBTSParsed As Boolean = False
-
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL"
                     npc.FullName = ResolveDisplayString(rec, sr, pluginManager)
+                    npc.HasFull = True
+                Case "ACBS"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 4 Then
+                        npc.AcbsFlags = BitConverter.ToUInt32(d, 0)
+                        npc.IsFemale = (npc.AcbsFlags And 1UI) <> 0UI
+                    End If
+                    If d IsNot Nothing AndAlso d.Length >= 16 Then
+                        npc.TemplateFlags = BitConverter.ToUInt16(d, 14)
+                    End If
                 Case "RNAM"
                     npc.RaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
-                Case "WNAM"
-                    npc.SkinFormID = ResolveFormIDReference(rec, sr, pluginManager)
-                Case "DOFT"
-                    npc.DefaultOutfitFormID = ResolveFormIDReference(rec, sr, pluginManager)
-                Case "SOFT"
-                    npc.SleepOutfitFormID = ResolveFormIDReference(rec, sr, pluginManager)
-                Case "FTSF", "FTST"
-                    npc.HeadTextureFormID = ResolveFormIDReference(rec, sr, pluginManager)
-                Case "HCLF"
-                    npc.HairColorFormID = ResolveFormIDReference(rec, sr, pluginManager)
-                Case "BCLF"
-                    npc.FacialHairColorFormID = ResolveFormIDReference(rec, sr, pluginManager)
-                Case "QNAM"
-                    npc.TextureLightingColor = ParseNormalizedFloatColor(sr.Data)
-                    npc.HasTextureLighting = (sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12)
+                    npc.HasRace = True
                 Case "TPLT"
                     npc.TemplateFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasTemplate = True
                 Case "TPTA"
                     If sr.Data IsNot Nothing Then
                         Dim entryCount = Math.Min(sr.Data.Length \ 4, 13)
@@ -911,33 +1609,645 @@ Public Module RecordParsers
                             npc.TemplateActorFormIDs(category) = ResolveFormIDReference(rec, rawFormID, pluginManager)
                         Next
                     End If
+            End Select
+        Next
+
+        Return npc
+    End Function
+
+    ' ============================================================================
+    ' ParseNPC — type-safe full coverage of NPC_ subrecords for FO4.
+    ' Spec source: memory/npc_subrecord_spec.md + wbDefinitionsFO4.pas:10617-10819.
+    '
+    ' Covers ALL 71 documented subrecords. Subrecords whose payloads are not yet
+    ' captured into structured fields are stored verbatim (raw bytes) so the
+    ' writer can re-emit the record byte-equivalent. The pre-existing fields
+    ' (RaceFormID, SkinFormID, HeadPartFormIDs, etc.) are populated alongside
+    ' the new structured fields for backward compat with renderer / editors.
+    '
+    ' Order of Case branches mirrors xEdit declaration order to make the
+    ' reviewer's job easier when cross-checking against the .pas spec.
+    '
+    ' For bulk listing / tree population use ParseNPCLight instead — orders of
+    ' magnitude faster because it skips VMAD scanner, Attacks, DEST stages,
+    ' OBTS combinations, Factions/Perks/Properties/Inventory, etc.
+    ' ============================================================================
+    Public Function ParseNPC(rec As PluginRecord, pluginName As String, Optional pluginManager As PluginManager = Nothing) As NPC_Data
+        Dim npc As New NPC_Data With {
+            .FormID = rec.Header.FormID,
+            .EditorID = rec.EditorID,
+            .PluginName = pluginName
+        }
+
+        ' Streaming state for paired/RArray subrecords (counters, multi-subrecord items, etc.).
+        Dim morphKeys As New List(Of UInteger)
+        Dim pendingTintLayer As NPC_FaceTintLayerData = Nothing
+        Dim pendingTetiStruct As NPC_TetiStruct = Nothing
+        Dim pendingFaceMorph As NPC_FaceMorphData = Nothing
+        Dim pendingFaceMorphTrailing As Byte() = Nothing
+        Dim pendingPerk As NPC_PerkEntry = Nothing
+        Dim pendingInventoryItem As NPC_InventoryItem = Nothing
+        Dim pendingAttack As NPC_AttackData = Nothing
+        Dim pendingActorSound As NPC_ActorSound = Nothing
+        ' Object Template combination state.
+        Dim pendingCombination As NPC_ObjectTemplateCombination = Nothing
+        Dim insideObjectTemplate As Boolean = False
+        ' Destruction state.
+        Dim destination As NPC_DestructionData = Nothing
+        Dim pendingDestStage As NPC_DestructionStage = Nothing
+
+        For Each sr In rec.Subrecords
+            Select Case sr.Signature
+                ' wbDefinitionsFO4.pas:10624 — EDID
+                Case "EDID"
+                    ' Already captured via rec.EditorID. No-op here.
+
+                ' wbDefinitionsFO4.pas:10625 — VMAD
+                Case "VMAD"
+                    npc.Vmad = NpcVmadScanner.Scan(sr.Data, rec.SourcePluginName, pluginManager)
+
+                ' wbDefinitionsFO4.pas:10626 — OBND (required, 12 bytes 6×s16)
+                Case "OBND"
+                    If sr.Data IsNot Nothing Then
+                        npc.ObjectBoundsRaw = sr.Data
+                    End If
+
+                ' wbDefinitionsFO4.pas:10627 — PTRN
+                Case "PTRN"
+                    npc.PreviewTransformFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasPreviewTransform = True
+
+                ' wbDefinitionsFO4.pas:10628 — STCP
+                Case "STCP"
+                    npc.AnimationSoundFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasAnimationSound = True
+
+                ' wbDefinitionsFO4.pas:10629-10677 — ACBS (required, 24 bytes typical)
+                Case "ACBS"
+                    Dim a As New NPC_AcbsData
+                    Dim d = sr.Data
+                    If d IsNot Nothing Then
+                        If d.Length >= 4 Then a.Flags = BitConverter.ToUInt32(d, 0)
+                        If d.Length >= 6 Then a.XpValueOffset = BitConverter.ToInt16(d, 4)
+                        If d.Length >= 8 Then a.LevelOrLevelMult = BitConverter.ToUInt16(d, 6)
+                        If d.Length >= 10 Then a.CalcMinLevel = BitConverter.ToUInt16(d, 8)
+                        If d.Length >= 12 Then a.CalcMaxLevel = BitConverter.ToUInt16(d, 10)
+                        If d.Length >= 14 Then a.DispositionBase = BitConverter.ToInt16(d, 12)
+                        If d.Length >= 16 Then a.TemplateFlags = BitConverter.ToUInt16(d, 14)
+                        If d.Length >= 18 Then a.BleedoutOverride = BitConverter.ToUInt16(d, 16)
+                        If d.Length >= 20 Then
+                            a.Unknown18 = New Byte() {d(18), d(19)}
+                        End If
+                        If d.Length > 20 Then
+                            a.TrailingBytes = New Byte(d.Length - 20 - 1) {}
+                            Buffer.BlockCopy(d, 20, a.TrailingBytes, 0, a.TrailingBytes.Length)
+                        End If
+                    End If
+                    npc.Acbs = a
+                    ' Mirror to legacy fields for renderer compatibility.
+                    npc.AcbsFlags = a.Flags
+                    npc.IsFemale = (a.Flags And 1UI) <> 0UI
+                    npc.TemplateFlags = a.TemplateFlags
+
+                ' wbDefinitionsFO4.pas:10678 — SNAM (Faction, RArrayS) — wbDefinitionsCommon.pas:7070
+                ' Each SNAM subrecord is one 8-byte Faction entry (FO4: formid + s8 rank + 3 unused).
+                Case "SNAM"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 5 Then
+                        Dim entry As New NPC_FactionEntry
+                        entry.FactionFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager)
+                        ' Rank is s8 per wbDefinitionsCommon.pas:7073. ReadInt8 does the bit-
+                        ' pattern reinterpret (0xFF → -1) — direct CSByte overflows for bytes ≥ 128.
+                        entry.Rank = ReadInt8(d(4))
+                        If d.Length >= 8 Then
+                            entry.Unused = New Byte() {d(5), d(6), d(7)}
+                        End If
+                        npc.Factions.Add(entry)
+                    End If
+
+                ' wbDefinitionsFO4.pas:10679 — INAM
+                Case "INAM"
+                    npc.DeathItemFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasDeathItem = True
+
+                ' wbDefinitionsFO4.pas:10680 — VTCK
+                Case "VTCK"
+                    npc.VoiceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasVoice = True
+
+                ' wbDefinitionsFO4.pas:10681 — TPLT (Default Template)
+                Case "TPLT"
+                    npc.TemplateFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasTemplate = True
+
+                ' wbDefinitionsFO4.pas:10682 — LTPT (Legendary Template)
+                Case "LTPT"
+                    npc.LegendaryTemplateFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasLegendaryTemplate = True
+
+                ' wbDefinitionsFO4.pas:10683 — LTPC (Legendary Chance)
+                Case "LTPC"
+                    npc.LegendaryChanceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasLegendaryChance = True
+
+                ' wbDefinitionsFO4.pas:10684-10700 — TPTA (Template Actors, 13×4 = 52 bytes)
+                ' wbNPCTemplateActorEntry @ wbDefinitionsCommon.pas:5944 = pure FormIDCk (4 bytes).
+                Case "TPTA"
+                    If sr.Data IsNot Nothing Then
+                        Dim entryCount = Math.Min(sr.Data.Length \ 4, 13)
+                        For i = 0 To entryCount - 1
+                            Dim rawFormID = BitConverter.ToUInt32(sr.Data, i * 4)
+                            If rawFormID = 0UI Then Continue For
+                            Dim category = CType(i, NPC_TemplateCategory)
+                            npc.TemplateActorFormIDs(category) = ResolveFormIDReference(rec, rawFormID, pluginManager)
+                        Next
+                    End If
+
+                ' wbDefinitionsFO4.pas:10701 — RNAM (Race, required)
+                Case "RNAM"
+                    npc.RaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasRace = True
+
+                ' wbDefinitionsFO4.pas:10702 — SPCT (counter for SPLO)
+                Case "SPCT"
+                    npc.HasSpctCounter = True
+
+                ' wbDefinitionsFO4.pas:10703 — SPLO (Actor Effect)
+                Case "SPLO"
+                    Dim fid = ResolveFormIDReference(rec, sr, pluginManager)
+                    If fid <> 0UI Then npc.ActorEffectFormIDs.Add(fid)
+
+                ' wbDefinitionsFO4.pas:10704 — DEST + DAMC + Stages
+                ' wbDEST @ wbDefinitionsFO4.pas:4641-4708.
+                Case "DEST"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 8 Then
+                        destination = New NPC_DestructionData With {
+                            .Health = BitConverter.ToInt32(d, 0),
+                            .DestStageCount = d(4),
+                            .Flags = d(5),
+                            .Unknown6 = New Byte() {d(6), d(7)}
+                        }
+                        npc.Destruction = destination
+                    End If
+                Case "DAMC"
+                    If destination IsNot Nothing AndAlso sr.Data IsNot Nothing Then
+                        Dim d = sr.Data
+                        Dim entryCount = d.Length \ 8
+                        For i = 0 To entryCount - 1
+                            Dim entry As New NPC_DamageResistance With {
+                                .DamageTypeFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, i * 8), pluginManager),
+                                .Value = BitConverter.ToUInt32(d, i * 8 + 4)
+                            }
+                            destination.Resistances.Add(entry)
+                        Next
+                    End If
+                Case "DSTD"
+                    If destination IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 20 Then
+                        pendingDestStage = New NPC_DestructionStage With {
+                            .HealthPercent = sr.Data(0),
+                            .Index = sr.Data(1),
+                            .ModelDamageStage = sr.Data(2),
+                            .Flags = sr.Data(3),
+                            .SelfDamagePerSecond = BitConverter.ToInt32(sr.Data, 4),
+                            .ExplosionFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 8), pluginManager),
+                            .DebrisFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 12), pluginManager),
+                            .DebrisCount = BitConverter.ToInt32(sr.Data, 16)
+                        }
+                    End If
+                Case "DSTA"
+                    If pendingDestStage IsNot Nothing Then pendingDestStage.SequenceName = sr.AsString
+                Case "DMDL"
+                    If pendingDestStage IsNot Nothing Then pendingDestStage.ModelFilename = sr.AsString
+                Case "DMDT"
+                    If pendingDestStage IsNot Nothing Then pendingDestStage.ModelTextureData = sr.Data
+                Case "DMDS"
+                    If pendingDestStage IsNot Nothing Then pendingDestStage.MaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "DMDC"
+                    If pendingDestStage IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        pendingDestStage.ColorRemappingIndex = BitConverter.ToSingle(sr.Data, 0)
+                        pendingDestStage.HasColorRemappingIndex = True
+                    End If
+                Case "DMDF"
+                    If pendingDestStage IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
+                        pendingDestStage.ModelFlags = sr.Data(0)
+                        pendingDestStage.HasModelFlags = True
+                    End If
+                Case "DSTF"
+                    If destination IsNot Nothing AndAlso pendingDestStage IsNot Nothing Then
+                        destination.Stages.Add(pendingDestStage)
+                        pendingDestStage = Nothing
+                    End If
+
+                ' wbDefinitionsFO4.pas:10705 — WNAM (Skin, NULL allowed=False)
+                Case "WNAM"
+                    npc.SkinFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasSkin = True
+
+                ' wbDefinitionsFO4.pas:10706 — ANAM (Far away model)
+                Case "ANAM"
+                    npc.FarAwayModelFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasFarAwayModel = True
+
+                ' wbDefinitionsFO4.pas:10707 — ATKR (Attack Race)
+                Case "ATKR"
+                    npc.AttackRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasAttackRace = True
+
+                ' wbDefinitionsFO4.pas:10708 — Attacks RArrayS — wbAttackData @ 4440-4491
+                ' Each Attack: ATKD struct + ATKE + optional ATKW/ATKS/ATKT.
+                Case "ATKD"
+                    ' Flush previous pending Attack.
+                    If pendingAttack IsNot Nothing Then npc.Attacks.Add(pendingAttack)
+                    Dim d = sr.Data
+                    pendingAttack = New NPC_AttackData
+                    If d IsNot Nothing AndAlso d.Length >= 44 Then
+                        pendingAttack.DamageMult = BitConverter.ToSingle(d, 0)
+                        pendingAttack.AttackChance = BitConverter.ToSingle(d, 4)
+                        pendingAttack.AttackSpellFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 8), pluginManager)
+                        pendingAttack.AttackFlags = BitConverter.ToUInt32(d, 12)
+                        pendingAttack.AttackAngle = BitConverter.ToSingle(d, 16)
+                        pendingAttack.StrikeAngle = BitConverter.ToSingle(d, 20)
+                        pendingAttack.Stagger = BitConverter.ToSingle(d, 24)
+                        pendingAttack.Knockdown = BitConverter.ToSingle(d, 28)
+                        pendingAttack.RecoveryTime = BitConverter.ToSingle(d, 32)
+                        pendingAttack.ActionPointsMult = BitConverter.ToSingle(d, 36)
+                        pendingAttack.StaggerOffset = BitConverter.ToInt32(d, 40)
+                    End If
+                Case "ATKE"
+                    If pendingAttack IsNot Nothing Then pendingAttack.AttackEvent = sr.AsString
+                Case "ATKW"
+                    If pendingAttack IsNot Nothing Then
+                        pendingAttack.WeaponSlotFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                        pendingAttack.HasWeaponSlot = True
+                    End If
+                Case "ATKS"
+                    If pendingAttack IsNot Nothing Then
+                        pendingAttack.RequiredSlotFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                        pendingAttack.HasRequiredSlot = True
+                    End If
+                Case "ATKT"
+                    If pendingAttack IsNot Nothing Then
+                        pendingAttack.Description = sr.AsString
+                        pendingAttack.HasDescription = True
+                    End If
+
+                ' wbDefinitionsFO4.pas:10709-10714 — Override Package List FormIDs
+                Case "SPOR"
+                    npc.SpectatorOverrideFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasSpectatorOverride = True
+                Case "OCOR"
+                    npc.ObserveDeadBodyOverrideFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasObserveDeadBodyOverride = True
+                Case "GWOR"
+                    npc.GuardWarnOverrideFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasGuardWarnOverride = True
+                Case "ECOR"
+                    npc.CombatOverrideFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasCombatOverride = True
+                Case "FCPL"
+                    npc.FollowerCommandFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasFollowerCommand = True
+                Case "RCLR"
+                    npc.FollowerElevatorFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasFollowerElevator = True
+
+                ' wbDefinitionsFO4.pas:10715-10724 — PRKZ + PRKR
+                Case "PRKZ"
+                    npc.HasPrkzCounter = True
+                Case "PRKR"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 5 Then
+                        Dim entry As New NPC_PerkEntry With {
+                            .PerkFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager),
+                            .Rank = d(4)
+                        }
+                        If d.Length >= 8 Then entry.Unused = New Byte() {d(5), d(6), d(7)}
+                        npc.Perks.Add(entry)
+                    End If
+
+                ' wbDefinitionsFO4.pas:10725 + 5634-5640 — PRPS Properties (8 bytes per entry)
+                Case "PRPS"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 8 Then
+                        Dim entryCount = d.Length \ 8
+                        For i = 0 To entryCount - 1
+                            Dim entry As New NPC_PropertyEntry With {
+                                .ActorValueFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, i * 8), pluginManager),
+                                .Value = BitConverter.ToSingle(d, i * 8 + 4)
+                            }
+                            npc.Properties.Add(entry)
+                        Next
+                    End If
+
+                ' wbDefinitionsFO4.pas:10726 — FTYP
+                Case "FTYP"
+                    npc.ForcedLocRefTypeFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasForcedLocRefType = True
+
+                ' wbDefinitionsFO4.pas:10727 — NTRM
+                Case "NTRM"
+                    npc.NativeTerminalFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasNativeTerminal = True
+
+                ' wbDefinitionsFO4.pas:10728-10729 + 3696-3705 — COCT + CNTO + COED
+                Case "COCT"
+                    npc.HasCoctCounter = True
+                Case "CNTO"
+                    ' Flush previous pending inventory item if it didn't get a COED.
+                    If pendingInventoryItem IsNot Nothing Then npc.Inventory.Add(pendingInventoryItem)
+                    Dim d = sr.Data
+                    pendingInventoryItem = New NPC_InventoryItem
+                    If d IsNot Nothing AndAlso d.Length >= 8 Then
+                        pendingInventoryItem.ItemFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager)
+                        pendingInventoryItem.Count = BitConverter.ToInt32(d, 4)
+                    End If
+                Case "COED"
+                    If pendingInventoryItem IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        pendingInventoryItem.HasCoed = True
+                        pendingInventoryItem.CoedOwnerFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                        pendingInventoryItem.CoedOwnerExtra = BitConverter.ToUInt32(sr.Data, 4)
+                        pendingInventoryItem.CoedItemCondition = BitConverter.ToSingle(sr.Data, 8)
+                        npc.Inventory.Add(pendingInventoryItem)
+                        pendingInventoryItem = Nothing
+                    End If
+
+                ' wbDefinitionsFO4.pas:10730 — AIDT
+                Case "AIDT"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 20 Then
+                        Dim ai As New NPC_AiData With {
+                            .Aggression = d(0),
+                            .Confidence = d(1),
+                            .EnergyLevel = d(2),
+                            .Morality = d(3),
+                            .Mood = d(4),
+                            .Assistance = d(5),
+                            .AggroRadiusBehavior = d(6),
+                            .AggroUnknown7 = d(7),
+                            .WarnRadius = BitConverter.ToUInt32(d, 8),
+                            .WarnAttackRadius = BitConverter.ToUInt32(d, 12),
+                            .AttackRadius = BitConverter.ToUInt32(d, 16)
+                        }
+                        If d.Length >= 24 Then
+                            ai.HasV29Fields = True
+                            ai.NoSlowApproach = d(20)
+                            ai.Unknown21 = New Byte() {d(21), d(22), d(23)}
+                        End If
+                        npc.AiData = ai
+                    End If
+
+                ' wbDefinitionsFO4.pas:10731-10733 — PKID (Packages, RArray)
+                Case "PKID"
+                    Dim fid = ResolveFormIDReference(rec, sr, pluginManager)
+                    If fid <> 0UI Then npc.AiPackageFormIDs.Add(fid)
+
+                ' wbDefinitionsFO4.pas:10734 + wbDefinitionsCommon.pas:6976 — KSIZ + KWDA
+                Case "KSIZ"
+                    npc.HasKsizCounter = True
+                Case "KWDA"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 4 Then
+                        Dim entryCount = d.Length \ 4
+                        For i = 0 To entryCount - 1
+                            Dim fid = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, i * 4), pluginManager)
+                            If fid <> 0UI Then npc.KeywordFormIDs.Add(fid)
+                        Next
+                    End If
+
+                ' wbDefinitionsFO4.pas:10735 — APPR (Attach Parent Slots)
+                Case "APPR"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 4 Then
+                        Dim entryCount = d.Length \ 4
+                        For i = 0 To entryCount - 1
+                            Dim fid = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, i * 4), pluginManager)
+                            If fid <> 0UI Then npc.AttachParentSlotFormIDs.Add(fid)
+                        Next
+                    End If
+
+                ' wbDefinitionsFO4.pas:10736 + 5867-5898 — Object Template (OBTE/OBTF/FULL/OBTS/STOP)
+                Case "OBTE"
+                    npc.HasObjectTemplate = True
+                    insideObjectTemplate = True
+                Case "OBTF"
+                    If insideObjectTemplate Then
+                        ' OBTF is an empty marker that opens a new combination.
+                        If pendingCombination IsNot Nothing Then
+                            npc.ObjectTemplateCombinations.Add(pendingCombination)
+                        End If
+                        pendingCombination = New NPC_ObjectTemplateCombination With {.IsEditorOnly = True}
+                    End If
+                Case "OBTS"
+                    Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
+                    If insideObjectTemplate Then
+                        ' Combination terminator. The enclosing Combination might already have
+                        ' OBTF + FULL from preceding subrecords; if not (some combinations skip OBTF),
+                        ' create one on the fly.
+                        If pendingCombination Is Nothing Then
+                            pendingCombination = New NPC_ObjectTemplateCombination
+                        End If
+                        pendingCombination.Combination = combo
+                        pendingCombination.RawObtsBytes = sr.Data
+                        npc.ObjectTemplateCombinations.Add(pendingCombination)
+                        pendingCombination = Nothing
+                    End If
+                    ' Legacy mirror: capture FIRST OBTS OMOD list for robot rendering compat.
+                    If npc.ObjectTemplateOMODFormIDs.Count = 0 AndAlso combo IsNot Nothing Then
+                        For Each modFID In combo.IncludeOMODFormIDs
+                            npc.ObjectTemplateOMODFormIDs.Add(modFID)
+                        Next
+                    End If
+                Case "STOP"
+                    If insideObjectTemplate Then
+                        ' Flush any pending combination that didn't terminate with OBTS (rare).
+                        If pendingCombination IsNot Nothing Then
+                            npc.ObjectTemplateCombinations.Add(pendingCombination)
+                            pendingCombination = Nothing
+                        End If
+                        insideObjectTemplate = False
+                    End If
+
+                ' wbDefinitionsFO4.pas:10737 — CNAM (Class)
+                Case "CNAM"
+                    npc.ClassFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasClass = True
+
+                ' wbDefinitionsFO4.pas:10738 — FULL (Display name)
+                Case "FULL"
+                    npc.FullName = ResolveDisplayString(rec, sr, pluginManager)
+                    npc.HasFull = True
+
+                ' wbDefinitionsFO4.pas:10739 — SHRT (Short Name)
+                Case "SHRT"
+                    npc.ShortName = ResolveDisplayString(rec, sr, pluginManager)
+                    npc.HasShortName = True
+
+                ' wbDefinitionsFO4.pas:10740 — DATA (empty marker, required separator)
+                Case "DATA"
+                    npc.HasDataMarker = True
+
+                ' wbDefinitionsFO4.pas:10741-10747 — DNAM (Calculated stats, 8 bytes)
+                Case "DNAM"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 8 Then
+                        npc.CalculatedStats = New NPC_CalculatedStats With {
+                            .CalculatedHealth = BitConverter.ToUInt16(d, 0),
+                            .CalculatedActionPoints = BitConverter.ToUInt16(d, 2),
+                            .FarAwayModelDistance = BitConverter.ToUInt16(d, 4),
+                            .GearedUpWeapons = d(6),
+                            .Unused7 = d(7)
+                        }
+                    End If
+
+                ' wbDefinitionsFO4.pas:10748 — PNAM (Head Parts RArrayS)
                 Case "PNAM"
                     Dim headPartFormID = ResolveFormIDReference(rec, sr, pluginManager)
                     If headPartFormID <> 0UI Then npc.HeadPartFormIDs.Add(headPartFormID)
-                Case "ACBS"
+
+                ' wbDefinitionsFO4.pas:10749 — HCLF (Hair Color)
+                Case "HCLF"
+                    npc.HairColorFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasHairColor = True
+
+                ' wbDefinitionsFO4.pas:10750 — BCLF (Facial Hair Color)
+                Case "BCLF"
+                    npc.FacialHairColorFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasFacialHairColor = True
+
+                ' wbDefinitionsFO4.pas:10751 — ZNAM (Combat Style)
+                Case "ZNAM"
+                    npc.CombatStyleFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasCombatStyle = True
+
+                ' wbDefinitionsFO4.pas:10752 — GNAM (Gift Filter)
+                Case "GNAM"
+                    npc.GiftFilterFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasGiftFilter = True
+
+                ' wbDefinitionsFO4.pas:10753-10756 — NAM5..NAM4 (heights / required unknowns)
+                Case "NAM5"
+                    npc.Nam5Raw = sr.Data
+                Case "NAM6"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
-                        npc.AcbsFlags = BitConverter.ToUInt32(sr.Data, 0)
-                        npc.IsFemale = (npc.AcbsFlags And 1UI) <> 0UI
+                        npc.HeightMin = BitConverter.ToSingle(sr.Data, 0)
+                        npc.HasHeightMin = True
                     End If
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 16 Then
-                        npc.TemplateFlags = BitConverter.ToUInt16(sr.Data, 14)
+                Case "NAM7"
+                    npc.Nam7Raw = sr.Data
+                Case "NAM4"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        npc.HeightMax = BitConverter.ToSingle(sr.Data, 0)
+                        npc.HasHeightMax = True
                     End If
+
+                ' wbDefinitionsFO4.pas:10757-10761 — MWGT (Weight, 12 bytes 3×float).
+                ' Each slot may carry the "Default" sentinel (Single.MaxValue, see ReadOptionalFloat
+                ' for the encoding) → ReadOptionalFloat returns Nothing and the body-weight resolver
+                ' substitutes from RACE.{Male|Female}DefaultWeight{X} per the documented rule.
+                ' Raw bytes preserved for byte-equivalent writeback.
                 Case "MWGT"
-                    ' wbDefinitionsFO4.pas:10757-10761 — { float Thin, float Muscular, float Fat }.
-                    ' Each slot may carry the "Default" sentinel (Single.MaxValue, see ReadOptionalFloat
-                    ' for the encoding) → ReadOptionalFloat returns Nothing and the body-weight resolver
-                    ' substitutes from RACE.{Male|Female}DefaultWeight{X} per the documented rule.
+                    npc.MwgtRaw = sr.Data
+                    npc.HasMwgt = True
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         npc.WeightThin = ReadOptionalFloat(sr.Data, 0)
                         npc.WeightMuscular = ReadOptionalFloat(sr.Data, 4)
                         npc.WeightFat = ReadOptionalFloat(sr.Data, 8)
                     End If
+
+                ' wbDefinitionsFO4.pas:10762 — NAM8 (Sound Level)
+                Case "NAM8"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        npc.SoundLevel = BitConverter.ToUInt32(sr.Data, 0)
+                        npc.HasSoundLevel = True
+                    End If
+
+                ' wbDefinitionsFO4.pas:10763-10768 + wbDefinitionsCommon.pas:7117 — Actor Sounds
+                ' Sequence: CS2H + N×(CS2K + CS2D) + CS2E + CS2F.
+                Case "CS2H"
+                    npc.HasCs2hCounter = True
+                Case "CS2K"
+                    ' Flush any incomplete pair (CS2K without matching CS2D — defensive).
+                    If pendingActorSound IsNot Nothing Then
+                        npc.ActorSounds.Add(pendingActorSound)
+                    End If
+                    pendingActorSound = New NPC_ActorSound With {
+                        .KeywordFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    }
+                Case "CS2D"
+                    If pendingActorSound Is Nothing Then pendingActorSound = New NPC_ActorSound
+                    pendingActorSound.SoundFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.ActorSounds.Add(pendingActorSound)
+                    pendingActorSound = Nothing
+                Case "CS2E"
+                    npc.HasCs2eMarker = True
+                Case "CS2F"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
+                        npc.Cs2fByte = sr.Data(0)
+                    End If
+
+                ' wbDefinitionsFO4.pas:10769 — CSCR (Inherits Sounds From)
+                Case "CSCR"
+                    npc.InheritsSoundsFromFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasInheritsSoundsFrom = True
+
+                ' wbDefinitionsFO4.pas:10770 — PFRN (Power Armor Stand)
+                Case "PFRN"
+                    npc.PowerArmorStandFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasPowerArmorStand = True
+
+                ' wbDefinitionsFO4.pas:10771 — DOFT (Default Outfit)
+                Case "DOFT"
+                    npc.DefaultOutfitFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasDefaultOutfit = True
+
+                ' wbDefinitionsFO4.pas:10772 — SOFT (Sleeping Outfit)
+                Case "SOFT"
+                    npc.SleepOutfitFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasSleepOutfit = True
+
+                ' wbDefinitionsFO4.pas:10773 — DPLT (Default Package List)
+                Case "DPLT"
+                    npc.DefaultPackageListFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasDefaultPackageList = True
+
+                ' wbDefinitionsFO4.pas:10774 — CRIF (Crime Faction)
+                Case "CRIF"
+                    npc.CrimeFactionFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasCrimeFaction = True
+
+                ' wbDefinitionsFO4.pas:10775 — FTST (Head Texture). FO4 NPC_ uses FTST only;
+                ' FTSF would be a RACE field (wbDefinitionsFO4.pas:11665) so it shouldn't appear
+                ' in NPC_, but we accept it as alias for tolerance against malformed/legacy mods.
+                Case "FTSF", "FTST"
+                    npc.HeadTextureFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.HasHeadTexture = True
+
+                ' wbDefinitionsFO4.pas:10776 — QNAM (Texture lighting, 4 floats RGBA)
+                Case "QNAM"
+                    npc.TextureLightingColor = ParseNormalizedFloatColor(sr.Data)
+                    npc.HasTextureLighting = (sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12)
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        Dim qf As New NPC_TextureLightingFloats With {
+                            .R = BitConverter.ToSingle(sr.Data, 0),
+                            .G = BitConverter.ToSingle(sr.Data, 4),
+                            .B = BitConverter.ToSingle(sr.Data, 8)
+                        }
+                        If sr.Data.Length >= 16 Then qf.A = BitConverter.ToSingle(sr.Data, 12)
+                        npc.TextureLightingFloats = qf
+                    End If
+
+                ' wbDefinitionsFO4.pas:10777 — MSDK (Morph keys)
                 Case "MSDK"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         For i = 0 To sr.Data.Length - 4 Step 4
-                            morphKeys.Add(BitConverter.ToUInt32(sr.Data, i))
+                            Dim k = BitConverter.ToUInt32(sr.Data, i)
+                            morphKeys.Add(k)
+                            npc.MorphKeysOrdered.Add(k)
                         Next
                     End If
+
+                ' wbDefinitionsFO4.pas:10778 — MSDV (Morph values)
                 Case "MSDV"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         Dim valueCount = Math.Min(morphKeys.Count, sr.Data.Length \ 4)
@@ -945,33 +2255,67 @@ Public Module RecordParsers
                             npc.MorphValues(morphKeys(i)) = BitConverter.ToSingle(sr.Data, i * 4)
                         Next
                     End If
+
+                ' wbDefinitionsFO4.pas:10779-10792 — Face Tinting Layers (TETI + TEND)
                 Case "TETI"
-                    If pendingTintLayer IsNot Nothing Then npc.FaceTintLayers.Add(pendingTintLayer)
+                    If pendingTintLayer IsNot Nothing Then
+                        npc.FaceTintLayers.Add(pendingTintLayer)
+                        npc.TintLayerStructs.Add((pendingTetiStruct, New NPC_TendStruct))
+                    End If
                     pendingTintLayer = New NPC_FaceTintLayerData()
+                    pendingTetiStruct = New NPC_TetiStruct
                     If sr.Data IsNot Nothing Then
                         pendingTintLayer.RawTetiBytes = sr.Data
                         If sr.Data.Length >= 4 Then
                             pendingTintLayer.Discriminator = BitConverter.ToUInt16(sr.Data, 0)
                             pendingTintLayer.Index = BitConverter.ToUInt16(sr.Data, 2)
+                            pendingTetiStruct.DataType = pendingTintLayer.Discriminator
+                            pendingTetiStruct.Index = pendingTintLayer.Index
                         End If
                     End If
                 Case "TEND"
-                    ' TEND layout per prior assumption (to verify empirically via raw-byte log):
-                    '   Discriminator=1 (Palette)     : 7 bytes = Value(1) + Color(4 RGBA bytes) + TemplateColorIndex(2 signed int16)
-                    '   Discriminator=2 (TextureSet)  : 1 byte  = Value(1)
-                    If pendingTintLayer Is Nothing Then pendingTintLayer = New NPC_FaceTintLayerData()
+                    ' TEND struct, three valid lengths per wbDefinitionsFO4.pas:10786-10790:
+                    '   1 byte  → Value only (TextureSet, Discriminator=2)
+                    '   5 bytes → Value + Color (R+G+B+wbUnused(1) padding internal to wbByteColors)
+                    '   7 bytes → Value + Color + s16 TemplateColorIndex
+                    ' xEdit aOptionalFromElement=1 means trailing members may be absent
+                    ' (wbImplementation.pas:22356-22389). Never 8 bytes; the previous "ColorA at
+                    ' offset 4" reading was misinterpreting the wbByteColors padding.
+                    If pendingTintLayer Is Nothing Then
+                        pendingTintLayer = New NPC_FaceTintLayerData()
+                        pendingTetiStruct = New NPC_TetiStruct
+                    End If
+                    Dim tend As New NPC_TendStruct
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
                         pendingTintLayer.RawTendBytes = sr.Data
                         pendingTintLayer.Value = sr.Data(0)
-                        If pendingTintLayer.Discriminator = 1 AndAlso sr.Data.Length >= 4 Then
-                            pendingTintLayer.Color = Color.FromArgb(255, sr.Data(1), sr.Data(2), sr.Data(3))
+                        tend.RawValue = sr.Data(0)
+                        If sr.Data.Length >= 5 Then
+                            tend.ColorR = sr.Data(1)
+                            tend.ColorG = sr.Data(2)
+                            tend.ColorB = sr.Data(3)
+                            tend.ColorPad = sr.Data(4)
+                            tend.HasColor = True
+                            ' Renderer-friendly System.Drawing.Color: A always 255 (TEND has no
+                            ' alpha channel — what looked like A was the wbByteColors padding).
+                            If pendingTintLayer.Discriminator = 1 Then
+                                pendingTintLayer.Color = Color.FromArgb(255, sr.Data(1), sr.Data(2), sr.Data(3))
+                            End If
                         End If
-                        If pendingTintLayer.Discriminator = 1 AndAlso sr.Data.Length >= 7 Then
-                            pendingTintLayer.TemplateColorIndex = CInt(BitConverter.ToInt16(sr.Data, 5))
+                        If sr.Data.Length >= 7 Then
+                            tend.TemplateColorIndex = BitConverter.ToInt16(sr.Data, 5)
+                            tend.HasTemplateColorIndex = True
+                            If pendingTintLayer.Discriminator = 1 Then
+                                pendingTintLayer.TemplateColorIndex = CInt(tend.TemplateColorIndex)
+                            End If
                         End If
                     End If
                     npc.FaceTintLayers.Add(pendingTintLayer)
+                    npc.TintLayerStructs.Add((pendingTetiStruct, tend))
                     pendingTintLayer = Nothing
+                    pendingTetiStruct = Nothing
+
+                ' wbDefinitionsFO4.pas:10793-10799 — MRSV (5 floats body morph regions)
                 Case "MRSV"
                     npc.BodyMorphRegionValues.Clear()
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
@@ -979,41 +2323,73 @@ Public Module RecordParsers
                             npc.BodyMorphRegionValues.Add(BitConverter.ToSingle(sr.Data, i))
                         Next
                     End If
+
+                ' wbDefinitionsFO4.pas:10801-10816 — Face Morphs (FMRI + FMRS)
+                Case "FMRI"
+                    If pendingFaceMorph IsNot Nothing Then
+                        npc.FaceMorphs.Add(pendingFaceMorph)
+                        npc.FaceMorphTrailingBytes.Add(If(pendingFaceMorphTrailing, Array.Empty(Of Byte)()))
+                    End If
+                    pendingFaceMorph = New NPC_FaceMorphData()
+                    pendingFaceMorphTrailing = Nothing
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        pendingFaceMorph.Index = BitConverter.ToUInt32(sr.Data, 0)
+                        pendingFaceMorph.RawFmriBytes = sr.Data
+                    End If
+                Case "FMRS"
+                    If pendingFaceMorph Is Nothing Then pendingFaceMorph = New NPC_FaceMorphData()
+                    pendingFaceMorph.RawFmrsBytes = sr.Data
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        ' Spec: 7 floats Pos/Rot/Scale + variable-length "Unknown" trailing bytes.
+                        Dim namedFloatBytes = 28
+                        Dim floatsToRead = Math.Min(sr.Data.Length \ 4, 7)
+                        For i = 0 To floatsToRead - 1
+                            pendingFaceMorph.Values.Add(BitConverter.ToSingle(sr.Data, i * 4))
+                        Next
+                        If sr.Data.Length > namedFloatBytes Then
+                            pendingFaceMorphTrailing = New Byte(sr.Data.Length - namedFloatBytes - 1) {}
+                            Buffer.BlockCopy(sr.Data, namedFloatBytes, pendingFaceMorphTrailing, 0, pendingFaceMorphTrailing.Length)
+                        Else
+                            pendingFaceMorphTrailing = Array.Empty(Of Byte)()
+                        End If
+                    End If
+                    npc.FaceMorphs.Add(pendingFaceMorph)
+                    npc.FaceMorphTrailingBytes.Add(If(pendingFaceMorphTrailing, Array.Empty(Of Byte)()))
+                    pendingFaceMorph = Nothing
+                    pendingFaceMorphTrailing = Nothing
+
+                ' wbDefinitionsFO4.pas:10817 — FMIN (Facial Morph Intensity)
                 Case "FMIN"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         npc.FacialMorphIntensity = BitConverter.ToSingle(sr.Data, 0)
+                        npc.HasFmin = True
                     End If
-                Case "FMRI"
-                    If pendingFaceMorph IsNot Nothing Then npc.FaceMorphs.Add(pendingFaceMorph)
-                    pendingFaceMorph = New NPC_FaceMorphData()
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then pendingFaceMorph.Index = BitConverter.ToUInt32(sr.Data, 0)
-                Case "FMRS"
-                    If pendingFaceMorph Is Nothing Then pendingFaceMorph = New NPC_FaceMorphData()
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
-                        For i = 0 To sr.Data.Length - 4 Step 4
-                            pendingFaceMorph.Values.Add(BitConverter.ToSingle(sr.Data, i))
-                        Next
-                    End If
-                    npc.FaceMorphs.Add(pendingFaceMorph)
-                    pendingFaceMorph = Nothing
-                Case "OBTS"
-                    ' NPC_ flow: only consume the FIRST OBTS (combination #0) for robot rendering
-                    ' per project_robot_rendering_combinations.md. ARMO multi-addon OBTS is parsed
-                    ' separately in ParseARMO. Helper ParseOBTSPayload encapsulates the binary layout.
-                    If Not firstOBTSParsed Then
-                        Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
-                        If combo IsNot Nothing Then
-                            For Each modFID In combo.IncludeOMODFormIDs
-                                npc.ObjectTemplateOMODFormIDs.Add(modFID)
-                            Next
-                            firstOBTSParsed = True
-                        End If
-                    End If
+
+                ' wbDefinitionsFO4.pas:10818 — ATTX (Activate Text Override)
+                Case "ATTX"
+                    npc.ActivateTextOverride = ResolveDisplayString(rec, sr, pluginManager)
+                    npc.HasActivateTextOverride = True
+
             End Select
         Next
 
-        If pendingTintLayer IsNot Nothing Then npc.FaceTintLayers.Add(pendingTintLayer)
-        If pendingFaceMorph IsNot Nothing Then npc.FaceMorphs.Add(pendingFaceMorph)
+        ' Flush any pending streaming state.
+        If pendingTintLayer IsNot Nothing Then
+            npc.FaceTintLayers.Add(pendingTintLayer)
+            npc.TintLayerStructs.Add((pendingTetiStruct, New NPC_TendStruct))
+        End If
+        If pendingFaceMorph IsNot Nothing Then
+            npc.FaceMorphs.Add(pendingFaceMorph)
+            npc.FaceMorphTrailingBytes.Add(If(pendingFaceMorphTrailing, Array.Empty(Of Byte)()))
+        End If
+        If pendingPerk IsNot Nothing Then npc.Perks.Add(pendingPerk)
+        If pendingInventoryItem IsNot Nothing Then npc.Inventory.Add(pendingInventoryItem)
+        If pendingAttack IsNot Nothing Then npc.Attacks.Add(pendingAttack)
+        If pendingActorSound IsNot Nothing Then npc.ActorSounds.Add(pendingActorSound)
+        If pendingCombination IsNot Nothing Then npc.ObjectTemplateCombinations.Add(pendingCombination)
+        If destination IsNot Nothing AndAlso pendingDestStage IsNot Nothing Then
+            destination.Stages.Add(pendingDestStage)
+        End If
 
         Return npc
     End Function

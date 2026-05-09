@@ -698,12 +698,17 @@ Public Class PreviewControl
         ' 1) Aseguramos que el contexto GL está activo
         Me.MakeCurrent()
 
-        ' 2) (Opcional) Debug Output para capturar sólo errores
+        ' 2) (Opcional) Debug Output para capturar sólo errores — solo en build DEBUG.
+        ' Synchronous fuerza al driver a serializar el pipeline para que el callback
+        ' caiga en la llamada GL culpable, lo que penaliza Release sin aportar nada
+        ' (DebugCallback ya gatea Debugger.Break a #If DEBUG).
+#If DEBUG Then
         GL.Enable(EnableCap.DebugOutput)
         GL.Enable(EnableCap.DebugOutputSynchronous)
         DebugProc = AddressOf DebugCallback
         GL.DebugMessageCallback(DebugProc, IntPtr.Zero)
         GL.DebugMessageControl(DebugSourceControl.DontCare, DebugTypeControl.DontCare, DebugSeverityControl.DebugSeverityHigh, 0, Array.Empty(Of Integer)(), True)
+#End If
 
         ' 3) Estado GL estándar
         GL.Enable(EnableCap.DepthTest)
@@ -1239,7 +1244,9 @@ Public Class PreviewControl
         If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
         If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap)
+#If DEBUG Then
         GL.DebugMessageCallback(Nothing, IntPtr.Zero)
+#End If
     End Sub
     Protected Overrides Sub Finalize()
         MyBase.Finalize()

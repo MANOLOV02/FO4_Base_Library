@@ -22,8 +22,10 @@ Imports DirectXTexWrapperCLI
 Public Module DirectXTextureConversionHelper
     Public Const DxgiFormatBc1Unorm As Integer = 71
     Public Const DxgiFormatBc3Unorm As Integer = 77
+    Public Const DxgiFormatBc4Unorm As Integer = 80
     Public Const DxgiFormatBc5Unorm As Integer = 83
     Public Const DxgiFormatB8G8R8A8Unorm As Integer = 87
+    Public Const DxgiFormatBc7Unorm As Integer = 98
 
 
     ''' <summary>

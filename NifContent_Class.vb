@@ -222,10 +222,21 @@ Public Class Nifcontent_Class_Manolo
             createFromShader(material)
         Else
             material.Deserialize(prefix & fullpath, matType)
-            ' ShaderType is not stored in BGSM files — read from NIF shader
+            ' ShaderType resolution when both BGSM and NIF carry hints:
+            '   - BGSM derives _NifShaderType from its semantic flags (Facegen/SkinTint/Hair/
+            '     Tree/Terrain) inside Deserialize → covers 5 of 21 enum values.
+            '   - NIF carries the raw ShaderType_SK_FO4 enum on BSLightingShaderProperty →
+            '     covers all 21 (including Parallax, MultilayerParallax, etc. that BGSM can't
+            '     express).
+            ' Rule: BGSM wins when it derived something (≠ Default), since those flags came
+            ' from the authoring tool's intent. NIF wins when BGSM stayed Default — covers the
+            ' 16 non-flagged enum values. Empirical motivation: HairFemale03_Hairline's NIF
+            ' shader is Default but the BGSM (hairshort_lgrad_8bit.bgsm) carries Hair=True;
+            ' previously we'd overwrite the derived HairTint with the NIF's Default, losing
+            ' the promotion CK relies on at bake time.
             If matType Is GetType(BGSM) Then
                 Dim bslsp = TryCast(shad, BSLightingShaderProperty)
-                If bslsp IsNot Nothing Then
+                If bslsp IsNot Nothing AndAlso material.NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
                     material.NifShaderType = bslsp.ShaderType_SK_FO4
                 End If
             End If

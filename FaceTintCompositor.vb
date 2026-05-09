@@ -492,11 +492,13 @@ void main() {
                 If layer Is Nothing Then Continue For
                 Dim layerName As String = If(String.IsNullOrEmpty(layer.DebugName), "<unnamed>", layer.DebugName)
 
-                ' TEST: TakesSkinTone layers do not contribute to the Diffuse channel.
-                If channel = FaceTintChannel.Diffuse AndAlso layer.TakesSkinTone Then
-                    If logger IsNot Nothing Then logger($"  layer '{layerName}' SKIP takesSkinTone-on-diffuse (test: relief only)")
-                    Continue For
-                End If
+                ' Previously: TakesSkinTone layers were skipped on the Diffuse channel under
+                ' the hypothesis that the scar/wrinkle _d slot only carried relief and the
+                ' base face _d had the colour pre-baked. Empirically wrong — Alijo's
+                ' BaseFemaleHead_d has no per-scar pixels, so the visible scar comes from
+                ' the layer's TTET[0] (Scar6_d / Scar11_d / etc.) being composited via its
+                ' own diffuse alpha and the authored blendOp. Skip removed; the standard
+                ' TextureSet-Diffuse path below handles it.
 
                 Dim chanKey As String = Nothing
                 If Not layerChannelKey.TryGetValue(i, chanKey) Then
@@ -1236,6 +1238,139 @@ void main() {
         GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
         GL.BindVertexArray(0)
     End Sub
+
+    ''' <summary>Per-channel result of <see cref="ApplyFaceTintPipeline"/>: the GL texture ID
+    ''' that came out of swap+compose (or the original input ID when no work was done on that
+    ''' channel) and a flag saying whether the ID is a fresh texture the caller now owns
+    ''' (must be deleted) or just a passthrough of the input. The two consumers handle the
+    ''' "fresh" flag differently: the live render swaps the new ID into Textures_Dictionary
+    ''' and deletes the old one; the offline bake reads the new ID, encodes to disk, and
+    ''' deletes it itself.</summary>
+    Public Class FaceTintPipelineChannelResult
+        Public Property TextureId As Integer
+        Public Property IsFresh As Boolean
+    End Class
+
+    ''' <summary>Aggregate result of <see cref="ApplyFaceTintPipeline"/>: one entry per channel
+    ''' (Diffuse / Normal / Specular). Channels whose input ID was 0 come back as IsFresh=False
+    ''' TextureId=0 (no work attempted).</summary>
+    Public Class FaceTintPipelineResult
+        Public Property Diffuse As FaceTintPipelineChannelResult
+        Public Property Normal As FaceTintPipelineChannelResult
+        Public Property Specular As FaceTintPipelineChannelResult
+    End Class
+
+    ''' <summary>Apply the face-tint pipeline (region-swap → tint compose) to a triplet of
+    ''' source GL textures and return the per-channel result.
+    '''
+    ''' Single source of truth for both the live render path and the offline bake. Neither
+    ''' caller replicates the orchestration; the difference between them is purely how they
+    ''' consume the output:
+    '''   • Render: swap result IDs into <c>Textures_Dictionary</c>, GL.DeleteTexture the IDs
+    '''     the dictionary previously held.
+    '''   • Bake: GL.GetTexImage from result IDs, encode to DDS on disk, GL.DeleteTexture the
+    '''     fresh result IDs (and any temporaries the bake itself uploaded as inputs).
+    '''
+    ''' QNAM softlight is intentionally NOT included: in the render path it runs after this
+    ''' function as a separate pass (TryApplyFaceSkinSoftLight) gated on NpcHasSkinToneLayer;
+    ''' the bake replicates that final pass on its own. Folding it in here would force the
+    ''' render to thread the QNAM color and the skip flag into TryApplyFaceTints, breaking
+    ''' the existing TryApplyFaceSkinSoftLight contract that lives outside.
+    '''
+    ''' This function does NOT touch any dictionary, model, or NIF — it is pure GL on the
+    ''' supplied state + cache. <paramref name="state"/> + <paramref name="cache"/> must be
+    ''' valid for the current GL context.
+    '''
+    ''' Returns IsFresh=True for channels where swap/compose produced a new texture (caller
+    ''' owns it); IsFresh=False when no contribution touched that channel (the input ID is
+    ''' returned verbatim — caller MUST NOT delete it on the fresh-cleanup path).
+    '''
+    ''' MUST run on the GL thread with the owning context current.</summary>
+    Public Function ApplyFaceTintPipeline(state As FaceTintCompositorState,
+                                          cache As FaceTintTextureCache,
+                                          srcDiffuseId As Integer,
+                                          srcNormalId As Integer,
+                                          srcSpecId As Integer,
+                                          width As Integer,
+                                          height As Integer,
+                                          layers As IList(Of FaceTintLayerInput),
+                                          swaps As IList(Of FaceRegionSwapInput),
+                                          Optional logger As Action(Of String) = Nothing) As FaceTintPipelineResult
+        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
+
+        Dim result As New FaceTintPipelineResult With {
+            .Diffuse = New FaceTintPipelineChannelResult With {.TextureId = srcDiffuseId, .IsFresh = False},
+            .Normal = New FaceTintPipelineChannelResult With {.TextureId = srcNormalId, .IsFresh = False},
+            .Specular = New FaceTintPipelineChannelResult With {.TextureId = srcSpecId, .IsFresh = False}
+        }
+
+        If width <= 0 OrElse height <= 0 Then Return result
+
+        ' --- Region-swap pre-pass (no-op if swaps empty / no contribution to a channel) ---
+        If swaps IsNot Nothing AndAlso swaps.Count > 0 Then
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height,
+                           Nothing, swaps, logger,
+                           skipReason:="region-swap diffuse: no input id")
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height,
+                           Nothing, swaps, logger,
+                           skipReason:="region-swap normal: no input id")
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height,
+                           Nothing, swaps, logger,
+                           skipReason:="region-swap specular: no input id")
+        End If
+
+        ' --- Tint compose ---
+        If layers IsNot Nothing AndAlso layers.Count > 0 Then
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height,
+                           layers, Nothing, logger,
+                           skipReason:="tint diffuse: no input id")
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height,
+                           layers, Nothing, logger,
+                           skipReason:="tint normal: no input id")
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height,
+                           layers, Nothing, logger,
+                           skipReason:="tint specular: no input id")
+        End If
+
+        Return result
+    End Function
+
+    ''' <summary>Run one channel through either the region-swap pre-pass (when
+    ''' <paramref name="swaps"/> is non-Nothing) or the tint compose (when
+    ''' <paramref name="layers"/> is non-Nothing). Updates <paramref name="ch"/> in place: if
+    ''' the compositor produced a new texture, the channel result switches to that ID and the
+    ''' previous fresh ID (if any) is deleted; if the compositor returned 0/no-op, the channel
+    ''' is left untouched. Source IDs (IsFresh=False) are never deleted — those belong to the
+    ''' caller, who is responsible for their lifetime.</summary>
+    Private Sub ProcessChannel(ch As FaceTintPipelineChannelResult,
+                               channel As FaceTintChannel,
+                               state As FaceTintCompositorState,
+                               cache As FaceTintTextureCache,
+                               width As Integer, height As Integer,
+                               layers As IList(Of FaceTintLayerInput),
+                               swaps As IList(Of FaceRegionSwapInput),
+                               logger As Action(Of String),
+                               skipReason As String)
+        If ch.TextureId = 0 Then
+            If logger IsNot Nothing Then logger($"  [PIPELINE] skip {channel}: {skipReason}")
+            Return
+        End If
+        Dim newId As Integer
+        If swaps IsNot Nothing Then
+            newId = ApplyRegionSwapsOntoFaceTexture(state, ch.TextureId, width, height, swaps, channel, logger, cache)
+        Else
+            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, logger, cache)
+        End If
+        If newId = 0 OrElse newId = ch.TextureId Then Return
+        Dim oldId = ch.TextureId
+        Dim oldFresh = ch.IsFresh
+        ch.TextureId = newId
+        ch.IsFresh = True
+        If oldFresh Then
+            Try : GL.DeleteTexture(oldId) : Catch : End Try
+        End If
+    End Sub
+
 End Module
 
 ''' <summary>Process-lifetime cache of decoded DDS → GL textures, keyed by an opaque string

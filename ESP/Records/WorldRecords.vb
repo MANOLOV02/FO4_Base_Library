@@ -440,8 +440,10 @@ Public Module WorldRecordParsers
             If sr.Signature = "DATA" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                 e.OwnerFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
                 e.LocationFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 4), pluginManager)
-                If sr.Data.Length >= 9 Then e.Rank = CSByte(sr.Data(8))
-                If sr.Data.Length >= 10 Then e.MinLevel = CSByte(sr.Data(9))
+                ' Rank/MinLevel are s8 per xEdit. Use ReadInt8 to bit-reinterpret bytes ≥ 128
+                ' (direct CSByte overflows for negative s8 values like rank = -1).
+                If sr.Data.Length >= 9 Then e.Rank = RecordParsers.ReadInt8(sr.Data(8))
+                If sr.Data.Length >= 10 Then e.MinLevel = RecordParsers.ReadInt8(sr.Data(9))
                 If sr.Data.Length >= 11 Then e.Flags = sr.Data(10)
             End If
         Next
