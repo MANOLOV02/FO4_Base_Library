@@ -383,6 +383,10 @@ Public Class PreviewControl
     Public camera As New OrbitCamera()
     Private projection As Matrix4
     Public LastUpdateMs As Double = 0
+    ' Set at the very start of Clean(); blocks every GL-touching path (Tick, OnPaint,
+    ' RenderScene, ExecuteRenderPipeline) so queued WM_PAINTs that drain after Clean()
+    ' nulls out shaders/VAOs/textures cannot dispatch draw calls against dead handles.
+    Private _isTearingDown As Boolean = False
     ' Backing field for updateRequired — Integer (not Boolean) so Volatile.Read/Write overloads resolve cleanly.
     ' 0 = False, 1 = True. Use the property from all call sites; direct field access is intentionally avoided.
     Private _updateRequired As Integer = 1
@@ -396,7 +400,7 @@ Public Class PreviewControl
     End Property
 
     Public Sub Processing_Status(Texto As String)
-        If Me.IsDisposed Then Exit Sub
+        If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         Me.MakeCurrent()
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
@@ -496,6 +500,7 @@ Public Class PreviewControl
     '''   Morphs       ? lightweight (reapply morphs, update skin buffers)
     ''' </summary>
     Private Sub ExecuteRenderPipeline()
+        If _isTearingDown Then Return
         Dim intent = _renderIntent
         If intent Is Nothing OrElse Not intent.HasWork Then Return
         If Me.Disposing OrElse Me.IsDisposed OrElse Not Visible Then Return
@@ -801,7 +806,9 @@ Public Class PreviewControl
         If ulog IsNot Nothing Then ulog($"[UpdateProjection] ctrl=({Me.Width}x{Me.Height}) aspect={aspect:F3} fovY=45deg near={nearZ:F2} far={farZ:F2} sceneSize=({size.X:F2},{size.Y:F2},{size.Z:F2}) eyeToCenter={eyeToCenter:F2}")
     End Sub
     Private Sub RenderScene()
-        If Me.IsDisposed Then Exit Sub
+        If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
+        If _Model Is Nothing Then Exit Sub
+        If SharedActiveShader Is Nothing AndAlso SharedSSEShader Is Nothing Then Exit Sub
         ApplyResize(False)
         Me.MakeCurrent()
         GL.ClearColor(Config_App.Current.Setting_BackColor)
@@ -850,11 +857,13 @@ Public Class PreviewControl
     End Function
 
     Protected Overrides Sub OnPaint(e As PaintEventArgs)
+        If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
         If Me.IsInDesignMode OrElse Not UpdateRequired Then Exit Sub
         MyBase.OnPaint(e)
         ' Consume the current render request up front so any new request raised
         ' during RenderScene survives this frame and schedules the next one.
         UpdateRequired = False
+        _ticksSinceLastPresent = 0  ' reset safety-repaint heartbeat
         Try
             RenderScene()
             SwapBuffers()
@@ -1192,20 +1201,84 @@ Public Class PreviewControl
         If disposing Then Clean()
         MyBase.Dispose(disposing)
     End Sub
+    ' Heartbeat for the safety repaint: tick count since the last presented frame.
+    ' At 16ms/tick, 63 ticks ˜ 1s. When this overflows we force a present so the
+    ' control recovers from front-buffer loss (hide/show, handle recreation, DWM).
+    Private _ticksSinceLastPresent As Integer = 0
+    Private Const SafetyRepaintTicks As Integer = 63  ' ˜1000 ms at Interval=16
+
     Private Sub RenderTimer_Tick(sender As Object, e As EventArgs) Handles RenderTimer.Tick
+        ' Bail out if Clean/Dispose started — Tick runs on UI thread, but a stale
+        ' Tick scheduled before Clean()'s timer.Stop() can still arrive.
+        If _isTearingDown OrElse RenderTimer Is Nothing OrElse Me.Disposing OrElse Me.IsDisposed Then Exit Sub
+
         ' Pull-based: if the intent has pending work, execute the pipeline
         If _renderIntent IsNot Nothing AndAlso _renderIntent.HasWork Then
             ExecuteRenderPipeline()
         End If
 
-        ' Then handle the normal repaint cycle (textures loading, camera interaction, etc.)
+        ' On-demand repaint: any subsystem (mouse, texture loader, callback) that
+        ' set UpdateRequired=True schedules a paint this tick.
         Dim texturesPending As Boolean = (Model IsNot Nothing AndAlso Not Model.TexturesReady)
-        If (UpdateRequired OrElse texturesPending) AndAlso RenderTimer.Enabled = True Then
-            UpdateRequired = True  ' ensure OnPaint won't skip
-            Me.Invalidate()  ' disparará OnPaint
+        Dim onDemand As Boolean = UpdateRequired OrElse texturesPending
+
+        ' Safety net: if no frame has been presented for ~1s, force one. Covers
+        ' loss of the front buffer (hide/show, handle recreation, DWM compositor)
+        ' without paying the cost of redrawing every tick.
+        '
+        ' GUARD: only fire the safety repaint if we currently own the GL context. Multiple
+        ' PreviewControls coexist across MainForm + modal editors (EditFace_Form,
+        ' EditBody_Form, etc.), each with its own GL context. OpenTK's "current context" is
+        ' per-thread, process-wide — Invalidate→OnPaint→MakeCurrent on a non-current control
+        ' steals the context from whichever sibling owns it right now (typically mid-frame),
+        ' corrupting both renders. If we are not current, hold the counter at the threshold so
+        ' we re-fire on the very next tick once the context returns to us, rather than waiting
+        ' another full second.
+        _ticksSinceLastPresent += 1
+        Dim safetyDue As Boolean = (_ticksSinceLastPresent >= SafetyRepaintTicks)
+        If safetyDue Then
+            Dim isCurrent As Boolean = False
+            Try
+                isCurrent = (Me.Context IsNot Nothing AndAlso Me.Context.IsCurrent)
+            Catch
+                isCurrent = False
+            End Try
+            If Not isCurrent Then
+                safetyDue = False
+                _ticksSinceLastPresent = SafetyRepaintTicks
+            End If
+        End If
+
+        If onDemand OrElse safetyDue Then
+            UpdateRequired = True
+            Me.Invalidate()
         End If
     End Sub
+    ''' <summary>
+    ''' Quiesces the render loop without freeing GL resources. Call this BEFORE disposing
+    ''' anything that owns GL handles (host caches, tint caches, etc.) so that paints
+    ''' queued by the safety-repaint heartbeat cannot drain mid-teardown and draw against
+    ''' handles the host is about to delete. After this returns the GL context is still
+    ''' alive — Clean()/Dispose() can be called next to actually release resources.
+    ''' Idempotent.
+    ''' </summary>
+    Public Sub BeginTeardown()
+        _isTearingDown = True
+        If RenderTimer IsNot Nothing Then
+            RenderTimer.Stop()
+            RenderTimer.Dispose()
+            RenderTimer = Nothing
+        End If
+        UpdateRequired = False
+    End Sub
+
     Public Sub Clean()
+        ' Mark teardown in progress BEFORE touching anything. Every GL-touching
+        ' path checks this flag so queued WM_PAINTs draining mid-Clean cannot fire
+        ' draw calls against shaders/VAOs/textures we are about to delete.
+        ' If BeginTeardown was already called, this is a no-op for those two lines.
+        BeginTeardown()
+
         If overlay IsNot Nothing Then
             overlay.Clean()
             overlay = Nothing
@@ -1234,12 +1307,6 @@ Public Class PreviewControl
         If SharedFloorShader IsNot Nothing Then
             SharedFloorShader.Dispose()
             SharedFloorShader = Nothing
-        End If
-
-        If RenderTimer IsNot Nothing Then
-            RenderTimer.Stop()
-            RenderTimer.Dispose()
-            RenderTimer = Nothing
         End If
         If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
@@ -2801,7 +2868,9 @@ Public Class PreviewModel
     End Sub
 
     Public Sub Processing_Status_GL(text As String)
-        If Me.ParentControl.IsDisposed Then Exit Sub
+        If Me.ParentControl Is Nothing OrElse Me.ParentControl.IsDisposed Then Exit Sub
+        ' Processing_Status itself guards against teardown; this wrapper bails out
+        ' early so we don't even queue the call when the control is dying.
         Me.ParentControl.Processing_Status(text)
     End Sub
     ''' <summary>
@@ -3018,13 +3087,13 @@ Public Class PreviewModel
                     ' Enqueue result for GL-thread upload (Phase 2)
                     _pendingTextureUploads.Enqueue(loaded)
 
-                    ' Signal the GL thread to wake up and process pending uploads.
-                    ' Without this, textures stay as fallback until the user interacts (rotate/zoom).
+                    ' Signal the GL thread to wake up and process pending uploads. Setting
+                    ' UpdateRequired alone is enough — the RenderTimer_Tick polls for it and
+                    ' calls Invalidate() guarded by Context.IsCurrent so we don't steal the
+                    ' GL context from a sibling PreviewControl (e.g. an active modal editor)
+                    ' just because a background-thread texture decode happened to finish.
                     If controlRef IsNot Nothing AndAlso Not controlRef.IsDisposed AndAlso controlRef.IsHandleCreated Then
-                        controlRef.BeginInvoke(Sub()
-                                                   controlRef.UpdateRequired = True
-                                                   controlRef.Invalidate()
-                                               End Sub)
+                        controlRef.BeginInvoke(Sub() controlRef.UpdateRequired = True)
                     End If
                 Catch ex As OperationCanceledException
                     ' Cancelled — remove paths from pending set so they can be retried

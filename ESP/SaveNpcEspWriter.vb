@@ -74,8 +74,11 @@ Public Module SaveNpcEspWriter
     ''' record set are dropped (except the game master, which is always preserved).</summary>
     ''' <param name="outputPath">Final destination path for the plugin (.esp/.esm).</param>
     ''' <param name="game">FO4 or SSE — picks game master and TES4/HEDR version constants.</param>
-    ''' <param name="lightMaster">If True, set FLAG_ESM | FLAG_ESL (light master / ESL).
-    ''' If False, emit as plain ESP (full slot in load order).</param>
+    ''' <param name="markAsMaster">If True, set FLAG_ESM (master flag). Independent from
+    ''' <paramref name="lightMaster"/>: any combination of the two is emitted verbatim into
+    ''' the TES4 header. False = no master flag (plain ESP slot semantics).</param>
+    ''' <param name="lightMaster">If True, set FLAG_ESL (light slot). Independent from
+    ''' <paramref name="markAsMaster"/>.</param>
     ''' <param name="overrides">List of NPC overrides to emit. Order is preserved.</param>
     ''' <param name="existingRecords">Optional: records from a pre-existing plugin (loaded
     ''' via PluginReader) that should be preserved alongside the new overrides. The caller
@@ -85,6 +88,7 @@ Public Module SaveNpcEspWriter
     ''' <param name="pluginManager">Required for FormID resolution (master high-byte → plugin name).</param>
     Public Function SaveOverridePlugin(outputPath As String,
                                        game As Config_App.Game_Enum,
+                                       markAsMaster As Boolean,
                                        lightMaster As Boolean,
                                        entries As List(Of NpcOverrideEntry),
                                        existingRecords As List(Of PluginRecord),
@@ -270,7 +274,7 @@ Public Module SaveNpcEspWriter
         ' ====================================================================
         ' Step 6: Build TES4 header + emit final stream.
         ' ====================================================================
-        Dim tes4Bytes = BuildTes4Header(game, lightMaster, sortedMasters, recordBuffers.Count, gameMaster, Path.GetDirectoryName(outputPath))
+        Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, recordBuffers.Count, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
         ' Step 7: Atomic write (.tmp + rename).
@@ -516,6 +520,7 @@ Public Module SaveNpcEspWriter
     End Function
 
     Private Function BuildTes4Header(game As Config_App.Game_Enum,
+                                     markAsMaster As Boolean,
                                      lightMaster As Boolean,
                                      masters As List(Of String),
                                      numContentRecords As Integer,
@@ -561,7 +566,8 @@ Public Module SaveNpcEspWriter
                 Using bw As New BinaryWriter(ms)
                     bw.Write(Encoding.ASCII.GetBytes("TES4"))
                     bw.Write(CUInt(bodyBytes.Length))
-                    Dim flags As UInteger = FLAG_ESM
+                    Dim flags As UInteger = 0UI
+                    If markAsMaster Then flags = flags Or FLAG_ESM
                     If lightMaster Then flags = flags Or FLAG_ESL
                     bw.Write(flags)
                     bw.Write(0UI)               ' FormID always 0 for TES4
