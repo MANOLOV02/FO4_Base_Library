@@ -30,7 +30,7 @@ Public Class OMOD_Property
     Public StepValue As Single
 End Class
 
-''' <summary>OMOD include entry.</summary>
+''' <summary>OMOD include entry (wbDefinitionsFO4.pas:12893-12898).</summary>
 Public Class OMOD_Include
     Public ModFormID As UInteger
     Public MinimumLevel As Byte
@@ -38,24 +38,44 @@ Public Class OMOD_Include
     Public DontUseAll As Boolean
 End Class
 
-''' <summary>Fallout 4 OMOD record - Object Modification.</summary>
+''' <summary>OMOD legacy "Items" array entry (wbDefinitionsFO4.pas:12888-12891). Two opaque
+''' 4-byte values per entry. xEdit comment: "no way to change these in CK, legacy data
+''' leftover?" — preserved verbatim so the parser doesn't mis-attribute these bytes to the
+''' Attach Parent Slots array (the previous heuristic "remaining bytes / 4" did exactly that).</summary>
+Public Class OMOD_LegacyItem
+    Public Value1 As UInteger
+    Public Value2 As UInteger
+End Class
+
+''' <summary>Fallout 4 OMOD record - Object Modification (wbDefinitionsFO4.pas:12863-12906).</summary>
 Public Class OMOD_Data
     Public FormID As UInteger
+    Public RecordFlags As UInteger     ' record header flags: bit 3 = Legendary Mod (0x08), bit 6 = Mod Collection (0x40)
     Public EditorID As String = ""
     Public FullName As String = ""
     Public Description As String = ""
     Public ModelPath As String = ""
     Public LooseModFormID As UInteger
     Public Priority As Byte
+    ''' <summary>FLTR (Filter) string subrecord (wbDefinitionsFO4.pas:12905 + :5642 wbString FLTR).</summary>
+    Public Filter As String = ""
 
     ' DATA struct header
     Public IncludeCount As UInteger
     Public PropertyCount As UInteger
+    ''' <summary>DATA byte 8: Unknown Bool 1 (xEdit unnamed). Captured raw for round-trip.</summary>
+    Public UnknownBool1 As Byte
+    ''' <summary>DATA byte 9: Unknown Bool 2 (xEdit unnamed). Captured raw for round-trip.</summary>
+    Public UnknownBool2 As Byte
     Public FormType As UInteger   ' Sig2Int: ARMO, NPC_, WEAP, NONE
     Public MaxRank As Byte
     Public LevelTierScaledOffset As Byte
     Public AttachPointFormID As UInteger
     Public AttachParentSlotFormIDs As New List(Of UInteger)
+    ''' <summary>"Items" array (wbDefinitionsFO4.pas:12888-12891). Legacy CK leftover, two
+    ''' opaque u32 per entry. Empty for almost all vanilla OMODs. Captured to keep the parser
+    ''' honest about which bytes belong where.</summary>
+    Public LegacyItems As New List(Of OMOD_LegacyItem)
 
     ' Target OMOD Keywords (MNAM)
     Public TargetKeywordFormIDs As New List(Of UInteger)
@@ -75,20 +95,42 @@ Public Class OMOD_Data
         End Get
     End Property
 
-    ''' <summary>If this OMOD targets ARMO (FormType="ARMO") and contains a Property with index 7
-    ''' (AddonIndex per wbArmorPropertyEnum @ wbDefinitionsFO4.pas:5710), return its Value 1 cast
-    ''' to Int. Returns -1 if no such property exists. Used by CollectArmoCandidates to resolve
-    ''' which ARMA addon (Lite/Mid/Heavy) to render when an OMOD swap is active.
-    '''
-    ''' Note: the property's Value 1 is stored as a single in OMOD_Property.Value1 (we reinterpret
-    ''' its 4 bytes as Int32). FunctionType=0 is SET (per wbObjectModFuncEnum); other ops on
-    ''' AddonIndex are not vanilla but we treat any function as SET for tolerance.</summary>
+    ''' <summary>AddonIndex op extracted from a Property (idx 7 ARMO). FunctionType per
+    ''' wbDefinitionsFO4.pas:5839/5842: SET=0, ADD=2 (and MUL+ADD=1 for Float — not used by
+    ''' Int-typed AddonIndex). Vanilla dump v2 confirms 59 SET + 10 ADD across loaded plugins.</summary>
+    Public Class AddonIndexOp
+        Public Value As Integer
+        Public IsSet As Boolean   ' True = SET, False = ADD
+    End Class
+
+    ''' <summary>Return every AddonIndex op (idx 7) declared by this OMOD, in declaration order.
+    ''' Caller folds them into the effective index by walking SET (overwrite) / ADD (add to
+    ''' running value). Schema: wbDefinitionsFO4.pas:5710 (wbArmorPropertyEnum) + :5842
+    ''' (FormID-bucket FunctionType enum SET/REM/ADD; AddonIndex is Int but the engine reuses
+    ''' the same SET/ADD semantics).</summary>
+    Public Function GetAddonIndexOps() As List(Of AddonIndexOp)
+        Const AddonIndexProperty As UShort = 7US
+        Dim ops As New List(Of AddonIndexOp)
+        For Each prop In Properties
+            If prop.PropertyIndex <> AddonIndexProperty Then Continue For
+            ' Value 1 stored as Single in OMOD_Property.Value1; reinterpret 4 bytes as Int32.
+            Dim asInt = BitConverter.ToInt32(BitConverter.GetBytes(prop.Value1), 0)
+            ops.Add(New AddonIndexOp With {
+                .Value = asInt,
+                .IsSet = (prop.FunctionType = 0)
+            })
+        Next
+        Return ops
+    End Function
+
+    ''' <summary>Legacy: returns the LAST AddonIndex value as if every op were SET. Kept for
+    ''' callers that pre-date the SET/ADD split (10 vanilla ADD cases were silently treated as
+    ''' SET, masking the running-sum semantics). New callers should use <see cref="GetAddonIndexOps"/>
+    ''' and fold ops correctly.</summary>
     Public Function GetAddonIndexOverride() As Integer
         Const AddonIndexProperty As UShort = 7US
         For Each prop In Properties
             If prop.PropertyIndex <> AddonIndexProperty Then Continue For
-            ' Value 1 is stored as Single (parser writes BitConverter.ToSingle in
-            ' ParseOMOD_DATA). For Int interpretation, reinterpret the 4 bytes.
             Dim asBytes = BitConverter.GetBytes(prop.Value1)
             Dim asInt = BitConverter.ToInt32(asBytes, 0)
             Return asInt
@@ -202,6 +244,7 @@ Public Module CraftingRecordParsers
     Public Function ParseOMOD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As OMOD_Data
         Dim o As New OMOD_Data With {
             .FormID = rec.Header.FormID,
+            .RecordFlags = rec.Header.Flags,
             .EditorID = rec.EditorID
         }
 
@@ -229,6 +272,8 @@ Public Module CraftingRecordParsers
                             o.FilterKeywordFormIDs.Add(ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, i), pluginManager))
                         Next
                     End If
+                Case "FLTR"
+                    o.Filter = sr.AsString
                 Case "DATA"
                     ParseOMOD_DATA(sr, rec, pluginManager, o)
             End Select
@@ -243,7 +288,8 @@ Public Module CraftingRecordParsers
 
         o.IncludeCount = BitConverter.ToUInt32(d, 0)
         o.PropertyCount = BitConverter.ToUInt32(d, 4)
-        ' Bytes 8-9: unknown bools
+        o.UnknownBool1 = d(8)
+        o.UnknownBool2 = d(9)
         o.FormType = BitConverter.ToUInt32(d, 10)
         o.MaxRank = d(14)
         o.LevelTierScaledOffset = d(15)
@@ -251,25 +297,46 @@ Public Module CraftingRecordParsers
 
         Dim offset = 20
 
-        ' Attach parent slots (variable count, read until includes section)
-        ' The layout after offset 20 is: AttachParentSlots[], Items[], Includes[], Properties[]
-        ' Unfortunately the slot count isn't stored explicitly - we calculate from remaining data
-        ' Skip to includes and properties using counts
+        ' Layout after offset 20 per wbDefinitionsFO4.pas:12886-12899:
+        '   AttachParentSlots[]   (wbArray -1 = u32 prefix count, each entry 4 bytes FormID KYWD)
+        '   Items[]               (wbArray -1 = u32 prefix count, each entry 8 bytes — legacy CK leftover)
+        '   Includes[]            (count from Include Count u32 at +0; 7 bytes each)
+        '   Properties[]          (count from Property Count u32 at +4; 24 bytes each)
+        '
+        ' Both AttachParentSlots and Items use u32 prefix per xEdit wbInterface.pas:13933-13948
+        ' (arCount=-1 → 4-byte length prefix). Reading them with explicit prefixes (not from
+        ' "remaining bytes / 4" heuristic) is the only way to keep AttachParentSlots clean
+        ' when an OMOD ships non-empty Items — the previous heuristic conflated both arrays.
 
-        ' Calculate expected sizes
-        Dim includeEntrySize = 7  ' FormID(4) + MinLevel(1) + Optional(1) + DontUseAll(1)
-        Dim propertyEntrySize = 24 ' ValueType(1)+pad(3)+FuncType(1)+pad(3)+Prop(2)+pad(2)+Val1(4)+Val2(4)+Step(4)
+        Const includeEntrySize As Integer = 7
+        Const propertyEntrySize As Integer = 24
+        Const itemEntrySize As Integer = 8
 
-        Dim includesAndPropsSize = CInt(o.IncludeCount) * includeEntrySize + CInt(o.PropertyCount) * propertyEntrySize
-        Dim attachSlotBytes = d.Length - offset - includesAndPropsSize
+        ' AttachParentSlots: u32 count prefix + N × 4 bytes
+        If offset + 4 <= d.Length Then
+            Dim slotCount As UInteger = BitConverter.ToUInt32(d, offset)
+            offset += 4
+            For i = 0 To CInt(slotCount) - 1
+                If offset + 4 > d.Length Then Exit For
+                o.AttachParentSlotFormIDs.Add(ResolveFIDRaw(rec, BitConverter.ToUInt32(d, offset), pm))
+                offset += 4
+            Next
+        End If
 
-        If attachSlotBytes > 0 AndAlso attachSlotBytes Mod 4 = 0 Then
-            Dim slotCount = attachSlotBytes \ 4
-            For i = 0 To slotCount - 1
-                If offset + 4 <= d.Length Then
-                    o.AttachParentSlotFormIDs.Add(ResolveFIDRaw(rec, BitConverter.ToUInt32(d, offset), pm))
-                    offset += 4
-                End If
+        ' Items: u32 count prefix + N × (4+4) bytes. xEdit comment "no way to change these in CK,
+        ' legacy data leftover" — vanilla almost always 0, but capture verbatim if present so the
+        ' parser doesn't drift Includes/Properties offsets when an outlier ships data here.
+        If offset + 4 <= d.Length Then
+            Dim itemCount As UInteger = BitConverter.ToUInt32(d, offset)
+            offset += 4
+            For i = 0 To CInt(itemCount) - 1
+                If offset + itemEntrySize > d.Length Then Exit For
+                Dim item As New OMOD_LegacyItem With {
+                    .Value1 = BitConverter.ToUInt32(d, offset),
+                    .Value2 = BitConverter.ToUInt32(d, offset + 4)
+                }
+                o.LegacyItems.Add(item)
+                offset += itemEntrySize
             Next
         End If
 
@@ -289,28 +356,47 @@ Public Module CraftingRecordParsers
         ' Parse properties
         For i = 0 To CInt(o.PropertyCount) - 1
             If offset + propertyEntrySize > d.Length Then Exit For
-            Dim prop As New OMOD_Property With {
-                .ValueType = CType(d(offset), OMOD_ValueType),
-                .FunctionType = d(offset + 4),
-                .PropertyIndex = BitConverter.ToUInt16(d, offset + 8)
-            }
-
-            Select Case prop.ValueType
-                Case OMOD_ValueType.FormIDInt, OMOD_ValueType.FormIDFloat
-                    prop.Value1FormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, offset + 12), pm)
-                    prop.Value1 = BitConverter.ToSingle(BitConverter.GetBytes(prop.Value1FormID), 0)
-                Case OMOD_ValueType.FloatType
-                    prop.Value1 = BitConverter.ToSingle(d, offset + 12)
-                Case Else
-                    prop.Value1 = BitConverter.ToSingle(d, offset + 12)
-            End Select
-
-            prop.Value2 = BitConverter.ToSingle(d, offset + 16)
-            prop.StepValue = BitConverter.ToSingle(d, offset + 20)
+            Dim prop = ParseObjectModProperty(d, offset, rec, pm)
             o.Properties.Add(prop)
             offset += propertyEntrySize
         Next
     End Sub
+
+    ''' <summary>Parse a single 24-byte OMOD Property entry from a binary buffer at the given
+    ''' offset. Caller validates `offset + 24 &lt;= d.Length` before invoking. Layout per
+    ''' wbObjectModProperties (wbDefinitionsFO4.pas:5826-5865):
+    '''   +0  u8   ValueType  (0=Int,1=Float,2=Bool,3=String,4=FormID,Int,5=Enum,6=FormID,Float)
+    '''   +1..+3  unused
+    '''   +4  u8   FunctionType (per-ValueType enum: SET/MUL+ADD/ADD/REM/AND/OR — see :5838-5843)
+    '''   +5..+7  unused
+    '''   +8  u16  PropertyIndex (interpreted via per-FormType enum: ARMO/NPC_/WEAP)
+    '''   +10..+11 unused
+    '''   +12 u32/float Value1 (FormID-typed values are resolved via ResolveFIDRaw)
+    '''   +16 u32/float Value2
+    '''   +20 float Step
+    ''' Used by ParseOMOD_DATA (OMOD record's Properties array) and by ParseOBTSPayload
+    ''' (Properties array embedded in an OBTS combination payload — same 24-byte layout).</summary>
+    Friend Function ParseObjectModProperty(d As Byte(), offset As Integer, rec As PluginRecord, pm As PluginManager) As OMOD_Property
+        Dim prop As New OMOD_Property With {
+            .ValueType = CType(d(offset), OMOD_ValueType),
+            .FunctionType = d(offset + 4),
+            .PropertyIndex = BitConverter.ToUInt16(d, offset + 8)
+        }
+
+        Select Case prop.ValueType
+            Case OMOD_ValueType.FormIDInt, OMOD_ValueType.FormIDFloat
+                prop.Value1FormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, offset + 12), pm)
+                prop.Value1 = BitConverter.ToSingle(BitConverter.GetBytes(prop.Value1FormID), 0)
+            Case OMOD_ValueType.FloatType
+                prop.Value1 = BitConverter.ToSingle(d, offset + 12)
+            Case Else
+                prop.Value1 = BitConverter.ToSingle(d, offset + 12)
+        End Select
+
+        prop.Value2 = BitConverter.ToSingle(d, offset + 16)
+        prop.StepValue = BitConverter.ToSingle(d, offset + 20)
+        Return prop
+    End Function
 
     Public Function ParseINNR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As INNR_Data
         Dim n As New INNR_Data With {

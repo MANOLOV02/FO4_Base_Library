@@ -1185,10 +1185,23 @@ Public Class ARMO_AddonEntry
     Public ArmaFormID As UInteger
 End Class
 
-''' <summary>Combination del Object Template del ARMO (wbDefinitionsFO4.pas:5867 wbOBTSReq dentro
-''' de wbObjectTemplate 5888-5898). Cada Combination tiene Includes (referencias a OMOD records),
-''' una lista de keywords que filtra cuándo se aplica esta combination, y un flag Default.
-''' El engine selecciona la combination matcheando los keywords del LVLI.LLKC contra esta lista.</summary>
+''' <summary>Single Include entry inside an OBTS combination (wbDefinitionsFO4.pas:5879-5884).
+''' Each Include is 7 bytes: u32 Mod FormID + u8 AttachPointIndex + u8 Optional + u8 DontUseAll.
+''' AttachPointIndex indexes into OMOD.AttachParentSlots when the engine resolves the socket
+''' (no documented handler in xEdit; semantics inferred from schema). Optional / DontUseAll
+''' are leveled-list flags that affect runtime sampling, not record-time render.</summary>
+Public Class ARMO_CombinationInclude
+    Public ModFormID As UInteger
+    Public AttachPointIndex As Byte
+    Public IsOptional As Boolean
+    Public DontUseAll As Boolean
+End Class
+
+''' <summary>Combination del Object Template del ARMO/NPC_ (wbDefinitionsFO4.pas:5867 wbOBTSReq
+''' dentro de wbObjectTemplate 5888-5898). Cada Combination tiene Includes (OMOD references),
+''' Properties (overrides directos en la combination misma), Keywords (filter), y metadata
+''' (Default flag, ParentCombinationIndex, level fields). El engine selecciona la combination
+''' matcheando los keywords del LVLI.LLKC contra esta lista.</summary>
 Public Class ARMO_Combination
     Public IsDefault As Boolean
     ''' <summary>Parent Combination Index (s16 @ offset 12 del OBTS payload, wbDefinitionsFO4.pas:5874).
@@ -1197,8 +1210,31 @@ Public Class ARMO_Combination
     ''' index — el override viene del OMOD include vía AddonIndex Property". ≥0 = la combination directamente
     ''' selecciona ese AddonIndex group de los Models de la ARMO sin necesidad de OMOD Property.</summary>
     Public ParentCombinationIndex As Integer = -1
+    Public LevelMin As Byte
+    Public LevelMax As Byte
+    Public MinLevelForRanks As Byte
+    Public AltLevelsPerTier As Byte
     Public Keywords As New List(Of UInteger)
-    Public IncludeOMODFormIDs As New List(Of UInteger)
+    Public Includes As New List(Of ARMO_CombinationInclude)
+    ''' <summary>Properties declared directly on this combination (in addition to whatever Properties
+    ''' the included OMODs carry). Same 24-byte layout as OMOD_Property — wbObjectModProperties
+    ''' (wbDefinitionsFO4.pas:5826-5865). Vanilla case observed: `BandanaSwapSkull` MSWP applied
+    ''' as ADD via combination Property without any Includes (Property Count=1, Include Count=0).</summary>
+    Public Properties As New List(Of OMOD_Property)
+
+    ''' <summary>Back-compat shim. Returns ModFormIDs of all Includes. Pre-existing call sites
+    ''' (SaveNpcEspWriter, NpcSubrecordWriter, ParseNPC OBTS legacy mirror, ResolveEffectiveAddonIndex)
+    ''' iterate this list to find OMODs to apply. New code should use Includes directly to access
+    ''' AttachPointIndex / Optional / DontUseAll.</summary>
+    Public ReadOnly Property IncludeOMODFormIDs As List(Of UInteger)
+        Get
+            Dim result As New List(Of UInteger)(Includes.Count)
+            For Each inc In Includes
+                result.Add(inc.ModFormID)
+            Next
+            Return result
+        End Get
+    End Property
 End Class
 
 Public Class ARMO_Data
@@ -1473,44 +1509,72 @@ Public Module RecordParsers
         Return ResolveFormIDReference(rec, sr.AsUInt32, pluginManager)
     End Function
 
-    ''' <summary>Parse the OBTS payload (Object Mod Template Item, wbOBTSReq @ wbDefinitionsFO4.pas:5867).
+    ''' <summary>Parse the OBTS payload (Object Mod Template Item, wbOBTSReq @ wbDefinitionsFO4.pas:5867-5886).
     ''' Layout (offsets verified against xEdit wbInterface.pas:13933-13948 prefix rules:
     ''' arCount=-1→u32 prefix, arCount=-2→u16 prefix, arCount=-4→u8 prefix):
-    '''   u32 IncludeCount @0
+    '''   u32 IncludeCount  @0
     '''   u32 PropertyCount @4
     '''   u8  LevelMin @8, u8 pad, u8 LevelMax @10, u8 pad
     '''   s16 ParentCombinationIndex @12, u8 Default @14
     '''   u8  KeywordCount @15 (wbArray(..., -4) = 1-byte prefix)
-    '''   KeywordCount × u32 @16+ (Keyword FormIDs)
+    '''   KeywordCount × u32 (Keyword FormIDs)
     '''   u8  MinLevelForRanks, u8 AltLevelsPerTier
     '''   IncludeCount × 7 bytes: u32 Mod FormID + u8 AttachPointIdx + u8 Optional + u8 DontUseAll
-    '''   PropertyCount × 24 bytes: skipped here (caller resolves Properties via OMOD lookup if needed).
+    '''   PropertyCount × 24 bytes: same layout as wbObjectModProperties (parsed via shared
+    '''       CraftingRecordParsers.ParseObjectModProperty so OMOD.DATA Properties and OBTS
+    '''       inline Properties stay in lockstep).
     '''
     ''' Returns a parsed combination, or Nothing if the payload is malformed (length checks).
-    ''' Used by both NPC_.OBTS (robot rendering) and ARMO.OBTS (multi-addon keyword swap).</summary>
+    ''' Used by both NPC_.OBTS (robot/template rendering) and ARMO.OBTS (multi-addon keyword swap).</summary>
     Friend Function ParseOBTSPayload(d As Byte(), rec As PluginRecord, pluginManager As PluginManager) As ARMO_Combination
         If d Is Nothing OrElse d.Length < 17 Then Return Nothing
         Dim combo As New ARMO_Combination()
-        Dim includeCount = BitConverter.ToUInt32(d, 0)
+        Dim includeCount As UInteger = BitConverter.ToUInt32(d, 0)
+        Dim propertyCount As UInteger = BitConverter.ToUInt32(d, 4)
+        combo.LevelMin = d(8)
+        combo.LevelMax = d(10)
         ' Offset 12: s16 'Parent Combination Index' (wbDefinitionsFO4.pas:5874). -1 = no override.
         combo.ParentCombinationIndex = CInt(BitConverter.ToInt16(d, 12))
         combo.IsDefault = (d(14) <> 0)
+
         Dim offset As Integer = 15
+        If offset >= d.Length Then Return combo
+
         Dim kwCount As Integer = CInt(d(offset))
         offset += 1
         For i = 0 To kwCount - 1
             If offset + 4 > d.Length Then Exit For
-            Dim rawKw = BitConverter.ToUInt32(d, offset)
+            Dim rawKw As UInteger = BitConverter.ToUInt32(d, offset)
             If rawKw <> 0UI Then combo.Keywords.Add(ResolveFormIDReference(rec, rawKw, pluginManager))
             offset += 4
         Next
-        offset += 2 ' MinLevelForRanks + AltLevelsPerTier
+
+        If offset + 1 < d.Length Then
+            combo.MinLevelForRanks = d(offset)
+            combo.AltLevelsPerTier = d(offset + 1)
+        End If
+        offset += 2
+
+        Const includeEntrySize As Integer = 7
         For i = 0 To CInt(includeCount) - 1
-            If offset + 7 > d.Length Then Exit For
-            Dim rawModFID = BitConverter.ToUInt32(d, offset)
-            If rawModFID <> 0UI Then combo.IncludeOMODFormIDs.Add(ResolveFormIDReference(rec, rawModFID, pluginManager))
-            offset += 7
+            If offset + includeEntrySize > d.Length Then Exit For
+            Dim inc As New ARMO_CombinationInclude With {
+                .ModFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, offset), pluginManager),
+                .AttachPointIndex = d(offset + 4),
+                .IsOptional = d(offset + 5) <> 0,
+                .DontUseAll = d(offset + 6) <> 0
+            }
+            combo.Includes.Add(inc)
+            offset += includeEntrySize
         Next
+
+        Const propertyEntrySize As Integer = 24
+        For i = 0 To CInt(propertyCount) - 1
+            If offset + propertyEntrySize > d.Length Then Exit For
+            combo.Properties.Add(CraftingRecordParsers.ParseObjectModProperty(d, offset, rec, pluginManager))
+            offset += propertyEntrySize
+        Next
+
         Return combo
     End Function
 

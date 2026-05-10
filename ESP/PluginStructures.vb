@@ -21,9 +21,14 @@ Public Module PluginConstants
     ' BPTD added 2026-04-19: RACE.GNAM references BPTD for bone→part-type mapping, consumed
     ' by NPC_Manager to resolve MRSV regions. Without BPTD, PluginManager.GetRecord(BPTDFormID)
     ' returns Nothing and downstream FMRS/body-weight pipelines cannot reach the data.
+    ' KYWD added 2026-05-10 (robot AttachPoint mounting): OMOD.AttachPoint is a FormID to a KYWD
+    ' whose EditorID matches BSConnectPoint::Parents.Name in the actor's skeleton NIF (verified
+    ' with dump v2 — 513 OMOD chunks NPC_-target with AttachPoint, ALL resolved as "not loaded"
+    ' before this fix because KYWD records were never indexed). With KYWD in the filter the
+    ' OMOD-AttachPoint→socket-name lookup works, enabling robot chunk mounting.
     Public ReadOnly SIGS_NPC_RENDERING As New HashSet(Of String)(
         {"NPC_", "RACE", "ARMO", "ARMA", "OTFT", "HDPT", "TXST", "CLFM", "LVLN", "LVLI", "FLST", "MSWP",
-         "CELL", "WRLD", "BPTD", "OMOD"},
+         "CELL", "WRLD", "BPTD", "OMOD", "KYWD"},
         StringComparer.Ordinal)
 
     ' Default filter kept for backward compatibility
