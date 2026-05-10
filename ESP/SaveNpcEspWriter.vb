@@ -542,15 +542,17 @@ Public Module SaveNpcEspWriter
                 bw.Write(authorBytes)
                 bw.Write(CByte(0))
 
-                ' MAST + DATA pairs.
+                ' MAST + DATA pairs. DATA is documented as `wbByteArray('Unknown', 8, cpIgnore)`
+                ' in xEdit (wbDefinitionsFO4.pas:12477) with the explicit comment "Should be set
+                ' by CK but usually null". The engine ignores the field at runtime — the canonical
+                ' CK output is 8 zero bytes, so we match that and skip the file-size lookup.
                 For Each masterName In masters
                     Dim masterBytes = Encoding.ASCII.GetBytes(masterName)
                     WriteSubrecordHeader(bw, "MAST", masterBytes.Length + 1)
                     bw.Write(masterBytes)
                     bw.Write(CByte(0))
-                    Dim masterFileSize As ULong = TryReadMasterFileSizeForDir(outputDir, masterName)
                     WriteSubrecordHeader(bw, "DATA", 8)
-                    bw.Write(masterFileSize)
+                    bw.Write(0UL)
                 Next
             End Using
             Dim bodyBytes = bodyMs.ToArray()

@@ -2194,9 +2194,10 @@ Public Class FO4UnifiedMaterial_Class
         shad.LightingInfluence = CByte(Math.Min(255, Math.Max(0, CInt(Mat.LightingInfluence * 255.0F))))
         shad.HasGreyscaleToPaletteAlpha = Mat.GrayscaleToPaletteAlpha
         shad.HasGreyscaleToPaletteColor = Mat.GrayscaleToPaletteColor
-
+        If Mat.SoftEnabled Then shad.SoftFalloffDepth = Mat.SoftDepth
         shad.HasGlowmap = Mat.Glowmap
         shad.EnvMapMinLOD = Mat.EnvmapMinLOD
+
         ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Weapon_Blood), Mat.BloodEnabled)
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Soft_Effect), Mat.SoftEnabled)
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Decal), Mat.Decal)
@@ -2300,7 +2301,15 @@ Public Class FO4UnifiedMaterial_Class
         Else
             shad.Smoothness = Mat.Smoothness
         End If
-        shad.SubsurfaceRolloff = Mat.SubsurfaceLightingRolloff
+        ' SubsurfaceRolloff centinela: CK only writes the BGSM Rolloff value when
+        ' SubsurfaceLighting=True; otherwise it normalizes the inline shader to 0
+        ' regardless of what the BGSM file carries (verified empirically against CK
+        ' bakes 2026-05-09 across 8 NPCs: every shape with BGSM SubsurfaceLighting=False
+        ' bakes inline SubsurfaceRolloff=0, even when the BGSM stores 0.3/0.5/etc.).
+        ' Without this gate the round-trip mat.SubsurfaceLightingRolloff diverges from CK
+        ' on hair/beard/lashes/wet/head where the BGSM ships a non-zero default but the
+        ' material does not actually opt into softlight.
+        shad.SubsurfaceRolloff = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
         shad.ModelSpace = Mat.ModelSpaceNormals
         shad.ShaderType_SK_FO4 = effectiveShaderType
         ' BGSM stores both hair tint and skin tint in the single HairTintColor field
@@ -2314,14 +2323,32 @@ Public Class FO4UnifiedMaterial_Class
         If Mat.SkinTint Then shad.SkinTintColor = hairTintNifColor
         shad.HasBacklight = Mat.BackLighting
         shad.BacklightPower = Mat.BackLightPower
-        shad.HasSpecular = Mat.SpecularEnabled
+        ' HasSpecular centinela: SpecularMult=0 means the specular contribution is
+        ' multiplicatively zero — engine renders no specular regardless of the bool flag.
+        ' CK normalizes the inline shader flag to False in that case (verified vs Lashes
+        ' bake: BGSM SpecularEnabled=True but SpecularMult=0, BAKED-CK HasSpecular=False).
+        shad.HasSpecular = Mat.SpecularEnabled AndAlso Mat.SpecularMult <> 0.0F
         shad.SpecularColor = UIntegerToNifColor3(Mat.SpecularColor)
         shad.SpecularStrength = Mat.SpecularMult
         shad.HasGlowmap = Mat.Glowmap
         shad.HasTreeAnim = Mat.Tree
         shad.HasSoftlight = Mat.SubsurfaceLighting
         shad.HasRimlight = Mat.RimLighting
-        shad.RimlightPower = Mat.RimPower
+        ' RimlightPower in the FO4-era NIF schema (StreamVersion 130-139) is the centinela that
+        ' gates BacklightPower serialization: BacklightPower is only written to disk when
+        ' rimlightPower2 >= Single.MaxValue (nifly Shaders.cpp:474-478, NiflySharp generated
+        ' BSMain.BSLightingShaderProperty.g.cs:474-478). CK bakes always emit MaxValue because
+        ' it's the C++ default of the FO4-specific rimlightPower2 field. If we wrote
+        ' Mat.RimPower verbatim, the centinela disarms and BacklightPower is dropped → reads
+        ' back as 0. Force MaxValue for the entire FO4-era stream range so BacklightPower
+        ' round-trips. Mat.RimPower is preserved by the BGSM file on disk, not by the inline
+        ' shader — engine consults the BGSM at load.
+        Dim streamVerForRim = Nif.Header.Version.StreamVersion
+        If streamVerForRim >= 130 AndAlso streamVerForRim <= 139 Then
+            shad.RimlightPower = Single.MaxValue
+        Else
+            shad.RimlightPower = Mat.RimPower
+        End If
         shad.HasGreyscaleToPaletteColor = Mat.GrayscaleToPaletteColor
         shad.GrayscaleToPaletteScale = Mat.GrayscaleToPaletteScale
         shad.FresnelPower = Mat.FresnelPower
@@ -2575,7 +2602,7 @@ Public Class FO4UnifiedMaterial_Class
             Dim sidecarBytes = FilesDictionary_class.GetBytes(sidecarKey)
             If sidecarBytes IsNot Nothing AndAlso sidecarBytes.Length > 0 Then
                 Try
-                    Using doc = JsonDocument.Parse(sidecarBytes)
+                    Using doc = JsonDocument.Parse(sidecarBytes, New JsonDocumentOptions With {.CommentHandling = JsonCommentHandling.Skip, .AllowTrailingCommas = True})
                         Dim root = doc.RootElement
                         If type Is GetType(BGSM) Then
                             Dim envmask As JsonElement = Nothing

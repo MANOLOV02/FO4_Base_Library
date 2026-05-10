@@ -104,13 +104,38 @@ Public Class PluginManager
         Return Plugins(index).FileName
     End Function
 
+    ''' <summary>Resolve the master plugin that "owns" a FormID for engine-faithful asset
+    ''' resolution (e.g. FaceGen path lookup). Critical: this must NOT return the override
+    ''' plugin in cases where the FormID has been overridden — the engine resolves FaceGen
+    ''' under the master's path regardless of overrides. Two cases:
+    '''
+    ''' 1) Full slot (high byte 0x00..0xFD): the high byte is the load-order index of the
+    '''    master, period. Doesn't matter who overrides it; the high byte itself encodes
+    '''    the master.
+    ''' 2) Light slot (high byte 0xFE): the FormID encodes a light-slot index in bits
+    '''    12..23 (0xFExxxYYY where xxx = ESL slot, YYY = ObjectID). The master is the
+    '''    N-th plugin with the ESL flag set, in load order — same algorithm xEdit uses
+    '''    [TwbFile.LoadOrderFileIDtoFileFileID, wbImplementation.pas:3441-3444].
+    '''
+    ''' Returns "" when the FormID's slot can't be resolved (load order doesn't have a
+    ''' plugin in that position, or fewer ESLs than the slot index demands).</summary>
     Public Function GetOriginatingPluginName(formID As UInteger) As String
-        Dim loadOrderIndex = CInt((formID >> 24) And &HFFUI)
-        If loadOrderIndex = &HFE Then
-            Dim rec = GetRecord(formID)
-            Return If(rec IsNot Nothing, rec.SourcePluginName, "")
+        Dim highByte = CInt((formID >> 24) And &HFFUI)
+        If highByte = &HFE Then
+            ' Light slot resolution: lightSlot = bits 12..23, then walk plugins-with-IsESL
+            ' in load order, picking the lightSlot-th one. Avoids using GetRecord(formID)
+            ' .SourcePluginName, which after a Save would return the override plugin
+            ' (NPC_Manager.esp) instead of the master ESL — breaking FaceGen path lookup.
+            Dim lightSlot = CInt((formID >> 12) And &HFFFUI)
+            Dim seen As Integer = 0
+            For Each p In Plugins
+                If p Is Nothing OrElse Not p.IsESL Then Continue For
+                If seen = lightSlot Then Return p.FileName
+                seen += 1
+            Next
+            Return ""
         End If
-        Return GetPluginNameByLoadOrderIndex(loadOrderIndex)
+        Return GetPluginNameByLoadOrderIndex(highByte)
     End Function
     Public Function ResolveFieldString(rec As PluginRecord, sr As SubrecordData, Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
         If sr.Data Is Nothing OrElse sr.Data.Length = 0 Then Return ""
@@ -279,35 +304,45 @@ Public Class PluginManager
             Next
         End If
 
-        ' Use loadorder.txt as ordering source if available (LOOT/Vortex managed).
-        ' Filter to only active plugins; preserves the ordering decisions made by the manager.
+        ' Use loadorder.txt as ordering source if available (LOOT/Vortex managed). Implicit masters
+        ' (game .esm + DLCs) and Creation Club entries are FORCE-loaded by the engine in their
+        ' canonical order regardless of what loadorder.txt says — LOOT/Vortex listings for those
+        ' are advisory only and the engine ignores them. We must replicate that to keep FormID high
+        ' bytes aligned with the runtime engine; otherwise a `loadorder.txt` that places any plugin
+        ' before Fallout4.esm would shove the game master to slot 1+, desyncing every FormID
+        ' diagnostic / clipboard helper / FaceGen path lookup that depends on the high byte.
         Dim loadorderTxt = Path.Combine(appData, appDataSubdir, "loadorder.txt")
         Dim ordered As New List(Of String)
         If File.Exists(loadorderTxt) Then
+            Dim implicitsSet As New HashSet(Of String)(implicits, StringComparer.OrdinalIgnoreCase)
+            Dim ccSet As New HashSet(Of String)(ccEntries, StringComparer.OrdinalIgnoreCase)
+
+            ' 1) Implicits at the front, in the hardcoded engine order.
+            ordered.AddRange(implicits)
+
+            ' 2) Creation Club entries next, skipping any that overlap with implicits.
+            For Each p In ccEntries
+                If implicitsSet.Contains(p) Then Continue For
+                ordered.Add(p)
+            Next
+
+            ' 3) Everything else from loadorder.txt, in its order, skipping implicits + CC (already
+            '    placed above) and inactive plugins (must also be in Plugins.txt with `*`).
             For Each line In File.ReadAllLines(loadorderTxt, Encoding.UTF8)
                 Dim trimmed = line.Trim()
                 If trimmed.Length = 0 Then Continue For
                 If trimmed.StartsWith("#") OrElse trimmed.StartsWith(";") Then Continue For
                 If trimmed.StartsWith("*") Then trimmed = trimmed.Substring(1).Trim()
                 If trimmed.Length = 0 Then Continue For
-                If activeSet.Contains(trimmed) Then ordered.Add(trimmed)
+                If Not activeSet.Contains(trimmed) Then Continue For
+                If implicitsSet.Contains(trimmed) Then Continue For
+                If ccSet.Contains(trimmed) Then Continue For
+                If ordered.Any(Function(x) String.Equals(x, trimmed, StringComparison.OrdinalIgnoreCase)) Then Continue For
+                ordered.Add(trimmed)
             Next
-            ' Append any actives that loadorder.txt didn't list (rare edge: just-installed plugin
-            ' or LOOT not aware of CC entries). Insert implicits at the front, CC after them, and
-            ' Plugins.txt extras at the end — same canonical order as the no-loadorder.txt path.
-            Dim insertPos As Integer = 0
-            For Each p In implicits
-                If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then
-                    ordered.Insert(insertPos, p)
-                    insertPos += 1
-                End If
-            Next
-            For Each p In ccEntries
-                If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then
-                    ordered.Insert(insertPos, p)
-                    insertPos += 1
-                End If
-            Next
+
+            ' 4) Fallback for actives in Plugins.txt that loadorder.txt didn't list (rare edge:
+            '    just-installed plugin not yet sorted by LOOT). Append at the end.
             For Each p In activeFromPluginsTxt
                 If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
             Next

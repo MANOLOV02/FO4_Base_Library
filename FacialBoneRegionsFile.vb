@@ -72,7 +72,7 @@ Public Class FacialBoneRegionsFile
 
         Try
             Dim json = System.Text.Encoding.UTF8.GetString(data)
-            Using doc As JsonDocument = JsonDocument.Parse(json)
+            Using doc As JsonDocument = JsonDocument.Parse(json, New JsonDocumentOptions With {.CommentHandling = JsonCommentHandling.Skip, .AllowTrailingCommas = True})
                 If doc.RootElement.ValueKind <> JsonValueKind.Array Then Return Nothing
 
                 Dim result As New FacialBoneRegionsFile

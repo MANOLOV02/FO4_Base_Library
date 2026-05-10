@@ -193,6 +193,17 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uUbColorLoc As Integer = -1
     Friend _uUbBlendOpLoc As Integer = -1
 
+    ' Persistent ping-pong colour attachments shared by ComposeOntoFaceTexture,
+    ' ApplyRegionSwapsOntoFaceTexture and ApplyUniformBlendOntoFaceTexture. Allocated lazily
+    ' to (_pingW, _pingH); reused across calls when dims match, re-allocated when dims change.
+    ' The "result snapshot" is a fresh texture per call — it carries the final pass output to
+    ' the caller, who owns its lifetime. Pings stay private to the state and are only released
+    ' on Dispose() or on dim-mismatch re-alloc.
+    Friend _pingTex(1) As Integer
+    Friend _pingFbo(1) As Integer
+    Friend _pingW As Integer = 0
+    Friend _pingH As Integer = 0
+
     ''' <summary>Release all GL handles owned by this state. Caller MUST invoke from the GL
     ''' thread with the owning context current. Idempotent — safe to call when handles are 0.</summary>
     Public Sub Dispose()
@@ -216,6 +227,24 @@ Public NotInheritable Class FaceTintCompositorState
             Try : GL.DeleteBuffer(_quadVbo) : Catch : End Try
             _quadVbo = 0
         End If
+        ReleasePingPongInternal()
+    End Sub
+
+    ''' <summary>Free the cached ping-pong textures + FBOs. Idempotent. Used by Dispose and by
+    ''' the compose path when the requested width/height change between calls.</summary>
+    Friend Sub ReleasePingPongInternal()
+        For i As Integer = 0 To 1
+            If _pingFbo(i) <> 0 Then
+                Try : GL.DeleteFramebuffer(_pingFbo(i)) : Catch : End Try
+                _pingFbo(i) = 0
+            End If
+            If _pingTex(i) <> 0 Then
+                Try : GL.DeleteTexture(_pingTex(i)) : Catch : End Try
+                _pingTex(i) = 0
+            End If
+        Next
+        _pingW = 0
+        _pingH = 0
     End Sub
 End Class
 
@@ -373,11 +402,8 @@ void main() {
         Dim wasDepth As Boolean = GL.IsEnabled(EnableCap.DepthTest)
         Dim wasScissor As Boolean = GL.IsEnabled(EnableCap.ScissorTest)
 
-        Dim pingTex(1) As Integer
-        Dim pingFbo(1) As Integer
-        pingTex(0) = 0 : pingTex(1) = 0
-        pingFbo(0) = 0 : pingFbo(1) = 0
         Dim resultTex As Integer = 0
+        Dim resultFbo As Integer = 0
         Dim batchLoaded As Dictionary(Of String, PreviewModel.Texture_Loaded_Class) = Nothing
 
         Try
@@ -452,27 +478,12 @@ void main() {
                 End If
             End If
 
-            ' Allocate two ping-pong colour attachments matching the face diffuse size.
-            For i As Integer = 0 To 1
-                pingTex(i) = GL.GenTexture()
-                GL.BindTexture(TextureTarget.Texture2D, pingTex(i))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
-                              width, height, 0,
-                              PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero)
-
-                pingFbo(i) = GL.GenFramebuffer()
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, pingFbo(i))
-                GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
-                                        TextureTarget.Texture2D, pingTex(i), 0)
-                Dim status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)
-                If status <> FramebufferErrorCode.FramebufferComplete Then
-                    Return 0
-                End If
-            Next
+            ' Reuse persistent ping-pong attachments at this size; allocate the caller-owned
+            ' result texture+fbo for the final pass output. Pings stay alive in the state
+            ' across calls, eliminating the per-call GenTexture+TexImage2D+DeleteTexture
+            ' churn for 1024^2 face textures.
+            If Not EnsurePingPongAllocated(state, width, height) Then Return 0
+            If Not AllocateResultTextureAndFbo(width, height, resultTex, resultFbo) Then Return 0
 
             GL.Viewport(0, 0, width, height)
             GL.Disable(EnableCap.DepthTest)
@@ -482,8 +493,34 @@ void main() {
             GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
 
+            ' Pre-pass: count drawable layers so we can route the LAST one to resultFbo
+            ' (caller-owned) instead of the persistent pings (which would mutate under the
+            ' caller's feet on the next compose call).
+            Dim drawableCount As Integer = 0
+            For i As Integer = 0 To layers.Count - 1
+                Dim ll = layers(i)
+                If ll Is Nothing Then Continue For
+                Dim k As String = Nothing
+                If Not layerChannelKey.TryGetValue(i, k) Then Continue For
+                Dim e As PreviewModel.Texture_Loaded_Class = Nothing
+                If batchLoaded Is Nothing OrElse Not batchLoaded.TryGetValue(k, e) _
+                   OrElse e Is Nothing OrElse e.Texture_ID = 0 Then Continue For
+                drawableCount += 1
+            Next
+
+            If drawableCount = 0 Then
+                ' Nothing to draw; release the result handles and return 0 (matches legacy behaviour).
+                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
+                Try : GL.DeleteTexture(resultTex) : Catch : End Try
+                resultFbo = 0
+                resultTex = 0
+                If logger IsNot Nothing Then logger($"  no drawable layer on channel {CInt(channel)}, return 0")
+                Return 0
+            End If
+
             Dim writeIdx As Integer = 0
             Dim readTexId As Integer = originalTexId  ' first iteration reads from the unmodified face diffuse
+            Dim drawnSoFar As Integer = 0
 
             Dim drawnLayers As Integer = 0
             Dim totalLayers As Integer = If(layers IsNot Nothing, layers.Count, 0)
@@ -526,7 +563,11 @@ void main() {
                     End If
                 End If
 
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, pingFbo(writeIdx))
+                ' Last drawable layer writes to caller-owned resultFbo; intermediate layers
+                ' bounce through the persistent pings.
+                Dim isLast As Boolean = (drawnSoFar = drawableCount - 1)
+                Dim drawFbo As Integer = If(isLast, resultFbo, state._pingFbo(writeIdx))
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, drawFbo)
 
                 GL.ActiveTexture(TextureUnit.Texture0)
                 GL.BindTexture(TextureTarget.Texture2D, readTexId)
@@ -571,19 +612,15 @@ void main() {
                 GL.ActiveTexture(TextureUnit.Texture1)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
 
-                ' Next iteration reads from what we just wrote.
-                readTexId = pingTex(writeIdx)
+                ' Next iteration reads from what we just wrote (resultTex on the last pass,
+                ' otherwise the ping we just bound).
+                readTexId = If(isLast, resultTex, state._pingTex(writeIdx))
                 writeIdx = 1 - writeIdx
+                drawnSoFar += 1
             Next
 
-            ' Whatever readTexId points at now is the final result. If it still points at
-            ' originalTexId, no layer actually drew — return 0.
-            If readTexId = originalTexId Then
-                resultTex = 0
-            Else
-                resultTex = readTexId
-            End If
-
+            ' resultTex now holds the final composite (drawableCount > 0 guaranteed by the
+            ' early-return above, so the last layer always wrote into resultFbo).
             If logger IsNot Nothing Then logger($"  drew {drawnLayers} of {totalLayers} layers on channel {CInt(channel)}")
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
@@ -593,11 +630,17 @@ void main() {
             Dim postErr = GL.GetError()
             If postErr <> ErrorCode.NoError Then
                 If logger IsNot Nothing Then logger($"  GL error after compose: 0x{Hex(CInt(postErr))} ({postErr}) — refusing to return tex")
+                ' Hand the result texture back to the cleanup path by clearing resultTex;
+                ' the Finally will delete the orphan via the resultTex-on-failure branch.
+                Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
             End If
         Catch ex As Exception
             If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
-            resultTex = 0
+            If resultTex <> 0 Then
+                Try : GL.DeleteTexture(resultTex) : Catch : End Try
+                resultTex = 0
+            End If
         Finally
             ' Free every GL texture that the batch loader created for this pass — except the
             ' ones the cache adopted. Cached entries survive across calls and will be released
@@ -611,15 +654,11 @@ void main() {
                 Next
             End If
 
-            ' Free whichever ping-pong texture is NOT the result. Free both FBOs.
-            For i As Integer = 0 To 1
-                If pingFbo(i) <> 0 Then
-                    Try : GL.DeleteFramebuffer(pingFbo(i)) : Catch : End Try
-                End If
-                If pingTex(i) <> 0 AndAlso pingTex(i) <> resultTex Then
-                    Try : GL.DeleteTexture(pingTex(i)) : Catch : End Try
-                End If
-            Next
+            ' Free the result FBO (always scratch, the texture is owned by the caller).
+            ' Pings are persistent and stay in the state for next call.
+            If resultFbo <> 0 Then
+                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
+            End If
 
             ' Restore state.
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
@@ -740,11 +779,8 @@ void main() {
         Dim wasDepth As Boolean = GL.IsEnabled(EnableCap.DepthTest)
         Dim wasScissor As Boolean = GL.IsEnabled(EnableCap.ScissorTest)
 
-        Dim pingTex(1) As Integer
-        Dim pingFbo(1) As Integer
-        pingTex(0) = 0 : pingTex(1) = 0
-        pingFbo(0) = 0 : pingFbo(1) = 0
         Dim resultTex As Integer = 0
+        Dim resultFbo As Integer = 0
         Dim batchLoaded As Dictionary(Of String, PreviewModel.Texture_Loaded_Class) = Nothing
 
         Try
@@ -801,27 +837,10 @@ void main() {
                 End If
             End If
 
-            ' Allocate two ping-pong colour attachments matching the face texture size.
-            For i As Integer = 0 To 1
-                pingTex(i) = GL.GenTexture()
-                GL.BindTexture(TextureTarget.Texture2D, pingTex(i))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
-                              width, height, 0,
-                              PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero)
-
-                pingFbo(i) = GL.GenFramebuffer()
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, pingFbo(i))
-                GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
-                                        TextureTarget.Texture2D, pingTex(i), 0)
-                Dim status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)
-                If status <> FramebufferErrorCode.FramebufferComplete Then
-                    Return 0
-                End If
-            Next
+            ' Reuse persistent ping-pong attachments at this size; allocate caller-owned
+            ' result for the final pass.
+            If Not EnsurePingPongAllocated(state, width, height) Then Return 0
+            If Not AllocateResultTextureAndFbo(width, height, resultTex, resultFbo) Then Return 0
 
             GL.Viewport(0, 0, width, height)
             GL.Disable(EnableCap.DepthTest)
@@ -831,9 +850,34 @@ void main() {
             GL.UseProgram(state._swapProgram)
             GL.BindVertexArray(state._quadVao)
 
+            ' Pre-pass: count drawable swaps so we can route the LAST one to resultFbo.
+            Dim drawableSwaps As Integer = 0
+            For i As Integer = 0 To swaps.Count - 1
+                Dim ss = swaps(i)
+                If ss Is Nothing Then Continue For
+                Dim sk As String = Nothing
+                Dim mk As String = Nothing
+                If Not swapTexKey.TryGetValue(i, sk) OrElse Not swapMaskKey.TryGetValue(i, mk) Then Continue For
+                Dim se As PreviewModel.Texture_Loaded_Class = Nothing
+                Dim mE2 As PreviewModel.Texture_Loaded_Class = Nothing
+                If Not batchLoaded.TryGetValue(sk, se) OrElse se Is Nothing OrElse se.Texture_ID = 0 Then Continue For
+                If Not batchLoaded.TryGetValue(mk, mE2) OrElse mE2 Is Nothing OrElse mE2.Texture_ID = 0 Then Continue For
+                drawableSwaps += 1
+            Next
+
+            If drawableSwaps = 0 Then
+                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
+                Try : GL.DeleteTexture(resultTex) : Catch : End Try
+                resultFbo = 0
+                resultTex = 0
+                If logger IsNot Nothing Then logger($"  no drawable swap on channel {CInt(channel)}, return 0")
+                Return 0
+            End If
+
             Dim writeIdx As Integer = 0
             Dim readTexId As Integer = originalTexId
             Dim drawn As Integer = 0
+            Dim drawnSoFar As Integer = 0
 
             For i As Integer = 0 To swaps.Count - 1
                 Dim sw = swaps(i)
@@ -855,7 +899,9 @@ void main() {
                     Continue For
                 End If
 
-                GL.BindFramebuffer(FramebufferTarget.Framebuffer, pingFbo(writeIdx))
+                Dim isLastSwap As Boolean = (drawnSoFar = drawableSwaps - 1)
+                Dim drawFbo As Integer = If(isLastSwap, resultFbo, state._pingFbo(writeIdx))
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, drawFbo)
 
                 GL.ActiveTexture(TextureUnit.Texture0)
                 GL.BindTexture(TextureTarget.Texture2D, readTexId)
@@ -880,15 +926,12 @@ void main() {
                 GL.ActiveTexture(TextureUnit.Texture1)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
 
-                readTexId = pingTex(writeIdx)
+                readTexId = If(isLastSwap, resultTex, state._pingTex(writeIdx))
                 writeIdx = 1 - writeIdx
+                drawnSoFar += 1
             Next
 
-            If readTexId = originalTexId Then
-                resultTex = 0
-            Else
-                resultTex = readTexId
-            End If
+            ' resultTex now holds the final composite (drawableSwaps > 0 guaranteed above).
 
             If logger IsNot Nothing Then logger($"  drew {drawn} of {swaps.Count} swaps on channel {CInt(channel)}")
 
@@ -897,11 +940,15 @@ void main() {
             Dim postErr = GL.GetError()
             If postErr <> ErrorCode.NoError Then
                 If logger IsNot Nothing Then logger($"  GL error after region swap: 0x{Hex(CInt(postErr))} ({postErr}) — refusing to return tex")
+                Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
             End If
         Catch ex As Exception
             If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
-            resultTex = 0
+            If resultTex <> 0 Then
+                Try : GL.DeleteTexture(resultTex) : Catch : End Try
+                resultTex = 0
+            End If
         Finally
             ' Cached entries survive across calls; only delete the per-call ones.
             If batchLoaded IsNot Nothing Then
@@ -913,14 +960,10 @@ void main() {
                 Next
             End If
 
-            For i As Integer = 0 To 1
-                If pingFbo(i) <> 0 Then
-                    Try : GL.DeleteFramebuffer(pingFbo(i)) : Catch : End Try
-                End If
-                If pingTex(i) <> 0 AndAlso pingTex(i) <> resultTex Then
-                    Try : GL.DeleteTexture(pingTex(i)) : Catch : End Try
-                End If
-            Next
+            ' Result FBO is scratch; pings stay persistent in the state.
+            If resultFbo <> 0 Then
+                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
+            End If
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
             GL.UseProgram(prevProg)
@@ -1168,6 +1211,79 @@ void main() {
         state._uSwapTexLoc = GL.GetUniformLocation(state._swapProgram, "uSwap")
         state._uSwapMaskLoc = GL.GetUniformLocation(state._swapProgram, "uMask")
     End Sub
+
+    ''' <summary>Allocate (or reuse) the two persistent ping-pong colour attachments at
+    ''' (width, height). Re-allocates when dims change; reuses verbatim when they match.
+    ''' Returns True on success; False on framebuffer-incompleteness (in which case the
+    ''' state is rolled back to "no pings allocated"). MUST run on the GL thread.</summary>
+    Private Function EnsurePingPongAllocated(state As FaceTintCompositorState, width As Integer, height As Integer) As Boolean
+        If state._pingTex(0) <> 0 AndAlso state._pingTex(1) <> 0 _
+           AndAlso state._pingFbo(0) <> 0 AndAlso state._pingFbo(1) <> 0 _
+           AndAlso state._pingW = width AndAlso state._pingH = height Then
+            Return True
+        End If
+
+        ' Dim mismatch (or never allocated): release stale handles before re-allocating.
+        state.ReleasePingPongInternal()
+
+        For i As Integer = 0 To 1
+            state._pingTex(i) = GL.GenTexture()
+            GL.BindTexture(TextureTarget.Texture2D, state._pingTex(i))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                          width, height, 0,
+                          PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero)
+
+            state._pingFbo(i) = GL.GenFramebuffer()
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, state._pingFbo(i))
+            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
+                                    TextureTarget.Texture2D, state._pingTex(i), 0)
+            Dim status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)
+            If status <> FramebufferErrorCode.FramebufferComplete Then
+                state.ReleasePingPongInternal()
+                Return False
+            End If
+        Next
+
+        state._pingW = width
+        state._pingH = height
+        Return True
+    End Function
+
+    ''' <summary>Allocate one fresh RGBA8 texture + framebuffer at (width, height) for the
+    ''' caller-owned final output of a pass. The caller is responsible for deleting
+    ''' <paramref name="resultTex"/> (per existing contract); the FBO is internal scratch and
+    ''' must be deleted by the caller's Finally block. Returns False on FBO incompleteness
+    ''' (handles freed before return). MUST run on the GL thread.</summary>
+    Private Function AllocateResultTextureAndFbo(width As Integer, height As Integer,
+                                                  ByRef resultTex As Integer, ByRef resultFbo As Integer) As Boolean
+        resultTex = GL.GenTexture()
+        GL.BindTexture(TextureTarget.Texture2D, resultTex)
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+                      width, height, 0,
+                      PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero)
+
+        resultFbo = GL.GenFramebuffer()
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, resultFbo)
+        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
+                                TextureTarget.Texture2D, resultTex, 0)
+        Dim status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)
+        If status <> FramebufferErrorCode.FramebufferComplete Then
+            Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
+            Try : GL.DeleteTexture(resultTex) : Catch : End Try
+            resultFbo = 0
+            resultTex = 0
+            Return False
+        End If
+        Return True
+    End Function
 
     Private Sub EnsureCompositorInitialized(state As FaceTintCompositorState)
         If state._program <> 0 AndAlso state._quadVao <> 0 Then Return

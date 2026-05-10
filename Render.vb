@@ -1396,6 +1396,12 @@ Public Class PreviewModel
 
         ' GPU Skinning: SSBO for bone matrices + VBOs for per-vertex bone indices/weights
         Private ssbo_BoneMatrices As Integer = 0  ' SSBO for bone matrices
+        ' Capacity (in bytes) the SSBO was allocated with via glBufferData. UpdateBoneMatricesSSBO
+        ' compares the current GPUBoneMatrices.Length*64 against this — if the array grew, a plain
+        ' BufferSubData fails with GL_INVALID_VALUE because the driver only sees the original size.
+        ' Diagnostic only for now: log the mismatch with shape identity so we can find the call
+        ' site that's reassigning GPUBoneMatrices to a bigger array post-creation.
+        Private ssbo_BoneMatricesCapacityBytes As Integer = 0
         Private vboBoneIndices As Integer = 0     ' VBO for per-vertex bone indices
         Private vboBoneWeights As Integer = 0     ' VBO for per-vertex bone weights
 
@@ -2017,8 +2023,33 @@ Public Class PreviewModel
         ''' </summary>
         Public Sub UpdateBoneMatricesSSBO()
             If ssbo_BoneMatrices = 0 OrElse MeshData.Meshgeometry.GPUBoneMatrices Is Nothing Then Exit Sub
+            Dim sizeBytes = MeshData.Meshgeometry.GPUBoneMatrices.Length * 64
+            ' Diagnostic: GL_INVALID_VALUE fires here when sizeBytes > the buffer's allocated size
+            ' (the original glBufferData capacity). Logged with shape name so the caller mutating
+            ' GPUBoneMatrices to a larger array can be traced. Cause is upstream — fix is in the
+            ' code path that grew the array, NOT here (silently reallocating would mask the bug).
+            If sizeBytes > ssbo_BoneMatricesCapacityBytes Then
+                Try
+                    Dim shapeName As String = "<unknown>"
+                    If MeshData IsNot Nothing AndAlso MeshData.Meshgeometry.Geometry IsNot Nothing AndAlso MeshData.Meshgeometry.Geometry.BackingShape IsNot Nothing Then
+                        Dim nm = MeshData.Meshgeometry.Geometry.BackingShape.Name
+                        If nm IsNot Nothing AndAlso nm.String IsNot Nothing Then shapeName = nm.String
+                    End If
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[GL-SSBO-DIAG] UpdateBoneMatricesSSBO size mismatch: shape='{shapeName}' " &
+                        $"newSize={sizeBytes} capacity={ssbo_BoneMatricesCapacityBytes} " &
+                        $"newCount={MeshData.Meshgeometry.GPUBoneMatrices.Length} " &
+                        $"capCount={ssbo_BoneMatricesCapacityBytes \ 64}")
+                Catch
+                End Try
+                ' Skip the BufferSubData call — it would fire GL_INVALID_VALUE. Returning silently
+                ' means this frame renders with stale bone matrices, but that's preferable to a
+                ' driver-level error log spam. Caller should reallocate the SSBO via re-creation.
+                GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
+                Exit Sub
+            End If
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, ssbo_BoneMatrices)
-            GL.BufferSubData(BufferTarget.ShaderStorageBuffer, IntPtr.Zero, MeshData.Meshgeometry.GPUBoneMatrices.Length * 64, MeshData.Meshgeometry.GPUBoneMatrices)
+            GL.BufferSubData(BufferTarget.ShaderStorageBuffer, IntPtr.Zero, sizeBytes, MeshData.Meshgeometry.GPUBoneMatrices)
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
         End Sub
 
@@ -2112,8 +2143,9 @@ Public Class PreviewModel
             ' GPU Skinning: SSBO for bone matrices
             If MeshData.Meshgeometry.GPUBoneMatrices IsNot Nothing AndAlso MeshData.Meshgeometry.GPUBoneMatrices.Length > 0 Then
                 ssbo_BoneMatrices = GL.GenBuffer()
+                ssbo_BoneMatricesCapacityBytes = MeshData.Meshgeometry.GPUBoneMatrices.Length * 64
                 GL.BindBuffer(BufferTarget.ShaderStorageBuffer, ssbo_BoneMatrices)
-                GL.BufferData(BufferTarget.ShaderStorageBuffer, MeshData.Meshgeometry.GPUBoneMatrices.Length * 64, MeshData.Meshgeometry.GPUBoneMatrices, BufferUsageHint.DynamicDraw)
+                GL.BufferData(BufferTarget.ShaderStorageBuffer, ssbo_BoneMatricesCapacityBytes, MeshData.Meshgeometry.GPUBoneMatrices, BufferUsageHint.DynamicDraw)
                 GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
             End If
 
