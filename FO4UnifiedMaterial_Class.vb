@@ -83,6 +83,62 @@ Public Class FO4UnifiedMaterial_Class
     <Browsable(False)>
     Public Property Underlying_Material As MaterialLib.BaseMaterialFile = New BGEM
 
+    ' Dirty tracking via snapshot comparison. ClearDirty() captures a Clone of the current
+    ' state; IsDirty() reports whether the wrapper has diverged from that snapshot via
+    ' GetDifferences (which honors AreEquivalentGrayscaleScale tolerance for slot-equivalent
+    ' palette scales). Net-zero round-trips (user edits then reverts) report clean because
+    ' the comparison is against the snapshot, not a one-way "was ever touched" flag.
+    ' Snapshot captured by the load/save paths (Deserialize / Save_To_* / Create_From_Shader);
+    ' the editor doesn't need to mark dirty on user edits — the next IsDirty() check detects
+    ' the diff automatically.
+    Private _cleanSnapshot As FO4UnifiedMaterial_Class = Nothing
+
+    Public Sub ClearDirty()
+        _cleanSnapshot = Clone()
+    End Sub
+
+    Public Function IsDirty() As Boolean
+        If _cleanSnapshot Is Nothing Then Return False
+        Return GetDifferences(Me, _cleanSnapshot).Count > 0
+    End Function
+
+    ''' <summary>Deep-copy the wrapper: serialize the Underlying_Material to bytes and
+    ''' deserialize into a fresh BGSM/BGEM, plus copy the transient wrapper fields that
+    ''' aren't persisted in the binary (NIF ShaderType, sidecar envmap path, the three
+    ''' alpha-blend fields). Used by ClearDirty to take a comparison snapshot.</summary>
+    Public Function Clone() As FO4UnifiedMaterial_Class
+        Dim copy As New FO4UnifiedMaterial_Class()
+        If Underlying_Material IsNot Nothing Then
+            Dim t = Underlying_Material.GetType()
+            Dim newMat As MaterialLib.BaseMaterialFile = Nothing
+            If t Is GetType(BGSM) Then
+                newMat = New BGSM()
+            ElseIf t Is GetType(BGEM) Then
+                newMat = New BGEM()
+            End If
+            If newMat IsNot Nothing Then
+                Using ms As New MemoryStream()
+                    Using writer As New BinaryWriter(ms)
+                        Underlying_Material.Serialize(writer)
+                    End Using
+                    Dim bytes = ms.ToArray()
+                    Using ms2 As New MemoryStream(bytes)
+                        Using reader As New BinaryReader(ms2)
+                            newMat.Deserialize(reader)
+                        End Using
+                    End Using
+                End Using
+                copy.Underlying_Material = newMat
+            End If
+        End If
+        copy._NifShaderType = _NifShaderType
+        copy._EnvmapMaskPath = _EnvmapMaskPath
+        copy._alphaBlendEnabled = _alphaBlendEnabled
+        copy._blendFunctionSource = _blendFunctionSource
+        copy._blendFunctionDest = _blendFunctionDest
+        Return copy
+    End Function
+
     ' NIF ShaderType — not part of BGSM/BGEM file format, stored here as runtime field
     Private _NifShaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default
     ' Env mask path for BGSM — NIF texture set slot 5. Not serialized in the .bgsm binary
@@ -124,6 +180,23 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
+    ' Alpha-blend state model:
+    ' The four canonical AlphaBlendMode values (None/Standard/Additive/Multiplicative) each
+    ' fix a tuple (enabled, src, dst). Unknown is the escape hatch for combinations that
+    ' don't match any canonical — when Unknown, the three fields below (AlphaBlendEnabled,
+    ' BlendFunctionSource, BlendFunctionDest) are the authoritative state and come from the
+    ' NIF's NiAlphaProperty, not from the BGSM file (whose serializer hardcodes (0,6,7) for
+    ' Unknown and can't carry arbitrary tuples). Setters of the three fields auto-classify
+    ' the resulting tuple against the 5 canonical patterns and promote/degrade the enum
+    ' reactively. The setter of AlphaBlendMode derives the three fields when the value is
+    ' canonical; when Unknown, it leaves them alone so caller-provided values survive.
+    ' Renderers (OutfitStudio GLSurface.cpp:1349, NifSkope glproperty.cpp:255) consume
+    ' NiAlphaProperty.Flags from the NIF, so persistence into the NIF is the source of truth.
+    Private _alphaBlendEnabled As Boolean = False
+    Private _blendFunctionSource As NiflySharp.Enums.AlphaFunction = NiflySharp.Enums.AlphaFunction.SRC_ALPHA
+    Private _blendFunctionDest As NiflySharp.Enums.AlphaFunction = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
+    Private _suppressAutoPromotion As Boolean = False
+
     <Category("Opacity")>
     <DefaultValue(AlphaBlendModeType.Unknown)>
     Public Property AlphaBlendMode As MaterialLib.BaseMaterialFile.AlphaBlendModeType
@@ -132,42 +205,55 @@ Public Class FO4UnifiedMaterial_Class
         End Get
         Set(value As MaterialLib.BaseMaterialFile.AlphaBlendModeType)
             Underlying_Material.AlphaBlendMode = value
-            ' Editor edits via the PropertyGrid land here. Always re-derive Source/Dest from
-            ' the enum so Save_To_Shader (which reads those two fields directly) never writes
-            ' stale factors. Unknown is included — under our single-semantic model it means
-            ' "blend OFF with default factors" (matches BGSM binary convention), so the
-            ' default {SrcAlpha, InvSrcAlpha} returned by Determine_AlphaFlags is what we want.
-            Dim flags = Determine_AlphaFlags(value)
-            BlendFunctionSource = flags(0)
-            BlendFunctionDest = flags(1)
+            If value <> AlphaBlendModeType.Unknown Then
+                Dim t = CanonicalTuple(value)
+                _suppressAutoPromotion = True
+                Try
+                    _alphaBlendEnabled = t.Enabled
+                    _blendFunctionSource = t.Src
+                    _blendFunctionDest = t.Dst
+                Finally
+                    _suppressAutoPromotion = False
+                End Try
+            End If
         End Set
     End Property
 
-    ' Source/Dest blend functions live alongside AlphaBlendMode so the render path can build
-    ' GL blend factors without consulting NiAlphaProperty.  For Standard/Additive/Multiplicative/
-    ' None they're derived from the enum at load time via Determine_AlphaFlags.  For Unknown
-    ' (exotic NIF blend that Determine_Alphablend couldn't classify) they hold the raw NIF
-    ' AlphaProperty Source/DestinationBlendMode so the render preserves the author's intent.
-    ' Save_To_Shader writes these back into the NIF AlphaProperty verbatim, so round-tripping
-    ' an exotic blend no longer collapses to {SrcAlpha, InvSrcAlpha}.
-    ' Visible but read-only in the Editor PropertyGrid: lets the user see the actual Source/Dest
-    ' factors the renderer and Save_To_Shader will use, while preventing direct edits that would
-    ' create an inconsistent state.  Reason: BGSM disk serialization derives the bytes (a,b,c)
-    ' from AlphaBlendMode alone (MaterialLib BaseMaterialFile.cs:389-422, only 5 fixed tuples
-    ' are valid), so any direct edit to Source/Dest would persist only to the NIF AlphaProperty
-    ' and get silently lost on the next BGSM-file reload.  All factor changes must go through
-    ' the AlphaBlendMode setter, which keeps both halves of the state in lockstep via
-    ' Determine_AlphaFlags.  Exotic embedded NIF blends preserve their raw factors via the
-    ' Create_From_Shader → ApplyAlphaPropertyFromNif promotion path.
     <Category("Opacity")>
-    <[ReadOnly](True)>
-    <DefaultValue(NiflySharp.Enums.AlphaFunction.SRC_ALPHA)>
-    Public Property BlendFunctionSource As NiflySharp.Enums.AlphaFunction = NiflySharp.Enums.AlphaFunction.SRC_ALPHA
+    <DefaultValue(False)>
+    Public Property AlphaBlendEnabled As Boolean
+        Get
+            Return _alphaBlendEnabled
+        End Get
+        Set(value As Boolean)
+            _alphaBlendEnabled = value
+            If Not _suppressAutoPromotion Then RecomputeAlphaBlendModeFromFields()
+        End Set
+    End Property
 
     <Category("Opacity")>
-    <[ReadOnly](True)>
+    <DefaultValue(NiflySharp.Enums.AlphaFunction.SRC_ALPHA)>
+    Public Property BlendFunctionSource As NiflySharp.Enums.AlphaFunction
+        Get
+            Return _blendFunctionSource
+        End Get
+        Set(value As NiflySharp.Enums.AlphaFunction)
+            _blendFunctionSource = value
+            If Not _suppressAutoPromotion Then RecomputeAlphaBlendModeFromFields()
+        End Set
+    End Property
+
+    <Category("Opacity")>
     <DefaultValue(NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA)>
-    Public Property BlendFunctionDest As NiflySharp.Enums.AlphaFunction = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
+    Public Property BlendFunctionDest As NiflySharp.Enums.AlphaFunction
+        Get
+            Return _blendFunctionDest
+        End Get
+        Set(value As NiflySharp.Enums.AlphaFunction)
+            _blendFunctionDest = value
+            If Not _suppressAutoPromotion Then RecomputeAlphaBlendModeFromFields()
+        End Set
+    End Property
 
     <Category("Textures")>
     <Editor(GetType(DictionaryFilePickerEditor), GetType(UITypeEditor))>
@@ -2004,64 +2090,107 @@ Public Class FO4UnifiedMaterial_Class
         Return 20UI                                       ' SSE / SK
     End Function
 
-    Public Shared Function Determine_Alphablend(Source As NiflySharp.Enums.AlphaFunction, dest As NiflySharp.Enums.AlphaFunction) As AlphaBlendModeType
+    ''' <summary>
+    ''' Tuple of the three independent alpha-blend bytes the NIF/BGSM binary format carries:
+    ''' the enable flag and the two blend factors. Used to canonicalize the four named modes
+    ''' (None/Standard/Additive/Multiplicative) and to classify a free tuple back into one of
+    ''' those four (or Unknown).
+    ''' </summary>
+    Public Structure AlphaBlendTuple
+        Public Enabled As Boolean
+        Public Src As NiflySharp.Enums.AlphaFunction
+        Public Dst As NiflySharp.Enums.AlphaFunction
+    End Structure
 
-        If Source = NiflySharp.Enums.AlphaFunction.SRC_ALPHA AndAlso dest = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA Then Return AlphaBlendModeType.Standard
-
-        If Source = NiflySharp.Enums.AlphaFunction.SRC_ALPHA AndAlso dest = NiflySharp.Enums.AlphaFunction.ONE Then Return AlphaBlendModeType.Additive
-
-        If Source = NiflySharp.Enums.AlphaFunction.DEST_COLOR AndAlso dest = NiflySharp.Enums.AlphaFunction.ZERO Then Return AlphaBlendModeType.Multiplicative
-
-        If Source = NiflySharp.Enums.AlphaFunction.ONE AndAlso dest = NiflySharp.Enums.AlphaFunction.ZERO Then Return AlphaBlendModeType.None
-
-        Return AlphaBlendModeType.Unknown
-    End Function
-    Public Shared Function Determine_AlphaFlags(Mode As AlphaBlendModeType) As NiflySharp.Enums.AlphaFunction()
-        If Mode = AlphaBlendModeType.Standard Then Return {NiflySharp.Enums.AlphaFunction.SRC_ALPHA, NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA}
-        If Mode = AlphaBlendModeType.Additive Then Return {NiflySharp.Enums.AlphaFunction.SRC_ALPHA, NiflySharp.Enums.AlphaFunction.ONE}
-        If Mode = AlphaBlendModeType.Multiplicative Then Return {NiflySharp.Enums.AlphaFunction.DEST_COLOR, NiflySharp.Enums.AlphaFunction.ZERO}
-        If Mode = AlphaBlendModeType.Unknown Then Return {NiflySharp.Enums.AlphaFunction.SRC_ALPHA, NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA}
-        If Mode = AlphaBlendModeType.None Then Return {NiflySharp.Enums.AlphaFunction.ONE, NiflySharp.Enums.AlphaFunction.ZERO}
-        Return {NiflySharp.Enums.AlphaFunction.SRC_ALPHA, NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA}
+    ''' <summary>
+    ''' Canonical (enabled, src, dst) tuple for each named mode. Mirrors the byte tuples
+    ''' MaterialLib serializes (BaseMaterialFile.cs:389-422): None=(0,0,0), Standard=(1,6,7),
+    ''' Additive=(1,6,0), Multiplicative=(1,4,1). Unknown has no canonical tuple — its three
+    ''' values are caller-provided (read from the NIF's NiAlphaProperty).
+    ''' </summary>
+    Public Shared Function CanonicalTuple(mode As AlphaBlendModeType) As AlphaBlendTuple
+        Select Case mode
+            Case AlphaBlendModeType.None
+                Return New AlphaBlendTuple With {.Enabled = False, .Src = NiflySharp.Enums.AlphaFunction.ONE, .Dst = NiflySharp.Enums.AlphaFunction.ZERO}
+            Case AlphaBlendModeType.Standard
+                Return New AlphaBlendTuple With {.Enabled = True, .Src = NiflySharp.Enums.AlphaFunction.SRC_ALPHA, .Dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA}
+            Case AlphaBlendModeType.Additive
+                Return New AlphaBlendTuple With {.Enabled = True, .Src = NiflySharp.Enums.AlphaFunction.SRC_ALPHA, .Dst = NiflySharp.Enums.AlphaFunction.ONE}
+            Case AlphaBlendModeType.Multiplicative
+                Return New AlphaBlendTuple With {.Enabled = True, .Src = NiflySharp.Enums.AlphaFunction.DEST_COLOR, .Dst = NiflySharp.Enums.AlphaFunction.ZERO}
+            Case Else
+                ' Unknown: no canonical tuple. Caller should not invoke for Unknown.
+                Return New AlphaBlendTuple With {.Enabled = False, .Src = NiflySharp.Enums.AlphaFunction.SRC_ALPHA, .Dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA}
+        End Select
     End Function
 
     ''' <summary>
-    ''' Derive <see cref="BlendFunctionSource"/> / <see cref="BlendFunctionDest"/> from the
-    ''' current <see cref="AlphaBlendMode"/> via <see cref="Determine_AlphaFlags"/>. Pure
-    ''' enum-to-factors mapping — never reads NiAlphaProperty, because once a material is
-    ''' resolved (BGSM Deserialize for FO4 typical content, or inline Create_From_Shader for
-    ''' embedded shapes / SSE) the wrapper IS the single source of truth. Create_From_Shader
-    ''' captures raw NIF factors for exotic blends in its own body before promoting the enum,
-    ''' so by the time this helper runs the enum is either Standard/Additive/Multiplicative/
-    ''' None or Unknown (Unknown is always "blend OFF with default factors" per BGSM binary
-    ''' convention — OutfitStudio MaterialFile.cpp:546-558, NifSkope renderer.cpp:1019).
+    ''' Inverse of <see cref="CanonicalTuple"/>: classify a free (enabled, src, dst) tuple
+    ''' against the four canonical patterns. Anything that doesn't match returns Unknown.
     ''' </summary>
-    Public Sub PopulateBlendFunctions()
-        Dim flags = Determine_AlphaFlags(Underlying_Material.AlphaBlendMode)
-        BlendFunctionSource = flags(0)
-        BlendFunctionDest = flags(1)
+    Public Shared Function ClassifyTuple(enabled As Boolean, src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction) As AlphaBlendModeType
+        If Not enabled AndAlso src = NiflySharp.Enums.AlphaFunction.ONE AndAlso dst = NiflySharp.Enums.AlphaFunction.ZERO Then
+            Return AlphaBlendModeType.None
+        End If
+        If enabled AndAlso src = NiflySharp.Enums.AlphaFunction.SRC_ALPHA AndAlso dst = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA Then
+            Return AlphaBlendModeType.Standard
+        End If
+        If enabled AndAlso src = NiflySharp.Enums.AlphaFunction.SRC_ALPHA AndAlso dst = NiflySharp.Enums.AlphaFunction.ONE Then
+            Return AlphaBlendModeType.Additive
+        End If
+        If enabled AndAlso src = NiflySharp.Enums.AlphaFunction.DEST_COLOR AndAlso dst = NiflySharp.Enums.AlphaFunction.ZERO Then
+            Return AlphaBlendModeType.Multiplicative
+        End If
+        Return AlphaBlendModeType.Unknown
+    End Function
+
+    ''' <summary>
+    ''' Reactive auto-promotion / degradation: after any of the three blend fields changes
+    ''' (AlphaBlendEnabled / BlendFunctionSource / BlendFunctionDest), reclassify the tuple
+    ''' and update AlphaBlendMode. Writes directly to Underlying_Material to bypass the public
+    ''' setter (which would re-derive the three fields and break the reactive flow).
+    ''' </summary>
+    Private Sub RecomputeAlphaBlendModeFromFields()
+        Underlying_Material.AlphaBlendMode = ClassifyTuple(_alphaBlendEnabled, _blendFunctionSource, _blendFunctionDest)
     End Sub
 
     ''' <summary>
-    ''' Compute the AlphaBlend bit to write into NiAlphaProperty.Flags at save time. Follows
-    ''' the OutfitStudio/NifSkope convention: blend is ON only for the three classified modes
-    ''' (Standard/Additive/Multiplicative). Both None and Unknown mean OFF — Unknown is the
-    ''' BGSM-binary sentinel for "blend disabled with default factors", verified against
-    ''' OutfitStudio MaterialFile.cpp:546-558 and NifSkope renderer.cpp:997-1019.
-    ''' </summary>
-    Private Function AlphaBlendBitForSave() As Boolean
-        Return Me.AlphaBlendMode <> AlphaBlendModeType.None AndAlso
-               Me.AlphaBlendMode <> AlphaBlendModeType.Unknown
-    End Function
-
-    ''' <summary>
     ''' Centralized write of the blend-related bits of a NiAlphaProperty.Flags. Called from
-    ''' both Save_To_Shader overloads so the two paths stay in lockstep on Unknown semantics.
+    ''' both Save_To_Shader overloads and from SetRelatedMaterial (FO4 path) so all writers
+    ''' stay in lockstep. Writes the three independent fields verbatim — no enum derivation —
+    ''' so Unknown round-trips its arbitrary (src, dst) factors faithfully to the NIF.
     ''' </summary>
     Private Sub WriteBlendFlagsToAlphaProperty(alp As NiAlphaProperty)
-        alp.Flags.AlphaBlend = AlphaBlendBitForSave()
-        alp.Flags.SourceBlendMode = BlendFunctionSource
-        alp.Flags.DestinationBlendMode = BlendFunctionDest
+        alp.Flags.AlphaBlend = _alphaBlendEnabled
+        alp.Flags.SourceBlendMode = _blendFunctionSource
+        alp.Flags.DestinationBlendMode = _blendFunctionDest
+    End Sub
+
+    ''' <summary>
+    ''' Sync the shape's NiAlphaProperty with the wrapper's full alpha state (blend bit +
+    ''' factors + AlphaTest + Threshold). Used by Save_To_Shader (BSLighting / BSEffect) when
+    ''' writing the full shader, and by SetRelatedMaterial (FO4 path) which otherwise only
+    ''' updates the BGSM path string and would leave the NIF alpha state stale.
+    '''
+    ''' Removes the NiAlphaProperty block via Nif.RemoveBlock if neither blend nor test are
+    ''' required, matching CK's "no NiAlphaProperty when not needed" behavior. NiflySharp
+    ''' NifFile.RemoveBlock re-indexes refs/pointers automatically (NifFile.cs:1157-1198).
+    ''' </summary>
+    Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo)
+        Dim needAlphaProperty = _alphaBlendEnabled OrElse Underlying_Material.AlphaTest
+        If needAlphaProperty Then
+            If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
+                shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
+            End If
+            Dim alp = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
+            alp.Flags.AlphaTest = Underlying_Material.AlphaTest
+            alp.Threshold = Underlying_Material.AlphaTestRef
+            WriteBlendFlagsToAlphaProperty(alp)
+        Else
+            If shap.AlphaPropertyRef IsNot Nothing AndAlso shap.AlphaPropertyRef.Index <> -1 Then
+                Nif.RemoveBlock(shap.AlphaPropertyRef.Index)
+            End If
+        End If
     End Sub
     Public Sub Create_From_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty)
         If Nif.Valid = False Then Exit Sub
@@ -2149,20 +2278,16 @@ Public Class FO4UnifiedMaterial_Class
         ' deterministic AlphaBlendMode AND deterministic BlendFunctionSource/Dest here so the
         ' wrapper carries everything afterwards — render/save never re-read the NIF.
         ApplyAlphaPropertyFromNif(shap, Nif)
+        ClearDirty()
     End Sub
 
     ''' <summary>
-    ''' Read the shape's NiAlphaProperty and project it onto the wrapper. Shared between the
-    ''' two Create_From_Shader overloads (BSLightingShaderProperty and BSEffectShaderProperty)
-    ''' because the alpha-state binding is identical for embedded BGSM and embedded BGEM.
-    '''
-    ''' Exotic blend handling: Determine_Alphablend can return Unknown when the NIF carries
-    ''' a Source/Dest combination outside the four enum-mapped modes (Standard/Additive/
-    ''' Multiplicative/None). To keep Unknown's semantics consistent across load paths —
-    ''' "blend OFF" per BGSM binary convention (OutfitStudio/NifSkope) — we promote exotic
-    ''' enums to Standard so the render path treats them as blended, and we keep the raw NIF
-    ''' factors in BlendFunctionSource/Dest verbatim so the rendered blend uses the author's
-    ''' actual intent. Save_To_Shader then writes those raw factors back to the NIF.
+    ''' Read the shape's NiAlphaProperty and project the three independent fields
+    ''' (AlphaBlendEnabled / BlendFunctionSource / BlendFunctionDest) plus AlphaTest /
+    ''' Threshold onto the wrapper. The enum is then classified from the resulting tuple —
+    ''' Unknown is preserved verbatim (no Standard-promotion) so callers and renderers see
+    ''' the actual NIF state. Shared between the two Create_From_Shader overloads
+    ''' (BSLighting / BSEffect) and used by GetRelatedMaterial when the BGSM enum is Unknown.
     ''' </summary>
     Private Sub ApplyAlphaPropertyFromNif(shap As INiShape, Nif As Nifcontent_Class_Manolo)
         Dim alp As NiAlphaProperty = Nothing
@@ -2170,33 +2295,30 @@ Public Class FO4UnifiedMaterial_Class
             alp = TryCast(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
         End If
         If alp Is Nothing Then
+            Underlying_Material.AlphaTest = False
+            Underlying_Material.AlphaTestRef = 128
+            _suppressAutoPromotion = True
+            Try
+                _alphaBlendEnabled = False
+                _blendFunctionSource = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
+                _blendFunctionDest = NiflySharp.Enums.AlphaFunction.SRC_ALPHA
+            Finally
+                _suppressAutoPromotion = False
+            End Try
             Underlying_Material.AlphaBlendMode = AlphaBlendModeType.None
-            PopulateBlendFunctions()
             Return
         End If
         Underlying_Material.AlphaTest = alp.Flags.AlphaTest
         Underlying_Material.AlphaTestRef = alp.Threshold
-        If Not alp.Flags.AlphaBlend Then
-            Underlying_Material.AlphaBlendMode = AlphaBlendModeType.None
-            PopulateBlendFunctions()
-            Return
-        End If
-        Dim resolved = Determine_Alphablend(alp.Flags.SourceBlendMode, alp.Flags.DestinationBlendMode)
-        If alp.Flags.TestFunc = NiflySharp.Enums.TestFunction.TEST_NEVER OrElse
-           (alp.Flags.TestFunc = NiflySharp.Enums.TestFunction.TEST_GREATER AndAlso
-            Underlying_Material.AlphaTestRef = 0) Then
-            resolved = AlphaBlendModeType.None
-        End If
-        If resolved = AlphaBlendModeType.Unknown Then
-            ' Exotic Source/Dest combo — preserve verbatim and promote enum to Standard so
-            ' Unknown's BGSM-binary "off" semantic stays unique to the Deserialize path.
-            BlendFunctionSource = alp.Flags.SourceBlendMode
-            BlendFunctionDest = alp.Flags.DestinationBlendMode
-            Underlying_Material.AlphaBlendMode = AlphaBlendModeType.Standard
-        Else
-            Underlying_Material.AlphaBlendMode = resolved
-            PopulateBlendFunctions()
-        End If
+        _suppressAutoPromotion = True
+        Try
+            _alphaBlendEnabled = alp.Flags.AlphaBlend
+            _blendFunctionSource = alp.Flags.SourceBlendMode
+            _blendFunctionDest = alp.Flags.DestinationBlendMode
+        Finally
+            _suppressAutoPromotion = False
+        End Try
+        Underlying_Material.AlphaBlendMode = ClassifyTuple(_alphaBlendEnabled, _blendFunctionSource, _blendFunctionDest)
     End Sub
 
     Public Sub Create_From_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty)
@@ -2256,6 +2378,7 @@ Public Class FO4UnifiedMaterial_Class
         ' Same alpha-state binding as the BSLightingShaderProperty overload — shared via
         ' ApplyAlphaPropertyFromNif (embedded path is the only legitimate NIF AlphaProperty read).
         ApplyAlphaPropertyFromNif(shap, Nif)
+        ClearDirty()
     End Sub
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty)
         If Nif.Valid = False Then Exit Sub
@@ -2331,13 +2454,7 @@ Public Class FO4UnifiedMaterial_Class
             End If
         End If
 
-        If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
-            shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
-        End If
-        Dim alp = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
-        alp.Flags.AlphaTest = Mat.AlphaTest
-        alp.Threshold = Mat.AlphaTestRef
-        WriteBlendFlagsToAlphaProperty(alp)
+        WriteAlphaPropertyToShape(shap, Nif)
     End Sub
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "")
         If Nif.Valid = False Then Exit Sub
@@ -2489,34 +2606,12 @@ Public Class FO4UnifiedMaterial_Class
         Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
         WriteBgsmTexturesToTextureSet(Mat, texset, Nif.Header.Version.IsSSE, envmapMaskPath)
 
-        ' NiAlphaProperty: only emit when the material actually requires alpha behavior.
-        ' CK does not write a NiAlphaProperty when blending is off AND AlphaTest is False
-        ' (see BAKED-CK observations on FemaleHeadHuman/Hazel/MouthDirty/HeadRear vs shapes
-        ' like Eyes/Hair/NeckGore that do require it). Match that:
-        '   - need-alpha = AlphaBlend bit OR AlphaTest bit
-        '   - "AlphaBlend bit" semantics now flow through AlphaBlendBitForSave(): AlphaBlendMode
-        '     <> None ⇒ blend ON (including Unknown post-load, which means "exotic NIF blend").
-        '   - if need-alpha: create-or-reuse the ref, then WriteBlendFlagsToAlphaProperty handles
-        '     blend bit + Source/Dest factors uniformly with the BGEM path.
-        '   - if not need-alpha: physically remove the block via Nif.RemoveBlock — NiflySharp
-        '     NifFile.RemoveBlock(int) re-indexes all surviving refs/pointers automatically
-        '     (NiflySharp/NifFile.cs:1157-1198), so no orphans and no manual cleanup needed.
-        Dim needAlphaProperty = AlphaBlendBitForSave() OrElse Mat.AlphaTest
-
-        If needAlphaProperty Then
-            If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
-                shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
-            End If
-
-            Dim alp = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
-            alp.Flags.AlphaTest = Mat.AlphaTest
-            alp.Threshold = Mat.AlphaTestRef
-            WriteBlendFlagsToAlphaProperty(alp)
-        Else
-            If shap.AlphaPropertyRef IsNot Nothing AndAlso shap.AlphaPropertyRef.Index <> -1 Then
-                Nif.RemoveBlock(shap.AlphaPropertyRef.Index)
-            End If
-        End If
+        ' NiAlphaProperty sync via shared helper. Removes the block when neither blend nor
+        ' test are needed, matching CK's "no NiAlphaProperty when not needed" behavior — see
+        ' BAKED-CK observations on FemaleHeadHuman/Hazel/MouthDirty/HeadRear vs shapes like
+        ' Eyes/Hair/NeckGore that do require it. NiflySharp NifFile.RemoveBlock re-indexes
+        ' refs/pointers automatically (NifFile.cs:1157-1198).
+        WriteAlphaPropertyToShape(shap, Nif)
     End Sub
     ''' <summary>
     ''' Sync a shader's NiString4 texture slot with a target content string. If the
@@ -2644,8 +2739,15 @@ Public Class FO4UnifiedMaterial_Class
             End If
         End If
     End Sub
-    Public Sub Deserialize(Memory As Byte(), type As Type)
+    Public Sub Deserialize(Memory As Byte(), type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
         If Memory.Length = 0 Then Exit Sub
+        ' Step 1: seed the three independent alpha fields from the NIF's NiAlphaProperty.
+        ' Required so the Unknown branch below can preserve the NIF state (BGSM Unknown can't
+        ' carry the alpha state independently — the byte tuple is hardcoded to (0,6,7) by ME).
+        ApplyAlphaPropertyFromNif(shap, Nif)
+        ' Step 2: deserialize the BGSM/BGEM payload. Reassigns Underlying_Material — anything
+        ' Step 1 wrote into Underlying_Material (AlphaTest, AlphaBlendMode, etc.) is discarded;
+        ' only the three private backing fields survive.
         Using ms As New MemoryStream(Memory)
             Using reader As New BinaryReader(ms)
                 Select Case type
@@ -2661,23 +2763,51 @@ Public Class FO4UnifiedMaterial_Class
             End Using
             ms.Close()
         End Using
+        ' Step 3: apply the canonical-vs-Unknown rule:
+        '   - Canonical (None/Standard/Additive/Multiplicative): BGSM wins. Overwrite the three
+        '     fields with the canonical tuple (discards what Step 1 read from the NIF).
+        '   - Unknown: BGSM serializer hardcodes (0,6,7) and can't carry the actual state, so
+        '     the NIF wins. Leave the three fields as Step 1 set them (or as a prior caller did).
+        '     Round-trip preservation: Underlying_Material.AlphaBlendMode stays Unknown, so a
+        '     subsequent Save round-trips the BGSM disk byte tuple verbatim.
+        Dim mode = Underlying_Material.AlphaBlendMode
+        If mode <> AlphaBlendModeType.Unknown Then
+            Dim t = CanonicalTuple(mode)
+            _suppressAutoPromotion = True
+            Try
+                _alphaBlendEnabled = t.Enabled
+                _blendFunctionSource = t.Src
+                _blendFunctionDest = t.Dst
+            Finally
+                _suppressAutoPromotion = False
+            End Try
+        End If
         If type Is GetType(BGSM) Then
-            ' Preserve-if-not-Default: when _NifShaderType already holds a NIF-derived
-            ' value, do not overwrite. The NIF shader is the authoritative source for
-            ' ShaderType per BodySlide wiki Shape-Properties + Fallout wiki Materials
-            ' Files Basics: when a .bgsm is assigned, "the values and texture paths
-            ' are read from the assigned material file instead of the shape properties,
-            ' [though] the shader type is still relevant" — i.e. ShaderType comes from
-            ' the NIF, not the BGSM. DeriveShaderTypeFromBgsm is a heuristic best-guess
-            ' used only when no NIF info is available (standalone .bgsm load).
+            ' ShaderType resolution. Two sources, in priority order:
+            '   1. BGSM-derived (DeriveShaderTypeFromBgsm): maps BGSM flags Facegen/SkinTint/
+            '      Hair/Tree/Terrain/Glowmap/EnvironmentMapping to ShaderType. Covers 5+ enum
+            '      values. WINS when non-Default — authoring tool's explicit intent.
+            '   2. NIF shader ShaderType_SK_FO4: covers all 21 enum values (Parallax,
+            '      MultilayerParallax, etc. that BGSM flags can't express). Used as fallback
+            '      when BGSM-derived stayed Default — covers the 16 non-flagged enum values.
+            ' Empirical motivation: HairFemale03_Hairline's NIF shader is Default but the BGSM
+            ' (hairshort_lgrad_8bit.bgsm) carries Hair=True; the promotion to HairTint must
+            ' survive — overwriting with NIF Default loses what CK relies on at bake time.
             If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
                 _NifShaderType = DeriveShaderTypeFromBgsm(CType(Underlying_Material, BGSM))
+                If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
+                    Dim bslsp = TryCast(Nif.GetShader(shap), BSLightingShaderProperty)
+                    If bslsp IsNot Nothing Then _NifShaderType = bslsp.ShaderType_SK_FO4
+                End If
             End If
         End If
+        ' Fresh load → clean state. Any subsequent user edit through the PropertyGrid (via
+        ' DirtyAwarePropertyDescriptor) or explicit MarkDirty() will flip IsDirty back to True.
+        ClearDirty()
     End Sub
 
-    Public Sub Deserialize(Diccionario As String, type As Type)
-        Deserialize(FilesDictionary_class.GetBytes(Diccionario), type)
+    Public Sub Deserialize(Diccionario As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
+        Deserialize(FilesDictionary_class.GetBytes(Diccionario), type, shap, Nif)
         ' Sidecar JSON resolution: `<file>.bgsm.json` (or `.bgem.json`) lives next to the
         ' material, resolvable via FilesDictionary the same way (loose or BA2/BSA). Carries
         ' fields the binary BGSM/BGEM cannot persist — today: envmapMaskTexture for BGSM.
@@ -2703,6 +2833,8 @@ Public Class FO4UnifiedMaterial_Class
         Catch ex As Exception
             ' Q3=a: any failure (read, dictionary miss, etc.) is silent.
         End Try
+        ' Fresh load (including sidecar) → clean state.
+        ClearDirty()
     End Sub
 
     ''' <summary>Serialize the underlying BGSM to disk and write a `.bgsm.json` sidecar
@@ -2718,6 +2850,8 @@ Public Class FO4UnifiedMaterial_Class
             bgsm.Save(stream)
         End Using
         WriteEnvmapMaskSidecar(filePath, _EnvmapMaskPath)
+        ' Just persisted to disk → state in memory matches the file → clean.
+        ClearDirty()
     End Sub
 
     ''' <summary>Serialize the underlying BGEM to disk. BGEM has a native envmapMaskTexture
@@ -2730,6 +2864,7 @@ Public Class FO4UnifiedMaterial_Class
         Using stream = File.Open(filePath, FileMode.Create)
             bgem.Save(stream)
         End Using
+        ClearDirty()
     End Sub
 
     Private Shared Sub WriteEnvmapMaskSidecar(materialPath As String, envmapMask As String)

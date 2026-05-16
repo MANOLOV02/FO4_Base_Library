@@ -1,5 +1,4 @@
-' Version Uploaded of Fo4Library 3.2.0
-Imports NiflySharp
+﻿' Version Uploaded of Fo4Library 3.2.0
 Imports NiflySharp.Blocks
 
 ''' <summary>

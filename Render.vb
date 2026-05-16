@@ -1475,28 +1475,19 @@ Public Class PreviewModel
             ''' cloning — each RenderableMesh keeps its own composed overlay.</summary>
             Public Property FaceTintOverlay_ID As Integer = 0
 
-            ' BGSM is authoritative for blend on/off. Unknown is the BGSM-binary sentinel for
-            ' "blend OFF with default factors" (a=0, b=6, c=7) — semantically identical to
-            ' None for renderer purposes. Verified against OutfitStudio MaterialFile.cpp
-            ' (ConvertAlphaBlendMode treats a=0 as off for both Unknown and None) and NifSkope
-            ' renderer.cpp (only enables GL_BLEND when bAlphaBlend=1, BGSM overrides any
-            ' NiAlphaProperty inline). Embedded shapes that arrive via Create_From_Shader can
-            ' carry exotic NIF blend factors, but ApplyAlphaPropertyFromNif promotes those to
-            ' Standard at load time precisely so the same Unknown enum value never has to
-            ' mean two different things here.
+            ' OS-faithful blend decision. Two independent triggers, either suffices:
+            '   1. NIF NiAlphaProperty.Flags.AlphaBlend (bit 0) — carried in the wrapper's
+            '      AlphaBlendEnabled field (Apply'd from the shape's NiAlphaProperty at load).
+            '   2. material.Alpha < 1.0 — the BGSM-level alpha multiplier. OS replicates
+            '      this even when there is no NiAlphaProperty on the shape (GLShader.cpp:186):
+            '        if (!alphaBlend && value < 1.0f) { glEnable(GL_BLEND); glBlendFunc(SrcAlpha, InvSrcAlpha); }
+            ' Testigo: NIF sin NiAlphaProperty + BGSM Unknown + Alpha < 1 → OS blendea,
+            ' la regla previa "enum-based" no — el enum Unknown perdía la independencia que
+            ' el modelo de tres campos restauró, pero el render todavía consultaba el enum.
             Public ReadOnly Property HasAlphaBlend
                 Get
                     If IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
-                    Select Case MaterialBase.AlphaBlendMode
-                        Case AlphaBlendModeType.None, AlphaBlendModeType.Unknown
-                            Return False
-                        Case AlphaBlendModeType.Standard, AlphaBlendModeType.Multiplicative,
-                             AlphaBlendModeType.Additive
-                            Return True
-                        Case Else
-                            Debugger.Break()
-                            Return False
-                    End Select
+                    Return MaterialBase.AlphaBlendEnabled OrElse MaterialBase.Alpha < 1.0F
                 End Get
             End Property
 
@@ -1506,15 +1497,19 @@ Public Class PreviewModel
                     Return MaterialBase.AlphaTest
                 End Get
             End Property
-            ' Pure map from the material's NIF-AlphaFunction enums to OpenGL BlendingFactor.
-            ' The material always carries deterministic Source/Dest factors after load
-            ' (NifContent_Class.GetRelatedMaterial + FO4UnifiedMaterial_Class.PopulateBlendFunctions
-            ' guarantee it for both the BGSM-Deserialize and Create_From_Shader paths). The render
-            ' must never re-read NiAlphaProperty — that would break the single-source-of-truth
-            ' invariant and the round-trip with Save_To_Shader.
+            ' Resolve the GL blend factors for the active blend mode. Two cases mirror
+            ' OS GLShader.cpp:181-189:
+            '   - NIF NiAlphaProperty drives blend → use the loaded Source/Dest verbatim
+            '     (whatever the author set, including exotic combos that classify Unknown).
+            '   - blend forced by Alpha<1 (no NIF flag) → OS hardcodes SRC_ALPHA/INV_SRC_ALPHA;
+            '     the BGSM-level Alpha multiplier doesn't carry per-shape factors so this is
+            '     the only sensible default.
             Public Function Calculate_Blending() As Integer()
-                Return {CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionSource)),
-                        CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionDest))}
+                If MaterialBase.AlphaBlendEnabled Then
+                    Return {CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionSource)),
+                            CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionDest))}
+                End If
+                Return {CInt(BlendingFactor.SrcAlpha), CInt(BlendingFactor.OneMinusSrcAlpha)}
             End Function
 
             Private Shared Function MapAlphaFunctionToBlendingFactor(f As NiflySharp.Enums.AlphaFunction) As BlendingFactor

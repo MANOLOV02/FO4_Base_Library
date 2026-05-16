@@ -221,32 +221,11 @@ Public Class Nifcontent_Class_Manolo
         If fullpath = "" Then
             createFromShader(material)
         Else
-            material.Deserialize(prefix & fullpath, matType)
-            ' ShaderType resolution when both BGSM and NIF carry hints:
-            '   - BGSM derives _NifShaderType from its semantic flags (Facegen/SkinTint/Hair/
-            '     Tree/Terrain) inside Deserialize → covers 5 of 21 enum values.
-            '   - NIF carries the raw ShaderType_SK_FO4 enum on BSLightingShaderProperty →
-            '     covers all 21 (including Parallax, MultilayerParallax, etc. that BGSM can't
-            '     express).
-            ' Rule: BGSM wins when it derived something (≠ Default), since those flags came
-            ' from the authoring tool's intent. NIF wins when BGSM stayed Default — covers the
-            ' 16 non-flagged enum values. Empirical motivation: HairFemale03_Hairline's NIF
-            ' shader is Default but the BGSM (hairshort_lgrad_8bit.bgsm) carries Hair=True;
-            ' previously we'd overwrite the derived HairTint with the NIF's Default, losing
-            ' the promotion CK relies on at bake time.
-            If matType Is GetType(BGSM) Then
-                Dim bslsp = TryCast(shad, BSLightingShaderProperty)
-                If bslsp IsNot Nothing AndAlso material.NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
-                    material.NifShaderType = bslsp.ShaderType_SK_FO4
-                End If
-            End If
-            ' BGSM is authoritative for alpha state (per OutfitStudio MaterialFile.cpp:546-558
-            ' and NifSkope renderer.cpp:997-1003,1019 — "BGSM overrides any NiAlphaProperty
-            ' inline"). Unknown is the BGSM-binary sentinel for "blend OFF with default
-            ' factors" (a=0, b=6, c=7), same as None for renderer purposes. We do NOT consult
-            ' the shape's NiAlphaProperty here — once a BGSM exists it owns the state.
-            ' Concrete Source/Dest factors derive from AlphaBlendMode alone.
-            material.PopulateBlendFunctions()
+            ' Pass shap+Me so Deserialize can: (a) seed the three alpha fields from the NIF's
+            ' NiAlphaProperty before applying the canonical-vs-Unknown rule (BGSM canonical
+            ' wins, BGSM Unknown defers to NIF); (b) resolve ShaderType from the NIF shader
+            ' when the BGSM-derived value is Default.
+            material.Deserialize(prefix & fullpath, matType, shap, Me)
         End If
 
         Return New RelatedMaterial_Class With {.material = material, .path = fullpath}
@@ -271,6 +250,12 @@ Public Class Nifcontent_Class_Manolo
                         Debugger.Break()
                         Throw New Exception
                 End Select
+                ' FO4 path does not rewrite the full inline shader (the BGSM file owns it),
+                ' but the NiAlphaProperty is shape-local — the BGSM serializer cannot carry
+                ' the AlphaBlend on/off bit independently from the factors (Unknown's bytes
+                ' are hardcoded by MaterialLib). The renderer (OS/NifSkope) reads from
+                ' NiAlphaProperty, so we must sync the shape-local alpha state here too.
+                mat.WriteAlphaPropertyToShape(shap, Me)
             Case Config_App.Game_Enum.Skyrim
                 Dim saveAction As Action
                 Select Case shad.GetType
