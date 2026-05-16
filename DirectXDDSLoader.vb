@@ -108,19 +108,6 @@ Public Module DirectXDDSLoader
     ' Change BC1 Alpha Preference
     Const PreferBC1Alpha As Boolean = True
 
-    ''' <summary>Optional sink for GL upload diagnostics. The library logs to Debug.WriteLine
-    ''' by default; an app may wire a richer sink (e.g. NpcPreviewLog) by assigning here.
-    ''' Never throws; never invoked from a hot path that the sink could stall.</summary>
-    Public TextureLogSink As Action(Of String) = Nothing
-
-    Private Sub LogTexDiag(msg As String)
-        System.Diagnostics.Debug.WriteLine(msg)
-        Dim sink = TextureLogSink
-        If sink IsNot Nothing Then
-            Try : sink(msg) : Catch : End Try
-        End If
-    End Sub
-
     ''' <summary>Drain any pending GL error so subsequent CheckGlOk calls only report errors
     ''' attributable to this upload. Caller MUST hold the GL context current.</summary>
     Private Sub DrainGlErrors()
@@ -131,12 +118,12 @@ Public Module DirectXDDSLoader
         Loop
     End Sub
 
-    ''' <summary>Returns True iff GL has no error after the last operation. Logs via
-    ''' <see cref="LogTexDiag"/> on failure. Use after each upload op to certify success.</summary>
+    ''' <summary>Returns True iff GL has no error after the last operation.
+    ''' Use after each upload op to certify success.</summary>
     Private Function CheckGlOk(opLabel As String) As Boolean
         Dim e = GL.GetError()
         If e = ErrorCode.NoError Then Return True
-        LogTexDiag($"GL error after {opLabel}: 0x{Hex(CInt(e))} ({e})")
+        Logger.Log($"[DDS] GL error after {opLabel}: 0x{Hex(CInt(e))} ({e})")
         Return False
     End Function
 
@@ -165,18 +152,11 @@ Public Module DirectXDDSLoader
         Dim faces As Integer = Math.Max(1, tex.Faces)
 
         If tex.IsCubemap AndAlso faces <> 6 Then
-            System.Diagnostics.Debug.WriteLine("CreateOpenGL_FromTextureLoaded_PBO: cubemap invalido, Faces=" & faces.ToString())
             Return 0
         End If
 
         Dim expectedImages As Integer = mipLevels * faces
         If tex.Levels.Count < expectedImages Then
-            System.Diagnostics.Debug.WriteLine(
-            "CreateOpenGL_FromTextureLoaded_PBO: TextureLoaded inconsistente. " &
-            "Levels.Count=" & tex.Levels.Count.ToString() &
-            ", Mips=" & mipLevels.ToString() &
-            ", Faces=" & faces.ToString() &
-            ", Esperados=" & expectedImages.ToString())
             Return 0
         End If
 
@@ -360,27 +340,16 @@ Public Module DirectXDDSLoader
         End Select
 
         If glInternal = 0 Then
-            System.Diagnostics.Debug.WriteLine(
-            "CreateOpenGL_FromTextureLoaded_PBO: formato GL incompatible. " &
-            "DXGI original=" & tex.DxgiCodeOriginal.ToString() &
-            ", DXGI final=" & tex.DxgiCodeFinal.ToString())
             Return 0
         End If
 
         If Not tex.IsCompressedGL AndAlso (glFormat = 0 OrElse glType = 0) Then
-            System.Diagnostics.Debug.WriteLine(
-            "CreateOpenGL_FromTextureLoaded_PBO: glFormat/glType invalidos. " &
-            "DXGI final=" & tex.DxgiCodeFinal.ToString() &
-            ", glInternal=0x" & Hex(glInternal) &
-            ", glFormat=0x" & Hex(glFormat) &
-            ", glType=0x" & Hex(glType))
             Return 0
         End If
 
         Dim baseW As Integer = tex.Levels(0).Width
         Dim baseH As Integer = tex.Levels(0).Height
         If baseW <= 0 OrElse baseH <= 0 Then
-            System.Diagnostics.Debug.WriteLine("CreateOpenGL_FromTextureLoaded_PBO: dimensiones invalidas en nivel 0.")
             Return 0
         End If
 
@@ -533,15 +502,7 @@ Public Module DirectXDDSLoader
             Return texID
 
         Catch ex As Exception
-            System.Diagnostics.Debug.WriteLine(
-            "CreateOpenGL_FromTextureLoaded_PBO failed. " &
-            "DXGI original=" & tex.DxgiCodeOriginal.ToString() &
-            ", DXGI final=" & tex.DxgiCodeFinal.ToString() &
-            ", glInternal=0x" & Hex(glInternal) &
-            ", glFormat=0x" & Hex(glFormat) &
-            ", glType=0x" & Hex(glType) &
-            Environment.NewLine &
-            ex.ToString())
+            Logger.Log($"[DDS] CreateOpenGL_FromTextureLoaded_PBO failed. DXGI={tex.DxgiCodeFinal} glInternal=0x{Hex(glInternal)} glFormat=0x{Hex(glFormat)} glType=0x{Hex(glType)} {ex.GetType().Name}: {ex.Message}")
 
             If texID <> 0 Then
                 GL.DeleteTexture(texID)

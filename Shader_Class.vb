@@ -1,4 +1,4 @@
-﻿' Version Uploaded of Fo4Library 3.2.0
+' Version Uploaded of Fo4Library 3.2.0
 Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
@@ -2027,13 +2027,6 @@ Public MustInherit Class Shader_Base_Class
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then
             GL.Uniform1(loc, value)
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} = {value}")
-            '#End If
-        Else
-            '#If DEBUG Then
-            '            Debug.Print($"⚠️ [Uniform] {name} not found!")
-            '#End If
         End If
     End Sub
 
@@ -2041,13 +2034,6 @@ Public MustInherit Class Shader_Base_Class
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then
             GL.Uniform1(loc, value)
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} = {value}")
-            '#End If
-        Else
-            '#If DEBUG Then
-            '            Debug.Print($"⚠️ [Uniform] {name} not found!")
-            '#End If
         End If
     End Sub
 
@@ -2059,13 +2045,6 @@ Public MustInherit Class Shader_Base_Class
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then
             GL.Uniform2(loc, value.X, value.Y)
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} = {value}")
-            '#End If
-        Else
-            '#If DEBUG Then
-            '            Debug.Print($"⚠️ [Uniform] {name} not found!")
-            '#End If
         End If
     End Sub
 
@@ -2073,13 +2052,6 @@ Public MustInherit Class Shader_Base_Class
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then
             GL.Uniform3(loc, value.X, value.Y, value.Z)
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} = {value}")
-            '#End If
-        Else
-            '#If DEBUG Then
-            '            Debug.Print($"⚠️ [Uniform] {name} not found!")
-            '#End If
         End If
     End Sub
 
@@ -2087,13 +2059,6 @@ Public MustInherit Class Shader_Base_Class
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then
             GL.Uniform4(loc, value.X, value.Y, value.Z, value.W)
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} = {value}")
-            '#End If
-        Else
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} not found!")
-            '#End If
         End If
     End Sub
 
@@ -2101,13 +2066,6 @@ Public MustInherit Class Shader_Base_Class
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then
             GL.UniformMatrix3(loc, False, value)
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} = {value}")
-            '#End If
-        Else
-            '#If DEBUG Then
-            '            Debug.Print($"⚠️ [Uniform] {name} not found!")
-            '#End If
         End If
     End Sub
 
@@ -2115,13 +2073,6 @@ Public MustInherit Class Shader_Base_Class
         Dim loc As Integer = GetUniformLocationCached(name)
         If loc <> -1 Then
             GL.UniformMatrix4(loc, False, value)
-            '#If DEBUG Then
-            '            Debug.Print($"[Uniform] {name} = {value}")
-            '#End If
-        Else
-            '#If DEBUG Then
-            '            Debug.Print($"⚠️ [Uniform] {name} not found!")
-            '#End If
         End If
     End Sub
 
@@ -2129,18 +2080,12 @@ Public MustInherit Class Shader_Base_Class
         GL.ActiveTexture(unit)
         GL.BindTexture(TextureTarget.Texture2D, textureID)
         SetInt(uniformName, unit - TextureUnit.Texture0)
-        '#If DEBUG Then
-        '        Debug.Print($"[Texture] {uniformName} bound to TextureUnit {unit - TextureUnit.Texture0} with ID {textureID}")
-        '#End If
     End Sub
 
     Public Sub BindCubeMap(uniformName As String, textureID As Integer, unit As TextureUnit)
         GL.ActiveTexture(unit)
         GL.BindTexture(TextureTarget.TextureCubeMap, textureID)
         SetInt(uniformName, unit - TextureUnit.Texture0)
-        '#If DEBUG Then
-        '        Debug.Print($"[CubeMap] {uniformName} bound to TextureUnit {unit - TextureUnit.Texture0} with ID {textureID}")
-        '#End If
     End Sub
 End Class
 

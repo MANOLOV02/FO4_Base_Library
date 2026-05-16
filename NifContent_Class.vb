@@ -240,6 +240,13 @@ Public Class Nifcontent_Class_Manolo
                     material.NifShaderType = bslsp.ShaderType_SK_FO4
                 End If
             End If
+            ' BGSM is authoritative for alpha state (per OutfitStudio MaterialFile.cpp:546-558
+            ' and NifSkope renderer.cpp:997-1003,1019 — "BGSM overrides any NiAlphaProperty
+            ' inline"). Unknown is the BGSM-binary sentinel for "blend OFF with default
+            ' factors" (a=0, b=6, c=7), same as None for renderer purposes. We do NOT consult
+            ' the shape's NiAlphaProperty here — once a BGSM exists it owns the state.
+            ' Concrete Source/Dest factors derive from AlphaBlendMode alone.
+            material.PopulateBlendFunctions()
         End If
 
         Return New RelatedMaterial_Class With {.material = material, .path = fullpath}
@@ -269,10 +276,10 @@ Public Class Nifcontent_Class_Manolo
                 Select Case shad.GetType
                     Case GetType(BSLightingShaderProperty)
                         Dim typed = CType(shad, BSLightingShaderProperty)
-                        saveAction = Sub() FO4UnifiedMaterial_Class.Save_To_Shader(Me, shap, typed, mat.Underlying_Material, mat.NifShaderType, mat.EnvmapMaskTexture)
+                        saveAction = Sub() mat.Save_To_Shader(Me, shap, typed, mat.NifShaderType, mat.EnvmapMaskTexture)
                     Case GetType(BSEffectShaderProperty)
                         Dim typed = CType(shad, BSEffectShaderProperty)
-                        saveAction = Sub() FO4UnifiedMaterial_Class.Save_To_Shader(Me, shap, typed, mat.Underlying_Material)
+                        saveAction = Sub() mat.Save_To_Shader(Me, shap, typed)
                     Case Else
                         Debugger.Break()
                         Throw New Exception
@@ -401,10 +408,14 @@ Public Class Nifcontent_Class_Manolo
         '   destShape.localT = M_srcShape × M_intermediates × destParentChain^-1
         ' donde M_srcShape × M_intermediates = GetGlobalTransform(srcShape) × srcRoot^-1.
         '
-        ' Skinned: NO se bakea. La posición de un skinned viene del bone palette + parent-only
-        ' GlobalTransform (SkinningHelper.vb:151 ignora shape.T/R/S). OS hace lo mismo
-        ' (Anim.cpp:692-704). Si un skinned post-merge aparece mal posicionado, el problema
-        ' es otro (xformGlobalToSkin equivalente, no este bake).
+        ' Skinned: NO se bakea. La posición de un skinned viene SOLO del bone palette y el
+        ' skin data (xformSkinToBone embebido en BSSkin_BoneData / NiSkinData). SkinningHelper.vb:151
+        ' y :968 usan Matrix4d.Identity — ignoran shape.T/R/S Y todo el parent chain. Paridad OS
+        ' Anim.cpp:717-728 (GetTransformShapeToGlobal para skinned = inv(xformGlobalToSkin), sin
+        ' recorrer parent chain). NiflySharp re-mapea los bone refs por nombre cross-file
+        ' (NifFile.cs:788-821), así que la palette llega coherente al destino. Si un skinned
+        ' post-merge aparece mal posicionado, el problema es xformGlobalToSkin del source vs el
+        ' esqueleto destino, no parent chain.
         '
         ' Same-file (srcNif == Me): NiflySharp parentea al mismo padre que srcShape (NifFile.cs:752),
         ' la posición se preserva sin baking.

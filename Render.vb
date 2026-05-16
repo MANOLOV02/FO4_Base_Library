@@ -802,8 +802,6 @@ Public Class PreviewControl
         lastNear = nearZ
         lastFar = farZ
         UpdateRequired = True
-        Dim ulog As Action(Of String) = UpdateProjectionLogger
-        If ulog IsNot Nothing Then ulog($"[UpdateProjection] ctrl=({Me.Width}x{Me.Height}) aspect={aspect:F3} fovY=45deg near={nearZ:F2} far={farZ:F2} sceneSize=({size.X:F2},{size.Y:F2},{size.Z:F2}) eyeToCenter={eyeToCenter:F2}")
     End Sub
     Private Sub RenderScene()
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
@@ -814,10 +812,6 @@ Public Class PreviewControl
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
         If Model.Can_Render Then
-            Dim slog As Action(Of String) = RenderSceneLogger
-            If slog IsNot Nothing Then
-                slog($"[RenderScene] ctrl=({Me.Width}x{Me.Height}) cam.focus=({camera.FocusPosition.X:F2},{camera.FocusPosition.Y:F2},{camera.FocusPosition.Z:F2}) cam.distance={camera.distance:F2} cam.forward=({camera.Forward.X:F2},{camera.Forward.Y:F2},{camera.Forward.Z:F2}) FloorOffset={Model.FloorOffset:F2}")
-            End If
             Model.RenderAll(projection, camera)
         End If
     End Sub
@@ -1130,32 +1124,16 @@ Public Class PreviewControl
             max = Vector3.ComponentMax(max, mesh.MeshData.Meshgeometry.Maxv)
         Next
     End Sub
-    ''' <summary>Optional diagnostic logger called from CenterCamera at each step. Set by the
-    ''' app (NPC_Manager) to forward into NpcPreviewLog. Null = no logging (default). NOT a
-    ''' library bug — it's a debug injection point used only when the app explicitly hooks it.</summary>
-    Public Shared CenterCameraLogger As Action(Of String) = Nothing
-    ''' <summary>Optional diagnostic logger for UpdateProjection — emits the actual aspect/near/far
-    ''' used to build the projection matrix at draw time. Useful to detect if the projection in
-    ''' use at draw differs from what CenterCamera assumed when computing the camera distance.</summary>
-    Public Shared UpdateProjectionLogger As Action(Of String) = Nothing
-    ''' <summary>Diagnostic — emits camera state at each RenderScene tick (FocusPosition, distance,
-    ''' Forward). Optional, default null.</summary>
-    Public Shared RenderSceneLogger As Action(Of String) = Nothing
-
     Public Sub CenterCamera()
         If Me.IsInDesignMode Then Return
-
-        Dim log As Action(Of String) = CenterCameraLogger
 
         ' 1) AABB
         Dim minB As Vector3, maxB As Vector3
         GetSceneBounds(minB, maxB)
-        If log IsNot Nothing Then log($"[CenterCamera] AABB min=({minB.X:F2},{minB.Y:F2},{minB.Z:F2}) max=({maxB.X:F2},{maxB.Y:F2},{maxB.Z:F2})")
 
         ' 2) Centro y tamaño
         Dim center As Vector3 = (minB + maxB) * 0.5F
         Dim size As Vector3 = maxB - minB
-        If log IsNot Nothing Then log($"[CenterCamera] center=({center.X:F2},{center.Y:F2},{center.Z:F2}) size=({size.X:F2},{size.Y:F2},{size.Z:F2})")
 
         ' 3) Focus y orbit mode
         camera.FocusPosition = center
@@ -1163,7 +1141,6 @@ Public Class PreviewControl
         ' 4) Parámetros de cámara
         Dim fovY As Single = MathHelper.DegreesToRadians(45.0F)
         Dim aspect As Single = Me.Width / CSng(Me.Height)
-        If log IsNot Nothing Then log($"[CenterCamera] ctrlSize=({Me.Width}x{Me.Height}) aspect={aspect:F3} fovY=45deg")
 
         ' ** Usamos Z para altura, X para anchura y Y para profundidad (hacia la cámara) **
         Dim halfH As Single = size.Z * 0.5F   ' vertical ? Z
@@ -1174,7 +1151,6 @@ Public Class PreviewControl
         Dim distH = halfH / CSng(Math.Tan(fovY * 0.5F))
         Dim fovX = 2.0F * CSng(Math.Atan(Math.Tan(fovY * 0.5F) * aspect))
         Dim distW = halfW / CSng(Math.Tan(fovX * 0.5F))
-        If log IsNot Nothing Then log($"[CenterCamera] halfH={halfH:F2} halfW={halfW:F2} halfD={halfD:F2} distH={distH:F2} distW={distW:F2} fovX={CSng(MathHelper.RadiansToDegrees(fovX)):F2}deg")
 
         ' 6) Margen uniforme (p.ej. 15% extra)
         Dim marginPct As Single = 0.1F
@@ -1187,14 +1163,12 @@ Public Class PreviewControl
         Dim clampedDist = Math.Clamp(idealDistance, camera.MinDistance, camera.MaxDistance)
         camera.distance = clampedDist
         camera.Optimaldistance = camera.distance
-        If log IsNot Nothing Then log($"[CenterCamera] baseDist={baseDistance:F2} ideal={idealDistance:F2} (margin {marginPct * 100:F0}%) → clamp[{camera.MinDistance:F2}..{camera.MaxDistance:F2}] → distance={clampedDist:F2}")
 
         ' 7) Reset ángulos y orientación
         camera.angleX = 0F
         camera.angleY = 0F
         camera.UpdateDirectionFromAngles()
         UpdateProjection(True)
-        If log IsNot Nothing Then log($"[CenterCamera] DONE focus=({camera.FocusPosition.X:F2},{camera.FocusPosition.Y:F2},{camera.FocusPosition.Z:F2}) distance={camera.distance:F2}")
     End Sub
 
     Protected Overrides Sub Dispose(disposing As Boolean)
@@ -1501,29 +1475,30 @@ Public Class PreviewModel
             ''' cloning — each RenderableMesh keeps its own composed overlay.</summary>
             Public Property FaceTintOverlay_ID As Integer = 0
 
+            ' BGSM is authoritative for blend on/off. Unknown is the BGSM-binary sentinel for
+            ' "blend OFF with default factors" (a=0, b=6, c=7) — semantically identical to
+            ' None for renderer purposes. Verified against OutfitStudio MaterialFile.cpp
+            ' (ConvertAlphaBlendMode treats a=0 as off for both Unknown and None) and NifSkope
+            ' renderer.cpp (only enables GL_BLEND when bAlphaBlend=1, BGSM overrides any
+            ' NiAlphaProperty inline). Embedded shapes that arrive via Create_From_Shader can
+            ' carry exotic NIF blend factors, but ApplyAlphaPropertyFromNif promotes those to
+            ' Standard at load time precisely so the same Unknown enum value never has to
+            ' mean two different things here.
             Public ReadOnly Property HasAlphaBlend
                 Get
                     If IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
-                    If MaterialBase.AlphaBlendMode = AlphaBlendModeType.None Then Return False
-                    If MaterialBase.AlphaBlendMode = AlphaBlendModeType.Standard Then Return True
-                    If MaterialBase.AlphaBlendMode = AlphaBlendModeType.Multiplicative Then Return True
-                    If MaterialBase.AlphaBlendMode = AlphaBlendModeType.Additive Then Return True
-                    If MaterialBase.AlphaBlendMode = AlphaBlendModeType.Unknown Then Return GetAlphaFromShape() OrElse MaterialBase.Alpha < 1.0F
-                    Debugger.Break()
-                    Return False
+                    Select Case MaterialBase.AlphaBlendMode
+                        Case AlphaBlendModeType.None, AlphaBlendModeType.Unknown
+                            Return False
+                        Case AlphaBlendModeType.Standard, AlphaBlendModeType.Multiplicative,
+                             AlphaBlendModeType.Additive
+                            Return True
+                        Case Else
+                            Debugger.Break()
+                            Return False
+                    End Select
                 End Get
             End Property
-            Private Function GetAlphaFromShape() As Boolean
-                If Not IsNothing(ParentMeshData.Shape.NifShape.AlphaPropertyRef) AndAlso ParentMeshData.Shape.NifShape.AlphaPropertyRef.Index <> -1 Then
-                    Dim alp = CType(ParentMeshData.Shape.NifContent.Blocks(ParentMeshData.Shape.NifShape.AlphaPropertyRef.Index), NiflySharp.Blocks.NiAlphaProperty)
-                    If alp.Flags.AlphaBlend Then
-                        Return True
-                    Else
-                        Return False
-                    End If
-                End If
-                Return False
-            End Function
 
             Public ReadOnly Property HasAlphaTest
                 Get
@@ -1531,80 +1506,32 @@ Public Class PreviewModel
                     Return MaterialBase.AlphaTest
                 End Get
             End Property
+            ' Pure map from the material's NIF-AlphaFunction enums to OpenGL BlendingFactor.
+            ' The material always carries deterministic Source/Dest factors after load
+            ' (NifContent_Class.GetRelatedMaterial + FO4UnifiedMaterial_Class.PopulateBlendFunctions
+            ' guarantee it for both the BGSM-Deserialize and Create_From_Shader paths). The render
+            ' must never re-read NiAlphaProperty — that would break the single-source-of-truth
+            ' invariant and the round-trip with Save_To_Shader.
             Public Function Calculate_Blending() As Integer()
-                Select Case MaterialBase.AlphaBlendMode
-                    Case AlphaBlendModeType.Standard
-                        Return {BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha}
-                    Case AlphaBlendModeType.Additive
-                        Return {BlendingFactor.SrcAlpha, BlendingFactor.One}
-                    Case AlphaBlendModeType.Multiplicative
-                        Return {BlendingFactor.DstColor, BlendingFactor.Zero}
-                    Case AlphaBlendModeType.Unknown
-                        Dim src As BlendingFactor = BlendingFactor.SrcAlpha
-                        Dim dst As BlendingFactor = BlendingFactor.OneMinusSrcAlpha
-                        Try
-                            If Not IsNothing(ParentMeshData.Shape.NifShape.AlphaPropertyRef) AndAlso ParentMeshData.Shape.NifShape.AlphaPropertyRef.Index <> -1 Then
-                                Dim alp = CType(ParentMeshData.Shape.NifContent.Blocks(ParentMeshData.Shape.NifShape.AlphaPropertyRef.Index), NiflySharp.Blocks.NiAlphaProperty)
+                Return {CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionSource)),
+                        CInt(MapAlphaFunctionToBlendingFactor(MaterialBase.BlendFunctionDest))}
+            End Function
 
-                                Select Case alp.Flags.SourceBlendMode
-                                    Case NiflySharp.Enums.AlphaFunction.DEST_ALPHA
-                                        src = BlendingFactor.DstAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.DEST_COLOR
-                                        src = BlendingFactor.DstColor
-                                    Case NiflySharp.Enums.AlphaFunction.INV_DEST_ALPHA
-                                        src = BlendingFactor.OneMinusDstAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.INV_DEST_COLOR
-                                        src = BlendingFactor.OneMinusDstColor
-                                    Case NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
-                                        src = BlendingFactor.OneMinusSrcAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.INV_SRC_COLOR
-                                        src = BlendingFactor.OneMinusSrcColor
-                                    Case NiflySharp.Enums.AlphaFunction.ONE
-                                        src = BlendingFactor.One
-                                    Case NiflySharp.Enums.AlphaFunction.SRC_ALPHA
-                                        src = BlendingFactor.SrcAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.SRC_ALPHA_SATURATE
-                                        src = BlendingFactor.SrcAlphaSaturate
-                                    Case NiflySharp.Enums.AlphaFunction.SRC_COLOR
-                                        src = BlendingFactor.SrcColor
-                                    Case NiflySharp.Enums.AlphaFunction.ZERO
-                                        src = BlendingFactor.Zero
-                                End Select
-                                Select Case alp.Flags.DestinationBlendMode
-                                    Case NiflySharp.Enums.AlphaFunction.DEST_ALPHA
-                                        dst = BlendingFactor.DstAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.DEST_COLOR
-                                        dst = BlendingFactor.DstColor
-                                    Case NiflySharp.Enums.AlphaFunction.INV_DEST_ALPHA
-                                        dst = BlendingFactor.OneMinusDstAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.INV_DEST_COLOR
-                                        dst = BlendingFactor.OneMinusDstColor
-                                    Case NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
-                                        dst = BlendingFactor.OneMinusSrcAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.INV_SRC_COLOR
-                                        dst = BlendingFactor.OneMinusSrcColor
-                                    Case NiflySharp.Enums.AlphaFunction.ONE
-                                        dst = BlendingFactor.One
-                                    Case NiflySharp.Enums.AlphaFunction.SRC_ALPHA
-                                        dst = BlendingFactor.SrcAlpha
-                                    Case NiflySharp.Enums.AlphaFunction.SRC_ALPHA_SATURATE
-                                        dst = BlendingFactor.SrcAlphaSaturate
-                                    Case NiflySharp.Enums.AlphaFunction.SRC_COLOR
-                                        dst = BlendingFactor.SrcColor
-                                    Case NiflySharp.Enums.AlphaFunction.ZERO
-                                        dst = BlendingFactor.Zero
-                                End Select
-
-                            End If
-                        Catch ex As Exception
-                            Debugger.Break()
-                        End Try
-
-                        Return {src, dst}
-                    Case Else
-                        Throw New Exception
+            Private Shared Function MapAlphaFunctionToBlendingFactor(f As NiflySharp.Enums.AlphaFunction) As BlendingFactor
+                Select Case f
+                    Case NiflySharp.Enums.AlphaFunction.SRC_ALPHA : Return BlendingFactor.SrcAlpha
+                    Case NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA : Return BlendingFactor.OneMinusSrcAlpha
+                    Case NiflySharp.Enums.AlphaFunction.SRC_COLOR : Return BlendingFactor.SrcColor
+                    Case NiflySharp.Enums.AlphaFunction.INV_SRC_COLOR : Return BlendingFactor.OneMinusSrcColor
+                    Case NiflySharp.Enums.AlphaFunction.DEST_ALPHA : Return BlendingFactor.DstAlpha
+                    Case NiflySharp.Enums.AlphaFunction.INV_DEST_ALPHA : Return BlendingFactor.OneMinusDstAlpha
+                    Case NiflySharp.Enums.AlphaFunction.DEST_COLOR : Return BlendingFactor.DstColor
+                    Case NiflySharp.Enums.AlphaFunction.INV_DEST_COLOR : Return BlendingFactor.OneMinusDstColor
+                    Case NiflySharp.Enums.AlphaFunction.ONE : Return BlendingFactor.One
+                    Case NiflySharp.Enums.AlphaFunction.ZERO : Return BlendingFactor.Zero
+                    Case NiflySharp.Enums.AlphaFunction.SRC_ALPHA_SATURATE : Return BlendingFactor.SrcAlphaSaturate
+                    Case Else : Return BlendingFactor.SrcAlpha
                 End Select
-
             End Function
 
 
@@ -2102,11 +2029,7 @@ Public Class PreviewModel
                         Dim nm = MeshData.Meshgeometry.Geometry.BackingShape.Name
                         If nm IsNot Nothing AndAlso nm.String IsNot Nothing Then shapeName = nm.String
                     End If
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[GL-SSBO-DIAG] UpdateBoneMatricesSSBO size mismatch: shape='{shapeName}' " &
-                        $"newSize={sizeBytes} capacity={ssbo_BoneMatricesCapacityBytes} " &
-                        $"newCount={MeshData.Meshgeometry.GPUBoneMatrices.Length} " &
-                        $"capCount={ssbo_BoneMatricesCapacityBytes \ 64}")
+                    Logger.Log($"[GL-SSBO-DIAG] UpdateBoneMatricesSSBO size mismatch: shape='{shapeName}' newSize={sizeBytes} capacity={ssbo_BoneMatricesCapacityBytes} newCount={MeshData.Meshgeometry.GPUBoneMatrices.Length} capCount={ssbo_BoneMatricesCapacityBytes \ 64}")
                 Catch
                 End Try
                 ' Skip the BufferSubData call — it would fire GL_INVALID_VALUE. Returning silently
@@ -2697,10 +2620,19 @@ Public Class PreviewModel
             shader.SetBool("bDoubleSided", materialBase.TwoSided)
 
             ' SkinTint / HairTint
+            ' SkinTint path: el tinte de piel ya fue aplicado upstream sobre la textura diffuse
+            ' (compositor face slot-12 SkinTone, o TryApplyBodySkinSoftLight QNAM para body/hands).
+            ' Forzar tintColor=White para que el render multiply quede no-op. Sin esto el BGSM
+            ' default HairTintColor=DefaultGray (128,128,128) oscurecería al 50% (síntoma "body
+            ' marrón" 2026-05-15 con Sturges). El chargen bake SÍ escribe SkinTintColor al inline
+            ' shader del HeadRear (HDPT type 9) — eso es para el engine in-game que consume el
+            ' .nif2, no afecta este render.
+            ' Hair path: el multiply ES la única fuente de coloreo (no hay compositor de hair).
+            ' Toma HairTintColor del BGSM, seteado per-NPC desde CLFM (HairColorFormID).
             Dim hasTint As Boolean = materialBase.SkinTint OrElse materialBase.Hair
             shader.SetBool("bHasTintColor", hasTint)
             If hasTint Then
-                Dim tint As Color = If(materialBase.SkinTint, materialBase.SkinTintColor, materialBase.HairTintColor)
+                Dim tint As Color = If(materialBase.SkinTint, Color.White, materialBase.HairTintColor)
                 shader.SetVector3("tintColor", Shader_Base_Class.Color_to_Vector(tint))
             End If
 
@@ -2932,9 +2864,7 @@ Public Class PreviewModel
 
             Return Renderable
         Catch ex As Exception
-            Debug.Print("[EXCEPTION] " & ex.Message)
-
-
+            Logger.Log("[Render] BuildRenderable EXCEPTION: " & ex.Message)
             Debugger.Break()
             Return Nothing
         End Try
@@ -3017,7 +2947,7 @@ Public Class PreviewModel
         _uploadFailureCount(path) = count
         If count >= MaxTextureUploadAttempts Then
             Last_Loaded_Textures.Add(path)
-            Debug.Print($"[O4.1] '{path}' marked dead after {count} upload failures (last: {reason})")
+            Logger.Log($"[Render] '{path}' marked dead after {count} upload failures (last: {reason})")
         End If
     End Sub
 
@@ -3109,7 +3039,7 @@ Public Class PreviewModel
                             _pendingBackgroundPaths.Remove(p)
                         Next
                     End SyncLock
-                    Debug.Print($"[O4.1] Background texture load failed: {ex.Message}")
+                    Logger.Log($"[Render] Background texture load failed: {ex.Message}")
                 End Try
             End Sub, ct)
 
@@ -3161,7 +3091,7 @@ Public Class PreviewModel
                             RegisterUploadFailure(path, "silent")
                         End If
                     Catch ex As Exception
-                        Debug.Print($"[O4.1] GL upload failed for '{path}': {ex.Message}")
+                        Logger.Log($"[Render] GL upload failed for '{path}': {ex.Message}")
                         Textures_Dictionary.Remove(path)
                         RegisterUploadFailure(path, ex.Message)
                     End Try
@@ -3260,7 +3190,7 @@ Public Class PreviewModel
         Try
             hook.Invoke(Me)
         Catch ex As Exception
-            Debug.Print($"[Render] PostTextureUpload {(If(success, "success", "timeout"))} hook threw: {ex.Message}")
+            Logger.Log($"[Render] PostTextureUpload {(If(success, "success", "timeout"))} hook threw: {ex.Message}")
         End Try
         ' The callback may have replaced one or more entry.Texture_ID values (face/body skin
         ' softlight passes do this when baking QNAM into the diffuse). Sort order in

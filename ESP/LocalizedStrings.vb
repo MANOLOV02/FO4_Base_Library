@@ -446,7 +446,7 @@ Friend NotInheritable Class LocalizedStringResolver
                     End Using
                 End Using
             Catch ex As Exception
-                Debug.Print($"[Strings] Failed to scan archive {Path.GetFileName(archivePath)}: {ex.Message}")
+                Logger.Log($"[Strings] Failed to scan archive {Path.GetFileName(archivePath)}: {ex.Message}")
             End Try
         Next
 

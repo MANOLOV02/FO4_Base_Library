@@ -202,7 +202,7 @@ Public Module RecordDispatcher
                     Return Nothing
             End Select
         Catch ex As Exception
-            Debug.Print($"[ESP] Failed to parse {rec.Header.Signature} record {rec.Header.FormID:X8}: {ex.Message}")
+            Logger.Log($"[ESP] Failed to parse {rec.Header.Signature} record {rec.Header.FormID:X8}: {ex.Message}")
             Return Nothing
         End Try
     End Function

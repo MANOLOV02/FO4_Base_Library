@@ -1148,6 +1148,12 @@ Public Class RACE_Data
     Public FemaleDefaultWeightMuscular As Single? = Nothing
     Public FemaleDefaultWeightFat As Single? = Nothing
 
+    ''' <summary>APPR — Attach Parent Slots declarados a nivel race. Lista de KYWD FormIDs
+    ''' (KeywordType=Attach Point). Para HandyRace = [ap_Bot_BotCore, ap_Bot_BotLegs] que
+    ''' autorizan el set de OMODs raíz del NPC.OBTE — los chunks anidados se autorizan después
+    ''' via AttachParentSlots de cada OMOD aceptado.</summary>
+    Public AttachParentSlotFormIDs As New List(Of UInteger)
+
     ''' <summary>Find a tint template option by its TETI index for the given gender.</summary>
     Public Function FindTintOption(index As UShort, isFemale As Boolean) As RACE_TintTemplateOption
         Dim groups = If(isFemale, FemaleTintTemplateGroups, MaleTintTemplateGroups)
@@ -2491,6 +2497,16 @@ Public Module RecordParsers
                 Case "GNAM"
                     ' Body Part Data FormID → BPTD record with bone→part-type map.
                     race.BodyPartDataFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "APPR"
+                    ' Attach Parent Slots — array u32 KYWD FormIDs.
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 4 Then
+                        Dim entryCount = d.Length \ 4
+                        For i = 0 To entryCount - 1
+                            Dim fid = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, i * 4), pluginManager)
+                            If fid <> 0UI Then race.AttachParentSlotFormIDs.Add(fid)
+                        Next
+                    End If
                 Case "ANAM"
                     Dim path = sr.AsString
                     If path <> "" Then

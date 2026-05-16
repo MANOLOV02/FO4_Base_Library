@@ -1070,7 +1070,7 @@ Public Class FilesDictionary_class
             ' No MsgBox desde acá: después del ConfigureAwait(False) estamos en el
             ' ThreadPool, sin sync context de la UI. MsgBox desde worker cuelga.
             _scanErrors.Enqueue("Fill_DictionaryAsync failed: " & ex.Message)
-            System.Diagnostics.Debug.WriteLine("Fill_DictionaryAsync error: " & ex.ToString())
+            Logger.Log("[FilesDictionary] Fill_DictionaryAsync error: " & ex.ToString())
         End Try
     End Function
     Private Shared Function ArchiveBelongsToPlugin(archiveFileName As String, pluginFileName As String) As Boolean
@@ -1339,7 +1339,7 @@ Public Class FilesDictionary_class
 
         Catch ex As Exception
             _scanErrors.Enqueue("Error processing BA2 " & ba2 & ": " & ex.Message)
-            System.Diagnostics.Debug.WriteLine("ProcessBa2File error: " & ex.ToString())
+            Logger.Log("[FilesDictionary] ProcessBa2File error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
             progress.Report(($"Procesado: {Path.GetFileName(ba2)}", current, totalCount))
@@ -1389,7 +1389,7 @@ Public Class FilesDictionary_class
 
         Catch ex As Exception
             _scanErrors.Enqueue("Error processing loose file " & file & ": " & ex.Message)
-            System.Diagnostics.Debug.WriteLine("ProcessLooseFile error: " & ex.ToString())
+            Logger.Log("[FilesDictionary] ProcessLooseFile error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
             progress.Report(($"Procesado: {Path.GetFileName(file)}", current, totalCount))

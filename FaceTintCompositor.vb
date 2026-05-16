@@ -1,4 +1,4 @@
-﻿Imports OpenTK.Graphics.OpenGL4
+Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
 ' ============================================================================
@@ -192,6 +192,7 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uUbPrevLoc As Integer = -1
     Friend _uUbColorLoc As Integer = -1
     Friend _uUbBlendOpLoc As Integer = -1
+    Friend _uUbOpacityLoc As Integer = -1
 
     ' Persistent ping-pong colour attachments shared by ComposeOntoFaceTexture,
     ' ApplyRegionSwapsOntoFaceTexture and ApplyUniformBlendOntoFaceTexture. Allocated lazily
@@ -260,6 +261,12 @@ void main() {
 
     ' Photoshop / W3C SVG compositing formulas. dst = current accumulated face diffuse,
     ' src = the layer's effective colour for that pixel.
+    '
+    ' Alpha contract: input alpha is PRESERVED into the output (read once into prevRgba.a,
+    ' written back on every fragColor). Blend operations are RGB-only by definition; touching
+    ' alpha here would corrupt callers passing alpha-tested diffuses. The current callers
+    ' (face diffuse with AlphaTest=False) make this a no-op visually, but the contract stays
+    ' honest so future callers can reuse this shader on alpha-tested textures safely.
     Private Const FragmentShaderSource As String = "#version 430
 in vec2 vUV;
 out vec4 fragColor;
@@ -292,7 +299,8 @@ vec3 blendSoftLight(vec3 d, vec3 s) {
 vec3 blendHardLight(vec3 d, vec3 s) { return blendOverlay(s, d); }
 
 void main() {
-    vec3 prev = texture(uPrev, vUV).rgb;
+    vec4 prevRgba = texture(uPrev, vUV);
+    vec3 prev = prevRgba.rgb;
     vec4 layerSample = texture(uLayer, vUV);
 
     vec3 srcColor;
@@ -323,7 +331,7 @@ void main() {
                       max(max(layerSample.r, layerSample.g), layerSample.b);
         float cov = clamp(maskA * uOpacity, 0.0, 1.0);
         vec3 finalRgb = mix(prev, layerSample.rgb, cov);
-        fragColor = vec4(finalRgb, 1.0);
+        fragColor = vec4(finalRgb, prevRgba.a);
         return;
     }
 
@@ -359,12 +367,12 @@ void main() {
     else                    blended = blendDefault(prev, srcColor);
 
     vec3 finalRgb = mix(prev, blended, coverage);
-    fragColor = vec4(finalRgb, 1.0);
+    fragColor = vec4(finalRgb, prevRgba.a);
 }"
 
     ''' <summary>Backward-compat wrapper that composes onto the diffuse channel without skin tinting.</summary>
     Public Function ComposeOntoFaceDiffuse(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput)) As Integer
-        Return ComposeOntoFaceTexture(state, originalTexId, width, height, layers, FaceTintChannel.Diffuse, logger:=Nothing)
+        Return ComposeOntoFaceTexture(state, originalTexId, width, height, layers, FaceTintChannel.Diffuse)
     End Function
 
     ''' <summary>Compose all layers that contribute to the requested channel onto a copy of the
@@ -379,10 +387,8 @@ void main() {
     ''' render shader's own tint uniform becomes a no-op -- otherwise skin tone is applied twice.
     ''' Pass Nothing (default) to skip skin-tone handling entirely and rely on the legacy render
     ''' uniform. No-op on Normal/Specular channels regardless of the value.
-    ''' <paramref name="logger"/> is optional — when supplied, the compositor reports per-layer
-    ''' disposition (DRAWN / no-channel-bytes / dds-load-failed) and an end-of-call summary.
-    ''' Diagnostic only; null in production builds.</summary>
-    Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional logger As Action(Of String) = Nothing, Optional cache As FaceTintTextureCache = Nothing) As Integer
+    ''' </summary>
+    Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional cache As FaceTintTextureCache = Nothing) As Integer
         If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If layers Is Nothing OrElse layers.Count = 0 Then Return 0
@@ -514,7 +520,6 @@ void main() {
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultFbo = 0
                 resultTex = 0
-                If logger IsNot Nothing Then logger($"  no drawable layer on channel {CInt(channel)}, return 0")
                 Return 0
             End If
 
@@ -539,7 +544,6 @@ void main() {
 
                 Dim chanKey As String = Nothing
                 If Not layerChannelKey.TryGetValue(i, chanKey) Then
-                    If logger IsNot Nothing Then logger($"  layer '{layerName}' SKIP no-channel-bytes")
                     Continue For
                 End If
 
@@ -547,7 +551,6 @@ void main() {
                 If batchLoaded Is Nothing _
                    OrElse Not batchLoaded.TryGetValue(chanKey, chanEntry) _
                    OrElse chanEntry Is Nothing OrElse chanEntry.Texture_ID = 0 Then
-                    If logger IsNot Nothing Then logger($"  layer '{layerName}' SKIP dds-load-failed")
                     Continue For
                 End If
 
@@ -595,16 +598,6 @@ void main() {
 
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawnLayers += 1
-                If logger IsNot Nothing Then
-                    Dim fmtStr As String = DescribeFormat(chanEntry.DGXFormat_Original, chanEntry.DGXFormat_Final)
-                    Dim dxgiOrig As Integer = chanEntry.DGXFormat_Original
-                    Dim dxgiFinal As Integer = chanEntry.DGXFormat_Final
-                    Dim maskNote As String = ""
-                    If maskEntry IsNot Nothing AndAlso diffuseMaskTex <> 0 Then
-                        maskNote = $" mask={DescribeFormat(maskEntry.DGXFormat_Original, maskEntry.DGXFormat_Final)} mask_dxgi=({maskEntry.DGXFormat_Original}->{maskEntry.DGXFormat_Final})"
-                    End If
-                    logger($"  layer '{layerName}' DRAWN kind={CInt(layer.Kind)} blendOp={layer.BlendOp} opacity={layer.Opacity:F2} takesSkinTone={layer.TakesSkinTone} fmt={fmtStr} dxgi=({dxgiOrig}->{dxgiFinal}){maskNote}")
-                End If
 
                 ' Unbind sampler slots; textures themselves are freed in the Finally block.
                 GL.ActiveTexture(TextureUnit.Texture2)
@@ -621,7 +614,6 @@ void main() {
 
             ' resultTex now holds the final composite (drawableCount > 0 guaranteed by the
             ' early-return above, so the last layer always wrote into resultFbo).
-            If logger IsNot Nothing Then logger($"  drew {drawnLayers} of {totalLayers} layers on channel {CInt(channel)}")
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
 
@@ -629,14 +621,12 @@ void main() {
             ' at a texture with undefined contents — caller must NOT cache it.
             Dim postErr = GL.GetError()
             If postErr <> ErrorCode.NoError Then
-                If logger IsNot Nothing Then logger($"  GL error after compose: 0x{Hex(CInt(postErr))} ({postErr}) — refusing to return tex")
                 ' Hand the result texture back to the cleanup path by clearing resultTex;
                 ' the Finally will delete the orphan via the resultTex-on-failure branch.
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
             End If
         Catch ex As Exception
-            If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
             If resultTex <> 0 Then
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
@@ -727,6 +717,10 @@ void main() {
     ' No tint colours, no blend ops, no per-iter opacity — the mask itself is the only
     ' authored coverage signal. The swap texture is treated as authoritative inside the
     ' masked region (it already contains the intended base diffuse / normal / spec).
+    '
+    ' Alpha contract: input alpha (from uPrev) is PRESERVED into the output. The swap and
+    ' mask textures contribute only RGB / weight respectively; the accumulator alpha rides
+    ' along untouched so callers passing alpha-tested diffuses do not lose their cutout.
     Private Const RegionSwapFragmentSource As String = "#version 430
 in vec2 vUV;
 out vec4 fragColor;
@@ -736,10 +730,11 @@ uniform sampler2D uSwap;
 uniform sampler2D uMask;
 
 void main() {
-    vec3 base = texture(uPrev, vUV).rgb;
+    vec4 baseRgba = texture(uPrev, vUV);
+    vec3 base = baseRgba.rgb;
     vec3 swap = texture(uSwap, vUV).rgb;
     float w   = texture(uMask, vUV).r;
-    fragColor = vec4(mix(base, swap, w), 1.0);
+    fragColor = vec4(mix(base, swap, w), baseRgba.a);
 }"
 
     ''' <summary>Apply a list of per-region MPPT TXST swaps onto the supplied face texture
@@ -757,7 +752,6 @@ void main() {
                                                      width As Integer, height As Integer,
                                                      swaps As IList(Of FaceRegionSwapInput),
                                                      channel As FaceTintChannel,
-                                                     Optional logger As Action(Of String) = Nothing,
                                                      Optional cache As FaceTintTextureCache = Nothing) As Integer
         If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
@@ -816,7 +810,6 @@ void main() {
                 loadKeys.Add(kM) : loadBytes.Add(sw.RegionMaskDdsBytes) : loadCacheable.Add(Not String.IsNullOrEmpty(mkCacheKey)) : swapMaskKey(i) = kM
             Next
             If loadKeys.Count = 0 Then
-                If logger IsNot Nothing Then logger($"  no swap contributes to channel {CInt(channel)}, skip")
                 Return 0
             End If
 
@@ -870,7 +863,6 @@ void main() {
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultFbo = 0
                 resultTex = 0
-                If logger IsNot Nothing Then logger($"  no drawable swap on channel {CInt(channel)}, return 0")
                 Return 0
             End If
 
@@ -887,7 +879,6 @@ void main() {
                 Dim sKey As String = Nothing
                 Dim mKey As String = Nothing
                 If Not swapTexKey.TryGetValue(i, sKey) OrElse Not swapMaskKey.TryGetValue(i, mKey) Then
-                    If logger IsNot Nothing Then logger($"  swap '{swapName}' SKIP missing-channel-or-mask")
                     Continue For
                 End If
 
@@ -895,7 +886,6 @@ void main() {
                 Dim mEntry As PreviewModel.Texture_Loaded_Class = Nothing
                 If Not batchLoaded.TryGetValue(sKey, sEntry) OrElse sEntry Is Nothing OrElse sEntry.Texture_ID = 0 _
                    OrElse Not batchLoaded.TryGetValue(mKey, mEntry) OrElse mEntry Is Nothing OrElse mEntry.Texture_ID = 0 Then
-                    If logger IsNot Nothing Then logger($"  swap '{swapName}' SKIP dds-load-failed")
                     Continue For
                 End If
 
@@ -917,9 +907,6 @@ void main() {
 
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawn += 1
-                If logger IsNot Nothing Then
-                    logger($"  swap '{swapName}' DRAWN swapFmt={DescribeFormat(sEntry.DGXFormat_Original, sEntry.DGXFormat_Final)} maskFmt={DescribeFormat(mEntry.DGXFormat_Original, mEntry.DGXFormat_Final)}")
-                End If
 
                 GL.ActiveTexture(TextureUnit.Texture2)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
@@ -933,18 +920,15 @@ void main() {
 
             ' resultTex now holds the final composite (drawableSwaps > 0 guaranteed above).
 
-            If logger IsNot Nothing Then logger($"  drew {drawn} of {swaps.Count} swaps on channel {CInt(channel)}")
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
 
             Dim postErr = GL.GetError()
             If postErr <> ErrorCode.NoError Then
-                If logger IsNot Nothing Then logger($"  GL error after region swap: 0x{Hex(CInt(postErr))} ({postErr}) — refusing to return tex")
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
             End If
         Catch ex As Exception
-            If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
             If resultTex <> 0 Then
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
@@ -984,6 +968,14 @@ void main() {
     ' colour over the entire texture (no mask, full coverage). Used by ApplyUniformBlendOntoFaceTexture
     ' for the body SkinTone pre-pass: softlight(body_diffuse, QNAM_color). The body has no
     ' equivalent of the face's TTET mask layers, so the blend covers the whole texture.
+    '
+    ' Alpha contract: input alpha is PRESERVED into the output. The blend operations
+    ' (Multiply/Overlay/SoftLight/HardLight) are colour-space operations defined for RGB only;
+    ' touching alpha would silently corrupt callers that pass alpha-tested diffuses (regression
+    ' 2026-05-15: pre-Bug-A fix, chunks marcados Kind=Skin → SkinTint=True → este pase corría
+    ' sobre pack_d.dds y reescribia su alpha a 1.0, rompiendo el discard del alpha test). Even
+    ' though the current callers (face / body skin) do not use alpha-test on the diffuse, the
+    ' shader stays honest about its scope: blend RGB, leave alpha alone.
     Private Const UniformBlendFragmentSource As String = "#version 430
 in vec2 vUV;
 out vec4 fragColor;
@@ -991,6 +983,7 @@ out vec4 fragColor;
 uniform sampler2D uPrev;
 uniform vec3 uColor;
 uniform int uBlendOp;
+uniform float uOpacity;
 
 vec3 blendDefault(vec3 d, vec3 s) { return s; }
 vec3 blendMultiply(vec3 d, vec3 s) { return d * s; }
@@ -1010,23 +1003,32 @@ vec3 blendSoftLight(vec3 d, vec3 s) {
 vec3 blendHardLight(vec3 d, vec3 s) { return blendOverlay(s, d); }
 
 void main() {
-    vec3 prev = texture(uPrev, vUV).rgb;
+    vec4 prevRgba = texture(uPrev, vUV);
+    vec3 prev = prevRgba.rgb;
     vec3 blended;
     if (uBlendOp == 1)      blended = blendMultiply(prev, uColor);
     else if (uBlendOp == 2) blended = blendOverlay(prev, uColor);
     else if (uBlendOp == 3) blended = blendSoftLight(prev, uColor);
     else if (uBlendOp == 4) blended = blendHardLight(prev, uColor);
     else                    blended = blendDefault(prev, uColor);
-    fragColor = vec4(blended, 1.0);
+    // Opacity attenuation: mix prev (no-op) toward blended (full strength).
+    // Matches ComposeOntoFaceTexture main shader math `mix(prev, blended, coverage)`
+    // so face compositor and body uniform-blend pass use the same attenuation formula.
+    vec3 finalRgb = mix(prev, blended, clamp(uOpacity, 0.0, 1.0));
+    fragColor = vec4(finalRgb, prevRgba.a);
 }"
 
     ''' <summary>Apply a single uniform-colour blend onto an entire face texture and return
     ''' the new GL texture ID. The original is left untouched. Returns 0 on failure.
     ''' MUST run on the GL thread.
     '''
-    ''' Used by the body SkinTone pre-pass (softlight(body_diffuse, QNAM)) so the body and
-    ''' face produce symmetric results when ENABLE_TWO_STEP_SKIN_TINT is on. There is no
-    ''' mask — the blend covers the entire texture.
+    ''' Used by the body SkinTone pre-pass (softlight(body_diffuse, QNAM)) and the face
+    ''' fallback (TryApplyFaceSkinSoftLight). Same attenuation math as
+    ''' <see cref="ComposeOntoFaceTexture"/>: <c>mix(prev, blended, opacity)</c> — caller passes
+    ''' the FULL source colour (not pre-attenuated toward neutral grey) plus an opacity scalar
+    ''' (typically tl.Value/100 or qnam.A/255). The shader interpolates between prev (no-op)
+    ''' and the full-strength blend by the opacity factor. This matches the main compositor's
+    ''' coverage math so face and body produce identical visual results for the same opacity.
     '''
     ''' blendOp follows the BGSCharacterTint enum: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight.</summary>
     Public Function ApplyUniformBlendOntoFaceTexture(state As FaceTintCompositorState,
@@ -1034,7 +1036,7 @@ void main() {
                                                       width As Integer, height As Integer,
                                                       r As Single, g As Single, b As Single,
                                                       blendOp As Integer,
-                                                      Optional logger As Action(Of String) = Nothing) As Integer
+                                                      opacity As Single) As Integer
         If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
 
@@ -1089,13 +1091,12 @@ void main() {
 
             GL.Uniform3(state._uUbColorLoc, r, g, b)
             GL.Uniform1(state._uUbBlendOpLoc, blendOp)
+            GL.Uniform1(state._uUbOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, opacity)))
 
             GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
             resultTex = outTex
 
-            If logger IsNot Nothing Then logger($"  uniform-blend DRAWN blendOp={blendOp} color=({r:F3},{g:F3},{b:F3}) onto {width}x{height}")
         Catch ex As Exception
-            If logger IsNot Nothing Then logger($"  EXCEPTION {ex.GetType().Name}: {ex.Message}")
             resultTex = 0
         Finally
             If outFbo <> 0 Then
@@ -1164,6 +1165,7 @@ void main() {
         state._uUbPrevLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uPrev")
         state._uUbColorLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uColor")
         state._uUbBlendOpLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uBlendOp")
+        state._uUbOpacityLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uOpacity")
     End Sub
 
     Private Sub EnsureRegionSwapInitialized(state As FaceTintCompositorState)
@@ -1410,8 +1412,7 @@ void main() {
                                           width As Integer,
                                           height As Integer,
                                           layers As IList(Of FaceTintLayerInput),
-                                          swaps As IList(Of FaceRegionSwapInput),
-                                          Optional logger As Action(Of String) = Nothing) As FaceTintPipelineResult
+                                          swaps As IList(Of FaceRegionSwapInput)) As FaceTintPipelineResult
         If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
 
         Dim result As New FaceTintPipelineResult With {
@@ -1424,28 +1425,16 @@ void main() {
 
         ' --- Region-swap pre-pass (no-op if swaps empty / no contribution to a channel) ---
         If swaps IsNot Nothing AndAlso swaps.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height,
-                           Nothing, swaps, logger,
-                           skipReason:="region-swap diffuse: no input id")
-            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height,
-                           Nothing, swaps, logger,
-                           skipReason:="region-swap normal: no input id")
-            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height,
-                           Nothing, swaps, logger,
-                           skipReason:="region-swap specular: no input id")
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height, Nothing, swaps)
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height, Nothing, swaps)
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height, Nothing, swaps)
         End If
 
         ' --- Tint compose ---
         If layers IsNot Nothing AndAlso layers.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height,
-                           layers, Nothing, logger,
-                           skipReason:="tint diffuse: no input id")
-            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height,
-                           layers, Nothing, logger,
-                           skipReason:="tint normal: no input id")
-            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height,
-                           layers, Nothing, logger,
-                           skipReason:="tint specular: no input id")
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height, layers, Nothing)
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height, layers, Nothing)
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height, layers, Nothing)
         End If
 
         Return result
@@ -1464,18 +1453,15 @@ void main() {
                                cache As FaceTintTextureCache,
                                width As Integer, height As Integer,
                                layers As IList(Of FaceTintLayerInput),
-                               swaps As IList(Of FaceRegionSwapInput),
-                               logger As Action(Of String),
-                               skipReason As String)
+                               swaps As IList(Of FaceRegionSwapInput))
         If ch.TextureId = 0 Then
-            If logger IsNot Nothing Then logger($"  [PIPELINE] skip {channel}: {skipReason}")
             Return
         End If
         Dim newId As Integer
         If swaps IsNot Nothing Then
-            newId = ApplyRegionSwapsOntoFaceTexture(state, ch.TextureId, width, height, swaps, channel, logger, cache)
+            newId = ApplyRegionSwapsOntoFaceTexture(state, ch.TextureId, width, height, swaps, channel, cache)
         Else
-            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, logger, cache)
+            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, cache)
         End If
         If newId = 0 OrElse newId = ch.TextureId Then Return
         Dim oldId = ch.TextureId
