@@ -15,6 +15,7 @@ Imports NiflySharp.Structs
 ''' </summary>
 Public Class NifRenderableShape
     Implements IRenderableShape
+    Implements IRuntimeSkinOverride
 
     Private ReadOnly _nif As Nifcontent_Class_Manolo
     Private ReadOnly _shape As INiShape
@@ -23,6 +24,12 @@ Public Class NifRenderableShape
     Private _bones As IReadOnlyList(Of NiNode)
     Private _boneTransforms As IReadOnlyList(Of Transform_Class)
     Private _material As Nifcontent_Class_Manolo.RelatedMaterial_Class
+
+    ' Runtime synthetic skin override (see IRuntimeSkinOverride). Populated by
+    ' ApplySyntheticAnchorSkin. When set, ShapeBones / ShapeBoneTransforms / IsSkinned
+    ' return the synthetic data instead of the NIF-resolved data from ResolveSkinData.
+    Private _syntheticBones As IReadOnlyList(Of NiNode)
+    Private _syntheticTransforms As IReadOnlyList(Of Transform_Class)
 
     Public Sub New(nif As Nifcontent_Class_Manolo, shape As INiShape, index As Integer)
         If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
@@ -155,13 +162,14 @@ Public Class NifRenderableShape
 
     Public ReadOnly Property ShapeBones As IReadOnlyList(Of NiNode) Implements IRenderableShape.ShapeBones
         Get
-            Return _bones
+            ' Synthetic override: return injected anchor bone instead of NIF-resolved palette.
+            Return If(_syntheticBones, _bones)
         End Get
     End Property
 
     Public ReadOnly Property ShapeBoneTransforms As IReadOnlyList(Of Transform_Class) Implements IRenderableShape.ShapeBoneTransforms
         Get
-            Return _boneTransforms
+            Return If(_syntheticTransforms, _boneTransforms)
         End Get
     End Property
 
@@ -173,9 +181,55 @@ Public Class NifRenderableShape
 
     Public ReadOnly Property IsSkinned As Boolean Implements IRenderableShape.IsSkinned
         Get
+            ' Synthetic runtime override: a shape that's unskinned in the NIF but had
+            ' ApplySyntheticAnchorSkin called on it reports as skinned for the downstream
+            ' pipeline. See IRuntimeSkinOverride.
+            If _syntheticBones IsNot Nothing Then Return True
             Return _shape IsNot Nothing AndAlso _shape.IsSkinned
         End Get
     End Property
+
+    ' ─────────────── IRuntimeSkinOverride ───────────────
+    Public ReadOnly Property HasSyntheticSkin As Boolean Implements IRuntimeSkinOverride.HasSyntheticSkin
+        Get
+            Return _syntheticBones IsNot Nothing
+        End Get
+    End Property
+
+    ''' <summary>
+    ''' Inject runtime synthetic skin tying the entire shape to a single anchor bone
+    ''' (weight 1.0 to bone 0 for every vertex). Does NOT mutate the NIF. After this call:
+    '''   - ShapeBones returns [anchorBone]
+    '''   - ShapeBoneTransforms returns [bindTransform]
+    '''   - IsSkinned returns True
+    '''   - Geometry.GetSkinning returns synthetic per-vertex data
+    '''   - Geometry.IsSkinned returns True
+    ''' </summary>
+    Public Sub ApplySyntheticAnchorSkin(anchorBone As NiNode, bindTransform As Transform_Class) Implements IRuntimeSkinOverride.ApplySyntheticAnchorSkin
+        If anchorBone Is Nothing Then Throw New ArgumentNullException(NameOf(anchorBone))
+        If bindTransform Is Nothing Then Throw New ArgumentNullException(NameOf(bindTransform))
+        If _geometry Is Nothing Then Throw New InvalidOperationException("Shape geometry is null")
+
+        _syntheticBones = New List(Of NiNode) From {anchorBone}
+        _syntheticTransforms = New List(Of Transform_Class) From {bindTransform}
+
+        ' Build per-vertex synthetic skin data: every vertex weighted 1.0 to bone 0.
+        Dim vc As Integer = _geometry.VertexCount
+        Dim idx(vc * 4 - 1) As Byte                ' all zeros — bone palette index 0
+        Dim wgt(vc * 4 - 1) As System.Half          ' slot 0 = 1.0, slots 1-3 = 0.0
+        Dim one As System.Half = CType(1.0F, System.Half)
+        For i = 0 To vc - 1
+            wgt(i * 4) = one
+        Next
+
+        _geometry.SetSyntheticSkinning(New ShapeSkinningData With {
+            .BoneIndices = idx,
+            .BoneWeights = wgt,
+            .WeightsPerVertex = 4,
+            .VertexCount = vc,
+            .BoneRefIndices = New Integer() {0}
+        })
+    End Sub
 
     Public ReadOnly Property HasPhysics As Boolean Implements IRenderableShape.HasPhysics
         Get

@@ -143,4 +143,18 @@ Public Interface IShapeGeometry
     ''' </summary>
     Sub UpdateBounds()
 
+    ' ─────────────── Runtime synthetic skinning ───────────────
+    ''' <summary>True once SetSyntheticSkinning has been called. When True, GetSkinning
+    ''' returns the synthetic data instead of reading from the NIF block, and IsSkinned
+    ''' returns True regardless of the backing block's state.</summary>
+    ReadOnly Property HasSyntheticSkinning As Boolean
+
+    ''' <summary>
+    ''' Inject runtime synthetic per-vertex skin data. data.VertexCount must equal this
+    ''' shape's VertexCount. Does NOT write to the NIF block — purely in-memory override.
+    ''' Used by IRuntimeSkinOverride.ApplySyntheticAnchorSkin to make an unskinned shape
+    ''' behave as skinned to a single anchor bone for rendering.
+    ''' </summary>
+    Sub SetSyntheticSkinning(data As ShapeSkinningData)
+
 End Interface

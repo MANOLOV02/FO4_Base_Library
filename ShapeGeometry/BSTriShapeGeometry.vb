@@ -32,11 +32,30 @@ Public Class BSTriShapeGeometry
     Private ReadOnly _tri As BSTriShape
     Private ReadOnly _nif As Nifcontent_Class_Manolo
 
+    ' Runtime synthetic skin override (see IRuntimeSkinOverride). When set, IsSkinned and
+    ' GetSkinning return this data instead of reading from _tri's NIF block. Used for
+    ' unskinned shapes that need to be anchored to a bone at render time without mutating
+    ' the NIF on disk (e.g. LightPlane in BSConnectPoint chunks).
+    Private _syntheticSkinning As ShapeSkinningData? = Nothing
+
     Public Sub New(tri As BSTriShape, nif As Nifcontent_Class_Manolo)
         If tri Is Nothing Then Throw New ArgumentNullException(NameOf(tri))
         If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
         _tri = tri
         _nif = nif
+    End Sub
+
+    Public ReadOnly Property HasSyntheticSkinning As Boolean Implements IShapeGeometry.HasSyntheticSkinning
+        Get
+            Return _syntheticSkinning.HasValue
+        End Get
+    End Property
+
+    Public Sub SetSyntheticSkinning(data As ShapeSkinningData) Implements IShapeGeometry.SetSyntheticSkinning
+        If data.VertexCount <> _tri.VertexCount Then
+            Throw New ArgumentException($"SetSyntheticSkinning vertex count mismatch: shape has {_tri.VertexCount}, data has {data.VertexCount}")
+        End If
+        _syntheticSkinning = data
     End Sub
 
     ' ─────────────── Identity ───────────────
@@ -103,7 +122,10 @@ Public Class BSTriShapeGeometry
 
     Public ReadOnly Property IsSkinned As Boolean Implements IShapeGeometry.IsSkinned
         Get
-            Return _tri.IsSkinned
+            ' Synthetic runtime override: shapes that are unskinned in the NIF but were
+            ' fake-skinned at runtime via SetSyntheticSkinning report as skinned for the
+            ' downstream pipeline (SkinningHelper, Render VBO upload).
+            Return _syntheticSkinning.HasValue OrElse _tri.IsSkinned
         End Get
     End Property
 
@@ -226,6 +248,10 @@ Public Class BSTriShapeGeometry
     ''' Returns ShapeSkinningData.Empty when the shape is unskinned.
     ''' </summary>
     Public Function GetSkinning() As ShapeSkinningData Implements IShapeGeometry.GetSkinning
+        ' Synthetic runtime override path: caller injected per-vertex skin data without
+        ' mutating the NIF. Return that verbatim — the NIF vertex buffer may not have skin
+        ' fields populated.
+        If _syntheticSkinning.HasValue Then Return _syntheticSkinning.Value
         If Not _tri.IsSkinned Then Return ShapeSkinningData.Empty
 
         Dim n As Integer = _tri.VertexCount

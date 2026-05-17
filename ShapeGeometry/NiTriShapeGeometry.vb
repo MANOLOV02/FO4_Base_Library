@@ -52,6 +52,12 @@ Public Class NiTriShapeGeometry
     Private ReadOnly _shape As INiShape
     Private ReadOnly _nif As Nifcontent_Class_Manolo
 
+    ' Runtime synthetic skin override (see IRuntimeSkinOverride). When set, IsSkinned and
+    ' GetSkinning return this data instead of reading from _shape's NIF block. Used for
+    ' unskinned shapes that need to be anchored to a bone at render time without mutating
+    ' the NIF on disk.
+    Private _syntheticSkinning As ShapeSkinningData? = Nothing
+
     Public Sub New(shape As INiShape, nif As Nifcontent_Class_Manolo)
         If shape Is Nothing Then Throw New ArgumentNullException(NameOf(shape))
         If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
@@ -150,9 +156,23 @@ Public Class NiTriShapeGeometry
 
     Public ReadOnly Property IsSkinned As Boolean Implements IShapeGeometry.IsSkinned
         Get
-            Return _shape.IsSkinned
+            ' Synthetic runtime override: see BSTriShapeGeometry.IsSkinned doc.
+            Return _syntheticSkinning.HasValue OrElse _shape.IsSkinned
         End Get
     End Property
+
+    Public ReadOnly Property HasSyntheticSkinning As Boolean Implements IShapeGeometry.HasSyntheticSkinning
+        Get
+            Return _syntheticSkinning.HasValue
+        End Get
+    End Property
+
+    Public Sub SetSyntheticSkinning(data As ShapeSkinningData) Implements IShapeGeometry.SetSyntheticSkinning
+        If data.VertexCount <> VertexCount Then
+            Throw New ArgumentException($"SetSyntheticSkinning vertex count mismatch: shape has {VertexCount}, data has {data.VertexCount}")
+        End If
+        _syntheticSkinning = data
+    End Sub
 
     Public ReadOnly Property Bounds As BoundingSphere Implements IShapeGeometry.Bounds
         Get
@@ -246,6 +266,9 @@ Public Class NiTriShapeGeometry
     End Function
 
     Public Function GetSkinning() As ShapeSkinningData Implements IShapeGeometry.GetSkinning
+        ' Synthetic runtime override: caller injected per-vertex skin data without mutating
+        ' the NIF. Return that verbatim.
+        If _syntheticSkinning.HasValue Then Return _syntheticSkinning.Value
         If Not _shape.IsSkinned Then Return ShapeSkinningData.Empty
 
         Dim skinInst = ResolveSkinInstance()
