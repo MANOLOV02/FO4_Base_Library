@@ -1269,6 +1269,12 @@ Public Class ARMO_Data
     Public MaleWorldModelPath As String = ""
     ''' <summary>Female 'World Model' mesh filename (ARMO.MOD4 subrecord). Analogous to the male path.</summary>
     Public FemaleWorldModelPath As String = ""
+    ''' <summary>APPR — Attach Parent Slots declarados por la ARMO. Lista de KYWD FormIDs que
+    ''' actúan como seed inicial del AP-pool para resolver OBTS combinations chunk-mount.
+    ''' Per wbDefinitionsFO4.pas:6206 (wbAPPR aparece en el record ARMO después de TNAM y antes
+    ''' de wbObjectTemplate). El AP-pool extiende dinámicamente vía AttachParentSlots de OMODs
+    ''' aceptados — mismo modelo que NPC.APPR/RACE.APPR ya implementado.</summary>
+    Public AttachParentSlotFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Per-bone scale delta from an ARMA record's BSMS subrecord. Per TES5Edit
@@ -3023,6 +3029,19 @@ Public Module RecordParsers
                 Case "MOD4"
                     ' ARMO.Female 'World Model' mesh path — analogous to MOD2 for females.
                     armo.FemaleWorldModelPath = sr.AsString
+                ' wbDefinitionsFO4.pas:6206 — APPR (Attach Parent Slots). Mismo layout u32 KYWD
+                ' array que NPC.APPR/RACE.APPR. Seed inicial del AP-pool para chunk-mount OBTS
+                ' (caso vivo: Armor_MiningHelmet declara ap_PowerArmor_HeadMod aquí, sin lo cual
+                ' Helmet_Mining_Mod queda rejected por pool vacío).
+                Case "APPR"
+                    Dim d = sr.Data
+                    If d IsNot Nothing AndAlso d.Length >= 4 Then
+                        Dim entryCount = d.Length \ 4
+                        For i = 0 To entryCount - 1
+                            Dim fid = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, i * 4), pluginManager)
+                            If fid <> 0UI Then armo.AttachParentSlotFormIDs.Add(fid)
+                        Next
+                    End If
             End Select
         Next
 
