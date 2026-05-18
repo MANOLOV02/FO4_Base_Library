@@ -149,16 +149,6 @@ Public Class SkinningHelper
         End If
 
         Dim GlobalTransform = Matrix4d.Identity
-        Dim check = If(shapeNode IsNot Nothing, Transform_Class.GetGlobalTransform(shapeNode, shape.NifContent).ToMatrix4d(), Matrix4d.Identity)
-        If shape.IsSkinned AndAlso Not check.Equals(GlobalTransform) Then
-            Debugger.Break()
-            ' Salvo childsskinned o synthetic-skin (IRuntimeSkinOverride) no debería pasar.
-            ' Synthetic-skinned shapes (LightPlane y similares fake-skinned a un chunk anchor)
-            ' tienen parent chain real en el chunk NIF (NIFtree con chunkRoot.R), no identity.
-            ' Es intencional: el bind synthetic compensa esa parent chain. Dejamos el break
-            ' firing como diagnostic — quitar cuando se confirme que solo dispara para
-            ' fake-skinned y no para otro caso real.
-        End If
 
         ' 2) Datos brutos — la INVERTIDAS swap y el byte-decode de TBN viven en el adapter:
         '    GetTangents/GetBitangents devuelven ya en convención del renderer.
@@ -971,13 +961,6 @@ Public Class SkinningHelper
         Dim shapeNode = TryCast(shape.NifContent.GetParentNode(backing), NiNode)
         If IsNothing(shapeNode) Then shapeNode = shape.NifContent.GetRootNode()
         Dim GlobalTransform = Matrix4d.Identity
-        Dim check = If(shapeNode IsNot Nothing, Transform_Class.GetGlobalTransform(shapeNode, shape.NifContent).ToMatrix4d(), Matrix4d.Identity)
-        If shape.IsSkinned AndAlso Not check.Equals(GlobalTransform) Then
-            Debugger.Break()
-            ' Salvo childsskinned o synthetic-skin (IRuntimeSkinOverride) no debería pasar.
-            ' Ver comentario homólogo en ExtractSkinnedGeometry para el caso fake-skin.
-        End If
-
         ' Branching predicate: shape.IsSkinned (consistente con ExtractSkinnedGeometry).
         ' bones.Length>0 secundario para acceso seguro a array.
         If shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Length > 0 Then
