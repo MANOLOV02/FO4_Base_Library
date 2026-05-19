@@ -123,7 +123,7 @@ Public Module DirectXDDSLoader
     Private Function CheckGlOk(opLabel As String) As Boolean
         Dim e = GL.GetError()
         If e = ErrorCode.NoError Then Return True
-        Logger.Log($"[DDS] GL error after {opLabel}: 0x{Hex(CInt(e))} ({e})")
+        Logger.LogLazy(Function() $"[DDS] GL error after {opLabel}: 0x{Hex(CInt(e))} ({e})")
         Return False
     End Function
 
@@ -502,7 +502,7 @@ Public Module DirectXDDSLoader
             Return texID
 
         Catch ex As Exception
-            Logger.Log($"[DDS] CreateOpenGL_FromTextureLoaded_PBO failed. DXGI={tex.DxgiCodeFinal} glInternal=0x{Hex(glInternal)} glFormat=0x{Hex(glFormat)} glType=0x{Hex(glType)} {ex.GetType().Name}: {ex.Message}")
+            Logger.LogLazy(Function() $"[DDS] CreateOpenGL_FromTextureLoaded_PBO failed. DXGI={tex.DxgiCodeFinal} glInternal=0x{Hex(glInternal)} glFormat=0x{Hex(glFormat)} glType=0x{Hex(glType)} {ex.GetType().Name}: {ex.Message}")
 
             If texID <> 0 Then
                 GL.DeleteTexture(texID)

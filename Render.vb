@@ -2024,7 +2024,7 @@ Public Class PreviewModel
                         Dim nm = MeshData.Meshgeometry.Geometry.BackingShape.Name
                         If nm IsNot Nothing AndAlso nm.String IsNot Nothing Then shapeName = nm.String
                     End If
-                    Logger.Log($"[GL-SSBO-DIAG] UpdateBoneMatricesSSBO size mismatch: shape='{shapeName}' newSize={sizeBytes} capacity={ssbo_BoneMatricesCapacityBytes} newCount={MeshData.Meshgeometry.GPUBoneMatrices.Length} capCount={ssbo_BoneMatricesCapacityBytes \ 64}")
+                    Logger.LogLazy(Function() $"[GL-SSBO-DIAG] UpdateBoneMatricesSSBO size mismatch: shape='{shapeName}' newSize={sizeBytes} capacity={ssbo_BoneMatricesCapacityBytes} newCount={MeshData.Meshgeometry.GPUBoneMatrices.Length} capCount={ssbo_BoneMatricesCapacityBytes \ 64}")
                 Catch
                 End Try
                 ' Skip the BufferSubData call — it would fire GL_INVALID_VALUE. Returning silently
@@ -2859,7 +2859,7 @@ Public Class PreviewModel
 
             Return Renderable
         Catch ex As Exception
-            Logger.Log("[Render] BuildRenderable EXCEPTION: " & ex.Message)
+            Logger.LogLazy(Function() "[Render] BuildRenderable EXCEPTION: " & ex.Message)
             Debugger.Break()
             Return Nothing
         End Try
@@ -2942,7 +2942,7 @@ Public Class PreviewModel
         _uploadFailureCount(path) = count
         If count >= MaxTextureUploadAttempts Then
             Last_Loaded_Textures.Add(path)
-            Logger.Log($"[Render] '{path}' marked dead after {count} upload failures (last: {reason})")
+            Logger.LogLazy(Function() $"[Render] '{path}' marked dead after {count} upload failures (last: {reason})")
         End If
     End Sub
 
@@ -3034,7 +3034,7 @@ Public Class PreviewModel
                             _pendingBackgroundPaths.Remove(p)
                         Next
                     End SyncLock
-                    Logger.Log($"[Render] Background texture load failed: {ex.Message}")
+                    Logger.LogLazy(Function() $"[Render] Background texture load failed: {ex.Message}")
                 End Try
             End Sub, ct)
 
@@ -3086,7 +3086,7 @@ Public Class PreviewModel
                             RegisterUploadFailure(path, "silent")
                         End If
                     Catch ex As Exception
-                        Logger.Log($"[Render] GL upload failed for '{path}': {ex.Message}")
+                        Logger.LogLazy(Function() $"[Render] GL upload failed for '{path}': {ex.Message}")
                         Textures_Dictionary.Remove(path)
                         RegisterUploadFailure(path, ex.Message)
                     End Try
@@ -3185,7 +3185,7 @@ Public Class PreviewModel
         Try
             hook.Invoke(Me)
         Catch ex As Exception
-            Logger.Log($"[Render] PostTextureUpload {(If(success, "success", "timeout"))} hook threw: {ex.Message}")
+            Logger.LogLazy(Function() $"[Render] PostTextureUpload {(If(success, "success", "timeout"))} hook threw: {ex.Message}")
         End Try
         ' The callback may have replaced one or more entry.Texture_ID values (face/body skin
         ' softlight passes do this when baking QNAM into the diffuse). Sort order in

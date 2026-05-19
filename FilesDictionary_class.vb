@@ -441,7 +441,7 @@ Public Class FilesDictionary_class
     End Property
 
     ''' <summary>
-    ''' Directory where per-archive index caches ({name}.idx.bin) are stored.
+    ''' Directory where per-archive index caches ({name}.cac) are stored.
     ''' The app sets this before Fill_DictionaryAsync to enable caching. Empty = cache disabled.
     ''' </summary>
     Public Shared Property CacheDirectory As String
@@ -454,7 +454,7 @@ Public Class FilesDictionary_class
     End Property
 
     ' ================== Archive index cache ==================
-    ' Binary format "FD4I" v1 per-archive file at {CacheDirectory}\{name}.idx.bin
+    ' Binary format "FD4I" v1 per-archive file at {CacheDirectory}\{name}.cac
     '   4B  magic        = 'F','D','4','I'
     '   2B  version u16  = 1
     '   8B  size i64
@@ -465,8 +465,8 @@ Public Class FilesDictionary_class
     '   N x [i32 index + u16 dir_len + utf8 fullpath bytes]
     Private Shared ReadOnly CacheMagic As Byte() = {&H46, &H44, &H34, &H49} ' "FD4I"
     Private Const CacheFormatVersion As UShort = 1US
-    Private Const CacheFileSuffix As String = ".idx.bin"
-    Private Const CacheTempSuffix As String = ".idx.bin.tmp"
+    Private Const CacheFileSuffix As String = ".cac"
+    Private Const CacheTempSuffix As String = ".cac.tmp"
 
     Private Shared _canonicalExtensionsSnapshot As List(Of String) = Nothing
 
@@ -1070,7 +1070,7 @@ Public Class FilesDictionary_class
             ' No MsgBox desde acá: después del ConfigureAwait(False) estamos en el
             ' ThreadPool, sin sync context de la UI. MsgBox desde worker cuelga.
             _scanErrors.Enqueue("Fill_DictionaryAsync failed: " & ex.Message)
-            Logger.Log("[FilesDictionary] Fill_DictionaryAsync error: " & ex.ToString())
+            Logger.LogLazy(Function() "[FilesDictionary] Fill_DictionaryAsync error: " & ex.ToString())
         End Try
     End Function
     Private Shared Function ArchiveBelongsToPlugin(archiveFileName As String, pluginFileName As String) As Boolean
@@ -1339,7 +1339,7 @@ Public Class FilesDictionary_class
 
         Catch ex As Exception
             _scanErrors.Enqueue("Error processing BA2 " & ba2 & ": " & ex.Message)
-            Logger.Log("[FilesDictionary] ProcessBa2File error: " & ex.ToString())
+            Logger.LogLazy(Function() "[FilesDictionary] ProcessBa2File error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
             progress.Report(($"Procesado: {Path.GetFileName(ba2)}", current, totalCount))
@@ -1389,7 +1389,7 @@ Public Class FilesDictionary_class
 
         Catch ex As Exception
             _scanErrors.Enqueue("Error processing loose file " & file & ": " & ex.Message)
-            Logger.Log("[FilesDictionary] ProcessLooseFile error: " & ex.ToString())
+            Logger.LogLazy(Function() "[FilesDictionary] ProcessLooseFile error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
             progress.Report(($"Procesado: {Path.GetFileName(file)}", current, totalCount))

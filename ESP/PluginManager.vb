@@ -59,7 +59,7 @@ Public Class PluginManager
                 Plugins.Add(reader)
                 MergeRecords(reader)
             Catch ex As Exception
-                Logger.Log($"[ESP] Failed to load {fileName}: {ex.Message}")
+                Logger.LogLazy(Function() $"[ESP] Failed to load {fileName}: {ex.Message}")
             End Try
         Next
 
