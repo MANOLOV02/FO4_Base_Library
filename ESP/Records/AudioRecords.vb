@@ -487,7 +487,10 @@ Public Module AudioRecordParsers
                 If sr.Data.Length > 4 Then
                     Dim strLen = sr.Data.Length - 4
                     If strLen > 0 AndAlso sr.Data(sr.Data.Length - 1) = 0 Then strLen -= 1
-                    currentEntry.Action = Encoding.ASCII.GetString(sr.Data, 4, strLen)
+                    ' xEdit defines STAG.TNAM Action as wbString (translatable). In practice the
+                    ' values are technical ASCII tags, but route through the central decoder for
+                    ' convention consistency and fallback safety.
+                    currentEntry.Action = PluginEncodingSettings.DecodeTranslatable(sr.Data, 4, strLen)
                 End If
             End If
         Next

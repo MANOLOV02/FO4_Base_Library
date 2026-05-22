@@ -12,6 +12,12 @@ Public Class PluginReader
     Public Property IsESM As Boolean
     Public Property IsESL As Boolean
     Public Property IsLocalized As Boolean
+    ''' <summary>
+    ''' Per-file translatable encoding captured from TES4.SNAM &lt;cp:XXXX&gt; at load time.
+    ''' Mirror of xEdit flEncodingTrans (wbImplementation.pas:766 + 5724-5737). Nothing when
+    ''' the plugin's TES4 description has no recognizable tag (default → use global).
+    ''' </summary>
+    Public Property TranslatableEncoding As Encoding
     Public Property Records As New Dictionary(Of UInteger, PluginRecord)
 
     Private ReadOnly _sigFilter As HashSet(Of String)
@@ -57,7 +63,26 @@ Public Class PluginReader
         Dim endPos = br.BaseStream.Position + header.DataSize
         Dim data = ReadRecordData(br, header)
 
-        For Each subrecord In ParseSubrecords(data)
+        ' Two passes over TES4 subrecords:
+        '  1) SNAM <cp:XXXX> — capture per-file translatable encoding BEFORE decoding MAST,
+        '     so master filenames (technically translatable per xEdit) are read with the right cp.
+        '  2) MAST — accumulate master plugin filenames using the resolved encoding.
+        ' xEdit does the SNAM parse inside TwbFile.Create (wbImplementation.pas:5724-5737) right
+        ' after master loading; we do it before for the same effect since MAST is ASCII-safe in
+        ' practice (filesystem-friendly names).
+        Dim tes4Subrecords = ParseSubrecords(data)
+
+        For Each subrecord In tes4Subrecords
+            If subrecord.Signature <> "SNAM" Then Continue For
+            Dim snamText = subrecord.AsString  ' global decode is fine here — tag uses ASCII
+            Dim parsed = PluginEncodingSettings.ParseSnamCpTag(snamText)
+            If parsed IsNot Nothing Then
+                TranslatableEncoding = parsed
+                Exit For
+            End If
+        Next
+
+        For Each subrecord In tes4Subrecords
             If subrecord.Signature <> "MAST" Then Continue For
             Dim master = subrecord.AsString
             If master <> "" Then Masters.Add(master)
@@ -117,7 +142,8 @@ Public Class PluginReader
         Dim record As New PluginRecord With {
             .Header = header,
             .SourcePluginName = FileName,
-            .SourcePluginIsLocalized = IsLocalized
+            .SourcePluginIsLocalized = IsLocalized,
+            .SourcePluginTranslatableEncoding = TranslatableEncoding
         }
 
         record.Subrecords.AddRange(ParseSubrecords(data))

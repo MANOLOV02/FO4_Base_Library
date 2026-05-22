@@ -149,6 +149,15 @@ Public Class PluginManager
             Return $"<Error: Unknown lstring ID {stringId:X8}>"
         End If
 
+        ' Per-file translatable encoding (from TES4 SNAM <cp:XXXX>) takes precedence over the
+        ' global PluginEncodingSettings.Translatable. Mirror of bsdGetEncoding precedence
+        ' (wbInterface.pas:23519-23535): aElement._File.Encoding[translatable] beats wbEncodingTrans.
+        If rec IsNot Nothing AndAlso rec.SourcePluginTranslatableEncoding IsNot Nothing Then
+            Dim len = sr.Data.Length
+            If len > 0 AndAlso sr.Data(len - 1) = 0 Then len -= 1
+            Return PluginEncodingSettings.DecodeWithEncoding(sr.Data, 0, len, rec.SourcePluginTranslatableEncoding)
+        End If
+
         Return sr.AsString
     End Function
 

@@ -123,6 +123,36 @@ Public Class FaceTintLayerInput
     ''' Specular textures are full-face baked. The compositor applies these via the mask-gated hard
     ''' replace branch in the shader, using the layer's own TTET[0] alpha as the spatial mask.</summary>
     Public Property TakesSkinTone As Boolean = False
+
+    ''' <summary>Opt-in for the per-pixel grayscale-to-palette path on the Diffuse channel. When
+    ''' True, the shader samples the per-fragment colour from a hair palette LUT instead of the
+    ''' authored RGB. The X coordinate depends on the layer kind: PaletteMask uses mask.r (the
+    ''' .r channel of the diffuse mask), TextureSet uses <c>dot(layerSample.rgb, vec3(0.299,
+    ''' 0.587, 0.114))</c> -- the standard luminance grayscale of the layer's own diffuse.
+    ''' The Y coordinate is always <see cref="HairPaletteRow"/> (= CLFM.RemappingIndex). Caller
+    ''' must supply <see cref="HairLutDdsBytes"/>; missing LUT bytes silently fall through to
+    ''' the default path. No-op on Normal/Specular channels.</summary>
+    Public Property UseHairPalette As Boolean = False
+    ''' <summary>Force the shader's TextureSet diffuse branch to use the uniform <c>uColor</c>
+    ''' instead of the layer's authored RGB, while keeping coverage from the layer's diffuse
+    ''' alpha. Used by the brow-tint override when the hair CLFM carries an RGB colour
+    ''' (HasColor) -- the layer keeps its shape (alpha) but the colour comes from HCLF. Ignored
+    ''' for PaletteMask layers (they already use uColor by default) and on N/S channels.</summary>
+    Public Property ForceUniformColor As Boolean = False
+    ''' <summary>Hair palette LUT DDS bytes (the same 2D texture the hair shader samples). Rows =
+    ''' hair-tone gradients (highlight→shadow). Loaded into a GL texture by the compositor's batch
+    ''' loader, sampled at <c>(mask.r, HairPaletteRow)</c> when <see cref="UseHairPalette"/> is True.</summary>
+    Public Property HairLutDdsBytes As Byte()
+    ''' <summary>Optional cache key for <see cref="HairLutDdsBytes"/> (typically the normalized
+    ''' texture path). Same caching semantics as <see cref="LayerCacheKey"/>: when supplied
+    ''' together with a <see cref="FaceTintTextureCache"/> on the compositor call, the decoded
+    ''' GL texture is reused across calls.</summary>
+    Public Property HairLutCacheKey As String = Nothing
+    ''' <summary>0..1 V coordinate into the LUT (= CLFM.RemappingIndex). Picks the tone row whose
+    ''' horizontal gradient becomes the per-pixel colour samples when <see cref="UseHairPalette"/>
+    ''' is True. Ignored otherwise.</summary>
+    Public Property HairPaletteRow As Single = 0F
+
     ''' <summary>Optional debug label written to the log when this layer is applied.</summary>
     Public Property DebugName As String = ""
 
@@ -177,6 +207,10 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uBlendOpLoc As Integer = -1
     Friend _uLayerKindLoc As Integer = -1
     Friend _uChannelLoc As Integer = -1
+    Friend _uHairLutLoc As Integer = -1
+    Friend _uPaletteRowLoc As Integer = -1
+    Friend _uUseHairPaletteLoc As Integer = -1
+    Friend _uForceUniformColorLoc As Integer = -1
     Friend _quadVao As Integer = 0
     Friend _quadVbo As Integer = 0
 
@@ -251,6 +285,67 @@ End Class
 
 Public Module FaceTintCompositor
 
+    ' === TEMP DEBUG INSTRUMENTATION (removable) =========================================
+    ' Per-layer compose diagnostics. When True, the compose loop reads back the accumulator
+    ' before/after EACH layer and logs that layer's parameters + the delta it produced
+    ' (how many pixels it moved and by how much), so a CK-vs-bake texture diff can be
+    ' attributed to a specific face-tint layer. The readback is a full-texture GL.GetTexImage
+    ' per layer -- expensive -- so it is double-gated: this flag (set ONLY around the FaceGen
+    ' bake, never during live render) AND Logger.Enabled. Leave False in render.
+    ' To remove: delete this flag, the LogComposeLayerDelta calls in the compose loop, and
+    ' the two helper methods below.
+    Public PerLayerDiffLog As Boolean = False
+
+    ''' <summary>TEMP DEBUG: full-texture BGRA readback for per-layer delta logging. Caller
+    ''' must hold the GL context. Returns Nothing on a zero/invalid texture.</summary>
+    Private Function ReadbackBgraForDebug(texId As Integer, w As Integer, h As Integer) As Byte()
+        If texId = 0 OrElse w <= 0 OrElse h <= 0 Then Return Nothing
+        Dim buf(w * h * 4 - 1) As Byte
+        GL.BindTexture(TextureTarget.Texture2D, texId)
+        Dim handle = System.Runtime.InteropServices.GCHandle.Alloc(buf, System.Runtime.InteropServices.GCHandleType.Pinned)
+        Try
+            GL.GetTexImage(TextureTarget.Texture2D, 0, PixelFormat.Bgra, PixelType.UnsignedByte, handle.AddrOfPinnedObject())
+        Finally
+            handle.Free()
+        End Try
+        GL.BindTexture(TextureTarget.Texture2D, 0)
+        Return buf
+    End Function
+
+    ''' <summary>TEMP DEBUG: abs-diff stats over B/G/R (alpha ignored) between two BGRA buffers.</summary>
+    Private Function FormatDeltaStats(prev As Byte(), cur As Byte(), w As Integer, h As Integer) As String
+        If prev Is Nothing OrElse cur Is Nothing OrElse prev.Length <> cur.Length OrElse prev.Length < w * h * 4 Then Return "<no-readback>"
+        Dim pixels As Long = CLng(w) * h
+        Dim maxB As Integer = 0, maxG As Integer = 0, maxR As Integer = 0
+        Dim sq As Double = 0
+        Dim changed As Long = 0
+        Dim i As Long = 0
+        While i < pixels
+            Dim idx = CInt(i * 4)
+            Dim db = Math.Abs(CInt(cur(idx + 0)) - CInt(prev(idx + 0)))
+            Dim dg = Math.Abs(CInt(cur(idx + 1)) - CInt(prev(idx + 1)))
+            Dim dr = Math.Abs(CInt(cur(idx + 2)) - CInt(prev(idx + 2)))
+            If db > maxB Then maxB = db
+            If dg > maxG Then maxG = dg
+            If dr > maxR Then maxR = dr
+            sq += CDbl(db) * db + CDbl(dg) * dg + CDbl(dr) * dr
+            If db > 0 OrElse dg > 0 OrElse dr > 0 Then changed += 1
+            i += 1
+        End While
+        Dim rms = Math.Sqrt(sq / (pixels * 3.0))
+        Dim pct = (changed * 100.0) / pixels
+        Return $"deltaRMS={rms:F2} changed={pct:F2}% maxBGR=({maxB},{maxG},{maxR})"
+    End Function
+
+    ''' <summary>TEMP DEBUG: log one layer's params + the delta it caused (prev vs cur BGRA).</summary>
+    Private Sub LogComposeLayerDelta(channel As FaceTintChannel, layerIndex As Integer, name As String,
+                                     layer As FaceTintLayerInput, useHairPalette As Boolean, forceUniform As Boolean,
+                                     prev As Byte(), cur As Byte(), w As Integer, h As Integer)
+        Dim deltaStat = FormatDeltaStats(prev, cur, w, h)
+        Logger.LogLazy(Function() $"[FACETINT-LAYER] ch={channel} #{layerIndex} '{name}' kind={layer.Kind} blend={layer.BlendOp} op={layer.Opacity:F3} rgb=({layer.R},{layer.G},{layer.B}) hairPal={useHairPalette} row={layer.HairPaletteRow:F3} forceUni={forceUniform} takesSkin={layer.TakesSkinTone} -> {deltaStat}")
+    End Sub
+    ' === END TEMP DEBUG INSTRUMENTATION =================================================
+
     Private Const VertexShaderSource As String = "#version 430
 layout(location = 0) in vec2 aPos;
 out vec2 vUV;
@@ -275,11 +370,15 @@ uniform sampler2D uPrev;
 uniform sampler2D uLayer;
 uniform sampler2D uLayerDiffuseAlpha;  // TTET[0] diffuse of the layer, used as spatial mask on N/S passes
 uniform int uHasDiffuseMask;           // 1 when uLayerDiffuseAlpha is meaningful
+uniform sampler2D uHairLut;            // Hair palette LUT (grayscale-to-palette) for PaletteMask layers that opt into uUseHairPalette. Unused on units that don't bind a real LUT.
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform int uBlendOp;
 uniform int uLayerKind;
 uniform int uChannel;     // 0=Diffuse 1=Normal 2=Specular
+uniform int uUseHairPalette;  // 1 = sample uHairLut per-pixel instead of authored colour (Diffuse only)
+uniform int uForceUniformColor;  // 1 = TextureSet diffuse uses uColor instead of layerSample.rgb (brow tint override path; ignored on PaletteMask)
+uniform float uPaletteRow;    // V coordinate into uHairLut when uUseHairPalette=1 (= CLFM.RemappingIndex)
 
 vec3 blendDefault(vec3 d, vec3 s) { return s; }
 vec3 blendMultiply(vec3 d, vec3 s) { return d * s; }
@@ -329,7 +428,14 @@ void main() {
     if (uLayerKind == 1 && uChannel != 0) {
         float maskA = (uHasDiffuseMask == 1) ? texture(uLayerDiffuseAlpha, vUV).a :
                       max(max(layerSample.r, layerSample.g), layerSample.b);
-        float cov = clamp(maskA * uOpacity, 0.0, 1.0);
+        // Normal (uChannel==1): gate by the mask ONLY, no uOpacity scaling. The detail normal is
+        // an absolute map and must fully take over inside the mask; a partial linear blend of a
+        // normal vector toward the flat base reduces the bump ANGLE, flattening the relief far
+        // more than the same coverage flattens color/scalar data. Scaling by opacity is what
+        // left the scar normal under-pronounced vs its diffuse/specular.
+        // Specular (uChannel==2): keep maskA*uOpacity, a scalar intensity fades gracefully and
+        // already reads correctly, so leave it on the intensity slider.
+        float cov = (uChannel == 1) ? clamp(maskA, 0.0, 1.0) : clamp(maskA * uOpacity, 0.0, 1.0);
         vec3 finalRgb = mix(prev, layerSample.rgb, cov);
         fragColor = vec4(finalRgb, prevRgba.a);
         return;
@@ -350,11 +456,37 @@ void main() {
     // a no-op (otherwise we'd double-tint everything).
     if (uLayerKind == 1) {
         // TextureSet Diffuse: detail RGBA, coverage from diffuse alpha.
-        srcColor = layerSample.rgb;
+        // Brow override paths (set per-layer by FaceTintLayerBuilder when slot==Brows):
+        //   uUseHairPalette=1   -> per-pixel hair LUT lookup. X = layerSample.g (green channel),
+        //                          matching the FO4 renderer convention (engine samples
+        //                          texGreyscale with baseMap.g; see Shader_Class.vb colorLookup).
+        //                          Y = uPaletteRow (= CLFM.RemappingIndex).
+        //                          Empirical: in this LUT higher X = lighter, lower X = darker.
+        //                          Alpha (avg 0.47) came out lighter than .g (0.11); the brow is
+        //                          still too light even at .g, so the column source needs more
+        //                          investigation (likely needs the hair's effective X to match).
+        //   uForceUniformColor=1 -> flat HCLF RGB tint; shape preserved via alpha coverage.
+        // Default (both 0): original detail RGB from the texture.
+        if (uUseHairPalette == 1) {
+            srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
+        } else if (uForceUniformColor == 1) {
+            srcColor = uColor;
+        } else {
+            srcColor = layerSample.rgb;
+        }
         coverage = layerSample.a;
     } else {
-        // Palette: greyscale mask in .r, tint colour from uColor uniform (TEND bytes).
-        srcColor = uColor;
+        // Palette: greyscale mask in .r.
+        // Default: uniform tint from uColor (TEND bytes).
+        // Hair-palette opt-in: sample per-pixel from the hair LUT using mask.g as the
+        // column coordinate (engine convention; mask textures author R=G=B so .r and .g
+        // are equivalent, but .g matches what the FO4 hair shader uses) and uPaletteRow
+        // (= CLFM.RemappingIndex) as the row.
+        if (uUseHairPalette == 1) {
+            srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
+        } else {
+            srcColor = uColor;
+        }
         coverage = layerSample.r;
     }
     coverage *= uOpacity;
@@ -436,6 +568,7 @@ void main() {
             Dim loadCacheable As New List(Of Boolean)
             Dim layerChannelKey As New Dictionary(Of Integer, String)
             Dim layerMaskKey As New Dictionary(Of Integer, String)
+            Dim layerHairLutKey As New Dictionary(Of Integer, String)
             Dim addRequest = Sub(reqKey As String, b As Byte(), cacheable As Boolean)
                                  loadKeys.Add(reqKey)
                                  loadBytes.Add(b)
@@ -461,6 +594,19 @@ void main() {
                     Dim kM As String = If(Not String.IsNullOrEmpty(maskCacheKey), maskCacheKey, $"l{i}m")
                     addRequest(kM, layer.LayerDdsBytes, Not String.IsNullOrEmpty(maskCacheKey))
                     layerMaskKey(i) = kM
+                End If
+
+                ' Hair LUT for layers that opt into the grayscale-to-palette path (typically slot
+                ' Brows). Works for both PaletteMask (mask.r as X) and TextureSet (luminance grey
+                ' of layerSample.rgb as X); shader branch picks the X source from uLayerKind.
+                ' Only meaningful on Diffuse; skipping N/S keeps the batch small.
+                If channel = FaceTintChannel.Diffuse _
+                   AndAlso layer.UseHairPalette _
+                   AndAlso layer.HairLutDdsBytes IsNot Nothing AndAlso layer.HairLutDdsBytes.Length > 0 Then
+                    Dim lutCacheKey As String = layer.HairLutCacheKey
+                    Dim kL As String = If(Not String.IsNullOrEmpty(lutCacheKey), lutCacheKey, $"l{i}lut")
+                    addRequest(kL, layer.HairLutDdsBytes, Not String.IsNullOrEmpty(lutCacheKey))
+                    layerHairLutKey(i) = kL
                 End If
             Next
             If loadKeys.Count > 0 Then
@@ -527,6 +673,11 @@ void main() {
             Dim readTexId As Integer = originalTexId  ' first iteration reads from the unmodified face diffuse
             Dim drawnSoFar As Integer = 0
 
+            ' TEMP DEBUG: snapshot the unmodified accumulator so each layer's delta can be measured.
+            Dim dbgPerLayer As Boolean = (PerLayerDiffLog AndAlso Logger.Enabled)
+            Dim dbgPrevPixels As Byte() = Nothing
+            If dbgPerLayer Then dbgPrevPixels = ReadbackBgraForDebug(originalTexId, width, height)
+
             Dim drawnLayers As Integer = 0
             Dim totalLayers As Integer = If(layers IsNot Nothing, layers.Count, 0)
             For i As Integer = 0 To layers.Count - 1
@@ -587,6 +738,34 @@ void main() {
                 GL.Uniform1(state._uLayerDiffuseAlphaLoc, 2)
                 GL.Uniform1(state._uHasDiffuseMaskLoc, If(diffuseMaskTex <> 0, 1, 0))
 
+                ' Hair LUT lookup on unit 3 for brow palette layers. Unit always has a valid
+                ' binding (fallback to layerTex when the layer didn't opt in) so the sampler
+                ' is never undefined; uUseHairPalette tells the shader whether to read it.
+                Dim hairLutTex As Integer = 0
+                Dim lutKey As String = Nothing
+                If layerHairLutKey.TryGetValue(i, lutKey) Then
+                    Dim lutEntry As PreviewModel.Texture_Loaded_Class = Nothing
+                    If batchLoaded IsNot Nothing _
+                       AndAlso batchLoaded.TryGetValue(lutKey, lutEntry) _
+                       AndAlso lutEntry IsNot Nothing AndAlso lutEntry.Texture_ID <> 0 Then
+                        hairLutTex = lutEntry.Texture_ID
+                    End If
+                End If
+                GL.ActiveTexture(TextureUnit.Texture3)
+                GL.BindTexture(TextureTarget.Texture2D, If(hairLutTex <> 0, hairLutTex, layerTex))
+                GL.Uniform1(state._uHairLutLoc, 3)
+                Dim useHairPaletteEffective As Boolean = (hairLutTex <> 0 AndAlso layer.UseHairPalette _
+                                                           AndAlso channel = FaceTintChannel.Diffuse)
+                GL.Uniform1(state._uUseHairPaletteLoc, If(useHairPaletteEffective, 1, 0))
+                GL.Uniform1(state._uPaletteRowLoc, Math.Max(0.0F, Math.Min(1.0F, layer.HairPaletteRow)))
+                ' Flat HCLF-RGB tint for TextureSet brow layers. Mutually exclusive with the LUT
+                ' path above (palette branch wins when both are set, mirroring the CPU rule).
+                Dim forceUniformColorEffective As Boolean = (layer.ForceUniformColor _
+                                                             AndAlso layer.Kind = FaceTintLayerKind.TextureSetDiffuse _
+                                                             AndAlso channel = FaceTintChannel.Diffuse _
+                                                             AndAlso Not useHairPaletteEffective)
+                GL.Uniform1(state._uForceUniformColorLoc, If(forceUniformColorEffective, 1, 0))
+
                 GL.Uniform3(state._uColorLoc,
                             CSng(layer.R) / 255.0F,
                             CSng(layer.G) / 255.0F,
@@ -600,6 +779,8 @@ void main() {
                 drawnLayers += 1
 
                 ' Unbind sampler slots; textures themselves are freed in the Finally block.
+                GL.ActiveTexture(TextureUnit.Texture3)
+                GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture2)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture1)
@@ -608,6 +789,14 @@ void main() {
                 ' Next iteration reads from what we just wrote (resultTex on the last pass,
                 ' otherwise the ping we just bound).
                 readTexId = If(isLast, resultTex, state._pingTex(writeIdx))
+
+                ' TEMP DEBUG: read back what this layer produced and log its delta vs the prior state.
+                If dbgPerLayer Then
+                    Dim dbgCur = ReadbackBgraForDebug(readTexId, width, height)
+                    LogComposeLayerDelta(channel, i, layerName, layer, useHairPaletteEffective, forceUniformColorEffective, dbgPrevPixels, dbgCur, width, height)
+                    dbgPrevPixels = dbgCur
+                End If
+
                 writeIdx = 1 - writeIdx
                 drawnSoFar += 1
             Next
@@ -871,6 +1060,11 @@ void main() {
             Dim drawn As Integer = 0
             Dim drawnSoFar As Integer = 0
 
+            ' TEMP DEBUG: snapshot for per-swap delta logging (region swaps rewrite base D/N/S).
+            Dim dbgSwap As Boolean = (PerLayerDiffLog AndAlso Logger.Enabled)
+            Dim dbgSwapPrev As Byte() = Nothing
+            If dbgSwap Then dbgSwapPrev = ReadbackBgraForDebug(originalTexId, width, height)
+
             For i As Integer = 0 To swaps.Count - 1
                 Dim sw = swaps(i)
                 If sw Is Nothing Then Continue For
@@ -914,6 +1108,17 @@ void main() {
                 GL.BindTexture(TextureTarget.Texture2D, 0)
 
                 readTexId = If(isLastSwap, resultTex, state._pingTex(writeIdx))
+
+                ' TEMP DEBUG: per-swap delta vs prior state.
+                If dbgSwap Then
+                    Dim dbgCur = ReadbackBgraForDebug(readTexId, width, height)
+                    Dim swapNameLocal = swapName
+                    Dim swapIndexLocal = i
+                    Dim deltaStat = FormatDeltaStats(dbgSwapPrev, dbgCur, width, height)
+                    Logger.LogLazy(Function() $"[FACETINT-SWAP] ch={channel} #{swapIndexLocal} '{swapNameLocal}' -> {deltaStat}")
+                    dbgSwapPrev = dbgCur
+                End If
+
                 writeIdx = 1 - writeIdx
                 drawnSoFar += 1
             Next
@@ -1337,6 +1542,10 @@ void main() {
         state._uBlendOpLoc = GL.GetUniformLocation(state._program, "uBlendOp")
         state._uLayerKindLoc = GL.GetUniformLocation(state._program, "uLayerKind")
         state._uChannelLoc = GL.GetUniformLocation(state._program, "uChannel")
+        state._uHairLutLoc = GL.GetUniformLocation(state._program, "uHairLut")
+        state._uPaletteRowLoc = GL.GetUniformLocation(state._program, "uPaletteRow")
+        state._uUseHairPaletteLoc = GL.GetUniformLocation(state._program, "uUseHairPalette")
+        state._uForceUniformColorLoc = GL.GetUniformLocation(state._program, "uForceUniformColor")
 
         Dim quadVerts() As Single = {
             -1.0F, -1.0F,

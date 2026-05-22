@@ -63,7 +63,10 @@ Public Module PluginWriter
                 bw.Write(NEXT_OBJECT_ID_DEFAULT)           ' nextObjectID
 
                 ' --- CNAM (author, ZSTRING) ---
-                Dim authorBytes = Encoding.ASCII.GetBytes(If(author, ""))
+                ' xEdit defines TES4.CNAM as wbString (translatable). Route through the central
+                ' encoder so future callers passing non-ASCII authors (e.g. 中文 author tools)
+                ' don't get silent '?' replacement.
+                Dim authorBytes = PluginEncodingSettings.EncodeTranslatable(If(author, ""))
                 WriteSubrecordHeader(bw, "CNAM", authorBytes.Length + 1)
                 bw.Write(authorBytes)
                 bw.Write(CByte(0))                         ' NUL terminator

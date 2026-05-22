@@ -147,6 +147,13 @@ Public Class PluginRecord
     Public Header As RecordHeader
     Public SourcePluginName As String = ""
     Public SourcePluginIsLocalized As Boolean
+    ''' <summary>
+    ''' Per-file translatable encoding captured from the source plugin's TES4 SNAM &lt;cp:XXXX&gt;
+    ''' tag at load time. Mirror of xEdit flEncodingTrans (wbImplementation.pas:766 + 5724-5737).
+    ''' Nothing = no tag in source → fall back to global PluginEncodingSettings.Translatable.
+    ''' Honored by PluginManager.ResolveFieldString and ParserHelpers.ResolveStr.
+    ''' </summary>
+    Public SourcePluginTranslatableEncoding As Encoding = Nothing
     Public Subrecords As New List(Of SubrecordData)
 
     ''' <summary>Get first subrecord with given signature, or Nothing.</summary>

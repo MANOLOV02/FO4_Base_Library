@@ -7,80 +7,33 @@ Public Enum LocalizedStringTableKind
     ILStrings
 End Enum
 
+''' <summary>
+''' Thin compatibility shim. Authoritative encoding settings live in PluginEncodingSettings
+''' (mirrors xEdit wbEncoding/wbEncodingTrans/wbLEncoding). This module exposes only the
+''' helpers required by LocalizedStringTable / LocalizedStringResolver.
+''' </summary>
 Friend Module PluginTextDecoding
-    Private ReadOnly _strictUtf8 As New UTF8Encoding(False, True)
-    Private ReadOnly _encodingCache As New Dictionary(Of Integer, Encoding)()
-    Private ReadOnly _localizedCodePages As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase) From {
-        {"english", 1252},
-        {"french", 1252},
-        {"polish", 1250},
-        {"czech", 1250},
-        {"danish", 1252},
-        {"finnish", 1252},
-        {"german", 1252},
-        {"greek", 1253},
-        {"italian", 1252},
-        {"japanese", 65001},
-        {"norwegian", 1252},
-        {"portuguese", 1252},
-        {"spanish", 1252},
-        {"swedish", 1252},
-        {"turkish", 1254},
-        {"russian", 1251},
-        {"chinese", 65001},
-        {"hungarian", 1250},
-        {"arabic", 1256}
-    }
 
+    ''' <summary>Inline plugin string (FULL/SHRT/etc) — Translatable encoding with fallback. Mirror of TwbStringDef.ToStringNative.</summary>
     Public Function DecodePluginString(data As Byte(), offset As Integer, count As Integer) As String
-        Return DecodeWithEncoding(data, offset, count, GetCodePageEncoding(1252), Nothing)
+        Return PluginEncodingSettings.DecodeTranslatable(data, offset, count)
     End Function
 
+    ''' <summary>Strings/DLStrings/ILStrings sidecar — explicit primary+fallback (per-file). Mirror of TwbLocalizationFile.ReadZString (wbLocalization.pas:243-270).</summary>
     Public Function DecodeLocalizedString(data As Byte(), offset As Integer, count As Integer, primary As Encoding, fallback As Encoding) As String
         Return DecodeWithEncoding(data, offset, count, primary, fallback)
     End Function
 
     Public Function NormalizeLanguage(language As String) As String
-        Dim normalized = If(language, "").Trim().ToLowerInvariant()
-        If normalized = "" Then Return ""
-        Return normalized.Replace(" ", "")
-    End Function
-
-    Public Function CanonicalizeLanguageAlias(language As String) As String
-        Dim normalized = NormalizeLanguage(language)
-
-        Select Case normalized
-            Case "en", "eng"
-                Return "english"
-            Case "es", "spa", "espanol"
-                Return "spanish"
-            Case "fr", "fre", "fra"
-                Return "french"
-            Case "de", "ger", "deu"
-                Return "german"
-            Case "it", "ita"
-                Return "italian"
-            Case "ja", "jpn"
-                Return "japanese"
-            Case "pl", "pol"
-                Return "polish"
-            Case "pt", "ptbr", "por", "brazilian"
-                Return "portuguese"
-            Case "ru", "rus"
-                Return "russian"
-            Case "zh", "chi", "zhhans", "zhhant"
-                Return "chinese"
-            Case Else
-                Return normalized
-        End Select
+        Return PluginEncodingSettings.NormalizeLanguage(language)
     End Function
 
     Public Function GetLocalizationPrimaryEncoding(language As String) As Encoding
-        Return GetLocalizationEncoding(language, fallback:=False)
+        Return PluginEncodingSettings.GetEncodingForLanguage(language, fallback:=False)
     End Function
 
     Public Function GetLocalizationFallbackEncoding(language As String) As Encoding
-        Return GetLocalizationEncoding(language, fallback:=True)
+        Return PluginEncodingSettings.GetEncodingForLanguage(language, fallback:=True)
     End Function
 
     Public Function TryGetCodePageOverride(stringsFilePath As String) As Encoding
@@ -93,51 +46,10 @@ Friend Module PluginTextDecoding
             Dim firstLine = File.ReadLines(overridePath).FirstOrDefault()
             Dim value = If(firstLine, "").Trim()
             If value = "" Then Return Nothing
-            Return ParseEncoding(value)
+            Return PluginEncodingSettings.ParseEncodingPublic(value)
         Catch
             Return Nothing
         End Try
-    End Function
-
-    Private Function GetLocalizationEncoding(language As String, fallback As Boolean) As Encoding
-        Dim normalized = NormalizeLanguage(language)
-        Dim codePage As Integer = 0
-        If _localizedCodePages.TryGetValue(normalized, codePage) Then
-            Return ParseEncoding(codePage.ToString())
-        End If
-
-        If fallback Then
-            Return GetCodePageEncoding(1252)
-        End If
-
-        Return _strictUtf8
-    End Function
-
-    Private Function ParseEncoding(value As String) As Encoding
-        Dim normalized = If(value, "").Trim().ToLowerInvariant()
-        If normalized = "" Then Return Nothing
-        If normalized = "utf8" OrElse normalized = "utf-8" OrElse normalized = "65001" Then Return _strictUtf8
-        If normalized.StartsWith("windows-") Then normalized = normalized.Substring("windows-".Length)
-
-        Dim codePage As Integer
-        If Integer.TryParse(normalized, codePage) Then
-            If codePage = 65001 Then Return _strictUtf8
-            Return GetCodePageEncoding(codePage)
-        End If
-
-        Return Encoding.GetEncoding(value, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback)
-    End Function
-
-    Private Function GetCodePageEncoding(codePage As Integer) As Encoding
-        SyncLock _encodingCache
-            Dim enc As Encoding = Nothing
-            If _encodingCache.TryGetValue(codePage, enc) Then Return enc
-
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)
-            enc = Encoding.GetEncoding(codePage, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback)
-            _encodingCache(codePage) = enc
-            Return enc
-        End SyncLock
     End Function
 
     Private Function DecodeWithEncoding(data As Byte(), offset As Integer, count As Integer, primary As Encoding, fallback As Encoding) As String
@@ -147,7 +59,7 @@ Friend Module PluginTextDecoding
         count = Math.Min(count, data.Length - offset)
         If count <= 0 Then Return ""
 
-        If primary Is Nothing Then primary = GetCodePageEncoding(1252)
+        If primary Is Nothing Then primary = PluginEncodingSettings.TranslatableFallback
 
         Try
             Return primary.GetString(data, offset, count)
@@ -549,28 +461,26 @@ Friend NotInheritable Class LocalizedStringResolver
     End Function
 
     Private Function BuildPreferredLanguageList() As List(Of String)
+        ' xEdit uses only wbLanguage (from sLanguage INI) as the resolution language; if the
+        ' STRINGS sidecar for that language is missing, xEdit emits "<Error: Unknown lstring ID>".
+        ' We diverge here by also probing CurrentUICulture and "english" as fallbacks — the
+        ' english fallback is justified because every vanilla FO4 plugin ships English STRINGS.
+        ' No language aliases (xEdit does direct StringList.Find against the literal token).
         Dim result As New List(Of String)
 
         AddLanguage(result, ReadLanguageFromIni())
         AddLanguage(result, Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName)
         AddLanguage(result, "english")
-        AddLanguage(result, "spanish")
 
         Return result
     End Function
 
     Private Shared Sub AddLanguage(target As List(Of String), language As String)
+        ' Direct token add (no alias canonicalization — xEdit does direct lookups).
         Dim normalized = PluginTextDecoding.NormalizeLanguage(language)
         If normalized = "" Then Return
-
-        Dim candidates = New List(Of String) From {normalized}
-        Dim canonical = PluginTextDecoding.CanonicalizeLanguageAlias(normalized)
-        If canonical <> normalized Then candidates.Add(canonical)
-
-        For Each candidate In candidates
-            If target.Exists(Function(entry) String.Equals(entry, candidate, StringComparison.OrdinalIgnoreCase)) Then Continue For
-            target.Add(candidate)
-        Next
+        If target.Exists(Function(entry) String.Equals(entry, normalized, StringComparison.OrdinalIgnoreCase)) Then Return
+        target.Add(normalized)
     End Sub
 
     Private Shared Function ReadLanguageFromIni() As String

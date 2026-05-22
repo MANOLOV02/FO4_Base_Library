@@ -184,7 +184,11 @@ Public Module NpcSubrecordWriter
         ' targeted at non-localized auto-generated plugins (we don't ship .strings tables alongside
         ' generated ESPs), so we always emit the literal string. If/when we support localized
         ' output the caller will need to pass an LString table writer.
-        Dim bytes = Encoding.ASCII.GetBytes(If(value, ""))
+        '
+        ' Encoding: PluginEncodingSettings.Translatable (mirror of xEdit wbEncodingTrans).
+        ' Default UTF-8 for FO4 — see xeInit.pas:1118-1129. ExceptionFallback prevents silent
+        ' "?" replacement of non-ASCII characters (e.g. Chinese NPC names).
+        Dim bytes = PluginEncodingSettings.EncodeTranslatable(If(value, ""))
         Dim payload(bytes.Length) As Byte
         Buffer.BlockCopy(bytes, 0, payload, 0, bytes.Length)
         WriteRawSubrecord(bw, sig, payload)

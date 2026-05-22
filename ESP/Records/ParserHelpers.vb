@@ -10,8 +10,19 @@ Public Module ParserHelpers
     ''' <summary>Resolve a display string from a subrecord, handling localization.</summary>
     Public Function ResolveStr(rec As PluginRecord, sr As SubrecordData, pluginManager As PluginManager,
                                Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
-        If pluginManager Is Nothing Then Return sr.AsString
-        Return pluginManager.ResolveFieldString(rec, sr, kind)
+        If pluginManager IsNot Nothing Then Return pluginManager.ResolveFieldString(rec, sr, kind)
+
+        ' No pluginManager: still honor per-file encoding (TES4 SNAM <cp:XXXX>) when available,
+        ' falling back to the global only when the record has no override. Mirror of the same
+        ' bsdGetEncoding precedence used inside ResolveFieldString.
+        If rec IsNot Nothing AndAlso rec.SourcePluginTranslatableEncoding IsNot Nothing AndAlso Not rec.SourcePluginIsLocalized Then
+            If sr.Data Is Nothing OrElse sr.Data.Length = 0 Then Return ""
+            Dim len = sr.Data.Length
+            If len > 0 AndAlso sr.Data(len - 1) = 0 Then len -= 1
+            Return PluginEncodingSettings.DecodeWithEncoding(sr.Data, 0, len, rec.SourcePluginTranslatableEncoding)
+        End If
+
+        Return sr.AsString
     End Function
 
     ''' <summary>Resolve a FormID reference from a subrecord.</summary>

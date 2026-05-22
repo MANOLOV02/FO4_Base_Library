@@ -7,13 +7,42 @@ Imports NiflySharp.Blocks
 ''' that gets folded into <see cref="LocaLTransform"/> when present.
 ''' </summary>
 Public Class HierarchiBone_class
+    ''' <summary>Effective local transform of this bone, composed as 3 layers:
+    ''' <c>OriginalLocaLTransform × MountDeltaTransform × DeltaTransform</c>.
+    ''' <para>
+    ''' Capas:
+    ''' <list type="bullet">
+    ''' <item><c>OriginalLocaLTransform</c> — skeleton bind (jamás se muta).</item>
+    ''' <item><c>MountDeltaTransform</c> — chunk-mount correction (delta multiplicativo
+    ''' sobre el bind). Se computa como <c>MountDelta = inv(OrigL) × newLocal</c> donde
+    ''' <c>newLocal = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>.</item>
+    ''' <item><c>DeltaTransform</c> — pose/morph (MRSV/NNAM/face FMRI/ARMA sculpt/
+    ''' animation merged by <c>ApplyPose</c>). Aplica AL FINAL.</item>
+    ''' </list>
+    ''' </para>
+    ''' <para>Equivalencia con pre-refactor (que mutaba <c>OriginalLocaLTransform</c> a
+    ''' <c>newLocal</c>):
+    ''' <c>OrigL × MountDelta × Delta = OrigL × inv(OrigL) × newLocal × Delta
+    ''' = newLocal × Delta</c> ≡ committed exacto.</para>
+    ''' <para>Cascade: <c>GetGlobalTransform</c> compone parent chain con esta
+    ''' <c>LocaLTransform</c>, propagando MountDelta y Delta del parent automáticamente.</para>
+    ''' </summary>
     Public ReadOnly Property LocaLTransform As Transform_Class
         Get
-            If IsNothing(DeltaTransform) Then Return OriginalLocaLTransform
-            Return OriginalLocaLTransform.ComposeTransforms(DeltaTransform)
+            Dim r As Transform_Class = OriginalLocaLTransform
+            If MountDeltaTransform IsNot Nothing Then r = r.ComposeTransforms(MountDeltaTransform)
+            If DeltaTransform IsNot Nothing Then r = r.ComposeTransforms(DeltaTransform)
+            Return r
         End Get
     End Property
     Public DeltaTransform As Transform_Class = Nothing
+    ''' <summary>Chunk-mount correction layer (V2). NULL = no mount correction.
+    ''' Delta multiplicativo entre <c>OriginalLocaLTransform</c> y <c>DeltaTransform</c>
+    ''' (composición <c>OrigL × MountDelta × Delta</c>). Computed as
+    ''' <c>MountDelta = inv(OrigL) × newLocal</c> donde
+    ''' <c>newLocal = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>.
+    ''' Limpiado por <c>Reset()</c> junto con <c>DeltaTransform</c>.</summary>
+    Public MountDeltaTransform As Transform_Class = Nothing
     Public OriginalLocaLTransform As Transform_Class
     Public BoneName As String
     Public Parent As HierarchiBone_class
@@ -24,10 +53,20 @@ Public Class HierarchiBone_class
             Return Parent.GetGlobalTransform.ComposeTransforms(LocaLTransform)
         End Get
     End Property
+    ''' <summary>Bind chain INCLUYENDO MountDeltaTransform pero EXCLUYENDO DeltaTransform
+    ''' (pose). Replica la semántica pre-refactor de "bind chain con mutaciones V2 aplicadas":
+    ''' antes V2 mutaba <c>OriginalLocaLTransform</c> a <c>newLocal</c>, ahora MountDelta
+    ''' contiene la corrección equivalente y debe propagarse igual en la cadena parent.
+    ''' Sin esto, children que computen <c>newLocal_child = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>
+    ''' no verían la corrección V2 del parent y la cascade quedaría rota.</summary>
     Public ReadOnly Property OriginalGetGlobalTransform As Transform_Class
         Get
-            If IsNothing(Parent) Then Return OriginalLocaLTransform
-            Return Parent.OriginalGetGlobalTransform.ComposeTransforms(OriginalLocaLTransform)
+            Dim localBind As Transform_Class = OriginalLocaLTransform
+            If MountDeltaTransform IsNot Nothing Then
+                localBind = localBind.ComposeTransforms(MountDeltaTransform)
+            End If
+            If IsNothing(Parent) Then Return localBind
+            Return Parent.OriginalGetGlobalTransform.ComposeTransforms(localBind)
         End Get
     End Property
 End Class
@@ -311,10 +350,20 @@ Public Class SkeletonInstance
         InjectedBones.Clear()
     End Sub
 
+    ''' <summary>Limpia AMBAS capas: DeltaTransform (pose/morph) Y MountDeltaTransform
+    ''' (chunk mount). Llamado dentro de <c>ApplyPose</c> antes de escribir el pose nuevo.
+    ''' <para>
+    ''' Después del Reset+ApplyPose, el caller DEBE invocar el aplicador del plan de mount
+    ''' (<c>ApplyMountPlanForActor(inst, renderData)</c> en NPC_Manager) para repopular
+    ''' MountDeltaTransform — sino los chunks quedan desalineados respecto del nuevo
+    ''' parent.GlobalTransform. Patrón canónico: ApplyPose → ApplyMountPlanForActor →
+    ''' MarkDirty(Pose).
+    ''' </para></summary>
     Public Sub Reset()
         SyncLock _lock
             For Each bon In SkeletonDictionary.Values
                 bon.DeltaTransform = Nothing
+                bon.MountDeltaTransform = Nothing
             Next
         End SyncLock
     End Sub
