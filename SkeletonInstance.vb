@@ -277,7 +277,7 @@ Public Class SkeletonInstance
                     parentMap.TryGetValue(bonIndex, par)
                 End If
                 If IsNothing(par) OrElse par.GetType Is GetType(NiflySharp.Blocks.BSFadeNode) Then
-                    Dim startNode = If(par IsNot Nothing, par, bon)
+                    Dim startNode = If(par, bon)
                     walkNode(startNode, Nothing)
                 End If
             Next

@@ -1,4 +1,4 @@
-Imports NiflySharp
+﻿Imports NiflySharp
 Imports NiflySharp.Blocks
 Imports NiflySharp.Helpers
 Imports NiflySharp.Structs
@@ -59,8 +59,8 @@ Public Class NiTriShapeGeometry
     Private _syntheticSkinning As ShapeSkinningData? = Nothing
 
     Public Sub New(shape As INiShape, nif As Nifcontent_Class_Manolo)
-        If shape Is Nothing Then Throw New ArgumentNullException(NameOf(shape))
-        If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
+        ArgumentNullException.ThrowIfNull(shape)
+        ArgumentNullException.ThrowIfNull(nif)
         If TypeOf shape IsNot NiTriShape AndAlso TypeOf shape IsNot BSLODTriShape AndAlso TypeOf shape IsNot NiTriStrips Then
             Throw New ArgumentException(
                 $"NiTriShapeGeometry only wraps NiTriShape / BSLODTriShape / NiTriStrips (got {shape.GetType().Name})",

@@ -1340,6 +1340,20 @@ Public Class ARMA_Data
     Public HasSculptData As Boolean = False
     ''' <summary>Bit 30: "Hi-Res 1st Person Only".</summary>
     Public HiRes1stPersonOnly As Boolean = False
+
+    ' --- Per-model "Flags" subrecords (MO2F/MO3F/MO4F/MO5F), wbModelFlags itU8 ---
+    ''' <summary>Model "Flags" byte for each model slot. <c>wbModelFlags</c>
+    ''' (TES5Edit wbDefinitionsFO4.pas:4622) declares exactly two bits:
+    '''   <c>0x01 = "Has FaceBones Model"</c> (a <c>_facebones.nif</c> variant skinned to face bones
+    '''           exists alongside the model — used in the chargen/facegen view), and
+    '''   <c>0x02 = "Has 1stPerson Model"</c> (a separate first-person/POV model exists — for ARMA the
+    '''           MO2F/MO3F male/female biped models point at MOD4/MOD5 1st-person counterparts).
+    ''' MO2F = Male biped (MOD2), MO3F = Female biped (MOD3), MO4F = Male 1st person (MOD4),
+    ''' MO5F = Female 1st person (MOD5). 0 when the subrecord is absent.</summary>
+    Public MaleModelFlags As Byte = 0
+    Public FemaleModelFlags As Byte = 0
+    Public MaleFPModelFlags As Byte = 0
+    Public FemaleFPModelFlags As Byte = 0
 End Class
 
 Public Class OTFT_Data
@@ -1790,11 +1804,12 @@ Public Module RecordParsers
                 Case "SNAM"
                     Dim d = sr.Data
                     If d IsNot Nothing AndAlso d.Length >= 5 Then
-                        Dim entry As New NPC_FactionEntry
-                        entry.FactionFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager)
                         ' Rank is s8 per wbDefinitionsCommon.pas:7073. ReadInt8 does the bit-
                         ' pattern reinterpret (0xFF → -1) — direct CSByte overflows for bytes ≥ 128.
-                        entry.Rank = ReadInt8(d(4))
+                        Dim entry As New NPC_FactionEntry With {
+                            .FactionFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager),
+                            .Rank = ReadInt8(d(4))
+                        }
                         If d.Length >= 8 Then
                             entry.Unused = New Byte() {d(5), d(6), d(7)}
                         End If
@@ -1892,9 +1907,11 @@ Public Module RecordParsers
                         }
                     End If
                 Case "DSTA"
-                    If pendingDestStage IsNot Nothing Then pendingDestStage.SequenceName = sr.AsString
+                    ' wbString cpNormal (wbDefinitionsFO4.pas:4682) → non-translatable → General (cp1252), like xEdit.
+                    If pendingDestStage IsNot Nothing Then pendingDestStage.SequenceName = sr.AsStringGeneral
                 Case "DMDL"
-                    If pendingDestStage IsNot Nothing Then pendingDestStage.ModelFilename = sr.AsString
+                    ' wbString cpNormal (wbDefinitionsFO4.pas:4684) → non-translatable → General.
+                    If pendingDestStage IsNot Nothing Then pendingDestStage.ModelFilename = sr.AsStringGeneral
                 Case "DMDT"
                     If pendingDestStage IsNot Nothing Then pendingDestStage.ModelTextureData = sr.Data
                 Case "DMDS"
@@ -1951,7 +1968,8 @@ Public Module RecordParsers
                         pendingAttack.StaggerOffset = BitConverter.ToInt32(d, 40)
                     End If
                 Case "ATKE"
-                    If pendingAttack IsNot Nothing Then pendingAttack.AttackEvent = sr.AsString
+                    ' wbString cpNormal (wbDefinitionsFO4.pas:4487) → non-translatable → General, like xEdit.
+                    If pendingAttack IsNot Nothing Then pendingAttack.AttackEvent = sr.AsStringGeneral
                 Case "ATKW"
                     If pendingAttack IsNot Nothing Then
                         pendingAttack.WeaponSlotFormID = ResolveFormIDReference(rec, sr, pluginManager)
@@ -1964,7 +1982,8 @@ Public Module RecordParsers
                     End If
                 Case "ATKT"
                     If pendingAttack IsNot Nothing Then
-                        pendingAttack.Description = sr.AsString
+                        ' wbString cpNormal (wbDefinitionsFO4.pas:4490) → non-translatable → General, like xEdit.
+                        pendingAttack.Description = sr.AsStringGeneral
                         pendingAttack.HasDescription = True
                     End If
 
@@ -2514,7 +2533,7 @@ Public Module RecordParsers
                         Next
                     End If
                 Case "ANAM"
-                    Dim path = sr.AsString
+                    Dim path = sr.AsStringGeneral
                     If path <> "" Then
                         If race.MaleSkeletonPath = "" Then
                             race.MaleSkeletonPath = path
@@ -2555,7 +2574,7 @@ Public Module RecordParsers
                         inMaleBody = False
                     End If
                 Case "MODL"
-                    Dim meshPath = sr.AsString
+                    Dim meshPath = sr.AsStringGeneral
                     If meshPath <> "" AndAlso meshPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase) Then
                         If inFemaleBody Then
                             race.FemaleBodyMeshes.Add(meshPath)
@@ -2606,9 +2625,9 @@ Public Module RecordParsers
                         race.FemaleDefaultHairColorFormID = ResolveFormIDReference(rec, femaleRaw, pluginManager)
                     End If
                 Case "HNAM"
-                    race.HairColorLookupTexture = sr.AsString
+                    race.HairColorLookupTexture = sr.AsStringGeneral
                 Case "HLTX"
-                    race.HairColorExtendedLookupTexture = sr.AsString
+                    race.HairColorExtendedLookupTexture = sr.AsStringGeneral
                 Case "MPGN"
                     ' Morph Group Name — start of a new Morph Group. Flush any pending preset
                     ' into the previous pending group, then flush the previous group itself.
@@ -2622,8 +2641,10 @@ Public Module RecordParsers
                         If inFemaleHead Then race.FemaleMorphGroups.Add(pendingMorphGroup)
                         If inMaleHead Then race.MaleMorphGroups.Add(pendingMorphGroup)
                     End If
-                    pendingMorphGroup = New RACE_MorphGroup()
-                    pendingMorphGroup.Name = sr.AsString
+
+                    pendingMorphGroup = New RACE_MorphGroup With {
+                        .Name = sr.AsStringGeneral
+                    }
                 Case "MPPC"
                     ' Morph Preset Count — metadata, not used to split entries (xEdit handles
                     ' the RArray via SetCountPath but we can count presets directly).
@@ -2631,9 +2652,7 @@ Public Module RecordParsers
                     ' Morph Group preset definition — flush any pending preset into the current
                     ' group (or the flat list if no group is active), then start a new preset.
                     If pendingMorphPresetDef IsNot Nothing Then
-                        If pendingMorphGroup IsNot Nothing Then
-                            pendingMorphGroup.Presets.Add(pendingMorphPresetDef)
-                        End If
+                        pendingMorphGroup?.Presets.Add(pendingMorphPresetDef)
                         If inFemaleHead Then
                             race.FemaleMorphPresets.Add(pendingMorphPresetDef)
                         ElseIf inMaleHead Then
@@ -2650,7 +2669,7 @@ Public Module RecordParsers
                     End If
                 Case "MPPM"
                     If pendingMorphPresetDef IsNot Nothing Then
-                        pendingMorphPresetDef.MorphName = sr.AsString
+                        pendingMorphPresetDef.MorphName = sr.AsStringGeneral
                     End If
                 Case "MPPT"
                     ' Texture FormID -> TXST for this preset. This is what the engine uses to
@@ -2673,9 +2692,7 @@ Public Module RecordParsers
                     ' Face morph definition start (in RACE context, not NPC)
                     ' Flush pending morph preset into its owning group (if any) + flat list
                     If pendingMorphPresetDef IsNot Nothing Then
-                        If pendingMorphGroup IsNot Nothing Then
-                            pendingMorphGroup.Presets.Add(pendingMorphPresetDef)
-                        End If
+                        pendingMorphGroup?.Presets.Add(pendingMorphPresetDef)
                         If inFemaleHead Then
                             race.FemaleMorphPresets.Add(pendingMorphPresetDef)
                         ElseIf inMaleHead Then
@@ -2715,18 +2732,16 @@ Public Module RecordParsers
                         pendingMorphValueDef.Index = BitConverter.ToUInt32(sr.Data, 0)
                     End If
                 Case "MSM0"
-                    If pendingMorphValueDef IsNot Nothing Then pendingMorphValueDef.MinName = sr.AsString
+                    If pendingMorphValueDef IsNot Nothing Then pendingMorphValueDef.MinName = sr.AsStringGeneral
                 Case "MSM1"
-                    If pendingMorphValueDef IsNot Nothing Then pendingMorphValueDef.MaxName = sr.AsString
+                    If pendingMorphValueDef IsNot Nothing Then pendingMorphValueDef.MaxName = sr.AsStringGeneral
                 Case "MPGS"
                     ' Morph Group Sliders - array of uint32 indices. Attach to the pending
                     ' morph group AND keep the flat per-gender list for backward compat.
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         For idx = 0 To sr.Data.Length - 4 Step 4
                             Dim sliderKey = BitConverter.ToUInt32(sr.Data, idx)
-                            If pendingMorphGroup IsNot Nothing Then
-                                pendingMorphGroup.SliderIndices.Add(sliderKey)
-                            End If
+                            pendingMorphGroup?.SliderIndices.Add(sliderKey)
                             If inFemaleHead Then
                                 race.FemaleMorphGroupSliders.Add(sliderKey)
                             ElseIf inMaleHead Then
@@ -2768,9 +2783,7 @@ Public Module RecordParsers
                         pendingTintOption.Flags = BitConverter.ToUInt16(sr.Data, 0)
                     End If
                 Case "TTET"
-                    If pendingTintOption IsNot Nothing Then
-                        pendingTintOption.Textures.Add(sr.AsString)
-                    End If
+                    pendingTintOption?.Textures.Add(sr.AsStringGeneral)
                 Case "TTEB"
                     ' xEdit marks this subrecord as wbUnknown — format is not documented publicly.
                     ' We store the raw bytes for empirical analysis and try a U32 BlendOp reading as
@@ -2899,7 +2912,7 @@ Public Module RecordParsers
                     ' payload applies to. We merge both sections into a single RACE_BoneData per
                     ' bone name inside the current gender block.
                     If currentBoneDataGender IsNot Nothing AndAlso currentBoneSection <> RACE_BoneDataSection.None Then
-                        currentBoneDataEntry = currentBoneDataGender.GetOrCreateBone(sr.AsString)
+                        currentBoneDataEntry = currentBoneDataGender.GetOrCreateBone(sr.AsStringGeneral)
                     End If
                 Case "BSMS"
                     ' BSMS payload layout depends on the current sub-section:
@@ -2930,9 +2943,7 @@ Public Module RecordParsers
 
         ' Flush pending
         If pendingMorphPresetDef IsNot Nothing Then
-            If pendingMorphGroup IsNot Nothing Then
-                pendingMorphGroup.Presets.Add(pendingMorphPresetDef)
-            End If
+            pendingMorphGroup?.Presets.Add(pendingMorphPresetDef)
             If inFemaleHead Then
                 race.FemaleMorphPresets.Add(pendingMorphPresetDef)
             ElseIf inMaleHead Then
@@ -2978,11 +2989,20 @@ Public Module RecordParsers
         ' We track the most recent INDX seen and pair it with the next MODL.
         Dim pendingAddonIndex As UShort = 0US
         Dim hasPendingIndex As Boolean = False
+        ' Once the Object Template block opens (OBTE), every FULL belongs to a COMBINATION
+        ' (Predeterminado/Estándar/etc.), NOT the ARMO. Per wbDefinitionsFO4.pas:5888-5896 the order is
+        ' OBTE → per-combination [OBTF, FULL, OBTS]; the ARMO's own FULL precedes OBTE.
+        Dim inObjectTemplate As Boolean = False
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL"
-                    armo.FullName = ResolveDisplayString(rec, sr, pluginManager)
+                    ' Only the ARMO's own FULL (before OBTE). Without this guard the last combination
+                    ' name overwrote the armor's real name (e.g. "Estándar" instead of
+                    ' "Blindaje de seguridad de Covenant").
+                    If Not inObjectTemplate Then armo.FullName = ResolveDisplayString(rec, sr, pluginManager)
+                Case "OBTE"
+                    inObjectTemplate = True
                 Case "BOD2", "BODT"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then armo.SlotMask = BitConverter.ToUInt32(sr.Data, 0)
                 Case "RNAM"
@@ -3025,10 +3045,10 @@ Public Module RecordParsers
                 Case "MOD2"
                     ' ARMO.Male 'World Model' mesh path — used by robots/special armors where the mesh
                     ' is authored at ARMO level instead of ARMA (e.g. Assaultron skin).
-                    armo.MaleWorldModelPath = sr.AsString
+                    armo.MaleWorldModelPath = sr.AsStringGeneral
                 Case "MOD4"
                     ' ARMO.Female 'World Model' mesh path — analogous to MOD2 for females.
-                    armo.FemaleWorldModelPath = sr.AsString
+                    armo.FemaleWorldModelPath = sr.AsStringGeneral
                 ' wbDefinitionsFO4.pas:6206 — APPR (Attach Parent Slots). Mismo layout u32 KYWD
                 ' array que NPC.APPR/RACE.APPR. Seed inicial del AP-pool para chunk-mount OBTS
                 ' (caso vivo: Armor_MiningHelmet declara ap_PowerArmor_HeadMod aquí, sin lo cual
@@ -3092,13 +3112,21 @@ Public Module RecordParsers
                         arma.WeaponAdjust = BitConverter.ToSingle(sr.Data, 8)
                     End If
                 Case "MOD2"
-                    arma.MaleMeshPath = sr.AsString
+                    arma.MaleMeshPath = sr.AsStringGeneral
                 Case "MOD3"
-                    arma.FemaleMeshPath = sr.AsString
+                    arma.FemaleMeshPath = sr.AsStringGeneral
                 Case "MOD4"
-                    arma.MaleFPMeshPath = sr.AsString
+                    arma.MaleFPMeshPath = sr.AsStringGeneral
                 Case "MOD5"
-                    arma.FemaleFPMeshPath = sr.AsString
+                    arma.FemaleFPMeshPath = sr.AsStringGeneral
+                Case "MO2F"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then arma.MaleModelFlags = sr.Data(0)
+                Case "MO3F"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then arma.FemaleModelFlags = sr.Data(0)
+                Case "MO4F"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then arma.MaleFPModelFlags = sr.Data(0)
+                Case "MO5F"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then arma.FemaleFPModelFlags = sr.Data(0)
                 Case "NAM0", "NAM1", "NAM2", "NAM3"
                     If sr.Data Is Nothing OrElse sr.Data.Length < 4 Then Continue For
                     Select Case sr.Signature
@@ -3133,7 +3161,7 @@ Public Module RecordParsers
                 Case "BSMB"
                     ' Bone name for the next BSMS delta entry.
                     If currentBoneScaleGender IsNot Nothing Then
-                        currentBoneScaleBone = sr.AsString
+                        currentBoneScaleBone = sr.AsStringGeneral
                     End If
                 Case "BSMS"
                     ' Vec3 bone scale delta for the previously-named bone.
@@ -3187,7 +3215,7 @@ Public Module RecordParsers
                 Case "FULL"
                     hdpt.FullName = ResolveDisplayString(rec, sr, pluginManager)
                 Case "MODL", "MOD2"
-                    If hdpt.MeshPath = "" Then hdpt.MeshPath = sr.AsString
+                    If hdpt.MeshPath = "" Then hdpt.MeshPath = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
                         hdpt.Flags = sr.Data(0)
@@ -3283,23 +3311,23 @@ Public Module RecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "TX00"
-                    txst.DiffuseTexture = sr.AsString
+                    txst.DiffuseTexture = sr.AsStringGeneral
                 Case "TX01"
-                    txst.NormalTexture = sr.AsString
+                    txst.NormalTexture = sr.AsStringGeneral
                 Case "TX02"
-                    txst.WrinklesTexture = sr.AsString
+                    txst.WrinklesTexture = sr.AsStringGeneral
                 Case "TX03"
-                    txst.GlowTexture = sr.AsString
+                    txst.GlowTexture = sr.AsStringGeneral
                 Case "TX04"
-                    txst.HeightTexture = sr.AsString
+                    txst.HeightTexture = sr.AsStringGeneral
                 Case "TX05"
-                    txst.EnvironmentTexture = sr.AsString
+                    txst.EnvironmentTexture = sr.AsStringGeneral
                 Case "TX06"
-                    txst.MultilayerTexture = sr.AsString
+                    txst.MultilayerTexture = sr.AsStringGeneral
                 Case "TX07"
-                    txst.SmoothSpecTexture = sr.AsString
+                    txst.SmoothSpecTexture = sr.AsStringGeneral
                 Case "MNAM"
-                    txst.MaterialPath = sr.AsString
+                    txst.MaterialPath = sr.AsStringGeneral
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then txst.Flags = BitConverter.ToUInt16(sr.Data, 0)
             End Select
@@ -3401,20 +3429,20 @@ Public Module RecordParsers
             Select Case sr.Signature
                 Case "FNAM"
                     If current Is Nothing Then
-                        If mswp.TreeFolder = "" Then mswp.TreeFolder = sr.AsString
+                        If mswp.TreeFolder = "" Then mswp.TreeFolder = sr.AsStringGeneral
                     Else
-                        current.TreeFolder = sr.AsString
+                        current.TreeFolder = sr.AsStringGeneral
                     End If
                 Case "BNAM"
                     If current IsNot Nothing AndAlso (current.OriginalMaterial <> "" OrElse current.ReplacementMaterial <> "") Then
                         mswp.Substitutions.Add(current)
                     End If
                     current = New MSWP_Substitution With {
-                        .OriginalMaterial = sr.AsString
+                        .OriginalMaterial = sr.AsStringGeneral
                     }
                 Case "SNAM"
                     If current Is Nothing Then current = New MSWP_Substitution()
-                    current.ReplacementMaterial = sr.AsString
+                    current.ReplacementMaterial = sr.AsStringGeneral
                 Case "CNAM"
                     If current Is Nothing Then current = New MSWP_Substitution()
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then

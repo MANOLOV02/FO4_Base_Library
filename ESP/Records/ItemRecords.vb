@@ -440,13 +440,15 @@ Public Module ItemRecordParsers
                 Case "DESC"
                     w.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "ICON"
-                    w.IconPath = sr.AsString
+                    w.IconPath = sr.AsStringGeneral
                 Case "MICO"
-                    w.MessageIconPath = sr.AsString
-                Case "MOD2"
-                    w.WorldModelPath = sr.AsString
+                    w.MessageIconPath = sr.AsStringGeneral
+                Case "MODL"
+                    ' FO4 WEAP world model is wbGenericModel → MODL (wbDefinitionsFO4.pas:13249),
+                    ' not MOD2. MOD4 below is the 1st-person model. The old "MOD2" case never matched.
+                    w.WorldModelPath = sr.AsStringGeneral
                 Case "MOD4"
-                    w.FirstPersonModelPath = sr.AsString
+                    w.FirstPersonModelPath = sr.AsStringGeneral
                 Case "ETYP"
                     w.EquipTypeFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ENCH"
@@ -612,13 +614,10 @@ Public Module ItemRecordParsers
                 Case "DESC"
                     a.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "MODL"
-                    If a.ModelPath = "" Then a.ModelPath = sr.AsString
+                    If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral
                 Case "NAM1"
-                    a.CasingModelPath = sr.AsString
-                Case "ICON"
-                    a.IconPath = sr.AsString
-                Case "MICO"
-                    a.MessageIconPath = sr.AsString
+                    a.CasingModelPath = sr.AsStringGeneral
+                ' FO4 AMMO has no ICON/MICO (only wbYNAM, wbDefinitionsFO4.pas) — dead cases removed.
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, a.KeywordFormIDs)
                 Case "DATA"
@@ -654,11 +653,11 @@ Public Module ItemRecordParsers
                 Case "DESC"
                     a.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "MODL"
-                    If a.ModelPath = "" Then a.ModelPath = sr.AsString
+                    If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral
                 Case "ICON"
-                    a.IconPath = sr.AsString
+                    a.IconPath = sr.AsStringGeneral
                 Case "MICO"
-                    a.MessageIconPath = sr.AsString
+                    a.MessageIconPath = sr.AsStringGeneral
                 Case "ETYP"
                     a.EquipTypeFormID = ResolveFID(rec, sr, pluginManager)
                 Case "KWDA"
@@ -715,11 +714,11 @@ Public Module ItemRecordParsers
                 Case "FULL"
                     m.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If m.ModelPath = "" Then m.ModelPath = sr.AsString
+                    If m.ModelPath = "" Then m.ModelPath = sr.AsStringGeneral
                 Case "ICON"
-                    m.IconPath = sr.AsString
+                    m.IconPath = sr.AsStringGeneral
                 Case "MICO"
-                    m.MessageIconPath = sr.AsString
+                    m.MessageIconPath = sr.AsStringGeneral
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, m.KeywordFormIDs)
                 Case "DATA"
@@ -756,11 +755,11 @@ Public Module ItemRecordParsers
                 Case "CNAM"
                     b.BookText = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "MODL"
-                    If b.ModelPath = "" Then b.ModelPath = sr.AsString
+                    If b.ModelPath = "" Then b.ModelPath = sr.AsStringGeneral
                 Case "ICON"
-                    b.IconPath = sr.AsString
+                    b.IconPath = sr.AsStringGeneral
                 Case "MICO"
-                    b.MessageIconPath = sr.AsString
+                    b.MessageIconPath = sr.AsStringGeneral
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, b.KeywordFormIDs)
                 Case "INAM"
@@ -800,11 +799,11 @@ Public Module ItemRecordParsers
                 Case "FULL"
                     k.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If k.ModelPath = "" Then k.ModelPath = sr.AsString
+                    If k.ModelPath = "" Then k.ModelPath = sr.AsStringGeneral
                 Case "ICON"
-                    k.IconPath = sr.AsString
+                    k.IconPath = sr.AsStringGeneral
                 Case "MICO"
-                    k.MessageIconPath = sr.AsString
+                    k.MessageIconPath = sr.AsStringGeneral
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, k.KeywordFormIDs)
                 Case "DATA"
@@ -829,15 +828,15 @@ Public Module ItemRecordParsers
                 Case "FULL"
                     l.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If l.ModelPath = "" Then l.ModelPath = sr.AsString
+                    If l.ModelPath = "" Then l.ModelPath = sr.AsStringGeneral
                 Case "ICON"
-                    l.IconPath = sr.AsString
+                    l.IconPath = sr.AsStringGeneral
                 Case "MICO"
-                    l.MessageIconPath = sr.AsString
+                    l.MessageIconPath = sr.AsStringGeneral
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, l.KeywordFormIDs)
                 Case "NAM0"
-                    l.GoboTexture = sr.AsString
+                    l.GoboTexture = sr.AsStringGeneral
                 Case "SNAM"
                     l.SoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "LNAM"
@@ -892,11 +891,11 @@ Public Module ItemRecordParsers
                 Case "FULL"
                     ig.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If ig.ModelPath = "" Then ig.ModelPath = sr.AsString
+                    If ig.ModelPath = "" Then ig.ModelPath = sr.AsStringGeneral
                 Case "ICON"
-                    ig.IconPath = sr.AsString
+                    ig.IconPath = sr.AsStringGeneral
                 Case "MICO"
-                    ig.MessageIconPath = sr.AsString
+                    ig.MessageIconPath = sr.AsStringGeneral
                 Case "ETYP"
                     ig.EquipTypeFormID = ResolveFID(rec, sr, pluginManager)
                 Case "KWDA"
@@ -943,7 +942,7 @@ Public Module ItemRecordParsers
                 Case "FULL"
                     c.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If c.ModelPath = "" Then c.ModelPath = sr.AsString
+                    If c.ModelPath = "" Then c.ModelPath = sr.AsStringGeneral
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, c.KeywordFormIDs)
                 Case "CNTO"
@@ -985,7 +984,7 @@ Public Module ItemRecordParsers
                 Case "FULL"
                     f.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If f.ModelPath = "" Then f.ModelPath = sr.AsString
+                    If f.ModelPath = "" Then f.ModelPath = sr.AsStringGeneral
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, f.KeywordFormIDs)
                 Case "RNAM"
@@ -1022,11 +1021,10 @@ Public Module ItemRecordParsers
                 Case "FULL"
                     n.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If n.ModelPath = "" Then n.ModelPath = sr.AsString
+                    If n.ModelPath = "" Then n.ModelPath = sr.AsStringGeneral
                 Case "ICON"
-                    n.IconPath = sr.AsString
-                Case "MICO"
-                    n.MessageIconPath = sr.AsString
+                    n.IconPath = sr.AsStringGeneral
+                ' FO4 NOTE has ICON but no MICO (wbDefinitionsFO4.pas:12839) — dead case removed.
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
                         n.NoteType = sr.Data(0)
@@ -1044,7 +1042,7 @@ Public Module ItemRecordParsers
                         Case 3 : n.TerminalFormID = fid
                     End Select
                 Case "PNAM"
-                    n.ProgramFile = sr.AsString
+                    n.ProgramFile = sr.AsStringGeneral
             End Select
         Next
 

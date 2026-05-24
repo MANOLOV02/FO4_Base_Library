@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 
 ''' <summary>
@@ -66,14 +66,15 @@ Public Structure RecordHeader
     End Property
 
     Public Shared Function Read(br As BinaryReader) As RecordHeader
-        Dim h As New RecordHeader
-        h.Signature = Encoding.ASCII.GetString(br.ReadBytes(4))
-        h.DataSize = br.ReadUInt32()
-        h.Flags = br.ReadUInt32()
-        h.FormID = br.ReadUInt32()
-        h.VCS1 = br.ReadUInt32()
-        h.Version = br.ReadUInt16()
-        h.VCS2 = br.ReadUInt16()
+        Dim h As New RecordHeader With {
+            .Signature = Encoding.ASCII.GetString(br.ReadBytes(4)),
+            .DataSize = br.ReadUInt32(),
+            .Flags = br.ReadUInt32(),
+            .FormID = br.ReadUInt32(),
+            .VCS1 = br.ReadUInt32(),
+            .Version = br.ReadUInt16(),
+            .VCS2 = br.ReadUInt16()
+        }
         Return h
     End Function
 End Structure
@@ -95,13 +96,14 @@ Public Structure GroupHeader
     End Property
 
     Public Shared Function Read(br As BinaryReader) As GroupHeader
-        Dim h As New GroupHeader
-        h.Signature = Encoding.ASCII.GetString(br.ReadBytes(4))
-        h.GroupSize = br.ReadUInt32()
-        h.Label = br.ReadUInt32()
-        h.GroupType = br.ReadInt32()
-        h.Stamp = br.ReadUInt32()
-        h.Unknown = br.ReadUInt32()
+        Dim h As New GroupHeader With {
+            .Signature = Encoding.ASCII.GetString(br.ReadBytes(4)),
+            .GroupSize = br.ReadUInt32(),
+            .Label = br.ReadUInt32(),
+            .GroupType = br.ReadInt32(),
+            .Stamp = br.ReadUInt32(),
+            .Unknown = br.ReadUInt32()
+        }
         Return h
     End Function
 End Structure
@@ -110,6 +112,9 @@ Public Structure SubrecordData
     Public Signature As String    ' 4 chars
     Public Data As Byte()
 
+    ''' <summary>Decode as a TRANSLATABLE inline string (cpTranslate fields like FULL/SHRT/DESC).
+    ''' Uses the Translatable encoding (xEdit wbEncodingTrans). For non-translatable fields
+    ''' (EDID, model paths — cpOverride/cpNormal) use <see cref="AsStringGeneral"/> instead.</summary>
     Public ReadOnly Property AsString As String
         Get
             If Data Is Nothing OrElse Data.Length = 0 Then Return ""
@@ -117,6 +122,19 @@ Public Structure SubrecordData
             Dim len = Data.Length
             If len > 0 AndAlso Data(len - 1) = 0 Then len -= 1
             Return PluginTextDecoding.DecodePluginString(Data, 0, len)
+        End Get
+    End Property
+
+    ''' <summary>Decode as a NON-translatable inline string (General encoding = cp1252 for FO4).
+    ''' Mirror of xEdit's wbEncoding path for fields where dfTranslatable is NOT set — e.g. EDID
+    ''' (wbStringKC cpOverride, wbDefinitionsFO4.pas:4080) resolves via bsdGetEncoding's
+    ''' `else Result := wbEncoding` branch (wbInterface.pas:23533), NOT wbEncodingTrans.</summary>
+    Public ReadOnly Property AsStringGeneral As String
+        Get
+            If Data Is Nothing OrElse Data.Length = 0 Then Return ""
+            Dim len = Data.Length
+            If len > 0 AndAlso Data(len - 1) = 0 Then len -= 1
+            Return PluginEncodingSettings.DecodeGeneral(Data, 0, len)
         End Get
     End Property
 
@@ -169,11 +187,14 @@ Public Class PluginRecord
         Return Subrecords.Where(Function(sr) sr.Signature = sig).ToList()
     End Function
 
-    ''' <summary>Editor ID (EDID subrecord).</summary>
+    ''' <summary>Editor ID (EDID subrecord). EDID is non-translatable (wbStringKC cpOverride,
+    ''' wbDefinitionsFO4.pas:4080) → decoded with the General encoding (cp1252), like xEdit, NOT
+    ''' Translatable. In practice EDIDs are pure ASCII so this matches AsString, but it keeps the
+    ''' encoding model faithful to xEdit.</summary>
     Public ReadOnly Property EditorID As String
         Get
             Dim sr = GetSubrecord("EDID")
-            Return If(sr?.AsString, "")
+            Return If(sr?.AsStringGeneral, "")
         End Get
     End Property
 End Class

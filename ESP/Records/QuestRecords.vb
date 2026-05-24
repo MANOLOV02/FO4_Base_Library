@@ -238,6 +238,7 @@ Public Module QuestRecordParsers
                 Case "FULL"
                     q.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "NNAM"
+                    ' QUST NNAM Description is wbString cpTranslate (wbDefinitionsFO4.pas:11313) → TRANSLATABLE (not General).
                     q.Description = sr.AsString
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
@@ -259,7 +260,7 @@ Public Module QuestRecordParsers
                 Case "GNAM"
                     q.QuestGroupFormID = ResolveFID(rec, sr, pluginManager)
                 Case "SNAM"
-                    q.SWFFile = sr.AsString
+                    q.SWFFile = sr.AsStringGeneral
 
                 ' Stages
                 Case "INDX"
@@ -315,7 +316,7 @@ Public Module QuestRecordParsers
                         currentAlias.AliasID = BitConverter.ToInt32(sr.Data, 0)
                     End If
                 Case "ALID"
-                    If currentAlias IsNot Nothing Then currentAlias.AliasName = sr.AsString
+                    If currentAlias IsNot Nothing Then currentAlias.AliasName = sr.AsStringGeneral
                 Case "ALFR"
                     If currentAlias IsNot Nothing Then currentAlias.ForcedRefFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ALUA"
@@ -365,7 +366,7 @@ Public Module QuestRecordParsers
                         d.Subtype = BitConverter.ToUInt16(sr.Data, 2)
                     End If
                 Case "SNAM"
-                    d.SubtypeName = sr.AsString
+                    d.SubtypeName = sr.AsStringGeneral
                 Case "TIFC"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         d.InfoCount = BitConverter.ToUInt32(sr.Data, 0)
@@ -426,7 +427,7 @@ Public Module QuestRecordParsers
                         currentResponse.ResponseText = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.ILStrings)
                     End If
                 Case "NAM2"
-                    If currentResponse IsNot Nothing Then currentResponse.ScriptNotes = sr.AsString
+                    If currentResponse IsNot Nothing Then currentResponse.ScriptNotes = sr.AsStringGeneral
             End Select
         Next
 
@@ -498,7 +499,7 @@ Public Module QuestRecordParsers
                         s.LastActionIndex = BitConverter.ToUInt32(sr.Data, 0)
                     End If
                 Case "NNAM"
-                    s.Notes = sr.AsString
+                    s.Notes = sr.AsStringGeneral
                 Case "TNAM"
                     s.TemplateSceneFormID = ResolveFID(rec, sr, pluginManager)
                 Case "KWDA"
@@ -518,11 +519,11 @@ Public Module QuestRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "DNAM"
-                    idle.BehaviorGraph = sr.AsString
+                    idle.BehaviorGraph = sr.AsStringGeneral
                 Case "ENAM"
-                    idle.AnimationEvent = sr.AsString
+                    idle.AnimationEvent = sr.AsStringGeneral
                 Case "GNAM"
-                    idle.AnimationFile = sr.AsString
+                    idle.AnimationFile = sr.AsStringGeneral
                 Case "ANAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                         idle.ParentFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)

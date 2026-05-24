@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 
 Public Enum LocalizedStringTableKind
@@ -249,8 +249,11 @@ Friend NotInheritable Class LocalizedStringResolver
         Dim cacheKey = $"{pluginBase}|{CInt(kind)}"
 
         SyncLock _syncRoot
-            If _resourceCache.ContainsKey(cacheKey) Then
-                Return _resourceCache(cacheKey)
+
+            Dim value As ResourceLocation = Nothing
+
+            If _resourceCache.TryGetValue(cacheKey, value) Then
+                Return value
             End If
         End SyncLock
 
@@ -460,7 +463,7 @@ Friend NotInheritable Class LocalizedStringResolver
         End Select
     End Function
 
-    Private Function BuildPreferredLanguageList() As List(Of String)
+    Private Shared Function BuildPreferredLanguageList() As List(Of String)
         ' xEdit uses only wbLanguage (from sLanguage INI) as the resolution language; if the
         ' STRINGS sidecar for that language is missing, xEdit emits "<Error: Unknown lstring ID>".
         ' We diverge here by also probing CurrentUICulture and "english" as fallbacks — the

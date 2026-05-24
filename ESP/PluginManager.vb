@@ -9,8 +9,19 @@ Public Class PluginManager
     ''' <summary>All loaded plugins in load order.</summary>
     Public Property Plugins As New List(Of PluginReader)
 
-    ''' <summary>Plugin name -> index in Plugins list.</summary>
+    ''' <summary>Plugin name -> index in Plugins list (raw load position, counts ALL plugins).</summary>
     Private ReadOnly _pluginIndex As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
+    ' Engine-faithful FileID slots (xEdit TwbFileID.CreateFull / CreateLight): full plugins (ESM + full
+    ' ESP) occupy the 0x00-0xFD high-byte space; light (ESL) plugins occupy the 0xFE light space, with a
+    ' 12-bit light index in bits 12..23. WITHOUT this split, a full plugin loaded after N ESLs would get
+    ' the wrong high byte (e.g. 0x3D instead of 0x0F), so its records' FormIDs wouldn't match the game /
+    ' xEdit and the saved plugin's references would be mis-encoded. Built once during LoadAllPlugins.
+    Private ReadOnly _fullSlotByName As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+    Private ReadOnly _lightSlotByName As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+    Private ReadOnly _nameByFullSlot As New Dictionary(Of Integer, String)
+    Private ReadOnly _nameByLightSlot As New Dictionary(Of Integer, String)
+
     Private _localizedStrings As LocalizedStringResolver
 
     ''' <summary>Global FormID -> final PluginRecord (last override wins).</summary>
@@ -57,6 +68,18 @@ Public Class PluginManager
                 reader.Load(filePath)
                 _pluginIndex(reader.FileName) = Plugins.Count
                 Plugins.Add(reader)
+                ' Engine-faithful slot assignment: ESL → next light slot; everything else → next full
+                ' slot. Done BEFORE MergeRecords so this plugin's own records (self-refs) resolve via its
+                ' just-assigned slot, and master-refs resolve via earlier plugins' slots.
+                If reader.IsESL Then
+                    Dim ls = _lightSlotByName.Count
+                    _lightSlotByName(reader.FileName) = ls
+                    _nameByLightSlot(ls) = reader.FileName
+                Else
+                    Dim fsx = _fullSlotByName.Count
+                    _fullSlotByName(reader.FileName) = fsx
+                    _nameByFullSlot(fsx) = reader.FileName
+                End If
                 MergeRecords(reader)
             Catch ex As Exception
                 Logger.LogLazy(Function() $"[ESP] Failed to load {fileName}: {ex.Message}")
@@ -66,25 +89,40 @@ Public Class PluginManager
         BuildTypeIndex()
     End Sub
 
-    ''' <summary>Resolve a file-local FormID to a global FormID using the plugin's master list.</summary>
+    ''' <summary>Resolve a file-local FormID to a global FormID using the plugin's master list. The
+    ''' global high byte follows the engine FileID scheme — full plugins use (fullSlot &lt;&lt; 24);
+    ''' light (ESL) plugins use the 0xFE light space — so it matches the game / xEdit even when ESLs
+    ''' precede the owner in load order.</summary>
     Public Function ResolveFormID(localFormID As UInteger, plugin As PluginReader) As UInteger
         Dim masterIndex = CInt(localFormID >> 24)
         Dim objectID = localFormID And &HFFFFFFUI
 
+        Dim owner As PluginReader = Nothing
         If masterIndex < plugin.Masters.Count Then
+            ' Reference into one of this plugin's masters. The master index is full-style (xEdit
+            ' LoadOrderFileIDtoFileFileID emits CreateFull(i) even when the master is an ESL).
             Dim masterName = plugin.Masters(masterIndex)
-            Dim masterIdx As Integer = -1
-            If _pluginIndex.TryGetValue(masterName, masterIdx) Then
-                Return (CUInt(masterIdx) << 24) Or objectID
-            End If
+            Dim mi As Integer = -1
+            If _pluginIndex.TryGetValue(masterName, mi) Then owner = Plugins(mi)
+        Else
+            owner = plugin   ' self record (master index == master count)
         End If
 
-        Dim selfIdx As Integer = -1
-        If _pluginIndex.TryGetValue(plugin.FileName, selfIdx) Then
-            Return (CUInt(selfIdx) << 24) Or objectID
-        End If
+        If owner Is Nothing Then Return localFormID   ' unresolved master — best effort
+        Return MakeGlobalFormID(owner, objectID)
+    End Function
 
-        Return localFormID
+    ''' <summary>Build the global FormID for a record owned by <paramref name="owner"/>: full plugins →
+    ''' (fullSlot &lt;&lt; 24) | object24; ESL plugins → 0xFE | (lightSlot &lt;&lt; 12) | object12.</summary>
+    Private Function MakeGlobalFormID(owner As PluginReader, objectID As UInteger) As UInteger
+        If owner.IsESL Then
+            Dim L As Integer = 0
+            _lightSlotByName.TryGetValue(owner.FileName, L)
+            Return &HFE000000UI Or (CUInt(L) << 12) Or (objectID And &HFFFUI)
+        End If
+        Dim F As Integer = 0
+        _fullSlotByName.TryGetValue(owner.FileName, F)
+        Return (CUInt(F) << 24) Or (objectID And &HFFFFFFUI)
     End Function
 
     ''' <summary>Resolve a referenced FormID using the source plugin that owns the record.</summary>
@@ -99,9 +137,28 @@ Public Class PluginManager
         Return ResolveFormID(localFormID, Plugins(pluginIdx))
     End Function
 
-    Public Function GetPluginNameByLoadOrderIndex(index As Integer) As String
-        If index < 0 OrElse index >= Plugins.Count Then Return ""
-        Return Plugins(index).FileName
+    ''' <summary>Combine a LooksMenu-style "Plugin|FormID" identifier back into a global FormID. The
+    ''' identifier's FormID part is the runtime FormID masked to 24 bits (Utilities.cpp:112
+    ''' <c>formID &amp; 0xFFFFFF</c>) — for an ESL it already carries the 12-bit light-slot in bits 12..23,
+    ''' so the global is just 0xFE | local; for a full plugin the global is (fullSlot &lt;&lt; 24) | local.
+    ''' Returns 0 when the named plugin isn't loaded. Inverse of <c>LooksmenuLoader.FormatFormIdentifier</c>.</summary>
+    Public Function GlobalFormIDFromIdentifierLocal(pluginName As String, identifierLocal As UInteger) As UInteger
+        Dim idx As Integer
+        If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, idx) Then Return 0UI
+        Dim p = Plugins(idx)
+        If p.IsESL Then Return &HFE000000UI Or (identifierLocal And &HFFFFFFUI)
+        Dim f As Integer = 0
+        _fullSlotByName.TryGetValue(p.FileName, f)
+        Return (CUInt(f) << 24) Or (identifierLocal And &HFFFFFFUI)
+    End Function
+
+    ''' <summary>Plugin occupying a given FULL FileID slot (high byte 0x00..0xFD). For light (ESL)
+    ''' plugins use the 0xFE light path in <see cref="GetOriginatingPluginName"/>. "" if no full plugin
+    ''' occupies that slot.</summary>
+    Public Function GetPluginNameByLoadOrderIndex(fullSlot As Integer) As String
+        Dim nm As String = Nothing
+        If _nameByFullSlot.TryGetValue(fullSlot, nm) Then Return nm
+        Return ""
     End Function
 
     ''' <summary>Resolve the master plugin that "owns" a FormID for engine-faithful asset
@@ -122,17 +179,10 @@ Public Class PluginManager
     Public Function GetOriginatingPluginName(formID As UInteger) As String
         Dim highByte = CInt((formID >> 24) And &HFFUI)
         If highByte = &HFE Then
-            ' Light slot resolution: lightSlot = bits 12..23, then walk plugins-with-IsESL
-            ' in load order, picking the lightSlot-th one. Avoids using GetRecord(formID)
-            ' .SourcePluginName, which after a Save would return the override plugin
-            ' (NPC_Manager.esp) instead of the master ESL — breaking FaceGen path lookup.
+            ' Light slot: lightSlot = bits 12..23 → the lightSlot-th ESL plugin (built at load time).
             Dim lightSlot = CInt((formID >> 12) And &HFFFUI)
-            Dim seen As Integer = 0
-            For Each p In Plugins
-                If p Is Nothing OrElse Not p.IsESL Then Continue For
-                If seen = lightSlot Then Return p.FileName
-                seen += 1
-            Next
+            Dim nm As String = Nothing
+            If _nameByLightSlot.TryGetValue(lightSlot, nm) Then Return nm
             Return ""
         End If
         Return GetPluginNameByLoadOrderIndex(highByte)

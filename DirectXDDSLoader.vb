@@ -618,7 +618,7 @@ Public Module DirectXDDSLoader
             Return New PreviewModel.Texture_Loaded_Class With {
                 .Texture_ID = 0,
                 .Size = New Size(2, 2),
-                .Cubemap = If(tex IsNot Nothing, tex.IsCubemap, False),
+                .Cubemap = tex IsNot Nothing AndAlso tex.IsCubemap,
                 .DGXFormat_Original = If(tex IsNot Nothing, tex.DxgiCodeOriginal, 0),
                 .DGXFormat_Final = If(tex IsNot Nothing, tex.DxgiCodeFinal, 0),
                 .Loaded = False,

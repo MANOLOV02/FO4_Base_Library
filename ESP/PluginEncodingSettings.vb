@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 
 ''' <summary>
@@ -40,11 +40,20 @@ Imports System.Text
 Public Module PluginEncodingSettings
 
     Private ReadOnly _syncRoot As New Object()
-    ' xEdit uses TEncoding.UTF8 (Delphi default, replacement fallback for invalid bytes / chars).
-    ' Mirror that — do NOT use UTF8Encoding(False, True) strict mode (that was a regression that
-    ' threw EncoderFallbackException mid-save when the user chose an encoding incompatible with
-    ' some character, breaking the save flow without giving the user actionable info).
-    Private ReadOnly _utf8 As Encoding = Encoding.UTF8
+    ' UTF-8 with STRICT decoder (throwOnInvalidBytes). Mirror of Delphi TEncoding.UTF8 whose
+    ' GetString raises EEncodingError on malformed bytes — REQUIRED for the STRINGS-sidecar
+    ' fallback chain (LocalizedStrings.DecodeWithEncoding: try UTF-8 primary → catch → cp1252
+    ' fallback, mirror of TwbLocalizationFile.ReadZString wbLocalization.pas:259-264). With .NET's
+    ' default Encoding.UTF8 (replacement fallback) the decoder NEVER throws, the catch is dead
+    ' code, and a cp1252 .STRINGS file read as UTF-8 yields U+FFFD mojibake instead of falling
+    ' back to cp1252. (Earlier comment claimed the opposite — that was the bug causing the Korean/
+    ' Spanish STRINGS mojibake report.)
+    '
+    ' throwOnInvalidBytes affects the DECODER (read). The ENCODER never throws for valid .NET
+    ' strings (UTF-8 encodes every Unicode scalar), so this does NOT reintroduce the mid-save
+    ' EncoderFallback problem — that was MBCSEncoding(cp) with ExceptionFallback, fixed separately
+    ' (MBCSEncoding now uses Delphi-default replacement).
+    Private ReadOnly _utf8 As Encoding = New UTF8Encoding(encoderShouldEmitUTF8Identifier:=False, throwOnInvalidBytes:=True)
     Private ReadOnly _encodingCache As New Dictionary(Of Integer, Encoding)()
 
     ''' <summary>
@@ -267,15 +276,38 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
+    ''' Decode bytes for a NON-translatable inline string subrecord using the General encoding.
+    ''' Mirror of TwbStringDef.ToStringNative for fields where dfTranslatable is NOT set:
+    ''' bsdGetEncoding (wbInterface.pas:23530-23533) returns wbEncoding (General, cp1252 for FO4),
+    ''' not wbEncodingTrans. Used for EDID (wbStringKC cpOverride) and other cpNormal/cpOverride
+    ''' string fields. Single-shot, no fallback chain (same as the translatable path).
+    ''' </summary>
+    Public Function DecodeGeneral(data As Byte(), offset As Integer, count As Integer) As String
+        Return DecodeWithEncoding(data, offset, count, General)
+    End Function
+
+    ''' <summary>
     ''' Encode string to bytes using Translatable encoding. Mirror of TwbStringDef.FromStringNative
     ''' (wbInterface.pas:16322) — single call to encoding.GetBytes with Delphi-default replacement
-    ''' fallback (silent '?' for unencodable chars). UX layer (pre-flight check in SaveEsp_Form)
-    ''' detects conflicts BEFORE save reaches the writer, so silent '?' only happens if the user
-    ''' bypasses validation.
+    ''' fallback (silent '?' for unencodable chars). UX layer (conflict check in NpcOverrideSaver)
+    ''' detects conflicts BEFORE the writer runs, so silent '?' only happens if validation is bypassed.
+    ''' Use for cpTranslate fields (FULL/SHRT/DESC/ATTX/combo-FULL).
     ''' </summary>
     Public Function EncodeTranslatable(value As String) As Byte()
         If String.IsNullOrEmpty(value) Then Return Array.Empty(Of Byte)()
         Return Translatable.GetBytes(value)
+    End Function
+
+    ''' <summary>
+    ''' Encode string to bytes using the General (non-translatable) encoding (cp1252 for FO4).
+    ''' Mirror of TwbStringDef.FromStringNative for fields where dfTranslatable is NOT set:
+    ''' bsdGetEncoding returns wbEncoding (General), not wbEncodingTrans. Use for cpOverride/cpNormal
+    ''' string fields: EDID, ATKE (Attack Event), ATKT (Description), DSTA (Sequence Name),
+    ''' DMDL (Model FileName). Delphi-default replacement fallback (silent '?').
+    ''' </summary>
+    Public Function EncodeGeneral(value As String) As Byte()
+        If String.IsNullOrEmpty(value) Then Return Array.Empty(Of Byte)()
+        Return General.GetBytes(value)
     End Function
 
     ''' <summary>

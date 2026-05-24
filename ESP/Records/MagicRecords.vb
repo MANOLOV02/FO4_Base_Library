@@ -455,13 +455,13 @@ Public Module MagicRecordParsers
                 Case "DESC"
                     p.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "ICON"
-                    p.IconPath = sr.AsString
+                    p.IconPath = sr.AsStringGeneral
                 Case "SNAM"
                     p.SoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "NNAM"
                     p.NextPerkFormID = ResolveFID(rec, sr, pluginManager)
                 Case "FNAM"
-                    p.SWFPath = sr.AsString
+                    p.SWFPath = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 3 Then
                         p.IsTrait = sr.Data(0) <> 0
@@ -525,7 +525,7 @@ Public Module MagicRecordParsers
                         k.KeywordColor = Color.FromArgb(sr.Data(3), sr.Data(0), sr.Data(1), sr.Data(2))
                     End If
                 Case "DNAM"
-                    k.Notes = sr.AsString
+                    k.Notes = sr.AsStringGeneral
                 Case "TNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         k.KeywordType = BitConverter.ToUInt32(sr.Data, 0)

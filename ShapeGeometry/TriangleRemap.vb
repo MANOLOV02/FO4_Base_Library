@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' Per-new-triangle provenance for operations that change triangle count (zap, split, merge).
 ''' When passed to IShapeGeometry.SetTriangles, the adapter uses this to redistribute count-
 ''' derived metadata (BSMeshLODTriShape / BSLODTriShape LOD0/1/2 sizes, BSSubIndexTriShape /
@@ -23,7 +23,7 @@ Public NotInheritable Class TriangleRemap
     Public ReadOnly Sources As IReadOnlyList(Of TriangleSource)
 
     Public Sub New(sources As IReadOnlyList(Of TriangleSource))
-        If sources Is Nothing Then Throw New ArgumentNullException(NameOf(sources))
+        ArgumentNullException.ThrowIfNull(sources)
         Me.Sources = sources
     End Sub
 
@@ -34,7 +34,7 @@ Public NotInheritable Class TriangleRemap
     ''' triangle).
     ''' </summary>
     Public Shared Function SameShape(oldTriIndices As IReadOnlyList(Of Integer)) As TriangleRemap
-        If oldTriIndices Is Nothing Then Throw New ArgumentNullException(NameOf(oldTriIndices))
+        ArgumentNullException.ThrowIfNull(oldTriIndices)
         Dim arr(oldTriIndices.Count - 1) As TriangleSource
         For i = 0 To oldTriIndices.Count - 1
             arr(i) = New TriangleSource(Nothing, oldTriIndices(i))

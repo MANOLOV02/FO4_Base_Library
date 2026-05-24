@@ -252,7 +252,7 @@ Public Module SystemRecordParsers
                     End If
                 Case "GNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then c.CollisionFlags = BitConverter.ToUInt32(sr.Data, 0)
-                Case "MNAM" : c.LayerName = sr.AsString
+                Case "MNAM" : c.LayerName = sr.AsStringGeneral
                 Case "CNAM"
                     c.CollidesWithFormIDs.Add(ResolveFID(rec, sr, pluginManager))
             End Select
@@ -292,7 +292,7 @@ Public Module SystemRecordParsers
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         a.ActionColor = Color.FromArgb(sr.Data(3), sr.Data(0), sr.Data(1), sr.Data(2))
                     End If
-                Case "DNAM" : a.Notes = sr.AsString
+                Case "DNAM" : a.Notes = sr.AsStringGeneral
                 Case "TNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then a.ActionType = BitConverter.ToUInt32(sr.Data, 0)
                 Case "DATA" : a.AttractionRuleFormID = ResolveFID(rec, sr, pluginManager)
@@ -323,10 +323,10 @@ Public Module SystemRecordParsers
         Dim a As New ASTP_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "MPRT" : a.MaleParentTitle = sr.AsString
-                Case "FPRT" : a.FemaleParentTitle = sr.AsString
-                Case "MCHT" : a.MaleChildTitle = sr.AsString
-                Case "FCHT" : a.FemaleChildTitle = sr.AsString
+                Case "MPRT" : a.MaleParentTitle = sr.AsStringGeneral
+                Case "FPRT" : a.FemaleParentTitle = sr.AsStringGeneral
+                Case "MCHT" : a.MaleChildTitle = sr.AsStringGeneral
+                Case "FCHT" : a.FemaleChildTitle = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         a.IsFamilyAssociation = (BitConverter.ToUInt32(sr.Data, 0) And &H1UI) <> 0
@@ -438,7 +438,7 @@ Public Module SystemRecordParsers
         Dim r As New RFGP_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "NNAM" : r.GroupName = sr.AsString
+                Case "NNAM" : r.GroupName = sr.AsStringGeneral
                 Case "RNAM" : r.ReferenceFormID = ResolveFID(rec, sr, pluginManager)
                 Case "PNAM" : r.PackInFormID = ResolveFID(rec, sr, pluginManager)
             End Select
@@ -491,7 +491,7 @@ Public Module SystemRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "DATA" : f.ImpactDataSetFormID = ResolveFID(rec, sr, pluginManager)
-                Case "ANAM" : f.Tag = sr.AsString
+                Case "ANAM" : f.Tag = sr.AsStringGeneral
             End Select
         Next
         Return f
@@ -515,7 +515,7 @@ Public Module SystemRecordParsers
         Dim i As New IDLM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "MODL" : If i.ModelPath = "" Then i.ModelPath = sr.AsString
+                Case "MODL" : If i.ModelPath = "" Then i.ModelPath = sr.AsStringGeneral
                 Case "IDLF"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then i.IdleFlags = sr.Data(0)
                 Case "IDLC"

@@ -350,13 +350,13 @@ Public Module WorldRecordParsers
                 Case "LTMP"
                     w.LightingTemplateFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ICON"
-                    w.MapImagePath = sr.AsString
+                    w.MapImagePath = sr.AsStringGeneral
                 Case "TNAM"
-                    w.HDLODDiffuseTexture = sr.AsString
+                    w.HDLODDiffuseTexture = sr.AsStringGeneral
                 Case "UNAM"
-                    w.HDLODNormalTexture = sr.AsString
+                    w.HDLODNormalTexture = sr.AsStringGeneral
                 Case "XWEM"
-                    w.WaterEnvironmentMap = sr.AsString
+                    w.WaterEnvironmentMap = sr.AsStringGeneral
                 Case "PNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
                         w.InheritanceFlags = BitConverter.ToUInt16(sr.Data, 0)
@@ -567,11 +567,13 @@ Public Module WorldRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FNAM"
-                    c.SunTexture = sr.AsString
+                    c.SunTexture = sr.AsStringGeneral
                 Case "GNAM"
-                    c.SunGlareTexture = sr.AsString
-                Case "MOD2"
-                    c.SkyModelPath = sr.AsString
+                    c.SunGlareTexture = sr.AsStringGeneral
+                Case "MODL"
+                    ' FO4 CLMT sky model uses wbGenericModel → MODL (wbDefinitionsFO4.pas:6481→1044),
+                    ' NOT MOD2. The old "MOD2" case never matched, so SkyModelPath stayed empty.
+                    c.SkyModelPath = sr.AsStringGeneral
                 Case "WLST"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         For i = 0 To sr.Data.Length - 12 Step 12

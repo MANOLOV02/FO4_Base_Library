@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 
 ' ============================================================================
 ' VMAD (Virtual Machine Adapter) sub-parser — FormID position scanner
@@ -67,8 +67,9 @@ Public Module NpcVmadScanner
     Public Function Scan(payload As Byte(), pluginName As String, pluginManager As PluginManager) As NPC_VmadData
         If payload Is Nothing OrElse payload.Length < 6 Then Return Nothing
 
-        Dim data As New NPC_VmadData
-        data.RawBytes = payload
+        Dim data As New NPC_VmadData With {
+            .RawBytes = payload
+        }
 
         Dim ms As New MemoryStream(payload, False)
         Dim br As New BinaryReader(ms)

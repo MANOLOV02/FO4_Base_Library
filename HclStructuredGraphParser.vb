@@ -503,7 +503,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         result.Field20NonZeroQuadCount = result.Field20QuadSlots.Where(Function(slot) slot IsNot Nothing AndAlso Not slot.IsAllZero).Count()
         result.Field20NonZeroQuadCountMatchesField30Count = (result.Field20NonZeroQuadCount > 0 AndAlso result.Field20NonZeroQuadCount = result.Field30Entries.Count)
         result.Field40NonZeroQuadCountMatchesField50Count = (result.Field40NonZeroQuadCount > 0 AndAlso result.Field40NonZeroQuadCount = result.Field50Entries.Count)
-        result.Field30LeadEntryCount = If(result.Field50PivotTailStartIndex.HasValue, result.Field50PivotTailStartIndex.Value, 0)
+        result.Field30LeadEntryCount = If(result.Field50PivotTailStartIndex, 0)
         result.Field30TailEntryCount = result.Field30Entries.Count - result.Field30LeadEntryCount
         result.Field30LeadEntries.AddRange(result.Field30Entries.Where(Function(entry) entry IsNot Nothing AndAlso entry.EntryIndex < result.Field30LeadEntryCount))
         result.Field30TailEntries.AddRange(result.Field30Entries.Where(Function(entry) entry IsNot Nothing AndAlso entry.EntryIndex >= result.Field30LeadEntryCount))
@@ -625,7 +625,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
                 Select(Function(reference)
                            If IsNothing(reference) Then Return Nothing
                            Dim sharedParticles = slot.Particles.Intersect(reference.Particles).ToList()
-                           Return New With { .Slot = reference, .SharedParticles = sharedParticles, .SharedCount = sharedParticles.Count }
+                           Return New With { .Slot = reference, sharedParticles, .SharedCount = sharedParticles.Count }
                        End Function).
                 Where(Function(match) match IsNot Nothing AndAlso match.SharedCount > 0).
                 OrderByDescending(Function(match) match.SharedCount).

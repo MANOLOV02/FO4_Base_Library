@@ -43,7 +43,7 @@ Public Module DirectXTextureConversionHelper
         Optional filterFlags As Integer = 0,
         Optional compressFlags As Integer = 0,
         Optional alphaThreshold As Single = 0.5F) As Byte()
-        If sourceBitmap Is Nothing Then Throw New ArgumentNullException(NameOf(sourceBitmap))
+        ArgumentNullException.ThrowIfNull(sourceBitmap)
         If sourceBitmap.Width <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(sourceBitmap), "Width debe ser > 0.")
         If sourceBitmap.Height <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(sourceBitmap), "Height debe ser > 0.")
         If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
@@ -136,7 +136,7 @@ Public Module DirectXTextureConversionHelper
 
         If width <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(width), "Width debe ser > 0.")
         If height <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(height), "Height debe ser > 0.")
-        If bgraPixels Is Nothing Then Throw New ArgumentNullException(NameOf(bgraPixels))
+        ArgumentNullException.ThrowIfNull(bgraPixels)
         Dim expectedLength = Math.BigMul(width, height) * 4L
         If expectedLength > Integer.MaxValue Then Throw New ArgumentOutOfRangeException(NameOf(bgraPixels), "El buffer BGRA excede el maximo soportado.")
         If bgraPixels.Length <> CInt(expectedLength) Then Throw New ArgumentException($"El buffer BGRA debe tener {expectedLength} bytes y llego con {bgraPixels.Length}.", NameOf(bgraPixels))
@@ -272,7 +272,7 @@ Public Module DirectXTextureConversionHelper
         Optional compressFlags As Integer = 0,
         Optional alphaThreshold As Single = 0.5F) As Byte()
 
-        If loadedTexture Is Nothing Then Throw New ArgumentNullException(NameOf(loadedTexture))
+        ArgumentNullException.ThrowIfNull(loadedTexture)
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
         If Not loadedTexture.Loaded Then Throw New ArgumentException("La textura cargada no esta marcada como Loaded.", NameOf(loadedTexture))
         If loadedTexture.Levels Is Nothing OrElse loadedTexture.Levels.Count = 0 Then
@@ -363,7 +363,7 @@ Public Module DirectXTextureConversionHelper
     End Function
 
     Private Function CreateBitmapSubresource(sourceBitmap As Bitmap, mipLevel As Integer) As DxTextureSubresourceBuffer
-        If sourceBitmap Is Nothing Then Throw New ArgumentNullException(NameOf(sourceBitmap))
+        ArgumentNullException.ThrowIfNull(sourceBitmap)
 
         Using normalizedBitmap As New Bitmap(sourceBitmap.Width, sourceBitmap.Height, Imaging.PixelFormat.Format32bppArgb)
             Using g = System.Drawing.Graphics.FromImage(normalizedBitmap)
@@ -490,7 +490,7 @@ Public Module DirectXTextureConversionHelper
         isCubemap As Boolean,
         subresourceData As IEnumerable(Of Byte())) As DxTextureConversionRequest
 
-        If subresourceData Is Nothing Then Throw New ArgumentNullException(NameOf(subresourceData))
+        ArgumentNullException.ThrowIfNull(subresourceData)
 
         Dim request As New DxTextureConversionRequest With {
             .Width = width,
@@ -609,7 +609,7 @@ Public Module DirectXTextureConversionHelper
     End Function
 
     Public Function ConcatenateSubresources(subresources As IEnumerable(Of DxTextureSubresourceBuffer)) As Byte()
-        If subresources Is Nothing Then Throw New ArgumentNullException(NameOf(subresources))
+        ArgumentNullException.ThrowIfNull(subresources)
 
         Dim payloads As New List(Of Byte())()
         Dim total As Long = 0
@@ -728,7 +728,7 @@ Public Module DirectXTextureConversionHelper
     End Function
 
     Private Function GetRequiredMemberValue(instance As Object, memberName As String) As Object
-        If instance Is Nothing Then Throw New ArgumentNullException(NameOf(instance))
+        ArgumentNullException.ThrowIfNull(instance)
         If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("El nombre de miembro es obligatorio.", NameOf(memberName))
 
         Dim instanceType = instance.GetType()
@@ -746,7 +746,7 @@ Public Module DirectXTextureConversionHelper
     End Function
 
     Private Sub SetRequiredMemberValue(instance As Object, memberName As String, value As Object)
-        If instance Is Nothing Then Throw New ArgumentNullException(NameOf(instance))
+        ArgumentNullException.ThrowIfNull(instance)
         If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("El nombre de miembro es obligatorio.", NameOf(memberName))
 
         Dim instanceType = instance.GetType()
@@ -783,7 +783,7 @@ Public Module DirectXTextureConversionHelper
     End Function
 
     Private Sub ValidateRequest(request As DxTextureConversionRequest)
-        If request Is Nothing Then Throw New ArgumentNullException(NameOf(request))
+        ArgumentNullException.ThrowIfNull(request)
         If request.Width <= 0 Then Throw New ArgumentOutOfRangeException("Width", "Width debe ser > 0.")
         If request.Height <= 0 Then Throw New ArgumentOutOfRangeException("Height", "Height debe ser > 0.")
         If request.ArraySize <= 0 Then Throw New ArgumentOutOfRangeException("ArraySize", "ArraySize debe ser > 0.")

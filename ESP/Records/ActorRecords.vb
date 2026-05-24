@@ -389,7 +389,7 @@ Public Module ActorRecordParsers
                 Case "DESC"
                     c.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "ICON"
-                    c.IconPath = sr.AsString
+                    c.IconPath = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                         c.BleedoutDefault = BitConverter.ToSingle(sr.Data, 4)
@@ -411,7 +411,7 @@ Public Module ActorRecordParsers
                 Case "FULL"
                     e.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "ICON"
-                    e.TexturePath = sr.AsString
+                    e.TexturePath = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
                         e.EyeFlags = sr.Data(0)
@@ -459,7 +459,7 @@ Public Module ActorRecordParsers
                     ' tienen MODL en el schema). Si BPTN ya abrió un part, el MODL siguiente sería
                     ' anómalo; nos quedamos con el primero por seguridad.
                     If b.ModelPath = "" AndAlso currentPart Is Nothing Then
-                        b.ModelPath = sr.AsString
+                        b.ModelPath = sr.AsStringGeneral
                     End If
                 Case "MODT", "MODC", "MODS", "MODF"
                     ' Discarded: texture hashes / color remap / material swap / flags (binary).
@@ -471,9 +471,9 @@ Public Module ActorRecordParsers
                         .PartName = ResolveStr(rec, sr, pluginManager)
                     }
                 Case "BPNN"
-                    If currentPart IsNot Nothing Then currentPart.NodeName = sr.AsString
+                    If currentPart IsNot Nothing Then currentPart.NodeName = sr.AsStringGeneral
                 Case "BPNT"
-                    If currentPart IsNot Nothing Then currentPart.VATSTarget = sr.AsString
+                    If currentPart IsNot Nothing Then currentPart.VATSTarget = sr.AsStringGeneral
                 Case "BPND"
                     ' Node Data struct (101 bytes) — wbDefinitionsFO4.pas:8051-8124.
                     ' Layout completo (todos los offsets):
@@ -551,15 +551,15 @@ Public Module ActorRecordParsers
                         If d.Length >= 101 Then currentPart.OnCrippleDecalCount = d(100)
                     End If
                 Case "NAM1"
-                    If currentPart IsNot Nothing Then currentPart.LimbReplacementModel = sr.AsString
+                    If currentPart IsNot Nothing Then currentPart.LimbReplacementModel = sr.AsStringGeneral
                 Case "NAM4"
-                    If currentPart IsNot Nothing Then currentPart.GoreTargetBone = sr.AsString
+                    If currentPart IsNot Nothing Then currentPart.GoreTargetBone = sr.AsStringGeneral
                 Case "NAM5"
                     ' Discarded: Model Information struct (texture hashes).
                 Case "ENAM"
-                    If currentPart IsNot Nothing Then currentPart.HitReactionStart = sr.AsString
+                    If currentPart IsNot Nothing Then currentPart.HitReactionStart = sr.AsStringGeneral
                 Case "FNAM"
-                    If currentPart IsNot Nothing Then currentPart.HitReactionEnd = sr.AsString
+                    If currentPart IsNot Nothing Then currentPart.HitReactionEnd = sr.AsStringGeneral
                 Case "BNAM"
                     If currentPart IsNot Nothing Then currentPart.DismemberBloodArtFormID = ResolveFID(rec, sr, pluginManager)
                 Case "INAM"
@@ -571,7 +571,7 @@ Public Module ActorRecordParsers
                 Case "NAM2"
                     If currentPart IsNot Nothing Then currentPart.CollarTextureSetFormID = ResolveFID(rec, sr, pluginManager)
                 Case "DNAM"
-                    If currentPart IsNot Nothing Then currentPart.TwistVariablePrefix = sr.AsString
+                    If currentPart IsNot Nothing Then currentPart.TwistVariablePrefix = sr.AsStringGeneral
             End Select
         Next
 
@@ -589,7 +589,7 @@ Public Module ActorRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "MNAM"
-                    m.MovementName = sr.AsString
+                    m.MovementName = sr.AsStringGeneral
                 Case "SPED"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 32 Then
                         m.LeftWalk = BitConverter.ToSingle(sr.Data, 0)

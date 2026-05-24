@@ -52,6 +52,21 @@ Public Class PluginReader
         End Using
     End Sub
 
+    ''' <summary>Cheap header-only load: reads just the TES4 record — master list
+    ''' (<see cref="Masters"/>), ESM/ESL/localized flags, and the &lt;cp:XXXX&gt; translatable
+    ''' encoding tag — then stops before the first GRUP. Leaves <see cref="Records"/> empty.
+    ''' Use when the caller only needs a plugin's masters / header flags (e.g. dependency
+    ''' validation in a preflight) without paying for a full parse: opening the file and reading
+    ''' its first record is a single sub-1 KB sequential read.</summary>
+    Public Sub LoadHeaderOnly(filePath As String)
+        FileName = Path.GetFileName(filePath)
+        Using fs As New FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read)
+            Using br As New BinaryReader(fs, Encoding.UTF8, True)
+                ReadTES4(br)
+            End Using
+        End Using
+    End Sub
+
     Private Sub ReadTES4(br As BinaryReader)
         Dim header = RecordHeader.Read(br)
         If header.Signature <> "TES4" Then Throw New InvalidDataException("Not a valid plugin file: missing TES4 header")
@@ -84,7 +99,8 @@ Public Class PluginReader
 
         For Each subrecord In tes4Subrecords
             If subrecord.Signature <> "MAST" Then Continue For
-            Dim master = subrecord.AsString
+            ' MAST is wbStringForward cpNormal (wbDefinitionsFO4.pas:12475) → non-translatable → General.
+            Dim master = subrecord.AsStringGeneral
             If master <> "" Then Masters.Add(master)
         Next
 

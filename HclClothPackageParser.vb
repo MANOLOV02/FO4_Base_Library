@@ -280,7 +280,7 @@ Public NotInheritable Class HclClothPackageParser_Class
         If IsNothing(binding) Then Return
 
         Dim bindMatrix = ToMatrix4x4(binding.Matrix)
-        Dim collMatrix = ToMatrix4x4(If(binding.Collidable IsNot Nothing, binding.Collidable.TransformMatrix, Nothing))
+        Dim collMatrix = ToMatrix4x4(binding.Collidable?.TransformMatrix)
         binding.MatrixIdentityDelta = MaxMatrixDelta(bindMatrix, Matrix4x4.Identity)
         binding.CollidableTransformIdentityDelta = MaxMatrixDelta(collMatrix, Matrix4x4.Identity)
         binding.BindTimesCollidableIdentityDelta = MaxMatrixDelta(Matrix4x4.Multiply(bindMatrix, collMatrix), Matrix4x4.Identity)

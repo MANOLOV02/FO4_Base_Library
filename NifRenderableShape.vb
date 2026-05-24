@@ -1,4 +1,4 @@
-Imports NiflySharp
+﻿Imports NiflySharp
 Imports NiflySharp.Blocks
 Imports NiflySharp.Structs
 
@@ -32,8 +32,8 @@ Public Class NifRenderableShape
     Private _syntheticTransforms As IReadOnlyList(Of Transform_Class)
 
     Public Sub New(nif As Nifcontent_Class_Manolo, shape As INiShape, index As Integer)
-        If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
-        If shape Is Nothing Then Throw New ArgumentNullException(NameOf(shape))
+        ArgumentNullException.ThrowIfNull(nif)
+        ArgumentNullException.ThrowIfNull(shape)
         _nif = nif
         _shape = shape
         _geometry = ShapeGeometryFactory.[For](shape, nif)
@@ -206,8 +206,8 @@ Public Class NifRenderableShape
     '''   - Geometry.IsSkinned returns True
     ''' </summary>
     Public Sub ApplySyntheticAnchorSkin(anchorBone As NiNode, bindTransform As Transform_Class) Implements IRuntimeSkinOverride.ApplySyntheticAnchorSkin
-        If anchorBone Is Nothing Then Throw New ArgumentNullException(NameOf(anchorBone))
-        If bindTransform Is Nothing Then Throw New ArgumentNullException(NameOf(bindTransform))
+        ArgumentNullException.ThrowIfNull(anchorBone)
+        ArgumentNullException.ThrowIfNull(bindTransform)
         If _geometry Is Nothing Then Throw New InvalidOperationException("Shape geometry is null")
 
         _syntheticBones = New List(Of NiNode) From {anchorBone}

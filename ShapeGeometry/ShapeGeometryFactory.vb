@@ -1,4 +1,4 @@
-Imports NiflySharp
+﻿Imports NiflySharp
 Imports NiflySharp.Blocks
 
 ''' <summary>
@@ -19,8 +19,8 @@ Public Module ShapeGeometryFactory
     ''' branch catches all derived classes via inheritance.
     ''' </summary>
     Public Function [For](shape As INiShape, nif As Nifcontent_Class_Manolo) As IShapeGeometry
-        If shape Is Nothing Then Throw New ArgumentNullException(NameOf(shape))
-        If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
+        ArgumentNullException.ThrowIfNull(shape)
+        ArgumentNullException.ThrowIfNull(nif)
 
         ' BSTriShape and any subclass (BSSubIndexTriShape, BSDynamicTriShape, BSSegmentedTriShape,
         ' BSMeshLODTriShape).  Must come before the NiTriShape branch — ordering by inheritance

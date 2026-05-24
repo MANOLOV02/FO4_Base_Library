@@ -1,4 +1,4 @@
-Imports OpenTK.Graphics.OpenGL4
+﻿Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
 ' ============================================================================
@@ -331,13 +331,13 @@ Public Module FaceTintCompositor
     ''' channels (one sRGB transfer, no per-channel special-casing). Verified on the isolated
     ''' skin-tone: linear-mask coverage left RMS ~3.5 vs CK; sRGB(mask) coverage drops it to
     ''' ~0.7-1.0 with near-zero bias. N/S already used sRGB(mask) directly so they don't regress.</summary>
-    Public BlendConvention As FaceTintBlendConvention = FaceTintBlendConvention.SrgbOpacity
+    Public Property BlendConvention As FaceTintBlendConvention = FaceTintBlendConvention.SrgbOpacity
 
     ''' <summary>When True, the DIFFUSE compose converts its base from sRGB to gamma-2.2 encoding
     ''' (CK encodes the FaceGen diffuse base in gamma-2.2; ours is stored sRGB). Verified: the
     ''' transfer maps our pre-tint base onto CK base at RMS ~0.5 across R/G/B. Diffuse only; normal
     ''' and specular are linear data and are never converted. Reversible: set False to disable.</summary>
-    Public ConvertDiffuseBaseToGamma22 As Boolean = True
+    Public Property ConvertDiffuseBaseToGamma22 As Boolean = True
 
     ''' <summary>When True (default), the DIFFUSE compose dispatches by the per-layer 'Takes Skin Tone'
     ''' flag (TTEF 0x0004), so layers that do NOT take skin tone (brows, tattoos = decals/own colour)
@@ -349,7 +349,7 @@ Public Module FaceTintCompositor
     ''' skin-tone softlight onto brows/tattoos (brow +20 light, tattoo +20 red). The diffuse base
     ''' conversion seeds the footprint to 0 (alpha) when this is on. Reversible: set False for the
     ''' legacy additive-over-base-everywhere behaviour.</summary>
-    Public TakesSkinToneOcclusion As Boolean = True
+    Public Property TakesSkinToneOcclusion As Boolean = True
 
     ' === TEMP DEBUG INSTRUMENTATION (removable) =========================================
     ' Per-layer compose diagnostics. When True, the compose loop reads back the accumulator
@@ -360,7 +360,7 @@ Public Module FaceTintCompositor
     ' bake, never during live render) AND Logger.Enabled. Leave False in render.
     ' To remove: delete this flag, the LogComposeLayerDelta calls in the compose loop, and
     ' the two helper methods below.
-    Public PerLayerDiffLog As Boolean = False
+    Public Property PerLayerDiffLog As Boolean = False
 
     ''' <summary>TEMP DEBUG: full-texture BGRA readback for per-layer delta logging. Caller
     ''' must hold the GL context. Returns Nothing on a zero/invalid texture.</summary>
@@ -418,7 +418,7 @@ Public Module FaceTintCompositor
     ' so each mask can be inspected as the GPU actually sampled it (catches upload/channel/sRGB
     ' issues, not just the source file). To remove: delete this field, the helpers below, and
     ' the DumpTextureToTga calls in the two loops.
-    Public DumpMaskDir As String = Nothing
+    Public Property DumpMaskDir As String = Nothing
 
     Private Function SanitizeName(s As String) As String
         If String.IsNullOrEmpty(s) Then Return "unnamed"
@@ -762,7 +762,7 @@ void main() {
     ''' uniform. No-op on Normal/Specular channels regardless of the value.
     ''' </summary>
     Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional cache As FaceTintTextureCache = Nothing) As Integer
-        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
+        ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If layers Is Nothing OrElse layers.Count = 0 Then Return 0
 
@@ -1285,7 +1285,7 @@ void main() {
                                                      swaps As IList(Of FaceRegionSwapInput),
                                                      channel As FaceTintChannel,
                                                      Optional cache As FaceTintTextureCache = Nothing) As Integer
-        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
+        ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If swaps Is Nothing OrElse swaps.Count = 0 Then Return 0
 
@@ -1600,7 +1600,7 @@ void main() {
                                                       r As Single, g As Single, b As Single,
                                                       blendOp As Integer,
                                                       opacity As Single) As Integer
-        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
+        ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
 
         EnsureCompositorInitialized(state)
@@ -2086,7 +2086,7 @@ void main() {
                                           height As Integer,
                                           layers As IList(Of FaceTintLayerInput),
                                           swaps As IList(Of FaceRegionSwapInput)) As FaceTintPipelineResult
-        If state Is Nothing Then Throw New ArgumentNullException(NameOf(state))
+        ArgumentNullException.ThrowIfNull(state)
 
         Dim result As New FaceTintPipelineResult With {
             .Diffuse = New FaceTintPipelineChannelResult With {.TextureId = srcDiffuseId, .IsFresh = False},

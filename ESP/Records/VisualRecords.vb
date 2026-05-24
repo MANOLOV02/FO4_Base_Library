@@ -279,7 +279,7 @@ Public Module VisualRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "TX00"
-                    img.LUTTexture = sr.AsString
+                    img.LUTTexture = sr.AsStringGeneral
                 Case "HNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 24 Then
                         img.EyeAdaptSpeed = BitConverter.ToSingle(sr.Data, 0)
@@ -341,15 +341,15 @@ Public Module VisualRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "ICON"
-                    e.FillTexture = sr.AsString
+                    e.FillTexture = sr.AsStringGeneral
                 Case "ICO2"
-                    e.ParticleShaderTexture = sr.AsString
+                    e.ParticleShaderTexture = sr.AsStringGeneral
                 Case "NAM7"
-                    e.HolesTexture = sr.AsString
+                    e.HolesTexture = sr.AsStringGeneral
                 Case "NAM8"
-                    e.MembranePaletteTexture = sr.AsString
+                    e.MembranePaletteTexture = sr.AsStringGeneral
                 Case "NAM9"
-                    e.ParticlePaletteTexture = sr.AsString
+                    e.ParticlePaletteTexture = sr.AsStringGeneral
                 Case "DNAM", "DATA"
                     e.HasData = True
             End Select
@@ -369,9 +369,9 @@ Public Module VisualRecordParsers
                 Case "FULL"
                     p.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If p.ModelPath = "" Then p.ModelPath = sr.AsString
+                    If p.ModelPath = "" Then p.ModelPath = sr.AsStringGeneral
                 Case "NAM1"
-                    p.MuzzleFlashModelPath = sr.AsString
+                    p.MuzzleFlashModelPath = sr.AsStringGeneral
                 Case "VNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         p.SoundLevelEnum = BitConverter.ToUInt32(sr.Data, 0)
@@ -430,7 +430,7 @@ Public Module VisualRecordParsers
                 Case "FULL"
                     e.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If e.ModelPath = "" Then e.ModelPath = sr.AsString
+                    If e.ModelPath = "" Then e.ModelPath = sr.AsStringGeneral
                 Case "MNAM"
                     e.ImageSpaceModFormID = ResolveFID(rec, sr, pluginManager)
                 Case "DATA"
@@ -472,7 +472,7 @@ Public Module VisualRecordParsers
                 Case "FULL"
                     h.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "MODL"
-                    If h.ModelPath = "" Then h.ModelPath = sr.AsString
+                    If h.ModelPath = "" Then h.ModelPath = sr.AsStringGeneral
                 Case "MNAM"
                     h.ImageSpaceModFormID = ResolveFID(rec, sr, pluginManager)
                 Case "DNAM"
@@ -507,8 +507,10 @@ Public Module VisualRecordParsers
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "MOD2"
-                    If c.ModelPath = "" Then c.ModelPath = sr.AsString
+                Case "MODL"
+                    ' FO4 CAMS model uses wbGenericModel → MODL (wbDefinitionsFO4.pas:8232→1044),
+                    ' NOT MOD2. The old "MOD2" case never matched, so ModelPath stayed empty.
+                    If c.ModelPath = "" Then c.ModelPath = sr.AsStringGeneral
                 Case "MNAM"
                     c.ImageSpaceModFormID = ResolveFID(rec, sr, pluginManager)
                 Case "DATA"
@@ -582,7 +584,7 @@ Public Module VisualRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "MNAM"
-                    s.ParticleTexture = sr.AsString
+                    s.ParticleTexture = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 24 Then
                         s.GravityVelocity = BitConverter.ToSingle(sr.Data, 0)
@@ -649,7 +651,7 @@ Public Module VisualRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "MODL"
-                    If a.ModelPath = "" Then a.ModelPath = sr.AsString
+                    If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         a.ArtType = BitConverter.ToUInt32(sr.Data, 0)
@@ -669,7 +671,7 @@ Public Module VisualRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "MODL"
-                    If i.ModelPath = "" Then i.ModelPath = sr.AsString
+                    If i.ModelPath = "" Then i.ModelPath = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         i.EffectDuration = BitConverter.ToSingle(sr.Data, 0)

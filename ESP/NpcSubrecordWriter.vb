@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 
 ' ============================================================================
@@ -127,12 +127,24 @@ Public Module NpcSubrecordWriter
     ' ========================================================================
 
     Private Sub EmitEdid(bw As BinaryWriter, edid As String)
-        ' EDID is zstring (NUL-terminated ASCII). xEdit wbStringKC.
-        Dim bytes = Encoding.ASCII.GetBytes(If(edid, "")) ' bytes WITHOUT trailing NUL.
+        ' EDID is wbStringKC cpOverride (wbDefinitionsFO4.pas:4080) → NON-translatable → General
+        ' encoding (cp1252), like xEdit bsdGetEncoding's `else Result := wbEncoding` branch. EDIDs
+        ' are ASCII in practice so this equals the old ASCII path, but it's now xEdit-faithful.
+        Dim bytes = PluginEncodingSettings.EncodeGeneral(If(edid, "")) ' bytes WITHOUT trailing NUL.
         Dim payload(bytes.Length) As Byte ' +1 for NUL
         Buffer.BlockCopy(bytes, 0, payload, 0, bytes.Length)
         ' payload(bytes.Length) defaults to 0 → NUL terminator already present.
         WriteRawSubrecord(bw, "EDID", payload)
+    End Sub
+
+    ''' <summary>Emit a NON-translatable string subrecord (General/cp1252 encoding). Mirror of xEdit
+    ''' wbString cpNormal/cpOverride fields. Use for ATKE/ATKT/DSTA/DMDL — distinct from EmitLString
+    ''' which uses Translatable for cpTranslate fields (FULL/SHRT/ATTX).</summary>
+    Private Sub EmitGeneralString(bw As BinaryWriter, sig As String, value As String)
+        Dim bytes = PluginEncodingSettings.EncodeGeneral(If(value, ""))
+        Dim payload(bytes.Length) As Byte
+        Buffer.BlockCopy(bytes, 0, payload, 0, bytes.Length)
+        WriteRawSubrecord(bw, sig, payload)
     End Sub
 
     Private Sub EmitVmad(bw As BinaryWriter, vmad As NPC_VmadData, remap As FormIdRemapper)
@@ -156,7 +168,8 @@ Public Module NpcSubrecordWriter
     Private Sub EmitObnd(bw As BinaryWriter, raw As Byte())
         If raw Is Nothing Then
             ' OBND is required per spec; emit zero-bounds 12-byte payload to keep record valid.
-            WriteRawSubrecord(bw, "OBND", New Byte(11) {})
+            Dim item2 = New Byte(11) {}
+            WriteRawSubrecord(bw, "OBND", item2)
         Else
             WriteRawSubrecord(bw, "OBND", raw)
         End If
@@ -309,8 +322,9 @@ Public Module NpcSubrecordWriter
                 End Using
                 WriteRawSubrecord(bw, "DSTD", ms.ToArray())
             End Using
-            If stage.SequenceName <> "" Then EmitLString(bw, "DSTA", stage.SequenceName)
-            If stage.ModelFilename <> "" Then EmitLString(bw, "DMDL", stage.ModelFilename)
+            ' DSTA/DMDL are wbString cpNormal (wbDefinitionsFO4.pas:4682,4684) → non-translatable → General.
+            If stage.SequenceName <> "" Then EmitGeneralString(bw, "DSTA", stage.SequenceName)
+            If stage.ModelFilename <> "" Then EmitGeneralString(bw, "DMDL", stage.ModelFilename)
             If stage.ModelTextureData IsNot Nothing AndAlso stage.ModelTextureData.Length > 0 Then
                 WriteRawSubrecord(bw, "DMDT", stage.ModelTextureData)
             End If
@@ -339,10 +353,11 @@ Public Module NpcSubrecordWriter
                 End Using
                 WriteRawSubrecord(bw, "ATKD", ms.ToArray())
             End Using
-            EmitLString(bw, "ATKE", a.AttackEvent)
+            ' ATKE/ATKT are wbString cpNormal (wbDefinitionsFO4.pas:4487,4490) → non-translatable → General.
+            EmitGeneralString(bw, "ATKE", a.AttackEvent)
             If a.HasWeaponSlot Then EmitFormId(bw, "ATKW", a.WeaponSlotFormID, remap)
             If a.HasRequiredSlot Then EmitFormId(bw, "ATKS", a.RequiredSlotFormID, remap)
-            If a.HasDescription Then EmitLString(bw, "ATKT", a.Description)
+            If a.HasDescription Then EmitGeneralString(bw, "ATKT", a.Description)
         Next
     End Sub
 

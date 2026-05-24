@@ -1,4 +1,4 @@
-Imports SysHalf = System.Half
+﻿Imports SysHalf = System.Half
 
 ''' <summary>
 ''' Per-vertex skinning data normalized across BSTriShape (inline VertexData[i].BoneIndices/BoneWeights)
@@ -54,7 +54,7 @@ Public Structure ShapeSkinningData
     ''' as having an implicit single bone (GlobalTransform) — that responsibility lives in the
     ''' rendering pipeline, not here.
     ''' </summary>
-    Public Shared ReadOnly Empty As ShapeSkinningData = New ShapeSkinningData With {
+    Public Shared ReadOnly Empty As New ShapeSkinningData With {
         .BoneIndices = Array.Empty(Of Byte)(),
         .BoneWeights = Array.Empty(Of SysHalf)(),
         .WeightsPerVertex = 0,

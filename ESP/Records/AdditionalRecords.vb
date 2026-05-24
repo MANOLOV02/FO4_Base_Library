@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Text
 
 ' ============================================================================
@@ -341,7 +341,7 @@ Public Module AdditionalRecordParsers
         Dim m As New MATO_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "MODL" : If m.ModelPath = "" Then m.ModelPath = sr.AsString
+                Case "MODL" : If m.ModelPath = "" Then m.ModelPath = sr.AsStringGeneral
                 Case "DNAM" : m.PropertyData = sr.Data
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 28 Then
@@ -385,7 +385,7 @@ Public Module AdditionalRecordParsers
                 Case "INTV"
                     If currentEntry IsNot Nothing Then currentEntry.IntervalData = sr.Data
                 Case "NAM1"
-                    If currentEntry IsNot Nothing Then currentEntry.ModelPath = sr.AsString
+                    If currentEntry IsNot Nothing Then currentEntry.ModelPath = sr.AsStringGeneral
             End Select
         Next
         If currentEntry IsNot Nothing Then n.Entries.Add(currentEntry)
@@ -433,8 +433,9 @@ Public Module AdditionalRecordParsers
             Select Case sr.Signature
                 Case "FULL" : s.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "DESC" : s.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
-                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsString
-                Case "ICON" : s.IconPath = sr.AsString
+                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsStringGeneral
+                ' SCRL has no ICON in the schema (commented out in FO4 wbDefinitionsFO4.pas:12412;
+                ' TES5 SCRL declares none) — dead case removed.
                 Case "YNAM" : s.PickUpSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ZNAM" : s.PutDownSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ETYP" : s.EquipTypeFormID = ResolveFID(rec, sr, pluginManager)
@@ -459,8 +460,9 @@ Public Module AdditionalRecordParsers
                     End If
                 Case "EFID"
                     ' Start of a new magic effect entry
-                    Dim eff As New MagicEffect_Entry
-                    eff.BaseEffectFormID = ResolveFID(rec, sr, pluginManager)
+                    Dim eff As New MagicEffect_Entry With {
+                        .BaseEffectFormID = ResolveFID(rec, sr, pluginManager)
+                    }
                     s.Effects.Add(eff)
                 Case "EFIT"
                     If s.Effects.Count > 0 AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
@@ -564,7 +566,7 @@ Public Module AdditionalRecordParsers
                         r.MatchErrorAllowance = BitConverter.ToSingle(sr.Data, 16)
                         r.DisplacementToDisable = BitConverter.ToSingle(sr.Data, 20)
                     End If
-                Case "ANAM" : r.DeathPose = sr.AsString
+                Case "ANAM" : r.DeathPose = sr.AsStringGeneral
             End Select
         Next
         Return r
@@ -576,8 +578,8 @@ Public Module AdditionalRecordParsers
             Select Case sr.Signature
                 Case "FULL" : a.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "DESC" : a.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
-                Case "MODL" : If a.ModelPath = "" Then a.ModelPath = sr.AsString
-                Case "ICON" : a.IconPath = sr.AsString
+                Case "MODL" : If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral
+                Case "ICON" : a.IconPath = sr.AsStringGeneral
                 Case "YNAM" : a.PickUpSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ZNAM" : a.PutDownSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "QUAL"
@@ -597,8 +599,8 @@ Public Module AdditionalRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : s.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsString
-                Case "ICON" : s.IconPath = sr.AsString
+                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsStringGeneral
+                Case "ICON" : s.IconPath = sr.AsStringGeneral
                 Case "YNAM" : s.PickUpSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ZNAM" : s.PutDownSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, s.KeywordFormIDs)

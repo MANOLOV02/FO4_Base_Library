@@ -1321,9 +1321,7 @@ Public Class FilesDictionary_class
                             End Function)
                         addedKeys?.Add(standardized)
 
-                        If collected IsNot Nothing Then
-                            collected.Add(New CachedEntry With {.Index = fil.Index, .FullPath = standardized})
-                        End If
+                        collected?.Add(New CachedEntry With {.Index = fil.Index, .FullPath = standardized})
                     Next
                 End Using
             End Using

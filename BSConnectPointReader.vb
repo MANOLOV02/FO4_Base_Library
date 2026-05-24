@@ -142,10 +142,17 @@ Public Module BSConnectPointReader
         ' Remap NiflySharp(X,Y,Z,W) ← disco(w,x,y,z) → OpenTK Quaternion(x,y,z,w) estándar.
         Dim openTkQuat As New OpenTK.Mathematics.Quaternion(q.Y, q.Z, q.W, q.X)
         Dim m4 = OpenTK.Mathematics.Matrix4.CreateFromQuaternion(openTkQuat)
-        Dim m As New NiflySharp.Structs.Matrix33()
-        m.M11 = m4.M11 : m.M12 = m4.M12 : m.M13 = m4.M13
-        m.M21 = m4.M21 : m.M22 = m4.M22 : m.M23 = m4.M23
-        m.M31 = m4.M31 : m.M32 = m4.M32 : m.M33 = m4.M33
+        Dim m As New NiflySharp.Structs.Matrix33 With {
+            .M11 = m4.M11, 
+        .M12 = m4.M12, 
+        .M13 = m4.M13,
+            .M21 = m4.M21, 
+        .M22 = m4.M22, 
+        .M23 = m4.M23,
+            .M31 = m4.M31, 
+        .M32 = m4.M32, 
+        .M33 = m4.M33
+        }
         Return m
     End Function
 

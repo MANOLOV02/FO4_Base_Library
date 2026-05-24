@@ -429,7 +429,7 @@ Public Class PreviewControl
     Public Sub New()
         Me.New(New GLControlSettings With {
         .API = ContextAPI.OpenGL,
-        .APIVersion = New Version(4, 4),
+        .APIVersion = New Version(4, 3),
         .Flags = ContextFlags.ForwardCompatible,
         .Profile = ContextProfile.Core
     })
@@ -590,7 +590,7 @@ Public Class PreviewControl
             ' Empty DirtyShapes (default) means "all shapes" (back-compat single-actor flow).
             For Each mesh In Model.meshes
                 If Not intent.IsShapeDirty(mesh.MeshData.Shape) Then Continue For
-                Dim meshSkel As SkeletonInstance = If(intent.SkeletonResolver IsNot Nothing, intent.SkeletonResolver.ResolveFor(mesh.MeshData.Shape), Nothing)
+                Dim meshSkel As SkeletonInstance = intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape)
                 ' Pose is implicit in the SkeletonInstance: the caller applied it via ApplyPose.
                 SkinningHelper.RecomputeGPUBoneMatrices(
                     mesh.MeshData.Shape, mesh.MeshData.Meshgeometry,
@@ -652,7 +652,7 @@ Public Class PreviewControl
     ''' lives in the SkeletonInstance(s) and gets re-applied by PrepareForShapes after
     ''' cloth-inject (idempotent — guarantees DeltaTransforms reflect the requested pose
     ''' even when cloth-inject re-creates bones).</summary>
-    Private Sub PipelineStep_Skeleton(intent As RenderIntent)
+    Private Shared Sub PipelineStep_Skeleton(intent As RenderIntent)
         If intent.SkeletonResolver IsNot Nothing Then
             intent.SkeletonResolver.ResolveSkeleton(intent.Shapes)
         Else
@@ -1211,7 +1211,8 @@ Public Class PreviewControl
         _ticksSinceLastPresent += 1
         Dim safetyDue As Boolean = (_ticksSinceLastPresent >= SafetyRepaintTicks)
         If safetyDue Then
-            Dim isCurrent As Boolean = False
+            Dim isCurrent As Boolean
+
             Try
                 isCurrent = (Me.Context IsNot Nothing AndAlso Me.Context.IsCurrent)
             Catch
@@ -1742,7 +1743,7 @@ Public Class PreviewModel
                                                              Dim m = mats(i)
                                                              Dim wp = Vector3d.TransformPosition(lv(i), m)
                                                              posF(i) = New Vector3(CSng(wp.X), CSng(wp.Y), CSng(wp.Z))
-                                                             Dim nm3 As Matrix3d = New Matrix3d(m)
+                                                             Dim nm3 As New Matrix3d(m)
                                                              nm3.Invert()
                                                              nm3.Transpose()
                                                              If isMSN Then
@@ -1859,7 +1860,7 @@ Public Class PreviewModel
 
                     If cpuSkin Then
                         Dim m = sparseMats(i)
-                        Dim nm3 As Matrix3d = New Matrix3d(m)
+                        Dim nm3 As New Matrix3d(m)
                         nm3.Invert()
                         nm3.Transpose()
 
@@ -2845,7 +2846,7 @@ Public Class PreviewModel
         Try
             ' 1) Obtener shape + geometría skinned (polimórfico via IShapeGeometry).
             If IsNothing(shape.NifShape) Then Return Nothing
-            Dim skel As SkeletonInstance = If(resolver IsNot Nothing, resolver.ResolveFor(shape), Nothing)
+            Dim skel As SkeletonInstance = resolver?.ResolveFor(shape)
             Dim geom = SkinningHelper.ExtractSkinnedGeometry(shape, SingleBoneSkinning, RecalculateNormals, skel)
 
             ' 2) Rellenar MeshData con la geometría final

@@ -255,7 +255,7 @@ Public Module CraftingRecordParsers
                 Case "DESC"
                     o.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "MODL"
-                    If o.ModelPath = "" Then o.ModelPath = sr.AsString
+                    If o.ModelPath = "" Then o.ModelPath = sr.AsStringGeneral
                 Case "LNAM"
                     o.LooseModFormID = ResolveFID(rec, sr, pluginManager)
                 Case "NAM1"
@@ -273,7 +273,7 @@ Public Module CraftingRecordParsers
                         Next
                     End If
                 Case "FLTR"
-                    o.Filter = sr.AsString
+                    o.Filter = sr.AsStringGeneral
                 Case "DATA"
                     ParseOMOD_DATA(sr, rec, pluginManager, o)
             End Select
@@ -536,7 +536,7 @@ Public Module CraftingRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "MNAM"
-                    m.MaterialName = sr.AsString
+                    m.MaterialName = sr.AsStringGeneral
                 Case "PNAM"
                     m.ParentFormID = ResolveFID(rec, sr, pluginManager)
                 Case "CNAM"
@@ -559,7 +559,7 @@ Public Module CraftingRecordParsers
                 Case "HNAM"
                     m.HavokImpactDataSetFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ANAM"
-                    m.BreakableFX = sr.AsString
+                    m.BreakableFX = sr.AsStringGeneral
             End Select
         Next
 

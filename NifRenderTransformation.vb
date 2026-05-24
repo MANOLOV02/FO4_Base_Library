@@ -127,7 +127,7 @@ Public Class Transform_Class
     Public Shared Function GetGlobalTransform(shape As INiShape, Current_nif As Nifcontent_Class_Manolo) As Transform_Class
         If shape Is Nothing Then Return New Transform_Class()
 
-        Dim globalTransform As Transform_Class = New Transform_Class(shape)
+        Dim globalTransform As New Transform_Class(shape)
         Dim current As NiNode = TryCast(Current_nif.GetParentNode(shape), NiNode)
 
         While current IsNot Nothing

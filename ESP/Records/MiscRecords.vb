@@ -260,7 +260,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : a.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If a.ModelPath = "" Then a.ModelPath = sr.AsString
+                Case "MODL" : If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral
                 Case "ATTX" : a.ActivateTextOverride = ResolveStr(rec, sr, pluginManager)
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, a.KeywordFormIDs)
                 Case "PNAM"
@@ -295,7 +295,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : s.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsString
+                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsStringGeneral
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         s.MaxAngle = BitConverter.ToSingle(sr.Data, 0)
@@ -321,7 +321,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : d.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If d.ModelPath = "" Then d.ModelPath = sr.AsString
+                Case "MODL" : If d.ModelPath = "" Then d.ModelPath = sr.AsStringGeneral
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, d.KeywordFormIDs)
                 Case "SNAM" : d.OpenSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ANAM" : d.CloseSoundFormID = ResolveFID(rec, sr, pluginManager)
@@ -343,7 +343,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : f.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If f.ModelPath = "" Then f.ModelPath = sr.AsString
+                Case "MODL" : If f.ModelPath = "" Then f.ModelPath = sr.AsStringGeneral
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, f.KeywordFormIDs)
                 Case "NTRM" : f.NativeTerminalFormID = ResolveFID(rec, sr, pluginManager)
                 Case "FNAM"
@@ -373,7 +373,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : m.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If m.ModelPath = "" Then m.ModelPath = sr.AsString
+                Case "MODL" : If m.ModelPath = "" Then m.ModelPath = sr.AsStringGeneral
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, m.KeywordFormIDs)
                 Case "SNAM" : m.LoopingSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "DATA"
@@ -390,7 +390,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : t.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If t.ModelPath = "" Then t.ModelPath = sr.AsString
+                Case "MODL" : If t.ModelPath = "" Then t.ModelPath = sr.AsStringGeneral
                 Case "PFIG" : t.IngredientFormID = ResolveFID(rec, sr, pluginManager)
                 Case "SNAM" : t.HarvestSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "PFPC"
@@ -416,7 +416,7 @@ Public Module MiscRecordParsers
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "MODL" : If g.ModelPath = "" Then g.ModelPath = sr.AsString
+                Case "MODL" : If g.ModelPath = "" Then g.ModelPath = sr.AsStringGeneral
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 5 Then
                         g.Density = sr.Data(0) : g.MinSlope = sr.Data(1) : g.MaxSlope = sr.Data(2)
@@ -436,7 +436,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : t.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If t.ModelPath = "" Then t.ModelPath = sr.AsString
+                Case "MODL" : If t.ModelPath = "" Then t.ModelPath = sr.AsStringGeneral
                 Case "NAM0" : t.HeaderText = ResolveStr(rec, sr, pluginManager)
                 Case "WNAM" : t.WelcomeText = ResolveStr(rec, sr, pluginManager)
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, t.KeywordFormIDs)
@@ -483,7 +483,7 @@ Public Module MiscRecordParsers
                 Case "FULL" : m.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "DESC" : m.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "NNAM" : m.ShortTitle = ResolveStr(rec, sr, pluginManager)
-                Case "SNAM" : m.SWFPath = sr.AsString
+                Case "SNAM" : m.SWFPath = sr.AsStringGeneral
                 Case "QNAM" : m.OwnerQuestFormID = ResolveFID(rec, sr, pluginManager)
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
@@ -511,7 +511,7 @@ Public Module MiscRecordParsers
                 Case "DESC" : l.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "NNAM" : l.LoadingNIFFormID = ResolveFID(rec, sr, pluginManager)
                 Case "TNAM" : l.TransformFormID = ResolveFID(rec, sr, pluginManager)
-                Case "MOD2" : l.CameraPath = sr.AsString
+                Case "MOD2" : l.CameraPath = sr.AsStringGeneral
             End Select
         Next
 
@@ -523,7 +523,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : s.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsString
+                Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsStringGeneral
             End Select
         Next
         Return s
@@ -546,7 +546,7 @@ Public Module MiscRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL" : t.FullName = ResolveStr(rec, sr, pluginManager)
-                Case "MODL" : If t.ModelPath = "" Then t.ModelPath = sr.AsString
+                Case "MODL" : If t.ModelPath = "" Then t.ModelPath = sr.AsStringGeneral
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, t.KeywordFormIDs)
                 Case "VNAM" : t.VoiceTypeFormID = ResolveFID(rec, sr, pluginManager)
             End Select
@@ -558,7 +558,7 @@ Public Module MiscRecordParsers
         Dim a As New ADDN_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "MOD2" : If a.ModelPath = "" Then a.ModelPath = sr.AsString
+                Case "MODL" : If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral  ' FO4 ADDN model is wbGenericModel→MODL (wbDefinitionsFO4.pas:8149), not MOD2.
                 Case "DATA"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then a.NodeIndex = BitConverter.ToUInt32(sr.Data, 0)
                 Case "SNAM" : a.SoundFormID = ResolveFID(rec, sr, pluginManager)
@@ -572,8 +572,8 @@ Public Module MiscRecordParsers
         Dim a As New ANIO_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
-                Case "MODL" : If a.ModelPath = "" Then a.ModelPath = sr.AsString
-                Case "BNAM" : a.UnloadEvent = sr.AsString
+                Case "MODL" : If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral
+                Case "BNAM" : a.UnloadEvent = sr.AsStringGeneral
             End Select
         Next
         Return a

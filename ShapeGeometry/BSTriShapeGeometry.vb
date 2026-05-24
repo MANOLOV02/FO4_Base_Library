@@ -1,4 +1,4 @@
-Imports NiflySharp
+﻿Imports NiflySharp
 Imports NiflySharp.Blocks
 Imports NiflySharp.Structs
 Imports SysHalf = System.Half
@@ -39,8 +39,8 @@ Public Class BSTriShapeGeometry
     Private _syntheticSkinning As ShapeSkinningData? = Nothing
 
     Public Sub New(tri As BSTriShape, nif As Nifcontent_Class_Manolo)
-        If tri Is Nothing Then Throw New ArgumentNullException(NameOf(tri))
-        If nif Is Nothing Then Throw New ArgumentNullException(NameOf(nif))
+        ArgumentNullException.ThrowIfNull(tri)
+        ArgumentNullException.ThrowIfNull(nif)
         _tri = tri
         _nif = nif
     End Sub

@@ -83,7 +83,7 @@ Public Class SingleInstanceSkeletonResolver
     Private ReadOnly _instance As SkeletonInstance
 
     Public Sub New(instance As SkeletonInstance)
-        If instance Is Nothing Then Throw New ArgumentNullException(NameOf(instance))
+        ArgumentNullException.ThrowIfNull(instance)
         _instance = instance
     End Sub
 
@@ -119,7 +119,7 @@ Public Class MultiInstanceSkeletonResolver
     ''' <paramref name="fallback"/> (or <see cref="SkeletonInstance.Default"/> if Nothing).</param>
     ''' <param name="fallback">Optional default instance for shapes not present in <paramref name="map"/>.</param>
     Public Sub New(map As IReadOnlyDictionary(Of IRenderableShape, SkeletonInstance), Optional fallback As SkeletonInstance = Nothing)
-        If map Is Nothing Then Throw New ArgumentNullException(NameOf(map))
+        ArgumentNullException.ThrowIfNull(map)
         _map = map
         _fallback = fallback
     End Sub

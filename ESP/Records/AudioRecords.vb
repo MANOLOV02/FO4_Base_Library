@@ -187,7 +187,7 @@ Public Module AudioRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "NNAM"
-                    s.Notes = sr.AsString
+                    s.Notes = sr.AsStringGeneral
                 Case "CNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         s.DescriptorType = BitConverter.ToUInt32(sr.Data, 0)
@@ -336,9 +336,9 @@ Public Module AudioRecordParsers
                         m.FadeOut = BitConverter.ToSingle(sr.Data, 0)
                     End If
                 Case "ANAM"
-                    m.TrackFileName = sr.AsString
+                    m.TrackFileName = sr.AsStringGeneral
                 Case "BNAM"
-                    m.FinaleFileName = sr.AsString
+                    m.FinaleFileName = sr.AsStringGeneral
                 Case "LNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         m.LoopBegins = BitConverter.ToSingle(sr.Data, 0)

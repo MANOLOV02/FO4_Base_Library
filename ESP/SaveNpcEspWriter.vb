@@ -55,6 +55,23 @@ Public Module SaveNpcEspWriter
         Public OriginalHeader As RecordHeader
     End Class
 
+    ''' <summary>One OTFT (outfit) record to write into the same plugin as the NPC override(s).
+    ''' Authored in the Edit Outfit "Create" tab. Two flavours:
+    '''   • NEW (IsOverride=False): a brand-new outfit owned by this plugin. <see cref="FormID"/> is
+    '''     the caller's PROVISIONAL sentinel (high byte 0xFF); the writer assigns the real plugin
+    '''     self-index FormID ((masterCount &lt;&lt; 24) | objIndex, objIndex≥0x800 per xEdit) and remaps
+    '''     every reference to it (notably the NPC.DOFT that points at the provisional).
+    '''   • OVERRIDE (IsOverride=True): edit of an existing OTFT keeping its EditorID. <see cref="FormID"/>
+    '''     is that record's real global FormID; emitted as an override (master index remapped).
+    ''' Body = EDID + INAM (array of ARMO/LVLI FormIDs, remapped against the new MAST list).</summary>
+    Public Class OtftRecordEntry
+        ''' <summary>New: provisional sentinel (0xFF…). Override: the existing OTFT's real global FormID.</summary>
+        Public FormID As UInteger
+        Public EditorID As String = ""
+        Public ItemArmoFormIDs As New List(Of UInteger)
+        Public IsOverride As Boolean
+    End Class
+
     ''' <summary>Result of a save operation.</summary>
     Public Class SaveResult
         Public OutputPath As String
@@ -93,13 +110,15 @@ Public Module SaveNpcEspWriter
                                        entries As List(Of NpcOverrideEntry),
                                        existingRecords As List(Of PluginRecord),
                                        existingMasters As List(Of String),
-                                       pluginManager As PluginManager) As SaveResult
+                                       pluginManager As PluginManager,
+                                       Optional outfitEntries As List(Of OtftRecordEntry) = Nothing) As SaveResult
 
         If String.IsNullOrWhiteSpace(outputPath) Then Throw New ArgumentException("outputPath is empty.", NameOf(outputPath))
         If entries Is Nothing Then entries = New List(Of NpcOverrideEntry)()
         If existingRecords Is Nothing Then existingRecords = New List(Of PluginRecord)()
         If existingMasters Is Nothing Then existingMasters = New List(Of String)()
         If pluginManager Is Nothing Then Throw New ArgumentException("pluginManager is required for FormID resolution.", NameOf(pluginManager))
+        If outfitEntries Is Nothing Then outfitEntries = New List(Of OtftRecordEntry)()
 
         Dim gameMaster = MasterFileNamePublic(game)
 
@@ -115,6 +134,14 @@ Public Module SaveNpcEspWriter
         For Each rec In existingRecords
             allFormIDs.Add(rec.Header.FormID)
             CollectFormIDsFromSubrecords(rec, existingMasters, pluginManager, allFormIDs)
+        Next
+        ' OTFT outfits: the INAM items (ARMO/LVLI) bring in masters; an OVERRIDE entry also brings in
+        ' its own record's master. NEW entries are owned by this plugin (no external master).
+        For Each oe In outfitEntries
+            For Each armoFid In oe.ItemArmoFormIDs
+                If armoFid <> 0UI Then allFormIDs.Add(armoFid)
+            Next
+            If oe.IsOverride AndAlso oe.FormID <> 0UI Then allFormIDs.Add(oe.FormID)
         Next
 
         ' ====================================================================
@@ -206,15 +233,39 @@ Public Module SaveNpcEspWriter
         ' "Self" master index (records owned by THIS plugin) = sortedMasters.Count.
         Dim selfMasterIdx As Integer = sortedMasters.Count
 
+        ' Assign real self-index FormIDs to NEW OTFT outfits. The caller handed each NEW entry a
+        ' PROVISIONAL sentinel (0xFF high byte); the real FormID is (selfMasterIdx << 24) | objIndex,
+        ' objIndex starting at NEXT_OBJECT_ID_DEFAULT (0x800) — the FO4/xEdit new-record convention.
+        ' draftRemap maps provisional → real so the remapper rewrites BOTH the OTFT record header AND
+        ' every reference to it (notably the NPC.DOFT pointing at the provisional FormID). OVERRIDE
+        ' entries keep their real FormID and resolve through the normal master-remap path.
+        Dim draftRemap As New Dictionary(Of UInteger, UInteger)
+        Dim nextSelfObjIndex As UInteger = NEXT_OBJECT_ID_DEFAULT
+        For Each oe In outfitEntries
+            If oe.IsOverride Then Continue For
+            draftRemap(oe.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
+            nextSelfObjIndex += 1UI
+        Next
+
         Dim remapper As NpcSubrecordWriter.FormIdRemapper =
             Function(globalFormID As UInteger) As UInteger
                 If globalFormID = 0UI Then Return 0UI
+                ' NEW OTFT provisional → real self FormID. Checked FIRST: the 0xFF high byte is not a
+                ' resolvable master, so GetOriginatingPluginName would fail to map it otherwise.
+                Dim mappedDraft As UInteger
+                If draftRemap.TryGetValue(globalFormID, mappedDraft) Then Return mappedDraft
                 Dim pname = pluginManager.GetOriginatingPluginName(globalFormID)
                 If String.IsNullOrEmpty(pname) Then
                     ' FormID master byte not resolvable to a loaded plugin. Best effort: keep raw.
                     Return globalFormID
                 End If
-                Dim localObjectID = globalFormID And &HFFFFFFUI
+                ' Object ID width depends on the SOURCE encoding: an ESL/light global is
+                ' 0xFE | (lightSlot << 12) | object12 — masking 0xFFFFFF would keep the light-slot bits
+                ' and corrupt the reference, so take only the low 12 bits. Full sources use the low 24.
+                ' The OUTPUT is always full-form (newIdx << 24 | object) — xEdit references ESL masters
+                ' the same way (LoadOrderFileIDtoFileFileID emits CreateFull(i) on FO4).
+                Dim isLightSource As Boolean = ((globalFormID >> 24) And &HFFUI) = &HFEUI
+                Dim localObjectID = If(isLightSource, globalFormID And &HFFFUI, globalFormID And &HFFFFFFUI)
                 Dim newIdx As Integer
                 If masterIndexLookup.TryGetValue(pname, newIdx) Then
                     Return (CUInt(newIdx) << 24) Or localObjectID
@@ -266,15 +317,30 @@ Public Module SaveNpcEspWriter
             recordBuffers.Add(SerializeExistingRecord(existing, existingMasters, pluginManager, remapper))
         Next
 
-        ' ====================================================================
-        ' Step 5: Wrap in GRUP NPC_ container.
-        ' ====================================================================
-        Dim grupBytes = BuildNpcGrup(recordBuffers)
+        ' OTFT outfit records (Edit Outfit "Create" tab). Each emits as a top-level record: NEW ones
+        ' carry a self-index FormID (via draftRemap inside the remapper); OVERRIDE ones keep their real
+        ' FormID. INAM items are remapped against the new MAST list.
+        Dim otftBuffers As New List(Of Byte())
+        For Each oe In outfitEntries
+            otftBuffers.Add(SerializeOtftRecord(oe, remapper, game))
+        Next
 
         ' ====================================================================
-        ' Step 6: Build TES4 header + emit final stream.
+        ' Step 5: Wrap each record type in its own top-level GRUP. OTFT before NPC_ — the NPCs' DOFT
+        ' references the outfits, so emit the referenced records first (order isn't required for FormID
+        ' resolution — the engine maps globally — but it keeps the file tidy / xEdit-friendly).
         ' ====================================================================
-        Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, recordBuffers.Count, gameMaster, Path.GetDirectoryName(outputPath))
+        Dim grupOtftBytes As Byte() = If(otftBuffers.Count > 0, BuildGrup("OTFT", otftBuffers), Array.Empty(Of Byte)())
+        Dim grupNpcBytes = BuildGrup("NPC_", recordBuffers)
+
+        ' ====================================================================
+        ' Step 6: Build TES4 header + emit final stream. numRecords counts EVERY record (NPC_ + OTFT).
+        ' nextObjectId = first free self object index after the new OTFTs so the CK won't re-hand out an
+        ' ID we already consumed (selfMasterIdx records start at NEXT_OBJECT_ID_DEFAULT).
+        ' ====================================================================
+        Dim nextObjectId As UInteger = NEXT_OBJECT_ID_DEFAULT + CUInt(draftRemap.Count)
+        Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count
+        Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
         ' Step 7: Atomic write (.tmp + rename).
@@ -287,7 +353,8 @@ Public Module SaveNpcEspWriter
         Dim tmpPath = outputPath & ".tmp"
         Using fs As FileStream = File.Create(tmpPath)
             fs.Write(tes4Bytes, 0, tes4Bytes.Length)
-            fs.Write(grupBytes, 0, grupBytes.Length)
+            If grupOtftBytes.Length > 0 Then fs.Write(grupOtftBytes, 0, grupOtftBytes.Length)
+            fs.Write(grupNpcBytes, 0, grupNpcBytes.Length)
         End Using
 
         If File.Exists(outputPath) Then File.Delete(outputPath)
@@ -498,16 +565,57 @@ Public Module SaveNpcEspWriter
             "record types this writer does not handle.")
     End Function
 
-    Private Function BuildNpcGrup(recordBuffers As List(Of Byte())) As Byte()
-        ' GRUP header (24 bytes): Signature "GRUP" + GroupSize (incl. header) + Label "NPC_" as u32
-        ' + GroupType (0 = top-level) + Stamp + Unknown.
+    ''' <summary>Serialize one OTFT (outfit) record: 24-byte header + EDID + INAM (array of remapped
+    ''' ARMO/LVLI FormIDs). The record FormID is remapped (NEW → self-index via draftRemap; OVERRIDE →
+    ''' master remap). INAM is omitted when there are no items.</summary>
+    Private Function SerializeOtftRecord(entry As OtftRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper, game As Config_App.Game_Enum) As Byte()
+        Dim body As Byte()
+        Using bms As New MemoryStream()
+            Using bw As New BinaryWriter(bms)
+                ' EDID (ZSTRING, cp1252 — non-translatable, mirrors NpcSubrecordWriter.EmitEdid).
+                Dim edidBytes = PluginEncodingSettings.EncodeGeneral(If(entry.EditorID, ""))
+                WriteSubrecordHeader(bw, "EDID", edidBytes.Length + 1)
+                bw.Write(edidBytes)
+                bw.Write(CByte(0))
+                ' INAM — array of u32 item FormIDs (ARMO/ARMA/LVLI), remapped. Zero entries skipped.
+                Dim items = entry.ItemArmoFormIDs.Where(Function(f) f <> 0UI).ToList()
+                If items.Count > 0 Then
+                    WriteSubrecordHeader(bw, "INAM", items.Count * 4)
+                    For Each fid In items
+                        bw.Write(remapper(fid))
+                    Next
+                End If
+            End Using
+            body = bms.ToArray()
+        End Using
+
+        Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
+        Using ms As New MemoryStream()
+            Using bw As New BinaryWriter(ms)
+                bw.Write(Encoding.ASCII.GetBytes("OTFT"))   ' Signature
+                bw.Write(CUInt(body.Length))                ' DataSize
+                bw.Write(0UI)                               ' Flags (uncompressed; nothing to preserve)
+                bw.Write(remapper(entry.FormID))            ' FormID (self-index for new / master-remap for override)
+                bw.Write(0UI)                               ' VCS1
+                bw.Write(recordVersion)                     ' Version
+                bw.Write(0US)                               ' VCS2
+                bw.Write(body)
+            End Using
+            Return ms.ToArray()
+        End Using
+    End Function
+
+    Private Function BuildGrup(label As String, recordBuffers As List(Of Byte())) As Byte()
+        ' GRUP header (24 bytes): Signature "GRUP" + GroupSize (incl. header) + Label (record-type
+        ' signature) as u32 + GroupType (0 = top-level) + Stamp + Unknown.
+        If label Is Nothing OrElse label.Length <> 4 Then Throw New ArgumentException($"GRUP label must be 4 chars: '{label}'.", NameOf(label))
         Using ms As New MemoryStream()
             Using bw As New BinaryWriter(ms)
                 Dim contentSize = recordBuffers.Sum(Function(b) b.Length)
                 Dim totalSize = 24 + contentSize
                 bw.Write(Encoding.ASCII.GetBytes("GRUP"))
                 bw.Write(CUInt(totalSize))
-                bw.Write(Encoding.ASCII.GetBytes("NPC_"))   ' Label u32 = signature bytes
+                bw.Write(Encoding.ASCII.GetBytes(label))     ' Label u32 = record-type signature bytes
                 bw.Write(0)                                  ' GroupType = 0 (top-level)
                 bw.Write(0UI)                                ' Stamp
                 bw.Write(0UI)                                ' Unknown
@@ -524,6 +632,7 @@ Public Module SaveNpcEspWriter
                                      lightMaster As Boolean,
                                      masters As List(Of String),
                                      numContentRecords As Integer,
+                                     nextObjectId As UInteger,
                                      gameMaster As String,
                                      outputDir As String) As Byte()
         Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
@@ -537,9 +646,11 @@ Public Module SaveNpcEspWriter
                 bw.Write(hedrVersion)
                 ' numRecords reported by xEdit = total records in plugin INCLUDING TES4 itself.
                 ' Bethesda actually counts only non-TES4 records here; xEdit/CK both compute it
-                ' from the GRUP content. We follow the CK convention (count NPC_ records only).
+                ' from the GRUP content. We count every content record (NPC_ + OTFT).
                 bw.Write(CUInt(numContentRecords))
-                bw.Write(NEXT_OBJECT_ID_DEFAULT)
+                ' Next free self object index — must exceed any self-index FormID we assigned to new
+                ' records (OTFT outfits start at NEXT_OBJECT_ID_DEFAULT) so the CK won't re-issue one.
+                bw.Write(nextObjectId)
 
                 ' CNAM (author, ZSTRING). xEdit treats TES4.CNAM as wbString (translatable).
                 ' Literal is ASCII-only but route via central encoder for convention consistency.
