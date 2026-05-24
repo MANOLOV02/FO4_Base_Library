@@ -172,9 +172,12 @@ Public Module PluginEncodingSettings
             End Select
             _languageMapPrimary = primary
 
-            ' wbInterface.pas:24296 — wbEncodingTrans := wbEncoding (cp1252)
-            ' (xeInit.pas:1323 will overwrite this after SetLanguage is called)
-            _translatable = _general
+            ' xEdit's wbInterface init sets wbEncodingTrans := wbEncoding (cp1252), but xeInit.pas:1323
+            ' ALWAYS overwrites it with wbEncodingForLanguage(wbLanguage, False) — so the cp1252 value
+            ' is never observable in practice. We seed _translatable with the primary default (UTF-8
+            ' for FO4) so that any access BEFORE SetLanguage runs gets the correct default rather than
+            ' cp1252. SetLanguage (called from app startup) refines it from the INI's sLanguage.
+            _translatable = _translatableDefaultPrimary
 
             _initialized = True
         End SyncLock
@@ -188,17 +191,22 @@ Public Module PluginEncodingSettings
     ''' Uses the PRIMARY map (wbLEncoding[False]) which for FO4 contains only {'en' → 1252}.
     ''' Any other language token (incl. "spanish", "russian", "english") falls through to
     ''' _translatableDefaultPrimary = UTF-8.
+    '''
+    ''' Mirrors xeInit.pas:1323 which runs UNCONDITIONALLY: an empty/missing sLanguage still goes
+    ''' through wbEncodingForLanguage("", False), which fails the Find and returns the primary
+    ''' default (UTF-8 for FO4). So an empty language MUST set _translatable = UTF-8, NOT leave it
+    ''' on a stale cp1252. (Earlier this early-returned, leaving cp1252 → broke Korean/Chinese
+    ''' plugins when the user's INI had no sLanguage entry.)
     ''' </summary>
     Public Sub SetLanguage(language As String)
         EnsureInitialized()
 
         Dim normalized = NormalizeLanguage(language)
-        If normalized = "" Then Return
 
         SyncLock _syncRoot
-            ' Mirror of wbEncodingForLanguage(normalized, False) inline
+            ' Mirror of wbEncodingForLanguage(normalized, False) inline. Empty token → Find miss → default.
             Dim cp As Integer = 0
-            If _languageMapPrimary IsNot Nothing AndAlso _languageMapPrimary.TryGetValue(normalized, cp) Then
+            If normalized <> "" AndAlso _languageMapPrimary IsNot Nothing AndAlso _languageMapPrimary.TryGetValue(normalized, cp) Then
                 _translatable = If(cp = 65001, _utf8, MBCSEncoding(cp))
             Else
                 _translatable = _translatableDefaultPrimary

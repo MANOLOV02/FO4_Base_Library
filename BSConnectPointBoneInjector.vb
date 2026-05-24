@@ -189,34 +189,48 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
 
         Dim added As Integer = 0
         For Each sock In sockets
-            If sock Is Nothing OrElse String.IsNullOrEmpty(sock.Name) Then Continue For
-
-            Dim cName = TryGetSocketCounterpartName(sock.Name)
-            If String.IsNullOrEmpty(cName) Then Continue For
-
-            ' Idempotencia: si C-X ya está en el dict, no tocar.
-            If targetSkeleton.SkeletonDictionary.ContainsKey(cName) Then Continue For
-
-            ' Parent bone — donde el C-X se ancla en el actor.
-            If String.IsNullOrEmpty(sock.ParentBoneName) Then Continue For
-            Dim parentBone As HierarchiBone_class = Nothing
-            If Not targetSkeleton.SkeletonDictionary.TryGetValue(sock.ParentBoneName, parentBone) Then
-                Continue For
-            End If
-
-            Dim socketLocalT As Transform_Class = SocketToTransform(sock)
-            Dim nuevo As New HierarchiBone_class With {
-                .BoneName = cName,
-                .Parent = parentBone,
-                .DeltaTransform = Nothing,
-                .OriginalLocaLTransform = socketLocalT
-            }
-            parentBone.Childrens.Add(nuevo)
-            targetSkeleton.SkeletonDictionary.Add(cName, nuevo)
-            targetSkeleton.InjectedBones.Add(cName)
-            added += 1
+            Dim before = targetSkeleton.SkeletonDictionary.Count
+            Dim cn = EnsureSocketCounterpartBone(sock, targetSkeleton)
+            If Not String.IsNullOrEmpty(cn) AndAlso targetSkeleton.SkeletonDictionary.Count > before Then added += 1
         Next
         Return added
+    End Function
+
+    ''' <summary>Materializa el counterpart bone "C-X" de UN socket "P-X" en el targetSkeleton,
+    ''' anclado a socket.ParentBoneName con socket.LocalTransform. Idempotente: si C-X ya existe,
+    ''' devuelve su nombre sin recrear. Devuelve el nombre del bone C-X creado/existente, o "" si
+    ''' no se pudo (name sin prefix P-/P_, parent bone ausente en el skel, o skel inválido).
+    ''' <para>Extraído del loop de <see cref="MaterializeSocketsAsConnectPointBones"/> para poder
+    ''' materializar on-demand un único socket — caso FAKE-SKIN de chunks unskinned puros
+    ''' (ShapeBones=0) cuyo C-X no fue materializado por el bulk (orden) ni por el injector
+    ''' (early-exit con 0 bones). El caller pasa el socket EFECTIVO (post SOCKET-EFFECTIVE-OVERRIDE).</para></summary>
+    Public Shared Function EnsureSocketCounterpartBone(sock As BSConnectPointReader.ConnectPointInfo,
+                                                       targetSkeleton As SkeletonInstance) As String
+        If sock Is Nothing OrElse String.IsNullOrEmpty(sock.Name) Then Return ""
+        If targetSkeleton Is Nothing OrElse Not targetSkeleton.HasSkeleton Then Return ""
+
+        Dim cName = TryGetSocketCounterpartName(sock.Name)
+        If String.IsNullOrEmpty(cName) Then Return ""
+
+        ' Idempotencia: si C-X ya está en el dict, devolverlo sin recrear.
+        If targetSkeleton.SkeletonDictionary.ContainsKey(cName) Then Return cName
+
+        ' Parent bone — donde el C-X se ancla en el actor. Si falta, no se puede materializar.
+        If String.IsNullOrEmpty(sock.ParentBoneName) Then Return ""
+        Dim parentBone As HierarchiBone_class = Nothing
+        If Not targetSkeleton.SkeletonDictionary.TryGetValue(sock.ParentBoneName, parentBone) Then Return ""
+
+        Dim socketLocalT As Transform_Class = SocketToTransform(sock)
+        Dim nuevo As New HierarchiBone_class With {
+            .BoneName = cName,
+            .Parent = parentBone,
+            .DeltaTransform = Nothing,
+            .OriginalLocaLTransform = socketLocalT
+        }
+        parentBone.Childrens.Add(nuevo)
+        targetSkeleton.SkeletonDictionary.Add(cName, nuevo)
+        targetSkeleton.InjectedBones.Add(cName)
+        Return cName
     End Function
 
     ''' <summary>Composición Transform_Class desde una BSConnectPointReader.ConnectPointInfo

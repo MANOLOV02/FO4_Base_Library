@@ -84,6 +84,53 @@ Public Module OutfitResolver
         Return SampleOutfitWithKeywords(otftFormID, pluginManager, warnings).Select(Function(p) p.ArmoFormID).ToList()
     End Function
 
+    ''' <summary>Determinista: enumera TODOS los ARMO terminales posibles de un OTFT, tratando cada
+    ''' LVLI como UseAll e ignorando ChanceNone. Sin RNG — pensado para filtros y listas estables
+    ''' (¿este outfit puede producir alguna pieza válida para la raza X?), NO para el render (que usa
+    ''' <see cref="SampleOutfitWithKeywords"/> con sampleo aleatorio). Cada LVLI se expande una sola
+    ''' vez (visited permanente) para evitar blow-up exponencial en cadenas anidadas/diamante; los
+    ''' ARMO terminales se deduplican por FormID.</summary>
+    Public Function EnumerateAllTerminalArmos(otftFormID As UInteger,
+                                              pluginManager As PluginManager) As List(Of UInteger)
+        Dim result As New List(Of UInteger)
+        If otftFormID = 0UI OrElse pluginManager Is Nothing Then Return result
+
+        Dim rec = pluginManager.GetRecord(otftFormID)
+        If rec Is Nothing OrElse rec.Header.Signature <> "OTFT" Then Return result
+
+        Dim otft = RecordParsers.ParseOTFT(rec, pluginManager)
+        Dim seen As New HashSet(Of UInteger)        ' ARMO terminales ya emitidos (dedup)
+        Dim expandedLvli As New HashSet(Of UInteger) ' LVLI ya expandidas (anti-ciclo + anti-blowup)
+        For Each itemFormID In otft.ItemFormIDs
+            EnumerateItemAllTerminal(itemFormID, pluginManager, expandedLvli, result, seen)
+        Next
+        Return result
+    End Function
+
+    Private Sub EnumerateItemAllTerminal(formID As UInteger,
+                                         pluginManager As PluginManager,
+                                         expandedLvli As HashSet(Of UInteger),
+                                         result As List(Of UInteger),
+                                         seen As HashSet(Of UInteger))
+        If formID = 0UI Then Return
+        Dim rec = pluginManager.GetRecord(formID)
+        If rec Is Nothing Then Return
+
+        Select Case rec.Header.Signature
+            Case "ARMO"
+                Dim terminalID = ResolveTerminalArmorFormID(formID, pluginManager)
+                If terminalID <> 0UI AndAlso seen.Add(terminalID) Then result.Add(terminalID)
+
+            Case "LVLI"
+                ' Expand-once: si ya la recorrimos por otra rama, sus descendientes ya están en result.
+                If Not expandedLvli.Add(formID) Then Return
+                Dim lvli = RecordParsers.ParseLVLI(rec, pluginManager)
+                For Each entry In lvli.Entries
+                    EnumerateItemAllTerminal(entry.FormID, pluginManager, expandedLvli, result, seen)
+                Next
+        End Select
+    End Sub
+
     ''' <summary>Resuelve la ARMO terminal siguiendo la cadena de templates CNAM.</summary>
     Public Function ResolveTerminalArmorFormID(armoFormID As UInteger,
                                                pluginManager As PluginManager,
