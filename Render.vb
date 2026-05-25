@@ -1119,10 +1119,24 @@ Public Class PreviewControl
     Public Sub GetSceneBounds(ByRef min As Vector3, ByRef max As Vector3)
         min = New Vector3(Single.MaxValue)
         max = New Vector3(Single.MinValue)
+        Dim anyVisible As Boolean = False
         For Each mesh In Model.meshes
+            ' Skip hidden shapes so the camera frames only what's actually drawn — mirror of the draw-time
+            ' skip (Render: MeshData.Shape Is Nothing OrElse RenderHide). Without this, hiding the body
+            ' (e.g. the Edit Outfit "piece only" preview, or "Render body" off) still framed the invisible
+            ' body AABB, so a small visible piece ended up zoomed as if the whole body were present.
+            If mesh.MeshData.Shape Is Nothing OrElse mesh.MeshData.Shape.RenderHide Then Continue For
             min = Vector3.ComponentMin(min, mesh.MeshData.Meshgeometry.Minv)
             max = Vector3.ComponentMax(max, mesh.MeshData.Meshgeometry.Maxv)
+            anyVisible = True
         Next
+        ' Fallback: if every shape is hidden, frame all meshes so the camera math doesn't degenerate.
+        If Not anyVisible Then
+            For Each mesh In Model.meshes
+                min = Vector3.ComponentMin(min, mesh.MeshData.Meshgeometry.Minv)
+                max = Vector3.ComponentMax(max, mesh.MeshData.Meshgeometry.Maxv)
+            Next
+        End If
     End Sub
     Public Sub CenterCamera()
         If Me.IsInDesignMode Then Return

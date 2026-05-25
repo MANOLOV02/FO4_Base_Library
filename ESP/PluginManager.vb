@@ -66,21 +66,7 @@ Public Class PluginManager
             Try
                 Dim reader As New PluginReader()
                 reader.Load(filePath)
-                _pluginIndex(reader.FileName) = Plugins.Count
-                Plugins.Add(reader)
-                ' Engine-faithful slot assignment: ESL → next light slot; everything else → next full
-                ' slot. Done BEFORE MergeRecords so this plugin's own records (self-refs) resolve via its
-                ' just-assigned slot, and master-refs resolve via earlier plugins' slots.
-                If reader.IsESL Then
-                    Dim ls = _lightSlotByName.Count
-                    _lightSlotByName(reader.FileName) = ls
-                    _nameByLightSlot(ls) = reader.FileName
-                Else
-                    Dim fsx = _fullSlotByName.Count
-                    _fullSlotByName(reader.FileName) = fsx
-                    _nameByFullSlot(fsx) = reader.FileName
-                End If
-                MergeRecords(reader)
+                IndexAndMergePlugin(reader)
             Catch ex As Exception
                 Logger.LogLazy(Function() $"[ESP] Failed to load {fileName}: {ex.Message}")
             End Try
@@ -88,6 +74,97 @@ Public Class PluginManager
 
         BuildTypeIndex()
     End Sub
+
+    ''' <summary>Append a loaded <see cref="PluginReader"/> as the next plugin in load order:
+    ''' record it in the name→index map, assign its engine-faithful FileID slot, and merge its
+    ''' records. Shared by <see cref="LoadAllPlugins"/> (batched: caller runs BuildTypeIndex once
+    ''' at the end) and <see cref="MergeOverridePlugin"/> (which rebuilds the type index itself).
+    ''' Slot assignment is done BEFORE MergeRecords so this plugin's own records (self-refs)
+    ''' resolve via its just-assigned slot, and master-refs resolve via earlier plugins' slots.</summary>
+    Private Sub IndexAndMergePlugin(reader As PluginReader)
+        _pluginIndex(reader.FileName) = Plugins.Count
+        Plugins.Add(reader)
+        AssignFileIdSlot(reader)
+        MergeRecords(reader)
+    End Sub
+
+    ''' <summary>Assign the engine-faithful FileID slot for a plugin: ESL → next light slot, full
+    ''' (ESM/ESP) → next full slot. Done BEFORE MergeRecords so self-refs resolve via this slot.
+    ''' Uses max-index+1 (not dict.Count) so it stays correct if a prior re-slot left a gap; at load
+    ''' time the dicts are dense so this equals Count (no behaviour change).</summary>
+    Private Sub AssignFileIdSlot(reader As PluginReader)
+        If reader.IsESL Then
+            Dim ls = NextSlotIndex(_nameByLightSlot)
+            _lightSlotByName(reader.FileName) = ls
+            _nameByLightSlot(ls) = reader.FileName
+        Else
+            Dim fsx = NextSlotIndex(_nameByFullSlot)
+            _fullSlotByName(reader.FileName) = fsx
+            _nameByFullSlot(fsx) = reader.FileName
+        End If
+    End Sub
+
+    ''' <summary>Next free slot index for a name-by-slot dict: max occupied index + 1 (0 when empty).
+    ''' Gap-safe so re-slotting (DropSlotAssignment) never reuses a vacated index.</summary>
+    Private Shared Function NextSlotIndex(nameBySlot As Dictionary(Of Integer, String)) As Integer
+        Dim maxIdx As Integer = -1
+        For Each k In nameBySlot.Keys
+            If k > maxIdx Then maxIdx = k
+        Next
+        Return maxIdx + 1
+    End Function
+
+    ''' <summary>Remove a plugin's slot assignment from BOTH the full and light dicts (by name). Used
+    ''' before re-assigning a slot when a plugin is re-mounted with a flipped ESM/ESL flag.</summary>
+    Private Sub DropSlotAssignment(name As String)
+        Dim f As Integer
+        If _fullSlotByName.TryGetValue(name, f) Then
+            _fullSlotByName.Remove(name)
+            _nameByFullSlot.Remove(f)
+        End If
+        Dim l As Integer
+        If _lightSlotByName.TryGetValue(name, l) Then
+            _lightSlotByName.Remove(name)
+            _nameByLightSlot.Remove(l)
+        End If
+    End Sub
+
+    ''' <summary>Mount an already-written plugin file at runtime as the top (last-wins) override,
+    ''' so <see cref="GetRecord"/> / <see cref="GetRecordsOfType"/> immediately reflect its records
+    ''' — the same picture the engine would show if the plugin loaded last in the load order. Used
+    ''' by NPC_Manager after Save ESP to re-read the just-saved NPC override without reloading the
+    ''' whole load order.
+    '''
+    ''' <para>New plugin name → appended as the last full/light FileID slot, records merged (last
+    ''' override wins). Already-loaded name (e.g. a second save to the same auto-gen plugin in the
+    ''' same session) → its reader is replaced in place and its FileID slot is re-derived from the
+    ''' new reader's ESM/ESL flag (so flipping Light-master between saves re-encodes its FormIDs
+    ''' correctly instead of leaving a stale full/light slot), then its records are re-merged as the
+    ''' top override. Always rebuilds the type index so GetRecordsOfType reflects the swapped record
+    ''' references. Returns the loaded reader.</para>
+    '''
+    ''' <para>Invariant: the plugin is treated as the winning override. For NPC_Manager's auto-gen
+    ''' plugins this holds (we just wrote it; it is conceptually last). Mounting a plugin that other
+    ''' active plugins override is out of scope — the caller's record wins, which matches the
+    ''' "show me what I just saved" preview intent.</para></summary>
+    Public Function MergeOverridePlugin(filePath As String) As PluginReader
+        Dim reader As New PluginReader()
+        reader.Load(filePath)
+        Dim existingIdx As Integer = -1
+        If _pluginIndex.TryGetValue(reader.FileName, existingIdx) Then
+            ' Re-save to a plugin already loaded this session: swap the reader, re-derive the FileID
+            ' slot (handles a flipped ESM/ESL flag — the slot dicts are name-keyed, so a stale
+            ' full-slot entry for a now-ESL plugin would mis-encode its FormIDs), then re-merge.
+            Plugins(existingIdx) = reader
+            DropSlotAssignment(reader.FileName)
+            AssignFileIdSlot(reader)
+            MergeRecords(reader)
+        Else
+            IndexAndMergePlugin(reader)
+        End If
+        BuildTypeIndex()
+        Return reader
+    End Function
 
     ''' <summary>Resolve a file-local FormID to a global FormID using the plugin's master list. The
     ''' global high byte follows the engine FileID scheme — full plugins use (fullSlot &lt;&lt; 24);

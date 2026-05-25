@@ -72,6 +72,42 @@ Public Module SaveNpcEspWriter
         Public IsOverride As Boolean
     End Class
 
+    ''' <summary>One LVLI (leveled item) record to write into the same plugin — a leveled list authored in
+    ''' the Edit Outfit editor's "New LVL…" flow. ALWAYS new (owned by this plugin): <see cref="FormID"/>
+    ''' is the caller's PROVISIONAL sentinel (high byte 0xFF), assigned a real self-index FormID by the
+    ''' writer exactly like a NEW <see cref="OtftRecordEntry"/>. Because every draft (OTFT + LVLI) is pre-
+    ''' assigned its real FormID in <c>draftRemap</c> BEFORE any record is serialized, references between
+    ''' drafts resolve through the single remapper regardless of emit order — an OTFT.INAM pointing at a
+    ''' draft LVLI, and a draft LVLI's LVLO pointing at another draft LVLI, both rewrite to the real
+    ''' self-index FormIDs. Body layout (wbDefinitionsFO4.pas:10352): EDID + OBND + LVLD + LVLM + LVLF +
+    ''' LLCT + N×LVLO (12 bytes each, wbDefinitionsCommon.pas:5704).</summary>
+    Public Class LvliRecordEntry
+        ''' <summary>NEW: provisional sentinel (0xFF…), rewritten to the real self-index FormID by the writer.
+        ''' OVERRIDE: the existing LVLI's real global FormID (master-remapped on emit), e.g. an LVLI authored in
+        ''' a prior save and re-preserved when updating the same plugin.</summary>
+        Public FormID As UInteger
+        Public EditorID As String = ""
+        ''' <summary>LVLD — whole-list chance of yielding nothing (0-100).</summary>
+        Public ChanceNone As Byte
+        ''' <summary>LVLM — Max Count (0 = unlimited).</summary>
+        Public MaxCount As Byte
+        ''' <summary>LVLF — packed flag byte (0x01 all-levels, 0x02 each-in-count, 0x04 use-all).</summary>
+        Public Flags As Byte
+        Public Entries As New List(Of LvliEntryData)
+        ''' <summary>True = override an existing LVLI (keep its real FormID + EditorID). False = brand-new
+        ''' (draft) list assigned a self-index FormID.</summary>
+        Public IsOverride As Boolean
+    End Class
+
+    ''' <summary>One LVLO entry inside an <see cref="LvliRecordEntry"/>. The reference is an ARMO (real),
+    ''' a vanilla LVLI (real), or another draft LVLI (provisional — remapped via draftRemap).</summary>
+    Public Class LvliEntryData
+        Public Level As UShort = 1
+        Public RefFormID As UInteger
+        Public Count As UShort = 1
+        Public ChanceNone As Byte
+    End Class
+
     ''' <summary>Result of a save operation.</summary>
     Public Class SaveResult
         Public OutputPath As String
@@ -84,6 +120,13 @@ Public Module SaveNpcEspWriter
         ''' resolves to that plugin) or accidentally pulled in by a parser/collection bug.
         ''' Format: master name → list of resolved FormIDs.</summary>
         Public MasterAudit As New Dictionary(Of String, List(Of UInteger))(StringComparer.OrdinalIgnoreCase)
+        ''' <summary>For every NEW draft emitted (OTFT outfits + LVLI leveled lists): provisional sentinel
+        ''' FormID (0xFF… as the caller handed it) → the FILE-LOCAL real FormID written into the record
+        ''' header ((selfMasterIdx &lt;&lt; 24) | objectIndex). The caller resolves each file-local value to a
+        ''' GLOBAL FormID after re-mounting the saved plugin (PluginManager.ResolveReferencedFormID) to
+        ''' "promote" the in-memory drafts to real records — remapping any overlay/draft reference that
+        ''' still points at the provisional and dropping the now-persisted drafts (no duplicate on reuse).</summary>
+        Public DraftFormIdMap As New Dictionary(Of UInteger, UInteger)
     End Class
 
     ''' <summary>Save (or update) a plugin file containing the given NPC overrides.
@@ -111,7 +154,8 @@ Public Module SaveNpcEspWriter
                                        existingRecords As List(Of PluginRecord),
                                        existingMasters As List(Of String),
                                        pluginManager As PluginManager,
-                                       Optional outfitEntries As List(Of OtftRecordEntry) = Nothing) As SaveResult
+                                       Optional outfitEntries As List(Of OtftRecordEntry) = Nothing,
+                                       Optional leveledEntries As List(Of LvliRecordEntry) = Nothing) As SaveResult
 
         If String.IsNullOrWhiteSpace(outputPath) Then Throw New ArgumentException("outputPath is empty.", NameOf(outputPath))
         If entries Is Nothing Then entries = New List(Of NpcOverrideEntry)()
@@ -119,6 +163,7 @@ Public Module SaveNpcEspWriter
         If existingMasters Is Nothing Then existingMasters = New List(Of String)()
         If pluginManager Is Nothing Then Throw New ArgumentException("pluginManager is required for FormID resolution.", NameOf(pluginManager))
         If outfitEntries Is Nothing Then outfitEntries = New List(Of OtftRecordEntry)()
+        If leveledEntries Is Nothing Then leveledEntries = New List(Of LvliRecordEntry)()
 
         Dim gameMaster = MasterFileNamePublic(game)
 
@@ -139,9 +184,21 @@ Public Module SaveNpcEspWriter
         ' its own record's master. NEW entries are owned by this plugin (no external master).
         For Each oe In outfitEntries
             For Each armoFid In oe.ItemArmoFormIDs
-                If armoFid <> 0UI Then allFormIDs.Add(armoFid)
+                ' Skip provisional draft FormIDs (0xFF high byte): they resolve through draftRemap, not a
+                ' master. Adding them would have GetOriginatingPluginName fail (no master at index 0xFF)
+                ' anyway, but skipping keeps the audit clean and the intent explicit.
+                If armoFid <> 0UI AndAlso Not IsProvisionalDraftFormID(armoFid) Then allFormIDs.Add(armoFid)
             Next
             If oe.IsOverride AndAlso oe.FormID <> 0UI Then allFormIDs.Add(oe.FormID)
+        Next
+        ' LVLI leveled lists: each LVLO reference (ARMO or a real/nested LVLI) brings in its master.
+        ' Provisional refs to other DRAFT leveled lists resolve via draftRemap (skipped here). An OVERRIDE
+        ' entry (existing LVLI being preserved) also brings in its own record's master.
+        For Each le In leveledEntries
+            For Each ent In le.Entries
+                If ent.RefFormID <> 0UI AndAlso Not IsProvisionalDraftFormID(ent.RefFormID) Then allFormIDs.Add(ent.RefFormID)
+            Next
+            If le.IsOverride AndAlso le.FormID <> 0UI Then allFormIDs.Add(le.FormID)
         Next
 
         ' ====================================================================
@@ -239,11 +296,24 @@ Public Module SaveNpcEspWriter
         ' draftRemap maps provisional → real so the remapper rewrites BOTH the OTFT record header AND
         ' every reference to it (notably the NPC.DOFT pointing at the provisional FormID). OVERRIDE
         ' entries keep their real FormID and resolve through the normal master-remap path.
+        ' Every NEW draft (OTFT outfits AND LVLI leveled lists) is pre-assigned its real self-index
+        ' FormID BEFORE serialization, so cross-draft references (OTFT.INAM → draft LVLI, draft LVLI.LVLO
+        ' → another draft LVLI, NPC.DOFT → draft OTFT) resolve through the single remapper irrespective of
+        ' emit order. OTFTs are numbered first, then LVLIs — any stable order works; the keys (provisional
+        ' FormIDs) are globally unique across both kinds because they come from one app-side counter.
         Dim draftRemap As New Dictionary(Of UInteger, UInteger)
         Dim nextSelfObjIndex As UInteger = NEXT_OBJECT_ID_DEFAULT
         For Each oe In outfitEntries
             If oe.IsOverride Then Continue For
             draftRemap(oe.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
+            nextSelfObjIndex += 1UI
+        Next
+        For Each le In leveledEntries
+            ' OVERRIDE LVLIs keep their real FormID (master-remapped on emit) — no self-index. Only NEW
+            ' (draft) lists get a self-index. Guard against a duplicate provisional listed twice.
+            If le.IsOverride Then Continue For
+            If draftRemap.ContainsKey(le.FormID) Then Continue For
+            draftRemap(le.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
             nextSelfObjIndex += 1UI
         Next
 
@@ -282,7 +352,8 @@ Public Module SaveNpcEspWriter
         Dim result As New SaveResult With {
             .OutputPath = outputPath,
             .NpcCount = entries.Count + existingRecords.Count,
-            .MasterList = sortedMasters
+            .MasterList = sortedMasters,
+            .DraftFormIdMap = New Dictionary(Of UInteger, UInteger)(draftRemap)
         }
         ' Filter the audit to only masters that actually made it into the final MAST list
         ' (drop entries for plugins that referencedPluginNames had but Step 2 filtered out
@@ -325,11 +396,19 @@ Public Module SaveNpcEspWriter
             otftBuffers.Add(SerializeOtftRecord(oe, remapper, game))
         Next
 
+        ' LVLI leveled lists (Edit Outfit "New LVL…"). Each emits as a self-index top-level record; LVLO
+        ' references are remapped (draft → self via draftRemap; real ARMO/LVLI → master remap).
+        Dim lvliBuffers As New List(Of Byte())
+        For Each le In leveledEntries
+            lvliBuffers.Add(SerializeLvliRecord(le, remapper, game))
+        Next
+
         ' ====================================================================
-        ' Step 5: Wrap each record type in its own top-level GRUP. OTFT before NPC_ — the NPCs' DOFT
-        ' references the outfits, so emit the referenced records first (order isn't required for FormID
-        ' resolution — the engine maps globally — but it keeps the file tidy / xEdit-friendly).
+        ' Step 5: Wrap each record type in its own top-level GRUP. Referenced-first order keeps the file
+        ' tidy / xEdit-friendly (FormID resolution is global, so order isn't required): LVLI (referenced by
+        ' OTFT.INAM and by other LVLIs) → OTFT (referenced by NPC.DOFT) → NPC_.
         ' ====================================================================
+        Dim grupLvliBytes As Byte() = If(lvliBuffers.Count > 0, BuildGrup("LVLI", lvliBuffers), Array.Empty(Of Byte)())
         Dim grupOtftBytes As Byte() = If(otftBuffers.Count > 0, BuildGrup("OTFT", otftBuffers), Array.Empty(Of Byte)())
         Dim grupNpcBytes = BuildGrup("NPC_", recordBuffers)
 
@@ -339,7 +418,7 @@ Public Module SaveNpcEspWriter
         ' ID we already consumed (selfMasterIdx records start at NEXT_OBJECT_ID_DEFAULT).
         ' ====================================================================
         Dim nextObjectId As UInteger = NEXT_OBJECT_ID_DEFAULT + CUInt(draftRemap.Count)
-        Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count
+        Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count + lvliBuffers.Count
         Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
@@ -353,6 +432,7 @@ Public Module SaveNpcEspWriter
         Dim tmpPath = outputPath & ".tmp"
         Using fs As FileStream = File.Create(tmpPath)
             fs.Write(tes4Bytes, 0, tes4Bytes.Length)
+            If grupLvliBytes.Length > 0 Then fs.Write(grupLvliBytes, 0, grupLvliBytes.Length)
             If grupOtftBytes.Length > 0 Then fs.Write(grupOtftBytes, 0, grupOtftBytes.Length)
             fs.Write(grupNpcBytes, 0, grupNpcBytes.Length)
         End Using
@@ -603,6 +683,74 @@ Public Module SaveNpcEspWriter
             End Using
             Return ms.ToArray()
         End Using
+    End Function
+
+    ''' <summary>Serialize one LVLI (leveled item) record: 24-byte header + body. Body order mirrors the
+    ''' xEdit FO4 definition (wbDefinitionsFO4.pas:10352): EDID + OBND(zeroed) + LVLD + LVLM + LVLF + LLCT +
+    ''' N×LVLO. OBND is zeroed (12 bytes) — meaningless for a leveled list but marked required by xEdit, so
+    ''' emitting it keeps the record error-free in xEdit; the engine ignores it. LVLG (Use Global) is omitted
+    ''' (no global). Each LVLO is 12 bytes: Level(u16)+pad(2)+Reference(u32, remapped)+Count(u16)+ChanceNone(u8)+pad(1)
+    ''' per wbDefinitionsCommon.pas:5704. The record FormID is the draft's real self-index (via draftRemap).</summary>
+    Private Function SerializeLvliRecord(entry As LvliRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper, game As Config_App.Game_Enum) As Byte()
+        Dim body As Byte()
+        Using bms As New MemoryStream()
+            Using bw As New BinaryWriter(bms)
+                ' EDID (ZSTRING, cp1252 — non-translatable, mirrors SerializeOtftRecord / NpcSubrecordWriter).
+                Dim edidBytes = PluginEncodingSettings.EncodeGeneral(If(entry.EditorID, ""))
+                WriteSubrecordHeader(bw, "EDID", edidBytes.Length + 1)
+                bw.Write(edidBytes)
+                bw.Write(CByte(0))
+                ' OBND (Object Bounds, 6×i16 = 12 bytes, all zero). Required by the xEdit def; engine ignores it.
+                WriteSubrecordHeader(bw, "OBND", 12)
+                bw.Write(New Byte(11) {})
+                ' LVLD (Chance None, u8).
+                WriteSubrecordHeader(bw, "LVLD", 1)
+                bw.Write(entry.ChanceNone)
+                ' LVLM (Max Count, u8).
+                WriteSubrecordHeader(bw, "LVLM", 1)
+                bw.Write(entry.MaxCount)
+                ' LVLF (Flags, u8).
+                WriteSubrecordHeader(bw, "LVLF", 1)
+                bw.Write(entry.Flags)
+                ' LLCT (entry count, u8) — only non-zero entries are emitted.
+                Dim ents = entry.Entries.Where(Function(e) e.RefFormID <> 0UI).ToList()
+                WriteSubrecordHeader(bw, "LLCT", 1)
+                bw.Write(CByte(Math.Min(ents.Count, 255)))
+                ' N × LVLO (12 bytes each).
+                For Each e In ents
+                    WriteSubrecordHeader(bw, "LVLO", 12)
+                    bw.Write(e.Level)               ' Level (u16)
+                    bw.Write(0US)                   ' pad (u16, wbUnused 2)
+                    bw.Write(remapper(e.RefFormID)) ' Reference (u32, remapped)
+                    bw.Write(e.Count)               ' Count (u16)
+                    bw.Write(e.ChanceNone)          ' Chance None (u8)
+                    bw.Write(CByte(0))              ' pad (u8, wbUnused 1)
+                Next
+            End Using
+            body = bms.ToArray()
+        End Using
+
+        Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
+        Using ms As New MemoryStream()
+            Using bw As New BinaryWriter(ms)
+                bw.Write(Encoding.ASCII.GetBytes("LVLI"))   ' Signature
+                bw.Write(CUInt(body.Length))                ' DataSize
+                bw.Write(0UI)                               ' Flags (uncompressed)
+                bw.Write(remapper(entry.FormID))            ' FormID (self-index via draftRemap)
+                bw.Write(0UI)                               ' VCS1
+                bw.Write(recordVersion)                     ' Version
+                bw.Write(0US)                               ' VCS2
+                bw.Write(body)
+            End Using
+            Return ms.ToArray()
+        End Using
+    End Function
+
+    ''' <summary>True if a FormID is a provisional draft sentinel (high byte 0xFF). Such FormIDs are not
+    ''' resolvable to any loaded master (max real index 0xFD, ESL prefix 0xFE) — they resolve only through
+    ''' draftRemap. Mirrors the app-side OutfitDraft.IsDraftFormID, kept local so the library has no app dep.</summary>
+    Private Function IsProvisionalDraftFormID(formID As UInteger) As Boolean
+        Return ((formID >> 24) And &HFFUI) = &HFFUI
     End Function
 
     Private Function BuildGrup(label As String, recordBuffers As List(Of Byte())) As Byte()

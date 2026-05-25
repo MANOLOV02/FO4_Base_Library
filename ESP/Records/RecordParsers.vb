@@ -1275,6 +1275,11 @@ Public Class ARMO_Data
     ''' de wbObjectTemplate). El AP-pool extiende dinámicamente vía AttachParentSlots de OMODs
     ''' aceptados — mismo modelo que NPC.APPR/RACE.APPR ya implementado.</summary>
     Public AttachParentSlotFormIDs As New List(Of UInteger)
+    ''' <summary>KWDA — top-level keywords (KYWD FormIDs) declared by the ARMO. wbDefinitionsFO4.pas:6184
+    ''' (wbKeywords inside the ARMO record). Carries the armor-type keyword in FO4 (ArmorTypePower /
+    ''' ArmorTypeLight / ArmorTypeHeavy) since FO4 BOD2 dropped the BODT 'Armor Type' field — power-armor
+    ''' detection reads ArmorTypePower from here.</summary>
+    Public KeywordFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Per-bone scale delta from an ARMA record's BSMS subrecord. Per TES5Edit
@@ -1452,6 +1457,9 @@ Public Class LVLI_Data
     Public FormID As UInteger
     Public EditorID As String = ""
     Public ChanceNone As Byte
+    ''' <summary>LVLM — Max Count (0 = unlimited). Captured for faithful round-trip when an existing LVLI is
+    ''' re-emitted as an override.</summary>
+    Public MaxCount As Byte
     Public Flags As Byte
     Public Entries As New List(Of LVLI_Entry)
     ''' <summary>LLKC entries — keywords con chance que el engine usa para enriquecer el item
@@ -3007,6 +3015,17 @@ Public Module RecordParsers
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then armo.SlotMask = BitConverter.ToUInt32(sr.Data, 0)
                 Case "RNAM"
                     armo.RaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "KWDA"
+                    ' wbDefinitionsFO4.pas:6184 — ARMO keywords (KSIZ count + KWDA u32 array). FO4 carries
+                    ' the armor-type here (ArmorTypePower/Light/Heavy); BOD2 no longer holds 'Armor Type'.
+                    Dim kd = sr.Data
+                    If kd IsNot Nothing AndAlso kd.Length >= 4 Then
+                        Dim kwCount = kd.Length \ 4
+                        For i = 0 To kwCount - 1
+                            Dim kwFid = ResolveFormIDReference(rec, BitConverter.ToUInt32(kd, i * 4), pluginManager)
+                            If kwFid <> 0UI Then armo.KeywordFormIDs.Add(kwFid)
+                        Next
+                    End If
                 Case "TNAM"
                     armo.TemplateArmorFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "INDX"
@@ -3367,6 +3386,8 @@ Public Module RecordParsers
             Select Case sr.Signature
                 Case "LVLD"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvli.ChanceNone = sr.Data(0)
+                Case "LVLM"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvli.MaxCount = sr.Data(0)
                 Case "LVLF"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvli.Flags = sr.Data(0)
                 Case "LVLO"
