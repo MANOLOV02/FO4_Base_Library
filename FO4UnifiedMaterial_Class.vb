@@ -136,6 +136,7 @@ Public Class FO4UnifiedMaterial_Class
         copy._alphaBlendEnabled = _alphaBlendEnabled
         copy._blendFunctionSource = _blendFunctionSource
         copy._blendFunctionDest = _blendFunctionDest
+        copy._skinTintAlpha = _skinTintAlpha
         Return copy
     End Function
 
@@ -177,6 +178,26 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As NiflySharp.Enums.BSLightingShaderType)
             _NifShaderType = value
             ApplyShaderTypeToBgsm(TryCast(Underlying_Material, BGSM), value)
+        End Set
+    End Property
+
+    ' Skin tint strength → shader SkinTintAlpha (FO4 shaderType=5 SkinTint). NOT a BGSM field:
+    ' the BGSM carries no skin-tint-alpha; it is an NPC-level value (QNAM TextureLighting's A /
+    ' the SkinTone tint-layer opacity) that the engine/CK bakes inline. Transient runtime field,
+    ' like NifShaderType: read from the shader in Create_From_Shader, written back in
+    ' Save_To_Shader (gated on SkinTint), never serialized to the .bgsm (disk round-trip unaffected).
+    ' The app sets it from the NPC's TextureLightingFloats.A before baking — same split as the skin
+    ' tone COLOR (app resolves it into HairTintColor, the library writes it). Defaults to 1.0 (full)
+    ' for materials with no NPC context (render / WM editing).
+    Private _skinTintAlpha As Single = 1.0F
+    <Category("Coloring")>
+    <BGSMOnly()>
+    Public Property SkinTintAlpha As Single
+        Get
+            Return _skinTintAlpha
+        End Get
+        Set(value As Single)
+            _skinTintAlpha = value
         End Set
     End Property
 
@@ -2273,6 +2294,9 @@ Public Class FO4UnifiedMaterial_Class
         mat.AlphaBlendMode = AlphaBlendModeType.None
         Underlying_Material = mat
         _NifShaderType = shad.ShaderType_SK_FO4
+        ' Capture the skin-tint strength from the shader (FO4 only serializes it for shaderType=5;
+        ' for other types NiflySharp returns its 0 default — harmless, only consumed when SkinTint).
+        _skinTintAlpha = shad.SkinTintAlpha
         ' Embedded shader: no BGSM file, so NiAlphaProperty is the only source of alpha state.
         ' This is the ONE load path that legitimately reads NiAlphaProperty. Resolve to a
         ' deterministic AlphaBlendMode AND deterministic BlendFunctionSource/Dest here so the
@@ -2456,6 +2480,164 @@ Public Class FO4UnifiedMaterial_Class
 
         WriteAlphaPropertyToShape(shap, Nif)
     End Sub
+    ' ── Wetness-control (rootMaterial-resolved) ─────────────────────────────────────────────
+    ' Vanilla face BGSMs leave the 6 wetness fields at the -1 "inherit" sentinel (BGSM ctor
+    ' default, BGSM.cs:34-39) and point rootMaterial at a template that carries the real values
+    ' (e.g. basehumanskin.bgsm -1 → template/SkinTemplate_Wet.bgsm 0.6/1.4/0.2/1/1.6/0). CK
+    ' resolves this chain when it bakes the inline shader; the engine resolves it at load.
+    '
+    ' These six Resolved* properties expose the RESOLVED value: every reader — Save_To_Shader today
+    ' and the GL render when it grows wetness support — reads `mat.ResolvedWetnessControl*` and gets
+    ' the inherited value transparently, with no need to know a chain exists. They are named apart
+    ' from the raw BGSM fields (Underlying_Material.WetnessControl*) on purpose, so a call site is
+    ' unambiguous about whether it wants the resolved value or the raw -1 sentinel. Resolution is
+    ' READ-ONLY: the underlying BGSM keeps its -1 sentinels, so the disk paths (bgsm.Save /
+    ' Serialize, which read the raw fields) still write the vanilla -1 verbatim — exactly what
+    ' CK/the engine expect on disk. Read resolved, write original. Browsable(False): they are
+    ' programmatic accessors, not grid fields, so the editor keeps editing the raw -1 and
+    ' round-trips it unchanged.
+    <Browsable(False)>
+    Public ReadOnly Property ResolvedWetnessControlSpecScale As Single
+        Get
+            Return ResolvedWetness()(0)
+        End Get
+    End Property
+    <Browsable(False)>
+    Public ReadOnly Property ResolvedWetnessControlSpecPowerScale As Single
+        Get
+            Return ResolvedWetness()(1)
+        End Get
+    End Property
+    <Browsable(False)>
+    Public ReadOnly Property ResolvedWetnessControlSpecMinvar As Single
+        Get
+            Return ResolvedWetness()(2)
+        End Get
+    End Property
+    <Browsable(False)>
+    Public ReadOnly Property ResolvedWetnessControlEnvMapScale As Single
+        Get
+            Return ResolvedWetness()(3)
+        End Get
+    End Property
+    <Browsable(False)>
+    Public ReadOnly Property ResolvedWetnessControlFresnelPower As Single
+        Get
+            Return ResolvedWetness()(4)
+        End Get
+    End Property
+    <Browsable(False)>
+    Public ReadOnly Property ResolvedWetnessControlMetalness As Single
+        Get
+            Return ResolvedWetness()(5)
+        End Get
+    End Property
+
+    ' Transient, non-serialized cache: the rootMaterial chain is walked once and the resulting array
+    ' is reused, keyed ONLY on THIS material's own 6 raw wetness fields. Re-resolves when one of them
+    ' flips: -1→value (the resolved value becomes the new concrete value), value→-1 (re-walk the
+    ' chain to inherit again). Changes to the parent/template ("base") files upstream do NOT
+    ' invalidate — a loaded material keeps what it resolved and we never re-read ancestor files to
+    ' poll them. Keying on the own fields (not the parents') is what keeps an innocuous getter off a
+    ' hot path from turning into a recursive/looping flood of FilesDictionary/BA2 reads.
+    Private _resolvedWetnessCache As Single()
+    Private _resolvedWetnessRaw As Single()
+
+    Private Function ResolvedWetness() As Single()
+        Dim bgsm = TryCast(Underlying_Material, BGSM)
+        ' No BGSM yet → -1 across the board, uncached: a wrapper can be constructed with the default
+        ' BGEM and have its BGSM assigned later, and that first real read must still resolve.
+        If bgsm Is Nothing Then Return New Single() {-1.0F, -1.0F, -1.0F, -1.0F, -1.0F, -1.0F}
+        Dim raw() As Single = {bgsm.WetnessControlSpecScale, bgsm.WetnessControlSpecPowerScale,
+                               bgsm.WetnessControlSpecMinvar, bgsm.WetnessControlEnvMapScale,
+                               bgsm.WetnessControlFresnelPower, bgsm.WetnessControlMetalness}
+        If _resolvedWetnessCache Is Nothing OrElse Not SameRawWetness(raw, _resolvedWetnessRaw) Then
+            _resolvedWetnessCache = ResolveEffectiveWetness(bgsm)
+            _resolvedWetnessRaw = raw
+        End If
+        Return _resolvedWetnessCache
+    End Function
+
+    ''' <summary>True if the two 6-field raw-wetness snapshots are bitwise equal. Used to detect a
+    ''' change in THIS material's own wetness fields (the only trigger to re-resolve the chain).</summary>
+    Private Shared Function SameRawWetness(a As Single(), b As Single()) As Boolean
+        If a Is Nothing OrElse b Is Nothing Then Return False
+        For i = 0 To 5
+            If a(i) <> b(i) Then Return False
+        Next
+        Return True
+    End Function
+
+    ' The engine's implicit base template for wetness inheritance. A material that leaves the
+    ' wetness fields at -1 AND specifies no rootMaterial (or whose chain bottoms out at a parent
+    ' with an empty rootMaterial) still inherits from here — the engine/CK treat an absent
+    ' rootMaterial as "use the default wet template", it is not "no wetness". Verified vs CK
+    ' 2026-05-25: every vanilla face material with rootMaterial='' (HumanCommon\Eyes, EyeWet,
+    ' GhoulsCommon\Eyes, FacialHair\*, the gore neck...) bakes 0.8/0.7/0.3/1/1.2/0.1 — exactly the
+    ' contents of this file — and the specialized templates (SkinTemplate_Wet) chain into it too.
+    ' defaultTemplate_wet itself points its rootMaterial at itself, the engine's "I am the root"
+    ' sentinel; the cycle guard below terminates the walk on that self-reference.
+    Private Const DefaultWetTemplate As String = "template/defaultTemplate_wet.bgsm"
+
+    ''' <summary>Chain engine behind the WetnessControl* resolving properties. Walks the BGSM
+    ''' <c>rootMaterial</c> parent chain filling each -1 sentinel with the first non-(-1) value
+    ''' found descending it; never mutates <paramref name="bgsm"/>. When the explicit chain ends
+    ''' (empty rootMaterial) with fields still unset, falls back once to <see cref="DefaultWetTemplate"/>
+    ''' — the engine's implicit base. Guards both ways against a runaway walk: a visited-set cycle
+    ''' guard (templates cross-referencing each other, incl. the default's self-reference) and a
+    ''' hard depth cap. Returns {SpecScale, SpecPowerScale, SpecMinvar, EnvMapScale, FresnelPower,
+    ''' Metalness}; a field stays -1 only if even the default leaves it unset. Verified vs CK 2026-05-25.</summary>
+    Private Function ResolveEffectiveWetness(bgsm As BGSM) As Single()
+        Const SENTINEL As Single = -1.0F
+        Dim eff() As Single = {bgsm.WetnessControlSpecScale, bgsm.WetnessControlSpecPowerScale, bgsm.WetnessControlSpecMinvar,
+                               bgsm.WetnessControlEnvMapScale, bgsm.WetnessControlFresnelPower, bgsm.WetnessControlMetalness}
+        Dim rootPath = bgsm.RootMaterialPath
+        Dim seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim defaultApplied = False
+        Dim depth = 0
+        While depth < 16 AndAlso Array.IndexOf(eff, SENTINEL) >= 0
+            If String.IsNullOrEmpty(rootPath) Then
+                ' Explicit chain ended but fields remain -1 → inherit from the engine default
+                ' template, exactly once (defaultTemplate_wet self-refs, so the cycle guard would
+                ' stop us anyway; the flag also covers a parent that itself had an empty root).
+                If defaultApplied Then Exit While
+                rootPath = DefaultWetTemplate
+                defaultApplied = True
+            End If
+            Dim key = MaterialsPrefix & CorrectMaterialPath(rootPath).StripPrefix(MaterialsPrefix)
+            If Not seen.Add(key.ToLowerInvariant()) Then Exit While   ' cycle guard (incl. default self-ref)
+            Dim parent = LoadBgsmByKey(key)
+            If parent Is Nothing Then Exit While
+            Dim pv() As Single = {parent.WetnessControlSpecScale, parent.WetnessControlSpecPowerScale, parent.WetnessControlSpecMinvar,
+                                  parent.WetnessControlEnvMapScale, parent.WetnessControlFresnelPower, parent.WetnessControlMetalness}
+            For i = 0 To 5
+                If eff(i) = SENTINEL AndAlso pv(i) <> SENTINEL Then eff(i) = pv(i)
+            Next
+            rootPath = parent.RootMaterialPath
+            depth += 1
+        End While
+        Return eff
+    End Function
+
+    ''' <summary>Load a standalone BGSM by its FilesDictionary key (Materials-prefixed path).
+    ''' Returns Nothing on miss / read / parse failure. Used by the rootMaterial chain walk in
+    ''' <see cref="ResolveEffectiveWetness"/>; intentionally does NOT touch this instance.</summary>
+    Private Shared Function LoadBgsmByKey(key As String) As BGSM
+        Try
+            Dim bytes = FilesDictionary_class.GetBytes(key)
+            If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
+            Dim m As New BGSM
+            Using ms As New MemoryStream(bytes)
+                Using rd As New BinaryReader(ms)
+                    m.Deserialize(rd)
+                End Using
+            End Using
+            Return m
+        Catch
+            Return Nothing
+        End Try
+    End Function
+
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "")
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGSM)
@@ -2526,7 +2708,14 @@ Public Class FO4UnifiedMaterial_Class
         ' shader was reused/cloned.
         Dim hairTintNifColor = UIntegerToNifColor3(Mat.HairTintColor)
         shad.HairTintColor = hairTintNifColor
-        If Mat.SkinTint Then shad.SkinTintColor = hairTintNifColor
+        If Mat.SkinTint Then
+            shad.SkinTintColor = hairTintNifColor
+            ' SkinTintAlpha (FO4 shaderType=5 tail) — the per-NPC skin-tint strength. Lives on the
+            ' wrapper (Me.SkinTintAlpha), set by the app from the NPC's TextureLightingFloats.A,
+            ' because the BGSM has no skin-tint-alpha field. CK bakes it; without this we left it 0
+            ' and the skin tint was inert (e.g. MaleHeadHumanRearTEMP rendered untinted).
+            shad.SkinTintAlpha = Me.SkinTintAlpha
+        End If
         shad.HasBacklight = Mat.BackLighting
         shad.BacklightPower = Mat.BackLightPower
         ' HasSpecular centinela: SpecularMult=0 means the specular contribution is
@@ -2566,13 +2755,18 @@ Public Class FO4UnifiedMaterial_Class
         shad.WetnessControl_UseSSR = Mat.WetnessControlScreenSpaceReflections
         shad.RefractionStrength = Mat.RefractionPower
 
+        ' Read the rootMaterial-RESOLVED wetness (Me.ResolvedWetnessControl*), not the raw BGSM
+        ' fields (Mat.WetnessControl*) which sit at the -1 "inherit" sentinel for vanilla face
+        ' materials. Per field the resolved value is the raw value when it isn't -1, otherwise the
+        ' first non-(-1) ancestor value down the rootMaterial chain. CK bakes these resolved values
+        ' into the inline shader; the disk .bgsm keeps the -1.
         Dim wet = shad.Wetness
-        wet.SpecScale = Mat.WetnessControlSpecScale
-        wet.SpecPower = Mat.WetnessControlSpecPowerScale
-        wet.MinVar = Mat.WetnessControlSpecMinvar
-        wet.EnvMapScale = Mat.WetnessControlEnvMapScale
-        wet.FresnelPower = Mat.WetnessControlFresnelPower
-        wet.Metalness = Mat.WetnessControlMetalness
+        wet.SpecScale = Me.ResolvedWetnessControlSpecScale
+        wet.SpecPower = Me.ResolvedWetnessControlSpecPowerScale
+        wet.MinVar = Me.ResolvedWetnessControlSpecMinvar
+        wet.EnvMapScale = Me.ResolvedWetnessControlEnvMapScale
+        wet.FresnelPower = Me.ResolvedWetnessControlFresnelPower
+        wet.Metalness = Me.ResolvedWetnessControlMetalness
         shad.Wetness = wet
 
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Cast_Shadows), Mat.CastShadows)
@@ -2583,6 +2777,12 @@ Public Class FO4UnifiedMaterial_Class
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.ZBuffer_Test), Mat.ZBufferTest)
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Refraction), Mat.Refraction)
         ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Anisotropic_Lighting), Mat.AnisoLighting)
+        ' Hair flag (F4SPF1 bit 18). CK sets it on hair shapes but Save_To_Shader never persisted it,
+        ' so baked hair lost its hair shading (anisotropic highlight + grayscale-to-palette tint) and
+        ' rendered as a generic surface. Driven by the BGSM Hair bool (same source Create_From_Shader
+        ' reads back via IsTypeHairTint). Verified missing vs CK FaceGen 2026-05-25 on HairMale22 /
+        ' HairMale22_Hairline. SSE has no separate Hair flag concept here; SetFlagSF1 is FO4-flag based.
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair), Mat.Hair)
 
         If Not Nif.Header.Version.IsSSE Then
             If Mat.Tessellate Then

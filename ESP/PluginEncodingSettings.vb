@@ -57,13 +57,18 @@ Public Module PluginEncodingSettings
     Private ReadOnly _encodingCache As New Dictionary(Of Integer, Encoding)()
 
     ''' <summary>
-    ''' Full language→codepage map. LITERAL mirror of wbAddDefaultLEncodingsIfMissing
-    ''' (TES5Edit/Core/wbInterface.pas:23665-23686). xEdit calls this procedure to populate the
-    ''' FALLBACK array `wbLEncoding[True]` (xeInit.pas:1131, unconditional), and also to populate
-    ''' the PRIMARY array `wbLEncoding[False]` for games &lt;= gmEnderal (xeInit.pas:1120).
-    ''' For games &gt; gmEnderal (FO4, FO76, SSE, TES5VR, EnderalSE) the primary array gets only
-    ''' one entry — see _languageMapPrimary built in InitializeForGame.
-    ''' Treat this list as a synced copy of xEdit. Do NOT add aliases. Do NOT canonicalize.
+    ''' Full language→codepage map, used as the FALLBACK map (wbLEncoding[True]) and, for games
+    ''' &lt;= gmEnderal, also the PRIMARY map.
+    '''
+    ''' First block = LITERAL mirror of wbAddDefaultLEncodingsIfMissing (wbInterface.pas:23665-23686):
+    ''' the 19 full language NAMES, same codepages. Do NOT canonicalize/alias these (no "es"→"spanish").
+    '''
+    ''' Second block = FO4 short language CODES (en/fr/ru/ko…) + Korean. These are the actual
+    ''' STRINGS-file suffixes and Fallout4.ini sLanguage values FO4 uses (Fallout4_en.STRINGS,
+    ''' _ru, _ko…). xEdit does NOT have these in its full map — this is a deliberate addition so the
+    ''' INLINE fallback (DecodeTranslatable) can resolve the right codepage from a short sLanguage
+    ''' code. They are direct entries (token→cp), NOT aliases that redirect to another token.
+    ''' Korean (ko/kor/korean→949) has no official FO4 localization; fan translations use CP949.
     ''' </summary>
     Private ReadOnly _languageMapFull As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase) From {
         {"english", 1252},
@@ -84,7 +89,20 @@ Public Module PluginEncodingSettings
         {"russian", 1251},
         {"chinese", 65001},
         {"hungarian", 1250},
-        {"arabic", 1256}
+        {"arabic", 1256},
+        {"en", 1252},
+        {"fr", 1252},
+        {"de", 1252},
+        {"it", 1252},
+        {"es", 1252},
+        {"pt", 1252},
+        {"pl", 1250},
+        {"ru", 1251},
+        {"ja", 65001},
+        {"zh", 65001},
+        {"ko", 949},
+        {"kor", 949},
+        {"korean", 949}
     }
 
     ''' <summary>Primary map (mirror of xEdit wbLEncoding[False]). Populated per-game by InitializeForGame.</summary>
@@ -96,6 +114,15 @@ Public Module PluginEncodingSettings
     Private _translatable As Encoding = Nothing
     Private _translatableDefaultPrimary As Encoding = Nothing   ' wbLEncodingDefault[False]
     Private _translatableDefaultFallback As Encoding = Nothing  ' wbLEncodingDefault[True]
+    ''' <summary>
+    ''' Codepage of the current sLanguage (from the full map), used as the INLINE fallback in
+    ''' DecodeTranslatable: when the primary (Translatable, usually UTF-8 for FO4) throws on a
+    ''' non-UTF-8 inline string, we retry with this. xEdit has NO inline fallback (ToStringNative
+    ''' is single-shot, wbInterface.pas:16514); this is a deliberate improvement so inline plugins
+    ''' in a legacy codepage (cp1251/CP949/…) read correctly without breaking UTF-8 plugins.
+    ''' Set from SetLanguage = GetEncodingForLanguage(sLanguage, True). Default cp1252 pre-SetLanguage.
+    ''' </summary>
+    Private _translatableInlineFallback As Encoding = Nothing
     Private _initialized As Boolean = False
 
     ''' <summary>
@@ -179,6 +206,13 @@ Public Module PluginEncodingSettings
                         primary(kvp.Key) = kvp.Value
                     Next
             End Select
+
+            ' NOTE: Korean is NOT added to the primary map (that was a fragile patch — CP949 in the
+            ' primary never throws, so a Korean plugin that happens to be UTF-8 would be silently
+            ' mojibake'd). Instead korean/ko/kor→949 lives in the FULL/fallback map, and the inline
+            ' fallback (DecodeTranslatable: try UTF-8 → catch → sLanguage codepage) reads both
+            ' CP949 and UTF-8 Korean plugins correctly. Same UTF-8-first + codepage-fallback model
+            ' as the .STRINGS sidecar.
             _languageMapPrimary = primary
 
             ' xEdit's wbInterface init sets wbEncodingTrans := wbEncoding (cp1252), but xeInit.pas:1323
@@ -187,6 +221,8 @@ Public Module PluginEncodingSettings
             ' for FO4) so that any access BEFORE SetLanguage runs gets the correct default rather than
             ' cp1252. SetLanguage (called from app startup) refines it from the INI's sLanguage.
             _translatable = _translatableDefaultPrimary
+            ' Inline fallback default = cp1252 until SetLanguage sets it from the sLanguage codepage.
+            _translatableInlineFallback = _translatableDefaultFallback
 
             _initialized = True
         End SyncLock
@@ -219,6 +255,16 @@ Public Module PluginEncodingSettings
                 _translatable = If(cp = 65001, _utf8, MBCSEncoding(cp))
             Else
                 _translatable = _translatableDefaultPrimary
+            End If
+
+            ' Inline fallback = codepage of this sLanguage from the FULL/fallback map (= wbEncodingForLanguage(normalized, True)).
+            ' Used by DecodeTranslatable when the primary throws. For ko → CP949, ru → cp1251, etc.;
+            ' unknown token → cp1252 default. Computed inline to avoid re-entrant lock.
+            Dim fbCp As Integer = 0
+            If normalized <> "" AndAlso _languageMapFallback.TryGetValue(normalized, fbCp) Then
+                _translatableInlineFallback = If(fbCp = 65001, _utf8, MBCSEncoding(fbCp))
+            Else
+                _translatableInlineFallback = _translatableDefaultFallback
             End If
         End SyncLock
     End Sub
@@ -267,12 +313,40 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Decode bytes for an inline string subrecord using the global Translatable encoding.
-    ''' Mirror of TwbStringDef.ToStringNative (wbInterface.pas:16480-16567) — single-shot decode
-    ''' via wbEncodingTrans, no fallback chain. See DecodeWithEncoding doc.
+    ''' Decode bytes for an inline TRANSLATABLE string (FULL/SHRT/ATTX in a non-localized plugin)
+    ''' using the global Translatable encoding, WITH an inline fallback to the sLanguage codepage.
+    '''
+    ''' DIVERGENCE FROM xEdit (deliberate improvement): xEdit's ToStringNative is single-shot
+    ''' (wbInterface.pas:16514) — on a non-UTF-8 inline string it dumps hex+error. We instead retry
+    ''' with the sLanguage codepage (_translatableInlineFallback), mirroring the .STRINGS sidecar
+    ''' fallback. This is SAFE: the fallback only runs inside the Catch, i.e. only when the primary
+    ''' ALREADY failed (where xEdit/we would otherwise yield garbage). It never changes a value the
+    ''' primary decoded successfully. Covers FO4 plugins whose FULL/etc are in a legacy codepage
+    ''' (Korean CP949, Russian cp1251, …) while keeping UTF-8 plugins correct.
     ''' </summary>
     Public Function DecodeTranslatable(data As Byte(), offset As Integer, count As Integer) As String
-        Return DecodeWithEncoding(data, offset, count, Translatable)
+        If data Is Nothing OrElse count <= 0 Then Return ""
+        If offset < 0 Then offset = 0
+        If offset >= data.Length Then Return ""
+        Dim safeCount = Math.Min(count, data.Length - offset)
+        If safeCount <= 0 Then Return ""
+
+        Dim primary = Translatable
+        Try
+            Return primary.GetString(data, offset, safeCount)
+        Catch ex As DecoderFallbackException
+            ' Primary (usually UTF-8 for FO4) failed → bytes are not in the primary encoding.
+            ' Retry with the sLanguage codepage. Only reached on primary failure, so it can only
+            ' improve (or leave unchanged) what would otherwise be unreadable.
+            Dim fb = _translatableInlineFallback
+            If fb IsNot Nothing AndAlso Not Object.ReferenceEquals(primary, fb) Then
+                Try
+                    Return fb.GetString(data, offset, safeCount)
+                Catch
+                End Try
+            End If
+            Return ""
+        End Try
     End Function
 
     ''' <summary>

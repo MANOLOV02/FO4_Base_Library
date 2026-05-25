@@ -1,4 +1,4 @@
-' Version Uploaded of Fo4Library 3.2.0
+﻿' Version Uploaded of Fo4Library 3.2.0
 Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
