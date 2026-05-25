@@ -374,6 +374,7 @@ float specFactor = 1.0;
 vec2 uv = vec2(0.0);
 vec3 albedo = vec3(0.0);
 vec3 emissive = vec3(0.0);
+vec3 backlightEmissive = vec3(0.0);
 
 vec4 baseMap = vec4(0.0);
 vec4 normalMap = vec4(0.0);
@@ -530,7 +531,7 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 	{
 		float NdotNegL = max(dot(normal, -lightDir), FLT_EPSILON);
 		vec3 backlight = albedo * NdotNegL * clamp(backlightPower, 0.0, 1.0);
-		emissive += backlight * light.diffuse;
+		backlightEmissive += backlight * light.diffuse;
 	}
 
 	// Diffuse
@@ -711,6 +712,12 @@ void main(void)
 					emissive *= glowMap.rgb;
 				}
 			}
+
+			// Backlight sumado DESPUES del glowmap (orden NifSkope fo4_default.frag:252-296 y
+			// sk_default.frag:124-143: el glowmap modula SOLO el self-emissive, NO el backlight
+			// de translucencia). Antes el backlight entraba en 'emissive' dentro del loop de luz
+			// y el '*= glowMap' lo contaminaba (en pelo, glowTex = el flow map _f).
+			emissive += backlightEmissive;
 
 			// SkinTint / HairTint: applied after lighting so soft/backlight use untinted albedo (matches NifSkope)
 			if (bHasTintColor && !bIsEffectShader)
@@ -1305,6 +1312,7 @@ float specFactor = 1.0;
 vec2 uv = vec2(0.0);
 vec3 albedo = vec3(0.0);
 vec3 emissive = vec3(0.0);
+vec3 backlightEmissive = vec3(0.0);
 
 vec4 baseMap = vec4(0.0);
 vec4 normalMap = vec4(0.0);
@@ -1463,7 +1471,7 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 		float NdotNegL = max(dot(normal, -lightDir), FLT_EPSILON);
 		vec3 backlightColor = texture(texSpecular, uv).rgb;
 		vec3 backlight = backlightColor * NdotNegL * clamp(backlightPower, 0.0, 1.0);
-		emissive += backlight * light.diffuse;
+		backlightEmissive += backlight * light.diffuse;
 	}
 
 	// Diffuse
@@ -1691,6 +1699,12 @@ void main(void)
 					emissive *= glowMap.rgb;
 				}
 			}
+
+			// Backlight sumado DESPUES del glowmap (orden NifSkope fo4_default.frag:252-296 y
+			// sk_default.frag:124-143: el glowmap modula SOLO el self-emissive, NO el backlight
+			// de translucencia). Antes el backlight entraba en 'emissive' dentro del loop de luz
+			// y el '*= glowMap' lo contaminaba (en pelo, glowTex = el flow map _f).
+			emissive += backlightEmissive;
 
 			// SkinTint / HairTint: applied after lighting so soft/backlight use untinted albedo (matches NifSkope)
 			if (bHasTintColor && !bIsEffectShader)
