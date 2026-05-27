@@ -289,6 +289,55 @@ Public Module PluginEncodingSettings
         End SyncLock
     End Sub
 
+    ''' <summary>Manual override for the inline fallback codepage consumed by DecodeTranslatable
+    ''' when the primary Translatable encoding throws DecoderFallbackException. Normally derived
+    ''' from the sLanguage FULL/fallback map by SetLanguage; this setter lets the OverridePluginEncoding.ini
+    ''' force a specific fallback (e.g. CP949 for plugins where some FULL strings are UTF-8 but a
+    ''' few legacy strings are CP949).</summary>
+    Public Sub SetTranslatableInlineFallbackOverride(codePageOrName As String)
+        EnsureInitialized()
+        Dim enc = ParseEncoding(codePageOrName)
+        If enc Is Nothing Then Return
+        SyncLock _syncRoot
+            _translatableInlineFallback = enc
+        End SyncLock
+    End Sub
+
+    ''' <summary>Read OverridePluginEncoding.ini from the given directory (typically appdir) and apply
+    ''' Translatable / General / TranslatableInlineFallback overrides. File-based mirror of xEdit's
+    ''' -cp-trans / -cp-general CLI params, matching the SkipEyebrowsTone.ini convention
+    ''' (flat key=value lines, ; or # comments, [sections] ignored, case-insensitive keys).
+    ''' Missing file = no-op.</summary>
+    Public Sub ApplyOverrideIni(iniDirectory As String)
+        If String.IsNullOrEmpty(iniDirectory) Then Return
+        Dim iniPath = IO.Path.Combine(iniDirectory, "OverridePluginEncoding.ini")
+        If Not IO.File.Exists(iniPath) Then Return
+        Try
+            For Each rawLine In IO.File.ReadAllLines(iniPath)
+                Dim line = rawLine.Trim()
+                If line.Length = 0 OrElse line.StartsWith(";") OrElse line.StartsWith("#") OrElse line.StartsWith("[") Then Continue For
+                Dim eq = line.IndexOf("="c)
+                If eq <= 0 Then Continue For
+                Dim key = line.Substring(0, eq).Trim().ToLowerInvariant()
+                Dim val = line.Substring(eq + 1).Trim()
+                If val = "" Then Continue For
+                Select Case key
+                    Case "translatable"
+                        SetTranslatableOverride(val)
+                        Logger.LogLazy(Function() $"[ENCODING-OVERRIDE-INI] Translatable={val}")
+                    Case "general"
+                        SetGeneralOverride(val)
+                        Logger.LogLazy(Function() $"[ENCODING-OVERRIDE-INI] General={val}")
+                    Case "translatableinlinefallback"
+                        SetTranslatableInlineFallbackOverride(val)
+                        Logger.LogLazy(Function() $"[ENCODING-OVERRIDE-INI] TranslatableInlineFallback={val}")
+                End Select
+            Next
+        Catch ex As Exception
+            Logger.LogLazy(Function() $"[ENCODING-OVERRIDE-INI] read failed: {ex.GetType().Name}: {ex.Message}")
+        End Try
+    End Sub
+
     ''' <summary>
     ''' Decode bytes for an inline string subrecord using an explicit per-file encoding override
     ''' (typically from TES4 SNAM `&lt;cp:XXXX&gt;`). Mirror of TwbStringDef.ToStringNative

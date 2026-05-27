@@ -362,6 +362,12 @@ Public Module FaceTintCompositor
     ' the two helper methods below.
     Public Property PerLayerDiffLog As Boolean = False
 
+    ''' <summary>NPC FormID currently being baked. Stamped into [FACETINT-LAYER] log
+    ''' lines so an offline parser can group layers per NPC (the bake processes
+    ''' several NPCs in sequence and the layer name alone is not unique). Set by
+    ''' the FaceGen bake; left at 0 in render paths.</summary>
+    Public Property CurrentNpcFormID As UInteger = 0
+
     ''' <summary>TEMP DEBUG: full-texture BGRA readback for per-layer delta logging. Caller
     ''' must hold the GL context. Returns Nothing on a zero/invalid texture.</summary>
     Private Function ReadbackBgraForDebug(texId As Integer, w As Integer, h As Integer) As Byte()
@@ -406,9 +412,17 @@ Public Module FaceTintCompositor
     ''' <summary>TEMP DEBUG: log one layer's params + the delta it caused (prev vs cur BGRA).</summary>
     Private Sub LogComposeLayerDelta(channel As FaceTintChannel, layerIndex As Integer, name As String,
                                      layer As FaceTintLayerInput, useHairPalette As Boolean, forceUniform As Boolean,
-                                     prev As Byte(), cur As Byte(), w As Integer, h As Integer)
+                                     prev As Byte(), cur As Byte(), w As Integer, h As Integer,
+                                     Optional isSkinTone As Boolean = False,
+                                     Optional layerClass As Integer = -1,
+                                     Optional forceOpaqueAlpha As Boolean = False,
+                                     Optional blendConv As Integer = -1,
+                                     Optional maskFile As String = Nothing,
+                                     Optional srcFile As String = Nothing)
         Dim deltaStat = FormatDeltaStats(prev, cur, w, h)
-        Logger.LogLazy(Function() $"[FACETINT-LAYER] ch={channel} #{layerIndex} '{name}' kind={layer.Kind} blend={layer.BlendOp} op={layer.Opacity:F3} rgb=({layer.R},{layer.G},{layer.B}) hairPal={useHairPalette} row={layer.HairPaletteRow:F3} forceUni={forceUniform} takesSkin={layer.TakesSkinTone} -> {deltaStat}")
+        Dim safeMask = If(maskFile, "")
+        Dim safeSrc = If(srcFile, "")
+        Logger.LogLazy(Function() $"[FACETINT-LAYER] npc=0x{CurrentNpcFormID:X8} ch={channel} #{layerIndex} '{name}' kind={layer.Kind} blend={layer.BlendOp} op={layer.Opacity:F3} rgb=({layer.R},{layer.G},{layer.B}) hairPal={useHairPalette} row={layer.HairPaletteRow:F3} forceUni={forceUniform} takesSkin={layer.TakesSkinTone} isSkinTone={isSkinTone} layerClass={layerClass} forceOpaqueAlpha={forceOpaqueAlpha} blendConv={blendConv} -> {deltaStat} | mask='{safeMask}' src='{safeSrc}'")
     End Sub
 
     ' === TEMP DEBUG: mask/texture TGA dump ============================================
@@ -429,8 +443,10 @@ Public Module FaceTintCompositor
     End Function
 
     ''' <summary>TEMP DEBUG: write a BGRA buffer as an uncompressed 32-bit TGA (top-left origin,
-    ''' matching CK's FaceGen TGA layout). Alpha PRESERVED so the mask channel can be inspected.</summary>
-    Private Sub WriteBgraToTga(path As String, bgra As Byte(), w As Integer, h As Integer)
+    ''' matching CK's FaceGen TGA layout). Alpha PRESERVED so the mask channel can be inspected.
+    ''' Public so the FaceGen bake (NPC_Manager) can also dump its final composited D/N/S buffers
+    ''' alongside the _2.dds outputs in DebugMode.</summary>
+    Public Sub WriteBgraToTga(path As String, bgra As Byte(), w As Integer, h As Integer)
         Dim hdr(17) As Byte
         hdr(2) = 2                                  ' uncompressed true-color
         hdr(12) = CByte(w And &HFF) : hdr(13) = CByte((w >> 8) And &HFF)
@@ -948,7 +964,19 @@ void main() {
             ' each layer's delta can be measured against the real starting state.
             Dim dbgPerLayer As Boolean = (PerLayerDiffLog AndAlso Logger.Enabled)
             Dim dbgPrevPixels As Byte() = Nothing
-            If dbgPerLayer Then dbgPrevPixels = ReadbackBgraForDebug(baseTexForCompose, width, height)
+            If dbgPerLayer Then
+                dbgPrevPixels = ReadbackBgraForDebug(baseTexForCompose, width, height)
+                ' Initial state dump = the accumulator BEFORE any layer is applied. Replication
+                ' tool: load this, then for each [FACETINT-LAYER] line apply (mask, src, params)
+                ' and compare to the matching state_after_NN_<name>.tga dumped below.
+                If Not String.IsNullOrEmpty(DumpMaskDir) AndAlso dbgPrevPixels IsNot Nothing Then
+                    Try
+                        Dim initName = $"{channel}_state_initial.tga"
+                        WriteBgraToTga(System.IO.Path.Combine(DumpMaskDir, initName), dbgPrevPixels, width, height)
+                    Catch
+                    End Try
+                End If
+            End If
 
             Dim drawnLayers As Integer = 0
             Dim totalLayers As Integer = If(layers IsNot Nothing, layers.Count, 0)
@@ -1007,10 +1035,16 @@ void main() {
                 ' LUT) per channel. MUST run BEFORE the texture-unit bindings below: DumpTextureToTga
                 ' uses TextureUnit.Texture0 and leaves it bound to 0, so running it mid-binding would
                 ' clobber uPrev and zero the accumulator for this layer's draw (and every layer after).
+                Dim dumpedSrcFile As String = Nothing
+                Dim dumpedMaskFile As String = Nothing
                 If Not String.IsNullOrEmpty(DumpMaskDir) Then
                     Dim nm = SanitizeName(layerName)
-                    DumpTextureToTga(layerTex, $"L{i:00}_{nm}_{channel}_{layer.Kind}_layer.tga")
-                    If diffuseMaskTex <> 0 Then DumpTextureToTga(diffuseMaskTex, $"L{i:00}_{nm}_{channel}_diffmask.tga")
+                    dumpedSrcFile = $"L{i:00}_{nm}_{channel}_{layer.Kind}_layer.tga"
+                    DumpTextureToTga(layerTex, dumpedSrcFile)
+                    If diffuseMaskTex <> 0 Then
+                        dumpedMaskFile = $"L{i:00}_{nm}_{channel}_diffmask.tga"
+                        DumpTextureToTga(diffuseMaskTex, dumpedMaskFile)
+                    End If
                     If hairLutTex <> 0 Then DumpTextureToTga(hairLutTex, $"L{i:00}_{nm}_{channel}_HAIRLUT.tga")
                 End If
 
@@ -1113,7 +1147,14 @@ void main() {
                 ' TEMP DEBUG: read back what this layer produced and log its delta vs the prior state.
                 If dbgPerLayer Then
                     Dim dbgCur = ReadbackBgraForDebug(readTexId, width, height)
-                    LogComposeLayerDelta(channel, i, layerName, layer, useHairPaletteEffective, forceUniformColorEffective, dbgPrevPixels, dbgCur, width, height)
+                    LogComposeLayerDelta(channel, i, layerName, layer, useHairPaletteEffective, forceUniformColorEffective,
+                                         dbgPrevPixels, dbgCur, width, height,
+                                         isSkinTone:=layer.IsSkinTone,
+                                         layerClass:=layerClass,
+                                         forceOpaqueAlpha:=(occlusionActive AndAlso isLast),
+                                         blendConv:=CInt(BlendConvention),
+                                         maskFile:=dumpedMaskFile,
+                                         srcFile:=dumpedSrcFile)
                     dbgPrevPixels = dbgCur
                 End If
 
@@ -1800,9 +1841,15 @@ void main() {
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+            ' Rgba32f: float storage so the accumulator never quantizes BETWEEN layers
+            ' (only at the final GetTexImage when the bake reads back). With Rgba8 the
+            ' per-layer write rounded each blend to 8 bits and the next layer sampled
+            ' that quantized value, compounding ~0.5/255 of noise per pass. Verified
+            ' against the Python sim: float storage closes ~5/7 of the bit-diff on the
+            ' 5-layer Diffuse compose.
+            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f,
                           width, height, 0,
-                          PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero)
+                          PixelFormat.Rgba, PixelType.Float, IntPtr.Zero)
 
             state._pingFbo(i) = GL.GenFramebuffer()
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, state._pingFbo(i))
@@ -1833,9 +1880,14 @@ void main() {
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
         GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
+        ' Rgba32f: see EnsurePingPongAllocated. The caller-owned output of the LAST
+        ' pass holds the same precision as the intermediates so the final byte readback
+        ' has one quantization step (the readback itself) instead of N+1 (one per layer
+        ' + the readback). Eliminates per-layer 8-bit truncation noise on multi-layer
+        ' composes (Diffuse mainly; N/S single-layer is unchanged byte-wise here).
+        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f,
                       width, height, 0,
-                      PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero)
+                      PixelFormat.Rgba, PixelType.Float, IntPtr.Zero)
 
         resultFbo = GL.GenFramebuffer()
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, resultFbo)

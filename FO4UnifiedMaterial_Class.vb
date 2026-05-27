@@ -1163,9 +1163,12 @@ Public Class FO4UnifiedMaterial_Class
     <BGSMOnly()>
     Public Property SpecularColor As Color
         Get
+            ' BGSM.SpecularColor (uint from MaterialLib) holds 3 bytes RGB with
+            ' the high byte = 0. SpecularColor has no separate alpha — stamp 0xFF
+            ' in the high byte so the ARGB-honest UIntegerToColor returns A=255.
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    Return UIntegerToColor(CType(Underlying_Material, BGSM).SpecularColor)
+                    Return UIntegerToColor(CType(Underlying_Material, BGSM).SpecularColor Or &HFF000000UI)
                 Case GetType(BGEM)
                     Return System.Drawing.Color.FromArgb(255, 255, 255, 255)
             End Select
@@ -1174,7 +1177,9 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As Color)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    CType(Underlying_Material, BGSM).SpecularColor = ColorToUInteger(value)
+                    ' Drop A on the way in — MaterialLib will discard the high
+                    ' byte at serialize time anyway.
+                    CType(Underlying_Material, BGSM).SpecularColor = ColorToUInteger(value) And &HFFFFFFUI
                 Case GetType(BGEM)
             End Select
         End Set
@@ -1183,20 +1188,22 @@ Public Class FO4UnifiedMaterial_Class
     <Category("Emissive")>
     Public Property EmittanceColor As Color
         Get
+            ' Same pattern as SpecularColor: stamp 0xFF in the high byte so the
+            ' ARGB-honest helper returns A=255 (EmittanceColor has no alpha).
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    Return UIntegerToColor(CType(Underlying_Material, BGSM).EmittanceColor)
+                    Return UIntegerToColor(CType(Underlying_Material, BGSM).EmittanceColor Or &HFF000000UI)
                 Case GetType(BGEM)
-                    Return UIntegerToColor(CType(Underlying_Material, BGEM).EmittanceColor)
+                    Return UIntegerToColor(CType(Underlying_Material, BGEM).EmittanceColor Or &HFF000000UI)
             End Select
             Throw New Exception
         End Get
         Set(value As Color)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    CType(Underlying_Material, BGSM).EmittanceColor = ColorToUInteger(value)
+                    CType(Underlying_Material, BGSM).EmittanceColor = ColorToUInteger(value) And &HFFFFFFUI
                 Case GetType(BGEM)
-                    CType(Underlying_Material, BGEM).EmittanceColor = ColorToUInteger(value)
+                    CType(Underlying_Material, BGEM).EmittanceColor = ColorToUInteger(value) And &HFFFFFFUI
             End Select
         End Set
     End Property
@@ -1425,9 +1432,10 @@ Public Class FO4UnifiedMaterial_Class
     <BGSMOnly()>
     Public Property HairTintColor As Color
         Get
+            ' Stamp 0xFF alpha in the high byte — HairTintColor has no alpha in spec.
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    Return UIntegerToColor(CType(Underlying_Material, BGSM).HairTintColor)
+                    Return UIntegerToColor(CType(Underlying_Material, BGSM).HairTintColor Or &HFF000000UI)
                 Case GetType(BGEM)
                     Return Color.Black
                 Case Else
@@ -1437,7 +1445,7 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As Color)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    CType(Underlying_Material, BGSM).HairTintColor = ColorToUInteger(value)
+                    CType(Underlying_Material, BGSM).HairTintColor = ColorToUInteger(value) And &HFFFFFFUI
                 Case GetType(BGEM)
                     ' No action
                 Case Else
@@ -1453,7 +1461,7 @@ Public Class FO4UnifiedMaterial_Class
             ' BGSM uses HairTintColor field for both hair and skin tint
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    Return UIntegerToColor(CType(Underlying_Material, BGSM).HairTintColor)
+                    Return UIntegerToColor(CType(Underlying_Material, BGSM).HairTintColor Or &HFF000000UI)
                 Case GetType(BGEM)
                     Return Color.White
                 Case Else
@@ -1463,7 +1471,7 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As Color)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
-                    CType(Underlying_Material, BGSM).HairTintColor = ColorToUInteger(value)
+                    CType(Underlying_Material, BGSM).HairTintColor = ColorToUInteger(value) And &HFFFFFFUI
                 Case GetType(BGEM)
                     ' No action
                 Case Else
@@ -1763,11 +1771,19 @@ Public Class FO4UnifiedMaterial_Class
     <BGEMOnly>
     Public Property BaseColor As Color
         Get
+            ' BGEM.BaseColor (uint from MaterialLib) holds 3 bytes RGB with the high
+            ' byte = 0. The BGEM "Alpha" lives separately in BaseMaterialFile.Alpha
+            ' (a float). Stamp Alpha (clamped to byte) in the high byte so the
+            ' ARGB-honest UIntegerToColor returns A representing the material opacity.
+            ' Callers needing exact alpha (> 1.0 possible) must read Mat.Alpha directly.
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
                     Return System.Drawing.Color.FromArgb(255, 255, 255, 255)
                 Case GetType(BGEM)
-                    Return UIntegerToColor(CType(Underlying_Material, BGEM).BaseColor)
+                    Dim bgem = CType(Underlying_Material, BGEM)
+                    Dim aByte = ClampByte(bgem.Alpha * 255)
+                    Dim argbUInt = (CUInt(aByte) << 24) Or (bgem.BaseColor And &HFFFFFFUI)
+                    Return UIntegerToColor(argbUInt)
                 Case Else
                     Throw New Exception
             End Select
@@ -1777,7 +1793,13 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGSM)
                     ' No action
                 Case GetType(BGEM)
-                    CType(Underlying_Material, BGEM).BaseColor = ColorToUInteger(value)
+                    ' Split incoming Color into RGB -> BGEM.BaseColor (uint, high byte 0)
+                    ' and A -> BaseMaterialFile.Alpha (float). The high byte is masked
+                    ' off because MaterialLib's Color.FromUInt32 ignores it at serialize
+                    ' time anyway.
+                    Dim bgem = CType(Underlying_Material, BGEM)
+                    bgem.BaseColor = ColorToUInteger(value) And &HFFFFFFUI
+                    bgem.Alpha = value.A / 255.0F
                 Case Else
                     Throw New Exception
             End Select
@@ -2234,7 +2256,7 @@ Public Class FO4UnifiedMaterial_Class
                 .EnvironmentMappingMaskScale = shad.EnvironmentMapScale,
                 .ModelSpaceNormals = shad.ModelSpace,
                 .Facegen = shad.IsTypeFaceTint,
-                .Hair = shad.IsTypeHairTint,
+                .Hair = shad.IsTypeHairTint OrElse (Not Nif.Header.Version.IsSSE AndAlso (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair) <> 0),
                 .SkinTint = shad.IsTypeSkinTint,
                 .BackLighting = shad.HasBacklight,
                 .BackLightPower = shad.BacklightPower,
@@ -2398,6 +2420,12 @@ Public Class FO4UnifiedMaterial_Class
         mat.AlphaTest = False
         mat.AlphaTestRef = 128
         mat.AlphaBlendMode = AlphaBlendModeType.None
+        ' Preserve the float A of shad.BaseColor (Color4) in BGEM.Alpha. The
+        ' NifColorColorToUInteger above only round-trips RGB through a uint;
+        ' the alpha — which can exceed 1.0 — must be captured separately.
+        If shad IsNot Nothing Then
+            mat.Alpha = shad.BaseColor.A
+        End If
         Underlying_Material = mat
         ' Same alpha-state binding as the BSLightingShaderProperty overload — shared via
         ' ApplyAlphaPropertyFromNif (embedded path is the only legitimate NIF AlphaProperty read).
@@ -2434,7 +2462,18 @@ Public Class FO4UnifiedMaterial_Class
         EnsureNiString4(shad.EmitGradientTexture, Mat.GlowTexture)
 
         ' Effect-specific properties (BaseColor, Falloff, Lighting Influence, Greyscale flags)
-        shad.BaseColor = UIntegerToNifColor4(Mat.BaseColor)
+        ' BSEffectShaderProperty.BaseColor is a true Color4. The A holds the
+        ' material opacity (BGEM.Alpha float). Mat.Alpha can exceed 1.0 (e.g. the
+        ' eye AO BGEM uses 1.2 to boost the effect) — that value can't survive
+        ' a byte round-trip, so compose RGB from Me.BaseColor (wrapper, returns
+        ' Color with RGB from BGEM.BaseColor uint) and write the float Mat.Alpha
+        ' directly into A.
+        Dim bcColor = Me.BaseColor
+        shad.BaseColor = New NiflySharp.Structs.Color4(
+            bcColor.R / 255.0F,
+            bcColor.G / 255.0F,
+            bcColor.B / 255.0F,
+            Mat.Alpha)
         shad.BaseColorScale = Mat.BaseColorScale
         shad.FalloffStartAngle = Mat.FalloffStartAngle
         shad.FalloffStopAngle = Mat.FalloffStopAngle
@@ -3083,11 +3122,17 @@ Public Class FO4UnifiedMaterial_Class
         File.WriteAllText(sidecarPath, JsonSerializer.Serialize(payload, opts))
     End Sub
 
+    ' Color helpers — ARGB-honest. The uint is treated as a real 32-bit ARGB
+    ' value (byte alpha in the high byte). Callers that hand us a uint coming
+    ' from MaterialLib (whose Color.FromUInt32/ToUInt32 only round-trip 3 bytes
+    ' of RGB) must stamp the alpha byte themselves before calling these
+    ' helpers — see the Mat.* property getters which do exactly that.
     Private Shared Function UIntegerToColor(color As UInteger) As Color
+        Dim a = ((color >> 24) And &HFF)
         Dim r = ((color >> 16) And &HFF)
         Dim g = ((color >> 8) And &HFF)
         Dim b = (color And &HFF)
-        Return System.Drawing.Color.FromArgb(255, r, g, b)
+        Return System.Drawing.Color.FromArgb(a, r, g, b)
     End Function
     Private Shared Function UIntegerToNifColor3(color As UInteger) As NiflySharp.Structs.Color3
         Dim r = ((color >> 16) And &HFF)
@@ -3096,10 +3141,11 @@ Public Class FO4UnifiedMaterial_Class
         Return New Color3(r / 255, g / 255, b / 255)
     End Function
     Private Shared Function UIntegerToNifColor4(color As UInteger) As NiflySharp.Structs.Color4
+        Dim a = ((color >> 24) And &HFF)
         Dim r = ((color >> 16) And &HFF)
         Dim g = ((color >> 8) And &HFF)
         Dim b = (color And &HFF)
-        Return New Color4(r / 255, g / 255, b / 255, 1)
+        Return New Color4(r / 255, g / 255, b / 255, a / 255)
     End Function
     Private Shared Function ClampByte(value As Single) As Integer
         Return Math.Min(255, Math.Max(0, CInt(value)))
@@ -3115,7 +3161,7 @@ Public Class FO4UnifiedMaterial_Class
     End Function
 
     Public Shared Function ColorToUInteger(c As Color) As UInteger
-        Return CType((CUInt(c.R) << 16) Or (CUInt(c.G) << 8) Or CUInt(c.B), UInteger)
+        Return CType((CUInt(c.A) << 24) Or (CUInt(c.R) << 16) Or (CUInt(c.G) << 8) Or CUInt(c.B), UInteger)
     End Function
     Private Shared Function NormalizeGameRelativePath(rawPath As String, rootPrefix As String) As String
         If String.IsNullOrWhiteSpace(rawPath) Then Return ""
