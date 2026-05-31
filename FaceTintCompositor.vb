@@ -177,6 +177,15 @@ Public Class FaceTintLayerInput
     ''' <summary>Optional debug label written to the log when this layer is applied.</summary>
     Public Property DebugName As String = ""
 
+    ''' <summary>RACE TintTemplateOption.Slot (12 = SkinTone). Usado por el compositor para resolver
+    ''' la convención de composición (ws/maskconv/framework) vía FaceTintConvention.ResolveConvention.
+    ''' Lo setea el builder desde la Option del RACE. Default 0xFFFF = desconocido (cae a Linear).</summary>
+    Public Property Slot As UShort = &HFFFFUS
+
+    ''' <summary>True si la Option del RACE es TextureSet (disc=2); False si Palette/Mask (disc=1).
+    ''' Redundante con Kind pero explícito para el resolver de convención. Lo setea el builder.</summary>
+    Public Property IsTextureSet As Boolean = False
+
     ''' <summary>Get the DDS bytes for the requested channel. Returns Nothing if the layer doesn't
     ''' contribute to that channel (Palette layers only contribute to Diffuse; TextureSet layers
     ''' may have any subset of Diffuse / Normal / Specular depending on which TTET slots are filled).</summary>
@@ -231,37 +240,17 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uChannelLoc As Integer = -1
     Friend _uHairLutLoc As Integer = -1
     Friend _uPaletteRowLoc As Integer = -1
-    Friend _uBlendConventionLoc As Integer = -1
     Friend _uUseHairPaletteLoc As Integer = -1
-    Friend _uLayerClassLoc As Integer = -1
     Friend _uForceOpaqueAlphaLoc As Integer = -1
     Friend _uForceUniformColorLoc As Integer = -1
+    Friend _uWorkingSpaceLoc As Integer = -1
+    Friend _uSrcSpaceLoc As Integer = -1
+    Friend _uOutputSpaceLoc As Integer = -1
+    Friend _uMaskConvFullLoc As Integer = -1
+    Friend _uModeLoc As Integer = -1
     Friend _quadVao As Integer = 0
     Friend _quadVbo As Integer = 0
 
-    ' Region-swap program (separate from the tint compositor). Created lazily by
-    ' EnsureRegionSwapInitialized. Shares _quadVao/_quadVbo with the tint compositor.
-    Friend _swapProgram As Integer = 0
-    Friend _uSwapPrevLoc As Integer = -1
-    Friend _uSwapTexLoc As Integer = -1
-    Friend _uSwapMaskLoc As Integer = -1
-    Friend _uSwapIntensityLoc As Integer = -1
-    Friend _uSwapBlendConventionLoc As Integer = -1
-
-    ' Uniform-blend program. Created lazily by EnsureUniformBlendInitialized.
-    Friend _uniformBlendProgram As Integer = 0
-    Friend _uUbPrevLoc As Integer = -1
-    Friend _uUbColorLoc As Integer = -1
-    Friend _uUbBlendOpLoc As Integer = -1
-    Friend _uUbOpacityLoc As Integer = -1
-
-    ' Base sRGB->gamma-2.2 conversion program (diffuse only). Created lazily by
-    ' EnsureBaseGamma22Initialized. Shares _quadVao/_quadVbo with the tint compositor. Converts
-    ' the diffuse base ONCE into an Rgba32f texture before the compose loop, so the per-layer
-    ' fragment path carries no gamma branch (the base is invariant across layers).
-    Friend _baseConvProgram As Integer = 0
-    Friend _uBaseConvSrcLoc As Integer = -1
-    Friend _uBaseConvZeroAlphaLoc As Integer = -1
 
     ' Persistent ping-pong colour attachments shared by ComposeOntoFaceTexture,
     ' ApplyRegionSwapsOntoFaceTexture and ApplyUniformBlendOntoFaceTexture. Allocated lazily
@@ -280,18 +269,6 @@ Public NotInheritable Class FaceTintCompositorState
         If _program <> 0 Then
             Try : GL.DeleteProgram(_program) : Catch : End Try
             _program = 0
-        End If
-        If _swapProgram <> 0 Then
-            Try : GL.DeleteProgram(_swapProgram) : Catch : End Try
-            _swapProgram = 0
-        End If
-        If _uniformBlendProgram <> 0 Then
-            Try : GL.DeleteProgram(_uniformBlendProgram) : Catch : End Try
-            _uniformBlendProgram = 0
-        End If
-        If _baseConvProgram <> 0 Then
-            Try : GL.DeleteProgram(_baseConvProgram) : Catch : End Try
-            _baseConvProgram = 0
         End If
         If _quadVao <> 0 Then
             Try : GL.DeleteVertexArray(_quadVao) : Catch : End Try
@@ -323,33 +300,6 @@ Public NotInheritable Class FaceTintCompositorState
 End Class
 
 Public Module FaceTintCompositor
-
-    ''' <summary>Active diffuse-compositing convention. GLOBAL on purpose: render and bake share
-    ''' this compositor and must produce identical output, so this is NOT bake-scoped.
-    ''' SrgbOpacity = coverage is sRGB(mask)*opacity -- the SAME coverage transfer the N/S path
-    ''' uses (linearToSrgb1 on the spatial mask). This is the UNIFIED convention across all three
-    ''' channels (one sRGB transfer, no per-channel special-casing). Verified on the isolated
-    ''' skin-tone: linear-mask coverage left RMS ~3.5 vs CK; sRGB(mask) coverage drops it to
-    ''' ~0.7-1.0 with near-zero bias. N/S already used sRGB(mask) directly so they don't regress.</summary>
-    Public Property BlendConvention As FaceTintBlendConvention = FaceTintBlendConvention.SrgbOpacity
-
-    ''' <summary>When True, the DIFFUSE compose converts its base from sRGB to gamma-2.2 encoding
-    ''' (CK encodes the FaceGen diffuse base in gamma-2.2; ours is stored sRGB). Verified: the
-    ''' transfer maps our pre-tint base onto CK base at RMS ~0.5 across R/G/B. Diffuse only; normal
-    ''' and specular are linear data and are never converted. Reversible: set False to disable.</summary>
-    Public Property ConvertDiffuseBaseToGamma22 As Boolean = True
-
-    ''' <summary>When True (default), the DIFFUSE compose dispatches by the per-layer 'Takes Skin Tone'
-    ''' flag (TTEF 0x0004), so layers that do NOT take skin tone (brows, tattoos = decals/own colour)
-    ''' OCCLUDE the skin-tone instead of receiving it on top. Mechanism: TakesSkinTone=False feature
-    ''' layers accumulate an occlusion footprint into the accumulator's alpha channel; the skin-tone
-    ''' layer and TakesSkinTone=True layers multiply their delta by (1 - footprint) so they don't
-    ''' reach the occluded regions. Verified vs CK: tattoo = mix(base, tex, cov) (no skin tone, all 3
-    ''' channels) and brow = LUT colour (no skin tone). Without this, additive-over-base summed the
-    ''' skin-tone softlight onto brows/tattoos (brow +20 light, tattoo +20 red). The diffuse base
-    ''' conversion seeds the footprint to 0 (alpha) when this is on. Reversible: set False for the
-    ''' legacy additive-over-base-everywhere behaviour.</summary>
-    Public Property TakesSkinToneOcclusion As Boolean = True
 
     ' === TEMP DEBUG INSTRUMENTATION (removable) =========================================
     ' Per-layer compose diagnostics. When True, the compose loop reads back the accumulator
@@ -458,29 +408,70 @@ Public Module FaceTintCompositor
         End Using
     End Sub
 
-    ''' <summary>TEMP DEBUG: read a GL texture back (at its own dimensions) and write it to TGA
-    ''' under DumpMaskDir. No-op on a zero texture / unset dir. Caller holds the GL context.</summary>
-    Private Sub DumpTextureToTga(texId As Integer, fileName As String)
-        If texId = 0 OrElse String.IsNullOrEmpty(DumpMaskDir) Then Return
+    ''' <summary>TEMP DEBUG: dump a SOURCE texture (by its FilesDictionary path) as a PRISTINE TGA under
+    ''' DumpMaskDir — re-reads the DDS fresh and CPU-decodes it via the wrapper (never the GPU). Replaces
+    ''' the old GL readback (GPU DXT decode, ~max 62 off vs CK). No-op on empty path / unset dir.</summary>
+    Private Sub DumpTextureToTga(texturePath As String, fileName As String)
+        If String.IsNullOrEmpty(texturePath) OrElse String.IsNullOrEmpty(DumpMaskDir) Then Return
+        WritePristineTga(texturePath, System.IO.Path.Combine(DumpMaskDir, fileName))
+    End Sub
+
+    ''' <summary>PRISTINE dumper (single source of truth) — recibe SOLO dos paths: el de la textura source
+    ''' y el de salida. Re-lee el DDS fresco del FilesDictionary, lo CPU-decodifica (BCn → uncompressed
+    ''' RGBA) por el wrapper DirectXTex (<c>Loader.LoadTextures(useCompress:=False, forceOpenGL:=False)</c>,
+    ''' IsCompressedGL=False) — NO GPU — swap RGBA→BGRA, escribe TGA uncompressed a <paramref name="outPath"/>.
+    ''' Byte-identico a texconv/CK (Tools/PristineDumpProbe: max 0). Maneja 4-canales (BC1/3/7→RGBA/BGRA),
+    ''' 2-canales (BC5→R8G8: normal/spec, B=0) y 1-canal (BC4→gray); BC6H/16-bit se loguean y saltean. Public para que el bake
+    ''' (NPC_Manager) dumpee BASEIN con el mismo path.</summary>
+    Public Sub WritePristineTga(sourceTexturePath As String, outPath As String)
+        If String.IsNullOrEmpty(sourceTexturePath) OrElse String.IsNullOrEmpty(outPath) Then Return
+        Dim ddsBytes As Byte() = Nothing
+        Try : ddsBytes = FilesDictionary_class.GetBytes(sourceTexturePath) : Catch : Return : End Try
+        If ddsBytes Is Nothing OrElse ddsBytes.Length = 0 Then Return
         Try
-            GL.ActiveTexture(TextureUnit.Texture0)
-            GL.BindTexture(TextureTarget.Texture2D, texId)
-            Dim tw As Integer = 0, th As Integer = 0
-            GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureWidth, tw)
-            GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureHeight, th)
-            If tw > 0 AndAlso th > 0 Then
-                Dim buf(tw * th * 4 - 1) As Byte
-                Dim handle = System.Runtime.InteropServices.GCHandle.Alloc(buf, System.Runtime.InteropServices.GCHandleType.Pinned)
-                Try
-                    GL.GetTexImage(TextureTarget.Texture2D, 0, PixelFormat.Bgra, PixelType.UnsignedByte, handle.AddrOfPinnedObject())
-                Finally
-                    handle.Free()
-                End Try
-                WriteBgraToTga(System.IO.Path.Combine(DumpMaskDir, fileName), buf, tw, th)
+            Dim loaded = DirectXTexWrapperCLI.Loader.LoadTextures(New Byte()() {ddsBytes}, useCompress:=False, forceOpenGL:=False)
+            If loaded Is Nothing OrElse loaded.Count = 0 OrElse loaded(0) Is Nothing OrElse Not loaded(0).Loaded Then Return
+            Dim tex = loaded(0)
+            If tex.Levels Is Nothing OrElse tex.Levels.Count = 0 OrElse tex.Levels(0) Is Nothing Then Return
+            Dim lvl = tex.Levels(0)
+            Dim w = lvl.Width, h = lvl.Height
+            Dim px = lvl.Data
+            Dim fmt = tex.DxgiCodeFinal
+            ' bytes-per-pixel del decode que devuelve el wrapper (ChooseDecompressFormatForSource):
+            '   BC1/BC2/BC3/BC7 -> R8G8B8A8(28/29) ó B8G8R8A8(87/88/91/93) = 4 canales
+            '   BC5 (normal/spec) -> R8G8_UNORM/SNORM(49/50) = 2 canales ; BC4 -> R8(61/62) = 1 canal
+            Dim bpp As Integer = 0
+            Select Case fmt
+                Case 28, 29, 87, 88, 91, 93 : bpp = 4
+                Case 49, 50 : bpp = 2
+                Case 61, 62 : bpp = 1
+            End Select
+            If w <= 0 OrElse h <= 0 OrElse px Is Nothing OrElse bpp = 0 OrElse px.Length < w * h * bpp Then
+                Dim p = outPath, dx = fmt, nb = If(px Is Nothing, 0, px.Length)
+                Logger.LogLazy(Function() $"[PRISTINE-DUMP] '{System.IO.Path.GetFileName(p)}' formato no soportado (DxgiFinal={dx}, bytes={nb}) -> skip")
+                Return
             End If
-            GL.BindTexture(TextureTarget.Texture2D, 0)
+            Dim isBgra8 = (fmt = 87 OrElse fmt = 88 OrElse fmt = 91 OrElse fmt = 93)
+            Dim bgra(w * h * 4 - 1) As Byte
+            For i As Integer = 0 To w * h - 1
+                Dim o As Integer = i * 4, s As Integer = i * bpp
+                Select Case bpp
+                    Case 4
+                        If isBgra8 Then
+                            bgra(o) = px(s) : bgra(o + 1) = px(s + 1) : bgra(o + 2) = px(s + 2) : bgra(o + 3) = px(s + 3)
+                        Else
+                            bgra(o) = px(s + 2) : bgra(o + 1) = px(s + 1) : bgra(o + 2) = px(s) : bgra(o + 3) = px(s + 3)   ' RGBA -> BGRA
+                        End If
+                    Case 2   ' R8G8 (BC5, p.ej. normal): R=X, G=Y, B=0, A=255 — igual que el readback GL de un RG texture
+                        bgra(o) = 0 : bgra(o + 1) = px(s + 1) : bgra(o + 2) = px(s) : bgra(o + 3) = 255
+                    Case 1   ' R8 (BC4): grayscale replicado
+                        bgra(o) = px(s) : bgra(o + 1) = px(s) : bgra(o + 2) = px(s) : bgra(o + 3) = 255
+                End Select
+            Next
+            WriteBgraToTga(outPath, bgra, w, h)
         Catch ex As Exception
-            Logger.LogLazy(Function() $"[MASKDUMP] failed '{fileName}': {ex.Message}")
+            Dim p = outPath, msg = ex.Message
+            Logger.LogLazy(Function() $"[PRISTINE-DUMP] '{System.IO.Path.GetFileName(p)}' fail: {msg}")
         End Try
     End Sub
 
@@ -538,9 +529,12 @@ uniform int uChannel;     // 0=Diffuse 1=Normal 2=Specular
 uniform int uUseHairPalette;  // 1 = sample uHairLut per-pixel instead of authored colour (Diffuse only)
 uniform int uForceUniformColor;  // 1 = TextureSet diffuse uses uColor instead of layerSample.rgb (brow tint override path; ignored on PaletteMask)
 uniform float uPaletteRow;    // V coordinate into uHairLut when uUseHairPalette=1 (= CLFM.RemappingIndex)
-uniform int uBlendConvention; // coverage convention (FaceTintBlendConvention): 0=Linear (mask), 1=SrgbOpacity (sRGB(mask))
-uniform int uLayerClass;      // diffuse occlusion dispatch: 0=skin-tone/TakesSkinTone (delta masked by footprint), 1=feature that does NOT take skin tone (occludes: writes footprint to alpha), 2=legacy additive-over-base (occlusion off)
-uniform int uForceOpaqueAlpha; // 1 = write opaque alpha (1.0) on the FINAL drawn layer, so the occlusion footprint carried in the accumulator alpha does NOT leak into the result texture's alpha (would make the face show only the brow). Footprint lives in alpha only BETWEEN layers.
+uniform int uForceOpaqueAlpha; // 1 = write opaque alpha (1.0) on the FINAL drawn layer (last pass).
+uniform int uWorkingSpace;     // 0=linear 1=srgb 2=g22. Espacio donde corre el blend.
+uniform int uSrcSpace;         // 0=linear 1=srgb 2=g22. Espacio del color de la capa (D=srgb, N/S=linear).
+uniform int uOutputSpace;      // 0=linear 1=srgb 2=g22. Espacio del acumulador/almacenamiento (D=g22, N/S=linear).
+uniform int uMaskConvFull;     // mask conv: 0=raw 1=srgbEncode 2=srgbDecode 3=g22Encode 4=g22Decode
+uniform int uMode;             // 0=tint (additive-over-base) ; 1=region swap (crossfade mix(prev,swap,mask.r*op))
 
 vec3 blendDefault(vec3 d, vec3 s) { return s; }
 vec3 blendMultiply(vec3 d, vec3 s) { return d * s; }
@@ -564,171 +558,117 @@ float linearToSrgb1(float c) {
     c = clamp(c, 0.0, 1.0);
     return (c <= 0.0031308) ? (c * 12.92) : (1.055 * pow(c, 1.0 / 2.4) - 0.055);
 }
-// THE single coverage convention, applied to every path (diffuse + N/S, all blend ops and
-// occlusion classes): shape the spatial mask, then multiply by uOpacity OUTSIDE this transfer
-// (verified from the Scar bake: opacity scales coverage exactly linearly, slope 0.750, so
-// coverage = sRGB(mask)*opacity, not sRGB(mask*opacity)). SrgbOpacity passes the mask through
-// the IEC 61966-2-1 transfer; Linear leaves it untouched.
-float convMask(float mask) {
-    if (uBlendConvention == 1) {
-        return linearToSrgb1(mask);
-    }
-    return mask;
+// ---- Derived-model helpers (parity with test_conventions.to_space). ASCII only. ----
+float srgbToLin1(float c){ c=clamp(c,0.0,1.0); return (c<=0.04045)?(c/12.92):pow((c+0.055)/1.055,2.4); }
+float g22ToLin1(float c){ return pow(clamp(c,0.0,1.0),2.2); }
+float linToG22_1(float c){ return pow(clamp(c,0.0,1.0),1.0/2.2); }
+// sRGB stored value -> working space (ws: 0=linear 1=srgb 2=g22)
+vec3 srgbToWS(vec3 v, int ws){
+    if (ws==1) return v;
+    vec3 lin = vec3(srgbToLin1(v.r), srgbToLin1(v.g), srgbToLin1(v.b));
+    if (ws==0) return lin;
+    return vec3(linToG22_1(lin.r), linToG22_1(lin.g), linToG22_1(lin.b));
 }
-
+// working space -> sRGB stored value
+vec3 wsToSrgb(vec3 v, int ws){
+    if (ws==1) return v;
+    vec3 lin = (ws==2) ? vec3(g22ToLin1(v.r), g22ToLin1(v.g), g22ToLin1(v.b)) : v;
+    return vec3(linearToSrgb1(lin.r), linearToSrgb1(lin.g), linearToSrgb1(lin.b));
+}
+// ---- Conversion generica entre espacios (0=linear 1=srgb 2=g22) via linear. Shader AGNOSTICO:
+//      solo aplica los espacios que el resolver pone en los uniforms. ----
+vec3 spaceToLin(vec3 v, int s){
+    if (s==0) return v;
+    if (s==1) return vec3(srgbToLin1(v.r), srgbToLin1(v.g), srgbToLin1(v.b));
+    return vec3(g22ToLin1(v.r), g22ToLin1(v.g), g22ToLin1(v.b));
+}
+vec3 linToSpace(vec3 v, int s){
+    if (s==0) return v;
+    if (s==1) return vec3(linearToSrgb1(v.r), linearToSrgb1(v.g), linearToSrgb1(v.b));
+    return vec3(linToG22_1(v.r), linToG22_1(v.g), linToG22_1(v.b));
+}
+vec3 cvt(vec3 v, int fromS, int toS){
+    if (fromS==toS) return v;
+    return linToSpace(spaceToLin(v, fromS), toS);
+}
+// derived-model mask conv (0=raw 1=srgbEnc 2=srgbDec 3=g22Enc 4=g22Dec)
+float convMaskFull(float m){
+    if (uMaskConvFull==1) return linearToSrgb1(m);
+    if (uMaskConvFull==2) return srgbToLin1(m);
+    if (uMaskConvFull==3) return linToG22_1(m);
+    if (uMaskConvFull==4) return g22ToLin1(m);
+    return m;
+}
+// derived-model blend dispatch (uBlendOp: 0=replace 1=mult 2=overlay 3=softlight 4=hardlight)
+vec3 blendDispatch(vec3 d, vec3 s){
+    if (uBlendOp==1) return blendMultiply(d,s);
+    if (uBlendOp==2) return blendOverlay(d,s);
+    if (uBlendOp==3) return blendSoftLight(d,s);
+    if (uBlendOp==4) return blendHardLight(d,s);
+    return blendDefault(d,s);
+}
+// Shader AGNOSTICO: compone CADA capa sobre el acumulador corriente (uPrev) aplicando las
+// convenciones que llegan por uniforms (uWorkingSpace / uMaskConvFull / uBlendOp / uLayerKind).
+// over-RUNNING: cada capa se compone sobre el resultado de las capas previas (no sobre un base
+// original fijo). Asi N/S con replace reemplazan secuencialmente (last-wins) en vez de acumular
+// deltas. Single-layer es identico a over-original (prev == base en la 1a capa). Parity con
+// compose_py (Tools/FaceGenByteCompare) / FaceTintConvention.ResolveConvention.
+//   cov     = convMaskFull(mask) * opacity
+//   base_ws = srgbToWS(prev)                 (prev = acumulador corriente)
+//   src_ws  = srgbToWS(src)
+//   res_ws  = base_ws + cov*(blendDispatch(base_ws,src_ws) - base_ws)
+//   final   = wsToSrgb(res_ws)               (el resultado ES el nuevo prev)
+// mask source: PaletteMask -> layer.G ; TextureSet D -> layer.a ; TextureSet N/S -> uLayerDiffuseAlpha.a
+// src: PaletteMask -> uColor (o LUT) ; TextureSet -> layer.rgb (o LUT / uColor forzado)
 void main() {
     vec4 prevRgba = texture(uPrev, vUV);
     vec3 prev = prevRgba.rgb;
     vec4 layerSample = texture(uLayer, vUV);
 
-    vec3 srcColor;
-    float coverage;
-    vec3 blended;
-
-    // ===== Unified Normal/Specular path for TextureSet layers =====
-    // Detail normal/specular textures in FO4 are full-face maps: outside their
-    // feature each pixel equals the ORIGINAL base channel; inside the feature it
-    // carries base + the authored deviation (groove, spec change). Multiple layers
-    // can share the same Scar_n / Scar_s and pick their region via TTET[0] alpha.
-    //
-    // The correct composite is ADDITIVE OF THE DEVIATION FROM THE ORIGINAL BASE:
-    //     final = prev + cov * (detail - base)
-    // where `base` is the unmodified face channel (uBase), constant across layers,
-    // and `prev` is the running accumulator. This accumulates every layer's feature
-    // (detail-base is ~0 where a layer has no feature, so neutral areas contribute
-    // nothing) and is order-independent for non-overlapping features. Verified
-    // against the CK Scar - Right Gouge bake: additive reproduces CK (slope 0.95
-    // vs 0.65 for replace). REPLACE was wrong here -- a later layer whose detail
-    // equals the base would drag prev back toward base (mix(prev,base,cov)),
-    // erasing an earlier feature in the overlap; additive subtracts the CONSTANT
-    // base instead of prev, so prior features survive.
-    //
-    // Specular goes through the same path: additive == replace there empirically
-    // (overlapping spec features don't conflict), so no regression. Diffuse does
-    // NOT use this path -- it is colour with authored Photoshop blend ops, and
-    // additive breaks it (the detail's literal colour can't shade a channel whose
-    // detail value already ~equals the base); see the diffuse branch below.
-    //
-    // Coverage = convMask(mask) * uOpacity -- THE single coverage convention (same as diffuse
-    // below), TTET[0] diffuse alpha as the spatial mask, opacity OUTSIDE the transfer. Verified
-    // against the CK Scar bake: linear mask gives slope 0.95 vs CK with a residual at faint/edge
-    // pixels (under-applied); sRGB(mask) gives slope 1.000 FLAT across all magnitudes for BOTH
-    // normal and specular -- CK reads the mask in sRGB space. That is why SrgbOpacity is the
-    // default; the same TTET[0] mask drives diffuse, so they share this convention. Fallback to
-    // max(rgb) only when no mask on unit 2.
-    if (uLayerKind == 1 && uChannel != 0) {
-        float maskA = (uHasDiffuseMask == 1) ? texture(uLayerDiffuseAlpha, vUV).a :
-                      max(max(layerSample.r, layerSample.g), layerSample.b);
-        float cov = clamp(convMask(maskA) * uOpacity, 0.0, 1.0);
-        vec3 baseRgb = texture(uBase, vUV).rgb;
-        vec3 finalRgb = prev + cov * (layerSample.rgb - baseRgb);
-        fragColor = vec4(finalRgb, prevRgba.a);
+    // uMode==1: region swap = alpha-over mix(prev, swap, mask.r * intensity). Es composicion de
+    // color por cobertura -> se hace en LINEAR. prev viene en uOutputSpace, swap en uSrcSpace;
+    // se convierten a linear, se mezclan, y vuelve a uOutputSpace. mask RAW (.r).
+    if (uMode == 1) {
+        float w = clamp(texture(uLayerDiffuseAlpha, vUV).r * uOpacity, 0.0, 1.0);
+        vec3 pl = cvt(prev, uOutputSpace, 0);
+        vec3 sl = cvt(layerSample.rgb, uSrcSpace, 0);
+        fragColor = vec4(cvt(mix(pl, sl, w), 0, uOutputSpace), prevRgba.a);
         return;
     }
 
-    // ===== Diffuse channel (TextureSet or Palette) =====
-    // Photoshop blend ops are correct here -- the authored blendOp (SoftLight,
-    // Multiply, etc.) reflects how the author wants the detail colour to composite
-    // onto the skin, and that math applies cleanly to RGB diffuse data.
-    //
-    // Skin tone handling: the slot 12 SkinTone layer flows through the Palette
-    // branch below (srcColor from uColor=TEND, coverage from layerSample.r, blended
-    // via its authored TemplateColors blendOp). Because layers compose in order, any
-    // non-skin-tone detail (scar, wrinkle, freckle) that comes AFTER slot 12 blends
-    // naturally against the already-tinted accumulator via its own blendOp. No extra
-    // per-layer tint multiply is needed, and the caller disables materialBase.SkinTint
-    // on the face mesh post-compose so the render shader's global tint uniform becomes
-    // a no-op (otherwise we'd double-tint everything).
-    if (uLayerKind == 1) {
-        // TextureSet Diffuse: detail RGBA, coverage from diffuse alpha.
-        // Brow override paths (set per-layer by FaceTintLayerBuilder when slot==Brows):
-        //   uUseHairPalette=1   -> per-pixel hair LUT lookup. X = layerSample.g (green channel),
-        //                          matching the FO4 renderer convention (engine samples
-        //                          texGreyscale with baseMap.g; see Shader_Class.vb colorLookup).
-        //                          Y = uPaletteRow (= CLFM.RemappingIndex).
-        //                          Empirical: in this LUT higher X = lighter, lower X = darker.
-        //                          Alpha (avg 0.47) came out lighter than .g (0.11); the brow is
-        //                          still too light even at .g, so the column source needs more
-        //                          investigation (likely needs the hair's effective X to match).
-        //   uForceUniformColor=1 -> flat HCLF RGB tint; shape preserved via alpha coverage.
-        // Default (both 0): original detail RGB from the texture.
-        if (uUseHairPalette == 1) {
-            srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
-        } else if (uForceUniformColor == 1) {
-            srcColor = uColor;
+    // uMode==0: tint / body uniform = additive-over-base.
+    // uLayerKind: 0=PaletteMask (src=uColor, mask=layer.g) ; 1=TextureSet (src=layer.rgb, mask=alpha) ;
+    //             2=UniformColor (body skin: src=uColor, mask=1, base=prev via uBase).
+    float maskV;
+    vec3 srcColor;
+    if (uLayerKind == 2) {
+        srcColor = uColor;
+        maskV = 1.0;
+    } else if (uLayerKind == 1) {
+        if (uUseHairPalette == 1)        srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
+        else if (uForceUniformColor == 1) srcColor = uColor;
+        else                              srcColor = layerSample.rgb;
+        if (uChannel == 0) {
+            maskV = layerSample.a;
         } else {
-            srcColor = layerSample.rgb;
+            maskV = (uHasDiffuseMask == 1) ? texture(uLayerDiffuseAlpha, vUV).a
+                                           : max(max(layerSample.r, layerSample.g), layerSample.b);
         }
-        coverage = layerSample.a;
     } else {
-        // Palette: greyscale mask in .r.
-        // Default: uniform tint from uColor (TEND bytes).
-        // Hair-palette opt-in: sample per-pixel from the hair LUT using mask.g as the
-        // column coordinate (engine convention; mask textures author R=G=B so .r and .g
-        // are equivalent, but .g matches what the FO4 hair shader uses) and uPaletteRow
-        // (= CLFM.RemappingIndex) as the row.
-        if (uUseHairPalette == 1) {
-            srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
-        } else {
-            srcColor = uColor;
-        }
-        coverage = layerSample.r;
+        if (uUseHairPalette == 1) srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
+        else                      srcColor = uColor;
+        maskV = layerSample.g;
     }
-    // THE single coverage convention, identical for every class and the N/S path above:
-    // coverage = convMask(mask) * uOpacity (mask shaped by FaceTintBlendConvention, opacity
-    // outside). No per-class space split -- the same TTET[0] mask drives diffuse and N/S, so
-    // CK reads it one way (sRGB, verified at slope 1.000 on N/S); SrgbOpacity is the default.
-    float cov = clamp(convMask(coverage) * uOpacity, 0.0, 1.0);
 
-    // ADDITIVE-OVER-BASE: the authored blend op runs against the ORIGINAL base (uBase),
-    // not the running accumulator (prev). The per-layer delta (blended - baseRgb) is then
-    // added onto the accumulator. Verified vs CK by inverting the skintone to recover raw:
-    // additive RMS 0.9-2.4 vs accumulator 3.7-5.1 on the scar. Reason: softlight darkens
-    // ~b(1-b); on the brighter skintoned accumulator it over-darkens (the more-layers-
-    // darker compounding); CK computes each feature delta against the darker raw base.
-    // Same uBase the N/S path uses. To revert: change baseRgb back to prev and use
-    // mix(prev, blended, cov).
-    //
-    // uBase encoding: on the diffuse channel the caller has already converted the base from
-    // stored sRGB to gamma-2.2 (CK encodes the FaceGen diffuse base in 2.2) in a single pass
-    // BEFORE this loop, and seeded the accumulator from that same converted base, so the whole
-    // accumulation lives in 2.2 with no per-layer branch here. When ConvertDiffuseBaseToGamma22
-    // is off (or on N/S) uBase is the raw stored base and this stays in stored space.
-    vec3 baseRgb = texture(uBase, vUV).rgb;
-    if (uBlendOp == 1)      blended = blendMultiply(baseRgb, srcColor);
-    else if (uBlendOp == 2) blended = blendOverlay(baseRgb, srcColor);
-    else if (uBlendOp == 3) blended = blendSoftLight(baseRgb, srcColor);
-    else if (uBlendOp == 4) blended = blendHardLight(baseRgb, srcColor);
-    else                    blended = blendDefault(baseRgb, srcColor);
-
-    // Occlusion dispatch (uLayerClass), keyed by the TTEF 'Takes Skin Tone' flag. The
-    // accumulator's ALPHA carries an occlusion footprint (seeded to 0 by the base-conversion
-    // pass). All three classes use the SAME coverage `cov` and the SAME additive-over-base
-    // colour math; they differ only in how the footprint gates the skin tone:
-    //   class 1 = feature that does NOT take skin tone (brow, tattoos, lunares): occludes the
-    //             skin tone -- writes its coverage to the footprint so the skin-tone delta
-    //             (class 0) is reduced by (1-footprint) there.
-    //   class 0 = the skin-tone layer (or TakesSkinTone=True detail): delta * (1 - footprint)
-    //             so it does not light up the occluding features drawn over it.
-    //   class 2 = additive-over-base, no footprint interaction (TakesSkinTone scars/burns, and
-    //             the legacy path when occlusion is off).
-    float footIn = prevRgba.a;
-    vec3 finalRgb;
-    float outA;
-    if (uLayerClass == 0) {
-        finalRgb = prev + cov * (1.0 - footIn) * (blended - baseRgb);
-        outA = footIn;
-    } else if (uLayerClass == 1) {
-        finalRgb = prev + cov * (blended - baseRgb);
-        outA = clamp(footIn + cov, 0.0, 1.0);
-    } else {
-        finalRgb = prev + cov * (blended - baseRgb);
-        outA = prevRgba.a;
-    }
-    // The footprint must NOT survive into the caller's result alpha (it would make the face
-    // render show only the brow). The final drawn layer writes opaque alpha; the footprint has
-    // already been consumed by the skin-tone masking earlier in the stack.
-    if (uForceOpaqueAlpha == 1) outA = 1.0;
+    float cov = clamp(convMaskFull(maskV) * uOpacity, 0.0, 1.0);
+    // over-RUNNING + 3 espacios (shader agnostico): el acumulador prev vive en uOutputSpace; el blend
+    // corre en uWorkingSpace; el color de capa esta en uSrcSpace. Convertir, blendear, volver a output.
+    vec3 base_ws = cvt(prev, uOutputSpace, uWorkingSpace);
+    vec3 src_ws  = cvt(srcColor, uSrcSpace, uWorkingSpace);
+    vec3 blended = blendDispatch(base_ws, src_ws);
+    vec3 res_ws  = clamp(base_ws + cov * (blended - base_ws), 0.0, 1.0);
+    vec3 finalRgb = cvt(res_ws, uWorkingSpace, uOutputSpace);
+    float outA = (uForceOpaqueAlpha == 1) ? 1.0 : prevRgba.a;
     fragColor = vec4(finalRgb, outA);
 }"
 
@@ -740,24 +680,6 @@ void main() {
     ' per layer (full float32, no intra-loop requantization). Alpha is passed through unchanged so
     ' the accumulator seeded from this texture preserves the base alpha exactly. srgbToLinear is the
     ' IEC 61966-2-1 standard transfer (same as the compositor's), not a magic curve.
-    Private Const BaseGamma22FragmentSource As String = "#version 430
-in vec2 vUV;
-out vec4 fragColor;
-
-uniform sampler2D uSrc;
-uniform int uZeroAlpha;   // 1 = seed the occlusion footprint to 0 in alpha (TakesSkinToneOcclusion). 0 = preserve src alpha (legacy).
-
-vec3 srgbToLinear(vec3 c) {
-    return mix(pow((c + 0.055) / 1.055, vec3(2.4)), c / 12.92, step(c, vec3(0.04045)));
-}
-vec3 srgbToGamma22(vec3 c) {
-    return pow(clamp(srgbToLinear(c), 0.0, 1.0), vec3(1.0 / 2.2));
-}
-
-void main() {
-    vec4 src = texture(uSrc, vUV);
-    fragColor = vec4(srgbToGamma22(src.rgb), (uZeroAlpha == 1) ? 0.0 : src.a);
-}"
 
     ''' <summary>Backward-compat wrapper that composes onto the diffuse channel without skin tinting.</summary>
     Public Function ComposeOntoFaceDiffuse(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput)) As Integer
@@ -799,7 +721,6 @@ void main() {
 
         Dim resultTex As Integer = 0
         Dim resultFbo As Integer = 0
-        Dim convertedBaseTex As Integer = 0   ' fresh Rgba32f base (diffuse + ConvertDiffuseBaseToGamma22); freed in Finally
         Dim batchLoaded As Dictionary(Of String, PreviewModel.Texture_Loaded_Class) = Nothing
 
         Try
@@ -908,26 +829,19 @@ void main() {
             ' in-shader recompute. N/S are linear data and never converted. Reversible: when
             ' ConvertDiffuseBaseToGamma22 is False, baseTexForCompose stays the raw stored base.
             ' On conversion failure we fall back to the raw base (stored space) rather than abort.
-            Dim convertBaseEffective As Boolean = (channel = FaceTintChannel.Diffuse AndAlso ConvertDiffuseBaseToGamma22)
-            ' Occlusion needs the footprint seeded to 0 in the accumulator alpha; the base-conversion
-            ' pass does that (uZeroAlpha). So occlusion rides on the converted-base path (both default On).
-            Dim occlusionActive As Boolean = (convertBaseEffective AndAlso TakesSkinToneOcclusion)
+            ' DERIVED MODEL: el shader convierte sRGB->ws por capa internamente, asi que uBase
+            ' DEBE ser el base RAW sRGB (sin pre-pass g22). Sin occlusion (descartado B07-B09).
+            ' El pre-pass g22 + footprint del modelo viejo se eliminan: baseTexForCompose = raw.
+            Dim convertBaseEffective As Boolean = False
+            Dim occlusionActive As Boolean = False
             Dim baseTexForCompose As Integer = originalTexId
-            If convertBaseEffective Then
-                convertedBaseTex = ConvertBaseToGamma22Texture(state, originalTexId, width, height, occlusionActive)
-                If convertedBaseTex <> 0 Then baseTexForCompose = convertedBaseTex
-            End If
 
             GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
 
-            ' TEMP DEBUG: dump the raw pre-tint base (originalTexId) for direct comparison against
-            ' CK's d_TintOff (same source BaseMaleHead_d), plus the gamma-2.2-converted base actually
-            ' fed to the compose when the conversion ran, so the transfer can be verified in isolation.
-            If Not String.IsNullOrEmpty(DumpMaskDir) Then
-                DumpTextureToTga(originalTexId, $"BASEIN_{channel}.tga")
-                If convertedBaseTex <> 0 Then DumpTextureToTga(convertedBaseTex, $"BASECONV_{channel}.tga")
-            End If
+            ' BASEIN se dumpea PRISTINO (CPU/DirectXTex) NPC-side en FaceGenBuilder.DumpPristineTgas.
+            ' El readback GL de aca daba el decode de la GPU (~max 62 off vs CK) y gastaba recursos
+            ' (glGetTexImage de la textura comprimida); removido — un solo camino para ese dump.
 
             ' Pre-pass: count drawable layers so we can route the LAST one to resultFbo
             ' (caller-owned) instead of the persistent pings (which would mutate under the
@@ -957,6 +871,8 @@ void main() {
             ' First iteration reads the accumulator seed = baseTexForCompose: the gamma-2.2-converted
             ' base on the diffuse channel (so the whole accumulation lives in 2.2), or the raw base on
             ' N/S / when conversion is off. Identical to the old "convert prev once on the first layer".
+            ' over-RUNNING: el acumulador arranca en el base RAW (originalTexId) y cada capa se
+            ' compone sobre el resultado de la anterior (readTexId se reapunta a lo recien escrito).
             Dim readTexId As Integer = baseTexForCompose
             Dim drawnSoFar As Integer = 0
 
@@ -1040,12 +956,12 @@ void main() {
                 If Not String.IsNullOrEmpty(DumpMaskDir) Then
                     Dim nm = SanitizeName(layerName)
                     dumpedSrcFile = $"L{i:00}_{nm}_{channel}_{layer.Kind}_layer.tga"
-                    DumpTextureToTga(layerTex, dumpedSrcFile)
+                    DumpTextureToTga(layer.GetChannelCacheKey(channel), dumpedSrcFile)
                     If diffuseMaskTex <> 0 Then
                         dumpedMaskFile = $"L{i:00}_{nm}_{channel}_diffmask.tga"
-                        DumpTextureToTga(diffuseMaskTex, dumpedMaskFile)
+                        DumpTextureToTga(layer.LayerCacheKey, dumpedMaskFile)
                     End If
-                    If hairLutTex <> 0 Then DumpTextureToTga(hairLutTex, $"L{i:00}_{nm}_{channel}_HAIRLUT.tga")
+                    If hairLutTex <> 0 Then DumpTextureToTga(layer.HairLutCacheKey, $"L{i:00}_{nm}_{channel}_HAIRLUT.tga")
                 End If
 
                 ' Last drawable layer writes to caller-owned resultFbo; intermediate layers
@@ -1076,40 +992,28 @@ void main() {
                 GL.BindTexture(TextureTarget.Texture2D, If(hairLutTex <> 0, hairLutTex, layerTex))
                 GL.Uniform1(state._uHairLutLoc, 3)
 
-                ' Unit 4 (uBase): the base reference, constant across all layers, used by the
-                ' additive paths as final = prev + cov*(detail - base). On diffuse this is the
-                ' gamma-2.2-converted base (baseTexForCompose); on N/S (or conversion off) it is the
-                ' raw original. Bound every iteration so the sampler is always valid.
+                ' Unit 4 (uBase): VESTIGIAL desde el cambio a over-RUNNING. El shader ya NO lee uBase
+                ' (la base del blend es el acumulador corriente uPrev). Se sigue bindeando un texture
+                ' valido para que el sampler nunca quede indefinido si el compilador no lo elimina.
                 GL.ActiveTexture(TextureUnit.Texture4)
                 GL.BindTexture(TextureTarget.Texture2D, baseTexForCompose)
                 GL.Uniform1(state._uBaseLoc, 4)
                 Dim useHairPaletteEffective As Boolean = (hairLutTex <> 0 AndAlso layer.UseHairPalette _
                                                            AndAlso channel = FaceTintChannel.Diffuse)
                 GL.Uniform1(state._uUseHairPaletteLoc, If(useHairPaletteEffective, 1, 0))
-                ' Occlusion dispatch (Diffuse only, occlusionActive), keyed by the TTEF 'Takes Skin
-                ' Tone' flag rather than by the hair-palette path:
-                '   class 0 = the skin-tone layer itself: its delta is masked by (1 - footprint) so it
-                '             does not light up the occluding features drawn over it.
-                '   class 1 = features that do NOT take skin tone (brow, tattoos, lunares): they occlude
-                '             the skin tone (write footprint = coverage).
-                '   class 2 = features that DO take skin tone (scars, burns): additive-over-base,
-                '             unchanged, plus the legacy path whenever occlusion is off.
-                Dim layerClass As Integer
-                If Not occlusionActive Then
-                    layerClass = 2
-                ElseIf layer.IsSkinTone Then
-                    layerClass = 0
-                ElseIf Not layer.TakesSkinTone Then
-                    layerClass = 1
-                Else
-                    layerClass = 2
-                End If
-                GL.Uniform1(state._uLayerClassLoc, layerClass)
-                ' Final drawn layer writes opaque alpha so the occlusion footprint (carried in the
-                ' accumulator alpha) does not leak into the caller's result alpha.
-                GL.Uniform1(state._uForceOpaqueAlphaLoc, If(occlusionActive AndAlso isLast, 1, 0))
+                ' Derived model: resolver de convencion centralizado (FaceTintConvention).
+                ' ws/maskconv/blend salen de (entry_type + slot + blendOp + channel + useHairPalette).
+                ' SIN occlusion footprint (descartado empiricamente B07-B09).
+                Dim conv = FaceTintConvention.ResolveConvention(
+                    layer.IsTextureSet, layer.Slot, layer.BlendOp, channel, useHairPaletteEffective)
+                GL.Uniform1(state._uModeLoc, 0)   ' tint = additive-over-base
+                GL.Uniform1(state._uWorkingSpaceLoc, CInt(conv.WorkingSpace))
+                GL.Uniform1(state._uSrcSpaceLoc, CInt(conv.SrcSpace))
+                GL.Uniform1(state._uOutputSpaceLoc, CInt(conv.OutputSpace))
+                GL.Uniform1(state._uMaskConvFullLoc, CInt(conv.MaskConv))
+                ' Alpha del resultado: no hay footprint; el ultimo layer escribe alpha opaca.
+                GL.Uniform1(state._uForceOpaqueAlphaLoc, If(isLast, 1, 0))
                 GL.Uniform1(state._uPaletteRowLoc, Math.Max(0.0F, Math.Min(1.0F, layer.HairPaletteRow)))
-                GL.Uniform1(state._uBlendConventionLoc, CInt(BlendConvention))
                 ' Flat HCLF-RGB tint for TextureSet brow layers. Mutually exclusive with the LUT
                 ' path above (palette branch wins when both are set, mirroring the CPU rule).
                 Dim forceUniformColorEffective As Boolean = (layer.ForceUniformColor _
@@ -1123,7 +1027,7 @@ void main() {
                             CSng(layer.G) / 255.0F,
                             CSng(layer.B) / 255.0F)
                 GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, layer.Opacity)))
-                GL.Uniform1(state._uBlendOpLoc, layer.BlendOp)
+                GL.Uniform1(state._uBlendOpLoc, CInt(conv.Blend))
                 GL.Uniform1(state._uLayerKindLoc, CInt(layer.Kind))
                 GL.Uniform1(state._uChannelLoc, CInt(channel))
 
@@ -1150,9 +1054,9 @@ void main() {
                     LogComposeLayerDelta(channel, i, layerName, layer, useHairPaletteEffective, forceUniformColorEffective,
                                          dbgPrevPixels, dbgCur, width, height,
                                          isSkinTone:=layer.IsSkinTone,
-                                         layerClass:=layerClass,
-                                         forceOpaqueAlpha:=(occlusionActive AndAlso isLast),
-                                         blendConv:=CInt(BlendConvention),
+                                         layerClass:=-1,
+                                         forceOpaqueAlpha:=isLast,
+                                         blendConv:=CInt(conv.MaskConv),
                                          maskFile:=dumpedMaskFile,
                                          srcFile:=dumpedSrcFile)
                     dbgPrevPixels = dbgCur
@@ -1198,11 +1102,6 @@ void main() {
             ' Pings are persistent and stay in the state for next call.
             If resultFbo <> 0 Then
                 Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
-            End If
-
-            ' Free the one-time converted base (scratch for this pass only).
-            If convertedBaseTex <> 0 Then
-                Try : GL.DeleteTexture(convertedBaseTex) : Catch : End Try
             End If
 
             ' Restore state.
@@ -1281,34 +1180,6 @@ void main() {
     ' Alpha contract: input alpha (from uPrev) is PRESERVED into the output. The swap and
     ' mask textures contribute only RGB / weight respectively; the accumulator alpha rides
     ' along untouched so callers passing alpha-tested diffuses do not lose their cutout.
-    Private Const RegionSwapFragmentSource As String = "#version 430
-in vec2 vUV;
-out vec4 fragColor;
-
-uniform sampler2D uPrev;
-uniform sampler2D uSwap;
-uniform sampler2D uMask;
-uniform float uSwapIntensity;   // NPC MSDV morph value (0..1); scales how much the variant blends in
-uniform int uBlendConvention;   // coverage convention (FaceTintBlendConvention): 0=Linear (mask), 1=SrgbOpacity (sRGB(mask))
-
-float linearToSrgb1(float c) {
-    c = clamp(c, 0.0, 1.0);
-    return (c <= 0.0031308) ? (c * 12.92) : (1.055 * pow(c, 1.0 / 2.4) - 0.055);
-}
-float convMask(float mask) {
-    if (uBlendConvention == 1) {
-        return linearToSrgb1(mask);
-    }
-    return mask;
-}
-
-void main() {
-    vec4 baseRgba = texture(uPrev, vUV);
-    vec3 base = baseRgba.rgb;
-    vec3 swap = texture(uSwap, vUV).rgb;
-    float w   = clamp(convMask(texture(uMask, vUV).r) * uSwapIntensity, 0.0, 1.0);
-    fragColor = vec4(mix(base, swap, w), baseRgba.a);
-}"
 
     ''' <summary>Apply a list of per-region MPPT TXST swaps onto the supplied face texture
     ''' for the requested channel and return the new GL texture ID. The original is left
@@ -1331,8 +1202,7 @@ void main() {
         If swaps Is Nothing OrElse swaps.Count = 0 Then Return 0
 
         EnsureCompositorInitialized(state)
-        EnsureRegionSwapInitialized(state)
-        If state._swapProgram = 0 OrElse state._quadVao = 0 Then Return 0
+        If state._program = 0 OrElse state._quadVao = 0 Then Return 0
 
         ' Save GL state we are about to clobber.
         Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
@@ -1414,8 +1284,15 @@ void main() {
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)
 
-            GL.UseProgram(state._swapProgram)
+            GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
+            ' Shader unico: region swap = uMode=1 (alpha-over en linear). swap tex -> uLayer(1),
+            ' region mask -> uLayerDiffuseAlpha(2), intensity -> uOpacity. uMode=1 SI lee uSrcSpace/
+            ' uOutputSpace para convertir prev/swap a linear y mezclar. D: srgb/srgb ; N/S: linear/linear.
+            GL.Uniform1(state._uModeLoc, 1)
+            Dim swSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' 1=srgb (D color), 0=linear (N/S datos)
+            GL.Uniform1(state._uSrcSpaceLoc, swSpace)
+            GL.Uniform1(state._uOutputSpaceLoc, swSpace)
 
             ' Pre-pass: count drawable swaps so we can route the LAST one to resultFbo.
             Dim drawableSwaps As Integer = 0
@@ -1471,8 +1348,8 @@ void main() {
                 ' TEMP DEBUG: dump the region-swap's swap texture + its region mask per channel.
                 If Not String.IsNullOrEmpty(DumpMaskDir) Then
                     Dim nm = SanitizeName(swapName)
-                    DumpTextureToTga(sEntry.Texture_ID, $"S{i:00}_{nm}_{channel}_swap.tga")
-                    DumpTextureToTga(mEntry.Texture_ID, $"S{i:00}_{nm}_{channel}_regionmask.tga")
+                    DumpTextureToTga(sKey, $"S{i:00}_{nm}_{channel}_swap.tga")
+                    DumpTextureToTga(mKey, $"S{i:00}_{nm}_{channel}_regionmask.tga")
                 End If
 
                 Dim isLastSwap As Boolean = (drawnSoFar = drawableSwaps - 1)
@@ -1481,20 +1358,19 @@ void main() {
 
                 GL.ActiveTexture(TextureUnit.Texture0)
                 GL.BindTexture(TextureTarget.Texture2D, readTexId)
-                GL.Uniform1(state._uSwapPrevLoc, 0)
+                GL.Uniform1(state._uPrevLoc, 0)
 
                 GL.ActiveTexture(TextureUnit.Texture1)
                 GL.BindTexture(TextureTarget.Texture2D, sEntry.Texture_ID)
-                GL.Uniform1(state._uSwapTexLoc, 1)
+                GL.Uniform1(state._uLayerLoc, 1)
 
                 GL.ActiveTexture(TextureUnit.Texture2)
                 GL.BindTexture(TextureTarget.Texture2D, mEntry.Texture_ID)
-                GL.Uniform1(state._uSwapMaskLoc, 2)
+                GL.Uniform1(state._uLayerDiffuseAlphaLoc, 2)
 
-                ' Morph intensity (MSDV value) scales the swap coverage. Clamp [0,1].
-                GL.Uniform1(state._uSwapIntensityLoc, Math.Max(0.0F, Math.Min(1.0F, sw.Intensity)))
-                ' Same single coverage convention as the tint compositor (TTET[0] mask).
-                GL.Uniform1(state._uSwapBlendConventionLoc, CInt(BlendConvention))
+                ' Morph intensity (MSDV value) -> uOpacity escala la cobertura del crossfade. Clamp.
+                ' Region swap = mix(prev, swap, mask.r_raw * intensity). Validado B10 (<0.3 byte).
+                GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, sw.Intensity)))
 
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawn += 1
@@ -1578,49 +1454,6 @@ void main() {
     ' sobre pack_d.dds y reescribia su alpha a 1.0, rompiendo el discard del alpha test). Even
     ' though the current callers (face / body skin) do not use alpha-test on the diffuse, the
     ' shader stays honest about its scope: blend RGB, leave alpha alone.
-    Private Const UniformBlendFragmentSource As String = "#version 430
-in vec2 vUV;
-out vec4 fragColor;
-
-uniform sampler2D uPrev;
-uniform vec3 uColor;
-uniform int uBlendOp;
-uniform float uOpacity;
-
-vec3 blendDefault(vec3 d, vec3 s) { return s; }
-vec3 blendMultiply(vec3 d, vec3 s) { return d * s; }
-vec3 blendOverlay(vec3 d, vec3 s) {
-    return mix(2.0 * d * s,
-               1.0 - 2.0 * (1.0 - d) * (1.0 - s),
-               step(0.5, d));
-}
-vec3 blendSoftLight(vec3 d, vec3 s) {
-    vec3 g = mix(((16.0 * d - 12.0) * d + 4.0) * d,
-                 sqrt(d),
-                 step(0.25, d));
-    return mix(d - (1.0 - 2.0 * s) * d * (1.0 - d),
-               d + (2.0 * s - 1.0) * (g - d),
-               step(0.5, s));
-}
-vec3 blendHardLight(vec3 d, vec3 s) { return blendOverlay(s, d); }
-
-void main() {
-    vec4 prevRgba = texture(uPrev, vUV);
-    vec3 prev = prevRgba.rgb;
-    vec3 blended;
-    if (uBlendOp == 1)      blended = blendMultiply(prev, uColor);
-    else if (uBlendOp == 2) blended = blendOverlay(prev, uColor);
-    else if (uBlendOp == 3) blended = blendSoftLight(prev, uColor);
-    else if (uBlendOp == 4) blended = blendHardLight(prev, uColor);
-    else                    blended = blendDefault(prev, uColor);
-    // Opacity attenuation: mix prev (no-op) toward blended (full strength). This path is a
-    // WHOLE-texture uniform blend (no mask, body skin pre-pass / face softlight fallback): it
-    // has no TTET spatial mask and no FaceGen gamma-2.2 base, so it deliberately does NOT use
-    // the main compositor's masked additive-over-base math (prev + cov*(blended - base)). With
-    // full coverage and prev==base, mix(prev, blended, op) is the equivalent attenuation.
-    vec3 finalRgb = mix(prev, blended, clamp(uOpacity, 0.0, 1.0));
-    fragColor = vec4(finalRgb, prevRgba.a);
-}"
 
     ''' <summary>Apply a single uniform-colour blend onto an entire face texture and return
     ''' the new GL texture ID. The original is left untouched. Returns 0 on failure.
@@ -1635,18 +1468,21 @@ void main() {
     ''' (no-op) and the full-strength blend by the opacity factor.
     '''
     ''' blendOp follows the BGSCharacterTint enum: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight.</summary>
+    ''' <param name="workingSpace">Working space (FaceTintWorkingSpace: 0=Linear 1=Srgb 2=G22) en el
+    ''' que se hace el blend, igual que la cara. El body SkinTone debe pasar la ws que el resolver
+    ''' (FaceTintConvention.ResolveConvention slot=SkinTone) da, para matchear la cara byte-a-byte.</param>
     Public Function ApplyUniformBlendOntoFaceTexture(state As FaceTintCompositorState,
                                                       originalTexId As Integer,
                                                       width As Integer, height As Integer,
                                                       r As Single, g As Single, b As Single,
                                                       blendOp As Integer,
-                                                      opacity As Single) As Integer
+                                                      opacity As Single,
+                                                      Optional workingSpace As Integer = 1) As Integer
         ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
 
         EnsureCompositorInitialized(state)
-        EnsureUniformBlendInitialized(state)
-        If state._uniformBlendProgram = 0 OrElse state._quadVao = 0 Then Return 0
+        If state._program = 0 OrElse state._quadVao = 0 Then Return 0
 
         Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
         Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
@@ -1686,16 +1522,40 @@ void main() {
             GL.Disable(EnableCap.ScissorTest)
             GL.Disable(EnableCap.Blend)
 
-            GL.UseProgram(state._uniformBlendProgram)
+            ' Shader unico: body skin = uMode=0 + uLayerKind=2 (UniformColor). Single pass whole-texture,
+            ' base==prev==la textura del cuerpo (bind a uPrev unit0 Y uBase unit4). src=uColor, mask=1.
+            ' workingSpace lo da el resolver SkinTone (sync con la cara). uBlendOp=SoftLight.
+            GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
+            GL.Uniform1(state._uModeLoc, 0)
+            GL.Uniform1(state._uLayerKindLoc, 2)
+            GL.Uniform1(state._uChannelLoc, 0)
+            GL.Uniform1(state._uUseHairPaletteLoc, 0)
+            GL.Uniform1(state._uForceUniformColorLoc, 0)
+            GL.Uniform1(state._uForceOpaqueAlphaLoc, 1)
+            GL.Uniform1(state._uHasDiffuseMaskLoc, 0)
+            GL.Uniform1(state._uMaskConvFullLoc, 0)
+            GL.Uniform1(state._uWorkingSpaceLoc, workingSpace)
+            ' body skin = diffuse color, acumulador sRGB (src srgb, output srgb); el blend (softlight)
+            ' corre en workingSpace (g22). Igual que la cara.
+            GL.Uniform1(state._uSrcSpaceLoc, 1)
+            GL.Uniform1(state._uOutputSpaceLoc, 1)
 
             GL.ActiveTexture(TextureUnit.Texture0)
             GL.BindTexture(TextureTarget.Texture2D, originalTexId)
-            GL.Uniform1(state._uUbPrevLoc, 0)
+            GL.Uniform1(state._uPrevLoc, 0)
+            ' uLayer (unit1) se samplea aunque kind=2 no lo use; bind algo valido.
+            GL.ActiveTexture(TextureUnit.Texture1)
+            GL.BindTexture(TextureTarget.Texture2D, originalTexId)
+            GL.Uniform1(state._uLayerLoc, 1)
+            ' uBase (unit4) = la misma textura del cuerpo (prev==base en single pass).
+            GL.ActiveTexture(TextureUnit.Texture4)
+            GL.BindTexture(TextureTarget.Texture2D, originalTexId)
+            GL.Uniform1(state._uBaseLoc, 4)
 
-            GL.Uniform3(state._uUbColorLoc, r, g, b)
-            GL.Uniform1(state._uUbBlendOpLoc, blendOp)
-            GL.Uniform1(state._uUbOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, opacity)))
+            GL.Uniform3(state._uColorLoc, r, g, b)
+            GL.Uniform1(state._uBlendOpLoc, blendOp)
+            GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, opacity)))
 
             GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
             resultTex = outTex
@@ -1725,100 +1585,6 @@ void main() {
         Return resultTex
     End Function
 
-    Private Sub EnsureUniformBlendInitialized(state As FaceTintCompositorState)
-        If state._uniformBlendProgram <> 0 Then Return
-
-        Dim vs = GL.CreateShader(ShaderType.VertexShader)
-        GL.ShaderSource(vs, VertexShaderSource)
-        GL.CompileShader(vs)
-        Dim vsOk As Integer
-        GL.GetShader(vs, ShaderParameter.CompileStatus, vsOk)
-        If vsOk = 0 Then
-            GL.DeleteShader(vs)
-            Return
-        End If
-
-        Dim fs = GL.CreateShader(ShaderType.FragmentShader)
-        GL.ShaderSource(fs, UniformBlendFragmentSource)
-        GL.CompileShader(fs)
-        Dim fsOk As Integer
-        GL.GetShader(fs, ShaderParameter.CompileStatus, fsOk)
-        If fsOk = 0 Then
-            GL.DeleteShader(vs)
-            GL.DeleteShader(fs)
-            Return
-        End If
-
-        state._uniformBlendProgram = GL.CreateProgram()
-        GL.AttachShader(state._uniformBlendProgram, vs)
-        GL.AttachShader(state._uniformBlendProgram, fs)
-        GL.LinkProgram(state._uniformBlendProgram)
-        GL.DetachShader(state._uniformBlendProgram, vs)
-        GL.DetachShader(state._uniformBlendProgram, fs)
-        GL.DeleteShader(vs)
-        GL.DeleteShader(fs)
-
-        Dim linkOk As Integer
-        GL.GetProgram(state._uniformBlendProgram, GetProgramParameterName.LinkStatus, linkOk)
-        If linkOk = 0 Then
-            GL.DeleteProgram(state._uniformBlendProgram)
-            state._uniformBlendProgram = 0
-            Return
-        End If
-
-        state._uUbPrevLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uPrev")
-        state._uUbColorLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uColor")
-        state._uUbBlendOpLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uBlendOp")
-        state._uUbOpacityLoc = GL.GetUniformLocation(state._uniformBlendProgram, "uOpacity")
-    End Sub
-
-    Private Sub EnsureRegionSwapInitialized(state As FaceTintCompositorState)
-        If state._swapProgram <> 0 Then Return
-
-        Dim vs = GL.CreateShader(ShaderType.VertexShader)
-        GL.ShaderSource(vs, VertexShaderSource)
-        GL.CompileShader(vs)
-        Dim vsOk As Integer
-        GL.GetShader(vs, ShaderParameter.CompileStatus, vsOk)
-        If vsOk = 0 Then
-            GL.DeleteShader(vs)
-            Return
-        End If
-
-        Dim fs = GL.CreateShader(ShaderType.FragmentShader)
-        GL.ShaderSource(fs, RegionSwapFragmentSource)
-        GL.CompileShader(fs)
-        Dim fsOk As Integer
-        GL.GetShader(fs, ShaderParameter.CompileStatus, fsOk)
-        If fsOk = 0 Then
-            GL.DeleteShader(vs)
-            GL.DeleteShader(fs)
-            Return
-        End If
-
-        state._swapProgram = GL.CreateProgram()
-        GL.AttachShader(state._swapProgram, vs)
-        GL.AttachShader(state._swapProgram, fs)
-        GL.LinkProgram(state._swapProgram)
-        GL.DetachShader(state._swapProgram, vs)
-        GL.DetachShader(state._swapProgram, fs)
-        GL.DeleteShader(vs)
-        GL.DeleteShader(fs)
-
-        Dim linkOk As Integer
-        GL.GetProgram(state._swapProgram, GetProgramParameterName.LinkStatus, linkOk)
-        If linkOk = 0 Then
-            GL.DeleteProgram(state._swapProgram)
-            state._swapProgram = 0
-            Return
-        End If
-
-        state._uSwapPrevLoc = GL.GetUniformLocation(state._swapProgram, "uPrev")
-        state._uSwapTexLoc = GL.GetUniformLocation(state._swapProgram, "uSwap")
-        state._uSwapMaskLoc = GL.GetUniformLocation(state._swapProgram, "uMask")
-        state._uSwapIntensityLoc = GL.GetUniformLocation(state._swapProgram, "uSwapIntensity")
-        state._uSwapBlendConventionLoc = GL.GetUniformLocation(state._swapProgram, "uBlendConvention")
-    End Sub
 
     ''' <summary>Allocate (or reuse) the two persistent ping-pong colour attachments at
     ''' (width, height). Re-allocates when dims change; reuses verbatim when they match.
@@ -1913,6 +1679,8 @@ void main() {
         Dim vsOk As Integer
         GL.GetShader(vs, ShaderParameter.CompileStatus, vsOk)
         If vsOk = 0 Then
+            Dim vsErr = GL.GetShaderInfoLog(vs)
+            Logger.LogLazy(Function() $"[FACETINT-SHADER] VERTEX compile FAILED: {vsErr}")
             GL.DeleteShader(vs)
             Return
         End If
@@ -1923,6 +1691,8 @@ void main() {
         Dim fsOk As Integer
         GL.GetShader(fs, ShaderParameter.CompileStatus, fsOk)
         If fsOk = 0 Then
+            Dim fsErr = GL.GetShaderInfoLog(fs)
+            Logger.LogLazy(Function() $"[FACETINT-SHADER] FRAGMENT compile FAILED: {fsErr}")
             GL.DeleteShader(vs)
             GL.DeleteShader(fs)
             Return
@@ -1940,10 +1710,13 @@ void main() {
         Dim linkOk As Integer
         GL.GetProgram(state._program, GetProgramParameterName.LinkStatus, linkOk)
         If linkOk = 0 Then
+            Dim linkErr = GL.GetProgramInfoLog(state._program)
+            Logger.LogLazy(Function() $"[FACETINT-SHADER] PROGRAM link FAILED: {linkErr}")
             GL.DeleteProgram(state._program)
             state._program = 0
             Return
         End If
+        Logger.LogLazy(Function() $"[FACETINT-SHADER] program linked OK id={state._program}")
 
         state._uPrevLoc = GL.GetUniformLocation(state._program, "uPrev")
         state._uLayerLoc = GL.GetUniformLocation(state._program, "uLayer")
@@ -1957,11 +1730,14 @@ void main() {
         state._uChannelLoc = GL.GetUniformLocation(state._program, "uChannel")
         state._uHairLutLoc = GL.GetUniformLocation(state._program, "uHairLut")
         state._uPaletteRowLoc = GL.GetUniformLocation(state._program, "uPaletteRow")
-        state._uBlendConventionLoc = GL.GetUniformLocation(state._program, "uBlendConvention")
         state._uUseHairPaletteLoc = GL.GetUniformLocation(state._program, "uUseHairPalette")
-        state._uLayerClassLoc = GL.GetUniformLocation(state._program, "uLayerClass")
         state._uForceOpaqueAlphaLoc = GL.GetUniformLocation(state._program, "uForceOpaqueAlpha")
         state._uForceUniformColorLoc = GL.GetUniformLocation(state._program, "uForceUniformColor")
+        state._uWorkingSpaceLoc = GL.GetUniformLocation(state._program, "uWorkingSpace")
+        state._uSrcSpaceLoc = GL.GetUniformLocation(state._program, "uSrcSpace")
+        state._uOutputSpaceLoc = GL.GetUniformLocation(state._program, "uOutputSpace")
+        state._uMaskConvFullLoc = GL.GetUniformLocation(state._program, "uMaskConvFull")
+        state._uModeLoc = GL.GetUniformLocation(state._program, "uMode")
 
         Dim quadVerts() As Single = {
             -1.0F, -1.0F,
@@ -1982,105 +1758,6 @@ void main() {
         GL.BindVertexArray(0)
     End Sub
 
-    Private Sub EnsureBaseGamma22Initialized(state As FaceTintCompositorState)
-        If state._baseConvProgram <> 0 Then Return
-
-        Dim vs = GL.CreateShader(ShaderType.VertexShader)
-        GL.ShaderSource(vs, VertexShaderSource)
-        GL.CompileShader(vs)
-        Dim vsOk As Integer
-        GL.GetShader(vs, ShaderParameter.CompileStatus, vsOk)
-        If vsOk = 0 Then
-            GL.DeleteShader(vs)
-            Return
-        End If
-
-        Dim fs = GL.CreateShader(ShaderType.FragmentShader)
-        GL.ShaderSource(fs, BaseGamma22FragmentSource)
-        GL.CompileShader(fs)
-        Dim fsOk As Integer
-        GL.GetShader(fs, ShaderParameter.CompileStatus, fsOk)
-        If fsOk = 0 Then
-            GL.DeleteShader(vs)
-            GL.DeleteShader(fs)
-            Return
-        End If
-
-        state._baseConvProgram = GL.CreateProgram()
-        GL.AttachShader(state._baseConvProgram, vs)
-        GL.AttachShader(state._baseConvProgram, fs)
-        GL.LinkProgram(state._baseConvProgram)
-        GL.DetachShader(state._baseConvProgram, vs)
-        GL.DetachShader(state._baseConvProgram, fs)
-        GL.DeleteShader(vs)
-        GL.DeleteShader(fs)
-
-        Dim linkOk As Integer
-        GL.GetProgram(state._baseConvProgram, GetProgramParameterName.LinkStatus, linkOk)
-        If linkOk = 0 Then
-            GL.DeleteProgram(state._baseConvProgram)
-            state._baseConvProgram = 0
-            Return
-        End If
-
-        state._uBaseConvSrcLoc = GL.GetUniformLocation(state._baseConvProgram, "uSrc")
-        state._uBaseConvZeroAlphaLoc = GL.GetUniformLocation(state._baseConvProgram, "uZeroAlpha")
-    End Sub
-
-    ''' <summary>Convert the diffuse base from stored sRGB to gamma-2.2 encoding ONCE into a fresh
-    ''' Rgba32f texture (CK encodes the FaceGen diffuse base in gamma-2.2; ours is stored sRGB).
-    ''' Returns the new texture ID — the caller OWNS it and must GL.DeleteTexture it. Returns 0 on
-    ''' failure (the caller then falls back to the raw base, leaving the pass in stored space).
-    '''
-    ''' Float (Rgba32f) target on purpose: the converted value is then bit-identical to computing
-    ''' srgbToGamma22 in-shader per layer (the previous design) — same float32 transfer, no extra
-    ''' 8-bit requantization of the base. The base is invariant across layers, so converting it
-    ''' here once is the single-source-of-truth equivalent of the old per-layer recompute.
-    '''
-    ''' Caller MUST hold the GL context and have set its own FBO/program/viewport save-restore
-    ''' around the wider pass; this routine binds its own scratch FBO and program and leaves the
-    ''' draw-framebuffer bound to 0 on exit (the compose loop rebinds per layer). MUST run on the
-    ''' GL thread.</summary>
-    Private Function ConvertBaseToGamma22Texture(state As FaceTintCompositorState, srcTexId As Integer, width As Integer, height As Integer, zeroAlpha As Boolean) As Integer
-        If srcTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
-        EnsureBaseGamma22Initialized(state)
-        If state._baseConvProgram = 0 OrElse state._quadVao = 0 Then Return 0
-
-        Dim convTex As Integer = GL.GenTexture()
-        GL.BindTexture(TextureTarget.Texture2D, convTex)
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba32f,
-                      width, height, 0,
-                      PixelFormat.Rgba, PixelType.Float, IntPtr.Zero)
-
-        Dim convFbo As Integer = GL.GenFramebuffer()
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, convFbo)
-        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
-                                TextureTarget.Texture2D, convTex, 0)
-        If GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer) <> FramebufferErrorCode.FramebufferComplete Then
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
-            Try : GL.DeleteFramebuffer(convFbo) : Catch : End Try
-            Try : GL.DeleteTexture(convTex) : Catch : End Try
-            Return 0
-        End If
-
-        GL.Viewport(0, 0, width, height)
-        GL.UseProgram(state._baseConvProgram)
-        GL.BindVertexArray(state._quadVao)
-        GL.ActiveTexture(TextureUnit.Texture0)
-        GL.BindTexture(TextureTarget.Texture2D, srcTexId)
-        GL.Uniform1(state._uBaseConvSrcLoc, 0)
-        GL.Uniform1(state._uBaseConvZeroAlphaLoc, If(zeroAlpha, 1, 0))
-        GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
-
-        GL.BindTexture(TextureTarget.Texture2D, 0)
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0)
-        Try : GL.DeleteFramebuffer(convFbo) : Catch : End Try
-        Return convTex
-    End Function
 
     ''' <summary>Per-channel result of <see cref="ApplyFaceTintPipeline"/>: the GL texture ID
     ''' that came out of swap+compose (or the original input ID when no work was done on that

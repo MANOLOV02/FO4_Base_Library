@@ -194,9 +194,17 @@ Public Class NPC_InventoryItem
     Public HasCoed As Boolean = False
     Public CoedOwnerFormID As UInteger
     ''' <summary>COED +4 union: GlobalVariableFormID when Owner is NPC_, or RequiredRank as s32
-    ''' when Owner is FACT, or 4 unused bytes when Owner is NULL. Stored as raw u32; semantic
-    ''' depends on CoedOwnerFormID resolution.</summary>
+    ''' when Owner is FACT, or 4 unused bytes when Owner is NULL — per wbCOEDOwnerDecider
+    ''' (wbDefinitionsCommon.pas:4103-4121, union @ wbDefinitionsFO4.pas:3686-3694). When
+    ''' <see cref="CoedExtraIsFormID"/> is True this field holds the GLOBAL FormID (resolved at
+    ''' parse time via the source plugin's MAST list); otherwise it's the raw int/unused bytes.
+    ''' The writer must remap THIS field iff the flag is set — otherwise the bytes are an int
+    ''' rank or unused padding and must be emitted verbatim.</summary>
     Public CoedOwnerExtra As UInteger
+    ''' <summary>True when <see cref="CoedOwnerExtra"/> carries a GLOB FormID (Owner signature
+    ''' is NPC_). Drives the writer's conditional remap so an ESL/light-master Global Variable
+    ''' reference doesn't get emitted with the wrong high byte.</summary>
+    Public CoedExtraIsFormID As Boolean
     Public CoedItemCondition As Single
 End Class
 
@@ -1442,6 +1450,17 @@ Public Class LVLI_Entry
     Public FormID As UInteger
     Public Count As UShort = 1US
     Public ChanceNone As Byte
+    ''' <summary>True when this entry has a COED subrecord trailing the LVLO struct
+    ''' (wbDefinitionsFO4.pas:10365-10367 + wbDefinitionsFO4.pas:3686-3694). LVLI entries can
+    ''' carry per-entry Owner/Rank metadata, separate from the LVLI record's own metadata.</summary>
+    Public HasCoed As Boolean = False
+    Public CoedOwnerFormID As UInteger
+    ''' <summary>COED +4 union per wbCOEDOwnerDecider: GLOB FormID when Owner=NPC_, Required Rank
+    ''' (s32) when Owner=FACT, unused 4 bytes otherwise. <see cref="CoedExtraIsFormID"/> drives
+    ''' the writer's conditional remap (mirror of NPC_InventoryItem.CoedExtraIsFormID).</summary>
+    Public CoedOwnerExtra As UInteger
+    Public CoedExtraIsFormID As Boolean
+    Public CoedItemCondition As Single
 End Class
 
 ''' <summary>Filter Keyword Chance entry from LVLI.LLKC subrecord (wbDefinitionsFO4.pas:10322-10327).
@@ -1456,6 +1475,10 @@ End Class
 Public Class LVLI_Data
     Public FormID As UInteger
     Public EditorID As String = ""
+    ''' <summary>OBND raw 12 bytes (6×s16). wbDefinitionsFO4.pas:10354 marks it as required.
+    ''' Captured verbatim like NPC_.ObjectBoundsRaw so preserve-existing round-trip is byte-equivalent.
+    ''' Nothing → writer falls back to 12 zero bytes (still valid per spec).</summary>
+    Public ObjectBoundsRaw As Byte() = Nothing
     Public ChanceNone As Byte
     ''' <summary>LVLM — Max Count (0 = unlimited). Captured for faithful round-trip when an existing LVLI is
     ''' re-emitted as an override.</summary>
@@ -1467,6 +1490,15 @@ Public Class LVLI_Data
     ''' → ARMO recibe ese keyword → busca su OBTS combination con keyword match → aplica
     ''' OMOD AddonIndex swap → renderiza addon Heavy.</summary>
     Public FilterKeywords As New List(Of LVLI_FilterKeyword)
+    ''' <summary>LVLG — Use Global, FormID [GLOB] (wbDefinitionsFO4.pas:10362). Optional.</summary>
+    Public HasUseGlobal As Boolean
+    Public UseGlobalFormID As UInteger
+    ''' <summary>LVSG — Epic Loot Chance, FormID [GLOB] (wbDefinitionsFO4.pas:10372). Optional.</summary>
+    Public HasEpicLootChance As Boolean
+    Public EpicLootChanceFormID As UInteger
+    ''' <summary>ONAM — Override Name, translatable lstring (wbDefinitionsFO4.pas:10373). Optional.</summary>
+    Public HasOverrideName As Boolean
+    Public OverrideName As String = ""
 
     Public ReadOnly Property UseAll As Boolean
         Get
@@ -2069,7 +2101,23 @@ Public Module RecordParsers
                     If pendingInventoryItem IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         pendingInventoryItem.HasCoed = True
                         pendingInventoryItem.CoedOwnerFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
-                        pendingInventoryItem.CoedOwnerExtra = BitConverter.ToUInt32(sr.Data, 4)
+                        Dim rawExtra = BitConverter.ToUInt32(sr.Data, 4)
+                        ' Decide the union per wbCOEDOwnerDecider (wbDefinitionsCommon.pas:4103-4121).
+                        ' Owner=NPC_ → extra is a GLOB FormID (must be resolved + remapped on emit).
+                        ' Owner=FACT → extra is Required Rank (s32, NOT a FormID; leave raw).
+                        ' Owner=NULL or unresolved → unused 4 bytes (leave raw).
+                        Dim ownerIsNPC As Boolean = False
+                        If pluginManager IsNot Nothing AndAlso pendingInventoryItem.CoedOwnerFormID <> 0UI Then
+                            Dim ownerRec = pluginManager.GetRecord(pendingInventoryItem.CoedOwnerFormID)
+                            If ownerRec IsNot Nothing AndAlso ownerRec.Header.Signature = "NPC_" Then ownerIsNPC = True
+                        End If
+                        If ownerIsNPC Then
+                            pendingInventoryItem.CoedExtraIsFormID = True
+                            pendingInventoryItem.CoedOwnerExtra = ResolveFormIDReference(rec, rawExtra, pluginManager)
+                        Else
+                            pendingInventoryItem.CoedExtraIsFormID = False
+                            pendingInventoryItem.CoedOwnerExtra = rawExtra
+                        End If
                         pendingInventoryItem.CoedItemCondition = BitConverter.ToSingle(sr.Data, 8)
                         npc.Inventory.Add(pendingInventoryItem)
                         pendingInventoryItem = Nothing
@@ -3382,23 +3430,66 @@ Public Module RecordParsers
             .EditorID = rec.EditorID
         }
 
+        ' Streaming state: an LVLO subrecord defines an entry header; an optional COED that
+        ' immediately follows attaches to it (wbLeveledListEntry + wbCOED, wbDefinitionsCommon
+        ' .pas:5704 + wbDefinitionsFO4.pas:3686). Same pattern as NPC_ Inventory CNTO+COED.
+        Dim pendingEntry As LVLI_Entry = Nothing
+
         For Each sr In rec.Subrecords
             Select Case sr.Signature
+                Case "OBND"
+                    ' Required 12-byte struct (6×s16). Capture verbatim for byte-equivalent round-trip.
+                    If sr.Data IsNot Nothing Then lvli.ObjectBoundsRaw = sr.Data
                 Case "LVLD"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvli.ChanceNone = sr.Data(0)
                 Case "LVLM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvli.MaxCount = sr.Data(0)
                 Case "LVLF"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvli.Flags = sr.Data(0)
+                Case "LVLG"
+                    ' Use Global: FormID [GLOB]. wbDefinitionsFO4.pas:10362.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        lvli.UseGlobalFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                        lvli.HasUseGlobal = True
+                    End If
                 Case "LVLO"
+                    ' Flush previous pending entry (no COED followed it).
+                    If pendingEntry IsNot Nothing Then
+                        lvli.Entries.Add(pendingEntry)
+                        pendingEntry = Nothing
+                    End If
                     Dim entry = ParseLeveledEntry(rec, sr, pluginManager)
                     If entry Is Nothing OrElse entry.FormID = 0UI Then Continue For
-                    lvli.Entries.Add(New LVLI_Entry With {
+                    pendingEntry = New LVLI_Entry With {
                         .Level = entry.Level,
                         .FormID = entry.FormID,
                         .Count = entry.Count,
                         .ChanceNone = entry.ChanceNone
-                    })
+                    }
+                Case "COED"
+                    ' wbCOED struct (wbDefinitionsFO4.pas:3686-3694): u32 Owner + u32 union + f32 Item Condition.
+                    ' Owner=NPC_ → extra is GLOB FormID. Owner=FACT → Required Rank (s32). Else unused.
+                    ' Attaches to the IMMEDIATELY preceding LVLO entry (xEdit RStruct grouping rule).
+                    If pendingEntry IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        pendingEntry.HasCoed = True
+                        pendingEntry.CoedOwnerFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                        Dim rawExtra = BitConverter.ToUInt32(sr.Data, 4)
+                        Dim ownerIsNPC As Boolean = False
+                        If pluginManager IsNot Nothing AndAlso pendingEntry.CoedOwnerFormID <> 0UI Then
+                            Dim ownerRec = pluginManager.GetRecord(pendingEntry.CoedOwnerFormID)
+                            If ownerRec IsNot Nothing AndAlso ownerRec.Header.Signature = "NPC_" Then ownerIsNPC = True
+                        End If
+                        If ownerIsNPC Then
+                            pendingEntry.CoedExtraIsFormID = True
+                            pendingEntry.CoedOwnerExtra = ResolveFormIDReference(rec, rawExtra, pluginManager)
+                        Else
+                            pendingEntry.CoedExtraIsFormID = False
+                            pendingEntry.CoedOwnerExtra = rawExtra
+                        End If
+                        pendingEntry.CoedItemCondition = BitConverter.ToSingle(sr.Data, 8)
+                        lvli.Entries.Add(pendingEntry)
+                        pendingEntry = Nothing
+                    End If
                 Case "LLKC"
                     ' Filter Keyword Chance: array of (Keyword FormID u32, Chance u32) per
                     ' wbDefinitionsFO4.pas:10322-10327. xEdit collapses into a single subrecord
@@ -3417,8 +3508,21 @@ Public Module RecordParsers
                             End If
                         Next
                     End If
+                Case "LVSG"
+                    ' Epic Loot Chance: FormID [GLOB]. wbDefinitionsFO4.pas:10372.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        lvli.EpicLootChanceFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                        lvli.HasEpicLootChance = True
+                    End If
+                Case "ONAM"
+                    ' Override Name: translatable lstring. wbDefinitionsFO4.pas:10373.
+                    lvli.OverrideName = ResolveDisplayString(rec, sr, pluginManager)
+                    lvli.HasOverrideName = True
             End Select
         Next
+
+        ' Flush any LVLO entry not consumed by a trailing COED (last entry of the array).
+        If pendingEntry IsNot Nothing Then lvli.Entries.Add(pendingEntry)
 
         Return lvli
     End Function

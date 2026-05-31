@@ -12,6 +12,13 @@ Public Class PluginReader
     Public Property IsESM As Boolean
     Public Property IsESL As Boolean
     Public Property IsLocalized As Boolean
+    ''' <summary>HEDR Next Object ID — the FormID object counter the engine/CK dispenses from
+    ''' when adding new self records to this plugin. Captured from TES4.HEDR (wbDefinitionsCommon
+    ''' .pas:6965-6970, 3rd field). Preserve-on-resave semantics: <see cref="SaveNpcEspWriter"/>
+    ''' must seed its own dispense pointer with <c>max(disk, computed)</c> to avoid re-issuing
+    ''' an ID that CK already consumed between saves (mirror of TwbFile.NewFormID's
+    ''' GetNextObjectID/SetNextObjectID at wbImplementation.pas:5083/5122).</summary>
+    Public Property NextObjectId As UInteger
     ''' <summary>
     ''' Per-file translatable encoding captured from TES4.SNAM &lt;cp:XXXX&gt; at load time.
     ''' Mirror of xEdit flEncodingTrans (wbImplementation.pas:766 + 5724-5737). Nothing when
@@ -102,6 +109,16 @@ Public Class PluginReader
             ' MAST is wbStringForward cpNormal (wbDefinitionsFO4.pas:12475) → non-translatable → General.
             Dim master = subrecord.AsStringGeneral
             If master <> "" Then Masters.Add(master)
+        Next
+
+        ' HEDR struct layout (wbDefinitionsCommon.pas:6965-6970): float Version + u32 NumRecords +
+        ' u32 NextObjectID. We only need NextObjectID for preserve-on-resave semantics.
+        For Each subrecord In tes4Subrecords
+            If subrecord.Signature <> "HEDR" Then Continue For
+            If subrecord.Data IsNot Nothing AndAlso subrecord.Data.Length >= 12 Then
+                NextObjectId = BitConverter.ToUInt32(subrecord.Data, 8)
+            End If
+            Exit For
         Next
 
         br.BaseStream.Position = endPos

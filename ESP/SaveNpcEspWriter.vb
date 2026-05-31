@@ -55,6 +55,30 @@ Public Module SaveNpcEspWriter
         Public OriginalHeader As RecordHeader
     End Class
 
+    ''' <summary>One NPC_ NEW record (not override) to write into the plugin. The writer assigns a real
+    ''' self-index FormID via draftRemap exactly like NEW <see cref="OtftRecordEntry"/> / <see cref="LvliRecordEntry"/>:
+    ''' the caller hands a PROVISIONAL sentinel (high byte 0xFF) in <see cref="ProvisionalFormID"/>; the writer
+    ''' rewrites every reference to it (including the record's own header FormID) through the single remapper.
+    ''' Use case: cloning a vanilla NPC into N variants with distinct FormIDs (debug tools, derivation experiments,
+    ''' or future "Duplicate NPC" features in NPC_Manager). The caller fully populates <see cref="NpcData"/> with
+    ''' the modifications (EditorID, TINI/TINC/TIAS for tint intensity, MSDV for morph values, etc.) BEFORE passing.
+    ''' Record header values (Flags, VCS1, Version, VCS2) are emitted as defaults — see SerializeNpcCreateRecord.
+    ''' All FormID references inside NpcData (RNAM, HEAD parts, factions, etc.) are remapped against the new
+    ''' MAST list — the master discovery walk includes creates so referenced plugins land in the MAST list.</summary>
+    Public Class NpcCreateEntry
+        ''' <summary>The fully-populated NPC_Data to serialize. Caller is responsible for modifying any fields
+        ''' (TintLayerStructs, MorphValues, EditorID, etc.) BEFORE passing. The writer does NOT mutate this.</summary>
+        Public NpcData As NPC_Data
+        ''' <summary>Provisional sentinel FormID (high byte 0xFF). Used by the writer to allocate a real
+        ''' self-index FormID and remap every reference to this NPC. Each create entry must have a unique
+        ''' provisional FormID (caller responsibility — typically counter-based: 0xFFFFFFFF, 0xFFFFFFFE, ...).</summary>
+        Public ProvisionalFormID As UInteger
+        ''' <summary>Plugin name (with extension, e.g. "Fallout4.esm") used as the "source" context for FormID
+        ''' master resolution of references INSIDE the cloned NpcData (RNAM=race, HDPT head parts, etc.).
+        ''' Typically the plugin that owns the base NPC being cloned. Optional: defaults to game master if empty.</summary>
+        Public BaseSourcePluginName As String = ""
+    End Class
+
     ''' <summary>One OTFT (outfit) record to write into the same plugin as the NPC override(s).
     ''' Authored in the Edit Outfit "Create" tab. Two flavours:
     '''   • NEW (IsOverride=False): a brand-new outfit owned by this plugin. <see cref="FormID"/> is
@@ -70,6 +94,11 @@ Public Module SaveNpcEspWriter
         Public EditorID As String = ""
         Public ItemArmoFormIDs As New List(Of UInteger)
         Public IsOverride As Boolean
+        ''' <summary>VCS1/VCS2 preserved from the source record on preserve-existing overrides — kept
+        ''' verbatim so a re-save doesn't bump the version counters CK uses for conflict detection.
+        ''' Defaults to zero for NEW drafts (no source). xEdit preserves these on round-trip; mirror.</summary>
+        Public OriginalVcs1 As UInteger
+        Public OriginalVcs2 As UShort
     End Class
 
     ''' <summary>One LVLI (leveled item) record to write into the same plugin — a leveled list authored in
@@ -87,6 +116,10 @@ Public Module SaveNpcEspWriter
         ''' a prior save and re-preserved when updating the same plugin.</summary>
         Public FormID As UInteger
         Public EditorID As String = ""
+        ''' <summary>OBND raw 12 bytes (6×s16). Set from <see cref="LVLI_Data.ObjectBoundsRaw"/> on preserve-existing
+        ''' overrides so the writer preserves the source-LVLI's bounds verbatim. NEW drafts leave it Nothing →
+        ''' writer emits 12 zero bytes (still valid per spec).</summary>
+        Public ObjectBoundsRaw As Byte() = Nothing
         ''' <summary>LVLD — whole-list chance of yielding nothing (0-100).</summary>
         Public ChanceNone As Byte
         ''' <summary>LVLM — Max Count (0 = unlimited).</summary>
@@ -97,15 +130,53 @@ Public Module SaveNpcEspWriter
         ''' <summary>True = override an existing LVLI (keep its real FormID + EditorID). False = brand-new
         ''' (draft) list assigned a self-index FormID.</summary>
         Public IsOverride As Boolean
+        ''' <summary>LVLG — Use Global, FormID [GLOB] (wbDefinitionsFO4.pas:10362). Optional.
+        ''' Set together with <see cref="UseGlobalFormID"/> on preserve-existing overrides.</summary>
+        Public HasUseGlobal As Boolean
+        Public UseGlobalFormID As UInteger
+        ''' <summary>LLKC — Filter Keyword Chances (wbDefinitionsFO4.pas:10322-10327). Re-emitted
+        ''' on preserve-existing overrides. NEW drafts authored in-app leave this empty.</summary>
+        Public FilterKeywords As New List(Of LvliFilterKeywordData)
+        ''' <summary>LVSG — Epic Loot Chance, FormID [GLOB] (wbDefinitionsFO4.pas:10372). Optional.</summary>
+        Public HasEpicLootChance As Boolean
+        Public EpicLootChanceFormID As UInteger
+        ''' <summary>ONAM — Override Name, translatable lstring (wbDefinitionsFO4.pas:10373).
+        ''' Emitted via the central translatable encoder so users with non-ASCII locales keep characters.</summary>
+        Public HasOverrideName As Boolean
+        Public OverrideName As String = ""
+        ''' <summary>VCS1/VCS2 preserved from the source record on preserve-existing overrides. See
+        ''' <see cref="OtftRecordEntry.OriginalVcs1"/> for rationale.</summary>
+        Public OriginalVcs1 As UInteger
+        Public OriginalVcs2 As UShort
+        ''' <summary>True = emit as LVLN (Leveled NPC, wbDefinitionsFO4.pas:10329) instead of LVLI.
+        ''' El body de subrecords es IDENTICO (EDID/OBND/LVLD/LVLM/LVLF/LVLG/LLCT/LVLO...); solo cambia
+        ''' la signature del record y el GRUP top-level. Usar para listas de NPC_ (cada LVLO referencia
+        ''' un NPC_ FormID). LVLN va antes que LVLI en el group order de xEdit (10329 &lt; 10352).</summary>
+        Public IsNpcList As Boolean = False
     End Class
 
     ''' <summary>One LVLO entry inside an <see cref="LvliRecordEntry"/>. The reference is an ARMO (real),
-    ''' a vanilla LVLI (real), or another draft LVLI (provisional — remapped via draftRemap).</summary>
+    ''' a vanilla LVLI (real), or another draft LVLI (provisional — remapped via draftRemap). May carry a
+    ''' trailing COED with per-entry Owner/Rank metadata (wbCOED, wbDefinitionsFO4.pas:3686-3694).</summary>
     Public Class LvliEntryData
         Public Level As UShort = 1
         Public RefFormID As UInteger
         Public Count As UShort = 1
         Public ChanceNone As Byte
+        ''' <summary>True when the entry carries a COED. Mirror of NPC_InventoryItem COED fields.</summary>
+        Public HasCoed As Boolean
+        Public CoedOwnerFormID As UInteger
+        ''' <summary>COED +4 union: GLOB FormID when Owner=NPC_ (CoedExtraIsFormID=True), Required Rank
+        ''' s32 when Owner=FACT, unused bytes otherwise. Same conditional-remap rule as NPC_ inventory.</summary>
+        Public CoedOwnerExtra As UInteger
+        Public CoedExtraIsFormID As Boolean
+        Public CoedItemCondition As Single
+    End Class
+
+    ''' <summary>One LLKC filter-keyword chance pair re-emitted on preserve-existing LVLI overrides.</summary>
+    Public Class LvliFilterKeywordData
+        Public KeywordFormID As UInteger
+        Public Chance As UInteger
     End Class
 
     ''' <summary>Result of a save operation.</summary>
@@ -155,7 +226,9 @@ Public Module SaveNpcEspWriter
                                        existingMasters As List(Of String),
                                        pluginManager As PluginManager,
                                        Optional outfitEntries As List(Of OtftRecordEntry) = Nothing,
-                                       Optional leveledEntries As List(Of LvliRecordEntry) = Nothing) As SaveResult
+                                       Optional leveledEntries As List(Of LvliRecordEntry) = Nothing,
+                                       Optional existingNextObjectId As UInteger = 0UI,
+                                       Optional npcCreateEntries As List(Of NpcCreateEntry) = Nothing) As SaveResult
 
         If String.IsNullOrWhiteSpace(outputPath) Then Throw New ArgumentException("outputPath is empty.", NameOf(outputPath))
         If entries Is Nothing Then entries = New List(Of NpcOverrideEntry)()
@@ -164,6 +237,7 @@ Public Module SaveNpcEspWriter
         If pluginManager Is Nothing Then Throw New ArgumentException("pluginManager is required for FormID resolution.", NameOf(pluginManager))
         If outfitEntries Is Nothing Then outfitEntries = New List(Of OtftRecordEntry)()
         If leveledEntries Is Nothing Then leveledEntries = New List(Of LvliRecordEntry)()
+        If npcCreateEntries Is Nothing Then npcCreateEntries = New List(Of NpcCreateEntry)()
 
         Dim gameMaster = MasterFileNamePublic(game)
 
@@ -176,8 +250,28 @@ Public Module SaveNpcEspWriter
             ' Also include the record's own FormID (for the master ownership reference).
             allFormIDs.Add(entry.Npc.FormID)
         Next
+        ' NEW NPC_ create entries: walk the cloned NpcData for FormID references (RNAM/HEAD/etc).
+        ' Their own FormID is the provisional sentinel (0xFF high byte) — DO NOT add it: it's not
+        ' resolvable to a master, draftRemap handles it. Skip provisional FormIDs in references too
+        ' (cross-draft refs go through draftRemap, same pattern as OTFT/LVLI).
+        For Each ce In npcCreateEntries
+            If ce.NpcData Is Nothing Then Continue For
+            CollectFormIDs(ce.NpcData, allFormIDs)
+        Next
         For Each rec In existingRecords
-            allFormIDs.Add(rec.Header.FormID)
+            ' rec.Header.FormID is LOCAL when rec comes from a fresh PluginReader (caller's
+            ' "update existing" path in NpcOverrideSaver Phase 2 loads with a new reader that
+            ' never goes through PluginManager.MergeRecords, which is what mutates the header
+            ' to GLOBAL — see PluginManager.vb:320-324). The audit downstream uses
+            ' GetOriginatingPluginName(fid) which interprets the high byte as a LOAD ORDER
+            ' slot, so passing LOCAL would pull in whichever plugin happens to occupy that
+            ' slot (typically a DLC ESM) as a spurious master. Resolve to GLOBAL via the
+            ' source plugin's MAST list — same operation MergeRecords does on load, and the
+            ' same convention xEdit uses internally (records carry FixedFormID = LoadOrder
+            ' FormID; CleanMasters / MastersUpdated / ReportRequiredMasters all operate over
+            ' GLOBAL FormIDs — wbImplementation.pas:3024-3120 / 5014 / 13572).
+            Dim globalRecFid = pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rec.Header.FormID)
+            allFormIDs.Add(globalRecFid)
             CollectFormIDsFromSubrecords(rec, existingMasters, pluginManager, allFormIDs)
         Next
         ' OTFT outfits: the INAM items (ARMO/LVLI) bring in masters; an OVERRIDE entry also brings in
@@ -194,9 +288,23 @@ Public Module SaveNpcEspWriter
         ' LVLI leveled lists: each LVLO reference (ARMO or a real/nested LVLI) brings in its master.
         ' Provisional refs to other DRAFT leveled lists resolve via draftRemap (skipped here). An OVERRIDE
         ' entry (existing LVLI being preserved) also brings in its own record's master.
+        ' Additional FormID-bearing fields (preserve-existing only; NEW drafts leave them empty):
+        '   LVLG (Use Global GLOB), LVSG (Epic Loot Chance GLOB), LLKC (Filter Keyword KYWD),
+        '   per-entry COED (Owner NPC_/FACT + extra GLOB if Owner=NPC_).
+        ' Each FormID that ends up in the file MUST appear here so the master discovery walks include it
+        ' (mirror of xEdit ReportRequiredMasters, wbImplementation.pas:13572).
         For Each le In leveledEntries
             For Each ent In le.Entries
                 If ent.RefFormID <> 0UI AndAlso Not IsProvisionalDraftFormID(ent.RefFormID) Then allFormIDs.Add(ent.RefFormID)
+                If ent.HasCoed Then
+                    If ent.CoedOwnerFormID <> 0UI Then allFormIDs.Add(ent.CoedOwnerFormID)
+                    If ent.CoedExtraIsFormID AndAlso ent.CoedOwnerExtra <> 0UI Then allFormIDs.Add(ent.CoedOwnerExtra)
+                End If
+            Next
+            If le.HasUseGlobal AndAlso le.UseGlobalFormID <> 0UI Then allFormIDs.Add(le.UseGlobalFormID)
+            If le.HasEpicLootChance AndAlso le.EpicLootChanceFormID <> 0UI Then allFormIDs.Add(le.EpicLootChanceFormID)
+            For Each fk In le.FilterKeywords
+                If fk.KeywordFormID <> 0UI Then allFormIDs.Add(fk.KeywordFormID)
             Next
             If le.IsOverride AndAlso le.FormID <> 0UI Then allFormIDs.Add(le.FormID)
         Next
@@ -302,10 +410,24 @@ Public Module SaveNpcEspWriter
         ' emit order. OTFTs are numbered first, then LVLIs — any stable order works; the keys (provisional
         ' FormIDs) are globally unique across both kinds because they come from one app-side counter.
         Dim draftRemap As New Dictionary(Of UInteger, UInteger)
-        Dim nextSelfObjIndex As UInteger = NEXT_OBJECT_ID_DEFAULT
+        ' Seed the draft object-ID counter from the disk HEDR if it's ahead of the default. On
+        ' update-existing, a prior save consumed object IDs 0x800..existingNextObjectId-1 (those
+        ' records are in existingRecords/Entries with self-index FormIDs). Starting at 0x800 again
+        ' would re-hand the same IDs and collide with already-preserved overrides.
+        Dim nextSelfObjIndex As UInteger = If(existingNextObjectId > NEXT_OBJECT_ID_DEFAULT, existingNextObjectId, NEXT_OBJECT_ID_DEFAULT)
         For Each oe In outfitEntries
             If oe.IsOverride Then Continue For
             draftRemap(oe.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
+            nextSelfObjIndex += 1UI
+        Next
+        ' NPC_ creates ANTES que leveled: los NPC_ son los records primarios y sus FormIDs deben ser
+        ' estables (los bakes en disco se nombran por FormID). Una LVLN/LVLI que los referencia toma su
+        ' slot DESPUES, asi agregar/quitar una leveled list no corre los FormIDs de los NPC_. La
+        ' resolucion de refs es global (draftRemap completo antes de serializar), asi que el orden de
+        ' asignacion no afecta la correctitud — solo que numero recibe cada record.
+        For Each ce In npcCreateEntries
+            If draftRemap.ContainsKey(ce.ProvisionalFormID) Then Continue For
+            draftRemap(ce.ProvisionalFormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
             nextSelfObjIndex += 1UI
         Next
         For Each le In leveledEntries
@@ -387,6 +509,11 @@ Public Module SaveNpcEspWriter
         For Each existing In existingRecords
             recordBuffers.Add(SerializeExistingRecord(existing, existingMasters, pluginManager, remapper))
         Next
+        ' NEW NPC_ records (clones with self-index FormIDs). Emitted into the same NPC_ GRUP as the
+        ' overrides — CK / xEdit / engine all consume NPC_ records uniformly regardless of override-vs-new.
+        For Each ce In npcCreateEntries
+            recordBuffers.Add(SerializeNpcCreateRecord(ce, remapper, game))
+        Next
 
         ' OTFT outfit records (Edit Outfit "Create" tab). Each emits as a top-level record: NEW ones
         ' carry a self-index FormID (via draftRemap inside the remapper); OVERRIDE ones keep their real
@@ -399,26 +526,46 @@ Public Module SaveNpcEspWriter
         ' LVLI leveled lists (Edit Outfit "New LVL…"). Each emits as a self-index top-level record; LVLO
         ' references are remapped (draft → self via draftRemap; real ARMO/LVLI → master remap).
         Dim lvliBuffers As New List(Of Byte())
+        Dim lvlnBuffers As New List(Of Byte())
         For Each le In leveledEntries
-            lvliBuffers.Add(SerializeLvliRecord(le, remapper, game))
+            Dim buf = SerializeLvliRecord(le, remapper, game)
+            If le.IsNpcList Then lvlnBuffers.Add(buf) Else lvliBuffers.Add(buf)
         Next
 
         ' ====================================================================
-        ' Step 5: Wrap each record type in its own top-level GRUP. Referenced-first order keeps the file
-        ' tidy / xEdit-friendly (FormID resolution is global, so order isn't required): LVLI (referenced by
-        ' OTFT.INAM and by other LVLIs) → OTFT (referenced by NPC.DOFT) → NPC_.
+        ' Step 5: Wrap each record type in its own top-level GRUP. Order matches xEdit canonical
+        ' wbGroupOrder (built from wbRecord(...) declaration order in wbDefinitionsFO4.pas):
+        '   OTFT (9698) → LVLI (10352) → NPC_ (10617). xEdit's PrepareSave sorts top-level GRUPs
+        '   by SortOrder (wbImplementation.pas:5212 wbMergeSortPtr CompareSortOrder), so any
+        '   plugin loaded into xEdit + re-saved comes out in this order. Match it on write so
+        '   our output is byte-comparable.
+        ' FormID resolution is global, so engine doesn't require this order — it's pure xEdit
+        ' canonicality.
         ' ====================================================================
-        Dim grupLvliBytes As Byte() = If(lvliBuffers.Count > 0, BuildGrup("LVLI", lvliBuffers), Array.Empty(Of Byte)())
         Dim grupOtftBytes As Byte() = If(otftBuffers.Count > 0, BuildGrup("OTFT", otftBuffers), Array.Empty(Of Byte)())
+        ' LVLN (Leveled NPC, decl 10329) va ANTES que LVLI (10352) en el group order de xEdit.
+        Dim grupLvlnBytes As Byte() = If(lvlnBuffers.Count > 0, BuildGrup("LVLN", lvlnBuffers), Array.Empty(Of Byte)())
+        Dim grupLvliBytes As Byte() = If(lvliBuffers.Count > 0, BuildGrup("LVLI", lvliBuffers), Array.Empty(Of Byte)())
         Dim grupNpcBytes = BuildGrup("NPC_", recordBuffers)
 
         ' ====================================================================
-        ' Step 6: Build TES4 header + emit final stream. numRecords counts EVERY record (NPC_ + OTFT).
-        ' nextObjectId = first free self object index after the new OTFTs so the CK won't re-hand out an
-        ' ID we already consumed (selfMasterIdx records start at NEXT_OBJECT_ID_DEFAULT).
+        ' Step 6: Build TES4 header + emit final stream.
+        ' numRecords counts every content record (NPC_ + OTFT + LVLI). Matches xEdit's
+        ' Pred(GetCountedRecordCount) at wbImplementation.pas:5219 — TES4 itself excluded.
+        ' nextObjectId follows TwbFile.NewFormID semantics (wbImplementation.pas:5083-5122):
+        '   - The draft counter (nextSelfObjIndex) was seeded from max(0x800, disk HEDR) and
+        '     advanced once per NEW draft (OTFT + LVLI). Its final value is the first free slot
+        '     after this save → exactly what HEDR.nextObjectId must hold.
+        '   - Fresh plugin with no drafts: nextSelfObjIndex stayed at 0x800.
+        '   - Update-existing with no new drafts but disk had advanced counter: preserved through
+        '     the seed.
+        ' Mask clamps the counter to the object-ID width: ESL/light = 12 bits (0xFFF),
+        ' full plugin = 24 bits (0xFFFFFF). Mirror of TwbFile.NewFormID mask logic.
         ' ====================================================================
-        Dim nextObjectId As UInteger = NEXT_OBJECT_ID_DEFAULT + CUInt(draftRemap.Count)
-        Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count + lvliBuffers.Count
+        Dim objectIdMask As UInteger = If(lightMaster, &HFFFUI, &HFFFFFFUI)
+        Dim nextObjectId As UInteger = nextSelfObjIndex
+        If nextObjectId > objectIdMask Then nextObjectId = objectIdMask
+        Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count + lvliBuffers.Count + lvlnBuffers.Count
         Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
@@ -432,8 +579,10 @@ Public Module SaveNpcEspWriter
         Dim tmpPath = outputPath & ".tmp"
         Using fs As FileStream = File.Create(tmpPath)
             fs.Write(tes4Bytes, 0, tes4Bytes.Length)
-            If grupLvliBytes.Length > 0 Then fs.Write(grupLvliBytes, 0, grupLvliBytes.Length)
+            ' Canonical xEdit GRUP order: OTFT → LVLI → NPC_ (see Step 5 comment).
             If grupOtftBytes.Length > 0 Then fs.Write(grupOtftBytes, 0, grupOtftBytes.Length)
+            If grupLvlnBytes.Length > 0 Then fs.Write(grupLvlnBytes, 0, grupLvlnBytes.Length)
+            If grupLvliBytes.Length > 0 Then fs.Write(grupLvliBytes, 0, grupLvliBytes.Length)
             fs.Write(grupNpcBytes, 0, grupNpcBytes.Length)
         End Using
 
@@ -507,6 +656,9 @@ Public Module SaveNpcEspWriter
         For Each item In npc.Inventory
             If item.ItemFormID <> 0UI Then sink.Add(item.ItemFormID)
             If item.HasCoed AndAlso item.CoedOwnerFormID <> 0UI Then sink.Add(item.CoedOwnerFormID)
+            ' COED extra slot is a GLOB FormID when Owner is NPC_ (wbCOEDOwnerDecider). Including
+            ' it here ensures the master defining that Global Variable lands in the new MAST list.
+            If item.HasCoed AndAlso item.CoedExtraIsFormID AndAlso item.CoedOwnerExtra <> 0UI Then sink.Add(item.CoedOwnerExtra)
         Next
         For Each fid In npc.AiPackageFormIDs
             If fid <> 0UI Then sink.Add(fid)
@@ -524,6 +676,15 @@ Public Module SaveNpcEspWriter
                 Next
                 For Each fid In combo.Combination.Keywords
                     If fid <> 0UI Then sink.Add(fid)
+                Next
+                ' OBTS Properties: Value1 is a FormID when ValueType is FormIDInt(4) or FormIDFloat(6)
+                ' — per wbObjectModProperties (wbDefinitionsFO4.pas:5826-5865). Must enter the master
+                ' audit so an ESL/light-master Actor Value (AVIF) reference brings its plugin into the
+                ' new MAST list and the writer remap doesn't fall back to "keep raw FormID".
+                For Each prop In combo.Combination.Properties
+                    If (prop.ValueType = OMOD_ValueType.FormIDInt OrElse prop.ValueType = OMOD_ValueType.FormIDFloat) AndAlso prop.Value1FormID <> 0UI Then
+                        sink.Add(prop.Value1FormID)
+                    End If
                 Next
             End If
         Next
@@ -616,6 +777,29 @@ Public Module SaveNpcEspWriter
         End Using
     End Function
 
+    ''' <summary>Serialize a NEW NPC_ record (clone with self-index FormID). Mirrors
+    ''' <see cref="SerializeNpcRecord"/> except header uses defaults (no source OriginalHeader): Flags=0
+    ''' (no COMPRESSED, no special flags), VCS1=0, Version=record-version of the target game, VCS2=0.
+    ''' FormID is the entry's provisional sentinel which the remapper rewrites to the real self-index.</summary>
+    Private Function SerializeNpcCreateRecord(entry As NpcCreateEntry, remapper As NpcSubrecordWriter.FormIdRemapper, game As Config_App.Game_Enum) As Byte()
+        Dim body = NpcSubrecordWriter.SerializeNpcBody(entry.NpcData, remapper)
+        Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
+
+        Using ms As New MemoryStream()
+            Using bw As New BinaryWriter(ms)
+                bw.Write(Encoding.ASCII.GetBytes("NPC_"))    ' Signature
+                bw.Write(CUInt(body.Length))                  ' DataSize
+                bw.Write(0UI)                                 ' Flags (no special flags for fresh NPC_)
+                bw.Write(remapper(entry.ProvisionalFormID))   ' FormID — remapped to real self-index
+                bw.Write(0UI)                                 ' VCS1 — fresh record, no change-tracking history
+                bw.Write(recordVersion)                       ' Version (FO4: 0x83 = 131)
+                bw.Write(CUShort(0))                          ' VCS2
+                bw.Write(body)
+            End Using
+            Return ms.ToArray()
+        End Using
+    End Function
+
     Private Function SerializeExistingRecord(rec As PluginRecord,
                                              existingMasters As List(Of String),
                                              pluginManager As PluginManager,
@@ -625,6 +809,15 @@ Public Module SaveNpcEspWriter
         ' fall back to copy-through with a best-effort 4-byte FormID patch on each subrecord.
         If rec.Header.Signature = "NPC_" Then
             Dim parsed = RecordParsers.ParseNPC(rec, rec.SourcePluginName, pluginManager)
+            ' ParseNPC copies rec.Header.FormID verbatim into parsed.FormID
+            ' (RecordParsers.vb:1735). For records coming from a fresh PluginReader (the
+            ' update-existing path) that value is LOCAL — but SerializeNpcRecord passes it to
+            ' the remapper, which expects GLOBAL (GetOriginatingPluginName indexes the high
+            ' byte against load order). Without this resolve the record's master high byte
+            ' gets rewritten against the wrong plugin in the new MAST list. Subrecord FormIDs
+            ' inside parsed are already GLOBAL (ResolveFormIDReference at parse time); only
+            ' the record-own FormID needs the explicit resolve.
+            parsed.FormID = pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rec.Header.FormID)
             Dim entry As New NpcOverrideEntry With {
                 .Npc = parsed,
                 .SourcePluginName = rec.SourcePluginName,
@@ -676,9 +869,9 @@ Public Module SaveNpcEspWriter
                 bw.Write(CUInt(body.Length))                ' DataSize
                 bw.Write(0UI)                               ' Flags (uncompressed; nothing to preserve)
                 bw.Write(remapper(entry.FormID))            ' FormID (self-index for new / master-remap for override)
-                bw.Write(0UI)                               ' VCS1
+                bw.Write(entry.OriginalVcs1)                ' VCS1 (preserved from source on overrides, 0 for new drafts)
                 bw.Write(recordVersion)                     ' Version
-                bw.Write(0US)                               ' VCS2
+                bw.Write(entry.OriginalVcs2)                ' VCS2 (preserved from source on overrides, 0 for new drafts)
                 bw.Write(body)
             End Using
             Return ms.ToArray()
@@ -695,14 +888,24 @@ Public Module SaveNpcEspWriter
         Dim body As Byte()
         Using bms As New MemoryStream()
             Using bw As New BinaryWriter(bms)
+                ' Subrecord order mirrors wbDefinitionsFO4.pas:10352-10374:
+                ' EDID, OBND(req), LVLD, LVLM, LVLF(req), LVLG(opt), LLCT, N×(LVLO + COED?), LLKC(opt), LVSG(opt), ONAM(opt)
                 ' EDID (ZSTRING, cp1252 — non-translatable, mirrors SerializeOtftRecord / NpcSubrecordWriter).
                 Dim edidBytes = PluginEncodingSettings.EncodeGeneral(If(entry.EditorID, ""))
                 WriteSubrecordHeader(bw, "EDID", edidBytes.Length + 1)
                 bw.Write(edidBytes)
                 bw.Write(CByte(0))
-                ' OBND (Object Bounds, 6×i16 = 12 bytes, all zero). Required by the xEdit def; engine ignores it.
-                WriteSubrecordHeader(bw, "OBND", 12)
-                bw.Write(New Byte(11) {})
+                ' OBND (Object Bounds, 6×i16 = 12 bytes). Required per wbDefinitionsFO4.pas:10354
+                ' (wbOBND(True)). Preserve verbatim from source on preserve-existing overrides so a
+                ' re-save is byte-equivalent; fall back to 12 zero bytes only when no source captured
+                ' (NEW drafts authored in Edit Outfit, which have no semantic bounds).
+                If entry.ObjectBoundsRaw IsNot Nothing AndAlso entry.ObjectBoundsRaw.Length = 12 Then
+                    WriteSubrecordHeader(bw, "OBND", 12)
+                    bw.Write(entry.ObjectBoundsRaw)
+                Else
+                    WriteSubrecordHeader(bw, "OBND", 12)
+                    bw.Write(New Byte(11) {})
+                End If
                 ' LVLD (Chance None, u8).
                 WriteSubrecordHeader(bw, "LVLD", 1)
                 bw.Write(entry.ChanceNone)
@@ -712,11 +915,28 @@ Public Module SaveNpcEspWriter
                 ' LVLF (Flags, u8).
                 WriteSubrecordHeader(bw, "LVLF", 1)
                 bw.Write(entry.Flags)
-                ' LLCT (entry count, u8) — only non-zero entries are emitted.
+                ' LVLG (Use Global FormID, optional) — wbDefinitionsFO4.pas:10362.
+                If entry.HasUseGlobal Then
+                    WriteSubrecordHeader(bw, "LVLG", 4)
+                    bw.Write(remapper(entry.UseGlobalFormID))
+                End If
+                ' LLCT (entry count, u8) — only non-zero entries are emitted. LLCT is itU8 in FO4
+                ' (wbDefinitionsFO4.pas:3674), so an LVLI can hold at most 255 entries. Truncating
+                ' the counter while emitting all entries leaves the file inconsistent (count claims
+                ' fewer entries than are on disk), so we throw instead — the caller must split a
+                ' larger list into a chain of nested LVLIs.
                 Dim ents = entry.Entries.Where(Function(e) e.RefFormID <> 0UI).ToList()
+                If ents.Count > 255 Then
+                    Throw New InvalidOperationException(
+                        $"LVLI '{If(entry.EditorID, "<no-edid>")}' has {ents.Count} entries; LLCT u8 limit is 255. " &
+                        "Split into nested LVLIs.")
+                End If
                 WriteSubrecordHeader(bw, "LLCT", 1)
-                bw.Write(CByte(Math.Min(ents.Count, 255)))
-                ' N × LVLO (12 bytes each).
+                bw.Write(CByte(ents.Count))
+                ' N × (LVLO + optional COED). Per wbDefinitionsCommon.pas:5704 LVLO is 12 bytes in FO4:
+                ' Level u16 + pad u16 + Reference u32 + Count u16 + ChanceNone u8 + pad u8.
+                ' COED (wbDefinitionsFO4.pas:3686-3694) trails the LVLO when the entry carries
+                ' per-entry Owner/Rank metadata (12 bytes: Owner u32 + union u32 + Item Condition f32).
                 For Each e In ents
                     WriteSubrecordHeader(bw, "LVLO", 12)
                     bw.Write(e.Level)               ' Level (u16)
@@ -725,7 +945,42 @@ Public Module SaveNpcEspWriter
                     bw.Write(e.Count)               ' Count (u16)
                     bw.Write(e.ChanceNone)          ' Chance None (u8)
                     bw.Write(CByte(0))              ' pad (u8, wbUnused 1)
+                    If e.HasCoed Then
+                        WriteSubrecordHeader(bw, "COED", 12)
+                        bw.Write(remapper(e.CoedOwnerFormID))
+                        ' Union: GLOB FormID if Owner=NPC_ (CoedExtraIsFormID), else int/unused raw.
+                        ' Same conditional-remap rule as NPC_ inventory (wbCOEDOwnerDecider).
+                        If e.CoedExtraIsFormID Then
+                            bw.Write(remapper(e.CoedOwnerExtra))
+                        Else
+                            bw.Write(e.CoedOwnerExtra)
+                        End If
+                        bw.Write(e.CoedItemCondition)
+                    End If
                 Next
+                ' LLKC (Filter Keyword Chances, optional) — wbDefinitionsFO4.pas:10322-10327. xEdit
+                ' emits as a single subrecord with N×(Keyword FormID u32 + Chance u32). 0 entries → skip.
+                Dim filters = entry.FilterKeywords.Where(Function(f) f.KeywordFormID <> 0UI).ToList()
+                If filters.Count > 0 Then
+                    WriteSubrecordHeader(bw, "LLKC", filters.Count * 8)
+                    For Each f In filters
+                        bw.Write(remapper(f.KeywordFormID))
+                        bw.Write(f.Chance)
+                    Next
+                End If
+                ' LVSG (Epic Loot Chance FormID, optional) — wbDefinitionsFO4.pas:10372.
+                If entry.HasEpicLootChance Then
+                    WriteSubrecordHeader(bw, "LVSG", 4)
+                    bw.Write(remapper(entry.EpicLootChanceFormID))
+                End If
+                ' ONAM (Override Name, optional translatable lstring) — wbDefinitionsFO4.pas:10373.
+                ' Encoded via the central translatable path so non-ASCII overrides survive a re-save.
+                If entry.HasOverrideName Then
+                    Dim onamBytes = PluginEncodingSettings.EncodeTranslatable(If(entry.OverrideName, ""))
+                    WriteSubrecordHeader(bw, "ONAM", onamBytes.Length + 1)
+                    bw.Write(onamBytes)
+                    bw.Write(CByte(0))
+                End If
             End Using
             body = bms.ToArray()
         End Using
@@ -733,13 +988,13 @@ Public Module SaveNpcEspWriter
         Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
         Using ms As New MemoryStream()
             Using bw As New BinaryWriter(ms)
-                bw.Write(Encoding.ASCII.GetBytes("LVLI"))   ' Signature
+                bw.Write(Encoding.ASCII.GetBytes(If(entry.IsNpcList, "LVLN", "LVLI")))   ' Signature (LVLN para listas de NPC_)
                 bw.Write(CUInt(body.Length))                ' DataSize
                 bw.Write(0UI)                               ' Flags (uncompressed)
-                bw.Write(remapper(entry.FormID))            ' FormID (self-index via draftRemap)
-                bw.Write(0UI)                               ' VCS1
+                bw.Write(remapper(entry.FormID))            ' FormID (self-index via draftRemap for NEW, master-remap for OVERRIDE)
+                bw.Write(entry.OriginalVcs1)                ' VCS1 (preserved from source on overrides, 0 for new drafts)
                 bw.Write(recordVersion)                     ' Version
-                bw.Write(0US)                               ' VCS2
+                bw.Write(entry.OriginalVcs2)                ' VCS2 (preserved from source on overrides, 0 for new drafts)
                 bw.Write(body)
             End Using
             Return ms.ToArray()
@@ -838,6 +1093,15 @@ Public Module SaveNpcEspWriter
                     WriteSubrecordHeader(bw, "DATA", 8)
                     bw.Write(0UL)
                 Next
+
+                ' INCC (Interior Cell Count, itU32) is .SetRequired per spec
+                ' (wbDefinitionsFO4.pas:12488). xEdit's PrepareSave (wbImplementation.pas:5223-5232)
+                ' always sets it to the count of CELL records flagged Interior (DATA bit 0 = 1) when
+                ' saving FO4 plugins. NPC_Manager auto-gen plugins never contain CELL records, so
+                ' INCC is always 0 — but the subrecord must be emitted (engine + CK validators
+                ' expect it on FO4 ESPs).
+                WriteSubrecordHeader(bw, "INCC", 4)
+                bw.Write(0UI)
             End Using
             Dim bodyBytes = bodyMs.ToArray()
 

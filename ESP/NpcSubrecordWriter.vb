@@ -416,9 +416,15 @@ Public Module NpcSubrecordWriter
                 Using ms As New MemoryStream()
                     Using w As New BinaryWriter(ms)
                         w.Write(remap(item.CoedOwnerFormID))
-                        ' CoedOwnerExtra is union per wbCOEDOwnerDecider — we preserve raw u32 since
-                        ' the parser also keeps it raw.
-                        w.Write(item.CoedOwnerExtra)
+                        ' CoedOwnerExtra is a union per wbCOEDOwnerDecider (wbDefinitionsCommon.pas:4103):
+                        ' Owner=NPC_ → GLOB FormID (must be remapped — parser already resolved to GLOBAL).
+                        ' Owner=FACT → Required Rank s32. Owner=NULL/unresolved → unused 4 bytes.
+                        ' CoedExtraIsFormID is the parser's verdict; emit through the remapper iff set.
+                        If item.CoedExtraIsFormID Then
+                            w.Write(remap(item.CoedOwnerExtra))
+                        Else
+                            w.Write(item.CoedOwnerExtra)
+                        End If
                         w.Write(item.CoedItemCondition)
                     End Using
                     WriteRawSubrecord(bw, "COED", ms.ToArray())
@@ -508,15 +514,16 @@ Public Module NpcSubrecordWriter
     End Sub
 
     ''' <summary>Re-emit OBTS bytes with FormIDs remapped for the new MAST list.
-    ''' Layout per ParseOBTSPayload (RecordParsers.vb:792, wbDefinitionsFO4.pas:5867):
+    ''' Layout per ParseOBTSPayload (RecordParsers.vb:1563, wbDefinitionsFO4.pas:5867):
     '''   u32 IncludeCount @0, u32 PropertyCount @4, u8 LevelMin @8, u8 pad, u8 LevelMax @10, u8 pad,
     '''   s16 ParentCombinationIndex @12, u8 Default @14, u8 KeywordCount @15,
     '''   KeywordCount × u32 @16+, then u8 MinLevelForRanks + u8 AltLevelsPerTier,
     '''   IncludeCount × 7 bytes (u32 OMOD FormID + u8 attach + u8 optional + u8 dontUseAll),
-    '''   PropertyCount × 24 bytes (Properties — opaque, we don't remap inside them today since
-    '''   our parser doesn't fully decode wbObjectModProperties. Property FormIDs in those fields
-    '''   may include unmapped masters; flagged as known limitation in
-    '''   memory/project_npc_save_esp_status.md).</summary>
+    '''   PropertyCount × 24 bytes (Properties, layout per wbObjectModProperties wbDefinitionsFO4.pas:5826):
+    '''     u8 ValueType @0, 3 unused, u8 FunctionType @4, 3 unused, u16 Property @8, 2 unused,
+    '''     4-byte Value1 @12 (FormID when ValueType is FormIDInt=4 or FormIDFloat=6, else float/int),
+    '''     4-byte Value2 @16, float Step @20. The Value1 FormID slot is patched here (parser already
+    '''     resolved it to GLOBAL into combo.Combination.Properties(i).Value1FormID).</summary>
     Private Function ApplyObtsRemap(combo As NPC_ObjectTemplateCombination, remap As FormIdRemapper) As Byte()
         Dim raw = combo.RawObtsBytes
         Dim payload = New Byte(raw.Length - 1) {}
@@ -571,6 +578,37 @@ Public Module NpcSubrecordWriter
             payload(offset + 3) = CByte((newRaw >> 24) And &HFFUI)
             offset += 7
         Next
+
+        ' Properties: 24 bytes each. The Value1 slot (bytes 12-15 within each entry) is a FormID
+        ' when ValueType (byte 0) is FormIDInt(4) or FormIDFloat(6) — per wbObjectModProperties
+        ' (wbDefinitionsFO4.pas:5826-5865). Patch each FormID-typed Value1 from the parser's
+        ' resolved-global view in combo.Combination.Properties(i).Value1FormID, mirroring the
+        ' Keywords/Includes pattern above. Other ValueTypes leave the 4 bytes untouched (they're
+        ' float/int payload, not master-bound).
+        Dim propertyCount = BitConverter.ToUInt32(raw, 4)
+        Const propertyEntrySize As Integer = 24
+        For i = 0 To CInt(propertyCount) - 1
+            If offset + propertyEntrySize > payload.Length Then Exit For
+            Dim valueType As Byte = payload(offset)
+            If valueType = CByte(OMOD_ValueType.FormIDInt) OrElse valueType = CByte(OMOD_ValueType.FormIDFloat) Then
+                Dim formIdOffset = offset + 12
+                Dim rawValue1 = BitConverter.ToUInt32(payload, formIdOffset)
+                Dim newRaw As UInteger = 0UI
+                If rawValue1 <> 0UI Then
+                    If CInt(propertyCount) = combo.Combination.Properties.Count AndAlso i < combo.Combination.Properties.Count Then
+                        newRaw = remap(combo.Combination.Properties(i).Value1FormID)
+                    Else
+                        newRaw = remap(rawValue1)
+                    End If
+                End If
+                payload(formIdOffset + 0) = CByte(newRaw And &HFFUI)
+                payload(formIdOffset + 1) = CByte((newRaw >> 8) And &HFFUI)
+                payload(formIdOffset + 2) = CByte((newRaw >> 16) And &HFFUI)
+                payload(formIdOffset + 3) = CByte((newRaw >> 24) And &HFFUI)
+            End If
+            offset += propertyEntrySize
+        Next
+
         Return payload
     End Function
 
