@@ -246,6 +246,7 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uWorkingSpaceLoc As Integer = -1
     Friend _uSrcSpaceLoc As Integer = -1
     Friend _uOutputSpaceLoc As Integer = -1
+    Friend _uCompositeSpaceLoc As Integer = -1
     Friend _uMaskConvFullLoc As Integer = -1
     Friend _uModeLoc As Integer = -1
     Friend _quadVao As Integer = 0
@@ -311,6 +312,13 @@ Public Module FaceTintCompositor
     ' To remove: delete this flag, the LogComposeLayerDelta calls in the compose loop, and
     ' the two helper methods below.
     Public Property PerLayerDiffLog As Boolean = False
+
+    ''' <summary>Flag RESERVADO (decisión usuario 2026-05-31). HAY UN SOLO PATH de composición (ley
+    ''' gen3, acumulador D en G22); el MISMO resultado se muestra (dictionary del render) y se escribe a
+    ''' disco (DDS del bake) — no hay dos caminos. Este flag NO forkea la ley; queda como gancho para,
+    ''' p.ej., reconvertir el render final g22→sRGB si el test visual lo pide (sin tocar Shader_Class.vb).
+    ''' Default False; aún sin uso activo.</summary>
+    Public Property BakeMode As Boolean = False
 
     ''' <summary>NPC FormID currently being baked. Stamped into [FACETINT-LAYER] log
     ''' lines so an offline parser can group layers per NPC (the bake processes
@@ -533,6 +541,7 @@ uniform int uForceOpaqueAlpha; // 1 = write opaque alpha (1.0) on the FINAL draw
 uniform int uWorkingSpace;     // 0=linear 1=srgb 2=g22. Espacio donde corre el blend.
 uniform int uSrcSpace;         // 0=linear 1=srgb 2=g22. Espacio del color de la capa (D=srgb, N/S=linear).
 uniform int uOutputSpace;      // 0=linear 1=srgb 2=g22. Espacio del acumulador/almacenamiento (D=g22, N/S=linear).
+uniform int uCompositeSpace;   // 0=linear 1=srgb 2=g22. Espacio donde corre el COMPOSITE (lerp por cov). Ley gen3: blend en working, lerp en linear. ==uWorkingSpace reduce al modelo previo.
 uniform int uMaskConvFull;     // mask conv: 0=raw 1=srgbEncode 2=srgbDecode 3=g22Encode 4=g22Decode
 uniform int uMode;             // 0=tint (additive-over-base) ; 1=region swap (crossfade mix(prev,swap,mask.r*op))
 
@@ -544,12 +553,10 @@ vec3 blendOverlay(vec3 d, vec3 s) {
                step(0.5, d));
 }
 vec3 blendSoftLight(vec3 d, vec3 s) {
-    vec3 g = mix(((16.0 * d - 12.0) * d + 4.0) * d,
-                 sqrt(d),
-                 step(0.25, d));
-    return mix(d - (1.0 - 2.0 * s) * d * (1.0 - d),
-               d + (2.0 * s - 1.0) * (g - d),
-               step(0.5, s));
+    // W3C soft-light (BlendOp 3). d=base, s=src. Re-derived vs CK 2026-05-31 (Illusions was a broken-BASEIN
+    // artifact; W3C wins skintone + TS bop3). = CPU BlendSoftLight1 (CPU/GL parity).
+    vec3 g = mix(((16.0*d - 12.0)*d + 4.0)*d, sqrt(clamp(d, 0.0, 1.0)), step(0.25, d));
+    return mix(d - (1.0 - 2.0*s)*d*(1.0 - d), d + (2.0*s - 1.0)*(g - d), step(0.5, s));
 }
 vec3 blendHardLight(vec3 d, vec3 s) { return blendOverlay(s, d); }
 
@@ -614,10 +621,11 @@ vec3 blendDispatch(vec3 d, vec3 s){
 // deltas. Single-layer es identico a over-original (prev == base en la 1a capa). Parity con
 // compose_py (Tools/FaceGenByteCompare) / FaceTintConvention.ResolveConvention.
 //   cov     = convMaskFull(mask) * opacity
-//   base_ws = srgbToWS(prev)                 (prev = acumulador corriente)
-//   src_ws  = srgbToWS(src)
-//   res_ws  = base_ws + cov*(blendDispatch(base_ws,src_ws) - base_ws)
-//   final   = wsToSrgb(res_ws)               (el resultado ES el nuevo prev)
+//   base_w  = cvt(prev -> uWorkingSpace)     (prev = acumulador corriente en uOutputSpace)
+//   src_w   = cvt(src  -> uWorkingSpace)
+//   blended = blendDispatch(base_w, src_w)   (blend en uWorkingSpace)
+//   res_c   = cvt(prev->uCompositeSpace) + cov*(cvt(blended->uCompositeSpace) - cvt(prev->uCompositeSpace))
+//   final   = cvt(res_c -> uOutputSpace)     (el resultado ES el nuevo prev)
 // mask source: PaletteMask -> layer.G ; TextureSet D -> layer.a ; TextureSet N/S -> uLayerDiffuseAlpha.a
 // src: PaletteMask -> uColor (o LUT) ; TextureSet -> layer.rgb (o LUT / uColor forzado)
 void main() {
@@ -629,10 +637,26 @@ void main() {
     // color por cobertura -> se hace en LINEAR. prev viene en uOutputSpace, swap en uSrcSpace;
     // se convierten a linear, se mezclan, y vuelve a uOutputSpace. mask RAW (.r).
     if (uMode == 1) {
-        float w = clamp(texture(uLayerDiffuseAlpha, vUV).r * uOpacity, 0.0, 1.0);
-        vec3 pl = cvt(prev, uOutputSpace, 0);
-        vec3 sl = cvt(layerSample.rgb, uSrcSpace, 0);
-        fragColor = vec4(cvt(mix(pl, sl, w), 0, uOutputSpace), prevRgba.a);
+        // build_3 region swap = RUNNING CLOSED-FORM en stored space (uOutputSpace):
+        //   base = uBase (SEED pre-swap, constante across swaps) ; swap = layerSample -> uOutputSpace ;
+        //   mask = .r (raw) ; msdv = uOpacity. bake@1 = lerp(base, swap, mask) ->
+        //   n = base + msdv*mask*(swap - base) ; cov = clamp(msdv * g22Encode(mask)) ; acc = n + (1-cov)*(prev-base)
+        vec3 base = texture(uBase, vUV).rgb;
+        vec3 swap = cvt(layerSample.rgb, uSrcSpace, uOutputSpace);
+        float mask = texture(uLayerDiffuseAlpha, vUV).r;
+        float msdv = uOpacity;
+        vec3 nrun = base + (msdv * mask) * (swap - base);
+        float cov = clamp(msdv * linToG22_1(mask), 0.0, 1.0);
+        vec3 res = clamp(nrun + (1.0 - cov) * (prev - base), 0.0, 1.0);
+        fragColor = vec4(res, prevRgba.a);
+        return;
+    }
+
+    // uMode==2: CONVERT puro de espacio (sin blend, sin mask). Convierte la textura bindeada en uPrev
+    // de uSrcSpace a uOutputSpace. Se usa para el SEED del path unico (source sRGB -> acumulador g22 en
+    // D) y queda reservado para el camino inverso g22 -> sRGB (flag BakeMode, si el render lo necesita).
+    if (uMode == 2) {
+        fragColor = vec4(cvt(prev, uSrcSpace, uOutputSpace), prevRgba.a);
         return;
     }
 
@@ -661,13 +685,18 @@ void main() {
     }
 
     float cov = clamp(convMaskFull(maskV) * uOpacity, 0.0, 1.0);
-    // over-RUNNING + 3 espacios (shader agnostico): el acumulador prev vive en uOutputSpace; el blend
-    // corre en uWorkingSpace; el color de capa esta en uSrcSpace. Convertir, blendear, volver a output.
-    vec3 base_ws = cvt(prev, uOutputSpace, uWorkingSpace);
-    vec3 src_ws  = cvt(srcColor, uSrcSpace, uWorkingSpace);
-    vec3 blended = blendDispatch(base_ws, src_ws);
-    vec3 res_ws  = clamp(base_ws + cov * (blended - base_ws), 0.0, 1.0);
-    vec3 finalRgb = cvt(res_ws, uWorkingSpace, uOutputSpace);
+    // over-RUNNING + 4 espacios (shader AGNOSTICO): el acumulador prev vive en uOutputSpace; el BLEND OP
+    // corre en uWorkingSpace; el color de capa esta en uSrcSpace; y el COMPOSITE (lerp por cov) corre en
+    // uCompositeSpace. Ley gen3: el blend va en su espacio (g22/srgb) pero la lerp por cobertura va en
+    // LINEAR-light. Cuando uCompositeSpace==uWorkingSpace se reduce EXACTO al modelo previo (lerp en
+    // working) -> el render legacy queda byte-identico. Sin ramas hardcodeadas: todo sale de los uniforms.
+    vec3 base_w  = cvt(prev, uOutputSpace, uWorkingSpace);
+    vec3 src_w   = cvt(srcColor, uSrcSpace, uWorkingSpace);
+    vec3 blended = blendDispatch(base_w, src_w);
+    vec3 base_c  = cvt(prev, uOutputSpace, uCompositeSpace);
+    vec3 blend_c = cvt(blended, uWorkingSpace, uCompositeSpace);
+    vec3 res_c   = clamp(base_c + cov * (blend_c - base_c), 0.0, 1.0);
+    vec3 finalRgb = cvt(res_c, uCompositeSpace, uOutputSpace);
     float outA = (uForceOpaqueAlpha == 1) ? 1.0 : prevRgba.a;
     fragColor = vec4(finalRgb, outA);
 }"
@@ -1010,6 +1039,7 @@ void main() {
                 GL.Uniform1(state._uWorkingSpaceLoc, CInt(conv.WorkingSpace))
                 GL.Uniform1(state._uSrcSpaceLoc, CInt(conv.SrcSpace))
                 GL.Uniform1(state._uOutputSpaceLoc, CInt(conv.OutputSpace))
+                GL.Uniform1(state._uCompositeSpaceLoc, CInt(conv.CompositeSpace))
                 GL.Uniform1(state._uMaskConvFullLoc, CInt(conv.MaskConv))
                 ' Alpha del resultado: no hay footprint; el ultimo layer escribe alpha opaca.
                 GL.Uniform1(state._uForceOpaqueAlphaLoc, If(isLast, 1, 0))
@@ -1286,13 +1316,18 @@ void main() {
 
             GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
-            ' Shader unico: region swap = uMode=1 (alpha-over en linear). swap tex -> uLayer(1),
-            ' region mask -> uLayerDiffuseAlpha(2), intensity -> uOpacity. uMode=1 SI lee uSrcSpace/
-            ' uOutputSpace para convertir prev/swap a linear y mezclar. D: srgb/srgb ; N/S: linear/linear.
+            ' Shader unico: region swap = uMode=1 (RUNNING CLOSED-FORM en stored space = build_3 + CPU). swap
+            ' tex -> uLayer(1), region mask -> uLayerDiffuseAlpha(2), intensity(msdv) -> uOpacity, SEED ->
+            ' uBase(4). El acumulador D vive en sRGB (storage build_3); el swap tex (MPPT TXST diffuse) es
+            ' sRGB -> src=srgb(1)=output. N/S: datos lineales, src=output=linear(0). El running necesita el
+            ' SEED (= originalTexId) aparte del acumulador (uPrev): se bindea uBase=originalTexId POR-DRAW en
+            ' el loop (no solo en el setup) para garantizar que la unit 4 este siempre el seed en cada draw.
             GL.Uniform1(state._uModeLoc, 1)
-            Dim swSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' 1=srgb (D color), 0=linear (N/S datos)
-            GL.Uniform1(state._uSrcSpaceLoc, swSpace)
-            GL.Uniform1(state._uOutputSpaceLoc, swSpace)
+            Dim swSrcSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' swap tex: srgb (D, ->g22 via cvt) / linear (N/S)
+            Dim swOutSpace As Integer = If(channel = FaceTintChannel.Diffuse, 2, 0)  ' accumulator/base: G22 (D, = seed g22) / linear (N/S)
+            GL.Uniform1(state._uSrcSpaceLoc, swSrcSpace)
+            GL.Uniform1(state._uOutputSpaceLoc, swOutSpace)
+            GL.Uniform1(state._uCompositeSpaceLoc, swOutSpace)
 
             ' Pre-pass: count drawable swaps so we can route the LAST one to resultFbo.
             Dim drawableSwaps As Integer = 0
@@ -1368,19 +1403,36 @@ void main() {
                 GL.BindTexture(TextureTarget.Texture2D, mEntry.Texture_ID)
                 GL.Uniform1(state._uLayerDiffuseAlphaLoc, 2)
 
-                ' Morph intensity (MSDV value) -> uOpacity escala la cobertura del crossfade. Clamp.
-                ' Region swap = mix(prev, swap, mask.r_raw * intensity). Validado B10 (<0.3 byte).
+                ' uBase(4) = el SEED (originalTexId): base del running closed-form, APARTE del acumulador
+                ' (uPrev unit 0). Se bindea ACA, por-draw, para garantizar que la unit 4 tenga el seed en
+                ' CADA pasada (solo el bind de setup no alcanzaba -> uBase leia ~negro y rompia el running GL).
+                GL.ActiveTexture(TextureUnit.Texture4)
+                GL.BindTexture(TextureTarget.Texture2D, originalTexId)
+                GL.Uniform1(state._uBaseLoc, 4)
+
+                ' Morph intensity (MSDV value) -> uOpacity = el msdv del running (escala n y cov). Clamp.
                 GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, sw.Intensity)))
 
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawn += 1
 
+                GL.ActiveTexture(TextureUnit.Texture4)
+                GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture2)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture1)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
 
                 readTexId = If(isLastSwap, resultTex, state._pingTex(writeIdx))
+
+                ' TEMP DEBUG: dump del acumulador DESPUES de este swap (verificar running GL vs CPU/python
+                ' paso a paso). Solo en DebugMode (DumpMaskDir).
+                If Not String.IsNullOrEmpty(DumpMaskDir) Then
+                    Dim swState = ReadbackBgraForDebug(readTexId, width, height)
+                    If swState IsNot Nothing Then
+                        Try : WriteBgraToTga(System.IO.Path.Combine(DumpMaskDir, $"{channel}_swapstate_{i:00}.tga"), swState, width, height) : Catch : End Try
+                    End If
+                End If
 
                 ' TEMP DEBUG: per-swap delta vs prior state.
                 If dbgSwap Then
@@ -1537,9 +1589,11 @@ void main() {
             GL.Uniform1(state._uMaskConvFullLoc, 0)
             GL.Uniform1(state._uWorkingSpaceLoc, workingSpace)
             ' body skin = diffuse color, acumulador sRGB (src srgb, output srgb); el blend (softlight)
-            ' corre en workingSpace (g22). Igual que la cara.
+            ' corre en workingSpace (g22). El COMPOSITE (lerp por op) corre en LINEAR = igual que la cara
+            ' (ley gen3). El body es textura sRGB (NO FaceCustomization g22) -> output queda sRGB.
             GL.Uniform1(state._uSrcSpaceLoc, 1)
             GL.Uniform1(state._uOutputSpaceLoc, 1)
+            GL.Uniform1(state._uCompositeSpaceLoc, 0)   ' linear = como la cara
 
             GL.ActiveTexture(TextureUnit.Texture0)
             GL.BindTexture(TextureTarget.Texture2D, originalTexId)
@@ -1736,6 +1790,7 @@ void main() {
         state._uWorkingSpaceLoc = GL.GetUniformLocation(state._program, "uWorkingSpace")
         state._uSrcSpaceLoc = GL.GetUniformLocation(state._program, "uSrcSpace")
         state._uOutputSpaceLoc = GL.GetUniformLocation(state._program, "uOutputSpace")
+        state._uCompositeSpaceLoc = GL.GetUniformLocation(state._program, "uCompositeSpace")
         state._uMaskConvFullLoc = GL.GetUniformLocation(state._program, "uMaskConvFull")
         state._uModeLoc = GL.GetUniformLocation(state._program, "uMode")
 
@@ -1759,6 +1814,63 @@ void main() {
     End Sub
 
 
+    ''' <summary>Convierte una textura GL de <paramref name="fromSpace"/> a <paramref name="toSpace"/>
+    ''' (0=linear 1=srgb 2=g22) hacia una textura Rgba32f FRESCA (el caller la posee y debe borrarla).
+    ''' Pasada pura de espacio (shader uMode=2, sin blend ni mask): es el SEED del path unico —
+    ''' source sRGB -> acumulador G22 en el canal D — y queda reservada para el inverso g22 -> sRGB
+    ''' (flag <see cref="BakeMode"/>). Devuelve 0 si falla. MUST run on the GL thread.</summary>
+    Public Function ConvertTextureSpace(state As FaceTintCompositorState, srcTexId As Integer,
+                                        width As Integer, height As Integer,
+                                        fromSpace As Integer, toSpace As Integer) As Integer
+        ArgumentNullException.ThrowIfNull(state)
+        If srcTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
+        EnsureCompositorInitialized(state)
+        If state._program = 0 OrElse state._quadVao = 0 Then Return 0
+
+        Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
+        Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
+        Dim prevVao As Integer = GL.GetInteger(GetPName.VertexArrayBinding)
+        Dim prevActiveTex As Integer = GL.GetInteger(GetPName.ActiveTexture)
+        Dim prevTex0 As Integer = GL.GetInteger(GetPName.TextureBinding2D)
+        Dim prevViewport(3) As Integer
+        GL.GetInteger(GetPName.Viewport, prevViewport)
+
+        Dim outTex As Integer = 0
+        Dim outFbo As Integer = 0
+        Try
+            If Not AllocateResultTextureAndFbo(width, height, outTex, outFbo) Then Return 0
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, outFbo)
+            GL.Viewport(0, 0, width, height)
+            GL.Disable(EnableCap.DepthTest)
+            GL.Disable(EnableCap.ScissorTest)
+            GL.Disable(EnableCap.Blend)
+            GL.UseProgram(state._program)
+            GL.BindVertexArray(state._quadVao)
+            GL.Uniform1(state._uModeLoc, 2)
+            GL.Uniform1(state._uSrcSpaceLoc, fromSpace)
+            GL.Uniform1(state._uOutputSpaceLoc, toSpace)
+            GL.ActiveTexture(TextureUnit.Texture0)
+            GL.BindTexture(TextureTarget.Texture2D, srcTexId)
+            GL.Uniform1(state._uPrevLoc, 0)
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
+            GL.BindTexture(TextureTarget.Texture2D, 0)
+        Catch ex As Exception
+            If outTex <> 0 Then Try : GL.DeleteTexture(outTex) : Catch : End Try
+            outTex = 0
+            Dim msg = ex.Message
+            Logger.LogLazy(Function() $"[FACETINT-CONVERT] space convert failed ({msg})")
+        Finally
+            If outFbo <> 0 Then Try : GL.DeleteFramebuffer(outFbo) : Catch : End Try
+            GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
+            GL.UseProgram(prevProg)
+            GL.BindVertexArray(prevVao)
+            GL.ActiveTexture(CType(prevActiveTex, TextureUnit))
+            GL.BindTexture(TextureTarget.Texture2D, prevTex0)
+            GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
+        End Try
+        Return outTex
+    End Function
+
     ''' <summary>Per-channel result of <see cref="ApplyFaceTintPipeline"/>: the GL texture ID
     ''' that came out of swap+compose (or the original input ID when no work was done on that
     ''' channel) and a flag saying whether the ID is a fresh texture the caller now owns
@@ -1769,6 +1881,10 @@ void main() {
     Public Class FaceTintPipelineChannelResult
         Public Property TextureId As Integer
         Public Property IsFresh As Boolean
+        ''' <summary>Tamaño del resultado del canal = target de resolución (o nativo si Inherit). El caller
+        ''' (bake) lee back a ESTE tamaño, no al del source. 0 = no seteado (usar el nativo del caller).</summary>
+        Public Property Width As Integer
+        Public Property Height As Integer
     End Class
 
     ''' <summary>Aggregate result of <see cref="ApplyFaceTintPipeline"/>: one entry per channel
@@ -1814,33 +1930,90 @@ void main() {
                                           width As Integer,
                                           height As Integer,
                                           layers As IList(Of FaceTintLayerInput),
-                                          swaps As IList(Of FaceRegionSwapInput)) As FaceTintPipelineResult
+                                          swaps As IList(Of FaceRegionSwapInput),
+                                          Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing) As FaceTintPipelineResult
         ArgumentNullException.ThrowIfNull(state)
 
+        ' Target de resolución POR CANAL (Inherit -> nativo = width/height del source). El acumulador GL
+        ' trabaja a ESTE tamaño; los samplers GL resizean source/capas/swaps por UV (bilineal) igual que
+        ' el CPU (FaceTintCpuCompositor.SampleChannelAt) -> GL==CPU para cualquier resolución. Bodyparts:
+        ' el caller pasa resolution=Nothing (fuerzan heredar; el enum es solo para la cara).
+        Dim dT = ChannelTargetSize(resolution, FaceTintChannel.Diffuse, width, height)
+        Dim nT = ChannelTargetSize(resolution, FaceTintChannel.Normal, width, height)
+        Dim sT = ChannelTargetSize(resolution, FaceTintChannel.Specular, width, height)
+
         Dim result As New FaceTintPipelineResult With {
-            .Diffuse = New FaceTintPipelineChannelResult With {.TextureId = srcDiffuseId, .IsFresh = False},
-            .Normal = New FaceTintPipelineChannelResult With {.TextureId = srcNormalId, .IsFresh = False},
-            .Specular = New FaceTintPipelineChannelResult With {.TextureId = srcSpecId, .IsFresh = False}
+            .Diffuse = New FaceTintPipelineChannelResult With {.TextureId = srcDiffuseId, .IsFresh = False, .Width = dT.W, .Height = dT.H},
+            .Normal = New FaceTintPipelineChannelResult With {.TextureId = srcNormalId, .IsFresh = False, .Width = nT.W, .Height = nT.H},
+            .Specular = New FaceTintPipelineChannelResult With {.TextureId = srcSpecId, .IsFresh = False, .Width = sT.W, .Height = sT.H}
         }
 
         If width <= 0 OrElse height <= 0 Then Return result
 
+        ' --- SEED/RESIZE del PATH UNICO al target por canal ---
+        ' D: seed = g22(srgb_to_lin(source)). El acumulador D vive en G22 (= storage de CK en disco: op0 =
+        ' g22(source), 99.2% vs heatmap BASEIN). ConvertTextureSpace srgb->g22 (y resize al target en el
+        ' mismo paso). El composite trata el acc como OutputSpace=Srgb (label) -> validado en formula_test.
+        ' (= CPU FaceTintCpuCompositor seed Cvt1(.,Srgb,G22); paridad GL/CPU.)
+        If result.Diffuse.TextureId <> 0 Then
+            Dim dG22 = ConvertTextureSpace(state, result.Diffuse.TextureId, dT.W, dT.H,
+                                           CInt(FaceTintConvention.FaceTintWorkingSpace.Srgb),
+                                           CInt(FaceTintConvention.FaceTintWorkingSpace.G22))
+            If dG22 <> 0 Then
+                Dim oldId = result.Diffuse.TextureId, oldFresh = result.Diffuse.IsFresh
+                result.Diffuse.TextureId = dG22
+                result.Diffuse.IsFresh = True
+                result.Diffuse.Width = dT.W : result.Diffuse.Height = dT.H
+                If oldFresh Then Try : GL.DeleteTexture(oldId) : Catch : End Try
+            End If
+        End If
+        ' N/S: datos lineales (sin convert de espacio). Solo se resizean si el target != nativo (asi el
+        ' caller siempre obtiene el canal al tamaño target, matcheando al CPU que siempre trabaja al target).
+        ResizeChannelIfNeeded(result.Normal, state, nT.W, nT.H, width, height)
+        ResizeChannelIfNeeded(result.Specular, state, sT.W, sT.H, width, height)
+
         ' --- Region-swap pre-pass (no-op if swaps empty / no contribution to a channel) ---
         If swaps IsNot Nothing AndAlso swaps.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height, Nothing, swaps)
-            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height, Nothing, swaps)
-            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height, Nothing, swaps)
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, Nothing, swaps)
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, Nothing, swaps)
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, Nothing, swaps)
         End If
 
         ' --- Tint compose ---
         If layers IsNot Nothing AndAlso layers.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, width, height, layers, Nothing)
-            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, width, height, layers, Nothing)
-            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, width, height, layers, Nothing)
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing)
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, layers, Nothing)
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing)
         End If
 
         Return result
     End Function
+
+    ''' <summary>Tamaño target de un canal: nativo si Inherit (o resolution Nothing), si no el del enum
+    ''' (cuadrado). = FaceTintCpuCompositor (misma regla) -> GL y CPU resuelven el mismo tamaño.</summary>
+    Private Function ChannelTargetSize(resolution As FaceTintConvention.FaceTintResolutionSettings,
+                                       channel As FaceTintChannel, nativeW As Integer, nativeH As Integer) As (W As Integer, H As Integer)
+        Dim r = If(resolution Is Nothing, FaceTintConvention.FaceTintChannelResolution.Inherit, resolution.ForChannel(channel))
+        If r = FaceTintConvention.FaceTintChannelResolution.Inherit Then Return (nativeW, nativeH)
+        Dim sz = FaceTintConvention.ResolveResolutionSize(r, Math.Min(nativeW, nativeH))
+        Return (sz, sz)
+    End Function
+
+    ''' <summary>Resize puro (linear->linear, uMode=2) de un canal al target si difiere del nativo. Usado
+    ''' por N/S (no llevan convert de espacio). Actualiza <paramref name="ch"/> in-place a la textura
+    ''' resizeada (fresca) y borra la anterior si era fresca. No-op si target == nativo o TextureId=0.</summary>
+    Private Sub ResizeChannelIfNeeded(ch As FaceTintPipelineChannelResult, state As FaceTintCompositorState,
+                                      targetW As Integer, targetH As Integer, nativeW As Integer, nativeH As Integer)
+        If ch.TextureId = 0 Then Return
+        If targetW = nativeW AndAlso targetH = nativeH Then Return
+        Dim resized = ConvertTextureSpace(state, ch.TextureId, targetW, targetH, 0, 0)   ' linear->linear = resize
+        If resized = 0 Then Return
+        Dim oldId = ch.TextureId
+        Dim oldFresh = ch.IsFresh
+        ch.TextureId = resized
+        ch.IsFresh = True
+        If oldFresh Then Try : GL.DeleteTexture(oldId) : Catch : End Try
+    End Sub
 
     ''' <summary>Run one channel through either the region-swap pre-pass (when
     ''' <paramref name="swaps"/> is non-Nothing) or the tint compose (when

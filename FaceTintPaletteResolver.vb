@@ -100,7 +100,8 @@ Public Module FaceTintPaletteResolver
     '''   Step 1: TemplateColorIndex match — honra el índice con cualquier Alpha (sin gate Alpha&gt;0).
     '''   Step 2: Color match via FindTemplateColorByColor (alpha-closest a la opacidad, acepta Alpha=0).
     '''   Step 3: ResolveFallbackBlendOp (F2 mode) cuando no hay match de color.
-    ''' TEND.Color (RGB) siempre preservada verbatim para el shader.
+    ''' COLOR: index>=0 (Step1) -> color del TEMPLATE (CLFM del RACE); custom -1 (Step2/3) -> TEND del NPC
+    ''' verbatim. Replica build_3.effective_palette_color (el engine sustituye el color cuando hay index).
     ''' </summary>
     Public Function ResolvePaletteLayerEffective(tl As NPC_FaceTintLayerData, opt As RACE_TintTemplateOption, pm As PluginManager) As (Color As Color, BlendOp As UInteger, Matched As Boolean, OpacityScale As Single)
         Dim resolvedColor As Color = tl.Color
@@ -125,6 +126,20 @@ Public Module FaceTintPaletteResolver
                 resolvedBlendOp = tplByIdx.BlendOperation
                 opacityScale = tplByIdx.Alpha
                 matched = True
+                ' COLOR: con TemplateColorIndex>=0 el engine usa el color del TEMPLATE (CLFM del RACE),
+                ' NO el TEND del NPC. Replica build_3.effective_palette_color (TTEC[tplcolidx]); el TEND
+                ' del entry solo manda en custom (index=-1, Step2/3). Sin esto el dirt (TEND azul/purpura,
+                ' template NEGRO) se pintaba azul y cubre ~60% de la cara (+40 byte en B). Si el CLFM no
+                ' resuelve, se conserva el TEND (= build_3 cae a TEND cuando el indice no esta en TTEC).
+                If tplByIdx.ColorFormID <> 0UI AndAlso pm IsNot Nothing Then
+                    Dim tplRec = pm.GetRecord(tplByIdx.ColorFormID)
+                    If tplRec IsNot Nothing AndAlso tplRec.Header.Signature = "CLFM" Then
+                        Dim tplClfm = RecordParsers.ParseCLFM(tplRec, pm)
+                        If tplClfm IsNot Nothing AndAlso tplClfm.HasColor Then
+                            resolvedColor = tplClfm.Color
+                        End If
+                    End If
+                End If
                 If opt.Slot = CUShort(TintSlot.SkinTone) AndAlso resolvedBlendOp = 0UI Then
                     resolvedBlendOp = 3UI
                 End If

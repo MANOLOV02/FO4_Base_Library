@@ -97,6 +97,24 @@ Public Class Config_App
     Public Property Setting_KeepPhysics As Boolean = True
     Public Property theme As AppTheme = AppTheme.Light
 
+    ' === CharGen / FaceGen bake output settings (botón "CharGen Options") ===
+    ' Tamaño del bake + compresión del diffuse de salida. Persistidos junto al resto del config
+    ' (config.json). Default = All + Inherit + BC3 = comportamiento actual / byte-comparable a gen3.
+    ' Lógica de tamaño:
+    '   Setting_FaceGenPerLayerResolution = False (ALL, default): los 3 canales usan el tamaño Diffuse
+    '       (N/S heredan de Diffuse, deshabilitados en la UI). Cubre "heredar las 3" (Diffuse=Inherit) y
+    '       "unificar a X" (Diffuse=enum).
+    '   = True (PER LAYER): cada canal usa su propio tamaño (los 3 habilitados en la UI).
+    ' Tamaño por canal: Inherit (MIP0 nativo, sin downgrade) o un enum (512/1024/2048/4096/8192).
+    ' Compresión: BC3 default / BC7 opción. N/S siempre BC5.
+    Public Property Setting_FaceGenPerLayerResolution As Boolean = False
+    Public Property Setting_FaceGenDiffuseResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
+    Public Property Setting_FaceGenNormalResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
+    Public Property Setting_FaceGenSpecularResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
+    Public Property Setting_FaceGenDiffuseCompression As FaceTintConvention.FaceTintDiffuseCompression = FaceTintConvention.FaceTintDiffuseCompression.Bc3
+    ' (El compositor GPU/CPU NO es una preferencia persistida: es una REGLA derivada — render = GPU si
+    '  skinning=GPU, sino CPU ; chargen = siempre CPU (async, no toca GL). Ver FaceGenBuilder.)
+
     Public Property Setting_Lightrig As LightsRig_struct = Default_Lights()
     Private _color As Color = Color.DarkGray
     Private _colorGrod As Color = Color.LightGray
