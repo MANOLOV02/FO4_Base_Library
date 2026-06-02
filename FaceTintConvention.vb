@@ -1,4 +1,4 @@
-Imports System
+﻿Imports System
 
 ''' <summary>
 ''' Convención de composición FaceTint configurable por estrato. Centraliza la tabla derivada
@@ -53,6 +53,17 @@ Public Module FaceTintConvention
         Overlay = 2
         SoftLight = 3
         HardLight = 4
+    End Enum
+
+    ''' <summary>Modelo de SOFT-LIGHT a usar cuando Blend=SoftLight (bop3). El compositor (GL+CPU) es
+    ''' AGNÓSTICO: implementa TODOS los modelos y elige por este id (igual que dispatch de BlendOp). El
+    ''' resolver decide cuál; HOY default = GIMP (derivado vs CK: minimiza el error en bop3). W3C queda como
+    ''' el de la libreria previa; Illusions/Pegtop disponibles para A/B. Sin tocar el shader para cambiarlo.</summary>
+    Public Enum FaceTintSoftLight
+        W3C = 0          ' W3C SVG soft-light (la formula previa de la libreria)
+        Gimp = 1         ' GIMP/Photoshop soft-light (DEFAULT derivado)
+        Illusions = 2    ' Illusions.hu  d^(2^(2(0.5-s)))
+        Pegtop = 3       ' pegtop  (1-2s)d^2 + 2sd
     End Enum
 
     ''' <summary>Resolución target por canal del FaceGen. Inherit (-1, DEFAULT) = MIP 0 NATIVO del source
@@ -129,14 +140,9 @@ Public Module FaceTintConvention
         Public MaskConv As FaceTintMaskConv
         Public Framework As FaceTintFramework
         Public Blend As FaceTintBlend
+        ''' <summary>Modelo de soft-light cuando Blend=SoftLight. El compositor lo aplica agnóstico.</summary>
+        Public SoftLight As FaceTintSoftLight
     End Structure
-
-    ''' <summary>Cuando True, ResolveConvention devuelve la convención LEGACY (el render que ya
-    ''' funcionaba: ws implícito g22 para diffuse vía ConvertDiffuseBaseToGamma22, mask SrgbOpacity,
-    ''' additive-over-base). Cuando False (default nuevo), devuelve la tabla DERIVADA single-layer.
-    ''' Permite A/B sin recompilar lógica: flip de un flag. La validación full-stack contra B01-B02
-    ''' decide cuál queda.</summary>
-    Public Property UseLegacyConvention As Boolean = False
 
     ''' <summary>Slot SkinTone (RACE TintTemplateOption.Slot). Centralizado para no hardcodear 12.</summary>
     Private Const SLOT_SKINTONE As UShort = 12US
@@ -161,20 +167,8 @@ Public Module FaceTintConvention
                                       Optional forBake As Boolean = True) As FaceTintConventionSet
         Dim c As FaceTintConventionSet
         Dim blend As FaceTintBlend = MapBlend(blendOp)
-
-        If UseLegacyConvention Then
-            ' Escape A/B: reproduce el render previo (mask sRGB, ws gamma para D, salida sRGB).
-            ' CompositeSpace=WorkingSpace -> el compositor generalizado se reduce al lerp-en-working.
-            c.MaskConv = FaceTintMaskConv.SrgbEncode
-            c.WorkingSpace = If(channel = FaceTintChannel.Diffuse, FaceTintWorkingSpace.G22, FaceTintWorkingSpace.Linear)
-            c.CompositeSpace = c.WorkingSpace
-            c.SrcSpace = FaceTintWorkingSpace.Srgb
-            c.OutputSpace = FaceTintWorkingSpace.Srgb
-            c.Framework = FaceTintFramework.AdditiveOverBase
-            c.Blend = blend
-            Return c
-        End If
-
+        ' SoftLight default = GIMP (derivado vs CK, minimiza bop3). El compositor lo aplica agnostico.
+        c.SoftLight = FaceTintSoftLight.Gimp
         ' ===== LEY ÚNICA gen3 (Tools/FaceTintDerive, CERRADA 2026-05-31), byte-exacta al `_3` =======
         ' Render Y bake usan ESTA ley (WYSIWYG). El compositor (GL shader + CPU mirror) es AGNÓSTICO;
         ' toda la decisión vive ACÁ, parametrizada por (canal / blendOp / useHairPalette / entry / slot
@@ -206,7 +200,7 @@ Public Module FaceTintConvention
             c.WorkingSpace = FaceTintWorkingSpace.Linear
             c.CompositeSpace = FaceTintWorkingSpace.Linear
             c.OutputSpace = FaceTintWorkingSpace.Linear
-            c.MaskConv = FaceTintMaskConv.G22Encode
+            c.MaskConv = FaceTintMaskConv.SrgbEncode   ' cov unificado = srgbenc(mask)*op (D y N/S)
             Return c
         End If
 
@@ -216,15 +210,19 @@ Public Module FaceTintConvention
         ' la composicion; el g22 queda solo como flag opcional de render = BakeMode). cov = g22_encode(mask)*op.
         c.OutputSpace = FaceTintWorkingSpace.Srgb
         If useHairPalette Then
-            ' Brow hair-LUT (build_3: ruta brow_predict aparte). LUT replace en sRGB, cov=alpha raw.
+            ' Brow hair-LUT: la ceja NO es un caso especial de convencion -> usa EXACTAMENTE la ley D/bop0
+            ' (replace): src srgb, ws=Linear, cs=Linear, cov=srgbenc(alpha)*op, store sRGB. Lo unico
+            ' brow-especifico es el SRC = LUT[layer.g, remap] (lo arma el compositor por useHairPalette, no la
+            ' convencion). UNIFICADO 2026-06-01 (vs el viejo raw+storage; srgbenc+linear gana en los 7 clones
+            ' ceja; para replace el ws no afecta). Residual restante = fidelidad de textura del LUT.
             c.Blend = FaceTintBlend.Replace
             c.SrcSpace = FaceTintWorkingSpace.Srgb
-            c.WorkingSpace = FaceTintWorkingSpace.Srgb
-            c.CompositeSpace = FaceTintWorkingSpace.Srgb
-            c.MaskConv = FaceTintMaskConv.Raw
+            c.WorkingSpace = FaceTintWorkingSpace.Linear
+            c.CompositeSpace = FaceTintWorkingSpace.Linear
+            c.MaskConv = FaceTintMaskConv.SrgbEncode
             Return c
         End If
-        c.MaskConv = FaceTintMaskConv.G22Encode
+        c.MaskConv = FaceTintMaskConv.SrgbEncode   ' cov unificado = srgbenc(mask)*op
         If blend = FaceTintBlend.Replace Then
             ' build_3 replace: src srgb->linear, blend (=src) y lerp en LINEAR, store sRGB. (ws=comp=linear)
             c.Blend = FaceTintBlend.Replace

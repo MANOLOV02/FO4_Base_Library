@@ -249,6 +249,7 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uCompositeSpaceLoc As Integer = -1
     Friend _uMaskConvFullLoc As Integer = -1
     Friend _uModeLoc As Integer = -1
+    Friend _uSoftLightLoc As Integer = -1
     Friend _quadVao As Integer = 0
     Friend _quadVbo As Integer = 0
 
@@ -544,6 +545,7 @@ uniform int uOutputSpace;      // 0=linear 1=srgb 2=g22. Espacio del acumulador/
 uniform int uCompositeSpace;   // 0=linear 1=srgb 2=g22. Espacio donde corre el COMPOSITE (lerp por cov). Ley gen3: blend en working, lerp en linear. ==uWorkingSpace reduce al modelo previo.
 uniform int uMaskConvFull;     // mask conv: 0=raw 1=srgbEncode 2=srgbDecode 3=g22Encode 4=g22Decode
 uniform int uMode;             // 0=tint (additive-over-base) ; 1=region swap (crossfade mix(prev,swap,mask.r*op))
+uniform int uSoftLight;        // modelo de soft-light cuando uBlendOp==3: 0=W3C 1=GIMP 2=Illusions 3=pegtop
 
 vec3 blendDefault(vec3 d, vec3 s) { return s; }
 vec3 blendMultiply(vec3 d, vec3 s) { return d * s; }
@@ -552,11 +554,26 @@ vec3 blendOverlay(vec3 d, vec3 s) {
                1.0 - 2.0 * (1.0 - d) * (1.0 - s),
                step(0.5, d));
 }
-vec3 blendSoftLight(vec3 d, vec3 s) {
-    // W3C soft-light (BlendOp 3). d=base, s=src. Re-derived vs CK 2026-05-31 (Illusions was a broken-BASEIN
-    // artifact; W3C wins skintone + TS bop3). = CPU BlendSoftLight1 (CPU/GL parity).
+vec3 blendSoftLightW3C(vec3 d, vec3 s) {
     vec3 g = mix(((16.0*d - 12.0)*d + 4.0)*d, sqrt(clamp(d, 0.0, 1.0)), step(0.25, d));
     return mix(d - (1.0 - 2.0*s)*d*(1.0 - d), d + (2.0*s - 1.0)*(g - d), step(0.5, s));
+}
+vec3 blendSoftLightGimp(vec3 d, vec3 s) {            // GIMP/Photoshop
+    d = clamp(d, 0.0, 1.0);
+    return mix(2.0*d*s + d*d*(1.0 - 2.0*s), 2.0*d*(1.0 - s) + sqrt(d)*(2.0*s - 1.0), step(0.5, s));
+}
+vec3 blendSoftLightIllusions(vec3 d, vec3 s) {       // Illusions.hu  d^(2^(2(0.5-s)))
+    return pow(max(d, vec3(1e-6)), pow(vec3(2.0), 2.0*(vec3(0.5) - s)));
+}
+vec3 blendSoftLightPegtop(vec3 d, vec3 s) {          // pegtop
+    return (1.0 - 2.0*s)*d*d + 2.0*s*d;
+}
+// soft-light AGNOSTICO por modelo (= CPU BlendSoftLightModel; paridad CPU/GL). uSoftLight: 0=W3C 1=GIMP 2=Illusions 3=pegtop
+vec3 blendSoftLightModel(vec3 d, vec3 s) {
+    if (uSoftLight==1) return blendSoftLightGimp(d, s);
+    if (uSoftLight==2) return blendSoftLightIllusions(d, s);
+    if (uSoftLight==3) return blendSoftLightPegtop(d, s);
+    return blendSoftLightW3C(d, s);
 }
 vec3 blendHardLight(vec3 d, vec3 s) { return blendOverlay(s, d); }
 
@@ -610,7 +627,7 @@ float convMaskFull(float m){
 vec3 blendDispatch(vec3 d, vec3 s){
     if (uBlendOp==1) return blendMultiply(d,s);
     if (uBlendOp==2) return blendOverlay(d,s);
-    if (uBlendOp==3) return blendSoftLight(d,s);
+    if (uBlendOp==3) return blendSoftLightModel(d,s);
     if (uBlendOp==4) return blendHardLight(d,s);
     return blendDefault(d,s);
 }
@@ -637,17 +654,15 @@ void main() {
     // color por cobertura -> se hace en LINEAR. prev viene en uOutputSpace, swap en uSrcSpace;
     // se convierten a linear, se mezclan, y vuelve a uOutputSpace. mask RAW (.r).
     if (uMode == 1) {
-        // build_3 region swap = RUNNING CLOSED-FORM en stored space (uOutputSpace):
-        //   base = uBase (SEED pre-swap, constante across swaps) ; swap = layerSample -> uOutputSpace ;
-        //   mask = .r (raw) ; msdv = uOpacity. bake@1 = lerp(base, swap, mask) ->
-        //   n = base + msdv*mask*(swap - base) ; cov = clamp(msdv * g22Encode(mask)) ; acc = n + (1-cov)*(prev-base)
-        vec3 base = texture(uBase, vUV).rgb;
+        // Region swap UNIFICADO = tint-replace (2026-06-01): lerp desde el RUNNING prev, cov=srgb_encode(mask)*msdv,
+        // en LINEAR (D decode/encode via uOutputSpace=Srgb / N-S raw via uOutputSpace=Linear). MISMA regla que los
+        // tints; ya NO usa uBase (SEED). Mejora N vs el closed-form viejo, neutral D/S.
         vec3 swap = cvt(layerSample.rgb, uSrcSpace, uOutputSpace);
         float mask = texture(uLayerDiffuseAlpha, vUV).r;
-        float msdv = uOpacity;
-        vec3 nrun = base + (msdv * mask) * (swap - base);
-        float cov = clamp(msdv * linToG22_1(mask), 0.0, 1.0);
-        vec3 res = clamp(nrun + (1.0 - cov) * (prev - base), 0.0, 1.0);
+        float cov = clamp(uOpacity * linearToSrgb1(mask), 0.0, 1.0);
+        vec3 pL = cvt(prev, uOutputSpace, 0);   // a linear (0). D: srgb->lin ; N/S: no-op
+        vec3 sL = cvt(swap, uOutputSpace, 0);
+        vec3 res = cvt(clamp(pL + cov * (sL - pL), 0.0, 1.0), 0, uOutputSpace);
         fragColor = vec4(res, prevRgba.a);
         return;
     }
@@ -1041,6 +1056,7 @@ void main() {
                 GL.Uniform1(state._uOutputSpaceLoc, CInt(conv.OutputSpace))
                 GL.Uniform1(state._uCompositeSpaceLoc, CInt(conv.CompositeSpace))
                 GL.Uniform1(state._uMaskConvFullLoc, CInt(conv.MaskConv))
+                GL.Uniform1(state._uSoftLightLoc, CInt(conv.SoftLight))   ' modelo de softlight (agnostico) para bop3
                 ' Alpha del resultado: no hay footprint; el ultimo layer escribe alpha opaca.
                 GL.Uniform1(state._uForceOpaqueAlphaLoc, If(isLast, 1, 0))
                 GL.Uniform1(state._uPaletteRowLoc, Math.Max(0.0F, Math.Min(1.0F, layer.HairPaletteRow)))
@@ -1323,8 +1339,8 @@ void main() {
             ' SEED (= originalTexId) aparte del acumulador (uPrev): se bindea uBase=originalTexId POR-DRAW en
             ' el loop (no solo en el setup) para garantizar que la unit 4 este siempre el seed en cada draw.
             GL.Uniform1(state._uModeLoc, 1)
-            Dim swSrcSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' swap tex: srgb (D, ->g22 via cvt) / linear (N/S)
-            Dim swOutSpace As Integer = If(channel = FaceTintChannel.Diffuse, 2, 0)  ' accumulator/base: G22 (D, = seed g22) / linear (N/S)
+            Dim swSrcSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' swap tex: srgb (D) / linear (N/S)
+            Dim swOutSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' acumulador/base: sRGB (D, seed BASEIN directo) / linear (N/S)
             GL.Uniform1(state._uSrcSpaceLoc, swSrcSpace)
             GL.Uniform1(state._uOutputSpaceLoc, swOutSpace)
             GL.Uniform1(state._uCompositeSpaceLoc, swOutSpace)
@@ -1793,6 +1809,7 @@ void main() {
         state._uCompositeSpaceLoc = GL.GetUniformLocation(state._program, "uCompositeSpace")
         state._uMaskConvFullLoc = GL.GetUniformLocation(state._program, "uMaskConvFull")
         state._uModeLoc = GL.GetUniformLocation(state._program, "uMode")
+        state._uSoftLightLoc = GL.GetUniformLocation(state._program, "uSoftLight")
 
         Dim quadVerts() As Single = {
             -1.0F, -1.0F,
@@ -1951,24 +1968,10 @@ void main() {
         If width <= 0 OrElse height <= 0 Then Return result
 
         ' --- SEED/RESIZE del PATH UNICO al target por canal ---
-        ' D: seed = g22(srgb_to_lin(source)). El acumulador D vive en G22 (= storage de CK en disco: op0 =
-        ' g22(source), 99.2% vs heatmap BASEIN). ConvertTextureSpace srgb->g22 (y resize al target en el
-        ' mismo paso). El composite trata el acc como OutputSpace=Srgb (label) -> validado en formula_test.
-        ' (= CPU FaceTintCpuCompositor seed Cvt1(.,Srgb,G22); paridad GL/CPU.)
-        If result.Diffuse.TextureId <> 0 Then
-            Dim dG22 = ConvertTextureSpace(state, result.Diffuse.TextureId, dT.W, dT.H,
-                                           CInt(FaceTintConvention.FaceTintWorkingSpace.Srgb),
-                                           CInt(FaceTintConvention.FaceTintWorkingSpace.G22))
-            If dG22 <> 0 Then
-                Dim oldId = result.Diffuse.TextureId, oldFresh = result.Diffuse.IsFresh
-                result.Diffuse.TextureId = dG22
-                result.Diffuse.IsFresh = True
-                result.Diffuse.Width = dT.W : result.Diffuse.Height = dT.H
-                If oldFresh Then Try : GL.DeleteTexture(oldId) : Catch : End Try
-            End If
-        End If
-        ' N/S: datos lineales (sin convert de espacio). Solo se resizean si el target != nativo (asi el
-        ' caller siempre obtiene el canal al tamaño target, matcheando al CPU que siempre trabaja al target).
+        ' Seed = BASEIN DIRECTO (sRGB) en los 3 canales (cambio 2026-06-01: g22(BASEIN) era conclusion errada;
+        ' CK NO aplica gamma). D acumula en sRGB (= CPU seedG22=False); N/S lineal raw. Ningun canal convierte
+        ' espacio en el seed: solo se resizea si el target != nativo (igual que el CPU, paridad GL/CPU).
+        ResizeChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height)
         ResizeChannelIfNeeded(result.Normal, state, nT.W, nT.H, width, height)
         ResizeChannelIfNeeded(result.Specular, state, sT.W, sT.H, width, height)
 

@@ -92,27 +92,34 @@ Public Module FaceTintCpuCompositor
         Return 2.0 * d * s
     End Function
 
-    Private Function BlendSoftLight1(d As Double, s As Double) As Double
-        ' W3C soft-light (BlendOp 3). d=base, s=src. Re-derivado vs CK 2026-05-31 (formula_test sobre clones
-        ' op-sweep: skintone W3C 0.67 vs Illusions 1.07; TS-bop3 W3C gana; el "Illusions ganaba" era artefacto
-        ' del set contaminado por BASEIN roto). = shader blendSoftLight (paridad CPU/GL).
-        Dim g As Double = If(d >= 0.25, Math.Sqrt(Clamp01(d)), ((16.0 * d - 12.0) * d + 4.0) * d)
-        If s >= 0.5 Then
-            Return d + (2.0 * s - 1.0) * (g - d)
-        Else
-            Return d - (1.0 - 2.0 * s) * d * (1.0 - d)
-        End If
+    ''' <summary>Soft-light AGNOSTICO por modelo (= shader blendSoftLightModel; paridad CPU/GL). model:
+    ''' 0=W3C 1=GIMP 2=Illusions 3=pegtop (FaceTintSoftLight). d=base, s=src. Default del resolver = GIMP.</summary>
+    Private Function BlendSoftLightModel(model As Integer, d As Double, s As Double) As Double
+        d = Clamp01(d) : s = Clamp01(s)
+        Select Case model
+            Case 1 ' GIMP / Photoshop
+                If s <= 0.5 Then Return 2.0 * d * s + d * d * (1.0 - 2.0 * s)
+                Return 2.0 * d * (1.0 - s) + Math.Sqrt(d) * (2.0 * s - 1.0)
+            Case 2 ' Illusions.hu  d^(2^(2(0.5-s)))
+                Return Math.Pow(Math.Max(d, 0.000001), Math.Pow(2.0, 2.0 * (0.5 - s)))
+            Case 3 ' pegtop
+                Return (1.0 - 2.0 * s) * d * d + 2.0 * s * d
+            Case Else ' 0 = W3C SVG
+                Dim g As Double = If(d >= 0.25, Math.Sqrt(d), ((16.0 * d - 12.0) * d + 4.0) * d)
+                If s >= 0.5 Then Return d + (2.0 * s - 1.0) * (g - d)
+                Return d - (1.0 - 2.0 * s) * d * (1.0 - d)
+        End Select
     End Function
 
     ''' <summary>Dispatch de blend por canal escalar. blendOp: 0=replace 1=mult 2=overlay 3=softlight
-    ''' 4=hardlight. = shader blendDispatch().</summary>
-    Private Function BlendDispatch1(blendOp As Integer, d As Double, s As Double) As Double
+    ''' 4=hardlight. softLight: modelo a usar cuando blendOp=3. = shader blendDispatch().</summary>
+    Private Function BlendDispatch1(blendOp As Integer, softLight As Integer, d As Double, s As Double) As Double
         Select Case blendOp
-            Case 1 : Return d * s                       ' multiply
-            Case 2 : Return BlendOverlay1(d, s)         ' overlay
-            Case 3 : Return BlendSoftLight1(d, s)       ' softlight (W3C)
-            Case 4 : Return BlendOverlay1(s, d)         ' hardlight = overlay(s,d)
-            Case Else : Return s                        ' replace (default)
+            Case 1 : Return d * s                                ' multiply
+            Case 2 : Return BlendOverlay1(d, s)                  ' overlay
+            Case 3 : Return BlendSoftLightModel(softLight, d, s) ' softlight (modelo elegido)
+            Case 4 : Return BlendOverlay1(s, d)                  ' hardlight = overlay(s,d)
+            Case Else : Return s                                 ' replace (default)
         End Select
     End Function
 
@@ -329,11 +336,11 @@ Public Module FaceTintCpuCompositor
         ' El storage del engine FaceCustomization es sRGB (= formato de CK en disco); no se acumula en g22.
         ' Seed via SampleChannelAt (índice directo si tamaños iguales; bilineal si difieren = resize).
         Dim accR(n - 1) As Double, accG(n - 1) As Double, accB(n - 1) As Double
-        ' Seed: D = g22(srgb_to_lin(source)) -> el acumulador D vive en g22 (= storage de CK en disco: op0 =
-        ' g22(source), 99.2% vs heatmap). Cvt1(.,Srgb=1,G22=2) = lin_to_g22(srgb_to_lin). N/S = lineal raw.
-        ' (El composite trata el acc como OutputSpace=Srgb (label) -> validado en formula_test sobre op0.)
+        ' Seed = BASEIN DIRECTO (sRGB) en TODOS los canales (cambio 2026-06-01: g22(BASEIN) era conclusion
+        ' errada; CK NO aplica gamma — el g22 solo aproximaba un residual op0 no entendido). D acumula en
+        ' sRGB (OutputSpace=Srgb consistente); N/S lineal raw. seedG22 queda como flag (default False).
         ' Parallel.For sobre pixeles: cada i escribe su propio accX(i) (indices disjuntos), lee inmutables.
-        Dim seedG22 As Boolean = isD
+        Dim seedG22 As Boolean = False
         System.Threading.Tasks.Parallel.For(0, n, Sub(i)
                                                       Dim r0 = SampleChannelAt(src, i, w, h, 0)
                                                       Dim g0 = SampleChannelAt(src, i, w, h, 1)
@@ -345,13 +352,10 @@ Public Module FaceTintCpuCompositor
                                                       End If
                                                   End Sub)
 
-        ' --- Region swaps: RUNNING CLOSED-FORM en stored space (= build_3.apply_region_swaps + GL uMode=1).
-        '     base = SEED (acc pre-swap, constante); bake@1 = lerp(base, swaptex, mask) ->
-        '     n = base + msdv*mask*(swaptex-base) ; cov = g22_encode(mask)*msdv ; acc = n + (1-cov)*(acc-base).
-        '     Stored space: D=sRGB, N/S=raw -> swaptex (DDS decodificada) y acc ya estan ahi (sin conversion).
+        ' --- Region swaps UNIFICADOS = tint-replace (2026-06-01): cada swap es un replace mas -> lerp desde el
+        '     RUNNING acc, cov = srgb_encode(mask)*msdv, en LINEAR (D decode/encode sRGB / N-S raw). MISMA regla
+        '     que los tints; SIN closed-form ni SEED aparte. Mejora N ~1 byte vs el closed-form viejo, neutral D/S.
         If swaps IsNot Nothing Then
-            Dim baseR(n - 1) As Double, baseG(n - 1) As Double, baseB(n - 1) As Double
-            Array.Copy(accR, baseR, n) : Array.Copy(accG, baseG, n) : Array.Copy(accB, baseB, n)
             For Each sw In swaps
                 If sw Is Nothing Then Continue For
                 Dim swBytes = sw.GetSwapBytes(channel)
@@ -365,15 +369,17 @@ Public Module FaceTintCpuCompositor
                                                               Dim sr = SampleChannelAt(swTex, i, w, h, 0)
                                                               Dim sg = SampleChannelAt(swTex, i, w, h, 1)
                                                               Dim sb = SampleChannelAt(swTex, i, w, h, 2)
-                                                              If isD Then       ' swaptex -> g22 (= la base g22 del seed); N/S raw
-                                                                  sr = Cvt1(sr, 1, 2) : sg = Cvt1(sg, 1, 2) : sb = Cvt1(sb, 1, 2)
-                                                              End If
                                                               Dim mask = SampleChannelAt(mkTex, i, w, h, 0)        ' regionmask .r (raw)
-                                                              Dim cov = Clamp01(msdv * LinToG221(mask))            ' g22_encode(mask)*msdv
-                                                              Dim mm = msdv * mask
-                                                              accR(i) = Clamp01((baseR(i) + mm * (sr - baseR(i))) + (1.0 - cov) * (accR(i) - baseR(i)))
-                                                              accG(i) = Clamp01((baseG(i) + mm * (sg - baseG(i))) + (1.0 - cov) * (accG(i) - baseG(i)))
-                                                              accB(i) = Clamp01((baseB(i) + mm * (sb - baseB(i))) + (1.0 - cov) * (accB(i) - baseB(i)))
+                                                              Dim cov = Clamp01(msdv * LinToSrgb1(mask))           ' cov = srgb_encode(mask)*msdv
+                                                              If isD Then        ' lerp en LINEAR (decode/encode sRGB), = tint replace D
+                                                                  accR(i) = Clamp01(LinToSrgb1(SrgbToLin1(accR(i)) + cov * (SrgbToLin1(sr) - SrgbToLin1(accR(i)))))
+                                                                  accG(i) = Clamp01(LinToSrgb1(SrgbToLin1(accG(i)) + cov * (SrgbToLin1(sg) - SrgbToLin1(accG(i)))))
+                                                                  accB(i) = Clamp01(LinToSrgb1(SrgbToLin1(accB(i)) + cov * (SrgbToLin1(sb) - SrgbToLin1(accB(i)))))
+                                                              Else               ' N/S: datos lineales -> lerp raw (= tint replace N/S)
+                                                                  accR(i) = Clamp01(accR(i) + cov * (sr - accR(i)))
+                                                                  accG(i) = Clamp01(accG(i) + cov * (sg - accG(i)))
+                                                                  accB(i) = Clamp01(accB(i) + cov * (sb - accB(i)))
+                                                              End If
                                                           End Sub)
             Next
         End If
@@ -407,6 +413,7 @@ Public Module FaceTintCpuCompositor
                 Dim ws = CInt(conv.WorkingSpace), cs = CInt(conv.CompositeSpace)
                 Dim ss = CInt(conv.SrcSpace), os = CInt(conv.OutputSpace)
                 Dim mc = CInt(conv.MaskConv), bop = CInt(conv.Blend)
+                Dim sl = CInt(conv.SoftLight)   ' modelo de softlight (agnostico) para bop3
                 Dim op = Math.Max(0.0, Math.Min(1.0, CDbl(layer.Opacity)))
                 Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
                 Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
@@ -448,9 +455,9 @@ Public Module FaceTintCpuCompositor
                     Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
 
                     ' composite agnóstico (= shader): blend en ws, lerp en cs, storage en os.
-                    accR(i) = ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop)
-                    accG(i) = ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop)
-                    accB(i) = ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop)
+                    accR(i) = ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl)
+                    accG(i) = ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl)
+                    accB(i) = ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl)
                 End Sub)
             Next
         End If
@@ -469,10 +476,11 @@ Public Module FaceTintCpuCompositor
     ''' base_c=cvt(prev,os,cs); blend_c=cvt(blended,ws,cs); res_c=clamp(base_c+cov*(blend_c-base_c));
     ''' final=cvt(res_c,cs,os).</summary>
     Private Function ComposeOne(prev As Double, src As Double, cov As Double,
-                                ws As Integer, cs As Integer, ss As Integer, os As Integer, bop As Integer) As Double
+                                ws As Integer, cs As Integer, ss As Integer, os As Integer, bop As Integer,
+                                softLight As Integer) As Double
         Dim base_w = Cvt1(prev, os, ws)
         Dim src_w = Cvt1(src, ss, ws)
-        Dim blended = BlendDispatch1(bop, base_w, src_w)
+        Dim blended = BlendDispatch1(bop, softLight, base_w, src_w)
         Dim base_c = Cvt1(prev, os, cs)
         Dim blend_c = Cvt1(blended, ws, cs)
         Dim res_c = Clamp01(base_c + cov * (blend_c - base_c))

@@ -15,41 +15,62 @@ Imports System.Text
 ''' </summary>
 Public Module FaceTintPaletteResolver
 
-    ''' <summary>Fallback BlendOp cuando match-by-index y match-by-color fallan.
-    ''' Estrategia F2: mode (mayoría) entre TemplateColors con Alpha&gt;0 dentro de la option.
+    ''' <summary>TIE-BREAK COMPARTIDO (Alpha vs opacity). Entre los tplColors candidatos elige el de
+    ''' Alpha más cercano a <paramref name="npcOpacity"/> (min |Alpha − npcOpacity|); desempate secundario
+    ''' determinista por TemplateIndex menor. Es la ÚNICA función de tie-break del resolver, usada por
+    ''' (a) el match por color cuando 2+ presets comparten el color (FindTemplateColorByColor) y
+    ''' (b) la moda empatada del fallback (ResolveFallbackBlendOp). Nothing si no hay candidatos.</summary>
+    Public Function BreakTieByOpacity(candidates As IEnumerable(Of RACE_TintTemplateColor), npcOpacity As Single) As RACE_TintTemplateColor
+        If candidates Is Nothing Then Return Nothing
+        Dim best As RACE_TintTemplateColor = Nothing
+        Dim bestDist As Single = Single.MaxValue
+        For Each tc In candidates
+            If tc Is Nothing Then Continue For
+            Dim dist As Single = Math.Abs(tc.Alpha - npcOpacity)
+            If dist < bestDist OrElse (dist = bestDist AndAlso best IsNot Nothing AndAlso tc.TemplateIndex < best.TemplateIndex) Then
+                bestDist = dist
+                best = tc
+            End If
+        Next
+        Return best
+    End Function
+
+    ''' <summary>BlendOp por defecto del grupo cuando NO hay match de color (Step3). Regla del usuario:
+    ''' = la MODA del BlendOp entre los TemplateColors activos (Alpha&gt;0) de la option; si la moda está
+    ''' EMPATADA, se rompe con el MISMO tie-break compartido (Alpha vs opacity = <see cref="BreakTieByOpacity"/>).
     ''' Robusto contra outliers de autoría (Maquillaje tplCol[9] BlendOp=0 vs mayoría=3).
-    ''' Si hay 2+ BlendOps distintos en activos, loguea para auditar pattern.
     ''' Safety net: SkinTone slot + BlendOp=0 → 3 (SoftLight).
     ''' Convenio: 0=Default(replace), 1=Multiply, 2=Overlay, 3=SoftLight, 4=HardLight.
     ''' </summary>
-    Public Function ResolveFallbackBlendOp(opt As RACE_TintTemplateOption) As UInteger
+    Public Function ResolveFallbackBlendOp(opt As RACE_TintTemplateOption, npcOpacity As Single) As UInteger
         If opt Is Nothing Then Return 0UI
 
-        Dim counts As New Dictionary(Of UInteger, Integer)
+        ' Activos = tplColors con Alpha>0 (presets seleccionables; Alpha=0 es el slider-default sin elegir).
+        Dim active As New List(Of RACE_TintTemplateColor)
         If opt.TemplateColors IsNot Nothing Then
             For Each tc In opt.TemplateColors
-                If tc.Alpha > 0.0F Then
-                    Dim bop = tc.BlendOperation
-                    If counts.ContainsKey(bop) Then
-                        counts(bop) = counts(bop) + 1
-                    Else
-                        counts(bop) = 1
-                    End If
-                End If
+                If tc IsNot Nothing AndAlso tc.Alpha > 0.0F Then active.Add(tc)
             Next
         End If
 
         Dim modeBlendOp As UInteger
-        If counts.Count > 0 Then
-            modeBlendOp = counts.OrderByDescending(Function(kvp) kvp.Value).First().Key
-            If counts.Count > 1 Then
-                Dim sb As New StringBuilder()
-                For Each kvp In counts.OrderByDescending(Function(p) p.Value)
-                    If sb.Length > 0 Then sb.Append(",")
-                    sb.Append($"{kvp.Key}:{kvp.Value}")
-                Next
-                Dim sbStr = sb.ToString()
-                Logger.LogLazy(Function() $"[FACETINT-FALLBACK] opt={opt.Index} '{opt.Name}' mode={modeBlendOp} from distinct=[{sbStr}]")
+        If active.Count > 0 Then
+            Dim counts As New Dictionary(Of UInteger, Integer)
+            For Each tc In active
+                Dim bop = tc.BlendOperation
+                counts(bop) = If(counts.ContainsKey(bop), counts(bop) + 1, 1)
+            Next
+            Dim maxCount As Integer = counts.Values.Max()
+            Dim tied = counts.Where(Function(kvp) kvp.Value = maxCount).Select(Function(kvp) kvp.Key).ToList()
+            If tied.Count = 1 Then
+                modeBlendOp = tied(0)
+            Else
+                ' MODA EMPATADA -> mismo tie-break compartido (Alpha vs opacity) entre los tplColors
+                ' activos cuyo BlendOp está empatado.
+                Dim tiedCols = active.Where(Function(c) tied.Contains(c.BlendOperation)).ToList()
+                Dim winner = BreakTieByOpacity(tiedCols, npcOpacity)
+                modeBlendOp = If(winner IsNot Nothing, winner.BlendOperation, tied.Min())
+                Logger.LogLazy(Function() $"[FACETINT-FALLBACK] opt={opt.Index} '{opt.Name}' moda-empate tied=[{String.Join(",", tied)}] op={npcOpacity} -> {modeBlendOp}")
             End If
         ElseIf opt.HasBlendOperation Then
             modeBlendOp = opt.BlendOperation
@@ -76,8 +97,9 @@ Public Module FaceTintPaletteResolver
         Dim targetR As Integer = layerColor.R
         Dim targetG As Integer = layerColor.G
         Dim targetB As Integer = layerColor.B
-        Dim best As RACE_TintTemplateColor = Nothing
-        Dim bestAlphaDist As Single = Single.MaxValue
+        ' Recolectar TODOS los presets que comparten el color exacto, y romper el empate con el tie-break
+        ' COMPARTIDO (Alpha vs opacity) — el mismo que usa la moda-empate del fallback.
+        Dim matches As New List(Of RACE_TintTemplateColor)
         For Each tplCol In opt.TemplateColors
             If tplCol.ColorFormID = 0UI Then Continue For
             Dim clfmRec = pm.GetRecord(tplCol.ColorFormID)
@@ -85,14 +107,10 @@ Public Module FaceTintPaletteResolver
             Dim clfm = RecordParsers.ParseCLFM(clfmRec, pm)
             If clfm Is Nothing OrElse Not clfm.HasColor Then Continue For
             If clfm.Color.R = targetR AndAlso clfm.Color.G = targetG AndAlso clfm.Color.B = targetB Then
-                Dim dist As Single = Math.Abs(tplCol.Alpha - npcOpacity)
-                If dist < bestAlphaDist Then
-                    bestAlphaDist = dist
-                    best = tplCol
-                End If
+                matches.Add(tplCol)
             End If
         Next
-        Return best
+        Return BreakTieByOpacity(matches, npcOpacity)
     End Function
 
     ''' <summary>Resuelve Color/BlendOp/Matched/OpacityScale para una Palette (disc=1) layer.
@@ -105,7 +123,7 @@ Public Module FaceTintPaletteResolver
     ''' </summary>
     Public Function ResolvePaletteLayerEffective(tl As NPC_FaceTintLayerData, opt As RACE_TintTemplateOption, pm As PluginManager) As (Color As Color, BlendOp As UInteger, Matched As Boolean, OpacityScale As Single)
         Dim resolvedColor As Color = tl.Color
-        Dim resolvedBlendOp As UInteger = ResolveFallbackBlendOp(opt)
+        Dim resolvedBlendOp As UInteger = ResolveFallbackBlendOp(opt, tl.Value / 100.0F)
         Dim matched As Boolean = False
         Dim opacityScale As Single = 1.0F
 
