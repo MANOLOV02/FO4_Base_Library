@@ -365,21 +365,21 @@ Public Module FaceTintCpuCompositor
                 Dim mkTex = CachedDecode(cache, sw.RegionMaskCacheKey, sw.RegionMaskDdsBytes)
                 If swTex Is Nothing OrElse mkTex Is Nothing Then Continue For
                 Dim msdv As Double = Math.Max(0.0, CDbl(sw.Intensity))
+                ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> sin convención
+                ' hardcodeada; el override (incl. #If DEBUG full-linear) alcanza también los swaps. NON-DEBUG
+                ' byte-idéntico al closed-form previo (cov=srgbenc(mask), D lerp linear-desde-srgb, N/S raw).
+                Dim cv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
+                Dim sws = CInt(cv.WorkingSpace), scs = CInt(cv.CompositeSpace), sss = CInt(cv.SrcSpace), sos = CInt(cv.OutputSpace)
+                Dim smc = CInt(cv.MaskConv), sbop = CInt(cv.Blend), ssl = CInt(cv.SoftLight)
                 System.Threading.Tasks.Parallel.For(0, n, Sub(i)
                                                               Dim sr = SampleChannelAt(swTex, i, w, h, 0)
                                                               Dim sg = SampleChannelAt(swTex, i, w, h, 1)
                                                               Dim sb = SampleChannelAt(swTex, i, w, h, 2)
                                                               Dim mask = SampleChannelAt(mkTex, i, w, h, 0)        ' regionmask .r (raw)
-                                                              Dim cov = Clamp01(msdv * LinToSrgb1(mask))           ' cov = srgb_encode(mask)*msdv
-                                                              If isD Then        ' lerp en LINEAR (decode/encode sRGB), = tint replace D
-                                                                  accR(i) = Clamp01(LinToSrgb1(SrgbToLin1(accR(i)) + cov * (SrgbToLin1(sr) - SrgbToLin1(accR(i)))))
-                                                                  accG(i) = Clamp01(LinToSrgb1(SrgbToLin1(accG(i)) + cov * (SrgbToLin1(sg) - SrgbToLin1(accG(i)))))
-                                                                  accB(i) = Clamp01(LinToSrgb1(SrgbToLin1(accB(i)) + cov * (SrgbToLin1(sb) - SrgbToLin1(accB(i)))))
-                                                              Else               ' N/S: datos lineales -> lerp raw (= tint replace N/S)
-                                                                  accR(i) = Clamp01(accR(i) + cov * (sr - accR(i)))
-                                                                  accG(i) = Clamp01(accG(i) + cov * (sg - accG(i)))
-                                                                  accB(i) = Clamp01(accB(i) + cov * (sb - accB(i)))
-                                                              End If
+                                                              Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)       ' C1: Clamp01 preservado
+                                                              accR(i) = ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl)
+                                                              accG(i) = ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl)
+                                                              accB(i) = ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl)
                                                           End Sub)
             Next
         End If

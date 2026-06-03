@@ -654,16 +654,17 @@ void main() {
     // color por cobertura -> se hace en LINEAR. prev viene en uOutputSpace, swap en uSrcSpace;
     // se convierten a linear, se mezclan, y vuelve a uOutputSpace. mask RAW (.r).
     if (uMode == 1) {
-        // Region swap UNIFICADO = tint-replace (2026-06-01): lerp desde el RUNNING prev, cov=srgb_encode(mask)*msdv,
-        // en LINEAR (D decode/encode via uOutputSpace=Srgb / N-S raw via uOutputSpace=Linear). MISMA regla que los
-        // tints; ya NO usa uBase (SEED). Mejora N vs el closed-form viejo, neutral D/S.
-        vec3 swap = cvt(layerSample.rgb, uSrcSpace, uOutputSpace);
+        // Region swap = REPLACE resuelto por FaceTintConvention.ResolveConvention(forSwap) (NO hardcoded):
+        // cov = convMask(mask, uMaskConvFull) * op ; compose generico (blend en uWorkingSpace, lerp en
+        // uCompositeSpace, storage en uOutputSpace), blended=src (replace). = misma algebra que ComposeOne (CPU).
+        // El override de convencion (incl. #If DEBUG full-linear) ahora alcanza tambien los swaps.
         float mask = texture(uLayerDiffuseAlpha, vUV).r;
-        float cov = clamp(uOpacity * linearToSrgb1(mask), 0.0, 1.0);
-        vec3 pL = cvt(prev, uOutputSpace, 0);   // a linear (0). D: srgb->lin ; N/S: no-op
-        vec3 sL = cvt(swap, uOutputSpace, 0);
-        vec3 res = cvt(clamp(pL + cov * (sL - pL), 0.0, 1.0), 0, uOutputSpace);
-        fragColor = vec4(res, prevRgba.a);
+        float cov = clamp(uOpacity * convMaskFull(mask), 0.0, 1.0);
+        vec3 src_w   = cvt(layerSample.rgb, uSrcSpace, uWorkingSpace);
+        vec3 base_c  = cvt(prev, uOutputSpace, uCompositeSpace);
+        vec3 blend_c = cvt(src_w, uWorkingSpace, uCompositeSpace);   // replace: blended = src_w
+        vec3 res_c   = clamp(base_c + cov * (blend_c - base_c), 0.0, 1.0);
+        fragColor = vec4(cvt(res_c, uCompositeSpace, uOutputSpace), prevRgba.a);
         return;
     }
 
@@ -1339,11 +1340,14 @@ void main() {
             ' SEED (= originalTexId) aparte del acumulador (uPrev): se bindea uBase=originalTexId POR-DRAW en
             ' el loop (no solo en el setup) para garantizar que la unit 4 este siempre el seed en cada draw.
             GL.Uniform1(state._uModeLoc, 1)
-            Dim swSrcSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' swap tex: srgb (D) / linear (N/S)
-            Dim swOutSpace As Integer = If(channel = FaceTintChannel.Diffuse, 1, 0)  ' acumulador/base: sRGB (D, seed BASEIN directo) / linear (N/S)
-            GL.Uniform1(state._uSrcSpaceLoc, swSrcSpace)
-            GL.Uniform1(state._uOutputSpaceLoc, swOutSpace)
-            GL.Uniform1(state._uCompositeSpaceLoc, swOutSpace)
+            ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> el override de convención
+            ' (incl. #If DEBUG full-linear) alcanza también los swaps. NON-DEBUG byte-idéntico (paridad con CPU).
+            Dim swConv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
+            GL.Uniform1(state._uSrcSpaceLoc, CInt(swConv.SrcSpace))
+            GL.Uniform1(state._uOutputSpaceLoc, CInt(swConv.OutputSpace))
+            GL.Uniform1(state._uCompositeSpaceLoc, CInt(swConv.CompositeSpace))
+            GL.Uniform1(state._uWorkingSpaceLoc, CInt(swConv.WorkingSpace))
+            GL.Uniform1(state._uMaskConvFullLoc, CInt(swConv.MaskConv))
 
             ' Pre-pass: count drawable swaps so we can route the LAST one to resultFbo.
             Dim drawableSwaps As Integer = 0
