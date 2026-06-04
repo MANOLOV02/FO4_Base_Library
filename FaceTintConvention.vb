@@ -159,29 +159,22 @@ Public Module FaceTintConvention
                                       useHairPalette As Boolean,
                                       Optional forBake As Boolean = True,
                                       Optional forSwap As Boolean = False) As FaceTintConventionSet
-        ' forSwap=True: region swap (MPPT) = replace por definición; se resuelve en ESTA tabla (no hardcodeado
-        ' en el compositor) para que el override de convención (incl. #If DEBUG full-linear) alcance también los
-        ' swaps. C2 self-review: forSwap FUERZA Blend=Replace con independencia del blendOp recibido.
         Dim c As FaceTintConventionSet
         Dim blend As FaceTintBlend = If(forSwap, FaceTintBlend.Replace, MapBlend(blendOp))
         ' SoftLight default = GIMP (derivado vs CK, minimiza bop3). El compositor lo aplica agnostico.
         c.SoftLight = FaceTintSoftLight.Gimp
         c.Framework = FaceTintFramework.AdditiveOverBase
         c.CompositeSpace = FaceTintWorkingSpace.Linear
-        c.WorkingSpace = FaceTintWorkingSpace.Linear
-        c.MaskConv = FaceTintMaskConv.SrgbEncode
-        c.SrcSpace = FaceTintWorkingSpace.Srgb
-        c.OutputSpace = FaceTintWorkingSpace.Srgb
+        c.MaskConv = FaceTintMaskConv.G22Encode
+        c.SrcSpace = FaceTintWorkingSpace.G22
+        c.WorkingSpace = FaceTintWorkingSpace.G22
+        c.OutputSpace = FaceTintWorkingSpace.G22
         c.Blend = blend
         If channel <> FaceTintChannel.Diffuse Then
-            ' Normal / Specular: datos lineales (raw). replace; cov = g22_encode (build_3/_3: N unifica a
-            ' replace/mask=g22_encode; g22e≡srgbe ruido). Src=Work=Comp=Out=Linear -> lerp raw directo.
             c.Blend = FaceTintBlend.Replace
             c.SrcSpace = FaceTintWorkingSpace.Linear
+            c.WorkingSpace = FaceTintWorkingSpace.Linear
             c.OutputSpace = FaceTintWorkingSpace.Linear
-        End If
-        If c.Blend = FaceTintBlend.SoftLight Then
-            c.WorkingSpace = FaceTintWorkingSpace.Srgb
         End If
 
         Return c

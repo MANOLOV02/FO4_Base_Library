@@ -1435,14 +1435,42 @@ Public Class LVLN_Entry
     Public FormID As UInteger
     Public Count As UShort = 1US
     Public ChanceNone As Byte
+    ''' <summary>True when this entry has a COED trailing the LVLO struct. The LVLN spec includes
+    ''' wbCOED per Leveled List Entry (wbDefinitionsFO4.pas:10344), same as LVLI. Captured for
+    ''' byte-equivalent round-trip when an existing LVLN is re-emitted as an override.</summary>
+    Public HasCoed As Boolean = False
+    Public CoedOwnerFormID As UInteger
+    ''' <summary>COED +4 union per wbCOEDOwnerDecider: GLOB FormID when Owner=NPC_, Required Rank
+    ''' (s32) when Owner=FACT, unused 4 bytes otherwise. Mirror of LVLI_Entry / NPC_InventoryItem.</summary>
+    Public CoedOwnerExtra As UInteger
+    Public CoedExtraIsFormID As Boolean
+    Public CoedItemCondition As Single
 End Class
 
 Public Class LVLN_Data
     Public FormID As UInteger
     Public EditorID As String = ""
+    ''' <summary>OBND raw 12 bytes (6×s16). wbDefinitionsFO4.pas:10331 marks it required. Captured
+    ''' verbatim like LVLI_Data.ObjectBoundsRaw so preserve-existing round-trip is byte-equivalent.</summary>
+    Public ObjectBoundsRaw As Byte() = Nothing
     Public ChanceNone As Byte
+    ''' <summary>LVLM — Max Count (always 00 in vanilla). Captured for faithful round-trip.</summary>
+    Public MaxCount As Byte
     Public Flags As Byte
     Public Entries As New List(Of LVLN_Entry)
+    ''' <summary>LVLG — Use Global, FormID [GLOB] (wbDefinitionsFO4.pas:10339). Optional.</summary>
+    Public HasUseGlobal As Boolean
+    Public UseGlobalFormID As UInteger
+    ''' <summary>LLKC — Filter Keyword Chances (wbDefinitionsFO4.pas:10348, wbFilterKeywordChances).
+    ''' Reuses LVLI_FilterKeyword (same (KeywordFormID, Chance) layout).</summary>
+    Public FilterKeywords As New List(Of LVLI_FilterKeyword)
+    ''' <summary>LVLN-specific generic model (wbDefinitionsFO4.pas:10349 → wbGenericModel @1040):
+    ''' MODL/MODT/MODC/MODS/MODF. LVLI has NO model — this is the real difference between the two
+    ''' record bodies (their tails diverge: LVLN=model, LVLI=LVSG+ONAM). Preserved verbatim per
+    ''' subrecord in source order for byte-equivalent round-trip; the MODS bytes hold the GLOBAL
+    ''' Material Swap FormID (resolved at parse, remapped on emit) — every other model subrecord is
+    ''' FormID-free. Empty for the typical leveled-NPC list (no model).</summary>
+    Public ModelSubrecords As New List(Of (Signature As String, Data As Byte()))
 End Class
 
 Public Class LVLI_Entry
@@ -3403,23 +3431,104 @@ Public Module RecordParsers
         Return txst
     End Function
 
+    ''' <summary>Full LVLN (Leveled NPC) parse — byte-equivalent round-trip coverage
+    ''' (wbDefinitionsFO4.pas:10329). Mirrors <see cref="ParseLVLI"/> for the shared subrecords
+    ''' (OBND/LVLD/LVLM/LVLF/LVLG/LLCT/N×(LVLO+COED)/LLKC) and captures the LVLN-specific generic
+    ''' model. The two records differ ONLY at the tail: LVLN ends with a generic model, LVLI with
+    ''' LVSG+ONAM — so this parser does NOT read LVSG/ONAM (they are not part of the LVLN spec).</summary>
     Public Function ParseLVLN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LVLN_Data
         Dim lvln As New LVLN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
         }
 
+        ' Streaming state for COED attachment, identical to ParseLVLI (wbLeveledListEntry + wbCOED).
+        Dim pendingEntry As LVLN_Entry = Nothing
+
         For Each sr In rec.Subrecords
             Select Case sr.Signature
+                Case "OBND"
+                    ' Required 12-byte struct (6×s16). Capture verbatim for byte-equivalent round-trip.
+                    If sr.Data IsNot Nothing Then lvln.ObjectBoundsRaw = sr.Data
                 Case "LVLD"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvln.ChanceNone = sr.Data(0)
+                Case "LVLM"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvln.MaxCount = sr.Data(0)
                 Case "LVLF"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then lvln.Flags = sr.Data(0)
+                Case "LVLG"
+                    ' Use Global: FormID [GLOB]. wbDefinitionsFO4.pas:10339.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        lvln.UseGlobalFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                        lvln.HasUseGlobal = True
+                    End If
                 Case "LVLO"
+                    ' Flush previous pending entry (no COED followed it).
+                    If pendingEntry IsNot Nothing Then
+                        lvln.Entries.Add(pendingEntry)
+                        pendingEntry = Nothing
+                    End If
                     Dim entry = ParseLeveledEntry(rec, sr, pluginManager)
-                    If entry IsNot Nothing AndAlso entry.FormID <> 0UI Then lvln.Entries.Add(entry)
+                    If entry Is Nothing OrElse entry.FormID = 0UI Then Continue For
+                    pendingEntry = entry
+                Case "COED"
+                    ' wbCOED (wbDefinitionsFO4.pas:3686-3694): u32 Owner + u32 union + f32 Item Condition.
+                    ' Owner=NPC_ → extra is GLOB FormID. Owner=FACT → Required Rank (s32). Else unused.
+                    ' Attaches to the IMMEDIATELY preceding LVLO entry. Same rule as ParseLVLI.
+                    If pendingEntry IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        pendingEntry.HasCoed = True
+                        pendingEntry.CoedOwnerFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                        Dim rawExtra = BitConverter.ToUInt32(sr.Data, 4)
+                        Dim ownerIsNPC As Boolean = False
+                        If pluginManager IsNot Nothing AndAlso pendingEntry.CoedOwnerFormID <> 0UI Then
+                            Dim ownerRec = pluginManager.GetRecord(pendingEntry.CoedOwnerFormID)
+                            If ownerRec IsNot Nothing AndAlso ownerRec.Header.Signature = "NPC_" Then ownerIsNPC = True
+                        End If
+                        If ownerIsNPC Then
+                            pendingEntry.CoedExtraIsFormID = True
+                            pendingEntry.CoedOwnerExtra = ResolveFormIDReference(rec, rawExtra, pluginManager)
+                        Else
+                            pendingEntry.CoedExtraIsFormID = False
+                            pendingEntry.CoedOwnerExtra = rawExtra
+                        End If
+                        pendingEntry.CoedItemCondition = BitConverter.ToSingle(sr.Data, 8)
+                        lvln.Entries.Add(pendingEntry)
+                        pendingEntry = Nothing
+                    End If
+                Case "LLKC"
+                    ' Filter Keyword Chance: array of (Keyword FormID u32, Chance u32). Same layout as LVLI.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
+                        Dim count = sr.Data.Length \ 8
+                        For i = 0 To count - 1
+                            Dim off = i * 8
+                            Dim rawKw = BitConverter.ToUInt32(sr.Data, off)
+                            Dim chance = BitConverter.ToUInt32(sr.Data, off + 4)
+                            If rawKw <> 0UI Then
+                                lvln.FilterKeywords.Add(New LVLI_FilterKeyword With {
+                                    .KeywordFormID = ResolveFormIDReference(rec, rawKw, pluginManager),
+                                    .Chance = chance
+                                })
+                            End If
+                        Next
+                    End If
+                Case "MODS"
+                    ' Generic model Material Swap = FormID [MSWP] (wbDefinitionsFO4.pas:4616). Store the
+                    ' GLOBAL FormID in the preserved bytes (resolved here, remapped on emit) so the model
+                    ' subrecord list stays uniform: all FormIDs are GLOBAL by the time they reach the writer.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then
+                        Dim globalMods = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                        lvln.ModelSubrecords.Add(("MODS", BitConverter.GetBytes(globalMods)))
+                    Else
+                        lvln.ModelSubrecords.Add((sr.Signature, sr.Data))
+                    End If
+                Case "MODL", "MODT", "MODC", "MODF"
+                    ' FormID-free model subrecords — preserved verbatim in source order.
+                    lvln.ModelSubrecords.Add((sr.Signature, sr.Data))
             End Select
         Next
+
+        ' Flush any LVLO entry not consumed by a trailing COED (last entry of the array).
+        If pendingEntry IsNot Nothing Then lvln.Entries.Add(pendingEntry)
 
         Return lvln
     End Function

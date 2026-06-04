@@ -149,10 +149,18 @@ Public Module SaveNpcEspWriter
         Public OriginalVcs1 As UInteger
         Public OriginalVcs2 As UShort
         ''' <summary>True = emit as LVLN (Leveled NPC, wbDefinitionsFO4.pas:10329) instead of LVLI.
-        ''' El body de subrecords es IDENTICO (EDID/OBND/LVLD/LVLM/LVLF/LVLG/LLCT/LVLO...); solo cambia
-        ''' la signature del record y el GRUP top-level. Usar para listas de NPC_ (cada LVLO referencia
-        ''' un NPC_ FormID). LVLN va antes que LVLI en el group order de xEdit (10329 &lt; 10352).</summary>
+        ''' El HEAD del body coincide (EDID/OBND/LVLD/LVLM/LVLF/LVLG/LLCT/N×(LVLO+COED)/LLKC), pero el
+        ''' TAIL difiere: LVLN termina con un generic model (<see cref="ModelSubrecords"/>) y NO lleva
+        ''' LVSG/ONAM; LVLI lleva LVSG+ONAM y NO model. Cada LVLO de una LVLN referencia un NPC_/LVLN
+        ''' FormID. LVLN va antes que LVLI en el group order de xEdit (10329 &lt; 10352).</summary>
         Public IsNpcList As Boolean = False
+        ''' <summary>LVLN-only generic model subrecords (MODL/MODT/MODC/MODS/MODF, wbGenericModel @
+        ''' wbDefinitionsFO4.pas:1040), preserved verbatim in source order for byte-equivalent round-trip.
+        ''' This is the real divergence between the LVLN and LVLI bodies: LVLN's tail is a model, LVLI's is
+        ''' LVSG+ONAM. The MODS bytes hold the GLOBAL Material Swap FormID ([MSWP], wbDefinitionsFO4.pas:4616),
+        ''' remapped on emit; every other model subrecord is FormID-free. Empty for LVLI and for typical
+        ''' leveled-NPC lists (which carry no model).</summary>
+        Public ModelSubrecords As New List(Of (Signature As String, Data As Byte()))
     End Class
 
     ''' <summary>One LVLO entry inside an <see cref="LvliRecordEntry"/>. The reference is an ARMO (real),
@@ -305,6 +313,14 @@ Public Module SaveNpcEspWriter
             If le.HasEpicLootChance AndAlso le.EpicLootChanceFormID <> 0UI Then allFormIDs.Add(le.EpicLootChanceFormID)
             For Each fk In le.FilterKeywords
                 If fk.KeywordFormID <> 0UI Then allFormIDs.Add(fk.KeywordFormID)
+            Next
+            ' LVLN generic model: MODS = Material Swap FormID [MSWP]. The bytes hold the GLOBAL FormID
+            ' (resolved at parse), so add it verbatim to the master walk. Other model subrecords are FormID-free.
+            For Each m In le.ModelSubrecords
+                If m.Signature = "MODS" AndAlso m.Data IsNot Nothing AndAlso m.Data.Length = 4 Then
+                    Dim mswp = BitConverter.ToUInt32(m.Data, 0)
+                    If mswp <> 0UI AndAlso Not IsProvisionalDraftFormID(mswp) Then allFormIDs.Add(mswp)
+                End If
             Next
             If le.IsOverride AndAlso le.FormID <> 0UI Then allFormIDs.Add(le.FormID)
         Next
@@ -968,18 +984,37 @@ Public Module SaveNpcEspWriter
                         bw.Write(f.Chance)
                     Next
                 End If
-                ' LVSG (Epic Loot Chance FormID, optional) — wbDefinitionsFO4.pas:10372.
-                If entry.HasEpicLootChance Then
-                    WriteSubrecordHeader(bw, "LVSG", 4)
-                    bw.Write(remapper(entry.EpicLootChanceFormID))
-                End If
-                ' ONAM (Override Name, optional translatable lstring) — wbDefinitionsFO4.pas:10373.
-                ' Encoded via the central translatable path so non-ASCII overrides survive a re-save.
-                If entry.HasOverrideName Then
-                    Dim onamBytes = PluginEncodingSettings.EncodeTranslatable(If(entry.OverrideName, ""))
-                    WriteSubrecordHeader(bw, "ONAM", onamBytes.Length + 1)
-                    bw.Write(onamBytes)
-                    bw.Write(CByte(0))
+                ' Tail diverges by record type — the LVLN and LVLI bodies are NOT identical:
+                '   LVLN (wbDefinitionsFO4.pas:10349): generic model (MODL/MODT/MODC/MODS/MODF). NO LVSG/ONAM.
+                '   LVLI (wbDefinitionsFO4.pas:10372-10373): LVSG (Epic Loot Chance) + ONAM (Override Name). NO model.
+                If entry.IsNpcList Then
+                    ' LVLN generic model, preserved verbatim in source order. MODS = Material Swap FormID
+                    ' ([MSWP], wbDefinitionsFO4.pas:4616), remapped like any other FormID; all other model
+                    ' subrecords are FormID-free and copied byte-for-byte.
+                    For Each m In entry.ModelSubrecords
+                        Dim mdata = If(m.Data, Array.Empty(Of Byte)())
+                        If m.Signature = "MODS" AndAlso mdata.Length = 4 Then
+                            WriteSubrecordHeader(bw, "MODS", 4)
+                            bw.Write(remapper(BitConverter.ToUInt32(mdata, 0)))
+                        Else
+                            WriteSubrecordHeader(bw, m.Signature, mdata.Length)
+                            bw.Write(mdata)
+                        End If
+                    Next
+                Else
+                    ' LVSG (Epic Loot Chance FormID, optional) — wbDefinitionsFO4.pas:10372.
+                    If entry.HasEpicLootChance Then
+                        WriteSubrecordHeader(bw, "LVSG", 4)
+                        bw.Write(remapper(entry.EpicLootChanceFormID))
+                    End If
+                    ' ONAM (Override Name, optional translatable lstring) — wbDefinitionsFO4.pas:10373.
+                    ' Encoded via the central translatable path so non-ASCII overrides survive a re-save.
+                    If entry.HasOverrideName Then
+                        Dim onamBytes = PluginEncodingSettings.EncodeTranslatable(If(entry.OverrideName, ""))
+                        WriteSubrecordHeader(bw, "ONAM", onamBytes.Length + 1)
+                        bw.Write(onamBytes)
+                        bw.Write(CByte(0))
+                    End If
                 End If
             End Using
             body = bms.ToArray()

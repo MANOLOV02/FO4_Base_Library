@@ -250,6 +250,19 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uMaskConvFullLoc As Integer = -1
     Friend _uModeLoc As Integer = -1
     Friend _uSoftLightLoc As Integer = -1
+    ' Pre-tono TakesSkinTone (flagged-after-skintone). Default inerte (uPreToneSkin=0).
+    Friend _uPreToneSkinLoc As Integer = -1
+    Friend _uSkinMaskLoc As Integer = -1
+    Friend _uSkinColorLoc As Integer = -1
+    Friend _uSkinOpacityLoc As Integer = -1
+    Friend _uSkinWsLoc As Integer = -1
+    Friend _uSkinCsLoc As Integer = -1
+    Friend _uSkinSsLoc As Integer = -1
+    Friend _uSkinOsLoc As Integer = -1
+    Friend _uSkinBopLoc As Integer = -1
+    Friend _uSkinSlLoc As Integer = -1
+    Friend _uSkinMcLoc As Integer = -1
+    Friend _uSkinMaskChLoc As Integer = -1
     Friend _quadVao As Integer = 0
     Friend _quadVbo As Integer = 0
 
@@ -546,6 +559,22 @@ uniform int uCompositeSpace;   // 0=linear 1=srgb 2=g22. Espacio donde corre el 
 uniform int uMaskConvFull;     // mask conv: 0=raw 1=srgbEncode 2=srgbDecode 3=g22Encode 4=g22Decode
 uniform int uMode;             // 0=tint (additive-over-base) ; 1=region swap (crossfade mix(prev,swap,mask.r*op))
 uniform int uSoftLight;        // modelo de soft-light cuando uBlendOp==3: 0=W3C 1=GIMP 2=Illusions 3=pegtop
+// Pre-tono TakesSkinTone (ASCII-only). Una capa flagged que compone DESPUES del skintone recibe el softlight
+// del skintone sobre su SOURCE. uPreToneSkin=1 lo activa (0 = inerte, path byte-identico). TODA la conv del
+// skintone llega EXPLICITA en uSkin* (color/op/mask + espacios + blendop/softlight/mask-conv/mask-channel),
+// resuelta del record por el caller; el GL usa esos (no los de la capa) -> GL == CPU por construccion.
+uniform int uPreToneSkin;      // 1 = pre-tonar el source con el skintone (solo flagged-after-skintone)
+uniform sampler2D uSkinMask;   // mask del skintone
+uniform vec3 uSkinColor;       // color del skintone
+uniform float uSkinOpacity;    // opacidad del skintone
+uniform int uSkinWs;           // working space del skintone
+uniform int uSkinCs;           // composite space del skintone
+uniform int uSkinSs;           // src space del skintone
+uniform int uSkinOs;           // output space del skintone
+uniform int uSkinBop;          // blendop del skintone (ResolveConvention slot 12)
+uniform int uSkinSl;           // softlight model del skintone
+uniform int uSkinMc;           // mask conv del skintone
+uniform int uSkinMaskCh;       // canal del mask del skintone: 1=.g (Palette) 3=.a (TextureSet)
 
 vec3 blendDefault(vec3 d, vec3 s) { return s; }
 vec3 blendMultiply(vec3 d, vec3 s) { return d * s; }
@@ -631,6 +660,29 @@ vec3 blendDispatch(vec3 d, vec3 s){
     if (uBlendOp==4) return blendHardLight(d,s);
     return blendDefault(d,s);
 }
+// Versiones PARAMETRIZADAS (= CPU ConvMask1 / BlendDispatch1). El pre-tono TakesSkinTone las usa con la
+// conv del SKINTONE (uSkin*), NO con la de la capa: asi GL == CPU por construccion sin asumir que skintone
+// y capa comparten mask-conv / blendop / softlight-model.
+float convMaskMc(float m, int mc){
+    if (mc==1) return linearToSrgb1(m);
+    if (mc==2) return srgbToLin1(m);
+    if (mc==3) return linToG22_1(m);
+    if (mc==4) return g22ToLin1(m);
+    return m;
+}
+vec3 softLightModelSl(vec3 d, vec3 s, int sl){
+    if (sl==1) return blendSoftLightGimp(d, s);
+    if (sl==2) return blendSoftLightIllusions(d, s);
+    if (sl==3) return blendSoftLightPegtop(d, s);
+    return blendSoftLightW3C(d, s);
+}
+vec3 blendDispatchBop(vec3 d, vec3 s, int bop, int sl){
+    if (bop==1) return blendMultiply(d,s);
+    if (bop==2) return blendOverlay(d,s);
+    if (bop==3) return softLightModelSl(d,s,sl);
+    if (bop==4) return blendHardLight(d,s);
+    return blendDefault(d,s);
+}
 // Shader AGNOSTICO: compone CADA capa sobre el acumulador corriente (uPrev) aplicando las
 // convenciones que llegan por uniforms (uWorkingSpace / uMaskConvFull / uBlendOp / uLayerKind).
 // over-RUNNING: cada capa se compone sobre el resultado de las capas previas (no sobre un base
@@ -698,6 +750,21 @@ void main() {
         if (uUseHairPalette == 1) srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
         else                      srcColor = uColor;
         maskV = layerSample.g;
+    }
+
+    // Pre-tono TakesSkinTone (guard uPreToneSkin): aplica el softlight del skintone al SOURCE de la capa
+    // flagged con la coverage del skintone (mask .g) en este pixel, ANTES del composite normal. = el
+    // ComposeOne(src, skinColor, skinCov, skinConv, softlight) del CPU. Inerte byte-identico si uPreToneSkin==0.
+    if (uPreToneSkin == 1) {
+        float skMaskV = (uSkinMaskCh == 3) ? texture(uSkinMask, vUV).a : texture(uSkinMask, vUV).g;
+        float skCov   = clamp(convMaskMc(skMaskV, uSkinMc) * uSkinOpacity, 0.0, 1.0);
+        vec3 sk_bw  = cvt(srcColor, uSkinOs, uSkinWs);
+        vec3 sk_sw  = cvt(uSkinColor, uSkinSs, uSkinWs);
+        vec3 sk_bl  = blendDispatchBop(sk_bw, sk_sw, uSkinBop, uSkinSl);
+        vec3 sk_bc  = cvt(srcColor, uSkinOs, uSkinCs);
+        vec3 sk_blc = cvt(sk_bl, uSkinWs, uSkinCs);
+        vec3 sk_rc  = clamp(sk_bc + skCov * (sk_blc - sk_bc), 0.0, 1.0);
+        srcColor = cvt(sk_rc, uSkinCs, uSkinOs);
     }
 
     float cov = clamp(convMaskFull(maskV) * uOpacity, 0.0, 1.0);
@@ -941,6 +1008,13 @@ void main() {
 
             Dim drawnLayers As Integer = 0
             Dim totalLayers As Integer = If(layers IsNot Nothing, layers.Count, 0)
+            ' Pre-tono TakesSkinTone: captura del skintone (slot 12) tras componerlo, para pre-tonar las
+            ' flagged-after-skintone. GUARD: stSeen False hasta pasar el skintone -> inerte en todo bake actual.
+            Dim stSeen As Boolean = False
+            Dim stMaskTexId As Integer = 0
+            Dim stColR As Single = 0, stColG As Single = 0, stColB As Single = 0, stOpac As Single = 0
+            Dim stWs As Integer = 0, stCs As Integer = 0, stSs As Integer = 0, stOs As Integer = 0
+            Dim stBop As Integer = 0, stSl As Integer = 0, stMc As Integer = 0, stMaskCh As Integer = 1
             For i As Integer = 0 To layers.Count - 1
                 Dim layer = layers(i)
                 If layer Is Nothing Then Continue For
@@ -1078,10 +1152,44 @@ void main() {
                 GL.Uniform1(state._uLayerKindLoc, CInt(layer.Kind))
                 GL.Uniform1(state._uChannelLoc, CInt(channel))
 
+                ' Pre-tono TakesSkinTone: solo si la capa es flagged (D) y el skintone ya se compuso. uSkinMask
+                ' en unit 5 (fallback layerTex para que el sampler nunca quede indefinido; solo se lee con
+                ' uPreToneSkin==1). Color/op/espacios del skintone capturados al pasarlo. Inerte si stSeen=False.
+                Dim preTone As Boolean = (channel = FaceTintChannel.Diffuse AndAlso layer.TakesSkinTone AndAlso stSeen)
+                GL.Uniform1(state._uPreToneSkinLoc, If(preTone, 1, 0))
+                GL.ActiveTexture(TextureUnit.Texture5)
+                GL.BindTexture(TextureTarget.Texture2D, If(stMaskTexId <> 0, stMaskTexId, layerTex))
+                GL.Uniform1(state._uSkinMaskLoc, 5)
+                GL.Uniform3(state._uSkinColorLoc, stColR, stColG, stColB)
+                GL.Uniform1(state._uSkinOpacityLoc, stOpac)
+                GL.Uniform1(state._uSkinWsLoc, stWs)
+                GL.Uniform1(state._uSkinCsLoc, stCs)
+                GL.Uniform1(state._uSkinSsLoc, stSs)
+                GL.Uniform1(state._uSkinOsLoc, stOs)
+                GL.Uniform1(state._uSkinBopLoc, stBop)
+                GL.Uniform1(state._uSkinSlLoc, stSl)
+                GL.Uniform1(state._uSkinMcLoc, stMc)
+                GL.Uniform1(state._uSkinMaskChLoc, stMaskCh)
+
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawnLayers += 1
 
+                ' Capturar el skintone (slot 12) tras componerlo: mask tex (Palette .g), color, op, espacios,
+                ' para pre-tonar las flagged-after-skintone. El tex vive en batchLoaded toda la pasada.
+                If channel = FaceTintChannel.Diffuse AndAlso layer.IsSkinTone Then
+                    stMaskTexId = layerTex
+                    stColR = CSng(layer.R) / 255.0F : stColG = CSng(layer.G) / 255.0F : stColB = CSng(layer.B) / 255.0F
+                    stOpac = Math.Max(0.0F, Math.Min(1.0F, layer.Opacity))
+                    stWs = CInt(conv.WorkingSpace) : stCs = CInt(conv.CompositeSpace)
+                    stSs = CInt(conv.SrcSpace) : stOs = CInt(conv.OutputSpace)
+                    stBop = CInt(conv.Blend) : stSl = CInt(conv.SoftLight) : stMc = CInt(conv.MaskConv)
+                    stMaskCh = If(layer.Kind = FaceTintLayerKind.PaletteMask, 1, 3)
+                    stSeen = True
+                End If
+
                 ' Unbind sampler slots; textures themselves are freed in the Finally block.
+                GL.ActiveTexture(TextureUnit.Texture5)
+                GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture4)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture3)
@@ -1630,6 +1738,11 @@ void main() {
             GL.Uniform3(state._uColorLoc, r, g, b)
             GL.Uniform1(state._uBlendOpLoc, blendOp)
             GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, opacity)))
+            ' body skin: sin pre-tono TakesSkinTone (no aplica). Bind unit5 valido por completitud del sampler.
+            GL.Uniform1(state._uPreToneSkinLoc, 0)
+            GL.ActiveTexture(TextureUnit.Texture5)
+            GL.BindTexture(TextureTarget.Texture2D, originalTexId)
+            GL.Uniform1(state._uSkinMaskLoc, 5)
 
             GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
             resultTex = outTex
@@ -1814,6 +1927,18 @@ void main() {
         state._uMaskConvFullLoc = GL.GetUniformLocation(state._program, "uMaskConvFull")
         state._uModeLoc = GL.GetUniformLocation(state._program, "uMode")
         state._uSoftLightLoc = GL.GetUniformLocation(state._program, "uSoftLight")
+        state._uPreToneSkinLoc = GL.GetUniformLocation(state._program, "uPreToneSkin")
+        state._uSkinMaskLoc = GL.GetUniformLocation(state._program, "uSkinMask")
+        state._uSkinColorLoc = GL.GetUniformLocation(state._program, "uSkinColor")
+        state._uSkinOpacityLoc = GL.GetUniformLocation(state._program, "uSkinOpacity")
+        state._uSkinWsLoc = GL.GetUniformLocation(state._program, "uSkinWs")
+        state._uSkinCsLoc = GL.GetUniformLocation(state._program, "uSkinCs")
+        state._uSkinSsLoc = GL.GetUniformLocation(state._program, "uSkinSs")
+        state._uSkinOsLoc = GL.GetUniformLocation(state._program, "uSkinOs")
+        state._uSkinBopLoc = GL.GetUniformLocation(state._program, "uSkinBop")
+        state._uSkinSlLoc = GL.GetUniformLocation(state._program, "uSkinSl")
+        state._uSkinMcLoc = GL.GetUniformLocation(state._program, "uSkinMc")
+        state._uSkinMaskChLoc = GL.GetUniformLocation(state._program, "uSkinMaskCh")
 
         Dim quadVerts() As Single = {
             -1.0F, -1.0F,

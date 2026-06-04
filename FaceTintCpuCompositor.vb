@@ -384,8 +384,18 @@ Public Module FaceTintCpuCompositor
             Next
         End If
 
-        ' --- Tint layers (over-running). La ley sale del resolver (compositor AGNÓSTICO). ---
+        ' --- Tint layers (over-running). La ley sale del resolver (compositor AGNOSTICO). ---
         If layers IsNot Nothing Then
+            ' TakesSkinTone: una capa flagged que compone DESPUES del skintone recibe el MISMO softlight del
+            ' skintone sobre su SOURCE (viene sin tonear; las flagged ANTES del skintone las tonea el skintone
+            ' encima por el orden). Capturamos color/mask/conv del skintone al pasarlo y pre-tonemos las flagged
+            ' posteriores. GUARD: solo se activa con flagged-after-skintone (inerte/byte-identico en todo bake
+            ' actual, p.ej. Alana, donde las flagged van antes del skintone). Mismo ComposeOne -> paridad GL.
+            Dim stSeen As Boolean = False
+            Dim stColR As Double = 0, stColG As Double = 0, stColB As Double = 0, stOpac As Double = 0
+            Dim stMaskTex As DecodedTex = Nothing
+            Dim stMaskCh As Integer = 1, stMc As Integer = 0
+            Dim stWs As Integer = 0, stCs As Integer = 0, stSs As Integer = 0, stOs As Integer = 0, stBop As Integer = 0, stSl As Integer = 0
             For Each layer In layers
                 If layer Is Nothing Then Continue For
                 Dim chanBytes = layer.GetChannelBytes(channel)
@@ -418,6 +428,8 @@ Public Module FaceTintCpuCompositor
                 Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
                 Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
                 Dim kind = layer.Kind
+                ' GUARD del pre-tono TakesSkinTone: solo D, capa flagged, y skintone ya compuesto antes.
+                Dim preToneSkin As Boolean = (isD AndAlso layer.TakesSkinTone AndAlso stSeen AndAlso stMaskTex IsNot Nothing)
 
                 System.Threading.Tasks.Parallel.For(0, n, Sub(i)
                     Dim lr = SampleChannelAt(layerTex, i, w, h, 0)
@@ -452,13 +464,34 @@ Public Module FaceTintCpuCompositor
                         End If
                     End If
 
+                    ' Pre-tono TakesSkinTone (guard preToneSkin): aplica el softlight del skintone al SOURCE
+                    ' de la flagged con la coverage del skintone en ese pixel (mask.G del skintone), antes del
+                    ' composite normal. = harness pre_softlight(s01, skintone). Inerte si preToneSkin=False.
+                    If preToneSkin Then
+                        Dim stMaskV = SampleChannelAt(stMaskTex, i, w, h, stMaskCh)
+                        Dim stCov = Clamp01(ConvMask1(stMaskV, stMc) * stOpac)
+                        srcR = ComposeOne(srcR, stColR, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
+                        srcG = ComposeOne(srcG, stColG, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
+                        srcB = ComposeOne(srcB, stColB, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
+                    End If
+
                     Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
 
-                    ' composite agnóstico (= shader): blend en ws, lerp en cs, storage en os.
+                    ' composite agnostico (= shader): blend en ws, lerp en cs, storage en os.
                     accR(i) = ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl)
                     accG(i) = ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl)
                     accB(i) = ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl)
                 End Sub)
+
+                ' Capturar el skintone (slot 12) tras componerlo: color/op/mask/conv para pre-tonar las
+                ' flagged-after-skintone. mask.G (Palette) o .A (TextureSet-D), = como el loop calcula maskV.
+                If isD AndAlso layer.IsSkinTone Then
+                    stColR = uColR : stColG = uColG : stColB = uColB : stOpac = op
+                    stMaskTex = layerTex : stMc = mc
+                    stMaskCh = If(kind = FaceTintLayerKind.PaletteMask, 1, 3)
+                    stWs = ws : stCs = cs : stSs = ss : stOs = os : stBop = bop : stSl = sl
+                    stSeen = True
+                End If
             Next
         End If
 

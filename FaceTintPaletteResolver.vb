@@ -15,17 +15,32 @@ Imports System.Text
 ''' </summary>
 Public Module FaceTintPaletteResolver
 
-    ''' <summary>TIE-BREAK COMPARTIDO (Alpha vs opacity). Entre los tplColors candidatos elige el de
-    ''' Alpha más cercano a <paramref name="npcOpacity"/> (min |Alpha − npcOpacity|); desempate secundario
-    ''' determinista por TemplateIndex menor. Es la ÚNICA función de tie-break del resolver, usada por
-    ''' (a) el match por color cuando 2+ presets comparten el color (FindTemplateColorByColor) y
-    ''' (b) la moda empatada del fallback (ResolveFallbackBlendOp). Nothing si no hay candidatos.</summary>
+    ''' <summary>TIE-BREAK por OPACITY (UMBRAL en 0): una capa ACTIVA (opacity&gt;0) usa una entrada Alpha&gt;0
+    ''' ("encendida"); SOLO opacity==0 usa la entrada Alpha=0 ("apagado/default"). Filtra el pool a la clase de
+    ''' Alpha correcta; si esa clase queda vacia, usa el pool completo (no romper). Dentro de la clase, desempate
+    ''' por Alpha mas cercano a npcOpacity, luego TemplateIndex menor. Usada por (a) FindTemplateColorByColor
+    ''' (2+ presets comparten color) y (b) la moda empatada de ResolveFallbackBlendOp. Nothing si no hay candidatos.
+    ''' 2026-06-03: el "primera opcion (min TemplateIndex)" ROMPIA la capa topmost custom (-1) del dirt (Polvo
+    ''' radiactivo, rojo): elegia la entrada Alpha=0/default (bop3/SoftLight) y la libreria renderea SoftLight de
+    ''' un rojo custom como TRANSPARENTE. El umbral garantiza que una capa activa NUNCA tome la entrada Alpha=0
+    ''' (off): Polvo (op=1.0) -> Alpha=1 -> bop0/Replace (opaco). Mas robusto que "Alpha mas cercano" (que para
+    ''' op&lt;0.5 tomaria Alpha=0 y re-rompe). El bake es per-capa; el "primera opcion" matcheaba el DISPLAY
+    ''' per-grupo del editor de CK, no el bake.</summary>
     Public Function BreakTieByOpacity(candidates As IEnumerable(Of RACE_TintTemplateColor), npcOpacity As Single) As RACE_TintTemplateColor
         If candidates Is Nothing Then Return Nothing
+        Dim wantPositive As Boolean = (npcOpacity > 0.0F)
+        Dim pool As New List(Of RACE_TintTemplateColor)
+        For Each tc In candidates
+            If tc IsNot Nothing AndAlso (tc.Alpha > 0.0F) = wantPositive Then pool.Add(tc)
+        Next
+        If pool.Count = 0 Then
+            For Each tc In candidates
+                If tc IsNot Nothing Then pool.Add(tc)
+            Next
+        End If
         Dim best As RACE_TintTemplateColor = Nothing
         Dim bestDist As Single = Single.MaxValue
-        For Each tc In candidates
-            If tc Is Nothing Then Continue For
+        For Each tc In pool
             Dim dist As Single = Math.Abs(tc.Alpha - npcOpacity)
             If dist < bestDist OrElse (dist = bestDist AndAlso best IsNot Nothing AndAlso tc.TemplateIndex < best.TemplateIndex) Then
                 bestDist = dist
@@ -45,11 +60,14 @@ Public Module FaceTintPaletteResolver
     Public Function ResolveFallbackBlendOp(opt As RACE_TintTemplateOption, npcOpacity As Single) As UInteger
         If opt Is Nothing Then Return 0UI
 
-        ' Activos = tplColors con Alpha>0 (presets seleccionables; Alpha=0 es el slider-default sin elegir).
+        ' TODOS los tplColors entran (sin gate de Alpha): Alpha=0 es el valor-default del slider, NO un
+        ' gate de validez — coherente con Step 1 (índice) y FindTemplateColorByColor, que ya aceptan
+        ' Alpha=0. El gate Alpha>0 acá quedó STALE. (Empíricamente no mueve el dump de Alana: el grime
+        ' resuelve por Step 1/índice, no por este fallback; pero elimina la incoherencia del resolver.)
         Dim active As New List(Of RACE_TintTemplateColor)
         If opt.TemplateColors IsNot Nothing Then
             For Each tc In opt.TemplateColors
-                If tc IsNot Nothing AndAlso tc.Alpha > 0.0F Then active.Add(tc)
+                If tc IsNot Nothing Then active.Add(tc)
             Next
         End If
 
