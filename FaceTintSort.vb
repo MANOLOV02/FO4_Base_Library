@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' Orden de composición configurable de tints y swaps de FaceTint. Reglas multi-clave (clave +
 ''' dirección) que el builder (FaceTintLayerBuilder) aplica como sort estable. El orden producido es el
 ''' orden de COMPOSICIÓN: el 1º compone = fondo; el último = encima (over-running).
@@ -12,29 +12,29 @@
 Public Enum FaceTintSortKey
     ' (valor 0 = PhysIndex, ELIMINADO: era redundante = GroupIndex + OptionInGroup. Hueco a propósito
     '  para no renumerar y no romper configs guardados. Una regla vieja con Key=0 queda inerte.)
-    GroupIndex = 1         ' índice del TintTemplateGroup
-    OptionInGroup = 2      ' posición dentro del grupo
-    Teti = 3               ' tl.Index (índice numérico de la option / TETI)
-    NpcListOrder = 4       ' orden en NPC.FaceTintLayers (tiebreak estable default, asc)
+    Group_Index = 1         ' índice del TintTemplateGroup
+    Option_Index = 2      ' posición dentro del grupo
+    Template_Index = 3               ' tl.Index (índice numérico de la option / TETI)
+    Npc_List_Order = 4       ' orden en NPC.FaceTintLayers (tiebreak estable default, asc)
     Slot = 5               ' opt.Slot (TintSlot: SkinTone=12, Scars=21, Brow=23...)
-    EntryType = 6          ' Discriminator: 1=Palette/Mask, 2=TextureSet
-    BlendOp = 7            ' blendop resuelto (0 Default..4 HardLight, 5+ estándar)
+    Entry_Type = 6          ' Discriminator: 1=Palette/Mask, 2=TextureSet
+    Blend_Operation = 7            ' blendop resuelto (0 Default..4 HardLight, 5+ estándar)
     Opacity = 8           ' tl.Value (intensidad 0-100)
-    FlagOnOffOnly = 9      ' TTEF 0x1
-    FlagChargenDetail = 10 ' TTEF 0x2
-    FlagTakesSkinTone = 11 ' TTEF 0x4
-    TemplateColorIndex = 12 ' TEND ColorID
-    CategoryIndex = 13     ' TTGE Category Index del grupo de la option (xEdit: TTGE 'Category Index')
+    Flag_OnOffOnly = 9      ' TTEF 0x1
+    Flag_ChargenDetail = 10 ' TTEF 0x2
+    Flag_TakesSkinTone = 11 ' TTEF 0x4
+    Template_ColorIndex = 12 ' TEND ColorID
+    Category_Index = 13     ' TTGE Category Index del grupo de la option (xEdit: TTGE 'Category Index')
 End Enum
 
 ''' <summary>Claves de orden para SWAPS (region swaps MPPT).</summary>
 Public Enum FaceTintSwapSortKey
-    GroupIndex = 0         ' orden físico del MorphGroup (default forward)
-    PresetInGroup = 1      ' orden del preset dentro del grupo (default forward)
-    PresetMorphIndex = 2   ' p.Index (MSDV)
-    MaskSlot = 3           ' TintSlot del mask del grupo (Forehead/Eyes/.../Neck = 0..6)
+    Group_Index = 0         ' orden físico del MorphGroup (default forward)
+    Preset_Index = 1      ' orden del preset dentro del grupo (default forward)
+    Morph_Index = 2   ' p.Index (MSDV)
+    Slot = 3           ' TintSlot del mask del grupo (Forehead/Eyes/.../Neck = 0..6)
     Intensity = 4          ' MSDV del NPC (0..1)
-    NpcOrder = 5           ' orden del morph dentro del NPC (MorphValues)
+    Npc_Lits_Order = 5           ' orden del morph dentro del NPC (MorphValues)
 End Enum
 
 ''' <summary>Placement especial del SkinTone (slot 12) en el orden de composición de tints. Gana sobre
@@ -63,14 +63,14 @@ Public Class FaceTintSortSettings
     Public Sub New()
         ' Default = orden previo (= el viejo PhysIndex desc): GroupIndex desc, luego OptionInGroup desc.
         TintRules = New List(Of FaceTintSortRule) From {
-            New FaceTintSortRule With {.Key = CInt(FaceTintSortKey.GroupIndex), .Descending = True},
-            New FaceTintSortRule With {.Key = CInt(FaceTintSortKey.OptionInGroup), .Descending = True}
+            New FaceTintSortRule With {.Key = CInt(FaceTintSortKey.Group_Index), .Descending = True},
+            New FaceTintSortRule With {.Key = CInt(FaceTintSortKey.Option_Index), .Descending = True}
         }
         ' Default explícito = forward (= orden de build): GroupIndex asc, luego PresetInGroup asc. Idéntico
         ' en resultado a una lista vacía, pero VISIBLE en la UI (el vacío no mostraba nada).
         SwapRules = New List(Of FaceTintSortRule) From {
-            New FaceTintSortRule With {.Key = CInt(FaceTintSwapSortKey.GroupIndex), .Descending = False},
-            New FaceTintSortRule With {.Key = CInt(FaceTintSwapSortKey.PresetInGroup), .Descending = False}
+            New FaceTintSortRule With {.Key = CInt(FaceTintSwapSortKey.Group_Index), .Descending = False},
+            New FaceTintSortRule With {.Key = CInt(FaceTintSwapSortKey.Preset_Index), .Descending = False}
         }
         SkinTonePlacement = CInt(FaceTintSkinTonePlacement.Positional)
     End Sub

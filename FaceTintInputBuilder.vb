@@ -301,12 +301,12 @@ Public Module FaceTintInputBuilder
                                 }
                                 Logger.LogLazy(Function() $"[REGIONSWAP-BUILD] '{g.Name}/BASELINE(idx0)' intensity=1.000 txst=0x{baseP.TextureFormID:X8}")
                                 Dim keysB(5) As Double
-                                keysB(CInt(FaceTintSwapSortKey.GroupIndex)) = CDbl(gPhys)
-                                keysB(CInt(FaceTintSwapSortKey.PresetInGroup)) = -1.0R   ' baseline ANTES de todo preset seleccionado del grupo
-                                keysB(CInt(FaceTintSwapSortKey.PresetMorphIndex)) = CDbl(baseP.Index)
-                                keysB(CInt(FaceTintSwapSortKey.MaskSlot)) = CDbl(CInt(slot))
+                                keysB(CInt(FaceTintSwapSortKey.Group_Index)) = CDbl(gPhys)
+                                keysB(CInt(FaceTintSwapSortKey.Preset_Index)) = -1.0R   ' baseline ANTES de todo preset seleccionado del grupo
+                                keysB(CInt(FaceTintSwapSortKey.Morph_Index)) = CDbl(baseP.Index)
+                                keysB(CInt(FaceTintSwapSortKey.Slot)) = CDbl(CInt(slot))
                                 keysB(CInt(FaceTintSwapSortKey.Intensity)) = 1.0R
-                                keysB(CInt(FaceTintSwapSortKey.NpcOrder)) = -1.0R
+                                keysB(CInt(FaceTintSwapSortKey.Npc_Lits_Order)) = -1.0R
                                 entries.Add((swBase, keysB))
                             End If
                         End If
@@ -353,12 +353,12 @@ Public Module FaceTintInputBuilder
                 Logger.LogLazy(Function() $"[REGIONSWAP-BUILD] '{g.Name}/{p.PresetName}' presetIdx={p.Index} msdv(intensity)={msdvVal:F3} txst=0x{p.TextureFormID:X8}")
 
                 Dim keys6(5) As Double
-                keys6(CInt(FaceTintSwapSortKey.GroupIndex)) = CDbl(gPhys)
-                keys6(CInt(FaceTintSwapSortKey.PresetInGroup)) = CDbl(pPhys)
-                keys6(CInt(FaceTintSwapSortKey.PresetMorphIndex)) = CDbl(p.Index)
-                keys6(CInt(FaceTintSwapSortKey.MaskSlot)) = CDbl(CInt(slot))
+                keys6(CInt(FaceTintSwapSortKey.Group_Index)) = CDbl(gPhys)
+                keys6(CInt(FaceTintSwapSortKey.Preset_Index)) = CDbl(pPhys)
+                keys6(CInt(FaceTintSwapSortKey.Morph_Index)) = CDbl(p.Index)
+                keys6(CInt(FaceTintSwapSortKey.Slot)) = CDbl(CInt(slot))
                 keys6(CInt(FaceTintSwapSortKey.Intensity)) = CDbl(msdvVal)
-                keys6(CInt(FaceTintSwapSortKey.NpcOrder)) = If(npcMorphOrder.ContainsKey(p.Index), CDbl(npcMorphOrder(p.Index)), BIGSWAP)
+                keys6(CInt(FaceTintSwapSortKey.Npc_Lits_Order)) = If(npcMorphOrder.ContainsKey(p.Index), CDbl(npcMorphOrder(p.Index)), BIGSWAP)
                 entries.Add((sw, keys6))
             Next
         Next
@@ -887,24 +887,24 @@ Public Module FaceTintInputBuilder
         Dim n = mergedLayers.Count
         Dim keys(n - 1)() As Double
         Dim isSkin(n - 1) As Boolean
-        Dim usesBlend As Boolean = (rules IsNot Nothing AndAlso rules.Any(Function(r) r.Key = CInt(FaceTintSortKey.BlendOp)))
+        Dim usesBlend As Boolean = (rules IsNot Nothing AndAlso rules.Any(Function(r) r.Key = CInt(FaceTintSortKey.Blend_Operation)))
         For i = 0 To n - 1
             Dim tl = mergedLayers(i).Layer
             Dim opt = race.FindTintOption(tl.Index, isFemale)
             Dim flags As UShort = If(opt IsNot Nothing, opt.Flags, CUShort(0))
             Dim k(13) As Double
-            k(CInt(FaceTintSortKey.GroupIndex)) = If(groupIndexByOption.ContainsKey(tl.Index), groupIndexByOption(tl.Index), BIG)
-            k(CInt(FaceTintSortKey.OptionInGroup)) = If(optionInGroupByOption.ContainsKey(tl.Index), optionInGroupByOption(tl.Index), BIG)
-            k(CInt(FaceTintSortKey.Teti)) = CDbl(tl.Index)
-            k(CInt(FaceTintSortKey.NpcListOrder)) = CDbl(i)
+            k(CInt(FaceTintSortKey.Group_Index)) = If(groupIndexByOption.ContainsKey(tl.Index), groupIndexByOption(tl.Index), BIG)
+            k(CInt(FaceTintSortKey.Option_Index)) = If(optionInGroupByOption.ContainsKey(tl.Index), optionInGroupByOption(tl.Index), BIG)
+            k(CInt(FaceTintSortKey.Template_Index)) = CDbl(tl.Index)
+            k(CInt(FaceTintSortKey.Npc_List_Order)) = CDbl(i)
             k(CInt(FaceTintSortKey.Slot)) = If(opt IsNot Nothing, CDbl(opt.Slot), BIG)
-            k(CInt(FaceTintSortKey.EntryType)) = CDbl(tl.Discriminator)
+            k(CInt(FaceTintSortKey.Entry_Type)) = CDbl(tl.Discriminator)
             k(CInt(FaceTintSortKey.Opacity)) = CDbl(tl.Value)
-            k(CInt(FaceTintSortKey.FlagOnOffOnly)) = If((flags And &H1US) <> 0US, 1.0, 0.0)
-            k(CInt(FaceTintSortKey.FlagChargenDetail)) = If((flags And &H2US) <> 0US, 1.0, 0.0)
-            k(CInt(FaceTintSortKey.FlagTakesSkinTone)) = If((flags And &H4US) <> 0US, 1.0, 0.0)
-            k(CInt(FaceTintSortKey.TemplateColorIndex)) = CDbl(tl.TemplateColorIndex)
-            k(CInt(FaceTintSortKey.CategoryIndex)) = If(categoryIndexByOption.ContainsKey(tl.Index), CDbl(categoryIndexByOption(tl.Index)), BIG)
+            k(CInt(FaceTintSortKey.Flag_OnOffOnly)) = If((flags And &H1US) <> 0US, 1.0, 0.0)
+            k(CInt(FaceTintSortKey.Flag_ChargenDetail)) = If((flags And &H2US) <> 0US, 1.0, 0.0)
+            k(CInt(FaceTintSortKey.Flag_TakesSkinTone)) = If((flags And &H4US) <> 0US, 1.0, 0.0)
+            k(CInt(FaceTintSortKey.Template_ColorIndex)) = CDbl(tl.TemplateColorIndex)
+            k(CInt(FaceTintSortKey.Category_Index)) = If(categoryIndexByOption.ContainsKey(tl.Index), CDbl(categoryIndexByOption(tl.Index)), BIG)
             Dim blendKey As Double = 0.0
             If usesBlend AndAlso opt IsNot Nothing Then
                 Dim opv As Single = CSng(tl.Value) / 100.0F
@@ -914,7 +914,7 @@ Public Module FaceTintInputBuilder
                     blendKey = CDbl(ResolveFallbackBlendOp(opt, opv))
                 End If
             End If
-            k(CInt(FaceTintSortKey.BlendOp)) = blendKey
+            k(CInt(FaceTintSortKey.Blend_Operation)) = blendKey
             keys(i) = k
             isSkin(i) = (opt IsNot Nothing AndAlso opt.Slot = CUShort(TintSlot.SkinTone))
         Next

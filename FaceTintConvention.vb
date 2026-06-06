@@ -192,11 +192,11 @@ Public Module FaceTintConvention
             ' Swap: convención del DIFFUSE swap (los swaps de N·S usan el bucket NormalSpecular, no éste).
             ' Cambiar acá = cambiar el default de fábrica.
             Diffuse = New FaceTintBucketConvention With {
-                .WorkingSpace = FaceTintWorkingSpace.Srgb,
+                .WorkingSpace = FaceTintWorkingSpace.G22,
                 .CompositeSpace = FaceTintWorkingSpace.Linear,
-                .SrcSpace = FaceTintWorkingSpace.Srgb,
-                .OutputSpace = FaceTintWorkingSpace.Srgb,
-                .MaskConv = FaceTintMaskConv.SrgbEncode,
+                .SrcSpace = FaceTintWorkingSpace.G22,
+                .OutputSpace = FaceTintWorkingSpace.G22,
+                .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
                 .SoftLight = FaceTintSoftLight.Gimp}
             NormalSpecular = New FaceTintBucketConvention With {
@@ -204,15 +204,15 @@ Public Module FaceTintConvention
                 .CompositeSpace = FaceTintWorkingSpace.Linear,
                 .SrcSpace = FaceTintWorkingSpace.Linear,
                 .OutputSpace = FaceTintWorkingSpace.Linear,
-                .MaskConv = FaceTintMaskConv.SrgbEncode,
+                .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
                 .SoftLight = FaceTintSoftLight.Gimp}
             Swap = New FaceTintBucketConvention With {
-                .WorkingSpace = FaceTintWorkingSpace.Srgb,
+                .WorkingSpace = FaceTintWorkingSpace.G22,
                 .CompositeSpace = FaceTintWorkingSpace.Linear,
-                .SrcSpace = FaceTintWorkingSpace.Srgb,
-                .OutputSpace = FaceTintWorkingSpace.Srgb,
-                .MaskConv = FaceTintMaskConv.SrgbEncode,
+                .SrcSpace = FaceTintWorkingSpace.G22,
+                .OutputSpace = FaceTintWorkingSpace.G22,
+                .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
                 .SoftLight = FaceTintSoftLight.Gimp}
             SeedDiffuseG22 = False

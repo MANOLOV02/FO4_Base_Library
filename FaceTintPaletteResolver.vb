@@ -26,10 +26,14 @@ Public Module FaceTintPaletteResolver
     ''' (off): Polvo (op=1.0) -> Alpha=1 -> bop0/Replace (opaco). Mas robusto que "Alpha mas cercano" (que para
     ''' op&lt;0.5 tomaria Alpha=0 y re-rompe). El bake es per-capa; el "primera opcion" matcheaba el DISPLAY
     ''' per-grupo del editor de CK, no el bake.</summary>
-    Public Function BreakTieByOpacity(candidates As IEnumerable(Of RACE_TintTemplateColor), npcOpacity As Single) As RACE_TintTemplateColor
-        If candidates Is Nothing Then Return Nothing
-        Dim wantPositive As Boolean = (npcOpacity > 0.0F)
+    ''' <summary>Filtro de clase activo/off: una capa ACTIVA (op&gt;0) usa entradas Alpha&gt;0 ("encendida");
+    ''' SOLO op==0 usa Alpha=0 ("apagado/default"). Si la clase queda vacia, devuelve el pool completo
+    ''' (no romper). Es el discriminante robusto del 2026-06-03 (dirt rojo custom op&gt;0 -&gt; Alpha&gt;0 -&gt;
+    ''' Replace, NO la off-entry SoftLight transparente).</summary>
+    Private Function FilterByOpacityClass(candidates As IEnumerable(Of RACE_TintTemplateColor), npcOpacity As Single) As List(Of RACE_TintTemplateColor)
         Dim pool As New List(Of RACE_TintTemplateColor)
+        If candidates Is Nothing Then Return pool
+        Dim wantPositive As Boolean = (npcOpacity > 0.0F)
         For Each tc In candidates
             If tc IsNot Nothing AndAlso (tc.Alpha > 0.0F) = wantPositive Then pool.Add(tc)
         Next
@@ -38,6 +42,36 @@ Public Module FaceTintPaletteResolver
                 If tc IsNot Nothing Then pool.Add(tc)
             Next
         End If
+        Return pool
+    End Function
+
+    ''' <summary>TemplateColor default de la opcion segun TTED = index POSICIONAL en TemplateColors (raw
+    ''' bits del float = el int). Nothing si no hay TTED o el indice cae fuera de rango. MISMO index que
+    ''' MergeTintLayersWithRaceDefaults usa para los defaults heredados. Ver
+    ''' [[arch_facetint_race_default_inheritance]].</summary>
+    Public Function TtedDefaultColor(opt As RACE_TintTemplateOption) As RACE_TintTemplateColor
+        If opt Is Nothing OrElse Not opt.HasDefaultValue Then Return Nothing
+        If opt.TemplateColors Is Nothing OrElse opt.TemplateColors.Count = 0 Then Return Nothing
+        Dim pos As UInteger = BitConverter.ToUInt32(BitConverter.GetBytes(opt.DefaultValue), 0)
+        If pos >= CUInt(opt.TemplateColors.Count) Then Return Nothing
+        Return opt.TemplateColors(CInt(pos))
+    End Function
+
+    ''' <summary>DESEMPATE UNIFICADO (reusable). Elige UN TemplateColor de <paramref name="candidates"/>
+    ''' dado opt + opacidad de la capa:
+    '''   1. Filtra a la clase activo/off (op&gt;0 -&gt; Alpha&gt;0; op=0 -&gt; Alpha=0; vacio -&gt; todos).
+    '''   2. Si el TTED-default cae en esa clase -&gt; ese (el preset default de la opcion; regla usuario
+    '''      2026-06-06). Asi se respeta el blend intencional del default SIN tomar la off-entry para una
+    '''      capa activa (el dirt rojo de Alana: TTED apunta a la off-entry SoftLight, pero al estar activa
+    '''      queda fuera del filtro -&gt; gana la activa Replace).
+    '''   3. Si no -&gt; Alpha mas cercano a op, luego TemplateIndex menor.
+    ''' Usado por FindTemplateColorByColor (Step 2: varios presets MISMO color) y ResolveFallbackBlendOp
+    ''' (Step 3: sin match -&gt; sobre TODOS los presets de la opcion). Nothing si no hay candidatos.</summary>
+    Public Function PickTemplateColor(candidates As IEnumerable(Of RACE_TintTemplateColor), opt As RACE_TintTemplateOption, npcOpacity As Single) As RACE_TintTemplateColor
+        Dim pool = FilterByOpacityClass(candidates, npcOpacity)
+        If pool.Count = 0 Then Return Nothing
+        Dim tdef = TtedDefaultColor(opt)
+        If tdef IsNot Nothing AndAlso pool.Contains(tdef) Then Return tdef
         Dim best As RACE_TintTemplateColor = Nothing
         Dim bestDist As Single = Single.MaxValue
         For Each tc In pool
@@ -50,56 +84,33 @@ Public Module FaceTintPaletteResolver
         Return best
     End Function
 
-    ''' <summary>BlendOp por defecto del grupo cuando NO hay match de color (Step3). Regla del usuario:
-    ''' = la MODA del BlendOp entre los TemplateColors activos (Alpha&gt;0) de la option; si la moda está
-    ''' EMPATADA, se rompe con el MISMO tie-break compartido (Alpha vs opacity = <see cref="BreakTieByOpacity"/>).
-    ''' Robusto contra outliers de autoría (Maquillaje tplCol[9] BlendOp=0 vs mayoría=3).
-    ''' Safety net: SkinTone slot + BlendOp=0 → 3 (SoftLight).
-    ''' Convenio: 0=Default(replace), 1=Multiply, 2=Overlay, 3=SoftLight, 4=HardLight.
-    ''' </summary>
+    ''' <summary>Compat: desempate por opacidad SIN preferencia de TTED-default (= PickTemplateColor con
+    ''' opt=Nothing). La logica vive en PickTemplateColor; conservada por si hay refs externas.</summary>
+    Public Function BreakTieByOpacity(candidates As IEnumerable(Of RACE_TintTemplateColor), npcOpacity As Single) As RACE_TintTemplateColor
+        Return PickTemplateColor(candidates, Nothing, npcOpacity)
+    End Function
+
+    ''' <summary>BlendOp para un color CUSTOM sin match por color (Step 3). Desempate UNIFICADO
+    ''' (<see cref="PickTemplateColor"/>) sobre TODOS los TemplateColors de la opcion: clase activo/off ->
+    ''' TTED-default-si-cae-en-la-clase -> Alpha mas cercano / TemplateIndex menor. Reemplaza la "moda"
+    ''' estadistica previa por el MISMO desempate del Step 2. Para una capa ACTIVA el filtro activo/off
+    ''' descarta la off-entry (Alpha=0), asi que el dirt rojo custom de Alana (cuyo TTED apunta a la
+    ''' off-entry SoftLight) cae en la activa = Replace, no en SoftLight transparente (regresion 2026-06-03
+    ''' evitada). Safety net: SkinTone + 0 -> 3. Convenio: 0=Replace 1=Multiply 2=Overlay 3=SoftLight
+    ''' 4=HardLight.</summary>
     Public Function ResolveFallbackBlendOp(opt As RACE_TintTemplateOption, npcOpacity As Single) As UInteger
         If opt Is Nothing Then Return 0UI
-
-        ' TODOS los tplColors entran (sin gate de Alpha): Alpha=0 es el valor-default del slider, NO un
-        ' gate de validez — coherente con Step 1 (índice) y FindTemplateColorByColor, que ya aceptan
-        ' Alpha=0. El gate Alpha>0 acá quedó STALE. (Empíricamente no mueve el dump de Alana: el grime
-        ' resuelve por Step 1/índice, no por este fallback; pero elimina la incoherencia del resolver.)
-        Dim active As New List(Of RACE_TintTemplateColor)
-        If opt.TemplateColors IsNot Nothing Then
-            For Each tc In opt.TemplateColors
-                If tc IsNot Nothing Then active.Add(tc)
-            Next
-        End If
-
-        Dim modeBlendOp As UInteger
-        If active.Count > 0 Then
-            Dim counts As New Dictionary(Of UInteger, Integer)
-            For Each tc In active
-                Dim bop = tc.BlendOperation
-                counts(bop) = If(counts.ContainsKey(bop), counts(bop) + 1, 1)
-            Next
-            Dim maxCount As Integer = counts.Values.Max()
-            Dim tied = counts.Where(Function(kvp) kvp.Value = maxCount).Select(Function(kvp) kvp.Key).ToList()
-            If tied.Count = 1 Then
-                modeBlendOp = tied(0)
-            Else
-                ' MODA EMPATADA -> mismo tie-break compartido (Alpha vs opacity) entre los tplColors
-                ' activos cuyo BlendOp está empatado.
-                Dim tiedCols = active.Where(Function(c) tied.Contains(c.BlendOperation)).ToList()
-                Dim winner = BreakTieByOpacity(tiedCols, npcOpacity)
-                modeBlendOp = If(winner IsNot Nothing, winner.BlendOperation, tied.Min())
-                Logger.LogLazy(Function() $"[FACETINT-FALLBACK] opt={opt.Index} '{opt.Name}' moda-empate tied=[{String.Join(",", tied)}] op={npcOpacity} -> {modeBlendOp}")
-            End If
+        Dim pick = PickTemplateColor(opt.TemplateColors, opt, npcOpacity)
+        Dim bop As UInteger
+        If pick IsNot Nothing Then
+            bop = pick.BlendOperation
         ElseIf opt.HasBlendOperation Then
-            modeBlendOp = opt.BlendOperation
+            bop = opt.BlendOperation
         Else
-            modeBlendOp = 0UI
+            bop = 0UI
         End If
-
-        If opt.Slot = CUShort(TintSlot.SkinTone) AndAlso modeBlendOp = 0UI Then
-            Return 3UI
-        End If
-        Return modeBlendOp
+        If opt.Slot = CUShort(TintSlot.SkinTone) AndAlso bop = 0UI Then Return 3UI
+        Return bop
     End Function
 
     ''' <summary>Find the TTEC preset a Palette layer's colour resolves to: exact CLFM RGB match,
@@ -128,7 +139,9 @@ Public Module FaceTintPaletteResolver
                 matches.Add(tplCol)
             End If
         Next
-        Return BreakTieByOpacity(matches, npcOpacity)
+        ' Desempate UNIFICADO (mismo que el fallback Step 3): clase activo/off -> TTED-default-si-cae ->
+        ' Alpha/idx. Asi "dos del mismo color" se resuelve con la misma regla que el resto.
+        Return PickTemplateColor(matches, opt, npcOpacity)
     End Function
 
     ''' <summary>Resuelve Color/BlendOp/Matched/OpacityScale para una Palette (disc=1) layer.
