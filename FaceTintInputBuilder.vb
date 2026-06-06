@@ -162,10 +162,25 @@ Public Module FaceTintInputBuilder
         Dim npcIndices As New HashSet(Of UShort)(safeNpc.Select(Function(tl) tl.Index))
         For Each grp In groups
             If grp.Options Is Nothing Then Continue For
+
+            ' GUARD On/Off (TTEF flag 0x0001 = radio set, mutuamente excluyente): un grupo On/Off es un
+            ' single-select del CharGen de CK (dropdown) -> UNA opcion elegida. GENERICO por el flag, NO atado a
+            ' un slot/grupo concreto: aplica a cualquier grupo On/Off (cejas slot 23, barbas slot 25, etc.). En
+            ' el record de HumanRace (Mitch+Alana, Tools dumps) el unico grupo On/Off observado son las cejas
+            ' (todas slot=23, solo la default trae TTED), pero la regla es del flag. Si el NPC ya autoro una
+            ' opcion On/Off del grupo (cualquiera, NO necesariamente la default que trae TTED), su eleccion
+            ' manda -> NO inyectar la default (sino quedan DOS activas en el radio set). Solo afecta On/Off;
+            ' las no-On/Off (Palette/TS ChargenDetail = sliders independientes) siguen per-opcion (un default
+            ' de labios va aunque haya un tatuaje autorado). En grupos mixtos el guard solo toca las On/Off.
+            Dim groupHasAuthoredOnOff As Boolean = grp.Options.Any(
+                Function(o) ((o.Flags And &H1US) <> 0US) AndAlso npcIndices.Contains(o.Index))
+
             For Each opt In grp.Options
                 ' PER-OPCION: si el NPC ya autora esta opcion, su TEND manda (ya esta en result).
                 If npcIndices.Contains(opt.Index) Then Continue For
                 If Not opt.HasDefaultValue Then Continue For   ' sin TTED -> sin default
+                ' On/Off ya cubierto por el NPC -> no agregar la default del radio set.
+                If ((opt.Flags And &H1US) <> 0US) AndAlso groupHasAuthoredOnOff Then Continue For
 
                 Dim valueInt As Integer
                 Dim disc As UShort = If(opt.EntryType = RACE_TintEntryType.TextureSet, CUShort(2), CUShort(1))

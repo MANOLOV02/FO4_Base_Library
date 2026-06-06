@@ -118,14 +118,25 @@ Public Module FaceTintConvention
     Public Enum FaceTintDiffuseCompression
         Bc3 = 0
         Bc7 = 1
+        Uncompressed = 2
+    End Enum
+
+    ''' <summary>Compresión de salida de Normal/Specular: BC5 (default) o Uncompressed (B8G8R8A8).</summary>
+    Public Enum FaceTintNormalSpecularCompression
+        Bc5 = 0
+        Uncompressed = 1
     End Enum
 
     Public Class FaceTintResolutionSettings
         Public Property Diffuse As FaceTintChannelResolution = FaceTintChannelResolution.Inherit
         Public Property Normal As FaceTintChannelResolution = FaceTintChannelResolution.Inherit
         Public Property Specular As FaceTintChannelResolution = FaceTintChannelResolution.Inherit
-        ''' <summary>Compresión del diffuse de salida (flag, default BC3). N/S siempre BC5.</summary>
+        ''' <summary>Compresión del diffuse de salida (default BC3; o BC7 / Uncompressed).</summary>
         Public Property DiffuseCompression As FaceTintDiffuseCompression = FaceTintDiffuseCompression.Bc3
+        ''' <summary>Compresión del normal de salida (default BC5; o Uncompressed).</summary>
+        Public Property NormalCompression As FaceTintNormalSpecularCompression = FaceTintNormalSpecularCompression.Bc5
+        ''' <summary>Compresión del specular de salida (default BC5; o Uncompressed).</summary>
+        Public Property SpecularCompression As FaceTintNormalSpecularCompression = FaceTintNormalSpecularCompression.Bc5
         Public Function ForChannel(ch As FaceTintChannel) As FaceTintChannelResolution
             Select Case ch
                 Case FaceTintChannel.Normal : Return Normal
@@ -215,7 +226,7 @@ Public Module FaceTintConvention
                 .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
                 .SoftLight = FaceTintSoftLight.Gimp}
-            SeedDiffuseG22 = False
+            SeedDiffuseG22 = True
         End Sub
     End Class
 

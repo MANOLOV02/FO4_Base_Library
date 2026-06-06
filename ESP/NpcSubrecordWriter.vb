@@ -240,11 +240,9 @@ Public Module NpcSubrecordWriter
                 Using w As New BinaryWriter(ms)
                     w.Write(remap(f.FactionFormID))
                     w.Write(f.Rank)
-                    If f.Unused IsNot Nothing AndAlso f.Unused.Length = 3 Then
-                        w.Write(f.Unused)
-                    Else
-                        w.Write(New Byte(2) {})
-                    End If
+                    ' FO4 SNAM Faction = 5 bytes (formid + s8 rank). NO trailing padding:
+                    ' wbFaction's wbUnused(3) is on the IsFO4Plus(nil, ...) FALSE branch (pre-FO4 only),
+                    ' FO4 selects nil. Emitting 3 bytes made xEdit report "Unused data in ... SNAM".
                 End Using
                 WriteRawSubrecord(bw, "SNAM", ms.ToArray())
             End Using
@@ -372,11 +370,9 @@ Public Module NpcSubrecordWriter
                 Using w As New BinaryWriter(ms)
                     w.Write(remap(p.PerkFormID))
                     w.Write(p.Rank)
-                    If p.Unused IsNot Nothing AndAlso p.Unused.Length = 3 Then
-                        w.Write(p.Unused)
-                    Else
-                        w.Write(New Byte(2) {})
-                    End If
+                    ' FO4 PRKR Perk = 5 bytes (formid + u8 rank). NO trailing padding — the FO4
+                    ' wbStruct (wbDefinitionsFO4.pas:10717-10719) has no wbUnused. Emitting 3 bytes
+                    ' made xEdit report "Unused data in ... PRKR".
                 End Using
                 WriteRawSubrecord(bw, "PRKR", ms.ToArray())
             End Using

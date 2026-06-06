@@ -161,13 +161,13 @@ Public Class NPC_AcbsData
     Public TrailingBytes As Byte() = Array.Empty(Of Byte)()
 End Class
 
-''' <summary>NPC_.SNAM (Faction) entry. wbDefinitionsCommon.pas:7070-7078. FO4 layout: 8 bytes —
-''' formid Faction (4) + s8 Rank (1) + 3 unused bytes.</summary>
+''' <summary>NPC_.SNAM (Faction) entry. wbDefinitionsCommon.pas:7070-7078. FO4 layout: 5 bytes —
+''' formid Faction (4) + s8 Rank (1). NO trailing padding: wbFaction's wbUnused(3) sits on the
+''' IsFO4Plus(nil, wbUnused(3)) FALSE branch (= pre-FO4 / Skyrim); FO4 (wbIsFallout4) resolves to
+''' nil. Emitting 3 padding bytes makes xEdit report "Unused data in ... SNAM".</summary>
 Public Class NPC_FactionEntry
     Public FactionFormID As UInteger
     Public Rank As SByte
-    ''' <summary>3 unused bytes (FO4 only). Preserved verbatim.</summary>
-    Public Unused As Byte() = New Byte() {0, 0, 0}
 End Class
 
 ''' <summary>NPC_.PRPS (Properties) entry. wbDefinitionsFO4.pas:10725 + 5634-5640. 8 bytes:
@@ -177,12 +177,12 @@ Public Class NPC_PropertyEntry
     Public Value As Single
 End Class
 
-''' <summary>NPC_.PRKR (Perk) entry. wbDefinitionsFO4.pas:10716-10724. 8 bytes per entry:
-''' formid Perk (PERK) + u8 Rank + 3 unused bytes.</summary>
+''' <summary>NPC_.PRKR (Perk) entry. wbDefinitionsFO4.pas:10716-10724. 5 bytes per entry:
+''' formid Perk (PERK, 4) + u8 Rank (1). NO trailing padding — the FO4 wbStruct has no wbUnused.
+''' Emitting 3 padding bytes makes xEdit report "Unused data in ... PRKR".</summary>
 Public Class NPC_PerkEntry
     Public PerkFormID As UInteger
     Public Rank As Byte
-    Public Unused As Byte() = New Byte() {0, 0, 0}
 End Class
 
 ''' <summary>NPC_.CNTO + COED (Inventory item). wbDefinitionsFO4.pas:3696-3705. CNTO mandatory,
@@ -1868,7 +1868,8 @@ Public Module RecordParsers
                     npc.TemplateFlags = a.TemplateFlags
 
                 ' wbDefinitionsFO4.pas:10678 — SNAM (Faction, RArrayS) — wbDefinitionsCommon.pas:7070
-                ' Each SNAM subrecord is one 8-byte Faction entry (FO4: formid + s8 rank + 3 unused).
+                ' Each SNAM subrecord is one 5-byte Faction entry (FO4: formid + s8 rank, NO unused —
+                ' wbFaction's wbUnused(3) is on the IsFO4Plus FALSE branch, pre-FO4 only).
                 Case "SNAM"
                     Dim d = sr.Data
                     If d IsNot Nothing AndAlso d.Length >= 5 Then
@@ -1878,9 +1879,6 @@ Public Module RecordParsers
                             .FactionFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager),
                             .Rank = ReadInt8(d(4))
                         }
-                        If d.Length >= 8 Then
-                            entry.Unused = New Byte() {d(5), d(6), d(7)}
-                        End If
                         npc.Factions.Add(entry)
                     End If
 
@@ -2085,7 +2083,6 @@ Public Module RecordParsers
                             .PerkFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager),
                             .Rank = d(4)
                         }
-                        If d.Length >= 8 Then entry.Unused = New Byte() {d(5), d(6), d(7)}
                         npc.Perks.Add(entry)
                     End If
 

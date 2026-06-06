@@ -317,89 +317,9 @@ End Class
 
 Public Module FaceTintCompositor
 
-    ' === TEMP DEBUG INSTRUMENTATION (removable) =========================================
-    ' Per-layer compose diagnostics. When True, the compose loop reads back the accumulator
-    ' before/after EACH layer and logs that layer's parameters + the delta it produced
-    ' (how many pixels it moved and by how much), so a CK-vs-bake texture diff can be
-    ' attributed to a specific face-tint layer. The readback is a full-texture GL.GetTexImage
-    ' per layer -- expensive -- so it is double-gated: this flag (set ONLY around the FaceGen
-    ' bake, never during live render) AND Logger.Enabled. Leave False in render.
-    ' To remove: delete this flag, the LogComposeLayerDelta calls in the compose loop, and
-    ' the two helper methods below.
-    Public Property PerLayerDiffLog As Boolean = False
-
-    ''' <summary>Flag RESERVADO (decisión usuario 2026-05-31). HAY UN SOLO PATH de composición (ley
-    ''' gen3, acumulador D en G22); el MISMO resultado se muestra (dictionary del render) y se escribe a
-    ''' disco (DDS del bake) — no hay dos caminos. Este flag NO forkea la ley; queda como gancho para,
-    ''' p.ej., reconvertir el render final g22→sRGB si el test visual lo pide (sin tocar Shader_Class.vb).
-    ''' Default False; aún sin uso activo.</summary>
-    Public Property BakeMode As Boolean = False
-
-    ''' <summary>NPC FormID currently being baked. Stamped into [FACETINT-LAYER] log
-    ''' lines so an offline parser can group layers per NPC (the bake processes
-    ''' several NPCs in sequence and the layer name alone is not unique). Set by
-    ''' the FaceGen bake; left at 0 in render paths.</summary>
-    Public Property CurrentNpcFormID As UInteger = 0
-
-    ''' <summary>TEMP DEBUG: full-texture BGRA readback for per-layer delta logging. Caller
-    ''' must hold the GL context. Returns Nothing on a zero/invalid texture.</summary>
-    Private Function ReadbackBgraForDebug(texId As Integer, w As Integer, h As Integer) As Byte()
-        If texId = 0 OrElse w <= 0 OrElse h <= 0 Then Return Nothing
-        Dim buf(w * h * 4 - 1) As Byte
-        GL.BindTexture(TextureTarget.Texture2D, texId)
-        Dim handle = System.Runtime.InteropServices.GCHandle.Alloc(buf, System.Runtime.InteropServices.GCHandleType.Pinned)
-        Try
-            GL.GetTexImage(TextureTarget.Texture2D, 0, PixelFormat.Bgra, PixelType.UnsignedByte, handle.AddrOfPinnedObject())
-        Finally
-            handle.Free()
-        End Try
-        GL.BindTexture(TextureTarget.Texture2D, 0)
-        Return buf
-    End Function
-
-    ''' <summary>TEMP DEBUG: abs-diff stats over B/G/R (alpha ignored) between two BGRA buffers.</summary>
-    Private Function FormatDeltaStats(prev As Byte(), cur As Byte(), w As Integer, h As Integer) As String
-        If prev Is Nothing OrElse cur Is Nothing OrElse prev.Length <> cur.Length OrElse prev.Length < w * h * 4 Then Return "<no-readback>"
-        Dim pixels As Long = CLng(w) * h
-        Dim maxB As Integer = 0, maxG As Integer = 0, maxR As Integer = 0
-        Dim sq As Double = 0
-        Dim changed As Long = 0
-        Dim i As Long = 0
-        While i < pixels
-            Dim idx = CInt(i * 4)
-            Dim db = Math.Abs(CInt(cur(idx + 0)) - CInt(prev(idx + 0)))
-            Dim dg = Math.Abs(CInt(cur(idx + 1)) - CInt(prev(idx + 1)))
-            Dim dr = Math.Abs(CInt(cur(idx + 2)) - CInt(prev(idx + 2)))
-            If db > maxB Then maxB = db
-            If dg > maxG Then maxG = dg
-            If dr > maxR Then maxR = dr
-            sq += CDbl(db) * db + CDbl(dg) * dg + CDbl(dr) * dr
-            If db > 0 OrElse dg > 0 OrElse dr > 0 Then changed += 1
-            i += 1
-        End While
-        Dim rms = Math.Sqrt(sq / (pixels * 3.0))
-        Dim pct = (changed * 100.0) / pixels
-        Return $"deltaRMS={rms:F2} changed={pct:F2}% maxBGR=({maxB},{maxG},{maxR})"
-    End Function
-
-    ''' <summary>TEMP DEBUG: log one layer's params + the delta it caused (prev vs cur BGRA).</summary>
-    Private Sub LogComposeLayerDelta(channel As FaceTintChannel, layerIndex As Integer, name As String,
-                                     layer As FaceTintLayerInput, useHairPalette As Boolean, forceUniform As Boolean,
-                                     prev As Byte(), cur As Byte(), w As Integer, h As Integer,
-                                     Optional isSkinTone As Boolean = False,
-                                     Optional layerClass As Integer = -1,
-                                     Optional forceOpaqueAlpha As Boolean = False,
-                                     Optional blendConv As Integer = -1,
-                                     Optional maskFile As String = Nothing,
-                                     Optional srcFile As String = Nothing)
-        Dim deltaStat = FormatDeltaStats(prev, cur, w, h)
-        Dim safeMask = If(maskFile, "")
-        Dim safeSrc = If(srcFile, "")
-        Logger.LogLazy(Function() $"[FACETINT-LAYER] npc=0x{CurrentNpcFormID:X8} ch={channel} #{layerIndex} '{name}' kind={layer.Kind} blend={layer.BlendOp} op={layer.Opacity:F3} rgb=({layer.R},{layer.G},{layer.B}) hairPal={useHairPalette} row={layer.HairPaletteRow:F3} forceUni={forceUniform} takesSkin={layer.TakesSkinTone} isSkinTone={isSkinTone} layerClass={layerClass} forceOpaqueAlpha={forceOpaqueAlpha} blendConv={blendConv} -> {deltaStat} | mask='{safeMask}' src='{safeSrc}'")
-    End Sub
-
-    ' === TGA writers (output final + CLI --dump). La instrumentacion de mask/intermediate dump fue
-    ' removida: los masks se dumpean ahora desde el CLI (FO4_FaceTint_CLI --dump). ===
+    ' === TGA writers (output final + CLI --dump/_3). La instrumentacion de dump/diff (per-layer
+    ' readback GL.GetTexImage, mask/intermediate dump) fue REMOVIDA de la libreria 2026-06-06: los
+    ' dumps viven en el CLI (FO4_FaceTint_CLI --dump). El render GL ya no hace readbacks de debug. ===
 
     ''' <summary>TEMP DEBUG: write a BGRA buffer as an uncompressed 32-bit TGA (top-left origin,
     ''' matching CK's FaceGen TGA layout). Alpha PRESERVED so the mask channel can be inspected.
@@ -1040,14 +960,6 @@ void main() {
             Dim readTexId As Integer = baseTexForCompose
             Dim drawnSoFar As Integer = 0
 
-            ' TEMP DEBUG: snapshot the unmodified accumulator (= the seed actually composed onto) so
-            ' each layer's delta can be measured against the real starting state.
-            Dim dbgPerLayer As Boolean = (PerLayerDiffLog AndAlso Logger.Enabled)
-            Dim dbgPrevPixels As Byte() = Nothing
-            If dbgPerLayer Then
-                dbgPrevPixels = ReadbackBgraForDebug(baseTexForCompose, width, height)
-            End If
-
             Dim drawnLayers As Integer = 0
             Dim totalLayers As Integer = If(layers IsNot Nothing, layers.Count, 0)
             ' Pre-tono TakesSkinTone: captura del skintone (slot 12) tras componerlo, para pre-tonar las
@@ -1088,7 +1000,6 @@ void main() {
             For i As Integer = 0 To layers.Count - 1
                 Dim layer = layers(i)
                 If layer Is Nothing Then Continue For
-                Dim layerName As String = If(String.IsNullOrEmpty(layer.DebugName), "<unnamed>", layer.DebugName)
 
                 ' Previously: TakesSkinTone layers were skipped on the Diffuse channel under
                 ' the hypothesis that the scar/wrinkle _d slot only carried relief and the
@@ -1123,8 +1034,7 @@ void main() {
                 End If
 
                 ' Hair LUT lookup for brow palette layers. Resolved HERE (before any texture-unit
-                ' binding) so the TEMP DEBUG dump below can read it without clobbering uPrev: bound
-                ' on unit 3 further down.
+                ' binding); bound on unit 3 further down.
                 Dim hairLutTex As Integer = 0
                 Dim lutKey As String = Nothing
                 If layerHairLutKey.TryGetValue(i, lutKey) Then
@@ -1135,9 +1045,6 @@ void main() {
                         hairLutTex = lutEntry.Texture_ID
                     End If
                 End If
-
-                Dim dumpedSrcFile As String = Nothing
-                Dim dumpedMaskFile As String = Nothing
 
                 ' Last drawable layer writes to caller-owned resultFbo; intermediate layers
                 ' bounce through the persistent pings.
@@ -1262,20 +1169,6 @@ void main() {
                 ' Next iteration reads from what we just wrote (resultTex on the last pass,
                 ' otherwise the ping we just bound).
                 readTexId = If(isLast, resultTex, state._pingTex(writeIdx))
-
-                ' TEMP DEBUG: read back what this layer produced and log its delta vs the prior state.
-                If dbgPerLayer Then
-                    Dim dbgCur = ReadbackBgraForDebug(readTexId, width, height)
-                    LogComposeLayerDelta(channel, i, layerName, layer, useHairPaletteEffective, forceUniformColorEffective,
-                                         dbgPrevPixels, dbgCur, width, height,
-                                         isSkinTone:=layer.IsSkinTone,
-                                         layerClass:=-1,
-                                         forceOpaqueAlpha:=isLast,
-                                         blendConv:=CInt(conv.MaskConv),
-                                         maskFile:=dumpedMaskFile,
-                                         srcFile:=dumpedSrcFile)
-                    dbgPrevPixels = dbgCur
-                End If
 
                 writeIdx = 1 - writeIdx
                 drawnSoFar += 1
@@ -1544,15 +1437,9 @@ void main() {
             Dim drawn As Integer = 0
             Dim drawnSoFar As Integer = 0
 
-            ' TEMP DEBUG: snapshot for per-swap delta logging (region swaps rewrite base D/N/S).
-            Dim dbgSwap As Boolean = (PerLayerDiffLog AndAlso Logger.Enabled)
-            Dim dbgSwapPrev As Byte() = Nothing
-            If dbgSwap Then dbgSwapPrev = ReadbackBgraForDebug(originalTexId, width, height)
-
             For i As Integer = 0 To swaps.Count - 1
                 Dim sw = swaps(i)
                 If sw Is Nothing Then Continue For
-                Dim swapName As String = If(String.IsNullOrEmpty(sw.DebugName), "<unnamed>", sw.DebugName)
 
                 Dim sKey As String = Nothing
                 Dim mKey As String = Nothing
@@ -1605,17 +1492,6 @@ void main() {
                 GL.BindTexture(TextureTarget.Texture2D, 0)
 
                 readTexId = If(isLastSwap, resultTex, state._pingTex(writeIdx))
-
-
-                ' TEMP DEBUG: per-swap delta vs prior state.
-                If dbgSwap Then
-                    Dim dbgCur = ReadbackBgraForDebug(readTexId, width, height)
-                    Dim swapNameLocal = swapName
-                    Dim swapIndexLocal = i
-                    Dim deltaStat = FormatDeltaStats(dbgSwapPrev, dbgCur, width, height)
-                    Logger.LogLazy(Function() $"[FACETINT-SWAP] ch={channel} #{swapIndexLocal} '{swapNameLocal}' -> {deltaStat}")
-                    dbgSwapPrev = dbgCur
-                End If
 
                 writeIdx = 1 - writeIdx
                 drawnSoFar += 1
@@ -2008,10 +1884,6 @@ void main() {
 
 
     ''' <summary>Convierte una textura GL de <paramref name="fromSpace"/> a <paramref name="toSpace"/>
-    ''' (0=linear 1=srgb 2=g22) hacia una textura Rgba32f FRESCA (el caller la posee y debe borrarla).
-    ''' Pasada pura de espacio (shader uMode=2, sin blend ni mask): es el SEED del path unico —
-    ''' source sRGB -> acumulador G22 en el canal D — y queda reservada para el inverso g22 -> sRGB
-    ''' (flag <see cref="BakeMode"/>). Devuelve 0 si falla. MUST run on the GL thread.</summary>
     Public Function ConvertTextureSpace(state As FaceTintCompositorState, srcTexId As Integer,
                                         width As Integer, height As Integer,
                                         fromSpace As Integer, toSpace As Integer) As Integer

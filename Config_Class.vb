@@ -106,12 +106,19 @@ Public Class Config_App
     '       "unificar a X" (Diffuse=enum).
     '   = True (PER LAYER): cada canal usa su propio tamaño (los 3 habilitados en la UI).
     ' Tamaño por canal: Inherit (MIP0 nativo, sin downgrade) o un enum (512/1024/2048/4096/8192).
-    ' Compresión: BC3 default / BC7 opción. N/S siempre BC5.
+    ' Compresión por canal (misma sincronía All/Per-layer que el tamaño): Diffuse BC3(default)/BC7/Uncompressed,
+    ' N/S BC5(default)/Uncompressed. En All, N/S siguen al Diffuse (Uncompressed si lo es, sino BC5).
     Public Property Setting_FaceGenPerLayerResolution As Boolean = False
     Public Property Setting_FaceGenDiffuseResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
     Public Property Setting_FaceGenNormalResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
     Public Property Setting_FaceGenSpecularResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
     Public Property Setting_FaceGenDiffuseCompression As FaceTintConvention.FaceTintDiffuseCompression = FaceTintConvention.FaceTintDiffuseCompression.Bc3
+    ' Compresión N/S: BC5 default / Uncompressed. En modo All siguen al Diffuse (Uncompressed si el Diffuse
+    ' lo es, sino BC5); en Per layer cada uno el suyo. GenerateTga = tilde del diálogo (TGA uncompressed al
+    ' lado de cada .dds). Defaults: BC3 / BC5 / no TGA.
+    Public Property Setting_FaceGenNormalCompression As FaceTintConvention.FaceTintNormalSpecularCompression = FaceTintConvention.FaceTintNormalSpecularCompression.Bc5
+    Public Property Setting_FaceGenSpecularCompression As FaceTintConvention.FaceTintNormalSpecularCompression = FaceTintConvention.FaceTintNormalSpecularCompression.Bc5
+    Public Property Setting_FaceGenGenerateTga As Boolean = False
 
     ' === FaceTint convention (botón "CharGen Options" → tab "FaceTint Conventions") ===
     ' La convención de composición FaceTint por bucket (Diffuse / Normal+Specular / Swaps), valores
