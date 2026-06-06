@@ -1,4 +1,4 @@
-Imports FO4_Base_Library.FaceTintConvention
+﻿Imports FO4_Base_Library.FaceTintConvention
 
 ' ============================================================================
 ' FaceTintCpuCompositor — espejo CPU EXACTO del compositor GL (FaceTintCompositor).
@@ -56,16 +56,26 @@ Public Module FaceTintCpuCompositor
         Return Math.Pow(Clamp01(c), 1.0 / 2.2)
     End Function
 
+    Private Function G24ToLin1(c As Double) As Double
+        Return Math.Pow(Clamp01(c), 2.4)
+    End Function
+
+    Private Function LinToG241(c As Double) As Double
+        Return Math.Pow(Clamp01(c), 1.0 / 2.4)
+    End Function
+
     Private Function SpaceToLin1(c As Double, s As Integer) As Double
         If s = 0 Then Return c
         If s = 1 Then Return SrgbToLin1(c)
-        Return G22ToLin1(c)
+        If s = 3 Then Return G24ToLin1(c)
+        Return G22ToLin1(c)   ' s=2
     End Function
 
     Private Function LinToSpace1(c As Double, s As Integer) As Double
         If s = 0 Then Return c
         If s = 1 Then Return LinToSrgb1(c)
-        Return LinToG221(c)
+        If s = 3 Then Return LinToG241(c)
+        Return LinToG221(c)   ' s=2
     End Function
 
     ''' <summary>cvt agnóstico entre espacios (0=linear 1=srgb 2=g22) via linear. = shader cvt().</summary>
@@ -81,6 +91,8 @@ Public Module FaceTintCpuCompositor
             Case 2 : Return SrgbToLin1(m)
             Case 3 : Return LinToG221(m)
             Case 4 : Return G22ToLin1(m)
+            Case 5 : Return LinToG241(m)
+            Case 6 : Return G24ToLin1(m)
             Case Else : Return m
         End Select
     End Function
@@ -111,15 +123,63 @@ Public Module FaceTintCpuCompositor
         End Select
     End Function
 
-    ''' <summary>Dispatch de blend por canal escalar. blendOp: 0=replace 1=mult 2=overlay 3=softlight
-    ''' 4=hardlight. softLight: modelo a usar cuando blendOp=3. = shader blendDispatch().</summary>
+    ' ---- Modos separables estandar adicionales (5..19). Transcripcion 1:1 del shader. ----
+    Private Function BlendColorDodge1(d As Double, s As Double) As Double
+        If s >= 1.0 Then Return 1.0
+        Return Math.Min(1.0, d / (1.0 - s))
+    End Function
+    Private Function BlendColorBurn1(d As Double, s As Double) As Double
+        If s <= 0.0 Then Return 0.0
+        Return 1.0 - Math.Min(1.0, (1.0 - d) / s)
+    End Function
+    Private Function BlendDivide1(d As Double, s As Double) As Double
+        If s <= 0.0 Then Return 1.0
+        Return Math.Min(1.0, d / s)
+    End Function
+    Private Function BlendVividLight1(d As Double, s As Double) As Double
+        If s < 0.5 Then Return BlendColorBurn1(d, 2.0 * s)
+        Return BlendColorDodge1(d, 2.0 * (s - 0.5))
+    End Function
+    Private Function BlendPinLight1(d As Double, s As Double) As Double
+        If s < 0.5 Then Return Math.Min(d, 2.0 * s)
+        Return Math.Max(d, 2.0 * s - 1.0)
+    End Function
+
+    ''' <summary>Identidad del blend op: el src que hace blend(prev,src)=prev. La usa ModSrc para que
+    ''' cov=0 deje prev intacto: mix(neutral, src, cov). = shader blendNeutral(). bop=replace no tiene
+    ''' identidad constante -> ModSrc degrada a OverPrev (ver ComposeOne).</summary>
+    Private Function BlendNeutral1(bop As Integer) As Double
+        Select Case bop
+            Case 1, 6, 9, 13, 15 : Return 1.0      ' multiply/darken/colorburn/linearburn/divide
+            Case 2, 3, 4, 16, 17, 18 : Return 0.5  ' overlay/softlight/hardlight/linearlight/vividlight/pinlight
+            Case Else : Return 0.0                 ' screen/lighten/colordodge/difference/exclusion/lineardodge/subtract/hardmix
+        End Select
+    End Function
+
+    ''' <summary>Dispatch de blend por canal escalar. 0=replace 1=mult 2=overlay 3=softlight 4=hardlight,
+    ''' 5..19 = modos separables estandar. softLight: modelo cuando blendOp=3. = shader blendDispatchBop().</summary>
     Private Function BlendDispatch1(blendOp As Integer, softLight As Integer, d As Double, s As Double) As Double
         Select Case blendOp
             Case 1 : Return d * s                                ' multiply
             Case 2 : Return BlendOverlay1(d, s)                  ' overlay
             Case 3 : Return BlendSoftLightModel(softLight, d, s) ' softlight (modelo elegido)
             Case 4 : Return BlendOverlay1(s, d)                  ' hardlight = overlay(s,d)
-            Case Else : Return s                                 ' replace (default)
+            Case 5 : Return d + s - d * s                        ' screen
+            Case 6 : Return Math.Min(d, s)                       ' darken
+            Case 7 : Return Math.Max(d, s)                       ' lighten
+            Case 8 : Return BlendColorDodge1(d, s)               ' colordodge
+            Case 9 : Return BlendColorBurn1(d, s)                ' colorburn
+            Case 10 : Return Math.Abs(d - s)                     ' difference
+            Case 11 : Return d + s - 2.0 * d * s                 ' exclusion
+            Case 12 : Return Math.Min(1.0, d + s)                ' lineardodge (add)
+            Case 13 : Return Math.Max(0.0, d + s - 1.0)          ' linearburn
+            Case 14 : Return Math.Max(0.0, d - s)                ' subtract
+            Case 15 : Return BlendDivide1(d, s)                  ' divide
+            Case 16 : Return Clamp01(d + 2.0 * s - 1.0)          ' linearlight
+            Case 17 : Return BlendVividLight1(d, s)              ' vividlight
+            Case 18 : Return BlendPinLight1(d, s)                ' pinlight
+            Case 19 : Return If(d + s >= 1.0, 1.0, 0.0)          ' hardmix
+            Case Else : Return s                                 ' replace (0, default)
         End Select
     End Function
 
@@ -336,16 +396,11 @@ Public Module FaceTintCpuCompositor
         ' El storage del engine FaceCustomization es sRGB (= formato de CK en disco); no se acumula en g22.
         ' Seed via SampleChannelAt (índice directo si tamaños iguales; bilineal si difieren = resize).
         Dim accR(n - 1) As Double, accG(n - 1) As Double, accB(n - 1) As Double
-        ' Seed = BASEIN DIRECTO (sRGB) en TODOS los canales (cambio 2026-06-01: g22(BASEIN) era conclusion
-        ' errada; CK NO aplica gamma — el g22 solo aproximaba un residual op0 no entendido). D acumula en
-        ' sRGB (OutputSpace=Srgb consistente); N/S lineal raw. seedG22 queda como flag (default False).
-        ' Parallel.For sobre pixeles: cada i escribe su propio accX(i) (indices disjuntos), lee inmutables.
-        Dim seedG22 As Boolean = False
         System.Threading.Tasks.Parallel.For(0, n, Sub(i)
                                                       Dim r0 = SampleChannelAt(src, i, w, h, 0)
                                                       Dim g0 = SampleChannelAt(src, i, w, h, 1)
                                                       Dim b0 = SampleChannelAt(src, i, w, h, 2)
-                                                      If seedG22 Then
+                                                      If SeedConventionIs_G22 AndAlso isD Then
                                                           accR(i) = Cvt1(r0, 1, 2) : accG(i) = Cvt1(g0, 1, 2) : accB(i) = Cvt1(b0, 1, 2)
                                                       Else
                                                           accR(i) = r0 : accG(i) = g0 : accB(i) = b0
@@ -375,14 +430,22 @@ Public Module FaceTintCpuCompositor
                                                               Dim sr = SampleChannelAt(swTex, i, w, h, 0)
                                                               Dim sg = SampleChannelAt(swTex, i, w, h, 1)
                                                               Dim sb = SampleChannelAt(swTex, i, w, h, 2)
-                                                              Dim mask = SampleChannelAt(mkTex, i, w, h, 0)        ' regionmask .r (raw)
-                                                              Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)       ' C1: Clamp01 preservado
+                                                              Dim mask = SampleChannelAt(mkTex, i, w, h, 0)
+                                                              Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)
                                                               accR(i) = ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl)
                                                               accG(i) = ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl)
                                                               accB(i) = ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl)
                                                           End Sub)
             Next
         End If
+
+        ' base = SNAPSHOT del acc POST-swaps. Paridad con el GL: el pase de tints (ComposeOntoFaceTexture,
+        ' línea ~2168) recibe como input la textura YA swapeada del pre-pass (FaceTintCompositor:2160-2170), y
+        ' su uBase = ese input -> uBase del GL es post-swap. Se captura acá (después de los region swaps) para
+        ' que los frameworks base-relativos (OverBase/AddBase) compongan sobre el baseline young-morpheado, NO
+        ' sobre el seed Hero pre-swap. OverPrev (default) NO usa base -> byte-idéntico al modelo previo.
+        Dim baseR(n - 1) As Double, baseG(n - 1) As Double, baseB(n - 1) As Double
+        Array.Copy(accR, baseR, n) : Array.Copy(accG, baseG, n) : Array.Copy(accB, baseB, n)
 
         ' --- Tint layers (over-running). La ley sale del resolver (compositor AGNOSTICO). ---
         If layers IsNot Nothing Then
@@ -396,6 +459,31 @@ Public Module FaceTintCpuCompositor
             Dim stMaskTex As DecodedTex = Nothing
             Dim stMaskCh As Integer = 1, stMc As Integer = 0
             Dim stWs As Integer = 0, stCs As Integer = 0, stSs As Integer = 0, stOs As Integer = 0, stBop As Integer = 0, stSl As Integer = 0
+            ' Pre-scan TakesSkinTone (2-pass): capturar color/op/mask/conv del skintone ANTES del loop, para
+            ' poder pre-tonar tambien las flagged que componen ANTES del skintone bajo frameworks no-acumulativos
+            ' (OverBase/AddBase). Con OverPrev/ModSrc nonAccum=False -> el guard se reduce a stSeen (byte-identico).
+            Dim skintoneFound As Boolean = False
+            Dim nonAccum As Boolean = False
+            If isD Then
+                For Each sLayer In layers
+                    If sLayer Is Nothing OrElse Not sLayer.IsSkinTone Then Continue For
+                    Dim sBytes = sLayer.GetChannelBytes(channel)
+                    If sBytes Is Nothing OrElse sBytes.Length = 0 Then Continue For
+                    Dim sTex = CachedDecode(cache, sLayer.GetChannelCacheKey(channel), sBytes)
+                    If sTex Is Nothing Then Continue For
+                    Dim sConv = FaceTintConvention.ResolveConvention(sLayer.IsTextureSet, sLayer.Slot, sLayer.BlendOp, channel, False, forBake:=True)
+                    stColR = sLayer.R / 255.0 : stColG = sLayer.G / 255.0 : stColB = sLayer.B / 255.0
+                    stOpac = Math.Max(0.0, Math.Min(1.0, CDbl(sLayer.Opacity)))
+                    stMaskTex = sTex : stMc = CInt(sConv.MaskConv)
+                    stMaskCh = If(sLayer.Kind = FaceTintLayerKind.PaletteMask, 1, 3)
+                    stWs = CInt(sConv.WorkingSpace) : stCs = CInt(sConv.CompositeSpace)
+                    stSs = CInt(sConv.SrcSpace) : stOs = CInt(sConv.OutputSpace)
+                    stBop = CInt(sConv.Blend) : stSl = CInt(sConv.SoftLight)
+                    nonAccum = (sConv.Framework = FaceTintFramework.OverBase OrElse sConv.Framework = FaceTintFramework.AddBase)
+                    skintoneFound = True
+                    Exit For
+                Next
+            End If
             For Each layer In layers
                 If layer Is Nothing Then Continue For
                 Dim chanBytes = layer.GetChannelBytes(channel)
@@ -424,12 +512,16 @@ Public Module FaceTintCpuCompositor
                 Dim ss = CInt(conv.SrcSpace), os = CInt(conv.OutputSpace)
                 Dim mc = CInt(conv.MaskConv), bop = CInt(conv.Blend)
                 Dim sl = CInt(conv.SoftLight)   ' modelo de softlight (agnostico) para bop3
+                Dim fw = CInt(conv.Framework)   ' framework de composite (OverPrev default)
                 Dim op = Math.Max(0.0, Math.Min(1.0, CDbl(layer.Opacity)))
                 Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
                 Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
                 Dim kind = layer.Kind
                 ' GUARD del pre-tono TakesSkinTone: solo D, capa flagged, y skintone ya compuesto antes.
-                Dim preToneSkin As Boolean = (isD AndAlso layer.TakesSkinTone AndAlso stSeen AndAlso stMaskTex IsNot Nothing)
+                ' Pre-tono si: capa flagged (D) Y hay skintone Y (ya se compuso antes -> over-running tona
+                ' las de antes desde arriba, las de despues necesitan source-pretono) O el framework no acumula
+                ' (OverBase/AddBase -> el skintone NO llega por el base, hay que pre-tonar TODA flagged).
+                Dim preToneSkin As Boolean = (isD AndAlso layer.TakesSkinTone AndAlso skintoneFound AndAlso (stSeen OrElse nonAccum))
 
                 System.Threading.Tasks.Parallel.For(0, n, Sub(i)
                     Dim lr = SampleChannelAt(layerTex, i, w, h, 0)
@@ -478,9 +570,9 @@ Public Module FaceTintCpuCompositor
                     Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
 
                     ' composite agnostico (= shader): blend en ws, lerp en cs, storage en os.
-                    accR(i) = ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl)
-                    accG(i) = ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl)
-                    accB(i) = ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl)
+                    accR(i) = ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, baseR(i), fw)
+                    accG(i) = ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, baseG(i), fw)
+                    accB(i) = ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, baseB(i), fw)
                 End Sub)
 
                 ' Capturar el skintone (slot 12) tras componerlo: color/op/mask/conv para pre-tonar las
@@ -504,20 +596,47 @@ Public Module FaceTintCpuCompositor
         Return New CpuChannelResult With {.Width = w, .Height = h, .Bgra = outB}
     End Function
 
-    ''' <summary>composite de UN canal escalar = exactamente el bloque del shader:
-    ''' base_w=cvt(prev,os,ws); src_w=cvt(src,ss,ws); blended=blend(base_w,src_w);
-    ''' base_c=cvt(prev,os,cs); blend_c=cvt(blended,ws,cs); res_c=clamp(base_c+cov*(blend_c-base_c));
-    ''' final=cvt(res_c,cs,os).</summary>
+    ''' <summary>composite de UN canal escalar = exactamente el bloque del shader (rama uFramework). El
+    ''' framework decide cómo blend(prev/base,src) entra en el acumulador (ver FaceTintFramework). DEFAULT
+    ''' framework=0 (OverPrev) = el modelo previo BYTE-IDENTICO; base/framework opcionales para no tocar los
+    ''' call sites que no usan los frameworks nuevos. base = textura original sin tintar (= uBase del shader).</summary>
     Private Function ComposeOne(prev As Double, src As Double, cov As Double,
                                 ws As Integer, cs As Integer, ss As Integer, os As Integer, bop As Integer,
-                                softLight As Integer) As Double
-        Dim base_w = Cvt1(prev, os, ws)
+                                softLight As Integer,
+                                Optional base As Double = 0.0, Optional framework As Integer = 0) As Double
         Dim src_w = Cvt1(src, ss, ws)
-        Dim blended = BlendDispatch1(bop, softLight, base_w, src_w)
-        Dim base_c = Cvt1(prev, os, cs)
-        Dim blend_c = Cvt1(blended, ws, cs)
-        Dim res_c = Clamp01(base_c + cov * (blend_c - base_c))
-        Return Cvt1(res_c, cs, os)
+        Select Case framework
+            Case 1 ' OverBase: mix(base, blend(base,src), cov)
+                Dim anchor_w = Cvt1(base, os, ws)
+                Dim blended = BlendDispatch1(bop, softLight, anchor_w, src_w)
+                Dim anchor_c = Cvt1(base, os, cs)
+                Dim blend_c = Cvt1(blended, ws, cs)
+                Return Cvt1(Clamp01(anchor_c + cov * (blend_c - anchor_c)), cs, os)
+            Case 2 ' AddBase: prev + cov*(blend(base,src) - base)
+                Dim anchor_w = Cvt1(base, os, ws)
+                Dim blended = BlendDispatch1(bop, softLight, anchor_w, src_w)
+                Dim prev_c = Cvt1(prev, os, cs)
+                Dim base_c2 = Cvt1(base, os, cs)
+                Dim blend_c = Cvt1(blended, ws, cs)
+                Return Cvt1(Clamp01(prev_c + cov * (blend_c - base_c2)), cs, os)
+            Case 3 ' ModSrc: blend(prev, mix(neutral, src, cov)). bop=replace no tiene neutral -> OverPrev.
+                Dim base_w = Cvt1(prev, os, ws)
+                If bop = 0 Then
+                    Dim bc = Cvt1(prev, os, cs)
+                    Dim sc = Cvt1(src_w, ws, cs)
+                    Return Cvt1(Clamp01(bc + cov * (sc - bc)), cs, os)
+                End If
+                Dim neut = BlendNeutral1(bop)
+                Dim smod_w = neut + cov * (src_w - neut)
+                Dim blended3 = BlendDispatch1(bop, softLight, base_w, smod_w)
+                Return Cvt1(Clamp01(Cvt1(blended3, ws, cs)), cs, os)
+            Case Else ' 0 = OverPrev (DEFAULT, byte-identico al modelo previo)
+                Dim base_w = Cvt1(prev, os, ws)
+                Dim blended = BlendDispatch1(bop, softLight, base_w, src_w)
+                Dim base_c = Cvt1(prev, os, cs)
+                Dim blend_c = Cvt1(blended, ws, cs)
+                Return Cvt1(Clamp01(base_c + cov * (blend_c - base_c)), cs, os)
+        End Select
     End Function
 
     ''' <summary>Sample de un canal del DecodedTex en el índice de píxel del acumulador (w,h). Si el tex
@@ -535,6 +654,10 @@ Public Module FaceTintCpuCompositor
         ' np.rint de gen3 = round-half-to-EVEN (banker's) = MidpointRounding.ToEven (default de Math.Round).
         ' El redondeo a byte se hace SOLO al final (los acumuladores quedan float toda la pasada), igual
         ' que gen3 (rint solo en el write). Asi CPU == `_3` byte-exacto.
+        ' Guard NaN: Clamp01 NO atrapa NaN (Math.Min/Max con NaN devuelve NaN) y CByte(NaN) tira
+        ' OverflowException. ±Infinity SI lo clampa Clamp01. NaN -> 0 (defensivo; no cambia ningún byte
+        ' válido -> la paridad byte-exacta con _3 se preserva, sólo evita el crash si un blend/framework NaN-ea).
+        If Double.IsNaN(c) Then c = 0.0
         Dim v = Math.Round(Clamp01(c) * 255.0, MidpointRounding.ToEven)
         If v < 0 Then v = 0
         If v > 255 Then v = 255

@@ -23,6 +23,7 @@ Public Module FaceTintConvention
         Linear = 0
         Srgb = 1
         G22 = 2
+        G24 = 3
     End Enum
 
     ''' <summary>Transformación aplicada a la mask espacial antes de multiplicar por opacity.
@@ -34,25 +35,49 @@ Public Module FaceTintConvention
         SrgbDecode = 2
         G22Encode = 3
         G22Decode = 4
+        G24Encode = 5
+        G24Decode = 6
     End Enum
 
-    ''' <summary>Cómo cov, base, src y blend se combinan en el resultado.
-    ''' Derivado: D = AdditiveOverBase (delta vs base original) ; N/S = mask-gated (additive de la
-    ''' desviación, binary-cov). MixTowardSrc y BlendWithModulatedSrc quedan expuestos para A/B.</summary>
+    ''' <summary>Cómo el blend(prev/base, src) se compone con la cobertura en el acumulador. 4 frameworks
+    ''' (GL+CPU agnósticos, se eligen por uFramework / el param de ComposeOne). base = textura original sin
+    ''' tintar (uBase). OverPrev NO usa base -> byte-idéntico al modelo previo (DEFAULT).
+    '''   OverPrev = mix(prev, blend(prev,src), cov)       source-over al acumulador corriente
+    '''   OverBase = mix(base, blend(base,src), cov)       source-over al base original
+    '''   AddBase  = prev + cov*(blend(base,src) - base)   additive del delta vs base
+    '''   ModSrc   = blend(prev, mix(neutral, src, cov))   source modulado por cobertura</summary>
     Public Enum FaceTintFramework
-        AdditiveOverBase = 0
-        MixTowardSrc = 1
-        BlendWithModulatedSrc = 2
+        OverPrev = 0
+        OverBase = 1
+        AddBase = 2
+        ModSrc = 3
     End Enum
 
-    ''' <summary>Operador de blend efectivo (mapea desde BlendOp 0..4 del record / resolver).
-    ''' 0=Replace(blendDefault), 1=Multiply, 2=Overlay, 3=SoftLight, 4=HardLight.</summary>
+    ''' <summary>Operador de blend efectivo. 0..4 = dominio del BlendOp del record FO4 (mapea via MapBlend).
+    ''' 5..19 = modos separables estándar (Photoshop/W3C) que el record NO emite pero el dispatch SÍ soporta
+    ''' (GL+CPU), agregados por pedido del usuario 2026-06-04. Apéndice: jamás reordenar (el config serializa
+    ''' el entero). Read-only en la UI (no hay selección de blend hoy; sólo del record / Replace).</summary>
     Public Enum FaceTintBlend
         Replace = 0
         Multiply = 1
         Overlay = 2
         SoftLight = 3
         HardLight = 4
+        Screen = 5
+        Darken = 6
+        Lighten = 7
+        ColorDodge = 8
+        ColorBurn = 9
+        Difference = 10
+        Exclusion = 11
+        LinearDodge = 12
+        LinearBurn = 13
+        Subtract = 14
+        Divide = 15
+        LinearLight = 16
+        VividLight = 17
+        PinLight = 18
+        HardMix = 19
     End Enum
 
     ''' <summary>Modelo de SOFT-LIGHT a usar cuando Blend=SoftLight (bop3). El compositor (GL+CPU) es
@@ -137,6 +162,72 @@ Public Module FaceTintConvention
         Public SoftLight As FaceTintSoftLight
     End Structure
 
+    ''' <summary>Convención de UN bucket (Diffuse / Normal+Specular / Swap). Valores CONCRETOS, sin nulos:
+    ''' estos SON la ley. Los defaults los fija FaceTintConventionSettings.New (= la ley derivada actual);
+    ''' el usuario los edita desde CharGen Options o el config.json y se persisten en Config_App.
+    ''' ResolveConvention los lee SIEMPRE de ahí. Blend NO está acá: es record-driven (diffuse = MapBlend)
+    ''' o Replace (N·S, swap), read-only en la UI.</summary>
+    Public Class FaceTintBucketConvention
+        Public Property WorkingSpace As FaceTintWorkingSpace
+        Public Property CompositeSpace As FaceTintWorkingSpace
+        Public Property SrcSpace As FaceTintWorkingSpace
+        Public Property OutputSpace As FaceTintWorkingSpace
+        Public Property MaskConv As FaceTintMaskConv
+        Public Property Framework As FaceTintFramework
+        Public Property SoftLight As FaceTintSoftLight
+    End Class
+
+    ''' <summary>La ley FaceTint completa, persistida en Config_App (config.json). Los defaults del
+    ''' constructor = la ley derivada actual (byte-match con CK si no se tocan). Si el usuario los cambia
+    ''' (UI o config.json) ESOS pasan a ser la ley: ResolveConvention los lee siempre. Sin nulos, sin
+    ''' capa de override — KISS.</summary>
+    Public Class FaceTintConventionSettings
+        Public Property Diffuse As FaceTintBucketConvention
+        Public Property NormalSpecular As FaceTintBucketConvention
+        Public Property Swap As FaceTintBucketConvention
+        Public Property SeedDiffuseG22 As Boolean
+
+        Public Sub New()
+            ' Defaults = ley derivada actual. Diffuse: blend tonal en G22. N·S: datos lineales (raw).
+            ' Swap: convención del DIFFUSE swap (los swaps de N·S usan el bucket NormalSpecular, no éste).
+            ' Cambiar acá = cambiar el default de fábrica.
+            Diffuse = New FaceTintBucketConvention With {
+                .WorkingSpace = FaceTintWorkingSpace.Srgb,
+                .CompositeSpace = FaceTintWorkingSpace.Linear,
+                .SrcSpace = FaceTintWorkingSpace.Srgb,
+                .OutputSpace = FaceTintWorkingSpace.Srgb,
+                .MaskConv = FaceTintMaskConv.SrgbEncode,
+                .Framework = FaceTintFramework.OverPrev,
+                .SoftLight = FaceTintSoftLight.Gimp}
+            NormalSpecular = New FaceTintBucketConvention With {
+                .WorkingSpace = FaceTintWorkingSpace.Linear,
+                .CompositeSpace = FaceTintWorkingSpace.Linear,
+                .SrcSpace = FaceTintWorkingSpace.Linear,
+                .OutputSpace = FaceTintWorkingSpace.Linear,
+                .MaskConv = FaceTintMaskConv.SrgbEncode,
+                .Framework = FaceTintFramework.OverPrev,
+                .SoftLight = FaceTintSoftLight.Gimp}
+            Swap = New FaceTintBucketConvention With {
+                .WorkingSpace = FaceTintWorkingSpace.Srgb,
+                .CompositeSpace = FaceTintWorkingSpace.Linear,
+                .SrcSpace = FaceTintWorkingSpace.Srgb,
+                .OutputSpace = FaceTintWorkingSpace.Srgb,
+                .MaskConv = FaceTintMaskConv.SrgbEncode,
+                .Framework = FaceTintFramework.OverPrev,
+                .SoftLight = FaceTintSoftLight.Gimp}
+            SeedDiffuseG22 = False
+        End Sub
+    End Class
+
+    ''' <summary>Seed del diffuse en G22 (lo leen ambos compositores: GL y CPU). Vive en el config; esto
+    ''' sólo lo reenvía, null-safe. Los 2 lectores no cambian (lo usan como Boolean de sólo lectura).</summary>
+    Public ReadOnly Property SeedConventionIs_G22 As Boolean
+        Get
+            Dim s = Config_App.Current?.Setting_FaceTintConvention
+            Return s IsNot Nothing AndAlso s.SeedDiffuseG22
+        End Get
+    End Property
+
     ''' <summary>Slot SkinTone (RACE TintTemplateOption.Slot). Centralizado para no hardcodear 12.</summary>
     Private Const SLOT_SKINTONE As UShort = 12US
 
@@ -159,23 +250,27 @@ Public Module FaceTintConvention
                                       useHairPalette As Boolean,
                                       Optional forBake As Boolean = True,
                                       Optional forSwap As Boolean = False) As FaceTintConventionSet
+        ' La ley vive en Config_App.Setting_FaceTintConvention (los defaults los pone el constructor =
+        ' ley derivada; si el usuario los cambia ESOS pasan a ser la ley). Se elige el bucket por
+        ' (forSwap / canal) y se copia tal cual. Null-safe: si el config no está cargado, usa los defaults.
+        Dim s = Config_App.Current?.Setting_FaceTintConvention
+        If s Is Nothing Then s = New FaceTintConventionSettings()
+        ' Swaps: sólo el DIFFUSE swap tiene bucket propio (s.Swap). Los swaps de Normal/Specular usan la
+        ' MISMA convención que su tint (s.NormalSpecular). Sólo el diffuse cambia.
+        Dim bucket As FaceTintBucketConvention =
+            If(forSwap AndAlso channel = FaceTintChannel.Diffuse, s.Swap,
+               If(channel = FaceTintChannel.Diffuse, s.Diffuse, s.NormalSpecular))
+
         Dim c As FaceTintConventionSet
-        Dim blend As FaceTintBlend = If(forSwap, FaceTintBlend.Replace, MapBlend(blendOp))
-        ' SoftLight default = GIMP (derivado vs CK, minimiza bop3). El compositor lo aplica agnostico.
-        c.SoftLight = FaceTintSoftLight.Gimp
-        c.Framework = FaceTintFramework.AdditiveOverBase
-        c.CompositeSpace = FaceTintWorkingSpace.Linear
-        c.MaskConv = FaceTintMaskConv.G22Encode
-        c.SrcSpace = FaceTintWorkingSpace.G22
-        c.WorkingSpace = FaceTintWorkingSpace.G22
-        c.OutputSpace = FaceTintWorkingSpace.G22
-        c.Blend = blend
-        If channel <> FaceTintChannel.Diffuse Then
-            c.Blend = FaceTintBlend.Replace
-            c.SrcSpace = FaceTintWorkingSpace.Linear
-            c.WorkingSpace = FaceTintWorkingSpace.Linear
-            c.OutputSpace = FaceTintWorkingSpace.Linear
-        End If
+        c.WorkingSpace = bucket.WorkingSpace
+        c.CompositeSpace = bucket.CompositeSpace
+        c.SrcSpace = bucket.SrcSpace
+        c.OutputSpace = bucket.OutputSpace
+        c.MaskConv = bucket.MaskConv
+        c.Framework = bucket.Framework
+        c.SoftLight = bucket.SoftLight
+        ' Blend: record-driven (MapBlend) en el tint diffuse; Replace en N·S y en swaps. Read-only en UI.
+        c.Blend = If(forSwap OrElse channel <> FaceTintChannel.Diffuse, FaceTintBlend.Replace, MapBlend(blendOp))
 
         Return c
     End Function

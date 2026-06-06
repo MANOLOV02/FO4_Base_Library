@@ -24,6 +24,16 @@ Public Class PluginManager
 
     Private _localizedStrings As LocalizedStringResolver
 
+    ' Guards the record / plugin / FileID-slot collections (AllRecords, RecordsByType, Plugins,
+    ' _pluginIndex and the four slot dicts) against concurrent read+write. Multiple reader threads
+    ' (overlapping preview renders and FaceGen bakes run their record lookups on Task.Run background
+    ' threads) read concurrently under the read lock; the only post-load mutation, MergeOverridePlugin
+    ' (Save read-back, on the UI thread), takes the write lock — so a reader can never observe a
+    ' half-rebuilt RecordsByType (BuildTypeIndex does Clear()+repopulate) or a torn slot reassignment.
+    ' SupportsRecursion so a public reader may call another public reader, and MergeRecords (running
+    ' under the write lock) may call the public ResolveFormID, without deadlocking.
+    Private ReadOnly _rwLock As New System.Threading.ReaderWriterLockSlim(System.Threading.LockRecursionPolicy.SupportsRecursion)
+
     ''' <summary>Global FormID -> final PluginRecord (last override wins).</summary>
     Public Property AllRecords As New Dictionary(Of UInteger, PluginRecord)
 
@@ -59,20 +69,25 @@ Public Class PluginManager
             End If
         Next
 
-        For i = 0 To pluginFiles.Count - 1
-            Dim filePath = pluginFiles(i)
-            Dim fileName = Path.GetFileName(filePath)
-            progress?.Report($"Loading {fileName} ({i + 1}/{pluginFiles.Count})")
-            Try
-                Dim reader As New PluginReader()
-                reader.Load(filePath)
-                IndexAndMergePlugin(reader)
-            Catch ex As Exception
-                Logger.LogLazy(Function() $"[ESP] Failed to load {fileName}: {ex.Message}")
-            End Try
-        Next
+        _rwLock.EnterWriteLock()
+        Try
+            For i = 0 To pluginFiles.Count - 1
+                Dim filePath = pluginFiles(i)
+                Dim fileName = Path.GetFileName(filePath)
+                progress?.Report($"Loading {fileName} ({i + 1}/{pluginFiles.Count})")
+                Try
+                    Dim reader As New PluginReader()
+                    reader.Load(filePath)
+                    IndexAndMergePlugin(reader)
+                Catch ex As Exception
+                    Logger.LogLazy(Function() $"[ESP] Failed to load {fileName}: {ex.Message}")
+                End Try
+            Next
 
-        BuildTypeIndex()
+            BuildTypeIndex()
+        Finally
+            _rwLock.ExitWriteLock()
+        End Try
     End Sub
 
     ''' <summary>Append a loaded <see cref="PluginReader"/> as the next plugin in load order:
@@ -150,19 +165,24 @@ Public Class PluginManager
     Public Function MergeOverridePlugin(filePath As String) As PluginReader
         Dim reader As New PluginReader()
         reader.Load(filePath)
-        Dim existingIdx As Integer = -1
-        If _pluginIndex.TryGetValue(reader.FileName, existingIdx) Then
-            ' Re-save to a plugin already loaded this session: swap the reader, re-derive the FileID
-            ' slot (handles a flipped ESM/ESL flag — the slot dicts are name-keyed, so a stale
-            ' full-slot entry for a now-ESL plugin would mis-encode its FormIDs), then re-merge.
-            Plugins(existingIdx) = reader
-            DropSlotAssignment(reader.FileName)
-            AssignFileIdSlot(reader)
-            MergeRecords(reader)
-        Else
-            IndexAndMergePlugin(reader)
-        End If
-        BuildTypeIndex()
+        _rwLock.EnterWriteLock()
+        Try
+            Dim existingIdx As Integer = -1
+            If _pluginIndex.TryGetValue(reader.FileName, existingIdx) Then
+                ' Re-save to a plugin already loaded this session: swap the reader, re-derive the FileID
+                ' slot (handles a flipped ESM/ESL flag — the slot dicts are name-keyed, so a stale
+                ' full-slot entry for a now-ESL plugin would mis-encode its FormIDs), then re-merge.
+                Plugins(existingIdx) = reader
+                DropSlotAssignment(reader.FileName)
+                AssignFileIdSlot(reader)
+                MergeRecords(reader)
+            Else
+                IndexAndMergePlugin(reader)
+            End If
+            BuildTypeIndex()
+        Finally
+            _rwLock.ExitWriteLock()
+        End Try
         Return reader
     End Function
 
@@ -171,22 +191,27 @@ Public Class PluginManager
     ''' light (ESL) plugins use the 0xFE light space — so it matches the game / xEdit even when ESLs
     ''' precede the owner in load order.</summary>
     Public Function ResolveFormID(localFormID As UInteger, plugin As PluginReader) As UInteger
-        Dim masterIndex = CInt(localFormID >> 24)
-        Dim objectID = localFormID And &HFFFFFFUI
+        _rwLock.EnterReadLock()
+        Try
+            Dim masterIndex = CInt(localFormID >> 24)
+            Dim objectID = localFormID And &HFFFFFFUI
 
-        Dim owner As PluginReader = Nothing
-        If masterIndex < plugin.Masters.Count Then
-            ' Reference into one of this plugin's masters. The master index is full-style (xEdit
-            ' LoadOrderFileIDtoFileFileID emits CreateFull(i) even when the master is an ESL).
-            Dim masterName = plugin.Masters(masterIndex)
-            Dim mi As Integer = -1
-            If _pluginIndex.TryGetValue(masterName, mi) Then owner = Plugins(mi)
-        Else
-            owner = plugin   ' self record (master index == master count)
-        End If
+            Dim owner As PluginReader = Nothing
+            If masterIndex < plugin.Masters.Count Then
+                ' Reference into one of this plugin's masters. The master index is full-style (xEdit
+                ' LoadOrderFileIDtoFileFileID emits CreateFull(i) even when the master is an ESL).
+                Dim masterName = plugin.Masters(masterIndex)
+                Dim mi As Integer = -1
+                If _pluginIndex.TryGetValue(masterName, mi) Then owner = Plugins(mi)
+            Else
+                owner = plugin   ' self record (master index == master count)
+            End If
 
-        If owner Is Nothing Then Return localFormID   ' unresolved master — best effort
-        Return MakeGlobalFormID(owner, objectID)
+            If owner Is Nothing Then Return localFormID   ' unresolved master — best effort
+            Return MakeGlobalFormID(owner, objectID)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
     End Function
 
     ''' <summary>Build the global FormID for a record owned by <paramref name="owner"/>: full plugins →
@@ -207,11 +232,16 @@ Public Class PluginManager
         If localFormID = 0UI Then Return 0UI
         If String.IsNullOrWhiteSpace(sourcePluginName) Then Return localFormID
 
-        Dim pluginIdx As Integer = -1
-        If Not _pluginIndex.TryGetValue(sourcePluginName, pluginIdx) Then Return localFormID
-        If pluginIdx < 0 OrElse pluginIdx >= Plugins.Count Then Return localFormID
+        _rwLock.EnterReadLock()
+        Try
+            Dim pluginIdx As Integer = -1
+            If Not _pluginIndex.TryGetValue(sourcePluginName, pluginIdx) Then Return localFormID
+            If pluginIdx < 0 OrElse pluginIdx >= Plugins.Count Then Return localFormID
 
-        Return ResolveFormID(localFormID, Plugins(pluginIdx))
+            Return ResolveFormID(localFormID, Plugins(pluginIdx))
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
     End Function
 
     ''' <summary>Combine a LooksMenu-style "Plugin|FormID" identifier back into a global FormID. The
@@ -220,22 +250,32 @@ Public Class PluginManager
     ''' so the global is just 0xFE | local; for a full plugin the global is (fullSlot &lt;&lt; 24) | local.
     ''' Returns 0 when the named plugin isn't loaded. Inverse of <c>LooksmenuLoader.FormatFormIdentifier</c>.</summary>
     Public Function GlobalFormIDFromIdentifierLocal(pluginName As String, identifierLocal As UInteger) As UInteger
-        Dim idx As Integer
-        If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, idx) Then Return 0UI
-        Dim p = Plugins(idx)
-        If p.IsESL Then Return &HFE000000UI Or (identifierLocal And &HFFFFFFUI)
-        Dim f As Integer = 0
-        _fullSlotByName.TryGetValue(p.FileName, f)
-        Return (CUInt(f) << 24) Or (identifierLocal And &HFFFFFFUI)
+        _rwLock.EnterReadLock()
+        Try
+            Dim idx As Integer
+            If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, idx) Then Return 0UI
+            Dim p = Plugins(idx)
+            If p.IsESL Then Return &HFE000000UI Or (identifierLocal And &HFFFFFFUI)
+            Dim f As Integer = 0
+            _fullSlotByName.TryGetValue(p.FileName, f)
+            Return (CUInt(f) << 24) Or (identifierLocal And &HFFFFFFUI)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
     End Function
 
     ''' <summary>Plugin occupying a given FULL FileID slot (high byte 0x00..0xFD). For light (ESL)
     ''' plugins use the 0xFE light path in <see cref="GetOriginatingPluginName"/>. "" if no full plugin
     ''' occupies that slot.</summary>
     Public Function GetPluginNameByLoadOrderIndex(fullSlot As Integer) As String
-        Dim nm As String = Nothing
-        If _nameByFullSlot.TryGetValue(fullSlot, nm) Then Return nm
-        Return ""
+        _rwLock.EnterReadLock()
+        Try
+            Dim nm As String = Nothing
+            If _nameByFullSlot.TryGetValue(fullSlot, nm) Then Return nm
+            Return ""
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
     End Function
 
     ''' <summary>Resolve the master plugin that "owns" a FormID for engine-faithful asset
@@ -254,15 +294,20 @@ Public Class PluginManager
     ''' Returns "" when the FormID's slot can't be resolved (load order doesn't have a
     ''' plugin in that position, or fewer ESLs than the slot index demands).</summary>
     Public Function GetOriginatingPluginName(formID As UInteger) As String
-        Dim highByte = CInt((formID >> 24) And &HFFUI)
-        If highByte = &HFE Then
-            ' Light slot: lightSlot = bits 12..23 → the lightSlot-th ESL plugin (built at load time).
-            Dim lightSlot = CInt((formID >> 12) And &HFFFUI)
-            Dim nm As String = Nothing
-            If _nameByLightSlot.TryGetValue(lightSlot, nm) Then Return nm
-            Return ""
-        End If
-        Return GetPluginNameByLoadOrderIndex(highByte)
+        _rwLock.EnterReadLock()
+        Try
+            Dim highByte = CInt((formID >> 24) And &HFFUI)
+            If highByte = &HFE Then
+                ' Light slot: lightSlot = bits 12..23 → the lightSlot-th ESL plugin (built at load time).
+                Dim lightSlot = CInt((formID >> 12) And &HFFFUI)
+                Dim nm As String = Nothing
+                If _nameByLightSlot.TryGetValue(lightSlot, nm) Then Return nm
+                Return ""
+            End If
+            Return GetPluginNameByLoadOrderIndex(highByte)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
     End Function
     Public Function ResolveFieldString(rec As PluginRecord, sr As SubrecordData, Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
         If sr.Data Is Nothing OrElse sr.Data.Length = 0 Then Return ""
@@ -290,16 +335,26 @@ Public Class PluginManager
 
     ''' <summary>Get the final resolved record for a FormID (after overrides).</summary>
     Public Function GetRecord(formID As UInteger) As PluginRecord
-        Dim rec As PluginRecord = Nothing
-        AllRecords.TryGetValue(formID, rec)
-        Return rec
+        _rwLock.EnterReadLock()
+        Try
+            Dim rec As PluginRecord = Nothing
+            AllRecords.TryGetValue(formID, rec)
+            Return rec
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
     End Function
 
     ''' <summary>Get all records of a specific type.</summary>
     Public Function GetRecordsOfType(sig As String) As List(Of PluginRecord)
-        Dim result As List(Of PluginRecord) = Nothing
-        If RecordsByType.TryGetValue(sig, result) Then Return result
-        Return New List(Of PluginRecord)
+        _rwLock.EnterReadLock()
+        Try
+            Dim result As List(Of PluginRecord) = Nothing
+            If RecordsByType.TryGetValue(sig, result) Then Return result
+            Return New List(Of PluginRecord)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
     End Function
 
     ''' <summary>Get all NPC_ records.</summary>

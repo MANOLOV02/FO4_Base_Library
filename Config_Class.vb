@@ -112,6 +112,20 @@ Public Class Config_App
     Public Property Setting_FaceGenNormalResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
     Public Property Setting_FaceGenSpecularResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
     Public Property Setting_FaceGenDiffuseCompression As FaceTintConvention.FaceTintDiffuseCompression = FaceTintConvention.FaceTintDiffuseCompression.Bc3
+
+    ' === FaceTint convention (botón "CharGen Options" → tab "FaceTint Conventions") ===
+    ' La convención de composición FaceTint por bucket (Diffuse / Normal+Specular / Swaps), valores
+    ' CONCRETOS. Los defaults los pone el constructor de FaceTintConventionSettings = la ley derivada
+    ' (byte-match con CK si no se tocan). El usuario los edita acá o desde la UI y ESOS pasan a ser la ley:
+    ' FaceTintConvention.ResolveConvention los lee SIEMPRE. Blend NO está (record-driven / Replace, read-only).
+    ' Un config.json viejo sin la key deserializa al default del constructor.
+    Public Property Setting_FaceTintConvention As New FaceTintConvention.FaceTintConventionSettings()
+
+    ' === FaceTint sort order (botón "CharGen Options" → tab "Tint Order") ===
+    ' Orden de composición configurable (multi-clave asc/desc) de tints y swaps + placement del SkinTone.
+    ' Default = comportamiento previo (tints PhysIndex desc, swaps forward, skintone Positional); editar
+    ' acá o en la UI cambia el orden con que el builder compone las capas. Ver FaceTintSortSettings.
+    Public Property Setting_FaceTintSort As New FaceTintSortSettings()
     ' (El compositor GPU/CPU NO es una preferencia persistida: es una REGLA derivada — render = GPU si
     '  skinning=GPU, sino CPU ; chargen = siempre CPU (async, no toca GL). Ver FaceGenBuilder.)
 

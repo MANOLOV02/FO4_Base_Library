@@ -3200,7 +3200,7 @@ Public Class PreviewModel
         Try
             hook.Invoke(Me)
         Catch ex As Exception
-            Logger.LogLazy(Function() $"[Render] PostTextureUpload {(If(success, "success", "timeout"))} hook threw: {ex.Message}")
+            Logger.LogLazy(Function() $"[Render] PostTextureUpload {(If(success, "success", "timeout"))} hook threw: {ex}")
         End Try
         ' The callback may have replaced one or more entry.Texture_ID values (face/body skin
         ' softlight passes do this when baking QNAM into the diffuse). Sort order in

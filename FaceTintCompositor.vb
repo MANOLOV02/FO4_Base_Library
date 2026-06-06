@@ -250,6 +250,7 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uMaskConvFullLoc As Integer = -1
     Friend _uModeLoc As Integer = -1
     Friend _uSoftLightLoc As Integer = -1
+    Friend _uFrameworkLoc As Integer = -1
     ' Pre-tono TakesSkinTone (flagged-after-skintone). Default inerte (uPreToneSkin=0).
     Friend _uPreToneSkinLoc As Integer = -1
     Friend _uSkinMaskLoc As Integer = -1
@@ -397,22 +398,8 @@ Public Module FaceTintCompositor
         Logger.LogLazy(Function() $"[FACETINT-LAYER] npc=0x{CurrentNpcFormID:X8} ch={channel} #{layerIndex} '{name}' kind={layer.Kind} blend={layer.BlendOp} op={layer.Opacity:F3} rgb=({layer.R},{layer.G},{layer.B}) hairPal={useHairPalette} row={layer.HairPaletteRow:F3} forceUni={forceUniform} takesSkin={layer.TakesSkinTone} isSkinTone={isSkinTone} layerClass={layerClass} forceOpaqueAlpha={forceOpaqueAlpha} blendConv={blendConv} -> {deltaStat} | mask='{safeMask}' src='{safeSrc}'")
     End Sub
 
-    ' === TEMP DEBUG: mask/texture TGA dump ============================================
-    ' When DumpMaskDir is set (only by the FaceGen bake in DebugMode, never in render), the
-    ' compose + region-swap loops dump every GL texture they apply (per layer, per channel:
-    ' the layer/swap texture AND the spatial mask) to uncompressed 24-bit TGAs in that folder,
-    ' so each mask can be inspected as the GPU actually sampled it (catches upload/channel/sRGB
-    ' issues, not just the source file). To remove: delete this field, the helpers below, and
-    ' the DumpTextureToTga calls in the two loops.
-    Public Property DumpMaskDir As String = Nothing
-
-    Private Function SanitizeName(s As String) As String
-        If String.IsNullOrEmpty(s) Then Return "unnamed"
-        For Each ch In System.IO.Path.GetInvalidFileNameChars()
-            s = s.Replace(ch, "_"c)
-        Next
-        Return s.Replace("/"c, "_"c).Replace("\"c, "_"c).Replace(" "c, "_"c)
-    End Function
+    ' === TGA writers (output final + CLI --dump). La instrumentacion de mask/intermediate dump fue
+    ' removida: los masks se dumpean ahora desde el CLI (FO4_FaceTint_CLI --dump). ===
 
     ''' <summary>TEMP DEBUG: write a BGRA buffer as an uncompressed 32-bit TGA (top-left origin,
     ''' matching CK's FaceGen TGA layout). Alpha PRESERVED so the mask channel can be inspected.
@@ -430,13 +417,6 @@ Public Module FaceTintCompositor
         End Using
     End Sub
 
-    ''' <summary>TEMP DEBUG: dump a SOURCE texture (by its FilesDictionary path) as a PRISTINE TGA under
-    ''' DumpMaskDir — re-reads the DDS fresh and CPU-decodes it via the wrapper (never the GPU). Replaces
-    ''' the old GL readback (GPU DXT decode, ~max 62 off vs CK). No-op on empty path / unset dir.</summary>
-    Private Sub DumpTextureToTga(texturePath As String, fileName As String)
-        If String.IsNullOrEmpty(texturePath) OrElse String.IsNullOrEmpty(DumpMaskDir) Then Return
-        WritePristineTga(texturePath, System.IO.Path.Combine(DumpMaskDir, fileName))
-    End Sub
 
     ''' <summary>PRISTINE dumper (single source of truth) — recibe SOLO dos paths: el de la textura source
     ''' y el de salida. Re-lee el DDS fresco del FilesDictionary, lo CPU-decodifica (BCn → uncompressed
@@ -497,25 +477,6 @@ Public Module FaceTintCompositor
         End Try
     End Sub
 
-    ''' <summary>TEMP DEBUG: dump the RAW source DDS bytes (as loaded from BA2/loose, before any
-    ''' decode) to DumpMaskDir\src so the actual DXGI format can be read straight from each
-    ''' header. This is the ground truth for the sRGB-vs-UNORM question.</summary>
-    Private Sub DumpRawDdsBatch(channelLabel As String, keys As List(Of String), data As List(Of Byte()))
-        If String.IsNullOrEmpty(DumpMaskDir) Then Return
-        Try
-            Dim srcDir = System.IO.Path.Combine(DumpMaskDir, "src")
-            System.IO.Directory.CreateDirectory(srcDir)
-            For di As Integer = 0 To keys.Count - 1
-                Dim b = data(di)
-                If b IsNot Nothing AndAlso b.Length > 0 Then
-                    System.IO.File.WriteAllBytes(System.IO.Path.Combine(srcDir, $"{channelLabel}_{SanitizeName(keys(di))}.dds"), b)
-                End If
-            Next
-        Catch ex As Exception
-            Logger.LogLazy(Function() $"[MASKDUMP] raw dds dump failed: {ex.Message}")
-        End Try
-    End Sub
-    ' === END TEMP DEBUG INSTRUMENTATION =================================================
 
     Private Const VertexShaderSource As String = "#version 430
 layout(location = 0) in vec2 aPos;
@@ -559,6 +520,7 @@ uniform int uCompositeSpace;   // 0=linear 1=srgb 2=g22. Espacio donde corre el 
 uniform int uMaskConvFull;     // mask conv: 0=raw 1=srgbEncode 2=srgbDecode 3=g22Encode 4=g22Decode
 uniform int uMode;             // 0=tint (additive-over-base) ; 1=region swap (crossfade mix(prev,swap,mask.r*op))
 uniform int uSoftLight;        // modelo de soft-light cuando uBlendOp==3: 0=W3C 1=GIMP 2=Illusions 3=pegtop
+uniform int uFramework;        // composite: 0=OverPrev(default) 1=OverBase 2=AddBase 3=ModSrc. base = uBase
 // Pre-tono TakesSkinTone (ASCII-only). Una capa flagged que compone DESPUES del skintone recibe el softlight
 // del skintone sobre su SOURCE. uPreToneSkin=1 lo activa (0 = inerte, path byte-identico). TODA la conv del
 // skintone llega EXPLICITA en uSkin* (color/op/mask + espacios + blendop/softlight/mask-conv/mask-channel),
@@ -605,6 +567,28 @@ vec3 blendSoftLightModel(vec3 d, vec3 s) {
     return blendSoftLightW3C(d, s);
 }
 vec3 blendHardLight(vec3 d, vec3 s) { return blendOverlay(s, d); }
+// Modos separables estandar adicionales (5..19). Transcripcion 1:1 del CPU (BlendDispatch1).
+vec3 blendScreen(vec3 d, vec3 s){ return d + s - d*s; }
+vec3 blendDarken(vec3 d, vec3 s){ return min(d, s); }
+vec3 blendLighten(vec3 d, vec3 s){ return max(d, s); }
+vec3 blendColorDodge(vec3 d, vec3 s){ return mix(min(vec3(1.0), d/max(vec3(1.0)-s, vec3(1e-6))), vec3(1.0), step(vec3(1.0), s)); }
+vec3 blendColorBurn(vec3 d, vec3 s){ return mix(vec3(1.0)-min(vec3(1.0), (vec3(1.0)-d)/max(s, vec3(1e-6))), vec3(0.0), step(s, vec3(0.0))); }
+vec3 blendDifference(vec3 d, vec3 s){ return abs(d - s); }
+vec3 blendExclusion(vec3 d, vec3 s){ return d + s - 2.0*d*s; }
+vec3 blendLinearDodge(vec3 d, vec3 s){ return min(vec3(1.0), d + s); }
+vec3 blendLinearBurn(vec3 d, vec3 s){ return max(vec3(0.0), d + s - vec3(1.0)); }
+vec3 blendSubtract(vec3 d, vec3 s){ return max(vec3(0.0), d - s); }
+vec3 blendDivide(vec3 d, vec3 s){ return mix(min(vec3(1.0), d/max(s, vec3(1e-6))), vec3(1.0), step(s, vec3(0.0))); }
+vec3 blendLinearLight(vec3 d, vec3 s){ return clamp(d + 2.0*s - vec3(1.0), 0.0, 1.0); }
+vec3 blendVividLight(vec3 d, vec3 s){ return mix(blendColorBurn(d, 2.0*s), blendColorDodge(d, 2.0*(s-vec3(0.5))), step(vec3(0.5), s)); }
+vec3 blendPinLight(vec3 d, vec3 s){ return mix(min(d, 2.0*s), max(d, 2.0*s-vec3(1.0)), step(vec3(0.5), s)); }
+vec3 blendHardMix(vec3 d, vec3 s){ return step(vec3(1.0), d + s); }
+// Identidad del blend (para ModSrc: mix(neutral,src,cov)). = CPU BlendNeutral1.
+float blendNeutral(int bop){
+    if (bop==1 || bop==6 || bop==9 || bop==13 || bop==15) return 1.0;
+    if (bop==2 || bop==3 || bop==4 || bop==16 || bop==17 || bop==18) return 0.5;
+    return 0.0;
+}
 
 // sRGB transfer (IEC 61966-2-1) for the coverage convention. Standard, not magic.
 float linearToSrgb1(float c) {
@@ -615,6 +599,8 @@ float linearToSrgb1(float c) {
 float srgbToLin1(float c){ c=clamp(c,0.0,1.0); return (c<=0.04045)?(c/12.92):pow((c+0.055)/1.055,2.4); }
 float g22ToLin1(float c){ return pow(clamp(c,0.0,1.0),2.2); }
 float linToG22_1(float c){ return pow(clamp(c,0.0,1.0),1.0/2.2); }
+float g24ToLin1(float c){ return pow(clamp(c,0.0,1.0),2.4); }
+float linToG24_1(float c){ return pow(clamp(c,0.0,1.0),1.0/2.4); }
 // sRGB stored value -> working space (ws: 0=linear 1=srgb 2=g22)
 vec3 srgbToWS(vec3 v, int ws){
     if (ws==1) return v;
@@ -633,12 +619,14 @@ vec3 wsToSrgb(vec3 v, int ws){
 vec3 spaceToLin(vec3 v, int s){
     if (s==0) return v;
     if (s==1) return vec3(srgbToLin1(v.r), srgbToLin1(v.g), srgbToLin1(v.b));
-    return vec3(g22ToLin1(v.r), g22ToLin1(v.g), g22ToLin1(v.b));
+    if (s==3) return vec3(g24ToLin1(v.r), g24ToLin1(v.g), g24ToLin1(v.b));
+    return vec3(g22ToLin1(v.r), g22ToLin1(v.g), g22ToLin1(v.b));   // s=2
 }
 vec3 linToSpace(vec3 v, int s){
     if (s==0) return v;
     if (s==1) return vec3(linearToSrgb1(v.r), linearToSrgb1(v.g), linearToSrgb1(v.b));
-    return vec3(linToG22_1(v.r), linToG22_1(v.g), linToG22_1(v.b));
+    if (s==3) return vec3(linToG24_1(v.r), linToG24_1(v.g), linToG24_1(v.b));
+    return vec3(linToG22_1(v.r), linToG22_1(v.g), linToG22_1(v.b));   // s=2
 }
 vec3 cvt(vec3 v, int fromS, int toS){
     if (fromS==toS) return v;
@@ -650,14 +638,31 @@ float convMaskFull(float m){
     if (uMaskConvFull==2) return srgbToLin1(m);
     if (uMaskConvFull==3) return linToG22_1(m);
     if (uMaskConvFull==4) return g22ToLin1(m);
+    if (uMaskConvFull==5) return linToG24_1(m);
+    if (uMaskConvFull==6) return g24ToLin1(m);
     return m;
 }
-// derived-model blend dispatch (uBlendOp: 0=replace 1=mult 2=overlay 3=softlight 4=hardlight)
+// derived-model blend dispatch (uBlendOp: 0=replace 1=mult 2=overlay 3=softlight 4=hardlight, 5..19 estandar)
 vec3 blendDispatch(vec3 d, vec3 s){
     if (uBlendOp==1) return blendMultiply(d,s);
     if (uBlendOp==2) return blendOverlay(d,s);
     if (uBlendOp==3) return blendSoftLightModel(d,s);
     if (uBlendOp==4) return blendHardLight(d,s);
+    if (uBlendOp==5) return blendScreen(d,s);
+    if (uBlendOp==6) return blendDarken(d,s);
+    if (uBlendOp==7) return blendLighten(d,s);
+    if (uBlendOp==8) return blendColorDodge(d,s);
+    if (uBlendOp==9) return blendColorBurn(d,s);
+    if (uBlendOp==10) return blendDifference(d,s);
+    if (uBlendOp==11) return blendExclusion(d,s);
+    if (uBlendOp==12) return blendLinearDodge(d,s);
+    if (uBlendOp==13) return blendLinearBurn(d,s);
+    if (uBlendOp==14) return blendSubtract(d,s);
+    if (uBlendOp==15) return blendDivide(d,s);
+    if (uBlendOp==16) return blendLinearLight(d,s);
+    if (uBlendOp==17) return blendVividLight(d,s);
+    if (uBlendOp==18) return blendPinLight(d,s);
+    if (uBlendOp==19) return blendHardMix(d,s);
     return blendDefault(d,s);
 }
 // Versiones PARAMETRIZADAS (= CPU ConvMask1 / BlendDispatch1). El pre-tono TakesSkinTone las usa con la
@@ -668,6 +673,8 @@ float convMaskMc(float m, int mc){
     if (mc==2) return srgbToLin1(m);
     if (mc==3) return linToG22_1(m);
     if (mc==4) return g22ToLin1(m);
+    if (mc==5) return linToG24_1(m);
+    if (mc==6) return g24ToLin1(m);
     return m;
 }
 vec3 softLightModelSl(vec3 d, vec3 s, int sl){
@@ -681,6 +688,21 @@ vec3 blendDispatchBop(vec3 d, vec3 s, int bop, int sl){
     if (bop==2) return blendOverlay(d,s);
     if (bop==3) return softLightModelSl(d,s,sl);
     if (bop==4) return blendHardLight(d,s);
+    if (bop==5) return blendScreen(d,s);
+    if (bop==6) return blendDarken(d,s);
+    if (bop==7) return blendLighten(d,s);
+    if (bop==8) return blendColorDodge(d,s);
+    if (bop==9) return blendColorBurn(d,s);
+    if (bop==10) return blendDifference(d,s);
+    if (bop==11) return blendExclusion(d,s);
+    if (bop==12) return blendLinearDodge(d,s);
+    if (bop==13) return blendLinearBurn(d,s);
+    if (bop==14) return blendSubtract(d,s);
+    if (bop==15) return blendDivide(d,s);
+    if (bop==16) return blendLinearLight(d,s);
+    if (bop==17) return blendVividLight(d,s);
+    if (bop==18) return blendPinLight(d,s);
+    if (bop==19) return blendHardMix(d,s);
     return blendDefault(d,s);
 }
 // Shader AGNOSTICO: compone CADA capa sobre el acumulador corriente (uPrev) aplicando las
@@ -771,14 +793,45 @@ void main() {
     // over-RUNNING + 4 espacios (shader AGNOSTICO): el acumulador prev vive en uOutputSpace; el BLEND OP
     // corre en uWorkingSpace; el color de capa esta en uSrcSpace; y el COMPOSITE (lerp por cov) corre en
     // uCompositeSpace. Ley gen3: el blend va en su espacio (g22/srgb) pero la lerp por cobertura va en
-    // LINEAR-light. Cuando uCompositeSpace==uWorkingSpace se reduce EXACTO al modelo previo (lerp en
-    // working) -> el render legacy queda byte-identico. Sin ramas hardcodeadas: todo sale de los uniforms.
-    vec3 base_w  = cvt(prev, uOutputSpace, uWorkingSpace);
-    vec3 src_w   = cvt(srcColor, uSrcSpace, uWorkingSpace);
-    vec3 blended = blendDispatch(base_w, src_w);
-    vec3 base_c  = cvt(prev, uOutputSpace, uCompositeSpace);
-    vec3 blend_c = cvt(blended, uWorkingSpace, uCompositeSpace);
-    vec3 res_c   = clamp(base_c + cov * (blend_c - base_c), 0.0, 1.0);
+    // LINEAR-light. uFramework decide como blend(prev/base,src) entra al acumulador (ver FaceTintFramework).
+    // base = uBase (original sin tintar, en uOutputSpace). OverPrev (0, default) = el modelo previo
+    // BYTE-IDENTICO (cuando uCompositeSpace==uWorkingSpace se reduce a lerp en working). 1:1 con CPU ComposeOne.
+    vec3 src_w = cvt(srcColor, uSrcSpace, uWorkingSpace);
+    vec3 base  = texture(uBase, vUV).rgb;
+    vec3 res_c;
+    if (uFramework == 1) {                 // OverBase: mix(base, blend(base,src), cov)
+        vec3 anchor_w = cvt(base, uOutputSpace, uWorkingSpace);
+        vec3 blended  = blendDispatch(anchor_w, src_w);
+        vec3 anchor_c = cvt(base, uOutputSpace, uCompositeSpace);
+        vec3 blend_c  = cvt(blended, uWorkingSpace, uCompositeSpace);
+        res_c = anchor_c + cov * (blend_c - anchor_c);
+    } else if (uFramework == 2) {          // AddBase: prev + cov*(blend(base,src) - base)
+        vec3 anchor_w = cvt(base, uOutputSpace, uWorkingSpace);
+        vec3 blended  = blendDispatch(anchor_w, src_w);
+        vec3 prev_c   = cvt(prev, uOutputSpace, uCompositeSpace);
+        vec3 base_c   = cvt(base, uOutputSpace, uCompositeSpace);
+        vec3 blend_c  = cvt(blended, uWorkingSpace, uCompositeSpace);
+        res_c = prev_c + cov * (blend_c - base_c);
+    } else if (uFramework == 3) {          // ModSrc: blend(prev, mix(neutral,src,cov)); replace -> OverPrev
+        vec3 base_w = cvt(prev, uOutputSpace, uWorkingSpace);
+        if (uBlendOp == 0) {
+            vec3 bc = cvt(prev, uOutputSpace, uCompositeSpace);
+            vec3 sc = cvt(src_w, uWorkingSpace, uCompositeSpace);
+            res_c = bc + cov * (sc - bc);
+        } else {
+            vec3 neut    = vec3(blendNeutral(uBlendOp));
+            vec3 smod_w  = neut + cov * (src_w - neut);
+            vec3 blended = blendDispatch(base_w, smod_w);
+            res_c = cvt(blended, uWorkingSpace, uCompositeSpace);
+        }
+    } else {                               // OverPrev (0, default): mix(prev, blend(prev,src), cov)
+        vec3 base_w  = cvt(prev, uOutputSpace, uWorkingSpace);
+        vec3 blended = blendDispatch(base_w, src_w);
+        vec3 base_c  = cvt(prev, uOutputSpace, uCompositeSpace);
+        vec3 blend_c = cvt(blended, uWorkingSpace, uCompositeSpace);
+        res_c = base_c + cov * (blend_c - base_c);
+    }
+    res_c = clamp(res_c, 0.0, 1.0);
     vec3 finalRgb = cvt(res_c, uCompositeSpace, uOutputSpace);
     float outA = (uForceOpaqueAlpha == 1) ? 1.0 : prevRgba.a;
     fragColor = vec4(finalRgb, outA);
@@ -900,7 +953,6 @@ void main() {
                     layerHairLutKey(i) = kL
                 End If
             Next
-            DumpRawDdsBatch(channel.ToString(), loadKeys, loadBytes) ' TEMP DEBUG: raw source DDS bytes
             If loadKeys.Count > 0 Then
                 If cache IsNot Nothing Then
                     batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
@@ -994,16 +1046,6 @@ void main() {
             Dim dbgPrevPixels As Byte() = Nothing
             If dbgPerLayer Then
                 dbgPrevPixels = ReadbackBgraForDebug(baseTexForCompose, width, height)
-                ' Initial state dump = the accumulator BEFORE any layer is applied. Replication
-                ' tool: load this, then for each [FACETINT-LAYER] line apply (mask, src, params)
-                ' and compare to the matching state_after_NN_<name>.tga dumped below.
-                If Not String.IsNullOrEmpty(DumpMaskDir) AndAlso dbgPrevPixels IsNot Nothing Then
-                    Try
-                        Dim initName = $"{channel}_state_initial.tga"
-                        WriteBgraToTga(System.IO.Path.Combine(DumpMaskDir, initName), dbgPrevPixels, width, height)
-                    Catch
-                    End Try
-                End If
             End If
 
             Dim drawnLayers As Integer = 0
@@ -1015,6 +1057,34 @@ void main() {
             Dim stColR As Single = 0, stColG As Single = 0, stColB As Single = 0, stOpac As Single = 0
             Dim stWs As Integer = 0, stCs As Integer = 0, stSs As Integer = 0, stOs As Integer = 0
             Dim stBop As Integer = 0, stSl As Integer = 0, stMc As Integer = 0, stMaskCh As Integer = 1
+            ' Pre-scan TakesSkinTone (2-pass, = CPU FaceTintCpuCompositor): params del skintone ANTES del loop,
+            ' para pre-tonar tambien las flagged que componen ANTES del skintone bajo OverBase/AddBase (nonAccum).
+            ' OverPrev/ModSrc -> nonAccum=False -> el guard se reduce a stSeen (byte-identico: uPreToneSkin=0
+            ' hace que el shader ignore los uSkin*). Misma logica/captura que el CPU -> paridad GL/CPU.
+            Dim skintoneFound As Boolean = False
+            Dim nonAccum As Boolean = False
+            If channel = FaceTintChannel.Diffuse Then
+                For si As Integer = 0 To layers.Count - 1
+                    Dim sLayer = layers(si)
+                    If sLayer Is Nothing OrElse Not sLayer.IsSkinTone Then Continue For
+                    Dim sKey As String = Nothing
+                    If Not layerChannelKey.TryGetValue(si, sKey) Then Continue For
+                    Dim sEntry As PreviewModel.Texture_Loaded_Class = Nothing
+                    If batchLoaded Is Nothing OrElse Not batchLoaded.TryGetValue(sKey, sEntry) _
+                       OrElse sEntry Is Nothing OrElse sEntry.Texture_ID = 0 Then Continue For
+                    Dim sConv = FaceTintConvention.ResolveConvention(sLayer.IsTextureSet, sLayer.Slot, sLayer.BlendOp, channel, False)
+                    stMaskTexId = sEntry.Texture_ID
+                    stColR = CSng(sLayer.R) / 255.0F : stColG = CSng(sLayer.G) / 255.0F : stColB = CSng(sLayer.B) / 255.0F
+                    stOpac = Math.Max(0.0F, Math.Min(1.0F, sLayer.Opacity))
+                    stWs = CInt(sConv.WorkingSpace) : stCs = CInt(sConv.CompositeSpace)
+                    stSs = CInt(sConv.SrcSpace) : stOs = CInt(sConv.OutputSpace)
+                    stBop = CInt(sConv.Blend) : stSl = CInt(sConv.SoftLight) : stMc = CInt(sConv.MaskConv)
+                    stMaskCh = If(sLayer.Kind = FaceTintLayerKind.PaletteMask, 1, 3)
+                    nonAccum = (sConv.Framework = FaceTintFramework.OverBase OrElse sConv.Framework = FaceTintFramework.AddBase)
+                    skintoneFound = True
+                    Exit For
+                Next
+            End If
             For i As Integer = 0 To layers.Count - 1
                 Dim layer = layers(i)
                 If layer Is Nothing Then Continue For
@@ -1066,22 +1136,8 @@ void main() {
                     End If
                 End If
 
-                ' TEMP DEBUG: dump every texture this layer applies (layer tex + spatial mask + hair
-                ' LUT) per channel. MUST run BEFORE the texture-unit bindings below: DumpTextureToTga
-                ' uses TextureUnit.Texture0 and leaves it bound to 0, so running it mid-binding would
-                ' clobber uPrev and zero the accumulator for this layer's draw (and every layer after).
                 Dim dumpedSrcFile As String = Nothing
                 Dim dumpedMaskFile As String = Nothing
-                If Not String.IsNullOrEmpty(DumpMaskDir) Then
-                    Dim nm = SanitizeName(layerName)
-                    dumpedSrcFile = $"L{i:00}_{nm}_{channel}_{layer.Kind}_layer.tga"
-                    DumpTextureToTga(layer.GetChannelCacheKey(channel), dumpedSrcFile)
-                    If diffuseMaskTex <> 0 Then
-                        dumpedMaskFile = $"L{i:00}_{nm}_{channel}_diffmask.tga"
-                        DumpTextureToTga(layer.LayerCacheKey, dumpedMaskFile)
-                    End If
-                    If hairLutTex <> 0 Then DumpTextureToTga(layer.HairLutCacheKey, $"L{i:00}_{nm}_{channel}_HAIRLUT.tga")
-                End If
 
                 ' Last drawable layer writes to caller-owned resultFbo; intermediate layers
                 ' bounce through the persistent pings.
@@ -1132,6 +1188,7 @@ void main() {
                 GL.Uniform1(state._uCompositeSpaceLoc, CInt(conv.CompositeSpace))
                 GL.Uniform1(state._uMaskConvFullLoc, CInt(conv.MaskConv))
                 GL.Uniform1(state._uSoftLightLoc, CInt(conv.SoftLight))   ' modelo de softlight (agnostico) para bop3
+                GL.Uniform1(state._uFrameworkLoc, CInt(conv.Framework))   ' framework de composite (OverPrev default)
                 ' Alpha del resultado: no hay footprint; el ultimo layer escribe alpha opaca.
                 GL.Uniform1(state._uForceOpaqueAlphaLoc, If(isLast, 1, 0))
                 GL.Uniform1(state._uPaletteRowLoc, Math.Max(0.0F, Math.Min(1.0F, layer.HairPaletteRow)))
@@ -1155,7 +1212,10 @@ void main() {
                 ' Pre-tono TakesSkinTone: solo si la capa es flagged (D) y el skintone ya se compuso. uSkinMask
                 ' en unit 5 (fallback layerTex para que el sampler nunca quede indefinido; solo se lee con
                 ' uPreToneSkin==1). Color/op/espacios del skintone capturados al pasarlo. Inerte si stSeen=False.
-                Dim preTone As Boolean = (channel = FaceTintChannel.Diffuse AndAlso layer.TakesSkinTone AndAlso stSeen)
+                ' Pre-tono: flagged (D) Y hay skintone Y (ya compuesto antes -> over-running tona las de antes
+                ' desde arriba, las de despues necesitan source-pretono) O framework no acumula (OverBase/AddBase
+                ' -> el skintone no llega por el base -> pre-tonar TODA flagged). = guard del CPU (paridad).
+                Dim preTone As Boolean = (channel = FaceTintChannel.Diffuse AndAlso layer.TakesSkinTone AndAlso skintoneFound AndAlso (stSeen OrElse nonAccum))
                 GL.Uniform1(state._uPreToneSkinLoc, If(preTone, 1, 0))
                 GL.ActiveTexture(TextureUnit.Texture5)
                 GL.BindTexture(TextureTarget.Texture2D, If(stMaskTexId <> 0, stMaskTexId, layerTex))
@@ -1407,7 +1467,6 @@ void main() {
                 loadKeys.Add(kS) : loadBytes.Add(sb) : loadCacheable.Add(Not String.IsNullOrEmpty(swCacheKey)) : swapTexKey(i) = kS
                 loadKeys.Add(kM) : loadBytes.Add(sw.RegionMaskDdsBytes) : loadCacheable.Add(Not String.IsNullOrEmpty(mkCacheKey)) : swapMaskKey(i) = kM
             Next
-            DumpRawDdsBatch("swap" & channel.ToString(), loadKeys, loadBytes) ' TEMP DEBUG: raw source DDS bytes
             If loadKeys.Count = 0 Then
                 Return 0
             End If
@@ -1450,7 +1509,7 @@ void main() {
             GL.Uniform1(state._uModeLoc, 1)
             ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> el override de convención
             ' (incl. #If DEBUG full-linear) alcanza también los swaps. NON-DEBUG byte-idéntico (paridad con CPU).
-            Dim swConv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
+            Dim swConv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True)
             GL.Uniform1(state._uSrcSpaceLoc, CInt(swConv.SrcSpace))
             GL.Uniform1(state._uOutputSpaceLoc, CInt(swConv.OutputSpace))
             GL.Uniform1(state._uCompositeSpaceLoc, CInt(swConv.CompositeSpace))
@@ -1508,12 +1567,6 @@ void main() {
                     Continue For
                 End If
 
-                ' TEMP DEBUG: dump the region-swap's swap texture + its region mask per channel.
-                If Not String.IsNullOrEmpty(DumpMaskDir) Then
-                    Dim nm = SanitizeName(swapName)
-                    DumpTextureToTga(sKey, $"S{i:00}_{nm}_{channel}_swap.tga")
-                    DumpTextureToTga(mKey, $"S{i:00}_{nm}_{channel}_regionmask.tga")
-                End If
 
                 Dim isLastSwap As Boolean = (drawnSoFar = drawableSwaps - 1)
                 Dim drawFbo As Integer = If(isLastSwap, resultFbo, state._pingFbo(writeIdx))
@@ -1553,14 +1606,6 @@ void main() {
 
                 readTexId = If(isLastSwap, resultTex, state._pingTex(writeIdx))
 
-                ' TEMP DEBUG: dump del acumulador DESPUES de este swap (verificar running GL vs CPU/python
-                ' paso a paso). Solo en DebugMode (DumpMaskDir).
-                If Not String.IsNullOrEmpty(DumpMaskDir) Then
-                    Dim swState = ReadbackBgraForDebug(readTexId, width, height)
-                    If swState IsNot Nothing Then
-                        Try : WriteBgraToTga(System.IO.Path.Combine(DumpMaskDir, $"{channel}_swapstate_{i:00}.tga"), swState, width, height) : Catch : End Try
-                    End If
-                End If
 
                 ' TEMP DEBUG: per-swap delta vs prior state.
                 If dbgSwap Then
@@ -1708,6 +1753,7 @@ void main() {
             GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
             GL.Uniform1(state._uModeLoc, 0)
+            GL.Uniform1(state._uFrameworkLoc, 0)   ' body = OverPrev (single pass, prev==base)
             GL.Uniform1(state._uLayerKindLoc, 2)
             GL.Uniform1(state._uChannelLoc, 0)
             GL.Uniform1(state._uUseHairPaletteLoc, 0)
@@ -1927,6 +1973,7 @@ void main() {
         state._uMaskConvFullLoc = GL.GetUniformLocation(state._program, "uMaskConvFull")
         state._uModeLoc = GL.GetUniformLocation(state._program, "uMode")
         state._uSoftLightLoc = GL.GetUniformLocation(state._program, "uSoftLight")
+        state._uFrameworkLoc = GL.GetUniformLocation(state._program, "uFramework")
         state._uPreToneSkinLoc = GL.GetUniformLocation(state._program, "uPreToneSkin")
         state._uSkinMaskLoc = GL.GetUniformLocation(state._program, "uSkinMask")
         state._uSkinColorLoc = GL.GetUniformLocation(state._program, "uSkinColor")
@@ -2100,9 +2147,14 @@ void main() {
         ' Seed = BASEIN DIRECTO (sRGB) en los 3 canales (cambio 2026-06-01: g22(BASEIN) era conclusion errada;
         ' CK NO aplica gamma). D acumula en sRGB (= CPU seedG22=False); N/S lineal raw. Ningun canal convierte
         ' espacio en el seed: solo se resizea si el target != nativo (igual que el CPU, paridad GL/CPU).
-        ResizeChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height)
-        ResizeChannelIfNeeded(result.Normal, state, nT.W, nT.H, width, height)
-        ResizeChannelIfNeeded(result.Specular, state, sT.W, sT.H, width, height)
+
+        If SeedConventionIs_G22 Then
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, 1, 2)
+        Else
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height)
+        End If
+        ConvertChannelIfNeeded(result.Normal, state, nT.W, nT.H, width, height)
+        ConvertChannelIfNeeded(result.Specular, state, sT.W, sT.H, width, height)
 
         ' --- Region-swap pre-pass (no-op if swaps empty / no contribution to a channel) ---
         If swaps IsNot Nothing AndAlso swaps.Count > 0 Then
@@ -2131,18 +2183,17 @@ void main() {
         Return (sz, sz)
     End Function
 
-    ''' <summary>Resize puro (linear->linear, uMode=2) de un canal al target si difiere del nativo. Usado
-    ''' por N/S (no llevan convert de espacio). Actualiza <paramref name="ch"/> in-place a la textura
-    ''' resizeada (fresca) y borra la anterior si era fresca. No-op si target == nativo o TextureId=0.</summary>
-    Private Sub ResizeChannelIfNeeded(ch As FaceTintPipelineChannelResult, state As FaceTintCompositorState,
-                                      targetW As Integer, targetH As Integer, nativeW As Integer, nativeH As Integer)
+    ''' Convierte + resizea un canal al target. (fromSpace,toSpace)=(0,0) -> solo resize (N/S, linear->linear).
+    ''' (1,2) -> Srgb->G22 ADEMÁS del resize (D). No-op SOLO si no hay resize NI conversión.
+    Private Sub ConvertChannelIfNeeded(ch As FaceTintPipelineChannelResult, state As FaceTintCompositorState,
+                                   targetW As Integer, targetH As Integer, nativeW As Integer, nativeH As Integer,
+                                   Optional fromSpace As Integer = 0, Optional toSpace As Integer = 0)
         If ch.TextureId = 0 Then Return
-        If targetW = nativeW AndAlso targetH = nativeH Then Return
-        Dim resized = ConvertTextureSpace(state, ch.TextureId, targetW, targetH, 0, 0)   ' linear->linear = resize
-        If resized = 0 Then Return
-        Dim oldId = ch.TextureId
-        Dim oldFresh = ch.IsFresh
-        ch.TextureId = resized
+        If targetW = nativeW AndAlso targetH = nativeH AndAlso fromSpace = toSpace Then Return  ' <- el guard ahora incluye el espacio
+        Dim converted = ConvertTextureSpace(state, ch.TextureId, targetW, targetH, fromSpace, toSpace)
+        If converted = 0 Then Return
+        Dim oldId = ch.TextureId, oldFresh = ch.IsFresh
+        ch.TextureId = converted
         ch.IsFresh = True
         If oldFresh Then Try : GL.DeleteTexture(oldId) : Catch : End Try
     End Sub
