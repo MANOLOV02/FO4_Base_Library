@@ -184,7 +184,7 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
             .BoneName = dictionaryKey,
             .Parent = parentBone,
             .DeltaTransform = Nothing,
-            .OriginalLocaLTransform = LocalReferencePoseToTransform(skeleton.ReferencePose(index))
+            .OriginalLocaLTransform = HkxTransformConventionHelper.ToTransform(skeleton.ReferencePose(index))
         }
 
         If IsNothing(parentBone) Then
@@ -196,41 +196,6 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         targetSkeleton.SkeletonDictionary.Add(dictionaryKey, nuevo)
         targetSkeleton.InjectedBones.Add(dictionaryKey)
         Return nuevo
-    End Function
-
-    Private Shared Function LocalReferencePoseToTransform(source As HkxQsTransformGraph_Class) As Transform_Class
-        If IsNothing(source) Then Return New Transform_Class()
-
-        Dim scale = ResolveUniformScale(source.Scale)
-        Dim rotation As Quaternion
-        If IsNothing(source.Rotation) Then
-            rotation = Quaternion.Identity
-        Else
-            rotation = New Quaternion(source.Rotation.X, source.Rotation.Y, source.Rotation.Z, source.Rotation.W)
-            If rotation.LengthSquared <= 0.000001F Then
-                rotation = Quaternion.Identity
-            Else
-                rotation = Quaternion.Normalize(rotation)
-            End If
-        End If
-
-        Dim transformMatrix =
-            Matrix4.CreateScale(scale) *
-            Matrix4.CreateFromQuaternion(rotation) *
-            Matrix4.CreateTranslation(source.Translation.X, source.Translation.Y, source.Translation.Z)
-
-        Return New Transform_Class(transformMatrix)
-    End Function
-
-    Private Shared Function ResolveUniformScale(scale As HkxVector4Graph_Class) As Single
-        If IsNothing(scale) Then Return 1.0F
-
-        Dim values = {scale.X, scale.Y, scale.Z}.
-            Where(Function(value) Single.IsFinite(value) AndAlso Math.Abs(value) > 0.000001F).
-            ToArray()
-
-        If values.Length = 0 Then Return 1.0F
-        Return CSng(values.Average())
     End Function
 
     Private Shared Function NormalizeBoneName(name As String) As String

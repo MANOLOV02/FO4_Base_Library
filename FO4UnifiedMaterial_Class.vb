@@ -173,12 +173,23 @@ Public Class FO4UnifiedMaterial_Class
     <TypeConverter(GetType(ShaderTypeConverter))>
     Public Property NifShaderType As NiflySharp.Enums.BSLightingShaderType
         Get
-            Return _NifShaderType
+            Select Case Underlying_Material.GetType
+                Case GetType(BGSM)
+                    Return _NifShaderType
+                Case GetType(BGEM)
+                    Return NiflySharp.Enums.BSLightingShaderType.Default
+            End Select
+            Throw New Exception("Unsupported material type")
+            Return NiflySharp.Enums.BSLightingShaderType.Default
         End Get
         Set(value As NiflySharp.Enums.BSLightingShaderType)
-            _NifShaderType = value
-            ApplyShaderTypeToBgsm(TryCast(Underlying_Material, BGSM), value)
-        End Set
+            Select Case Underlying_Material.GetType
+                Case GetType(BGSM)
+                    _NifShaderType = value
+                    ApplyShaderTypeToBgsm(TryCast(Underlying_Material, BGSM), value)
+                Case GetType(BGEM)
+            End Select
+         End Set
     End Property
 
     ' Skin tint strength → shader SkinTintAlpha (FO4 shaderType=5 SkinTint). NOT a BGSM field:
@@ -801,6 +812,7 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
+
     <Category("Specular")>
     <DefaultValue(1.0F)>
     Public Property EnvironmentMappingMaskScale As Single
@@ -941,6 +953,30 @@ Public Class FO4UnifiedMaterial_Class
             End Select
         End Set
     End Property
+
+    <Category("Specular")>
+    <BGSMOnly()>
+    <DefaultValue(False)>
+    Public Property EyeEnvironmentMapping As Boolean
+        Get
+            Select Case Underlying_Material.GetType
+                Case GetType(BGSM)
+                    Return CType(Underlying_Material, BGSM).EnvironmentMappingEye
+                Case GetType(BGEM)
+                    Return False
+            End Select
+            Throw New Exception
+        End Get
+        Set(value As Boolean)
+            Select Case Underlying_Material.GetType
+                Case GetType(BGSM)
+                    CType(Underlying_Material, BGSM).EnvironmentMappingEye = value
+                Case GetType(BGEM)
+            End Select
+        End Set
+
+    End Property
+
 
     <Category("Specular")>
     <BGSMOnly()>
@@ -2037,65 +2073,25 @@ Public Class FO4UnifiedMaterial_Class
             End Select
         End Set
     End Property
-    ''' <summary>
-    ''' Heuristic best-guess: derive a BSLightingShaderType from BGSM flags when no
-    ''' NIF info is available (e.g. standalone .bgsm load).
-    '''
-    ''' Per BodySlide wiki Shape-Properties + Fallout wiki Materials Files Basics,
-    ''' "the shader type is still relevant" meaning ShaderType lives in the NIF
-    ''' and is not stored in the BGSM binary directly. The NIF shader always wins
-    ''' (callers should preserve a non-Default _NifShaderType).
-    '''
-    ''' BUT: per nifly C++ Shaders.cpp:597-602, the engine evaluates feature flags
-    ''' as AND with ShaderType — `HasGlowmap = ShaderType==GlowShader AND flag` and
-    ''' `HasEnvironmentMapping = ShaderType==EnvironmentMap AND flag`. So a
-    ''' well-formed BGSM that has Glowmap=True implies the original NIF had
-    ''' ShaderType=GlowShader (otherwise the flag would have been inert and CK
-    ''' wouldn't write it). Same logic for EnvironmentMap.
-    '''
-    ''' Precedence Glowmap > Facegen > SkinTint > Hair > Tree > Terrain > EnvironmentMap.
-    ''' EnvironmentMap is last because the heuristic can't know whether the cubemap
-    ''' (slot 4) is actually populated; if it isn't, Save_To_Shader degrades back to
-    ''' Default (see effectiveShaderType logic at the BGSM Save_To_Shader entry).
-    ''' </summary>
+
     Public Shared Function DeriveShaderTypeFromBgsm(bgsm As BGSM) As NiflySharp.Enums.BSLightingShaderType
         If bgsm Is Nothing Then Return NiflySharp.Enums.BSLightingShaderType.Default
-        If bgsm.Glowmap Then Return NiflySharp.Enums.BSLightingShaderType.GlowShader
         If bgsm.Facegen Then Return NiflySharp.Enums.BSLightingShaderType.FaceTint
         If bgsm.SkinTint Then Return NiflySharp.Enums.BSLightingShaderType.SkinTint
         If bgsm.Hair Then Return NiflySharp.Enums.BSLightingShaderType.HairTint
         If bgsm.Tree Then Return NiflySharp.Enums.BSLightingShaderType.TreeAnim
         If bgsm.Terrain Then Return NiflySharp.Enums.BSLightingShaderType.MultitextureLandscape
+        If bgsm.EnvironmentMappingEye Then Return NiflySharp.Enums.BSLightingShaderType.EyeEnvmap
+        If bgsm.Glowmap Then Return NiflySharp.Enums.BSLightingShaderType.GlowShader
         If bgsm.EnvironmentMapping Then Return NiflySharp.Enums.BSLightingShaderType.EnvironmentMap
         Return NiflySharp.Enums.BSLightingShaderType.Default
     End Function
 
-    ''' <summary>
-    ''' When the user assigns a ShaderType to the unified material, sync the BGSM
-    ''' boolean flags that the engine evaluates as AND with the ShaderType (see
-    ''' nifly C++ Shaders.cpp:597-602): Glowmap, EnvironmentMapping, plus the five
-    ''' `IsType*` flags that have a 1:1 enum counterpart (Facegen, SkinTint, Hair,
-    ''' Tree, Terrain).
-    '''
-    ''' Engine semantics (from nifly C++):
-    '''   HasGlowmap()            = (ShaderType == GlowShader)    AND (SF2 bit 6)
-    '''   HasEnvironmentMapping() = (ShaderType == EnvironmentMap) AND (SF1 bit 7)
-    ''' So a BGSM with Glowmap=True but ShaderType=HairTint is INCONSISTENT — the
-    ''' engine ignores Glowmap because the ShaderType vetoes it. Clearing Glowmap
-    ''' here when ShaderType ≠ GlowShader keeps the BGSM consistent with what the
-    ''' render will actually do, and avoids a flag that lies about the shape.
-    '''
-    ''' ShaderTypes without a BGSM flag (Parallax, EyeEnvmap, MultiLayerParallax,
-    ''' etc.) clear all 7 toggled flags — there is no engine-faithful BGSM flag for
-    ''' them and the heuristic best-guess returns Default for those.
-    '''
-    ''' BGEM is a no-op (passing Nothing): BSEffectShaderProperty has no ShaderType
-    ''' enum, so there is nothing to mirror.
-    ''' </summary>
     Public Shared Sub ApplyShaderTypeToBgsm(bgsm As BGSM, type As NiflySharp.Enums.BSLightingShaderType)
         If bgsm Is Nothing Then Exit Sub
         bgsm.Glowmap = (type = NiflySharp.Enums.BSLightingShaderType.GlowShader)
-        bgsm.EnvironmentMapping = (type = NiflySharp.Enums.BSLightingShaderType.EnvironmentMap)
+        bgsm.EnvironmentMappingEye = (type = NiflySharp.Enums.BSLightingShaderType.EyeEnvmap)
+        bgsm.EnvironmentMapping = (type = NiflySharp.Enums.BSLightingShaderType.EnvironmentMap) Or bgsm.EnvironmentMappingEye
         bgsm.Facegen = (type = NiflySharp.Enums.BSLightingShaderType.FaceTint)
         bgsm.SkinTint = (type = NiflySharp.Enums.BSLightingShaderType.SkinTint)
         bgsm.Hair = (type = NiflySharp.Enums.BSLightingShaderType.HairTint)
@@ -2103,28 +2099,6 @@ Public Class FO4UnifiedMaterial_Class
         bgsm.Terrain = (type = NiflySharp.Enums.BSLightingShaderType.MultitextureLandscape)
     End Sub
 
-    ''' <summary>
-    ''' Default BGSM/BGEM binary Version to assign when creating a material from a
-    ''' NIF shader (no .bgsm/.bgem of origin to preserve). Derived from the NIF
-    ''' stream version, mirroring NiflySharp's BeforeSync game detection
-    ''' (BSLightingShaderProperty.cs / BSEffectShaderProperty.cs).
-    '''
-    ''' SSE (StreamVersion &lt; 130) → v20: covers every field NiflySharp's
-    ''' BSLightingShaderProperty / BSEffectShaderProperty actually exposes
-    ''' (DepthBias, MaskWrites, LumEmittance via Luminance, AdaptativeEmissive,
-    ''' DistanceFieldAlphaTexture, etc.). Does NOT default to v22 because the
-    ''' v21+ Glass block and v20+ EffectPbrSpecular have no shader counterpart
-    ''' in NiflySharp; defaulting higher would persist "dead" defaults.
-    '''
-    ''' FO4 (StreamVersion ≥ 130, ≠ 155) → v2: vanilla CK FO4 emission. Mods may
-    ''' carry v17 (DistanceFieldAlpha); when loading from disk the audited
-    ''' Deserialize path (BaseMaterialFile.Deserialize) preserves the original
-    ''' Version, so v17 .bgsm survive a round-trip even though we default to v2
-    ''' for shader-only origins.
-    '''
-    ''' FO76 (StreamVersion = 155) is out of scope; we still return v2 to stay
-    ''' in the "safe minimum" range — the unified does not target FO76.
-    ''' </summary>
     Public Shared Function DefaultMaterialVersionForNif(Nif As Nifcontent_Class_Manolo) As UInteger
         If Nif Is Nothing OrElse Nif.Header Is Nothing Then Return 2UI
         Dim streamVer = Nif.Header.Version.StreamVersion
@@ -2133,24 +2107,12 @@ Public Class FO4UnifiedMaterial_Class
         Return 20UI                                       ' SSE / SK
     End Function
 
-    ''' <summary>
-    ''' Tuple of the three independent alpha-blend bytes the NIF/BGSM binary format carries:
-    ''' the enable flag and the two blend factors. Used to canonicalize the four named modes
-    ''' (None/Standard/Additive/Multiplicative) and to classify a free tuple back into one of
-    ''' those four (or Unknown).
-    ''' </summary>
     Public Structure AlphaBlendTuple
         Public Enabled As Boolean
         Public Src As NiflySharp.Enums.AlphaFunction
         Public Dst As NiflySharp.Enums.AlphaFunction
     End Structure
 
-    ''' <summary>
-    ''' Canonical (enabled, src, dst) tuple for each named mode. Mirrors the byte tuples
-    ''' MaterialLib serializes (BaseMaterialFile.cs:389-422): None=(0,0,0), Standard=(1,6,7),
-    ''' Additive=(1,6,0), Multiplicative=(1,4,1). Unknown has no canonical tuple — its three
-    ''' values are caller-provided (read from the NIF's NiAlphaProperty).
-    ''' </summary>
     Public Shared Function CanonicalTuple(mode As AlphaBlendModeType) As AlphaBlendTuple
         Select Case mode
             Case AlphaBlendModeType.None
@@ -2167,10 +2129,6 @@ Public Class FO4UnifiedMaterial_Class
         End Select
     End Function
 
-    ''' <summary>
-    ''' Inverse of <see cref="CanonicalTuple"/>: classify a free (enabled, src, dst) tuple
-    ''' against the four canonical patterns. Anything that doesn't match returns Unknown.
-    ''' </summary>
     Public Shared Function ClassifyTuple(enabled As Boolean, src As NiflySharp.Enums.AlphaFunction, dst As NiflySharp.Enums.AlphaFunction) As AlphaBlendModeType
         If Not enabled AndAlso src = NiflySharp.Enums.AlphaFunction.ONE AndAlso dst = NiflySharp.Enums.AlphaFunction.ZERO Then
             Return AlphaBlendModeType.None
@@ -2186,39 +2144,16 @@ Public Class FO4UnifiedMaterial_Class
         End If
         Return AlphaBlendModeType.Unknown
     End Function
-
-    ''' <summary>
-    ''' Reactive auto-promotion / degradation: after any of the three blend fields changes
-    ''' (AlphaBlendEnabled / BlendFunctionSource / BlendFunctionDest), reclassify the tuple
-    ''' and update AlphaBlendMode. Writes directly to Underlying_Material to bypass the public
-    ''' setter (which would re-derive the three fields and break the reactive flow).
-    ''' </summary>
     Private Sub RecomputeAlphaBlendModeFromFields()
         Underlying_Material.AlphaBlendMode = ClassifyTuple(_alphaBlendEnabled, _blendFunctionSource, _blendFunctionDest)
     End Sub
 
-    ''' <summary>
-    ''' Centralized write of the blend-related bits of a NiAlphaProperty.Flags. Called from
-    ''' both Save_To_Shader overloads and from SetRelatedMaterial (FO4 path) so all writers
-    ''' stay in lockstep. Writes the three independent fields verbatim — no enum derivation —
-    ''' so Unknown round-trips its arbitrary (src, dst) factors faithfully to the NIF.
-    ''' </summary>
     Private Sub WriteBlendFlagsToAlphaProperty(alp As NiAlphaProperty)
         alp.Flags.AlphaBlend = _alphaBlendEnabled
         alp.Flags.SourceBlendMode = _blendFunctionSource
         alp.Flags.DestinationBlendMode = _blendFunctionDest
     End Sub
 
-    ''' <summary>
-    ''' Sync the shape's NiAlphaProperty with the wrapper's full alpha state (blend bit +
-    ''' factors + AlphaTest + Threshold). Used by Save_To_Shader (BSLighting / BSEffect) when
-    ''' writing the full shader, and by SetRelatedMaterial (FO4 path) which otherwise only
-    ''' updates the BGSM path string and would leave the NIF alpha state stale.
-    '''
-    ''' Removes the NiAlphaProperty block via Nif.RemoveBlock if neither blend nor test are
-    ''' required, matching CK's "no NiAlphaProperty when not needed" behavior. NiflySharp
-    ''' NifFile.RemoveBlock re-indexes refs/pointers automatically (NifFile.cs:1157-1198).
-    ''' </summary>
     Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo)
         Dim needAlphaProperty = _alphaBlendEnabled OrElse Underlying_Material.AlphaTest
         If needAlphaProperty Then
@@ -2316,25 +2251,11 @@ Public Class FO4UnifiedMaterial_Class
         mat.AlphaBlendMode = AlphaBlendModeType.None
         Underlying_Material = mat
         _NifShaderType = shad.ShaderType_SK_FO4
-        ' Capture the skin-tint strength from the shader (FO4 only serializes it for shaderType=5;
-        ' for other types NiflySharp returns its 0 default — harmless, only consumed when SkinTint).
         _skinTintAlpha = shad.SkinTintAlpha
-        ' Embedded shader: no BGSM file, so NiAlphaProperty is the only source of alpha state.
-        ' This is the ONE load path that legitimately reads NiAlphaProperty. Resolve to a
-        ' deterministic AlphaBlendMode AND deterministic BlendFunctionSource/Dest here so the
-        ' wrapper carries everything afterwards — render/save never re-read the NIF.
         ApplyAlphaPropertyFromNif(shap, Nif)
         ClearDirty()
     End Sub
 
-    ''' <summary>
-    ''' Read the shape's NiAlphaProperty and project the three independent fields
-    ''' (AlphaBlendEnabled / BlendFunctionSource / BlendFunctionDest) plus AlphaTest /
-    ''' Threshold onto the wrapper. The enum is then classified from the resulting tuple —
-    ''' Unknown is preserved verbatim (no Standard-promotion) so callers and renderers see
-    ''' the actual NIF state. Shared between the two Create_From_Shader overloads
-    ''' (BSLighting / BSEffect) and used by GetRelatedMaterial when the BGSM enum is Unknown.
-    ''' </summary>
     Private Sub ApplyAlphaPropertyFromNif(shap As INiShape, Nif As Nifcontent_Class_Manolo)
         Dim alp As NiAlphaProperty = Nothing
         If shap IsNot Nothing AndAlso Not IsNothing(shap.AlphaPropertyRef) AndAlso shap.AlphaPropertyRef.Index <> -1 Then
@@ -2420,23 +2341,16 @@ Public Class FO4UnifiedMaterial_Class
         mat.AlphaTest = False
         mat.AlphaTestRef = 128
         mat.AlphaBlendMode = AlphaBlendModeType.None
-        ' Preserve the float A of shad.BaseColor (Color4) in BGEM.Alpha. The
-        ' NifColorColorToUInteger above only round-trips RGB through a uint;
-        ' the alpha — which can exceed 1.0 — must be captured separately.
         If shad IsNot Nothing Then
             mat.Alpha = shad.BaseColor.A
         End If
         Underlying_Material = mat
-        ' Same alpha-state binding as the BSLightingShaderProperty overload — shared via
-        ' ApplyAlphaPropertyFromNif (embedded path is the only legitimate NIF AlphaProperty read).
         ApplyAlphaPropertyFromNif(shap, Nif)
         ClearDirty()
     End Sub
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGEM)
-        ' Force shader.Type from NIF version when None (cloned/in-memory shaders).
-        ' Same rationale as BSLightingShaderProperty Save_To_Shader.
         If shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.None Then
             Dim streamVer = Nif.Header.Version.StreamVersion
             If streamVer = 155 Then
@@ -2461,13 +2375,6 @@ Public Class FO4UnifiedMaterial_Class
         EnsureNiString4(shad.ReflectanceTexture, Mat.SpecularTexture)
         EnsureNiString4(shad.EmitGradientTexture, Mat.GlowTexture)
 
-        ' Effect-specific properties (BaseColor, Falloff, Lighting Influence, Greyscale flags)
-        ' BSEffectShaderProperty.BaseColor is a true Color4. The A holds the
-        ' material opacity (BGEM.Alpha float). Mat.Alpha can exceed 1.0 (e.g. the
-        ' eye AO BGEM uses 1.2 to boost the effect) — that value can't survive
-        ' a byte round-trip, so compose RGB from Me.BaseColor (wrapper, returns
-        ' Color with RGB from BGEM.BaseColor uint) and write the float Mat.Alpha
-        ' directly into A.
         Dim bcColor = Me.BaseColor
         shad.BaseColor = New NiflySharp.Structs.Color4(
             bcColor.R / 255.0F,
@@ -2493,18 +2400,15 @@ Public Class FO4UnifiedMaterial_Class
         ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.ZBuffer_Write), Mat.ZBufferWrite)
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.ZBuffer_Test), Mat.ZBufferTest)
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Refraction), Mat.Refraction)
-
-        ' Shader flags for Falloff and EffectLighting
         ShaderHelper.SetFlagSF1(shad, ShaderHelper.FalloffFlagValue(shad), Mat.FalloffEnabled)
+
         If Nif.Header.Version.IsSSE Then
-            ' SSE: EffectLighting in SF2
             If Mat.EffectLightingEnabled Then
                 shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 Or NiflySharp.Enums.SkyrimShaderPropertyFlags2.Effect_Lighting
             Else
                 shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 And Not NiflySharp.Enums.SkyrimShaderPropertyFlags2.Effect_Lighting
             End If
         Else
-            ' FO4: EffectLighting in SF2, FalloffColor via RGB_Falloff in SF1
             If Mat.EffectLightingEnabled Then
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Effect_Lighting
             Else
@@ -2519,22 +2423,7 @@ Public Class FO4UnifiedMaterial_Class
 
         WriteAlphaPropertyToShape(shap, Nif)
     End Sub
-    ' ── Wetness-control (rootMaterial-resolved) ─────────────────────────────────────────────
-    ' Vanilla face BGSMs leave the 6 wetness fields at the -1 "inherit" sentinel (BGSM ctor
-    ' default, BGSM.cs:34-39) and point rootMaterial at a template that carries the real values
-    ' (e.g. basehumanskin.bgsm -1 → template/SkinTemplate_Wet.bgsm 0.6/1.4/0.2/1/1.6/0). CK
-    ' resolves this chain when it bakes the inline shader; the engine resolves it at load.
-    '
-    ' These six Resolved* properties expose the RESOLVED value: every reader — Save_To_Shader today
-    ' and the GL render when it grows wetness support — reads `mat.ResolvedWetnessControl*` and gets
-    ' the inherited value transparently, with no need to know a chain exists. They are named apart
-    ' from the raw BGSM fields (Underlying_Material.WetnessControl*) on purpose, so a call site is
-    ' unambiguous about whether it wants the resolved value or the raw -1 sentinel. Resolution is
-    ' READ-ONLY: the underlying BGSM keeps its -1 sentinels, so the disk paths (bgsm.Save /
-    ' Serialize, which read the raw fields) still write the vanilla -1 verbatim — exactly what
-    ' CK/the engine expect on disk. Read resolved, write original. Browsable(False): they are
-    ' programmatic accessors, not grid fields, so the editor keeps editing the raw -1 and
-    ' round-trips it unchanged.
+
     <Browsable(False)>
     Public ReadOnly Property ResolvedWetnessControlSpecScale As Single
         Get
@@ -2571,14 +2460,6 @@ Public Class FO4UnifiedMaterial_Class
             Return ResolvedWetness()(5)
         End Get
     End Property
-
-    ' Transient, non-serialized cache: the rootMaterial chain is walked once and the resulting array
-    ' is reused, keyed ONLY on THIS material's own 6 raw wetness fields. Re-resolves when one of them
-    ' flips: -1→value (the resolved value becomes the new concrete value), value→-1 (re-walk the
-    ' chain to inherit again). Changes to the parent/template ("base") files upstream do NOT
-    ' invalidate — a loaded material keeps what it resolved and we never re-read ancestor files to
-    ' poll them. Keying on the own fields (not the parents') is what keeps an innocuous getter off a
-    ' hot path from turning into a recursive/looping flood of FilesDictionary/BA2 reads.
     Private _resolvedWetnessCache As Single()
     Private _resolvedWetnessRaw As Single()
 
@@ -2596,9 +2477,6 @@ Public Class FO4UnifiedMaterial_Class
         End If
         Return _resolvedWetnessCache
     End Function
-
-    ''' <summary>True if the two 6-field raw-wetness snapshots are bitwise equal. Used to detect a
-    ''' change in THIS material's own wetness fields (the only trigger to re-resolve the chain).</summary>
     Private Shared Function SameRawWetness(a As Single(), b As Single()) As Boolean
         If a Is Nothing OrElse b Is Nothing Then Return False
         For i = 0 To 5
@@ -2607,25 +2485,8 @@ Public Class FO4UnifiedMaterial_Class
         Return True
     End Function
 
-    ' The engine's implicit base template for wetness inheritance. A material that leaves the
-    ' wetness fields at -1 AND specifies no rootMaterial (or whose chain bottoms out at a parent
-    ' with an empty rootMaterial) still inherits from here — the engine/CK treat an absent
-    ' rootMaterial as "use the default wet template", it is not "no wetness". Verified vs CK
-    ' 2026-05-25: every vanilla face material with rootMaterial='' (HumanCommon\Eyes, EyeWet,
-    ' GhoulsCommon\Eyes, FacialHair\*, the gore neck...) bakes 0.8/0.7/0.3/1/1.2/0.1 — exactly the
-    ' contents of this file — and the specialized templates (SkinTemplate_Wet) chain into it too.
-    ' defaultTemplate_wet itself points its rootMaterial at itself, the engine's "I am the root"
-    ' sentinel; the cycle guard below terminates the walk on that self-reference.
     Private Const DefaultWetTemplate As String = "template/defaultTemplate_wet.bgsm"
 
-    ''' <summary>Chain engine behind the WetnessControl* resolving properties. Walks the BGSM
-    ''' <c>rootMaterial</c> parent chain filling each -1 sentinel with the first non-(-1) value
-    ''' found descending it; never mutates <paramref name="bgsm"/>. When the explicit chain ends
-    ''' (empty rootMaterial) with fields still unset, falls back once to <see cref="DefaultWetTemplate"/>
-    ''' — the engine's implicit base. Guards both ways against a runaway walk: a visited-set cycle
-    ''' guard (templates cross-referencing each other, incl. the default's self-reference) and a
-    ''' hard depth cap. Returns {SpecScale, SpecPowerScale, SpecMinvar, EnvMapScale, FresnelPower,
-    ''' Metalness}; a field stays -1 only if even the default leaves it unset. Verified vs CK 2026-05-25.</summary>
     Private Function ResolveEffectiveWetness(bgsm As BGSM) As Single()
         Const SENTINEL As Single = -1.0F
         Dim eff() As Single = {bgsm.WetnessControlSpecScale, bgsm.WetnessControlSpecPowerScale, bgsm.WetnessControlSpecMinvar,
@@ -2657,10 +2518,6 @@ Public Class FO4UnifiedMaterial_Class
         End While
         Return eff
     End Function
-
-    ''' <summary>Load a standalone BGSM by its FilesDictionary key (Materials-prefixed path).
-    ''' Returns Nothing on miss / read / parse failure. Used by the rootMaterial chain walk in
-    ''' <see cref="ResolveEffectiveWetness"/>; intentionally does NOT touch this instance.</summary>
     Private Shared Function LoadBgsmByKey(key As String) As BGSM
         Try
             Dim bytes = FilesDictionary_class.GetBytes(key)
@@ -2680,15 +2537,6 @@ Public Class FO4UnifiedMaterial_Class
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "")
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGSM)
-        ' NiflySharp only sets shad.Type during BeforeSync (deserialize). A shader created
-        ' or cloned in memory keeps Type=None, which makes the flag helpers (HasGlowmap,
-        ' HasGreyscaleToPaletteColor, etc.) silently no-op because GlowmapFlagValue and
-        ' SetFlagSF2 fall through to `_ => 0` for any non-matching Type.
-        ' Derive the game from the NIF stream version (mirrors NiflySharp's BeforeSync
-        ' logic at BSLightingShaderProperty.cs:286-309): version <130 → SK, >=130 → FO4,
-        ' ==155 → FO76SF. Multi-game safe.
-        ' Verified empirically Alijo 2026-05-07: HairFemale03 cloned from base NIF had
-        ' shad.Type=None, Save_To_Shader's `shad.HasGlowmap = True` left SF2 unchanged.
         If shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.None Then
             Dim streamVer = Nif.Header.Version.StreamVersion
             If streamVer = 155 Then
@@ -2706,13 +2554,6 @@ Public Class FO4UnifiedMaterial_Class
         shad.EmissiveColor = UIntegerToNifColor4(Mat.EmittanceColor)
         shad.EmissiveMultiple = Mat.EmittanceMult
         shad.Alpha = Mat.Alpha
-
-        ' Empty-cubemap degradation at bake time. When the shader claimed EnvironmentMap
-        ' but the BGSM has no EnvmapTexture (cubemap, NIF slot 4), the env-map shader
-        ' cannot do anything — write Default + HasEnvironmentMapping=False so the bake
-        ' matches what CK emits (verified Alijo 2026-05-07 across 3 NPCs: Lashes BGSM
-        ' has no cubemap and CK degrades to Default; EyesHazel/Wet keep EnvironmentMap
-        ' because their BGSM does carry shared/cubemaps/eyecubemap.dds).
         Dim effectiveShaderType = shaderType
         Dim effectiveEnvMapping = Mat.EnvironmentMapping
         If shaderType = NiflySharp.Enums.BSLightingShaderType.EnvironmentMap _
@@ -2728,39 +2569,17 @@ Public Class FO4UnifiedMaterial_Class
         Else
             shad.Smoothness = Mat.Smoothness
         End If
-        ' SubsurfaceRolloff centinela: CK only writes the BGSM Rolloff value when
-        ' SubsurfaceLighting=True; otherwise it normalizes the inline shader to 0
-        ' regardless of what the BGSM file carries (verified empirically against CK
-        ' bakes 2026-05-09 across 8 NPCs: every shape with BGSM SubsurfaceLighting=False
-        ' bakes inline SubsurfaceRolloff=0, even when the BGSM stores 0.3/0.5/etc.).
-        ' Without this gate the round-trip mat.SubsurfaceLightingRolloff diverges from CK
-        ' on hair/beard/lashes/wet/head where the BGSM ships a non-zero default but the
-        ' material does not actually opt into softlight.
         shad.SubsurfaceRolloff = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
         shad.ModelSpace = Mat.ModelSpaceNormals
         shad.ShaderType_SK_FO4 = effectiveShaderType
-        ' BGSM stores both hair tint and skin tint in the single HairTintColor field
-        ' (Material-Editor BGSM.cs:43, default 0x808080). Mirror it to BOTH shader
-        ' fields unconditionally so the shader's HairTintColor and SkinTintColor stay
-        ' in sync with the material — previous code only wrote one of them depending
-        ' on Mat.SkinTint, which left the other shader field with stale data when the
-        ' shader was reused/cloned.
         Dim hairTintNifColor = UIntegerToNifColor3(Mat.HairTintColor)
         shad.HairTintColor = hairTintNifColor
         If Mat.SkinTint Then
             shad.SkinTintColor = hairTintNifColor
-            ' SkinTintAlpha (FO4 shaderType=5 tail) — the per-NPC skin-tint strength. Lives on the
-            ' wrapper (Me.SkinTintAlpha), set by the app from the NPC's TextureLightingFloats.A,
-            ' because the BGSM has no skin-tint-alpha field. CK bakes it; without this we left it 0
-            ' and the skin tint was inert (e.g. MaleHeadHumanRearTEMP rendered untinted).
             shad.SkinTintAlpha = Me.SkinTintAlpha
         End If
         shad.HasBacklight = Mat.BackLighting
         shad.BacklightPower = Mat.BackLightPower
-        ' HasSpecular centinela: SpecularMult=0 means the specular contribution is
-        ' multiplicatively zero — engine renders no specular regardless of the bool flag.
-        ' CK normalizes the inline shader flag to False in that case (verified vs Lashes
-        ' bake: BGSM SpecularEnabled=True but SpecularMult=0, BAKED-CK HasSpecular=False).
         shad.HasSpecular = Mat.SpecularEnabled AndAlso Mat.SpecularMult <> 0.0F
         shad.SpecularColor = UIntegerToNifColor3(Mat.SpecularColor)
         shad.SpecularStrength = Mat.SpecularMult
@@ -2768,15 +2587,6 @@ Public Class FO4UnifiedMaterial_Class
         shad.HasTreeAnim = Mat.Tree
         shad.HasSoftlight = Mat.SubsurfaceLighting
         shad.HasRimlight = Mat.RimLighting
-        ' RimlightPower in the FO4-era NIF schema (StreamVersion 130-139) is the centinela that
-        ' gates BacklightPower serialization: BacklightPower is only written to disk when
-        ' rimlightPower2 >= Single.MaxValue (nifly Shaders.cpp:474-478, NiflySharp generated
-        ' BSMain.BSLightingShaderProperty.g.cs:474-478). CK bakes always emit MaxValue because
-        ' it's the C++ default of the FO4-specific rimlightPower2 field. If we wrote
-        ' Mat.RimPower verbatim, the centinela disarms and BacklightPower is dropped → reads
-        ' back as 0. Force MaxValue for the entire FO4-era stream range so BacklightPower
-        ' round-trips. Mat.RimPower is preserved by the BGSM file on disk, not by the inline
-        ' shader — engine consults the BGSM at load.
         Dim streamVerForRim = Nif.Header.Version.StreamVersion
         If streamVerForRim >= 130 AndAlso streamVerForRim <= 139 Then
             shad.RimlightPower = Single.MaxValue
@@ -2793,12 +2603,6 @@ Public Class FO4UnifiedMaterial_Class
         shad.UseScreenSpaceReflections = Mat.ScreenSpaceReflections
         shad.WetnessControl_UseSSR = Mat.WetnessControlScreenSpaceReflections
         shad.RefractionStrength = Mat.RefractionPower
-
-        ' Read the rootMaterial-RESOLVED wetness (Me.ResolvedWetnessControl*), not the raw BGSM
-        ' fields (Mat.WetnessControl*) which sit at the -1 "inherit" sentinel for vanilla face
-        ' materials. Per field the resolved value is the raw value when it isn't -1, otherwise the
-        ' first non-(-1) ancestor value down the rootMaterial chain. CK bakes these resolved values
-        ' into the inline shader; the disk .bgsm keeps the -1.
         Dim wet = shad.Wetness
         wet.SpecScale = Me.ResolvedWetnessControlSpecScale
         wet.SpecPower = Me.ResolvedWetnessControlSpecPowerScale
@@ -2816,12 +2620,8 @@ Public Class FO4UnifiedMaterial_Class
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.ZBuffer_Test), Mat.ZBufferTest)
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Refraction), Mat.Refraction)
         ShaderHelper.SetFlagSF2(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Anisotropic_Lighting), Mat.AnisoLighting)
-        ' Hair flag (F4SPF1 bit 18). CK sets it on hair shapes but Save_To_Shader never persisted it,
-        ' so baked hair lost its hair shading (anisotropic highlight + grayscale-to-palette tint) and
-        ' rendered as a generic surface. Driven by the BGSM Hair bool (same source Create_From_Shader
-        ' reads back via IsTypeHairTint). Verified missing vs CK FaceGen 2026-05-25 on HairMale22 /
-        ' HairMale22_Hairline. SSE has no separate Hair flag concept here; SetFlagSF1 is FO4-flag based.
         ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair), Mat.Hair)
+        ShaderHelper.SetFlagSF1(shad, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Eye_Environment_Mapping), Mat.EnvironmentMappingEye)
 
         If Not Nif.Header.Version.IsSSE Then
             If Mat.Tessellate Then
@@ -2835,7 +2635,6 @@ Public Class FO4UnifiedMaterial_Class
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha
             End If
         End If
-
         If IsNothing(shad.TextureSetRef) OrElse shad.TextureSetRef.Index = -1 Then
             Dim texset1 = New BSShaderTextureSet
             shad.TextureSetRef = New NiBlockRef(Of BSShaderTextureSet) With {.Index = Nif.AddBlock(texset1)}
@@ -2844,12 +2643,6 @@ Public Class FO4UnifiedMaterial_Class
 
         Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
         WriteBgsmTexturesToTextureSet(Mat, texset, Nif.Header.Version.IsSSE, envmapMaskPath)
-
-        ' NiAlphaProperty sync via shared helper. Removes the block when neither blend nor
-        ' test are needed, matching CK's "no NiAlphaProperty when not needed" behavior — see
-        ' BAKED-CK observations on FemaleHeadHuman/Hazel/MouthDirty/HeadRear vs shapes like
-        ' Eyes/Hair/NeckGore that do require it. NiflySharp NifFile.RemoveBlock re-indexes
-        ' refs/pointers automatically (NifFile.cs:1157-1198).
         WriteAlphaPropertyToShape(shap, Nif)
     End Sub
     ''' <summary>

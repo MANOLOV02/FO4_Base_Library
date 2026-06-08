@@ -539,6 +539,13 @@ Public Partial Class HkxObjectGraph_Class
                     destination.Scale.X = scaleFrames(frameInBlock).X
                     destination.Scale.Y = scaleFrames(frameInBlock).Y
                     destination.Scale.Z = scaleFrames(frameInBlock).Z
+                    destination.TranslationXAnimated = mask.GetPositionType(0) <> HkxSplineTrackValueType_Enum.Identity
+                    destination.TranslationYAnimated = mask.GetPositionType(1) <> HkxSplineTrackValueType_Enum.Identity
+                    destination.TranslationZAnimated = mask.GetPositionType(2) <> HkxSplineTrackValueType_Enum.Identity
+                    destination.RotationAnimated = rotationType <> HkxSplineTrackValueType_Enum.Identity
+                    destination.ScaleXAnimated = mask.GetScaleType(0) <> HkxSplineTrackValueType_Enum.Identity
+                    destination.ScaleYAnimated = mask.GetScaleType(1) <> HkxSplineTrackValueType_Enum.Identity
+                    destination.ScaleZAnimated = mask.GetScaleType(2) <> HkxSplineTrackValueType_Enum.Identity
                 Next
             Next
         Next
@@ -899,6 +906,25 @@ Public Class HkxAnimationTransformGraph_Class
     Public Property Translation As HkxVector4Graph_Class
     Public Property Rotation As HkxQuaternionGraph_Class
     Public Property Scale As HkxVector4Graph_Class
+    Public Property TranslationXAnimated As Boolean
+    Public Property TranslationYAnimated As Boolean
+    Public Property TranslationZAnimated As Boolean
+    Public Property RotationAnimated As Boolean
+    Public Property ScaleXAnimated As Boolean
+    Public Property ScaleYAnimated As Boolean
+    Public Property ScaleZAnimated As Boolean
+
+    Public ReadOnly Property HasAnyMissingComponent As Boolean
+        Get
+            Return TranslationXAnimated = False OrElse
+                   TranslationYAnimated = False OrElse
+                   TranslationZAnimated = False OrElse
+                   RotationAnimated = False OrElse
+                   ScaleXAnimated = False OrElse
+                   ScaleYAnimated = False OrElse
+                   ScaleZAnimated = False
+        End Get
+    End Property
 End Class
 
 Public Class HkaSplineCompressedAnimationGraph_Class

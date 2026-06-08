@@ -16,6 +16,7 @@ Imports OpenTK.Windowing.Common.Input
 Imports FO4_Base_Library.PreviewModel
 Imports Windows.Win32.System.Diagnostics
 Imports NiflySharp.Enums
+Imports System.Xml
 
 
 Public Class TextOverlayRenderer
@@ -221,7 +222,9 @@ Public Class PreviewControl
             Return SharedActiveShader
         End Get
     End Property
-
+    ''' <summary>Playback mode for fast pose ticks: suppresses camera/cursor-style UI churn
+    ''' and skips non-essential bounds bookkeeping while animation frames are advancing.</summary>
+    Public Property PlayingAnimation As Boolean = False
 
     Public WithEvents RenderTimer As New System.Windows.Forms.Timer
     Private DebugProc As DebugProc
@@ -476,7 +479,9 @@ Public Class PreviewControl
         i.GeometryModifiers = request.GeometryModifiers
         i.TexturePrefetchAction = Nothing
         i.PreserveTextureCache = request.PreserveTextureCache
-        i.MarkDirty(RenderDirtyFlags.Shapes Or RenderDirtyFlags.Camera)
+        Dim dirty = RenderDirtyFlags.Shapes
+        If request.ResetCamera AndAlso Not PlayingAnimation Then dirty = dirty Or RenderDirtyFlags.Camera
+        i.MarkDirty(dirty)
         ExecuteRenderPipeline()
     End Sub
 
@@ -522,6 +527,7 @@ Public Class PreviewControl
         Dim needsMorphUpdate = (flags And RenderDirtyFlags.Morphs) <> 0
         Dim needsTextureUpdate = (flags And RenderDirtyFlags.Textures) <> 0
         Dim needsCameraReset = (flags And RenderDirtyFlags.Camera) <> 0
+        Dim allowCameraReset = intent.ResetCamera AndAlso Not PlayingAnimation
 
         Model.FloorOffset = intent.FloorOffset
 
@@ -574,7 +580,7 @@ Public Class PreviewControl
             End If
 
             ' Display
-            If needsCameraReset OrElse isNewShapeSet Then ResetCamera()
+            If allowCameraReset AndAlso (needsCameraReset OrElse isNewShapeSet) Then ResetCamera()
             RefreshRender()
 
         ElseIf needsPoseUpdate Then
@@ -604,11 +610,13 @@ Public Class PreviewControl
 
                 mesh.UpdateSkinBuffers_GL()
                 mesh.UpdateBoneMatricesSSBO()
-                mesh.ComputeBounds()
+                If Not PlayingAnimation OrElse needsMorphUpdate Then mesh.ComputeBounds()
             Next
 
-            Model.MarkRenderBucketsDirty()
-            If needsCameraReset Then ResetCamera()
+            If needsMorphUpdate Then
+                Model.MarkRenderBucketsDirty()
+            End If
+            If needsCameraReset AndAlso allowCameraReset Then ResetCamera()
             RefreshRender()
 
         ElseIf needsMorphUpdate Then
@@ -1716,6 +1724,7 @@ Public Class PreviewModel
         Public Sub UpdateSkinBuffers_GL()
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
             ' Detect skinning mode change: if the toggle changed since last upload, force ALL dirty
+            Me.ParentModel.ParentControl.MakeCurrent()
             Dim gpuMode As Boolean = Config_App.Current.Setting_GPUSkinning
             If gpuMode <> _lastUploadWasGPU Then
                 _lastUploadWasGPU = gpuMode
@@ -2027,6 +2036,7 @@ Public Class PreviewModel
         ''' </summary>
         Public Sub UpdateBoneMatricesSSBO()
             If ssbo_BoneMatrices = 0 OrElse MeshData.Meshgeometry.GPUBoneMatrices Is Nothing Then Exit Sub
+            Me.ParentModel.ParentControl.MakeCurrent()
             Dim sizeBytes = MeshData.Meshgeometry.GPUBoneMatrices.Length * 64
             ' Diagnostic: GL_INVALID_VALUE fires here when sizeBytes > the buffer's allocated size
             ' (the original glBufferData capacity). Logged with shape name so the caller mutating
@@ -2457,16 +2467,17 @@ Public Class PreviewModel
             Dim greyscaleTextureId = material.GreyscaleTexture_ID
             Dim glowTextureId = material.GlowTexture_ID
             Dim lightingTextureId = material.LightingTexture_ID
+            Dim WrinklesTextureId = material.WrinklesTexture_ID
+
             Dim hasBacklightTexture As Boolean = materialBase.BackLighting
 
-            ' ShaderType EnvironmentMap: SmoothSpec slot is actually an environment
-            ' mask, not a specular map (e.g. eyeenvironmentmask_m.dds).
-            ' Done here in render (not in material properties) to avoid corrupting
-            ' save flows that read-modify-write the BGSM fields.
-            If materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.EnvironmentMap AndAlso
-               smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
+            If materialBase.EyeEnvironmentMapping AndAlso smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
                 envmapMaskTextureId = smoothSpecTextureId
                 smoothSpecTextureId = 0
+            End If
+            If materialBase.Facegen AndAlso WrinklesTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
+                envmapMaskTextureId = WrinklesTextureId
+                WrinklesTextureId = 0
             End If
 
             Dim hasSpecMap As Boolean = (smoothSpecTextureId <> 0)
