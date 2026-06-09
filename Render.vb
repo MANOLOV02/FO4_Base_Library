@@ -224,7 +224,25 @@ Public Class PreviewControl
     End Property
     ''' <summary>Playback mode for fast pose ticks: suppresses camera/cursor-style UI churn
     ''' and skips non-essential bounds bookkeeping while animation frames are advancing.</summary>
-    Public Property PlayingAnimation As Boolean = False
+    Private _playingAnimation As Boolean = False
+
+    ''' <summary>True mientras el HKX form reproduce una animación. El setter PARA el RenderTimer
+    ''' general durante el play — el PlaybackTimer del HKX es el único driver (corre el pipeline vía
+    ''' InvalidateRender y repinta vía RefreshRender), así que no se pierde nada — y lo REACTIVA al
+    ''' terminar (sin esto el preview se congelaría). Además habilita el present sincrónico en
+    ''' RefreshRender (sin diferir a WM_PAINT).</summary>
+    Public Property PlayingAnimation As Boolean
+        Get
+            Return _playingAnimation
+        End Get
+        Set(value As Boolean)
+            If _playingAnimation = value Then Return
+            _playingAnimation = value
+            If RenderTimer IsNot Nothing Then
+                If value Then RenderTimer.Stop() Else RenderTimer.Start()
+            End If
+        End Set
+    End Property
 
     Public WithEvents RenderTimer As New System.Windows.Forms.Timer
     Private DebugProc As DebugProc
@@ -404,7 +422,7 @@ Public Class PreviewControl
 
     Public Sub Processing_Status(Texto As String)
         If _isTearingDown OrElse Me.IsDisposed OrElse Me.Disposing Then Exit Sub
-        Me.MakeCurrent()
+        Me.EnsureContextCurrent()
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
         If Not IsNothing(overlay) Then
@@ -495,6 +513,19 @@ Public Class PreviewControl
     ''' </summary>
     Public Sub InvalidateRender()
         ExecuteRenderPipeline()
+    End Sub
+
+    ''' <summary>Hace el contexto GL current SOLO si no lo está ya. MakeCurrent() (cambio de
+    ''' contexto) es caro aunque el contexto ya sea el current; llamarlo por-mesh por-buffer en el
+    ''' loop de upload (UpdateSkinBuffers_GL + UpdateBoneMatricesSSBO) cuesta. El guard con
+    ''' Context.IsCurrent es 100% equivalente (el contexto queda current igual) y evita el switch
+    ''' redundante. Fallback a MakeCurrent si IsCurrent falla → peor caso = comportamiento actual.</summary>
+    Public Sub EnsureContextCurrent()
+        Try
+            If Context IsNot Nothing AndAlso Context.IsCurrent Then Return
+        Catch
+        End Try
+        MakeCurrent()
     End Sub
 
     ''' <summary>
@@ -594,23 +625,39 @@ Public Class PreviewControl
 
             ' Recompute bone matrices + GPU upload — only for shapes the caller marked dirty.
             ' Empty DirtyShapes (default) means "all shapes" (back-compat single-actor flow).
-            For Each mesh In Model.meshes
-                If Not intent.IsShapeDirty(mesh.MeshData.Shape) Then Continue For
-                Dim meshSkel As SkeletonInstance = intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape)
-                ' Pose is implicit in the SkeletonInstance: the caller applied it via ApplyPose.
-                SkinningHelper.RecomputeGPUBoneMatrices(
-                    mesh.MeshData.Shape, mesh.MeshData.Meshgeometry,
-                    Model.SingleBoneSkinning, meshSkel)
+            ' Two-pass split (mismo patrón que LoadShapesParallel → Setup_GL):
+            '   Pasada 1 = CPU puro (sin GL) → paralela sobre los meshes dirty.
+            '   Pasada 2 = GL (MakeCurrent + BufferSubData) → serial en el hilo del contexto.
+            Dim dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
+            Dim cpuSkinMode As Boolean = Not Config_App.Current.Setting_GPUSkinning
+            Dim computeBoundsThisFrame As Boolean = (Not PlayingAnimation) OrElse needsMorphUpdate
 
-                If Not Config_App.Current.Setting_GPUSkinning Then
-                    mesh.MeshData.Meshgeometry.dirtyVertexIndices =
-                        New HashSet(Of Integer)(Enumerable.Range(0, mesh.MeshData.Meshgeometry.Vertices.Length))
-                    Array.Fill(mesh.MeshData.Meshgeometry.dirtyVertexFlags, True)
-                End If
+            ' --- Pasada 1: CPU (paralela) -------------------------------------------------
+            ' RecomputeGPUBoneMatrices + ComputeBounds escriben SOLO el geo de su propio mesh
+            ' (memoria distinta por mesh) y leen el SkeletonInstance read-only (GetGlobalTransform
+            ' recompone y devuelve objetos nuevos, no muta). Orden por-mesh recompute→bounds
+            ' preservado (bounds lee el PerVertexSkinMatrix que recompute acaba de poblar).
+            Parallel.ForEach(dirtyMeshes,
+                Sub(mesh)
+                    Dim meshSkel As SkeletonInstance = intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape)
+                    ' Pose is implicit in the SkeletonInstance: the caller applied it via ApplyPose.
+                    SkinningHelper.RecomputeGPUBoneMatrices(
+                        mesh.MeshData.Shape, mesh.MeshData.Meshgeometry,
+                        Model.SingleBoneSkinning, meshSkel)
 
+                    If cpuSkinMode Then
+                        mesh.MeshData.Meshgeometry.dirtyVertexIndices =
+                            New HashSet(Of Integer)(Enumerable.Range(0, mesh.MeshData.Meshgeometry.Vertices.Length))
+                        Array.Fill(mesh.MeshData.Meshgeometry.dirtyVertexFlags, True)
+                    End If
+
+                    If computeBoundsThisFrame Then mesh.ComputeBounds()
+                End Sub)
+
+            ' --- Pasada 2: GL (serial) ----------------------------------------------------
+            For Each mesh In dirtyMeshes
                 mesh.UpdateSkinBuffers_GL()
                 mesh.UpdateBoneMatricesSSBO()
-                If Not PlayingAnimation OrElse needsMorphUpdate Then mesh.ComputeBounds()
             Next
 
             If needsMorphUpdate Then
@@ -675,18 +722,24 @@ Public Class PreviewControl
     ''' explicit "no morphs" contract, so callers can toggle morphs OFF simply by
     ''' clearing the resolver instead of carrying stale deltas.</summary>
     Private Sub PipelineStep_Morphs(intent As RenderIntent)
-        For Each mesh In Model.meshes
-            If Not intent.IsShapeDirty(mesh.MeshData.Shape) Then Continue For
-            Dim plan As MorphPlan = Nothing
-            If intent.MorphResolver IsNot Nothing Then
-                plan = intent.MorphResolver.ResolveMorphPlan(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
-            End If
-            MorphEngine.ApplyMorphPlan(
-                mesh.MeshData.Meshgeometry, plan,
-                intent.RecalculateNormals,
-                allowMask:=AllowMask,
-                maskedVertices:=mesh.MeshData.Shape.MaskedVertices)
-        Next
+        ' CPU puro (sin GL): por cada shape dirty resuelve su MorphPlan y lo aplica a su geo.
+        ' Paralelizado across-shapes — cada mesh escribe SOLO su propio geo; ResolveMorphPlan se
+        ' llama concurrente sobre la misma instancia de resolver (sus campos son read-only y las
+        ' cachés TRI Shared están protegidas con SyncLock: NpcMorphResolver, BodySlideTriResolver._pirtCache).
+        ' Ver el contrato de concurrencia en IMorphResolver.ResolveMorphPlan.
+        Dim dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
+        Parallel.ForEach(dirtyMeshes,
+            Sub(mesh)
+                Dim plan As MorphPlan = Nothing
+                If intent.MorphResolver IsNot Nothing Then
+                    plan = intent.MorphResolver.ResolveMorphPlan(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
+                End If
+                MorphEngine.ApplyMorphPlan(
+                    mesh.MeshData.Meshgeometry, plan,
+                    intent.RecalculateNormals,
+                    allowMask:=AllowMask,
+                    maskedVertices:=mesh.MeshData.Shape.MaskedVertices)
+            End Sub)
     End Sub
 
     ''' <summary>Apply geometry modifiers in order. Skips if none set.</summary>
@@ -709,7 +762,7 @@ Public Class PreviewControl
         SharedFloorShader = New Floor_Shader_Class
 
         ' 1) Aseguramos que el contexto GL está activo
-        Me.MakeCurrent()
+        Me.EnsureContextCurrent()
 
         ' 2) (Opcional) Debug Output para capturar sólo errores — solo en build DEBUG.
         ' Synchronous fuerza al driver a serializar el pipeline para que el callback
@@ -749,7 +802,7 @@ Public Class PreviewControl
     Public Sub ApplyResize(Force As Boolean)
         If Me.IsInDesignMode Then Return
         If Force OrElse (Me.Width <> lastW OrElse Me.Height <> lastH) Then
-            MakeCurrent()
+            EnsureContextCurrent()
             GL.Viewport(0, 0, Me.Width, Me.Height)
             lastW = Me.Width
             lastH = Me.Height
@@ -816,7 +869,7 @@ Public Class PreviewControl
         If _Model Is Nothing Then Exit Sub
         If SharedActiveShader Is Nothing AndAlso SharedSSEShader Is Nothing Then Exit Sub
         ApplyResize(False)
-        Me.MakeCurrent()
+        Me.EnsureContextCurrent()
         GL.ClearColor(Config_App.Current.Setting_BackColor)
         GL.Clear(ClearBufferMask.ColorBufferBit Or ClearBufferMask.DepthBufferBit)
         If Model.Can_Render Then
@@ -831,7 +884,7 @@ Public Class PreviewControl
     Public Function CaptureBitmap() As Bitmap
         If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Nothing
 
-        Me.MakeCurrent()
+        Me.EnsureContextCurrent()
         ApplyResize(True)
 
         If UpdateRequired Then
@@ -867,15 +920,22 @@ Public Class PreviewControl
         UpdateRequired = False
         _ticksSinceLastPresent = 0  ' reset safety-repaint heartbeat
         Try
-            RenderScene()
-            SwapBuffers()
-            FinishRenderFrame()
+            PresentFrame()
         Catch ex As Exception
             Try
                 Processing_Status("Render error")
             Catch
             End Try
         End Try
+    End Sub
+
+    ''' <summary>Dibuja y presenta un frame: RenderScene + SwapBuffers + FinishRenderFrame. Lo
+    ''' llaman OnPaint (camino diferido normal, vía WM_PAINT) y RefreshRender durante el play
+    ''' (camino sincrónico). Centralizado para tener un único punto de present.</summary>
+    Private Sub PresentFrame()
+        RenderScene()
+        SwapBuffers()
+        FinishRenderFrame()
     End Sub
     Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
         MyBase.OnMouseDown(e)
@@ -1096,8 +1156,26 @@ Public Class PreviewControl
     End Sub
 
     Public Sub RefreshRender()
-        UpdateRequired = True
-        Me.Invalidate()
+        If PlayingAnimation Then
+            ' En play: dibujar SINCRÓNICO (sin diferir a WM_PAINT) para sacar la latencia del
+            ' message-pump. No dejamos UpdateRequired=True → OnPaint no redibuja el mismo frame
+            ' (evita doble draw; OnPaint ya se auto-saltea con UpdateRequired=False). FUERA del
+            ' play, el camino normal diferido (Invalidate→OnPaint) queda IGUAL — sin cambios para
+            ' editar/rotar cámara (coalescing, reentrancy-safe, no quema CPU en idle).
+            UpdateRequired = False
+            _ticksSinceLastPresent = 0
+            Try
+                PresentFrame()
+            Catch ex As Exception
+                Try
+                    Processing_Status("Render error")
+                Catch
+                End Try
+            End Try
+        Else
+            UpdateRequired = True
+            Me.Invalidate()
+        End If
     End Sub
     Public Sub ResetCamera(Optional Force As Boolean = False)
         If Me.IsInDesignMode Then Return
@@ -1724,7 +1802,7 @@ Public Class PreviewModel
         Public Sub UpdateSkinBuffers_GL()
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
             ' Detect skinning mode change: if the toggle changed since last upload, force ALL dirty
-            Me.ParentModel.ParentControl.MakeCurrent()
+            Me.ParentModel.ParentControl.EnsureContextCurrent()
             Dim gpuMode As Boolean = Config_App.Current.Setting_GPUSkinning
             If gpuMode <> _lastUploadWasGPU Then
                 _lastUploadWasGPU = gpuMode
@@ -2036,7 +2114,7 @@ Public Class PreviewModel
         ''' </summary>
         Public Sub UpdateBoneMatricesSSBO()
             If ssbo_BoneMatrices = 0 OrElse MeshData.Meshgeometry.GPUBoneMatrices Is Nothing Then Exit Sub
-            Me.ParentModel.ParentControl.MakeCurrent()
+            Me.ParentModel.ParentControl.EnsureContextCurrent()
             Dim sizeBytes = MeshData.Meshgeometry.GPUBoneMatrices.Length * 64
             ' Diagnostic: GL_INVALID_VALUE fires here when sizeBytes > the buffer's allocated size
             ' (the original glBufferData capacity). Logged with shape name so the caller mutating
@@ -2905,7 +2983,7 @@ Public Class PreviewModel
 
     Private Sub Process_Indices_GL()
         If Me.ParentControl.IsDisposed Then Exit Sub
-        ParentControl.MakeCurrent()
+        ParentControl.EnsureContextCurrent()
         For Each mesh In meshes
             mesh.SetupMesh_GL()
         Next
@@ -3307,7 +3385,7 @@ Public Class PreviewModel
         Can_Render = False
         TexturesReady = True
         If Not IsNothing(ParentControl.RenderTimer) Then ParentControl.RenderTimer.Stop()
-        ParentControl.MakeCurrent()
+        ParentControl.EnsureContextCurrent()
         ParentControl.UpdateRequired = True
         If ShowText Then Me.ParentControl.Processing_Status("Cleaned")
         ' Limpia meshes internamente

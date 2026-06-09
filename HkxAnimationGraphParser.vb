@@ -265,11 +265,21 @@ Public Partial Class HkxObjectGraph_Class
 
         For blockIndex = 0 To numBlocks - 1
             Dim blockStart = UInt32ToInt32(blockOffsets(blockIndex), "block offset")
-            Dim firstFrame = blockIndex * maxFramesPerBlock
-            If firstFrame > numFrames Then Throw New InvalidDataException("Animation block frame range is invalid.")
+            ' Los bloques spline COMPARTEN el frame de borde: el último frame de un bloque es el primero
+            ' del siguiente, así que el stride entre bloques es (maxFramesPerBlock - 1), NO maxFramesPerBlock.
+            ' Confirmado por (a) blockDuration = (maxFramesPerBlock-1)*frameDuration en los propios datos y
+            ' (b) HavokLib (mapeo por tiempo con blockDuration/blockInverseDuration). Con stride=maxFPB un
+            ' bloque NO-último escribe (firstFrame+maxFPB-1) que excede numFrames en animaciones multi-bloque
+            ' → IndexOutOfRange (p.ej. Skyrim paired_dragonmount: 441 frames/15 bloques/32 maxFPB). FO4 no lo
+            ' disparaba porque sus splines son de 1 bloque (firstFrame=0 con cualquier stride).
+            Dim frameStride = Math.Max(1, maxFramesPerBlock - 1)
+            Dim firstFrame = blockIndex * frameStride
+            If firstFrame >= numFrames Then Continue For   ' bloque fuera de rango (datos inconsistentes)
 
-            Dim framesInBlock = If(blockIndex = numBlocks - 1, numFrames - firstFrame, maxFramesPerBlock)
-            If framesInBlock < 0 Then Throw New InvalidDataException("Animation block frame count is invalid.")
+            ' Un bloque escribe hasta maxFramesPerBlock frames, recortado a lo que reste hasta numFrames
+            ' (el frame de borde compartido lo reescribe el bloque siguiente con el mismo valor).
+            Dim framesInBlock = Math.Min(maxFramesPerBlock, numFrames - firstFrame)
+            If framesInBlock <= 0 Then Continue For
 
             Dim offset = blockStart
             EnsureBlobReadable(blob, offset, 4 * numTracks, "Track mask block")
@@ -940,6 +950,10 @@ Public Class HkaSplineCompressedAnimationGraph_Class
     Public ReadOnly Property TrackNames As New List(Of String)
     Public ReadOnly Property TrackTransforms As New List(Of HkxAnimationTransformGraph_Class)
     Public Property Binding As HkaAnimationBindingGraph_Class
+    ' Esquema de compresión de origen del que se decodificó esta animación: "spline" (default,
+    ' hkaSplineCompressedAnimation) o "lossless" (hkaLosslessCompressedAnimation). El contenedor
+    ' es común porque ambos terminan en TrackTransforms = TRS por (frame, track).
+    Public Property SourceCompression As String = "spline"
 
     Public Function GetTransform(frameIndex As Integer, trackIndex As Integer) As HkxAnimationTransformGraph_Class
         If frameIndex < 0 OrElse trackIndex < 0 OrElse NumTransformTracks <= 0 Then Return Nothing

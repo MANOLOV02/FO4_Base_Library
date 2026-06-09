@@ -4,6 +4,8 @@
 '
 '  Créditos:
 '   - Ousnius: NiflySharp – Licensed under the GPL-3.0 License (https://github.com/ousnius/NiflySharp)
+'   - Lukas Cone: HavokLib – Licensed under the GPL-3.0 License (https://github.com/PredatorCZ/HavokLib)
+'       (decoder de hkaLosslessCompressedAnimation portado en FO4_Base_Library/HkxLosslessAnimationGraphParser.vb)
 '   - Ousnius: Material Editor – Licensed under the MIT License (https://github.com/ousnius/Material-Editor)
 '   - OpenTK (GLControl) – Licensed under the MIT License (https://github.com/opentk/opentk)
 '   - ICSharpCode.SharpZipLib.dll – Licensed under the GPL-3.0 with linking exception (https://github.com/icsharpcode/SharpZipLib)

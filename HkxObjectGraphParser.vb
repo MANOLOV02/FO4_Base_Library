@@ -487,14 +487,17 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseSkeleton(source As HkxVirtualObjectGraph_Class) As HkaSkeletonGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkaSkeleton", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' hkaSkeleton layout (autoritativo: HavokLib classgen/reader, HK2012_1..HK2015 = FO4 hk_2014, ptr=8):
+        '   name, parentIndices, bones, transforms(referencePose), referenceFloats, floatSlots, localFrames, partitions.
+        ' OJO: hay que contar referenceFloats entre referencePose y floatSlots (antes se omitía → campos corridos).
         Dim nameFieldOffset = BaseObjectFieldOffset
         Dim parentIndicesOffset = nameFieldOffset + PointerSizeValue
         Dim bonesOffset = parentIndicesOffset + ArrayHeaderSizeValue
         Dim referencePoseOffset = bonesOffset + ArrayHeaderSizeValue
-        Dim floatSlotsOffset = referencePoseOffset + ArrayHeaderSizeValue
+        Dim referenceFloatsOffset = referencePoseOffset + ArrayHeaderSizeValue
+        Dim floatSlotsOffset = referenceFloatsOffset + ArrayHeaderSizeValue
         Dim localFramesOffset = floatSlotsOffset + ArrayHeaderSizeValue
         Dim partitionsOffset = localFramesOffset + ArrayHeaderSizeValue
-        Dim partitionNamesOffset = partitionsOffset + ArrayHeaderSizeValue
 
         Dim result As New HkaSkeletonGraph_Class With {
             .SourceObject = source,
@@ -503,14 +506,44 @@ Public Partial Class HkxObjectGraph_Class
             .ParentIndicesField = CreateArrayField(source, parentIndicesOffset, "ParentIndices"),
             .BonesField = CreateArrayField(source, bonesOffset, "Bones"),
             .ReferencePoseField = CreateArrayField(source, referencePoseOffset, "ReferencePose"),
+            .ReferenceFloatsField = CreateArrayField(source, referenceFloatsOffset, "ReferenceFloats"),
             .FloatSlotsField = CreateArrayField(source, floatSlotsOffset, "FloatSlots"),
             .LocalFramesField = CreateArrayField(source, localFramesOffset, "LocalFrames"),
-            .PartitionsField = CreateArrayField(source, partitionsOffset, "Partitions"),
-            .PartitionNamesField = CreateArrayField(source, partitionNamesOffset, "PartitionNames")
+            .PartitionsField = CreateArrayField(source, partitionsOffset, "Partitions")
         }
 
         result.Bones = ReadSkeletonBones(result.BonesField)
         result.ReferencePose = ReadQsTransformArray(result.ReferencePoseField)
+        result.FloatSlotNames = ReadFloatSlotNames(source, floatSlotsOffset)
+        result.Partitions = ReadSkeletonPartitions(source, partitionsOffset)
+        Return result
+    End Function
+
+    ' floatSlots: hkArray<hkStringPtr> — canales float nombrados a los que se bindean float-tracks de animación
+    ' (drivers faciales / additive / IK). NO son regiones de body-weight.
+    Private Function ReadFloatSlotNames(source As HkxVirtualObjectGraph_Class, fieldOffset As Integer) As List(Of String)
+        Dim result As New List(Of String)
+        For Each entryOffset In ReadStructureOffsets(source.RelativeOffset + fieldOffset, PointerSizeValue)
+            result.Add(ResolveLocalString(entryOffset))
+        Next
+        Return result
+    End Function
+
+    ' partitions: hkArray<hkaPartition>{ name@0, startBoneIndex:int16@ptr, numBones:uint16@ptr+2 }.
+    ' Stride 16 (ptr=8) / 8 (ptr=4). Agrupaciones de huesos para el solver/threading de Havok — NO regiones de morph.
+    Private Function ReadSkeletonPartitions(source As HkxVirtualObjectGraph_Class, fieldOffset As Integer) As List(Of HkaPartitionGraph_Class)
+        Dim result As New List(Of HkaPartitionGraph_Class)
+        Dim stride = If(PointerSizeValue = 8, 16, 8)
+        Dim idx = 0
+        For Each entryOffset In ReadStructureOffsets(source.RelativeOffset + fieldOffset, stride)
+            result.Add(New HkaPartitionGraph_Class With {
+                .Index = idx,
+                .Name = ResolveLocalString(entryOffset),
+                .StartBoneIndex = ReadInt16(entryOffset + PointerSizeValue),
+                .NumBones = ReadInt16(entryOffset + PointerSizeValue + 2)
+            })
+            idx += 1
+        Next
         Return result
     End Function
 
@@ -1032,12 +1065,21 @@ Public Class HkaSkeletonGraph_Class
     Public Property ParentIndicesField As HkxObjectArrayField_Class
     Public Property BonesField As HkxObjectArrayField_Class
     Public Property ReferencePoseField As HkxObjectArrayField_Class
+    Public Property ReferenceFloatsField As HkxObjectArrayField_Class
     Public Property FloatSlotsField As HkxObjectArrayField_Class
     Public Property LocalFramesField As HkxObjectArrayField_Class
     Public Property PartitionsField As HkxObjectArrayField_Class
-    Public Property PartitionNamesField As HkxObjectArrayField_Class
     Public Property Bones As List(Of HkaBoneGraph_Class)
     Public Property ReferencePose As List(Of HkxQsTransformGraph_Class)
+    Public Property FloatSlotNames As List(Of String)
+    Public Property Partitions As List(Of HkaPartitionGraph_Class)
+End Class
+
+Public Class HkaPartitionGraph_Class
+    Public Property Index As Integer
+    Public Property Name As String
+    Public Property StartBoneIndex As Short
+    Public Property NumBones As Short
 End Class
 
 Public Class HkaBoneGraph_Class

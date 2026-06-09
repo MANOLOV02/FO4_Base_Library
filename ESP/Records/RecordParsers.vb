@@ -1054,6 +1054,24 @@ Public Class RACE_TintTemplateGroup
     Public CategoryIndex As UInteger
 End Class
 
+''' <summary>Una entrada de RACE.Subgraph Data: un behaviour graph .hkx enchufado a un slot, con su
+''' rol/perspectiva (SRAF) y los keywords/animation-paths que el engine usa para elegirlo.
+''' wbDefinitionsFO4.pas:11676-11698.</summary>
+Public Class RACE_SubgraphData
+    ''' <summary>SGNM - path del behaviour graph .hkx (ej. "Actors\Character\Behaviors\MTBehavior.hkx").</summary>
+    Public BehaviourGraph As String = ""
+    ''' <summary>SRAF Role: 0=MT, 1=Weapon, 2=Furniture, 3=Idle, 4=Pipboy (-1 = sin SRAF).</summary>
+    Public Role As Integer = -1
+    ''' <summary>SRAF Perspective: 0=3rd, 1=1st (-1 = sin SRAF).</summary>
+    Public Perspective As Integer = -1
+    ''' <summary>SAKD - keywords del actor para los que aplica este subgraph.</summary>
+    Public ActorKeywordFormIDs As New List(Of UInteger)
+    ''' <summary>STKD - keywords del target.</summary>
+    Public TargetKeywordFormIDs As New List(Of UInteger)
+    ''' <summary>SAPT - animation paths declarados del subgraph.</summary>
+    Public AnimationPaths As New List(Of String)
+End Class
+
 Public Class RACE_Data
     Public FormID As UInteger
     Public EditorID As String = ""
@@ -1067,6 +1085,21 @@ Public Class RACE_Data
     Public FemaleSkeletonPath As String = ""
     Public MaleBodyMeshes As New List(Of String)
     Public FemaleBodyMeshes As New List(Of String)
+    ''' <summary>Behavior graph "project" .hkx por gender (raíz del árbol de behavior). En el RACE es el
+    ''' MODL del RStruct 'Male/Female Behavior Graph' (marker MNAM/FNAM + wbGenericModel), wbDefinitionsFO4.pas:11598.
+    ''' Ej: HumanRace male/female = "actors\Character\RaiderProject.hkx" (sí, "Raider"); Molerat =
+    ''' "Actors\Molerat\MoleratProject.hkx". El project referencia subgraphs por índice → ver SubgraphData.</summary>
+    Public MaleBehaviorGraphProject As String = ""
+    Public FemaleBehaviorGraphProject As String = ""
+    ''' <summary>SRAC - Subgraph Template Race (FormID→RACE). Si está y SubgraphData propio está vacío, los
+    ''' subgraphs se heredan de esta raza (caso humano: Raider/etc → HumanRaceSubGraphData). pas:11674.</summary>
+    Public SubgraphTemplateRaceFormID As UInteger
+    ''' <summary>SADD - Subgraph Additive Race (FormID→RACE). Subgraphs que se SUMAN encima. pas:11675.</summary>
+    Public SubgraphAdditiveRaceFormID As UInteger
+    ''' <summary>Subgraph Data (RArray). Cada entry = un behaviour graph .hkx (SGNM) enchufado a un slot,
+    ''' con su Role/Perspective (SRAF, terminator de cada entry) + keywords (SAKD actor/STKD target) +
+    ''' animation paths (SAPT). wbDefinitionsFO4.pas:11676.</summary>
+    Public SubgraphData As New List(Of RACE_SubgraphData)
     Public MaleHeadPartFormIDs As New List(Of UInteger)
     Public FemaleHeadPartFormIDs As New List(Of UInteger)
     Public MaleFaceDetailTextureFormIDs As New List(Of UInteger)
@@ -2593,6 +2626,9 @@ Public Module RecordParsers
         Dim currentBoneSection As RACE_BoneDataSection = RACE_BoneDataSection.None
         Dim currentBoneDataGender As RACE_BoneDataGender = Nothing
         Dim currentBoneDataEntry As RACE_BoneData = Nothing
+        ' Subgraph Data: cada entry empieza en SGNM y cierra en SRAF (terminator). SAKD precede al SGNM.
+        Dim currentSubgraph As RACE_SubgraphData = Nothing
+        Dim pendingSubgraphActorKeywords As New List(Of UInteger)
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -2662,7 +2698,49 @@ Public Module RecordParsers
                         ElseIf inMaleBody Then
                             race.MaleBodyMeshes.Add(meshPath)
                         End If
+                    ElseIf meshPath <> "" AndAlso meshPath.EndsWith(".hkx", StringComparison.OrdinalIgnoreCase) Then
+                        ' Behavior Graph project: el MODL bajo el primer MNAM/FNAM (antes de NAM0/head) es el
+                        ' .hkx del project de behavior por gender. El primero gana (la sección body no trae .hkx).
+                        If inFemaleBody Then
+                            If race.FemaleBehaviorGraphProject = "" Then race.FemaleBehaviorGraphProject = meshPath
+                        ElseIf inMaleBody Then
+                            If race.MaleBehaviorGraphProject = "" Then race.MaleBehaviorGraphProject = meshPath
+                        End If
                     End If
+                Case "SRAC"
+                    race.SubgraphTemplateRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "SADD"
+                    race.SubgraphAdditiveRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "SAKD"
+                    ' Actor keyword del subgraph; precede al SGNM → bufferizar y asignar al crear el entry.
+                    Dim kw = ResolveFormIDReference(rec, sr, pluginManager)
+                    If kw <> 0UI Then pendingSubgraphActorKeywords.Add(kw)
+                Case "SGNM"
+                    ' Nueva entrada de Subgraph Data (behaviour graph .hkx).
+                    currentSubgraph = New RACE_SubgraphData With {.BehaviourGraph = sr.AsStringGeneral}
+                    If pendingSubgraphActorKeywords.Count > 0 Then
+                        currentSubgraph.ActorKeywordFormIDs.AddRange(pendingSubgraphActorKeywords)
+                        pendingSubgraphActorKeywords.Clear()
+                    End If
+                    race.SubgraphData.Add(currentSubgraph)
+                Case "SAPT"
+                    If currentSubgraph IsNot Nothing Then
+                        Dim p = sr.AsStringGeneral
+                        If p <> "" Then currentSubgraph.AnimationPaths.Add(p)
+                    End If
+                Case "STKD"
+                    If currentSubgraph IsNot Nothing Then
+                        Dim kw = ResolveFormIDReference(rec, sr, pluginManager)
+                        If kw <> 0UI Then currentSubgraph.TargetKeywordFormIDs.Add(kw)
+                    End If
+                Case "SRAF"
+                    ' Terminator de cada entry: Role(u16) + Perspective(u16).
+                    If currentSubgraph IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        currentSubgraph.Role = BitConverter.ToUInt16(sr.Data, 0)
+                        currentSubgraph.Perspective = BitConverter.ToUInt16(sr.Data, 2)
+                    End If
+                    currentSubgraph = Nothing
+                    pendingSubgraphActorKeywords.Clear()
                 Case "HEAD"
                     Dim headPartFormID = ResolveFormIDReference(rec, sr, pluginManager)
                     If headPartFormID = 0UI Then Continue For

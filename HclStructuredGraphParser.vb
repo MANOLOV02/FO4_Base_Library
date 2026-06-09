@@ -50,14 +50,12 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .Field38Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H38)),
             .Field48UInt16 = ReadUInt16Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H48)),
             .Field58UInt16 = ReadUInt16Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H58)),
-            .Field68Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H68)),
             .Field88UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H88)),
             .Field98Matrices = ReadMatrix4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H98)),
             .Collidables = collidableObjects,
             .ConstraintSets = constraintObjects,
             .DefaultClothPoses = defaultPoseObjects,
             .FieldF8UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &HF8)),
-            .Field108Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H108)),
             .Field118Pairs = ReadUInt32PairArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H118))
         }
 
@@ -65,7 +63,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         result.FixedParticleIndices.AddRange(result.Field48UInt16.Select(Function(value) CInt(value)))
         result.Triangles.AddRange(ReadUInt16TriangleArray(result.Field58UInt16))
         result.StaticCollisionMasks.AddRange(result.FieldF8UInt32)
-        result.PinchDetectionFlags.AddRange(result.Field108Bytes)
+        result.PinchDetectionFlags.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H108)))
         result.CollidableDetails.AddRange(collidableObjects.Select(Function(obj) ParseCollidable(graph, obj)).Where(Function(detail) Not IsNothing(detail)))
         result.DefaultClothPoseDetails.AddRange(defaultPoseObjects.Select(Function(obj) graph.ParseSimClothPose(obj)).Where(Function(detail) Not IsNothing(detail)))
         result.ConstraintDetails.AddRange(constraintObjects.Select(Function(obj) ParseConstraintObject(graph, obj)).Where(Function(detail) Not IsNothing(detail)))
@@ -81,15 +79,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
             .Field18UInt32 = ReadUInt32Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H18)),
             .Field28Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H28)),
-            .Field38Structs = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H38), 32),
-            .Field48Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H48)),
-            .FieldB0Structs = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &HB0), 72),
-            .FieldC0Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &HC0)),
-            .FieldD8Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &HD8)),
-            .FieldF0Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &HF0)),
-            .Field108Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H108)),
-            .Field120Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H120)),
-            .Field138Bytes = ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H138))
+            .Field48Vectors = ReadVector4Array(graph, graph.ReadArrayHeader(source.RelativeOffset + &H48))
         }
 
         result.OperatorIndices.AddRange(result.Field18UInt32.Select(Function(value) CInt(value)))
@@ -117,7 +107,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Dim result As New HclClothStateBufferAccessDetail_Class With {
             .EntryIndex = raw.EntryIndex,
             .EntryRelativeOffset = raw.EntryRelativeOffset,
-            .RawStruct = raw,
             .Word0 = If(raw.UInt32Values.Count > 0, raw.UInt32Values(0), 0UI),
             .Word1 = If(raw.UInt32Values.Count > 1, raw.UInt32Values(1), 0UI),
             .Word2 = If(raw.UInt32Values.Count > 2, raw.UInt32Values(2), 0UI),
@@ -147,7 +136,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Dim result As New HclClothStateTransformAccessContainerDetail_Class With {
             .EntryIndex = raw.EntryIndex,
             .EntryRelativeOffset = raw.EntryRelativeOffset,
-            .RawStruct = raw,
             .NestedAccessHeader = nestedHeader
         }
         result.HeaderUInt32.AddRange(raw.UInt32Values.Take(4))
@@ -165,8 +153,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
 
         Dim result As New HclClothStateTransformSetAccessDetail_Class With {
             .EntryIndex = raw.EntryIndex,
-            .EntryRelativeOffset = raw.EntryRelativeOffset,
-            .RawStruct = raw
+            .EntryRelativeOffset = raw.EntryRelativeOffset
         }
 
         For subIndex = 0 To 2
@@ -174,7 +161,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             If Not IsNothing(componentAccess) Then result.ComponentAccesses.Add(componentAccess)
         Next
 
-        result.HasAnyMaskData = result.ComponentAccesses.Any(Function(access) access.MaskBytes.Any(Function(value) value <> 0))
+        result.HasAnyMaskData = result.ComponentAccesses.Any(Function(access) access.MaskIndices.Any())
         Return result
     End Function
 
@@ -186,18 +173,18 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Dim headerOffset = raw.EntryRelativeOffset + (subIndex * 24)
         Dim header = graph.ReadArrayHeader(headerOffset)
 
+        Dim maskBytes = ReadByteArray(graph, header)   ' local: se consume para MaskIndices, no se guarda crudo
         Dim result As New HclClothStateTransformComponentAccessDetail_Class With {
             .SubIndex = subIndex,
             .HeaderRelativeOffset = headerOffset,
             .ArrayHeader = header,
-            .MaskBytes = ReadByteArray(graph, header),
             .MaskCount = header.Count,
             .CapacityAndFlags = header.CapacityAndFlags,
             .TransformCount = If(raw.UInt32Values.Count > wordBase + 4, CInt(raw.UInt32Values(wordBase + 4)), 0),
             .ReservedValue = If(raw.UInt32Values.Count > wordBase + 5, raw.UInt32Values(wordBase + 5), 0UI)
         }
 
-        result.MaskIndices.AddRange(DecodeMaskIndices(result.MaskBytes))
+        result.MaskIndices.AddRange(DecodeMaskIndices(maskBytes))
         Return result
     End Function
 
@@ -210,7 +197,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .SourceObject = source,
             .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
             .PayloadRelativeOffset = source.RelativeOffset + &H20,
-            .PayloadBytes = ReadPayloadBytes(graph, source, &H20),
             .PayloadUInt32 = payloadUInt32,
             .ParticleCount = If(payloadUInt32.Count > 0, CInt(payloadUInt32(0)), 0),
             .TriangleCount = If(payloadUInt32.Count > 1, CInt(payloadUInt32(1)), 0)
@@ -226,7 +212,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .SourceObject = source,
             .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
             .PayloadRelativeOffset = source.RelativeOffset + &H20,
-            .PayloadBytes = ReadPayloadBytes(graph, source, &H20),
             .PayloadUInt32 = payloadUInt32,
             .ParticleCount = If(payloadUInt32.Count > 0, CInt(payloadUInt32(0)), 0),
             .TriangleCount = If(payloadUInt32.Count > 1, CInt(payloadUInt32(1)), 0)
@@ -271,7 +256,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
             .HeaderUInt32 = ReadUInt32Block(graph, source.RelativeOffset + &H18, 2),
             .PayloadRelativeOffset = source.RelativeOffset + &H20,
-            .PayloadBytes = payloadBytes,
             .PayloadUInt32 = payloadUInt32,
             .ElementCount = If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0),
             .PayloadAsciiTag = ExtractPrintableAscii(payloadBytes)
@@ -289,12 +273,84 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
             .HeaderUInt32 = ReadUInt32Block(graph, source.RelativeOffset + &H18, 2),
             .PayloadRelativeOffset = source.RelativeOffset + &H20,
-            .PayloadBytes = payloadBytes,
             .PayloadUInt32 = payloadUInt32,
             .ElementCount = If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0),
             .GatheredVertexIndices = DecodePackedUInt16List(payloadUInt32.Skip(12), If(payloadUInt32.Count > 2, CInt(payloadUInt32(2)), 0)),
             .PayloadAsciiTag = ExtractPrintableAscii(payloadBytes)
         }
+    End Function
+
+    ' uint16 sin signo desde el grafo.
+    Private Shared Function U16(graph As HkxObjectGraph_Class, relativeOffset As Integer) As Integer
+        Return CInt(graph.ReadInt16(relativeOffset)) And &HFFFF
+    End Function
+
+    ' --- Cloth-menores: layouts {name@+0x10, hkArray principal@+0x20}, structs verificados por --dump
+    '     (multi-elemento) sobre DC Guard / Residents 6Suit / Institute Lab Coat. Todo a campos tipados.
+
+    ' hclBendLinkConstraintSet — stride 20: {u16 particleA, u16 particleB, 4×float}. (DC Guard)
+    Public Shared Function ParseBendLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBendLinkConstraintSetDetail_Class
+        If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclBendLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
+        Dim result As New HclBendLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+        If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
+            For i = 0 To h.Count - 1
+                Dim e = h.DataRelativeOffset + (i * 20)
+                result.Links.Add(New HclBendLink_Class With {
+                    .ParticleA = U16(graph, e + 0), .ParticleB = U16(graph, e + 2),
+                    .Value0 = graph.ReadSingle(e + 4), .Value1 = graph.ReadSingle(e + 8),
+                    .Value2 = graph.ReadSingle(e + 12), .Value3 = graph.ReadSingle(e + 16)})
+            Next
+        End If
+        Return result
+    End Function
+
+    ' hclCompressibleLinkConstraintSet — stride 16: {u16 particleA, u16 particleB, 3×float}. (Institute Lab Coat)
+    Public Shared Function ParseCompressibleLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCompressibleLinkConstraintSetDetail_Class
+        If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclCompressibleLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
+        Dim result As New HclCompressibleLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+        If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
+            For i = 0 To h.Count - 1
+                Dim e = h.DataRelativeOffset + (i * 16)
+                result.Links.Add(New HclCompressibleLink_Class With {
+                    .ParticleA = U16(graph, e + 0), .ParticleB = U16(graph, e + 2),
+                    .Value0 = graph.ReadSingle(e + 4), .Value1 = graph.ReadSingle(e + 8), .Value2 = graph.ReadSingle(e + 12)})
+            Next
+        End If
+        Return result
+    End Function
+
+    ' hclBonePlanesConstraintSet — stride 32: {plane normal(3f)+dist(f), boneIndex(u16), index1(u16), weight(f), 2×f}. (Residents 6Suit)
+    Public Shared Function ParseBonePlanesConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBonePlanesConstraintSetDetail_Class
+        If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclBonePlanesConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
+        Dim result As New HclBonePlanesConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+        If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
+            For i = 0 To h.Count - 1
+                Dim e = h.DataRelativeOffset + (i * 32)
+                result.Constraints.Add(New HclBonePlaneConstraint_Class With {
+                    .NormalX = graph.ReadSingle(e + 0), .NormalY = graph.ReadSingle(e + 4), .NormalZ = graph.ReadSingle(e + 8),
+                    .PlaneDistance = graph.ReadSingle(e + 12),
+                    .BoneIndex = U16(graph, e + 16), .Index1 = U16(graph, e + 18),
+                    .Weight = graph.ReadSingle(e + 20), .Value0 = graph.ReadSingle(e + 24), .Value1 = graph.ReadSingle(e + 28)})
+            Next
+        End If
+        Return result
+    End Function
+
+    ' hclGatherSomeVerticesOperator — stride 4: pares {u16 source, u16 target} de remap de vértices. (Institute Lab Coat)
+    Public Shared Function ParseGatherSomeVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclGatherSomeVerticesOperatorDetail_Class
+        If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclGatherSomeVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
+        Dim result As New HclGatherSomeVerticesOperatorDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
+        If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
+            For i = 0 To h.Count - 1
+                Dim e = h.DataRelativeOffset + (i * 4)
+                result.Pairs.Add(New HclVertexGatherPair_Class With {.Source = U16(graph, e + 0), .Target = U16(graph, e + 2)})
+            Next
+        End If
+        Return result
     End Function
 
     Private Shared Function DecodePackedUInt16List(words As IEnumerable(Of UInteger), takeCount As Integer) As List(Of UShort)
@@ -372,7 +428,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .ShapeObject = graph.ResolveGlobalObject(source.RelativeOffset + &H88),
             .ShapeDetail = ParseCapsuleShape(graph, graph.ResolveGlobalObject(source.RelativeOffset + &H88)),
             .PayloadRelativeOffset = source.RelativeOffset + &H18,
-            .PayloadBytes = payloadBytes,
             .PayloadUInt32 = ReadPayloadUInt32(graph, source, &H18),
             .PayloadVectors = payloadVectors,
             .TransformMatrix = CreateMatrix4FromVectorRows(payloadVectors, 0),
@@ -388,8 +443,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Dim rawLinks = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 12)
         Dim result As New HclStandardLinkConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .Links = rawLinks
+            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
         }
         result.LinkDetails.AddRange(ParseDistanceConstraints(rawLinks))
         Return result
@@ -402,8 +456,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Dim rawLinks = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 12)
         Dim result As New HclStretchLinkConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .Links = rawLinks
+            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
         }
         result.LinkDetails.AddRange(ParseDistanceConstraints(rawLinks))
         Return result
@@ -416,8 +469,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Dim rawLinks = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 32)
         Dim result As New HclBendStiffnessConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .Links = rawLinks
+            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
         }
         result.LinkDetails.AddRange(ParseBendConstraints(rawLinks))
         Return result
@@ -430,8 +482,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Dim rawConstraints = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 16)
         Dim result As New HclLocalRangeConstraintSetDetail_Class With {
             .SourceObject = source,
-            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .Constraints = rawConstraints
+            .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)
         }
         result.ConstraintDetails.AddRange(ParseLocalRangeConstraints(rawConstraints))
         result.UniformMaximumDistance = ResolveUniformParameter(result.ConstraintDetails.Select(Function(item) item.MaximumDistance))
@@ -447,22 +498,21 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclVolumeConstraintMx", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        ' Raw structs LOCALES (se consumen acá para producir batches/quad-slots tipados; no se guardan en el result).
+        Dim f20raw = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 352)
+        Dim f40raw = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H40), 352)
         Dim result As New HclVolumeConstraintMxDetail_Class With {
             .SourceObject = source,
             .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
-            .Field20RawStructs = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 352),
-            .Field30RawStructs = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H30), 32),
-            .Field40RawStructs = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H40), 352),
-            .Field50RawStructs = ReadRawStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H50), 32),
             .Field20VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H20), 22),
             .Field30VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H30), 2),
             .Field40VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H40), 22),
             .Field50VectorBlocks = ReadVectorStructArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H50), 2)
         }
 
-        result.Field20Batches.AddRange(ParseVolumeConstraintBatches(result.Field20RawStructs, result.Field20VectorBlocks))
+        result.Field20Batches.AddRange(ParseVolumeConstraintBatches(f20raw, result.Field20VectorBlocks))
         result.Field30Entries.AddRange(ParseVolumeConstraintVectorEntries(result.Field30VectorBlocks))
-        result.Field40Batches.AddRange(ParseVolumeConstraintBatches(result.Field40RawStructs, result.Field40VectorBlocks))
+        result.Field40Batches.AddRange(ParseVolumeConstraintBatches(f40raw, result.Field40VectorBlocks))
         result.Field50Entries.AddRange(ParseVolumeConstraintVectorEntries(result.Field50VectorBlocks))
         result.Field20QuadSlots.AddRange(result.Field20Batches.SelectMany(Function(batch) batch.QuadSlots))
         result.Field40QuadSlots.AddRange(result.Field40Batches.SelectMany(Function(batch) batch.QuadSlots))
@@ -545,7 +595,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
 
             Dim batch As New HclVolumeConstraintBatch_Class With {
                 .EntryIndex = raw.EntryIndex,
-                .RawStruct = raw,
                 .VectorBlock = block
             }
 
@@ -971,7 +1020,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             If IsNothing(raw) OrElse IsNothing(raw.RawBytes) OrElse raw.RawBytes.Length < 12 Then Continue For
             result.Add(New HclDistanceConstraintGraph_Class With {
                 .EntryIndex = raw.EntryIndex,
-                .RawStruct = raw,
                 .ParticleA = BitConverter.ToUInt16(raw.RawBytes, 0),
                 .ParticleB = BitConverter.ToUInt16(raw.RawBytes, 2),
                 .RestLength = BitConverter.ToSingle(raw.RawBytes, 4),
@@ -990,7 +1038,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             If IsNothing(raw) OrElse IsNothing(raw.RawBytes) OrElse raw.RawBytes.Length < 32 Then Continue For
             result.Add(New HclBendConstraintGraph_Class With {
                 .EntryIndex = raw.EntryIndex,
-                .RawStruct = raw,
                 .WeightA = BitConverter.ToSingle(raw.RawBytes, 0),
                 .WeightB = BitConverter.ToSingle(raw.RawBytes, 4),
                 .WeightC = BitConverter.ToSingle(raw.RawBytes, 8),
@@ -1015,7 +1062,6 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             If IsNothing(raw) OrElse IsNothing(raw.RawBytes) OrElse raw.RawBytes.Length < 16 Then Continue For
             result.Add(New HclLocalRangeConstraintGraph_Class With {
                 .EntryIndex = raw.EntryIndex,
-                .RawStruct = raw,
                 .ParticleIndex = BitConverter.ToUInt16(raw.RawBytes, 0),
                 .ReferenceVertexIndex = BitConverter.ToUInt16(raw.RawBytes, 2),
                 .MaximumDistance = BitConverter.ToSingle(raw.RawBytes, 4),
@@ -1339,7 +1385,6 @@ Public Class HclSimClothDataDetail_Class
     Public ReadOnly Property ResolvedMoveParticlePairs As New List(Of HclMoveParticlesVertexParticlePairGraph_Class)
     Public Property Field58UInt16 As List(Of UShort)
     Public ReadOnly Property Triangles As New List(Of HkxUInt16TriangleGraph_Class)
-    Public Property Field68Bytes As Byte()
     Public Property Field88UInt32 As List(Of UInteger)
     Public Property Field98Matrices As List(Of HkxMatrix4Graph_Class)
     Public Property Collidables As List(Of HkxVirtualObjectGraph_Class)
@@ -1351,7 +1396,6 @@ Public Class HclSimClothDataDetail_Class
     Public ReadOnly Property DefaultClothPoseDetails As New List(Of HclSimClothPoseGraph_Class)
     Public Property FieldF8UInt32 As List(Of UInteger)
     Public ReadOnly Property StaticCollisionMasks As New List(Of UInteger)
-    Public Property Field108Bytes As Byte()
     Public ReadOnly Property PinchDetectionFlags As New List(Of Byte)
     Public Property Field118Pairs As List(Of HkxUInt32PairGraph_Class)
     Public Property CollidableBindingUniformParameter As Single?
@@ -1389,15 +1433,7 @@ Public Class HclClothStateDetail_Class
     Public ReadOnly Property ResolvedOperators As New List(Of HkxVirtualObjectGraph_Class)
     Public ReadOnly Property ResolvedOperatorNames As New List(Of String)
     Public Property Field28Vectors As List(Of HkxVector4Graph_Class)
-    Public Property Field38Structs As List(Of HkxRawStructGraph_Class)
     Public Property Field48Vectors As List(Of HkxVector4Graph_Class)
-    Public Property FieldB0Structs As List(Of HkxRawStructGraph_Class)
-    Public Property FieldC0Bytes As Byte()
-    Public Property FieldD8Bytes As Byte()
-    Public Property FieldF0Bytes As Byte()
-    Public Property Field108Bytes As Byte()
-    Public Property Field120Bytes As Byte()
-    Public Property Field138Bytes As Byte()
     Public ReadOnly Property BufferAccesses As New List(Of HclClothStateBufferAccessDetail_Class)
     Public ReadOnly Property AuxiliaryBufferAccesses As New List(Of HclClothStateBufferAccessDetail_Class)
     Public ReadOnly Property TransformAccessContainers As New List(Of HclClothStateTransformAccessContainerDetail_Class)
@@ -1407,7 +1443,6 @@ End Class
 Public Class HclClothStateBufferAccessDetail_Class
     Public Property EntryIndex As Integer
     Public Property EntryRelativeOffset As Integer
-    Public Property RawStruct As HkxRawStructGraph_Class
     Public Property Word0 As UInteger
     Public Property Word1 As UInteger
     Public Property Word2 As UInteger
@@ -1422,7 +1457,6 @@ End Class
 Public Class HclClothStateTransformAccessContainerDetail_Class
     Public Property EntryIndex As Integer
     Public Property EntryRelativeOffset As Integer
-    Public Property RawStruct As HkxRawStructGraph_Class
     Public ReadOnly Property HeaderUInt32 As New List(Of UInteger)
     Public Property NestedAccessHeader As HkxObjectArrayHeader_Class
     Public ReadOnly Property Accesses As New List(Of HclClothStateTransformSetAccessDetail_Class)
@@ -1431,7 +1465,6 @@ End Class
 Public Class HclClothStateTransformSetAccessDetail_Class
     Public Property EntryIndex As Integer
     Public Property EntryRelativeOffset As Integer
-    Public Property RawStruct As HkxRawStructGraph_Class
     Public ReadOnly Property ComponentAccesses As New List(Of HclClothStateTransformComponentAccessDetail_Class)
     Public Property HasAnyMaskData As Boolean
 End Class
@@ -1440,7 +1473,6 @@ Public Class HclClothStateTransformComponentAccessDetail_Class
     Public Property SubIndex As Integer
     Public Property HeaderRelativeOffset As Integer
     Public Property ArrayHeader As HkxObjectArrayHeader_Class
-    Public Property MaskBytes As Byte()
     Public Property MaskCount As Integer
     Public Property CapacityAndFlags As Integer
     Public Property TransformCount As Integer
@@ -1455,7 +1487,6 @@ Public Class HclBufferDefinitionDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
     Public Property PayloadRelativeOffset As Integer
-    Public Property PayloadBytes As Byte()
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ParticleCount As Integer
     Public Property TriangleCount As Integer
@@ -1465,7 +1496,6 @@ Public Class HclScratchBufferDefinitionDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
     Public Property PayloadRelativeOffset As Integer
-    Public Property PayloadBytes As Byte()
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ParticleCount As Integer
     Public Property TriangleCount As Integer
@@ -1510,7 +1540,6 @@ Public Class HclCopyVerticesOperatorDetail_Class
     Public Property Name As String
     Public Property HeaderUInt32 As List(Of UInteger)
     Public Property PayloadRelativeOffset As Integer
-    Public Property PayloadBytes As Byte()
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ElementCount As Integer
     Public Property PayloadAsciiTag As String
@@ -1521,11 +1550,65 @@ Public Class HclGatherAllVerticesOperatorDetail_Class
     Public Property Name As String
     Public Property HeaderUInt32 As List(Of UInteger)
     Public Property PayloadRelativeOffset As Integer
-    Public Property PayloadBytes As Byte()
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property ElementCount As Integer
     Public Property PayloadAsciiTag As String
     Public Property GatheredVertexIndices As New List(Of UShort)
+End Class
+
+' --- Cloth-menores: detalles TIPADOS (cero bytes crudos), structs verificados por --dump multi-elemento.
+Public Class HclBendLink_Class
+    Public Property ParticleA As Integer
+    Public Property ParticleB As Integer
+    Public Property Value0 As Single
+    Public Property Value1 As Single
+    Public Property Value2 As Single
+    Public Property Value3 As Single
+End Class
+Public Class HclBendLinkConstraintSetDetail_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public ReadOnly Property Links As New List(Of HclBendLink_Class)
+End Class
+
+Public Class HclCompressibleLink_Class
+    Public Property ParticleA As Integer
+    Public Property ParticleB As Integer
+    Public Property Value0 As Single
+    Public Property Value1 As Single
+    Public Property Value2 As Single
+End Class
+Public Class HclCompressibleLinkConstraintSetDetail_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public ReadOnly Property Links As New List(Of HclCompressibleLink_Class)
+End Class
+
+Public Class HclBonePlaneConstraint_Class
+    Public Property NormalX As Single
+    Public Property NormalY As Single
+    Public Property NormalZ As Single
+    Public Property PlaneDistance As Single
+    Public Property BoneIndex As Integer
+    Public Property Index1 As Integer
+    Public Property Weight As Single
+    Public Property Value0 As Single
+    Public Property Value1 As Single
+End Class
+Public Class HclBonePlanesConstraintSetDetail_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public ReadOnly Property Constraints As New List(Of HclBonePlaneConstraint_Class)
+End Class
+
+Public Class HclVertexGatherPair_Class
+    Public Property Source As Integer
+    Public Property Target As Integer
+End Class
+Public Class HclGatherSomeVerticesOperatorDetail_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public ReadOnly Property Pairs As New List(Of HclVertexGatherPair_Class)
 End Class
 
 Public Class HclCollidableDetail_Class
@@ -1534,7 +1617,6 @@ Public Class HclCollidableDetail_Class
     Public Property ShapeObject As HkxVirtualObjectGraph_Class
     Public Property ShapeDetail As HclCapsuleShapeDetail_Class
     Public Property PayloadRelativeOffset As Integer
-    Public Property PayloadBytes As Byte()
     Public Property PayloadUInt32 As List(Of UInteger)
     Public Property PayloadVectors As List(Of HkxVector4Graph_Class)
     Public Property TransformMatrix As HkxMatrix4Graph_Class
@@ -1577,14 +1659,12 @@ End Class
 Public Class HclStandardLinkConstraintSetDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property Links As List(Of HkxRawStructGraph_Class)
     Public ReadOnly Property LinkDetails As New List(Of HclDistanceConstraintGraph_Class)
 End Class
 
 Public Class HclStretchLinkConstraintSetDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property Links As List(Of HkxRawStructGraph_Class)
     Public ReadOnly Property LinkDetails As New List(Of HclDistanceConstraintGraph_Class)
 End Class
 
@@ -1620,7 +1700,6 @@ End Class
 
 Public Class HclVolumeConstraintBatch_Class
     Public Property EntryIndex As Integer
-    Public Property RawStruct As HkxRawStructGraph_Class
     Public Property VectorBlock As HkxVectorStructBlockGraph_Class
     Public ReadOnly Property AllVectors As New List(Of HkxVector4Graph_Class)
     Public ReadOnly Property PreQuadVectors As New List(Of HkxVector4Graph_Class)
@@ -1636,7 +1715,6 @@ End Class
 Public Class HclBendStiffnessConstraintSetDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property Links As List(Of HkxRawStructGraph_Class)
     Public ReadOnly Property LinkDetails As New List(Of HclBendConstraintGraph_Class)
     Public Property ResolvedTopologyCount As Integer
     Public Property ResolvedRestGeometryCount As Integer
@@ -1649,7 +1727,6 @@ End Class
 Public Class HclLocalRangeConstraintSetDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property Constraints As List(Of HkxRawStructGraph_Class)
     Public ReadOnly Property ConstraintDetails As New List(Of HclLocalRangeConstraintGraph_Class)
     Public Property UniformMaximumDistance As Single?
     Public Property UniformMaximumNormalDistance As Single?
@@ -1662,10 +1739,6 @@ End Class
 Public Class HclVolumeConstraintMxDetail_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property Name As String
-    Public Property Field20RawStructs As List(Of HkxRawStructGraph_Class)
-    Public Property Field30RawStructs As List(Of HkxRawStructGraph_Class)
-    Public Property Field40RawStructs As List(Of HkxRawStructGraph_Class)
-    Public Property Field50RawStructs As List(Of HkxRawStructGraph_Class)
     Public Property Field20VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
     Public Property Field30VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
     Public Property Field40VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
@@ -1749,7 +1822,6 @@ End Class
 
 Public Class HclDistanceConstraintGraph_Class
     Public Property EntryIndex As Integer
-    Public Property RawStruct As HkxRawStructGraph_Class
     Public Property ParticleA As UShort
     Public Property ParticleB As UShort
     Public Property RestLength As Single
@@ -1758,7 +1830,6 @@ End Class
 
 Public Class HclBendConstraintGraph_Class
     Public Property EntryIndex As Integer
-    Public Property RawStruct As HkxRawStructGraph_Class
     Public Property WeightA As Single
     Public Property WeightB As Single
     Public Property WeightC As Single
@@ -1794,7 +1865,6 @@ End Class
 
 Public Class HclLocalRangeConstraintGraph_Class
     Public Property EntryIndex As Integer
-    Public Property RawStruct As HkxRawStructGraph_Class
     Public Property ParticleIndex As UShort
     Public Property ReferenceVertexIndex As UShort
     Public Property MaximumDistance As Single

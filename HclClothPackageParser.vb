@@ -105,6 +105,8 @@ Public NotInheritable Class HclClothPackageParser_Class
                         clothConfig.CopyVertices = HclStructuredGraphParser_Class.ParseCopyVerticesOperator(graph, op)
                     Case "hclgatherallverticesoperator"
                         clothConfig.GatherAllVertices = HclStructuredGraphParser_Class.ParseGatherAllVerticesOperator(graph, op)
+                    Case "hclgathersomeverticesoperator"
+                        clothConfig.GatherSomeVertices = HclStructuredGraphParser_Class.ParseGatherSomeVerticesOperator(graph, op)
                     Case Else
                         clothConfig.UnknownOperators.Add(op)
                 End Select
@@ -140,6 +142,17 @@ Public NotInheritable Class HclClothPackageParser_Class
         result.ConstraintSets.AddRange(
             graph.GetObjectsByClassName("hclLocalRangeConstraintSet").
                 Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseLocalRangeConstraintSet(graph, obj), Object)))
+
+        ' Constraint sets cloth-menores — decodificados a campos tipados (cero bytes crudos):
+        result.ConstraintSets.AddRange(
+            graph.GetObjectsByClassName("hclBonePlanesConstraintSet").
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBonePlanesConstraintSet(graph, obj), Object)))
+        result.ConstraintSets.AddRange(
+            graph.GetObjectsByClassName("hclBendLinkConstraintSet").
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseBendLinkConstraintSet(graph, obj), Object)))
+        result.ConstraintSets.AddRange(
+            graph.GetObjectsByClassName("hclCompressibleLinkConstraintSet").
+                Select(Function(obj) CType(HclStructuredGraphParser_Class.ParseCompressibleLinkConstraintSet(graph, obj), Object)))
 
         Return result
     End Function
@@ -697,6 +710,7 @@ Public Class HclClothConfigGraph_Class
     Public Property SimpleMeshBoneDeform As HclSimpleMeshBoneDeformOperatorGraph_Class
     Public Property CopyVertices As HclCopyVerticesOperatorDetail_Class
     Public Property GatherAllVertices As HclGatherAllVerticesOperatorDetail_Class
+    Public Property GatherSomeVertices As HclGatherSomeVerticesOperatorDetail_Class
     Public ReadOnly Property UnknownOperators As New List(Of HkxVirtualObjectGraph_Class)
     Public ReadOnly Property ClothStates As New List(Of HclClothStateDetail_Class)
 End Class

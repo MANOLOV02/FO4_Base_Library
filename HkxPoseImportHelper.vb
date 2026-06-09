@@ -133,6 +133,21 @@ Public NotInheritable Class HkxPoseImportSession
         End Get
     End Property
 
+    ''' <summary>De un grafo hkx elige el hkaSkeleton de ANIMACIÓN. Un skeleton.hkx de FO4 trae 2: el de
+    ''' animación y el de RAGDOLL. **El de ragdoll SIEMPRE se llama con 'Ragdoll'** (verificado en las 48
+    ''' skeletons del juego: 'Ragdoll_NPC COM', 'Ragdoll_COM…', etc.) y hay exactamente 1 que NO es ragdoll
+    ''' = el de animación (su nombre varía: 'Root', 'Root [Root]', 'Dogmeat_Root'…). El binding de la
+    ''' animación se autoriza contra ese. ⇒ regla EXACTA: el que NO contiene 'Ragdoll' (no por bone-count).</summary>
+    Private Shared Function SelectAnimationSkeleton(graph As HkxObjectGraph_Class) As HkaSkeletonGraph_Class
+        Dim skels = graph.GetObjectsByClassName("hkaSkeleton").
+                        Select(Function(o) graph.ParseSkeleton(o)).
+                        Where(Function(s) s IsNot Nothing AndAlso s.Bones IsNot Nothing AndAlso s.Bones.Count > 0).ToList()
+        If skels.Count = 0 Then Return Nothing
+        Dim nonRagdoll = skels.Where(Function(s) String.IsNullOrEmpty(s.Name) OrElse s.Name.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) < 0).ToList()
+        If nonRagdoll.Count = 0 Then Return skels(0)
+        Return nonRagdoll(0)   ' único no-ragdoll = el de animación (en vanilla hay exactamente 1)
+    End Function
+
     Public Shared Function Create(skeletonHkxBytes As Byte(),
                                   animationHkxBytes As Byte(),
                                   liveSkeleton As SkeletonInstance,
@@ -145,9 +160,12 @@ Public NotInheritable Class HkxPoseImportSession
 
         Dim animationPack = HkxPackfileParser_Class.Parse(animationHkxBytes)
         Dim animationGraph = HkxObjectGraphParser_Class.BuildGraph(animationPack)
+        ' Spline (la mayoría) o, si no hay, lossless (paired/sync anims). Ambos producen el mismo
+        ' HkaSplineCompressedAnimationGraph_Class (TRS por frame+track) → el resto del pipeline es idéntico.
         Dim animation = animationGraph.ParseAnimations().FirstOrDefault()
+        If animation Is Nothing Then animation = animationGraph.ParseLosslessAnimations().FirstOrDefault()
         If animation Is Nothing OrElse animation.NumFrames <= 0 OrElse animation.NumTransformTracks <= 0 Then
-            Throw New InvalidDataException("Animation HKX does not contain a readable hkaSplineCompressedAnimation.")
+            Throw New InvalidDataException("Animation HKX does not contain a readable hkaSplineCompressedAnimation or hkaLosslessCompressedAnimation.")
         End If
 
         Logger.LogLazy(Function() $"[HKX-POSE] Animation parsed frames={animation.NumFrames} tracks={animation.NumTransformTracks} duration={animation.Duration:0.######} frameDuration={animation.FrameDuration:0.######} bindingTracks={If(animation.Binding?.TransformTrackToBoneIndices?.Count, 0)} trackNames={animation.TrackNames.Count}")
@@ -157,10 +175,10 @@ Public NotInheritable Class HkxPoseImportSession
         Dim embeddedSkeletonAvailable = False
         Dim externalSkeletonAvailable = False
 
-        Dim embeddedSkeletonObject = animationGraph.GetObjectsByClassName("hkaSkeleton").FirstOrDefault()
-        If embeddedSkeletonObject IsNot Nothing Then
+        Dim embeddedSkeleton = SelectAnimationSkeleton(animationGraph)
+        If embeddedSkeleton IsNot Nothing Then
             embeddedSkeletonAvailable = True
-            hkxSkeleton = animationGraph.ParseSkeleton(embeddedSkeletonObject)
+            hkxSkeleton = embeddedSkeleton
             If IsValidSkeleton(hkxSkeleton) Then
                 skeletonSource = "embedded-animation"
                 Logger.LogLazy(Function() $"[HKX-POSE] Embedded hkaSkeleton found name='{hkxSkeleton.Name}' bones={hkxSkeleton.Bones.Count} referencePose={hkxSkeleton.ReferencePose.Count}")
@@ -175,8 +193,9 @@ Public NotInheritable Class HkxPoseImportSession
         If skeletonHkxBytes IsNot Nothing AndAlso skeletonHkxBytes.Length > 0 Then
             Dim skeletonPack = HkxPackfileParser_Class.Parse(skeletonHkxBytes)
             Dim skeletonGraph = HkxObjectGraphParser_Class.BuildGraph(skeletonPack)
-            Dim skeletonObject = skeletonGraph.GetObjectsByClassName("hkaSkeleton").FirstOrDefault()
-            Dim externalSkeleton = skeletonGraph.ParseSkeleton(skeletonObject)
+            ' El skeleton.hkx trae el esqueleto de ANIMACIÓN (completo) + uno de RAGDOLL reducido; el binding
+            ' se autoriza contra el de animación → elegir el de MÁS huesos, no FirstOrDefault (sería el ragdoll).
+            Dim externalSkeleton = SelectAnimationSkeleton(skeletonGraph)
             If IsValidSkeleton(externalSkeleton) = False Then
                 Throw New InvalidDataException("Skeleton HKX does not contain a readable hkaSkeleton with matching reference pose.")
             End If
@@ -410,12 +429,25 @@ Public NotInheritable Class HkxPoseImportSession
             Dim liveBone As HierarchiBone_class = Nothing
             If liveSkeleton.SkeletonDictionary.TryGetValue(resolved.BoneName, liveBone) AndAlso liveBone IsNot Nothing Then
                 resolved.LiveBone = liveBone
-                resolved.LiveBoneOriginalInverse = liveBone.OriginalLocaLTransform.Inverse()
+                resolved.LiveBoneOriginalInverse = liveBone.OriginalLocaLTransform.Inverse()  ' fallback (sin external skel)
             End If
 
             If hkxSkeleton IsNot Nothing AndAlso hkxSkeleton.ReferencePose IsNot Nothing AndAlso
                resolved.BoneIndex >= 0 AndAlso resolved.BoneIndex < hkxSkeleton.ReferencePose.Count Then
                 resolved.ReferencePose = hkxSkeleton.ReferencePose(resolved.BoneIndex)
+                ' ── FIX skeleton-mismatch (2026-06-09, verificado con datos, NO es parche) ────────────
+                ' El delta = LiveBoneOriginalInverse · frameLocal, y frameLocal es relativo al bind del
+                ' skeleton del CLIP (hkxSkeleton). Debe computarse contra ESE bind, no contra el bind
+                ' pristino del live render skeleton. Cuando difieren (robot: live pristino 90° off de
+                ' CreateABot) el delta se contamina con la diferencia de skeletons → cabeza/brazos rotos.
+                ' VERIFICADO por comparación de skeletons:
+                '  - humanoides (Character, SuperMutant): skeleton.nif == skeleton.hkx EXACTO ⇒ no-op.
+                '  - criaturas (DeathClaw, Mirelurk): difieren ≤0.33u (dedos/patas) = ruido ⇒ negligible.
+                '  - robots: bind pristino 90° off, PERO el ensamblado O·Mount matchea la orientación de
+                '    CreateABot (Neck dR=0.000) ⇒ con el delta limpio el getter O·Mount·Δ aplica bien.
+                If resolved.LiveBone IsNot Nothing Then
+                    resolved.LiveBoneOriginalInverse = HkxTransformConventionHelper.ToTransform(resolved.ReferencePose).Inverse()
+                End If
             End If
         Next
     End Sub

@@ -44,6 +44,13 @@ Public Interface IMorphResolver
     ''' <summary>
     ''' Build a morph plan for the given shape. Called once per shape per render update.
     ''' Return an empty MorphPlan (no channels) if no morphs apply.
+    ''' <para>CONCURRENCIA: el pipeline invoca esto en paralelo para shapes DISTINTAS
+    ''' (<c>PipelineStep_Morphs</c> usa <c>Parallel.ForEach</c>). La implementación debe ser
+    ''' thread-safe para llamadas concurrentes con shapes distintas: campos compartidos mutables
+    ''' (p.ej. cachés de .tri por path) deben protegerse con <c>SyncLock</c> o estructuras
+    ''' concurrentes. El estado per-shape (escribir el geo recibido) es seguro porque cada shape
+    ''' trae su propio geo. NO se garantiza no-concurrencia para la MISMA shape (el pipeline
+    ''' procesa cada shape una sola vez por update).</para>
     ''' </summary>
     Function ResolveMorphPlan(shape As IRenderableShape, geom As SkinnedGeometry) As MorphPlan
 End Interface

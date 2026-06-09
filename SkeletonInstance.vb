@@ -7,41 +7,58 @@ Imports NiflySharp.Blocks
 ''' that gets folded into <see cref="LocaLTransform"/> when present.
 ''' </summary>
 Public Class HierarchiBone_class
-    ''' <summary>Effective local transform of this bone, composed as 3 layers:
-    ''' <c>OriginalLocaLTransform × MountDeltaTransform × DeltaTransform</c>.
+    ''' <summary>Effective local transform of this bone, composed as 4 layers:
+    ''' <c>OriginalLocaLTransform × MountDeltaTransform × MorphDeltaTransform × DeltaTransform</c>.
     ''' <para>
-    ''' Capas:
+    ''' Capas (de bind hacia afuera):
     ''' <list type="bullet">
     ''' <item><c>OriginalLocaLTransform</c> — skeleton bind (jamás se muta).</item>
     ''' <item><c>MountDeltaTransform</c> — chunk-mount correction (delta multiplicativo
     ''' sobre el bind). Se computa como <c>MountDelta = inv(OrigL) × newLocal</c> donde
     ''' <c>newLocal = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>.</item>
-    ''' <item><c>DeltaTransform</c> — pose/morph (MRSV/NNAM/face FMRI/ARMA sculpt/
-    ''' animation merged by <c>ApplyPose</c>). Aplica AL FINAL.</item>
+    ''' <item><c>MorphDeltaTransform</c> — bone-morph de apariencia del NPC (race height,
+    ''' body weight MWGT/NNAM/MRSV, face FMRI/FMRS, ARMA sculpt) escrito por
+    ''' <c>ApplyBoneMorphPose</c>. Capa estructural como el mount: SOBREVIVE a un cambio de
+    ''' pose/animación.</item>
+    ''' <item><c>DeltaTransform</c> — pose/animación (HKX por frame, ScreenArcher, etc.)
+    ''' escrito por <c>ApplyPose</c>. Aplica AL FINAL, libre para animar sin tocar el morph.</item>
     ''' </list>
     ''' </para>
-    ''' <para>Equivalencia con pre-refactor (que mutaba <c>OriginalLocaLTransform</c> a
-    ''' <c>newLocal</c>):
-    ''' <c>OrigL × MountDelta × Delta = OrigL × inv(OrigL) × newLocal × Delta
-    ''' = newLocal × Delta</c> ≡ committed exacto.</para>
+    ''' <para>No-op vs pre-refactor (morph en Delta): con <c>DeltaTransform = Nothing</c>
+    ''' (sin animación), <c>OrigL × Mount × Morph</c> es bit-idéntico al viejo
+    ''' <c>OrigL × Mount × Delta(morph)</c> — el mismo Transform por hueso que iba a Delta
+    ''' ahora va a Morph, y componer con Nothing es no-op.</para>
     ''' <para>Cascade: <c>GetGlobalTransform</c> compone parent chain con esta
-    ''' <c>LocaLTransform</c>, propagando MountDelta y Delta del parent automáticamente.</para>
+    ''' <c>LocaLTransform</c>, propagando Mount/Morph/Delta del parent automáticamente.</para>
     ''' </summary>
     Public ReadOnly Property LocaLTransform As Transform_Class
         Get
             Dim r As Transform_Class = OriginalLocaLTransform
             If MountDeltaTransform IsNot Nothing Then r = r.ComposeTransforms(MountDeltaTransform)
+            If MorphDeltaTransform IsNot Nothing Then r = r.ComposeTransforms(MorphDeltaTransform)
             If DeltaTransform IsNot Nothing Then r = r.ComposeTransforms(DeltaTransform)
             Return r
         End Get
     End Property
+    ''' <summary>Capa de pose/animación únicamente (NULL = sin pose). Es la capa MÁS externa,
+    ''' escrita por <c>ApplyPose</c>. Los morphs de apariencia del NPC ya NO viven aquí — van a
+    ''' <see cref="MorphDeltaTransform"/> — para que la animación HKX pueda manejar esta capa
+    ''' por frame sin borrarlos. Limpiada por <c>Reset()</c> y <c>ResetPose()</c>.</summary>
     Public DeltaTransform As Transform_Class = Nothing
+    ''' <summary>Capa de bone-morph de apariencia del NPC (V3). NULL = sin morph. Va ENTRE
+    ''' <see cref="MountDeltaTransform"/> y <see cref="DeltaTransform"/>: composición
+    ''' <c>OrigL × MountDelta × Morph × Delta</c> ("skeleton + chunks + morph + pose").
+    ''' Lleva race height, body weight (MWGT/NNAM/MRSV), face FMRI/FMRS y ARMA sculpt mergeados,
+    ''' escritos por <c>ApplyBoneMorphPose</c>. Capa estructural: SOBREVIVE a un cambio de
+    ''' pose/animación (igual que el mount). Excluida de <see cref="OriginalGetGlobalTransform"/>
+    ''' (como <c>DeltaTransform</c>). Limpiada por <c>Reset()</c> y <c>ResetMorph()</c>.</summary>
+    Public MorphDeltaTransform As Transform_Class = Nothing
     ''' <summary>Chunk-mount correction layer (V2). NULL = no mount correction.
-    ''' Delta multiplicativo entre <c>OriginalLocaLTransform</c> y <c>DeltaTransform</c>
-    ''' (composición <c>OrigL × MountDelta × Delta</c>). Computed as
+    ''' Delta multiplicativo entre <c>OriginalLocaLTransform</c> y <c>MorphDeltaTransform</c>
+    ''' (composición <c>OrigL × MountDelta × Morph × Delta</c>). Computed as
     ''' <c>MountDelta = inv(OrigL) × newLocal</c> donde
     ''' <c>newLocal = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>.
-    ''' Limpiado por <c>Reset()</c> junto con <c>DeltaTransform</c>.</summary>
+    ''' Limpiado por <c>Reset()</c>.</summary>
     Public MountDeltaTransform As Transform_Class = Nothing
     Public OriginalLocaLTransform As Transform_Class
     Public BoneName As String
@@ -92,7 +109,14 @@ Public Class SkeletonInstance
     Public Property SkeletonStructure As New List(Of HierarchiBone_class)
     Public Property SkeletonDictionary As New Dictionary(Of String, HierarchiBone_class)(StringComparer.OrdinalIgnoreCase)
     Public ReadOnly Property InjectedBones As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+    ''' <summary>Pose/animación actualmente aplicada a la capa <c>DeltaTransform</c>
+    ''' (source-of-truth de "¿hay pose?"). En NPC_Manager los morphs de apariencia NO van aquí
+    ''' sino en <see cref="MorphPose"/>.</summary>
     Public Property Pose As Poses_class
+    ''' <summary>Bone-morph de apariencia del NPC actualmente aplicado a la capa
+    ''' <c>MorphDeltaTransform</c> (source-of-truth de "¿hay morph?"). Escrito por
+    ''' <c>ApplyBoneMorphPose</c>. Independiente de <see cref="Pose"/>.</summary>
+    Public Property MorphPose As Poses_class
     Private ReadOnly _lock As New Object
 
     Public ReadOnly Property HasSkeleton As Boolean
@@ -103,11 +127,29 @@ Public Class SkeletonInstance
         End Get
     End Property
 
+    ''' <summary>Resuelve una entrada de <c>Poses_class.Transforms</c> al <c>Transform_Class</c>
+    ''' que se guarda en el hueso, aplicando el manejo ScreenArcher (delta relativo al bind).
+    ''' Compartido por <see cref="ApplyPose"/> y <see cref="ApplyBoneMorphPose"/>. Sin lock;
+    ''' el caller debe tener <c>_lock</c>.</summary>
+    Private Shared Function ResolvePoseTransform(bon As HierarchiBone_class,
+                                                 value As PoseTransformData,
+                                                 source As Poses_class.Pose_Source_Enum) As Transform_Class
+        Dim posetrans = New Transform_Class(value, source)
+        If source = Poses_class.Pose_Source_Enum.ScreenArcher Then
+            Return bon.OriginalLocaLTransform.Inverse.ComposeTransforms(posetrans)
+        End If
+        Return posetrans
+    End Function
+
+    ''' <summary>Aplica una pose/animación a la capa <c>DeltaTransform</c> (la más externa).
+    ''' Limpia SOLO esa capa (<see cref="ResetPose"/>): el bone-morph (<see cref="MorphPose"/>)
+    ''' y el chunk-mount sobreviven, de modo que la animación HKX puede manejar esta capa por
+    ''' frame sin recomputar la apariencia.</summary>
     Public Sub ApplyPose(pose As Poses_class)
         SyncLock _lock
             If Not HasSkeleton Then Exit Sub
 
-            Reset()
+            ResetPose()
 
             If pose Is Nothing Then
                 Me.Pose = Nothing
@@ -117,20 +159,39 @@ Public Class SkeletonInstance
             For Each posbon In pose.Transforms
                 If Not SkeletonDictionary.ContainsKey(posbon.Key) Then Continue For
                 Dim bon = SkeletonDictionary(posbon.Key)
-                Dim bonetrans = bon.OriginalLocaLTransform
-                Dim posetrans = New Transform_Class(posbon.Value, pose.Source)
-                Dim trans As Transform_Class
-
-                If pose.Source = Poses_class.Pose_Source_Enum.ScreenArcher Then
-                    trans = bonetrans.Inverse.ComposeTransforms(posetrans)
-                Else
-                    trans = posetrans
-                End If
-                bon.DeltaTransform = trans
+                bon.DeltaTransform = ResolvePoseTransform(bon, posbon.Value, pose.Source)
                 SkeletonDictionary(posbon.Key) = bon
             Next
 
             Me.Pose = pose
+        End SyncLock
+    End Sub
+
+    ''' <summary>Aplica los bone-morphs de apariencia del NPC (race height + body weight +
+    ''' face FMRI/FMRS + ARMA sculpt mergeados) a la capa <c>MorphDeltaTransform</c>. Limpia
+    ''' SOLO esa capa (<see cref="ResetMorph"/>): la pose/animación (<c>DeltaTransform</c>) y el
+    ''' chunk-mount sobreviven. Espejo de <see cref="ApplyPose"/> pero sobre la capa morph.
+    ''' <para>Patrón NPC: <c>ApplyBoneMorphPose(morph)</c> + <c>ApplyMountPlanForActor</c>
+    ''' + (opcional) <c>ApplyPose(frame)</c> por frame de animación.</para></summary>
+    Public Sub ApplyBoneMorphPose(pose As Poses_class)
+        SyncLock _lock
+            If Not HasSkeleton Then Exit Sub
+
+            ResetMorph()
+
+            If pose Is Nothing Then
+                Me.MorphPose = Nothing
+                Exit Sub
+            End If
+
+            For Each posbon In pose.Transforms
+                If Not SkeletonDictionary.ContainsKey(posbon.Key) Then Continue For
+                Dim bon = SkeletonDictionary(posbon.Key)
+                bon.MorphDeltaTransform = ResolvePoseTransform(bon, posbon.Value, pose.Source)
+                SkeletonDictionary(posbon.Key) = bon
+            Next
+
+            Me.MorphPose = pose
         End SyncLock
     End Sub
 
@@ -350,20 +411,40 @@ Public Class SkeletonInstance
         InjectedBones.Clear()
     End Sub
 
-    ''' <summary>Limpia AMBAS capas: DeltaTransform (pose/morph) Y MountDeltaTransform
-    ''' (chunk mount). Llamado dentro de <c>ApplyPose</c> antes de escribir el pose nuevo.
-    ''' <para>
-    ''' Después del Reset+ApplyPose, el caller DEBE invocar el aplicador del plan de mount
-    ''' (<c>ApplyMountPlanForActor(inst, renderData)</c> en NPC_Manager) para repopular
-    ''' MountDeltaTransform — sino los chunks quedan desalineados respecto del nuevo
-    ''' parent.GlobalTransform. Patrón canónico: ApplyPose → ApplyMountPlanForActor →
-    ''' MarkDirty(Pose).
-    ''' </para></summary>
+    ''' <summary>Teardown total a bind: limpia las TRES capas
+    ''' (<c>DeltaTransform</c> pose/animación, <c>MorphDeltaTransform</c> bone-morph,
+    ''' <c>MountDeltaTransform</c> chunk mount). Tras esto, <c>GetGlobalTransform</c> devuelve
+    ''' el bind puro. Lo usan los callers que quieren "render bind regardless of pose"
+    ''' (p.ej. ShapeTypeValidator). Para limpiar una sola capa ver <see cref="ResetPose"/> /
+    ''' <see cref="ResetMorph"/>.</summary>
     Public Sub Reset()
         SyncLock _lock
             For Each bon In SkeletonDictionary.Values
                 bon.DeltaTransform = Nothing
+                bon.MorphDeltaTransform = Nothing
                 bon.MountDeltaTransform = Nothing
+            Next
+        End SyncLock
+    End Sub
+
+    ''' <summary>Limpia SOLO la capa de pose/animación (<c>DeltaTransform</c>). Deja intactas
+    ''' las capas Morph y Mount. Llamado por <c>ApplyPose</c> antes de escribir el pose nuevo,
+    ''' de modo que un cambio de pose/animación NO borra los morphs de apariencia ni el mount
+    ''' de los chunks.</summary>
+    Public Sub ResetPose()
+        SyncLock _lock
+            For Each bon In SkeletonDictionary.Values
+                bon.DeltaTransform = Nothing
+            Next
+        End SyncLock
+    End Sub
+
+    ''' <summary>Limpia SOLO la capa de bone-morph (<c>MorphDeltaTransform</c>). Deja intactas
+    ''' las capas Pose y Mount. Llamado por <c>ApplyBoneMorphPose</c> antes de reaplicar.</summary>
+    Public Sub ResetMorph()
+        SyncLock _lock
+            For Each bon In SkeletonDictionary.Values
+                bon.MorphDeltaTransform = Nothing
             Next
         End SyncLock
     End Sub

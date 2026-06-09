@@ -16,12 +16,19 @@ Imports OpenTK.Mathematics
 ' LocalReferencePoseToTransform: usa OpenTK Matrix4 → Transform_Class(Matrix4).
 ' Es la implementación CORRECTA y consistente con el resto del render.
 '
+' AUTORÍA = BSClothExtraData: el hkaSkeleton de BSClothExtraData ES la rebanada de autoría
+' embebida en el NIF (cloth-bones + ancla + bind + jerarquía). Leerlo y colgar los bones (esto)
+' YA es usar la autoría directo — no hay que recalcular nada. El .hkx de autoría SUELTO
+' (FemaleHair04.hkx, junto al NIF) tiene el skeleton COMPLETO de 201 huesos con el mismo bind de
+' los cloth-bones (verificado: Δ<5e-4 u vs el embebido), pero el render no tiene el path del NIF
+' (Nifcontent_Class_Manolo no guarda su filename), así que el embebido es la fuente in-memory.
+' Si BSClothExtraData falta (CloneShape_Original no lo transfiere) la solución correcta es preservarlo
+' en el clone / leer del NIF source — NO recalcular desde el skin. Ver [[arch_cloth_bones_inject]].
+'
 ' PENDIENTES CONOCIDOS:
 '  - LocalReferencePoseToTransform y ResolveUniformScale están duplicadas aquí
 '    y en HclCollisionPoseHelper.vb. Candidatas a extraer a módulo compartido
 '    cuando se decida conectar HclCollisionPoseHelper al render.
-'  - Debugger.Break() en el catch de InjectMissingBonesIntoLiveSkeleton:
-'    útil para debug, evaluar si dejar o quitar en producción.
 '  - NormalizeBoneName usa ToUpperInvariant(). Consistente con el resto de
 '    bone lookups (OrdinalIgnoreCase). Revisar si hay casos edge con nombres
 '    de huesos que usen caracteres no-ASCII.
@@ -29,10 +36,37 @@ Imports OpenTK.Mathematics
 
 Public NotInheritable Class SkeletonClothOverlayHelper_Class
 
-    ' Parses the BSClothExtraData from a NIF and returns the HKX skeleton.
+    ' Caché por-NIF del cloth hkaSkeleton parseado. ParseClothSkeleton se invoca desde
+    ' PrepareForShapes, que el path de pose-update corre EN CADA FRAME — sin caché, durante el play
+    ' de una animación se re-parseaba el packfile Havok entero (Parse + BuildGraph + ParseSkeleton)
+    ' de cada prenda con física ~60 veces/seg (el costo es del parse, no de la geometría: por eso
+    ' lento aun con pocas shapes). El cloth-skeleton es INVARIANTE para un NIF dado, así que se
+    ' cachea por instancia de NIF.
+    ' ConditionalWeakTable: clave DÉBIL → cuando el NIF se libera (shape descargada/reemplazada por
+    ' otra instancia), la entrada se evacúa sola por GC. Sin clear manual y sin mantener NIFs vivos
+    ' (no leak). TryGetValue/AddOrUpdate son thread-safe.
+    Private Shared ReadOnly _clothSkeletonCache As _
+        New Runtime.CompilerServices.ConditionalWeakTable(Of Nifcontent_Class_Manolo, HkaSkeletonGraph_Class)
+
+    ' Parses the BSClothExtraData from a NIF and returns the HKX skeleton (cached per NIF instance).
     ' Returns Nothing if the NIF has no cloth data or the skeleton cannot be parsed.
-    ' Call once per unique NIFContent and cache the result when processing multiple shapes.
     Public Shared Function ParseClothSkeleton(nifContent As Nifcontent_Class_Manolo) As HkaSkeletonGraph_Class
+        If nifContent Is Nothing Then Return Nothing
+
+        Dim cached As HkaSkeletonGraph_Class = Nothing
+        If _clothSkeletonCache.TryGetValue(nifContent, cached) Then Return cached
+
+        Dim parsed = ParseClothSkeletonUncached(nifContent)
+        ' Solo se cachean resultados no-nulos: ConditionalWeakTable no admite Nothing como value, y un
+        ' Nothing (sin BSClothExtraData o parse fallido) es barato de re-evaluar. En la práctica los
+        ' callers (PrepareForShapes) solo pasan NIFs de shapes con HasPhysics → parsed no-nulo → cachea.
+        ' AddOrUpdate (no Add): si dos hilos parsean a la vez, el último gana; ambos resultados son
+        ' equivalentes (el parse es determinístico para un NIF dado), así que es idempotente.
+        If parsed IsNot Nothing Then _clothSkeletonCache.AddOrUpdate(nifContent, parsed)
+        Return parsed
+    End Function
+
+    Private Shared Function ParseClothSkeletonUncached(nifContent As Nifcontent_Class_Manolo) As HkaSkeletonGraph_Class
         Dim cloth = nifContent?.Blocks.OfType(Of BSClothExtraData)().FirstOrDefault()
         If cloth Is Nothing Then Return Nothing
         Try
@@ -69,6 +103,9 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
         If cachedSkeleton IsNot Nothing Then
             skeleton = cachedSkeleton
         Else
+            ' BSClothExtraData embebe la rebanada del hkaSkeleton de AUTORÍA con los cloth-bones + su
+            ' ancla y bind/jerarquía — la fuente directa y correcta. (El .hkx de autoría suelto tiene el
+            ' skeleton completo de 201 huesos, mismo bind, pero el render no tiene el path para cargarlo.)
             skeleton = ParseClothSkeleton(shape.NifContent)
             If skeleton Is Nothing Then Exit Sub
         End If
@@ -93,13 +130,13 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
 
                 Dim targetIndex As Integer = -1
                 If Not hkxBoneLookup.TryGetValue(shapeBoneName, targetIndex) Then
-                    Debugger.Break()
+                    Logger.LogLazy(Function() $"[CLOTH-BIND] '{shapeName}': bone '{shapeBoneName}' del skin no está en el hkaSkeleton del BSClothExtraData; se omite.")
                     Continue For
                 End If
                 EnsureLiveInjectedBone(targetIndex, skeleton, targetSkeleton, shapeName, shapeBoneName)
             Next
         Catch ex As Exception
-            Debugger.Break()
+            Logger.LogLazy(Function() $"[CLOTH-BIND] excepción inyectando cloth-bones (HKX) para '{shapeName}': {ex.Message}")
         End Try
     End Sub
 
