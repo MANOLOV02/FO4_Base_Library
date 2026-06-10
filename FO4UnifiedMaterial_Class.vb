@@ -2857,16 +2857,6 @@ Public Class FO4UnifiedMaterial_Class
             End Try
         End If
         If type Is GetType(BGSM) Then
-            ' ShaderType resolution. Two sources, in priority order:
-            '   1. BGSM-derived (DeriveShaderTypeFromBgsm): maps BGSM flags Facegen/SkinTint/
-            '      Hair/Tree/Terrain/Glowmap/EnvironmentMapping to ShaderType. Covers 5+ enum
-            '      values. WINS when non-Default — authoring tool's explicit intent.
-            '   2. NIF shader ShaderType_SK_FO4: covers all 21 enum values (Parallax,
-            '      MultilayerParallax, etc. that BGSM flags can't express). Used as fallback
-            '      when BGSM-derived stayed Default — covers the 16 non-flagged enum values.
-            ' Empirical motivation: HairFemale03_Hairline's NIF shader is Default but the BGSM
-            ' (hairshort_lgrad_8bit.bgsm) carries Hair=True; the promotion to HairTint must
-            ' survive — overwriting with NIF Default loses what CK relies on at bake time.
             If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
                 _NifShaderType = DeriveShaderTypeFromBgsm(CType(Underlying_Material, BGSM))
                 If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then

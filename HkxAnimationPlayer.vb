@@ -1,6 +1,8 @@
 ' Version Uploaded of Fo4Library 3.2.0
 Imports System.Collections.Generic
 Imports System.Diagnostics
+Imports System.Runtime.InteropServices
+Imports System.Windows.Forms
 
 ''' <summary>
 ''' Reproductor de animación HKX compartido por Wardrobe_Manager y FO4_NPC_Manager. Encapsula lo
@@ -122,6 +124,78 @@ Public Class HkxAnimationPlayer
     Public Sub ClearCache()
         _poseCache.Clear()
     End Sub
+
+    ' ─────────────────────────────────────────────────────────────────────────────────────────
+    ' Loop de render basado en Application.Idle (best practice WinForms/OpenTK para tiempo real).
+    ' Reemplaza al WinForms Timer durante el play. Renderiza apenas el hilo UI queda libre (sin
+    ' esperar el WM_TIMER de baja prioridad), PERO:
+    '   • solo dispara onFrame cuando el frame REALMENTE cambió (paceado por reloj) → no quema GPU,
+    '   • duerme 1ms cuando está adelantado → no quema CPU (no spinea al 100%),
+    '   • chequea la cola en cada vuelta y SALE apenas llega input → NO congela la UI.
+    ' onFrame corre en el hilo UI (igual que un Tick). Llamar Start(fromFrame) antes de Begin.
+    ' ─────────────────────────────────────────────────────────────────────────────────────────
+    Private _idleHandler As EventHandler = Nothing
+    Private _onFrame As Action(Of Integer) = Nothing
+    Private _lastShownFrame As Integer = -1
+
+    ''' <summary>Arranca el loop Application.Idle. <paramref name="onFrame"/> se invoca en el hilo UI
+    ''' con el frame a mostrar, SOLO cuando cambia respecto del último. Idempotente: nunca suscribe
+    ''' dos veces. Llamar <see cref="Start"/> antes para fijar el reloj.</summary>
+    Public Sub BeginIdlePlayback(onFrame As Action(Of Integer))
+        If onFrame Is Nothing Then Return
+        _onFrame = onFrame
+        _lastShownFrame = -1
+        If _idleHandler Is Nothing Then _idleHandler = AddressOf OnAppIdle
+        RemoveHandler Application.Idle, _idleHandler   ' idempotente
+        AddHandler Application.Idle, _idleHandler
+    End Sub
+
+    ''' <summary>Frena el loop Application.Idle (desuscribe). Llamar junto con <see cref="[Stop]"/>.
+    ''' Se ejecuta en el hilo UI, donde el loop NO está corriendo, así que no hay carrera.</summary>
+    Public Sub EndIdlePlayback()
+        _onFrame = Nothing
+        If _idleHandler IsNot Nothing Then RemoveHandler Application.Idle, _idleHandler
+    End Sub
+
+    Private Sub OnAppIdle(sender As Object, e As EventArgs)
+        ' Loop MIENTRAS la cola esté vacía. Apenas llega un mensaje (click/mouse/tecla/paint),
+        ' AppIsIdle()=False → sale → el pump lo procesa → Idle se vuelve a disparar. Por eso cede
+        ' en cada vuelta y NO congela la UI; la latencia de input es a lo sumo un frame (~render).
+        While _playing AndAlso _onFrame IsNot Nothing AndAlso AppIsIdle()
+            Dim f = FrameForNow()
+            If f < 0 Then Exit While
+            If f <> _lastShownFrame Then
+                _lastShownFrame = f
+                Dim cb = _onFrame
+                If cb IsNot Nothing Then cb(f)
+            Else
+                Threading.Thread.Sleep(1)   ' adelantado: pacing, cede el hilo 1ms (no spin)
+            End If
+        End While
+    End Sub
+
+    ''' <summary>True si la cola de mensajes del hilo está vacía. PeekMessage con PM_NOREMOVE: mira
+    ''' sin sacar el mensaje, así no roba input al pump.</summary>
+    Private Shared Function AppIsIdle() As Boolean
+        Dim msg As NativeMessage
+        Return Not PeekMessage(msg, IntPtr.Zero, 0UI, 0UI, 0UI)
+    End Function
+
+    <StructLayout(LayoutKind.Sequential)>
+    Private Structure NativeMessage
+        Public Handle As IntPtr
+        Public Msg As UInteger
+        Public WParam As IntPtr
+        Public LParam As IntPtr
+        Public Time As UInteger
+        Public Location As System.Drawing.Point
+    End Structure
+
+    <DllImport("user32.dll")>
+    Private Shared Function PeekMessage(ByRef lpMsg As NativeMessage, hWnd As IntPtr,
+                                        wMsgFilterMin As UInteger, wMsgFilterMax As UInteger,
+                                        wRemoveMsg As UInteger) As Boolean
+    End Function
 
     Private Function ClampFrame(frame As Integer) As Integer
         Dim count = FrameCount

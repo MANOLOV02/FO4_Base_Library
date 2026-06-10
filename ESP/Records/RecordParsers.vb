@@ -1100,6 +1100,10 @@ Public Class RACE_Data
     ''' con su Role/Perspective (SRAF, terminator de cada entry) + keywords (SAKD actor/STKD target) +
     ''' animation paths (SAPT). wbDefinitionsFO4.pas:11676.</summary>
     Public SubgraphData As New List(Of RACE_SubgraphData)
+    ''' <summary>KWDA — keywords del RACE (KYWD FormIDs). Incluye el keyword de actor 'Anims&lt;X&gt;Race' que
+    ''' gatea qué subgraph (SAKD) aplica a este robot (Assaultron/Protectron/SentryBot comparten subgraphs vía
+    ''' SRAC; el keyword del race los discrimina). Ver [[arch_race_behavior_resolution]].</summary>
+    Public Keywords As New List(Of UInteger)
     Public MaleHeadPartFormIDs As New List(Of UInteger)
     Public FemaleHeadPartFormIDs As New List(Of UInteger)
     Public MaleFaceDetailTextureFormIDs As New List(Of UInteger)
@@ -2706,6 +2710,15 @@ Public Module RecordParsers
                         ElseIf inMaleBody Then
                             If race.MaleBehaviorGraphProject = "" Then race.MaleBehaviorGraphProject = meshPath
                         End If
+                    End If
+                Case "KWDA"
+                    ' Keywords del RACE (array de KYWD FormIDs). El 'Anims<X>Race' discrimina el robot.
+                    Dim kd = sr.Data
+                    If kd IsNot Nothing AndAlso kd.Length >= 4 Then
+                        For ki = 0 To (kd.Length \ 4) - 1
+                            Dim kfid = ResolveFormIDReference(rec, BitConverter.ToUInt32(kd, ki * 4), pluginManager)
+                            If kfid <> 0UI Then race.Keywords.Add(kfid)
+                        Next
                     End If
                 Case "SRAC"
                     race.SubgraphTemplateRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)

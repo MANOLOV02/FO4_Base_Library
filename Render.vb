@@ -226,11 +226,13 @@ Public Class PreviewControl
     ''' and skips non-essential bounds bookkeeping while animation frames are advancing.</summary>
     Private _playingAnimation As Boolean = False
 
-    ''' <summary>True mientras el HKX form reproduce una animación. El setter PARA el RenderTimer
-    ''' general durante el play — el PlaybackTimer del HKX es el único driver (corre el pipeline vía
-    ''' InvalidateRender y repinta vía RefreshRender), así que no se pierde nada — y lo REACTIVA al
-    ''' terminar (sin esto el preview se congelaría). Además habilita el present sincrónico en
-    ''' RefreshRender (sin diferir a WM_PAINT).</summary>
+    ''' <summary>True mientras se está REPRODUCIENDO la animación (botón Play apretado; Stop/pausa →
+    ''' False). El setter PARA el RenderTimer general durante el play — el PlaybackTimer/animTimer de
+    ''' la app es el único driver (corre el pipeline vía InvalidateRender y repinta vía RefreshRender)
+    ''' — y lo REACTIVA al parar (sin esto, en pausa no se podría rotar/zoom). Además habilita el
+    ''' present SINCRÓNICO en RefreshRender (sin diferir a WM_PAINT) y el skip de reset de cámara/bounds.
+    ''' IMPORTANTE: debe seguir la lógica del botón Play (True al reproducir, False al parar), NO "hay
+    ''' un clip seleccionado" — si quedara True en pausa, el RenderTimer no correría y se congelaría.</summary>
     Public Property PlayingAnimation As Boolean
         Get
             Return _playingAnimation
@@ -240,6 +242,18 @@ Public Class PreviewControl
             _playingAnimation = value
             If RenderTimer IsNot Nothing Then
                 If value Then RenderTimer.Stop() Else RenderTimer.Start()
+            End If
+            ' Al PARAR la animación: durante el play se saltearon world-cache + bounds para meshes
+            ' opacos (Option B), y mesh.ComputeBounds quedó gateado (frustum congelado). Forzar un Pose
+            ' dirty (todos los shapes) + render síncrono YA con PlayingAnimation=False → el pipeline
+            ' recomputa con computeBoundsThisFrame=True y updateWorldCache=True → frustum / cámara /
+            ' picking / world-cache frescos antes de que el usuario rote o seleccione. Cubre WM y NPC
+            ' (ambos paran vía este setter). Guard de Shapes para no disparar el branch "empty" del
+            ' pipeline si no hay nada cargado.
+            If Not value AndAlso _renderIntent IsNot Nothing AndAlso
+               _renderIntent.Shapes IsNot Nothing AndAlso _renderIntent.Shapes.Any() Then
+                _renderIntent.MarkDirty(RenderDirtyFlags.Pose)
+                InvalidateRender()
             End If
         End Set
     End Property
@@ -252,6 +266,29 @@ Public Class PreviewControl
     Private _renderIntent As RenderIntent
     ''' <summary>Tracks the original shapes reference from the last full reload, for identity comparison.</summary>
     Private _lastLoadedShapesSource As IEnumerable(Of IRenderableShape)
+    ''' <summary>Shape set para el que el skeleton ya fue preparado (cloth bones inyectados vía
+    ''' PipelineStep_Skeleton). En pose-only se compara por identidad para saltear el re-inject
+    ''' per-frame (caro en WM con física; no-op en NPC). Se setea en cada PipelineStep_Skeleton.</summary>
+    Private _skeletonPreparedForShapes As IEnumerable(Of IRenderableShape)
+    ''' <summary>[RENDER-MS] acumuladores del desglose de UpdateSkinBuffers_GL: cómputo per-vértice
+    ''' (world-transform + invert 3×3) vs upload (BufferSubData). Los resetea ExecuteRenderPipeline
+    ''' antes del loop GL y los suma UpdateSkinBuffers_GL. Solo instrumentación.</summary>
+    Friend _skinComputeMs As Double
+    Friend _skinUploadMs As Double
+    ''' <summary>[RENDER-MS] dirty-vertex bookkeeping (limpiar el HashSet de 32k flags por mesh).
+    ''' Sospechoso del "gap" en CPU-anim (todos los verts dirty cada frame → el HashSet es overhead).</summary>
+    Friend _skinDirtyMs As Double
+    ''' <summary>[RENDER-MS] EnsureContextCurrent por mesh (sospechoso #2 del gap: si el contexto no
+    ''' está current cada llamada, MakeCurrent ×19/frame; o Context.IsCurrent es caro por sí solo).</summary>
+    Friend _skinCtxMs As Double
+    ''' <summary>[RENDER-MS] ComputeBounds() INCONDICIONAL dentro de UpdateSkinBuffers_GL (sospechoso #3,
+    ''' el más fuerte: pasada per-vértice a mundo que bypassea el gate computeBoundsThisFrame).</summary>
+    Friend _skinBoundsMs As Double
+    Friend _skinMaskMs As Double
+    ''' <summary>[RENDER-MS] mide el PERÍODO real entre pose-updates (= 1000/fps efectivo). Si period >>
+    ''' total, el cuello está ENTRE frames (ApplyPose/BuildPose del callback, pacing del Idle, vsync),
+    ''' no en el pipeline medido.</summary>
+    Private ReadOnly _posePeriodSw As New System.Diagnostics.Stopwatch
     ''' <summary>
     ''' The declarative render intent for this control. Apps set properties + dirty flags,
     ''' then call InvalidateRender(). The timer-driven pipeline consumes it.
@@ -546,6 +583,7 @@ Public Class PreviewControl
             Model.CleanTextures()
             Model.LoadedShapes.Clear()
             _lastLoadedShapesSource = Nothing
+            _skeletonPreparedForShapes = Nothing
             intent.TexturePrefetchAction = Nothing
             Model.Processing_Status_GL("Empty")
             intent.ClearDirty()
@@ -592,6 +630,7 @@ Public Class PreviewControl
 
             ' Skeleton
             PipelineStep_Skeleton(intent)
+            _skeletonPreparedForShapes = intent.Shapes
 
             ' Geometry extraction (parallel) — resolver consulted per shape for SkeletonInstance
             Model.LoadShapesParallel(intent.Shapes, intent.SkeletonResolver)
@@ -616,12 +655,25 @@ Public Class PreviewControl
 
         ElseIf needsPoseUpdate Then
             ' -- Pose change (incremental) ----------------------------
-            PipelineStep_Skeleton(intent)
+            ' Candidato #2: solo re-preparar el skeleton (clear+reinject cloth bones) si CAMBIÓ el shape
+            ' set. En pose-only durante animación el set es estable → los bones inyectados del último
+            ' prepare siguen vivos (ApplyPose no los toca) → se saltea el churn per-frame (caro en WM
+            ' con física; PrepareForShapes. NPC: resolver no-op, así que esto es no-op para NPC).
+            ' [RENDER-MS] período REAL entre pose-updates (= 1000/fps efectivo). vs total = trabajo.
+            Dim _periodMs = _posePeriodSw.Elapsed.TotalMilliseconds : _posePeriodSw.Restart()
+            ' [RENDER-MS] timers por fase (gateados por LogLazy; el Stopwatch es ~ns, despreciable).
+            Dim _sw = System.Diagnostics.Stopwatch.StartNew()
+            If Not ReferenceEquals(_skeletonPreparedForShapes, intent.Shapes) Then
+                PipelineStep_Skeleton(intent)
+                _skeletonPreparedForShapes = intent.Shapes
+            End If
+            Dim _msSkel = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
 
             ' Morphs (if also dirty — preset+pose changed simultaneously)
             If needsMorphUpdate Then
                 PipelineStep_Morphs(intent)
             End If
+            Dim _msMorph = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
 
             ' Recompute bone matrices + GPU upload — only for shapes the caller marked dirty.
             ' Empty DirtyShapes (default) means "all shapes" (back-compat single-actor flow).
@@ -630,7 +682,23 @@ Public Class PreviewControl
             '   Pasada 2 = GL (MakeCurrent + BufferSubData) → serial en el hilo del contexto.
             Dim dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
             Dim cpuSkinMode As Boolean = Not Config_App.Current.Setting_GPUSkinning
-            Dim computeBoundsThisFrame As Boolean = (Not PlayingAnimation) OrElse needsMorphUpdate
+            Dim playingNow As Boolean = PlayingAnimation
+            Dim computeBoundsThisFrame As Boolean = (Not playingNow) OrElse needsMorphUpdate
+
+            ' Memoización #3: construir la cache de global transforms UNA vez por SkeletonInstance única
+            ' (BFS parent-first), ANTES del Parallel.ForEach. Compartida read-only por todos los meshes de
+            ' esa instancia → O(bones) en vez de O(shapes × bonesPalette × profundidad). Se reconstruye
+            ' cada frame desde el estado actual (sin invalidación stale). Corre DESPUÉS de
+            ' PipelineStep_Skeleton (inyección, arriba) y de que la app aplicó pose/morph/mount → capas
+            ' finales. WM: 1 instancia (Default). NPC: base + clones por-ARMA (vía resolver).
+            Dim globalCaches As New Dictionary(Of SkeletonInstance, SkeletonGlobalTransformCache)
+            For Each mesh In dirtyMeshes
+                Dim inst As SkeletonInstance = If(intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape), SkeletonInstance.Default)
+                If inst IsNot Nothing AndAlso Not globalCaches.ContainsKey(inst) Then
+                    globalCaches(inst) = inst.BuildGlobalTransformCacheForRenderPass()
+                End If
+            Next
+            Dim _msCache = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
 
             ' --- Pasada 1: CPU (paralela) -------------------------------------------------
             ' RecomputeGPUBoneMatrices + ComputeBounds escriben SOLO el geo de su propio mesh
@@ -640,10 +708,25 @@ Public Class PreviewControl
             Parallel.ForEach(dirtyMeshes,
                 Sub(mesh)
                     Dim meshSkel As SkeletonInstance = intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape)
+                    Dim meshGlobalCache As SkeletonGlobalTransformCache = Nothing
+                    globalCaches.TryGetValue(If(meshSkel, SkeletonInstance.Default), meshGlobalCache)
+                    ' Option B (GPU y CPU). Pasada 3 (world-cache/bounds): solo fuera de play, o para
+                    ' meshes que el sort de transparentes lee por Boundingcenter en play. Ese bucket
+                    ' (BlendedMeshes en RebuildRenderBuckets) = HasAlphaBlend ∪ Wireframe → el carve-out
+                    ' DEBE matchearlo exacto, o un wireframe leería Boundingcenter stale (z-sort mal).
+                    ' Para opacos en play nadie la muestra (frustum usa mesh.BoundsMin, congelado aparte;
+                    ' el display no lee el world-cache) y en CPU es redundante con UpdateSkinBuffers.
+                    ' Pasada 2 (PerVertexSkinMatrix): además en CPU-skin la necesita el display. Pasada 1
+                    ' (matrices→SSBO) corre siempre dentro de Recompute.
+                    Dim keepBounds As Boolean =
+                        (mesh.MeshData.Material IsNot Nothing AndAlso mesh.MeshData.Material.HasAlphaBlend) OrElse
+                        (mesh.MeshData.Shape IsNot Nothing AndAlso mesh.MeshData.Shape.Wireframe)
+                    Dim updateWorldCache As Boolean = (Not playingNow) OrElse keepBounds
+                    Dim updatePerVertexSkin As Boolean = cpuSkinMode OrElse updateWorldCache
                     ' Pose is implicit in the SkeletonInstance: the caller applied it via ApplyPose.
                     SkinningHelper.RecomputeGPUBoneMatrices(
                         mesh.MeshData.Shape, mesh.MeshData.Meshgeometry,
-                        Model.SingleBoneSkinning, meshSkel)
+                        Model.SingleBoneSkinning, meshSkel, updateWorldCache, updatePerVertexSkin, meshGlobalCache)
 
                     If cpuSkinMode Then
                         mesh.MeshData.Meshgeometry.dirtyVertexIndices =
@@ -653,18 +736,40 @@ Public Class PreviewControl
 
                     If computeBoundsThisFrame Then mesh.ComputeBounds()
                 End Sub)
+            Dim _msPass1 = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
 
             ' --- Pasada 2: GL (serial) ----------------------------------------------------
+            ' Timer separado en 3: skinCompute (world-transform + invert 3×3/vértice) + skinUpload (4
+            ' BufferSubData/mesh) los acumula UpdateSkinBuffers_GL en _skinComputeMs/_skinUploadMs; ssbo
+            ' (matrices de hueso — desperdicio en CPU-skin) es el segundo loop. Loops separados = mismo
+            ' resultado (cada uno escribe buffers independientes por mesh).
+            _skinComputeMs = 0 : _skinUploadMs = 0 : _skinDirtyMs = 0 : _skinCtxMs = 0 : _skinBoundsMs = 0 : _skinMaskMs = 0
+            Dim _gc0Before = GC.CollectionCount(0)   ' Gen0 GCs durante el loop skin (los arrays alocan ~28MB/frame)
+            Dim _skinFuncMs As Double = 0            ' tiempo de la función entera (vs el wall del loop = overhead/GC entre meshes)
             For Each mesh In dirtyMeshes
-                mesh.UpdateSkinBuffers_GL()
+                Dim _swM = System.Diagnostics.Stopwatch.StartNew()
+                mesh.UpdateSkinBuffers_GL(recomputeBounds:=False)   ' pose path: bounds los maneja la línea gateada del pass 1
+                _skinFuncMs += _swM.Elapsed.TotalMilliseconds
+            Next
+            Dim _msSkin = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
+            Dim _gc0 = GC.CollectionCount(0) - _gc0Before
+            For Each mesh In dirtyMeshes
                 mesh.UpdateBoneMatricesSSBO()
             Next
+            Dim _msSsbo = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
 
             If needsMorphUpdate Then
                 Model.MarkRenderBucketsDirty()
             End If
             If needsCameraReset AndAlso allowCameraReset Then ResetCamera()
             RefreshRender()
+            ' present solo es síncrono (y por lo tanto medible aquí) en PlayingAnimation; en scrub
+            ' RefreshRender solo hace Invalidate (el draw real es diferido a OnPaint) → ~0 acá.
+            Dim _msPresent = _sw.Elapsed.TotalMilliseconds
+            Dim _scMs As Double = _skinComputeMs : Dim _suMs As Double = _skinUploadMs : Dim _sdMs As Double = _skinDirtyMs   ' snapshot p/ el closure
+            Dim _sfMs As Double = _skinFuncMs : Dim _gc0n As Integer = _gc0 : Dim _sctxMs As Double = _skinCtxMs
+            Dim _sbMs As Double = _skinBoundsMs : Dim _smMs As Double = _skinMaskMs
+            Logger.LogLazy(Function() $"[RENDER-MS] period={_periodMs:F2} meshes={dirtyMeshes.Count} skel={_msSkel:F2} morph={_msMorph:F2} cache={_msCache:F2} pass1={_msPass1:F2} ctx={_sctxMs:F2} skinCompute={_scMs:F2} skinUpload={_suMs:F2} skinDirty={_sdMs:F2} skinBounds={_sbMs:F2} skinMask={_smMs:F2} skinFunc={_sfMs:F2} skin={_msSkin:F2} gc0={_gc0n} ssbo={_msSsbo:F2} present={_msPresent:F2} total={(_msSkel + _msMorph + _msCache + _msPass1 + _msSkin + _msSsbo + _msPresent):F2} play={playingNow} cpuSkin={cpuSkinMode}")
 
         ElseIf needsMorphUpdate Then
             ' -- Morph-only (lightweight) -----------------------------
@@ -1799,10 +1904,17 @@ Public Class PreviewModel
             MeshData.ParentMesh = Me
         End Sub
 
-        Public Sub UpdateSkinBuffers_GL()
+        ''' <param name="recomputeBounds">True (default) = recomputa bounds tras el full upload (full-reload
+        ''' y morph, que no tienen ComputeBounds aparte). El pose path pasa False porque sus bounds los
+        ''' maneja la línea gateada del pass 1 (computeBoundsThisFrame); incondicional acá bypasseaba ese
+        ''' gate Y Option B en CPU (8.9ms/frame de pasada per-vértice a mundo, medido). Nombre ≠ ComputeBounds
+        ''' a propósito: VB es case-insensitive y un param 'computeBounds' sombrearía el método.</param>
+        Public Sub UpdateSkinBuffers_GL(Optional recomputeBounds As Boolean = True)
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
             ' Detect skinning mode change: if the toggle changed since last upload, force ALL dirty
+            Dim _swCtx = System.Diagnostics.Stopwatch.StartNew()
             Me.ParentModel.ParentControl.EnsureContextCurrent()
+            ParentModel.ParentControl._skinCtxMs += _swCtx.Elapsed.TotalMilliseconds
             Dim gpuMode As Boolean = Config_App.Current.Setting_GPUSkinning
             If gpuMode <> _lastUploadWasGPU Then
                 _lastUploadWasGPU = gpuMode
@@ -1820,6 +1932,7 @@ Public Class PreviewModel
 
                 ' O3.1: Smart threshold — full BufferSubData upload when >60% vertices are dirty
                 If MeshData.Meshgeometry.dirtyVertexIndices.Count > vertexCount * 0.6 Then
+                    Dim _swSkinPhase = System.Diagnostics.Stopwatch.StartNew()   ' [RENDER-MS] compute vs upload
                     Dim posF(vertexCount - 1) As Vector3
                     Dim nrmF(vertexCount - 1) As Vector3
                     Dim tanF(vertexCount - 1) As Vector3
@@ -1901,6 +2014,7 @@ Public Class PreviewModel
                                                             End Sub
                         If vertexCount >= 2000 Then Parallel.For(0, vertexCount, gpuBody) Else For i = 0 To vertexCount - 1 : gpuBody(i) : Next
                     End If
+                    ParentModel.ParentControl._skinComputeMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
 
                     GL.BindBuffer(BufferTarget.ArrayBuffer, vboPosition)
                     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, totalBytes, posF)
@@ -1915,17 +2029,24 @@ Public Class PreviewModel
                     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, totalBytes, bitanF)
 
                     GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+                    ParentModel.ParentControl._skinUploadMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
 
                     ' Clear all dirty flags since everything was updated
                     For Each i As Integer In MeshData.Meshgeometry.dirtyVertexIndices
                         MeshData.Meshgeometry.dirtyVertexFlags(i) = False
                     Next
                     MeshData.Meshgeometry.dirtyVertexIndices.Clear()
+                    ParentModel.ParentControl._skinDirtyMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
 
-                    ' Also recompute bounds after full update
-                    ComputeBounds()
+                    ' Also recompute bounds after full update — SALVO cuando el caller ya los maneja.
+                    ' En el pose path los computa la línea gateada del pass 1 ('If computeBoundsThisFrame
+                    ' Then mesh.ComputeBounds()'); incondicional acá bypasseaba ese gate Y Option B en CPU
+                    ' (ComputeBounds→GetWorldVertices = pasada per-vértice a mundo, 8.9ms/frame medido).
+                    If recomputeBounds Then Me.ComputeBounds()
+                    ParentModel.ParentControl._skinBoundsMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
 
                     UpdateUpdateSkinBuffersMask_GL()
+                    ParentModel.ParentControl._skinMaskMs += _swSkinPhase.Elapsed.TotalMilliseconds
                     Return
                 End If
 
@@ -2049,7 +2170,7 @@ Public Class PreviewModel
                 MeshData.Meshgeometry.dirtyVertexIndices.Clear()
                 ' Recompute AABB after sparse update — bounds are needed for frustum culling
                 ' and blended-mesh depth sorting. Full update path already calls this above.
-                ComputeBounds()
+                Me.ComputeBounds()
             End If
             UpdateUpdateSkinBuffersMask_GL()
         End Sub

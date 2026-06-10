@@ -30,6 +30,66 @@ Public NotInheritable Class RaceBehaviorResolver
     ' wbTemplateFlags bit 0 = "Use Traits" (incluye Race). Ver MainForm TraitsState.
     Private Const TemplateFlagUseTraits As UShort = &H1US
 
+    ' ── KYWD.TNAM Type (wbDefinitionsFO4.pas:5213 wbKeywordTypeEnum) — discriminador AUTORITATIVO de los SAKD.
+    '    'None'(0) = keyword de IDENTIDAD (ej 'Anims<X>Race', 'ActorType<X>'); 'Anim Injured'(17)/'Anim Archetype'(7)/
+    '    'Anim Flavor'(13)/'Anim Gender'(14)/'Anim Face'(15) = EJES DE ESTADO runtime. NO se filtra por string.
+    Friend Const KwTypeNone As UInteger = 0UI
+    Friend Const KwTypeAnimGender As UInteger = 14UI
+    Private Shared ReadOnly KeywordTypeNames As String() = {
+        "None", "Component Tech Level", "Attach Point", "Component Property", "Instantiation Filter",
+        "Mod Association", "Sound", "Anim Archetype", "Function Call", "Recipe Filter", "Attraction Type",
+        "Dialogue Subtype", "Quest Target", "Anim Flavor", "Anim Gender", "Anim Face", "Quest Group",
+        "Anim Injured", "Dispel Effect"}
+
+    Private Shared _kwType As Dictionary(Of UInteger, UInteger)        ' KYWD FormID → TNAM Type
+    Private Shared _raceIdentityKw As HashSet(Of UInteger)             ' keywords None-typed declaradas en ALGUNA KWDA de RACE
+    Private Shared _kwMapsPm As PluginManager                          ' pm con el que se construyeron (rebuild si cambia)
+
+    ''' <summary>Construye (una vez por pm) el mapa KYWD→tipo y el set de keywords de IDENTIDAD de raza (None-typed
+    ''' ∧ presentes en la KWDA de alguna RACE). Idempotente; rebuild si cambia el pm. Llamado por ResolveRaceBehavior.</summary>
+    Friend Shared Sub EnsureKeywordMaps(pm As PluginManager)
+        If pm Is Nothing Then Return
+        If _kwMapsPm Is pm AndAlso _kwType IsNot Nothing Then Return
+        Dim kt As New Dictionary(Of UInteger, UInteger)
+        For Each rec In pm.GetRecordsOfType("KYWD")
+            Dim t As UInteger = 0
+            For Each sr In rec.Subrecords
+                If sr.Signature = "TNAM" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then t = BitConverter.ToUInt32(sr.Data, 0) : Exit For
+            Next
+            kt(rec.Header.FormID) = t
+        Next
+        Dim ident As New HashSet(Of UInteger)
+        For Each rec In pm.GetRecordsOfType("RACE")
+            Dim race As RACE_Data = Nothing
+            Try : race = RecordParsers.ParseRACE(rec, pm) : Catch : Continue For : End Try
+            If race Is Nothing Then Continue For
+            For Each k In race.Keywords
+                Dim tt As UInteger = 0
+                If kt.TryGetValue(k, tt) AndAlso tt = KwTypeNone Then ident.Add(k)   ' None-typed ∧ declarada por una raza = identidad
+            Next
+        Next
+        _kwType = kt : _raceIdentityKw = ident : _kwMapsPm = pm
+    End Sub
+
+    ''' <summary>Tipo (TNAM) de una keyword; 0 ('None') si no se conoce. Requiere EnsureKeywordMaps previo.</summary>
+    Public Shared Function KeywordType(fid As UInteger) As UInteger
+        Dim t As UInteger = 0
+        If _kwType IsNot Nothing Then _kwType.TryGetValue(fid, t)
+        Return t
+    End Function
+
+    ''' <summary>Nombre del tipo TNAM (ej "Anim Injured"); "None" si desconocido.</summary>
+    Public Shared Function KeywordTypeName(fid As UInteger) As String
+        Dim t = KeywordType(fid)
+        Return If(t < CUInt(KeywordTypeNames.Length), KeywordTypeNames(CInt(t)), $"Type{t}")
+    End Function
+
+    ''' <summary>¿Es keyword de IDENTIDAD de raza? = None-typed ∧ declarada en la KWDA de alguna RACE. Solo estas
+    ''' discriminan entre actores (ej 'AnimsProtectronRace'); las de estado ('Anim Injured'…) NUNCA excluyen.</summary>
+    Public Shared Function IsRaceIdentityKeyword(fid As UInteger) As Boolean
+        Return _raceIdentityKw IsNot Nothing AndAlso _raceIdentityKw.Contains(fid)
+    End Function
+
     ''' <summary>NPC → behavior de su raza efectiva (resolviendo Use Traits/TPLT).</summary>
     Public Shared Function ResolveNpcBehavior(npc As NPC_Data, pm As PluginManager) As ResolvedRaceBehavior
         If IsNothing(npc) OrElse IsNothing(pm) Then Return Nothing
@@ -55,6 +115,7 @@ Public NotInheritable Class RaceBehaviorResolver
     ''' <summary>RACE → behavior: project por gender + subgraphs (propios, o heredados vía SRAC + SADD).</summary>
     Public Shared Function ResolveRaceBehavior(raceFormID As UInteger, pm As PluginManager) As ResolvedRaceBehavior
         If raceFormID = 0UI OrElse IsNothing(pm) Then Return Nothing
+        EnsureKeywordMaps(pm)   ' mapas KYWD-type + identidades-de-raza listos para el filtro type-driven de EnumerateClips
         Dim rec = pm.GetRecord(raceFormID)
         If IsNothing(rec) OrElse rec.Header.Signature <> "RACE" Then Return Nothing
         Dim race = RecordParsers.ParseRACE(rec, pm)
@@ -68,6 +129,8 @@ Public NotInheritable Class RaceBehaviorResolver
             .MaleSkeleton = race.MaleSkeletonPath,
             .FemaleSkeleton = race.FemaleSkeletonPath
         }
+        ' Keywords del race EFECTIVO (el 'Anims<X>Race' que filtra los subgraphs compartidos por SAKD).
+        result.ActorKeywords.AddRange(race.Keywords)
 
         If race.SubgraphData.Count > 0 Then
             result.Subgraphs.AddRange(race.SubgraphData)
@@ -111,6 +174,10 @@ Public Class ResolvedRaceBehavior
     Public MaleSkeleton As String = ""
     Public FemaleSkeleton As String = ""
     Public ReadOnly Property Subgraphs As New List(Of RACE_SubgraphData)
+    ''' <summary>Keywords del RACE EFECTIVO (no del SRAC template). Contienen el 'Anims&lt;X&gt;Race' que
+    ''' discrimina qué subgraph (SAKD) aplica a este robot. Robots comparten subgraphs vía SRAC pero cada race
+    ''' tiene su keyword propio → se filtran los clips por SAKD ∩ ActorKeywords. [[arch_race_behavior_resolution]]</summary>
+    Public ReadOnly Property ActorKeywords As New List(Of UInteger)
     ''' <summary>Diagnóstico: "own" / "SRAC:0x… +SADD:0x…" — de dónde salieron los subgraphs.</summary>
     Public Property SubgraphSource As String = ""
 

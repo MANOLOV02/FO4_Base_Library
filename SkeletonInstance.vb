@@ -88,6 +88,40 @@ Public Class HierarchiBone_class
     End Property
 End Class
 
+''' <summary>Cache EFÍMERA (por pase de render) de los global transforms de un
+''' <see cref="SkeletonInstance"/>. La construye <see cref="SkeletonInstance.BuildGlobalTransformCacheForRenderPass"/>
+''' UNA vez por instancia antes del <c>Parallel.ForEach</c> de meshes, y se lee read-only durante el
+''' loop. Dos mapas: <c>Display</c> (Original×Mount×Morph×Delta, = <c>GetGlobalTransform</c>) y
+''' <c>BindMount</c> (Original×Mount, = <c>OriginalGetGlobalTransform</c>). NO persiste entre frames:
+''' se reconstruye desde el estado actual de las capas → sin riesgo de invalidación stale (la
+''' superficie de mutación incluye el mount escrito por la APP, así que un generation-counter sería
+''' frágil). Si un hueso NO está en la cache (huérfano no alcanzable desde SkeletonStructure), el
+''' caller cae al camino recursivo. Keyed por <see cref="HierarchiBone_class"/> (referencia) — el hot
+''' path ya tiene el objeto bone.</summary>
+Public NotInheritable Class SkeletonGlobalTransformCache
+    Private ReadOnly _display As Dictionary(Of HierarchiBone_class, Transform_Class)
+    Private ReadOnly _bindMount As Dictionary(Of HierarchiBone_class, Transform_Class)
+
+    Friend Sub New(capacity As Integer)
+        Dim cap = Math.Max(0, capacity)
+        _display = New Dictionary(Of HierarchiBone_class, Transform_Class)(cap)
+        _bindMount = New Dictionary(Of HierarchiBone_class, Transform_Class)(cap)
+    End Sub
+
+    Friend Sub Store(bone As HierarchiBone_class, display As Transform_Class, bindMount As Transform_Class)
+        _display(bone) = display
+        _bindMount(bone) = bindMount
+    End Sub
+
+    Friend Function TryGetDisplay(bone As HierarchiBone_class, ByRef value As Transform_Class) As Boolean
+        Return _display.TryGetValue(bone, value)
+    End Function
+
+    Friend Function TryGetBindMount(bone As HierarchiBone_class, ByRef value As Transform_Class) As Boolean
+        Return _bindMount.TryGetValue(bone, value)
+    End Function
+End Class
+
 ''' <summary>
 ''' Esqueleto cargado en memoria con su jerarquía, dict por nombre, bones inyectados (cloth)
 ''' y pose actual aplicada. Permite N esqueletos vivos simultáneos (multi-actor en una escena).
@@ -126,6 +160,63 @@ Public Class SkeletonInstance
             Return True
         End Get
     End Property
+
+    ''' <summary>Memoización #3: construye la cache de global transforms con un pase BFS parent-first
+    ''' desde las raíces (<see cref="SkeletonStructure"/>). O(bones) en vez de O(bonesPalette ×
+    ''' profundidad) por shape, y compartida por todos los shapes de la instancia.
+    ''' <para><b>Bit-idéntico al recursivo</b>: misma asociatividad left-assoc desde la raíz
+    ''' (<c>display = parent.display × LocaLTransform</c>, igual que <c>GetGlobalTransform</c>;
+    ''' <c>bindMount = parent.bindMount × (Original×Mount)</c>, igual que
+    ''' <c>OriginalGetGlobalTransform</c>). Las dos caches se construyen con locales DISTINTOS — bind
+    ''' NO se deriva de display ni viceversa.</para>
+    ''' <para><b>Precondición de orden</b>: llamar DESPUÉS de <c>ApplyPose</c> / <c>ApplyBoneMorphPose</c>
+    ''' / el mount (<c>ApplyMountPlanForActor</c>, escrito por la app) / inyección de cloth-connect
+    ''' bones — todos ocurren antes de <c>InvalidateRender</c> (render síncrono), así que al construir
+    ''' la cache las capas ya están finales.</para>
+    ''' <para>Huesos en <see cref="SkeletonDictionary"/> pero NO alcanzables desde
+    ''' <see cref="SkeletonStructure"/> quedan fuera de la cache → el caller (RecomputeGPUBoneMatrices)
+    ''' cae al camino recursivo para ellos (fallback seguro).</para></summary>
+    Friend Function BuildGlobalTransformCacheForRenderPass() As SkeletonGlobalTransformCache
+        SyncLock _lock
+            Dim cache As New SkeletonGlobalTransformCache(SkeletonDictionary.Count)
+            Dim queue As New Queue(Of HierarchiBone_class)
+            For Each root In SkeletonStructure
+                If root IsNot Nothing Then queue.Enqueue(root)
+            Next
+            While queue.Count > 0
+                Dim bone = queue.Dequeue()
+
+                ' Local bind+mount (igual que OriginalGetGlobalTransform usa por hueso).
+                Dim localBind As Transform_Class = bone.OriginalLocaLTransform
+                If bone.MountDeltaTransform IsNot Nothing Then localBind = localBind.ComposeTransforms(bone.MountDeltaTransform)
+                ' Local display (las 4 capas; la propiedad ya las compone).
+                Dim localDisplay As Transform_Class = bone.LocaLTransform
+
+                Dim display As Transform_Class
+                Dim bindMount As Transform_Class
+                Dim pDisplay As Transform_Class = Nothing
+                Dim pBind As Transform_Class = Nothing
+                If bone.Parent Is Nothing Then
+                    display = localDisplay
+                    bindMount = localBind
+                ElseIf cache.TryGetDisplay(bone.Parent, pDisplay) AndAlso cache.TryGetBindMount(bone.Parent, pBind) Then
+                    ' BFS parent-first → el padre ya está cacheado.
+                    display = pDisplay.ComposeTransforms(localDisplay)
+                    bindMount = pBind.ComposeTransforms(localBind)
+                Else
+                    ' Defensivo (no debería pasar en BFS bien ordenado): recursivo.
+                    display = bone.GetGlobalTransform
+                    bindMount = bone.OriginalGetGlobalTransform
+                End If
+
+                cache.Store(bone, display, bindMount)
+                For Each child In bone.Childrens
+                    If child IsNot Nothing Then queue.Enqueue(child)
+                Next
+            End While
+            Return cache
+        End SyncLock
+    End Function
 
     ''' <summary>Resuelve una entrada de <c>Poses_class.Transforms</c> al <c>Transform_Class</c>
     ''' que se guarda en el hueso, aplicando el manejo ScreenArcher (delta relativo al bind).
@@ -345,6 +436,98 @@ Public Class SkeletonInstance
 
             Return addedCount
         End SyncLock
+    End Function
+
+    ''' <summary>Hace AUTORITATIVO al HKX de animación (skeleton.hkx) sobre los huesos COMPARTIDOS del
+    ''' skeleton base: cada hueso que existe en el render-NIF Y en el HKX se RE-POSICIONA al world del HKX
+    ''' (no-op cuando NIF==HKX = 100/113 razas; flipea oddballs como Behemoth/Turret a la orientación del
+    ''' HKX, que es la correcta). NO agrega los huesos solo-HKX: el dato (--mountvalidate) muestra que el
+    ''' ensamblaje real del robot está 7–18u LEJOS de CreateABot ⇒ los chunk-bones del HKX NO son la posición
+    ''' de render (la define el socket+mount); y Weapon/IK son inertes. hkxBytes Nothing/vacío → no-op
+    ''' (fallback NIF puro, ej. Wardrobe Manager). El skeleton de animación se elige porque su root existe en
+    ''' el NIF base (el de ragdoll, 'Ragdoll_*', nunca). Ver [[arch_race_behavior_resolution]] / [[arch_mountdelta]].</summary>
+    ''' <returns>Cantidad de huesos compartidos re-posicionados al world del HKX (0 si no hay HKX/anim skel).</returns>
+    Public Function MergeHkxSkeleton(hkxBytes As Byte()) As Integer
+        If hkxBytes Is Nothing OrElse hkxBytes.Length = 0 Then Return 0
+
+        SyncLock _lock
+            If Not HasSkeleton Then Return 0
+
+            Dim sk As HkaSkeletonGraph_Class = Nothing
+            Try
+                Dim sg = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(hkxBytes))
+                Dim cands = sg.GetObjectsByClassName("hkaSkeleton").Select(Function(o) sg.ParseSkeleton(o)).
+                               Where(Function(s) s IsNot Nothing AndAlso s.Bones IsNot Nothing AndAlso
+                                     s.ParentIndices IsNot Nothing AndAlso s.ReferencePose IsNot Nothing AndAlso
+                                     s.ReferencePose.Count >= s.Bones.Count).ToList()
+                ' Selección anim-vs-ragdoll: el root del de animación existe en el NIF base; sino, no-'Ragdoll'.
+                sk = cands.FirstOrDefault(Function(s) SkeletonDictionary.ContainsKey(HkxRootBoneName(s)))
+                If sk Is Nothing Then sk = cands.FirstOrDefault(Function(s) String.IsNullOrEmpty(s.Name) OrElse
+                                                                   s.Name.IndexOf("Ragdoll", StringComparison.OrdinalIgnoreCase) < 0)
+            Catch
+                Return 0
+            End Try
+            If sk Is Nothing OrElse sk.Bones.Count = 0 Then Return 0
+
+            ' World bind por hueso del HKX (compose ReferencePose vía ParentIndices; orden topológico).
+            Dim nB = sk.Bones.Count
+            Dim hWorld(nB - 1) As Transform_Class
+            Dim hByName As New Dictionary(Of String, Transform_Class)(StringComparer.OrdinalIgnoreCase)
+            For i = 0 To nB - 1
+                Dim loc = HkxTransformConventionHelper.ToTransform(sk.ReferencePose(i))
+                Dim p = If(i < sk.ParentIndices.Count, CInt(sk.ParentIndices(i)), -1)
+                hWorld(i) = If(p < 0 OrElse p >= i, loc, hWorld(p).ComposeTransforms(loc))
+                Dim nm0 = sk.Bones(i).Name
+                If Not String.IsNullOrEmpty(nm0) AndAlso Not hByName.ContainsKey(nm0) Then hByName(nm0) = hWorld(i)
+            Next
+
+            Dim changed As Integer = 0
+
+            ' Pass A — compartidos: override el world al del HKX, recorriendo la estructura NIF parent-first
+            ' (así el world del parent ya está finalizado cuando computo el local del hijo).
+            Dim stack As New Stack(Of HierarchiBone_class)(SkeletonStructure)
+            While stack.Count > 0
+                Dim b = stack.Pop()
+                Dim hw As Transform_Class = Nothing
+                If b.BoneName IsNot Nothing AndAlso hByName.TryGetValue(b.BoneName, hw) Then
+                    Dim pw = If(b.Parent IsNot Nothing, b.Parent.OriginalGetGlobalTransform, New Transform_Class())
+                    b.OriginalLocaLTransform = pw.Inverse().ComposeTransforms(hw)
+                    changed += 1
+                End If
+                For Each c In b.Childrens : stack.Push(c) : Next
+            End While
+
+            ' Pass B — solo-HKX: agregar TODOS los bones del HKX que el NIF no tiene (Weapon/IK + chunk-bones de
+            ' robot + connect-points C-), colgando de su padre HKX en el bind ensamblado de CreateABot. Son BASE
+            ' (no injected). Los chunk-mesh se RE-BINDEAN aparte para encastrar en estas posiciones (ver render).
+            For i = 0 To nB - 1
+                Dim nm = sk.Bones(i).Name
+                If String.IsNullOrEmpty(nm) OrElse SkeletonDictionary.ContainsKey(nm) Then Continue For
+                Dim p = If(i < sk.ParentIndices.Count, CInt(sk.ParentIndices(i)), -1)
+                Dim parentBone As HierarchiBone_class = Nothing
+                If p >= 0 AndAlso p < nB Then SkeletonDictionary.TryGetValue(sk.Bones(p).Name, parentBone)
+                Dim pw = If(parentBone IsNot Nothing, parentBone.OriginalGetGlobalTransform, New Transform_Class())
+                Dim nbone As New HierarchiBone_class With {
+                    .BoneName = nm,
+                    .Parent = parentBone,
+                    .OriginalLocaLTransform = pw.Inverse().ComposeTransforms(hWorld(i))
+                }
+                If parentBone IsNot Nothing Then parentBone.Childrens.Add(nbone) Else SkeletonStructure.Add(nbone)
+                SkeletonDictionary(nm) = nbone
+                changed += 1
+            Next
+
+            Return changed
+        End SyncLock
+    End Function
+
+    ''' <summary>Nombre del root (bone con parent &lt; 0) de un hkaSkeleton parseado.</summary>
+    Private Shared Function HkxRootBoneName(s As HkaSkeletonGraph_Class) As String
+        For i = 0 To s.Bones.Count - 1
+            Dim p = If(i < s.ParentIndices.Count, CInt(s.ParentIndices(i)), -1)
+            If p < 0 OrElse p >= s.Bones.Count Then Return s.Bones(i).Name
+        Next
+        Return If(s.Bones.Count > 0, s.Bones(0).Name, "")
     End Function
 
     ''' <summary>Cloth-bone injection. If the caller passes a non-null <paramref name="pose"/>,

@@ -86,7 +86,7 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
             }
             targetBone.Childrens.Add(anchorBone)
             targetSkeleton.SkeletonDictionary.Add(anchorName, anchorBone)
-            targetSkeleton.InjectedBones.Add(anchorName)
+            ' Chunk/socket bones son parte de la BASE (el HKX los provee); NO injected. Solo cloth queda injected.
         End If
 
         Dim effectiveParent As HierarchiBone_class = anchorBone
@@ -152,7 +152,7 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
         End If
 
         targetSkeleton.SkeletonDictionary.Add(boneName, nuevo)
-        targetSkeleton.InjectedBones.Add(boneName)
+        ' Chunk bones son parte de la BASE (el HKX los provee); NO injected. Solo cloth queda injected.
         injectedCounter += 1
 
         Return nuevo
@@ -229,7 +229,7 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
         }
         parentBone.Childrens.Add(nuevo)
         targetSkeleton.SkeletonDictionary.Add(cName, nuevo)
-        targetSkeleton.InjectedBones.Add(cName)
+        ' Socket counterpart (C-X) es parte de la BASE; NO injected. Solo cloth queda injected.
         Return cName
     End Function
 

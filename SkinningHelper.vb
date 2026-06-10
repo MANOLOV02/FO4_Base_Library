@@ -51,6 +51,11 @@ Public Structure SkinnedGeometry
     Public CachedWorldVertices() As Vector3d
     Public CachedWorldNormals() As Vector3d
     Public WorldCacheValid As Boolean
+    ' Option B: en GPU-mode durante animación, RecomputeGPUBoneMatrices saltea el blend per-vértice
+    ' (PerVertexSkinMatrix) porque el shader skinnea del SSBO y nadie muestra el world-cache. Este flag
+    ' marca si PerVertexSkinMatrix está al día; si no, EnsurePerVertexSkinMatrix lo recompone lazy desde
+    ' BoneMatsPose cuando un lector (bounds/picking/export/occlusion) realmente lo pide.
+    Public PerVertexMatrixValid As Boolean
 End Structure
 Public Structure MorphData
     Public index As UInteger
@@ -464,7 +469,8 @@ Public Class SkinningHelper
              .GPUBoneIndices = gpuBoneIdx,
              .GPUBoneWeights = gpuBoneWgt,
              .GPUBoneMatrices = gpuBoneMats,
-             .WorldCacheValid = False
+             .WorldCacheValid = False,
+             .PerVertexMatrixValid = True
         }
 
         ' Uvs_Weight packs per-vertex UV (X,Y) and the first bone weight (Z) — used by the
@@ -891,7 +897,36 @@ Public Class SkinningHelper
         Return geo.CachedWorldNormals
     End Function
 
+    ''' <summary>Recompone PerVertexSkinMatrix (lazy) desde BoneMatsPose si quedó inválida porque
+    ''' RecomputeGPUBoneMatrices la salteó en GPU-mode durante animación (Option B). Bit-idéntico al
+    ''' cálculo eager: en el path multi-bone precomputedBoneMatrices == BoneMatsPose (GlobalTransform
+    ''' es Identity), así que blendear BoneMatsPose con los mismos pesos/índices da lo mismo. El caso
+    ''' single-bone/unskinned siempre llena PerVertexSkinMatrix (Array.Fill, barato) → nunca llega acá.
+    ''' Solo lo dispara un lector del world-cache (bounds/picking/export) en el hilo UI tras un play GPU;
+    ''' el occlusion en background nunca corre sobre un control que está reproduciendo animación.</summary>
+    Private Shared Sub EnsurePerVertexSkinMatrix(ByRef geo As SkinnedGeometry)
+        If geo.PerVertexMatrixValid Then Return
+        Dim mats = geo.PerVertexSkinMatrix
+        If mats Is Nothing Then Return
+        Dim vc = mats.Length
+        Dim poseMats = geo.BoneMatsPose
+        Dim flatIdx = geo.Skinning.BoneIndices
+        Dim flatWgt = geo.Skinning.BoneWeights
+        Dim wpv = If(geo.Skinning.WeightsPerVertex > 0, geo.Skinning.WeightsPerVertex, 4)
+        Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso geo.Skinning.VertexCount = vc AndAlso poseMats IsNot Nothing)
+        If hasSkin Then
+            Dim body As Action(Of Integer) = Sub(i) mats(i) = BlendBoneMatrices(flatWgt, flatIdx, i * wpv, wpv, poseMats)
+            If vc >= 500 Then
+                Parallel.For(0, vc, body)
+            Else
+                For i = 0 To vc - 1 : body(i) : Next
+            End If
+        End If
+        geo.PerVertexMatrixValid = True
+    End Sub
+
     Public Shared Sub ComputeWorldSpaceCache(ByRef geo As SkinnedGeometry)
+        EnsurePerVertexSkinMatrix(geo)   ' Option B: recompone PerVertexSkinMatrix si pass-2 se salteó
         Dim count = geo.Vertices.Length
         ' Capture arrays as locals — VB.NET cannot capture ByRef params in lambdas
         Dim localVerts = geo.Vertices
@@ -948,7 +983,38 @@ Public Class SkinningHelper
     ''' contract as <see cref="ExtractSkinnedGeometry"/>: Nothing → SkeletonInstance.Default.
     ''' Pose application is implicit via DeltaTransforms; callers wanting bind call
     ''' <see cref="SkeletonInstance.Reset"/> first.</param>
-    Public Shared Sub RecomputeGPUBoneMatrices(shape As IRenderableShape, ByRef geo As SkinnedGeometry, singleboneskinning As Boolean, Optional skeleton As SkeletonInstance = Nothing)
+    ''' <summary>bindMount global del hueso (Original×Mount): de la cache de pase si está, o recursivo
+    ''' (fallback: hueso huérfano / sin cache). Bit-idéntico a <c>OriginalGetGlobalTransform</c>.</summary>
+    Private Shared Function CachedBindMount(bone As HierarchiBone_class, cache As SkeletonGlobalTransformCache) As Transform_Class
+        Dim t As Transform_Class = Nothing
+        If cache IsNot Nothing AndAlso cache.TryGetBindMount(bone, t) Then Return t
+        Return bone.OriginalGetGlobalTransform
+    End Function
+
+    ''' <summary>display global del hueso (Original×Mount×Morph×Delta): de la cache de pase si está, o
+    ''' recursivo (fallback). Bit-idéntico a <c>GetGlobalTransform</c>.</summary>
+    Private Shared Function CachedDisplay(bone As HierarchiBone_class, cache As SkeletonGlobalTransformCache) As Transform_Class
+        Dim t As Transform_Class = Nothing
+        If cache IsNot Nothing AndAlso cache.TryGetDisplay(bone, t) Then Return t
+        Return bone.GetGlobalTransform
+    End Function
+
+    ''' <param name="updateWorldCache">False saltea la pasada 3 (ComputeWorldBounds + world-cache
+    ''' per-vértice): en animación + mesh OPACO nadie la muestra (frustum congelado; el display —GPU
+    ''' del SSBO, CPU de UpdateSkinBuffers— NO lee el world-cache; en CPU es además redundante con
+    ''' UpdateSkinBuffers). Aplica a GPU Y CPU. Default True = fuera de play, o meshes HasAlphaBlend
+    ''' (Boundingcenter del sort de transparentes).</param>
+    ''' <param name="updatePerVertexSkin">False saltea la pasada 2 (PerVertexSkinMatrix). Solo se
+    ''' saltea en GPU-skin opaco en play (el shader skinnea del SSBO, no la usa). En CPU-skin SIEMPRE
+    ''' se computa (el display la necesita en UpdateSkinBuffers). Cuando se saltea, marca
+    ''' PerVertexMatrixValid=False → EnsurePerVertexSkinMatrix la recompone lazy si un lector la pide.
+    ''' Invariante del caller: updatePerVertexSkin = cpuSkin OrElse updateWorldCache (la pasada 3 lee
+    ''' PerVertexSkinMatrix, así que si la 3 corre, la 2 también). La pasada 1 (matrices→SSBO) siempre.</param>
+    ''' <param name="globalCache">Memoización #3: cache de globals construida una vez por instancia
+    ''' antes del loop de meshes. Si se pasa, los globals de hueso se leen de ahí (O(1) lookup) en vez
+    ''' de recursar la cadena de padres. Nothing = recursivo (comportamiento original). Fallback
+    ''' recursivo por hueso si falta en la cache.</param>
+    Public Shared Sub RecomputeGPUBoneMatrices(shape As IRenderableShape, ByRef geo As SkinnedGeometry, singleboneskinning As Boolean, Optional skeleton As SkeletonInstance = Nothing, Optional updateWorldCache As Boolean = True, Optional updatePerVertexSkin As Boolean = True, Optional globalCache As SkeletonGlobalTransformCache = Nothing)
         If geo.GPUBoneMatrices Is Nothing Then Exit Sub
         Dim effectiveSkel As SkeletonInstance = If(skeleton, SkeletonInstance.Default)
 
@@ -983,13 +1049,13 @@ Public Class SkinningHelper
                 Dim bindT As Transform_Class
 
                 If effectiveSkel.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
-                    bindT = SkeletonBone.OriginalGetGlobalTransform
+                    bindT = CachedBindMount(SkeletonBone, globalCache)
                 Else
                     bindT = Transform_Class.GetGlobalTransform(bones(k), shape.NifContent)
                 End If
 
                 If Not IsNothing(SkeletonBone) Then
-                    poseT = SkeletonBone.GetGlobalTransform()
+                    poseT = CachedDisplay(SkeletonBone, globalCache)
                 Else
                     poseT = bindT
                 End If
@@ -1031,12 +1097,22 @@ Public Class SkinningHelper
                                                      End If
                                                  End Sub
 
-            If vertexCount >= 500 Then
-                Parallel.For(0, vertexCount, skinBody)
+            If updatePerVertexSkin Then
+                If vertexCount >= 500 Then
+                    Parallel.For(0, vertexCount, skinBody)
+                Else
+                    For i = 0 To vertexCount - 1
+                        skinBody(i)
+                    Next
+                End If
+                geo.PerVertexMatrixValid = True
             Else
-                For i = 0 To vertexCount - 1
-                    skinBody(i)
-                Next
+                ' GPU-skin + animación + opaco: el shader skinnea del SSBO (GPUBoneMatrices ya
+                ' recomputadas arriba); PerVertexSkinMatrix solo alimenta el world-cache, que nadie
+                ' muestra en play. Stale + inválido → EnsurePerVertexSkinMatrix lo recompone desde
+                ' BoneMatsPose si un lector lo pide. (En CPU-skin esto NUNCA se saltea: el display
+                ' lo necesita en UpdateSkinBuffers_GL.)
+                geo.PerVertexMatrixValid = False
             End If
         Else
             ' Tres sub-casos: (1) skinned single-bone, (2) skinned degenerado (IsSkinned=True
@@ -1053,7 +1129,7 @@ Public Class SkinningHelper
                 Dim SkeletonBone As HierarchiBone_class = Nothing
                 Dim bindT As Transform_Class
                 If effectiveSkel.SkeletonDictionary.TryGetValue(boneName, SkeletonBone) Then
-                    bindT = SkeletonBone.OriginalGetGlobalTransform
+                    bindT = CachedBindMount(SkeletonBone, globalCache)
                 Else
                     bindT = Transform_Class.GetGlobalTransform(bones(0), shape.NifContent)
                 End If
@@ -1073,12 +1149,17 @@ Public Class SkinningHelper
                 CSng(Mtot.M31), CSng(Mtot.M32), CSng(Mtot.M33), CSng(Mtot.M34),
                 CSng(Mtot.M41), CSng(Mtot.M42), CSng(Mtot.M43), CSng(Mtot.M44))
             Array.Fill(geo.PerVertexSkinMatrix, Mtot)
+            geo.PerVertexMatrixValid = True   ' rama single-bone/unskinned: siempre se llena (barato)
         End If
 
-        ' Invalidate world-space cache so it gets recomputed on next access
+        ' Invalidate world-space cache so it gets recomputed on next access. SIEMPRE se invalida
+        ' (aunque salteemos el recompute) para que el próximo lector recompute con la pose nueva.
         InvalidateWorldCache(geo)
-        ' Recompute world bounds from new pose
-        ComputeWorldBounds(geo)
+        ' Recompute world bounds from new pose — SALVO en Option B (GPU-anim opaco): nadie muestra los
+        ' bounds en play (frustum ya usa mesh.BoundsMin congelado; el sort de transparentes pasa
+        ' updateWorldCache=True). Tras Stop, el setter de PlayingAnimation fuerza un Pose dirty que
+        ' recomputa todo con updateWorldCache=True.
+        If updateWorldCache Then ComputeWorldBounds(geo)
     End Sub
 
 End Class
