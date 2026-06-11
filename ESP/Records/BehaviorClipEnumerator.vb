@@ -85,6 +85,24 @@ Public NotInheritable Class BehaviorClipEnumerator
         End If
         If graph Is Nothing Then Return
 
+        ' [ADDITIVE-POR-JERARQUÍA] La aditividad de un clip puede declararla el GRAFO, no el binding
+        ' del archivo (probado: 'AdditiveDynamicIdle' del Handy tiene blendHint=0 en DialogueIdle_Long1.hkx
+        ' pero su wrapper en HandyBehavior es un DynamicAnimationTaggingGenerator llamado
+        ' 'AdditiveDynamicAnimationGenerator' — el cuerpo del objeto es todo ceros: el NOMBRE autoreado
+        ' ES la declaración). Recolectar los hkbClipGenerator referenciados por un tagging generator
+        ' 'Additive*' y marcarlos aditivos.
+        Dim additiveClipGenOffsets As New HashSet(Of Integer)
+        For Each datg In graph.GetObjectsByClassName("DynamicAnimationTaggingGenerator")
+            Dim datgName = graph.ReadNodeName(datg)
+            If String.IsNullOrEmpty(datgName) OrElse datgName.IndexOf("Additive", StringComparison.OrdinalIgnoreCase) < 0 Then Continue For
+            For Each gf In graph.GetGlobalFixupsInRange(datg.RelativeOffset, datg.Size)
+                Dim tgt = graph.GetObject(gf.TargetRelativeOffset)
+                If tgt IsNot Nothing AndAlso tgt.ClassName.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then
+                    additiveClipGenOffsets.Add(tgt.RelativeOffset)
+                End If
+            Next
+        Next
+
         For Each obj In graph.GetObjectsByClassName("hkbClipGenerator")
             Dim cg = graph.ParseClipGenerator(obj)
             If IsNothing(cg) OrElse String.IsNullOrWhiteSpace(cg.AnimationName) Then Continue For
@@ -101,6 +119,7 @@ Public NotInheritable Class BehaviorClipEnumerator
                 byClip(animFile) = clip
                 result.Add(clip)
             End If
+            If additiveClipGenOffsets.Contains(obj.RelativeOffset) Then clip.IsAdditive = True
             If Not clip.SourceBehaviorFiles.Contains(behFile, StringComparer.OrdinalIgnoreCase) Then clip.SourceBehaviorFiles.Add(behFile)
             If Not clip.Roles.Contains(role) Then clip.Roles.Add(role)
             If Not clip.StateAxes.Contains(stateAxis) Then clip.StateAxes.Add(stateAxis)
@@ -333,6 +352,10 @@ Public Class ResolvedAnimationClip
     Public ClipName As String = ""             ' nombre del hkbClipGenerator
     Public PlaybackSpeed As Single = 1.0F
     Public SourceSkeletonPath As String = ""   ' skeleton del actor de ORIGEN de la anim (para interpretarla)
+    ''' <summary>Aditivo DECLARADO POR EL GRAFO: el clip generator está envuelto por un
+    ''' DynamicAnimationTaggingGenerator 'Additive*' (ej. AdditiveDynamicIdle del Handy, cuyo
+    ''' archivo trae blendHint=0). Complementa al blendHint del binding del archivo.</summary>
+    Public IsAdditive As Boolean = False
     Public ReadOnly Property Roles As New List(Of String)               ' MT/Weapon/Furniture/Idle/Pipboy/Core
     Public ReadOnly Property SourceBehaviorFiles As New List(Of String) ' behavior .hkx que lo contienen
     ''' <summary>Ejes de ESTADO (nombre del tipo KYWD.TNAM de los SAKD del subgraph: "Anim Injured"/"Anim Archetype"/

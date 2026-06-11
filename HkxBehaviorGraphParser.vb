@@ -138,7 +138,8 @@ Public Partial Class HkxObjectGraph_Class
             .PlaybackSpeed = ReadSingle(rel + &HB0),
             .EnforcedDuration = ReadSingle(rel + &HB4),
             .AnimationBindingIndex = CInt(ReadInt16(rel + &HBC)),
-            .PlaybackMode = CInt(ReadByte(rel + &HBE))
+            .PlaybackMode = CInt(ReadByte(rel + &HBE)),
+            .FlagsRaw = CInt(ReadByte(rel + &HBF))
         }
     End Function
 
@@ -536,6 +537,7 @@ Public Class HkbClipGeneratorGraph_Class
     Public Property EnforcedDuration As Single
     Public Property AnimationBindingIndex As Integer  ' +0xBC int16 (-1 = sin binding)
     Public Property PlaybackMode As Integer           ' +0xBE enum (loop/once/...)
+    Public Property FlagsRaw As Integer               ' +0xBF int8 hkbClipGenerator::flags
 End Class
 
 Public Class HkbBlenderGeneratorChildGraph_Class

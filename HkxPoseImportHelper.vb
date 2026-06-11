@@ -83,18 +83,21 @@ Public NotInheritable Class HkxPoseImportSession
     Private ReadOnly _liveSkeleton As SkeletonInstance
     Private ReadOnly _tracks As List(Of ResolvedTrack)
     Private ReadOnly _baseDiagnostics As HkxPoseImportDiagnostics
+    Private ReadOnly _additiveHint As Boolean
     Private ReadOnly _previewPoseCache As New Dictionary(Of Integer, HkxPoseImportHelper.ImportResult)
 
     Private Sub New(animation As HkaSplineCompressedAnimationGraph_Class,
                     hkxSkeleton As HkaSkeletonGraph_Class,
                     liveSkeleton As SkeletonInstance,
                     tracks As List(Of ResolvedTrack),
-                    diagnostics As HkxPoseImportDiagnostics)
+                    diagnostics As HkxPoseImportDiagnostics,
+                    additiveHint As Boolean)
         _animation = animation
         _hkxSkeleton = hkxSkeleton
         _liveSkeleton = liveSkeleton
         _tracks = tracks
         _baseDiagnostics = diagnostics
+        _additiveHint = additiveHint
     End Sub
 
     Public ReadOnly Property FrameCount As Integer
@@ -148,11 +151,14 @@ Public NotInheritable Class HkxPoseImportSession
         Return nonRagdoll(0)   ' único no-ragdoll = el de animación (en vanilla hay exactamente 1)
     End Function
 
+    ''' <param name="additiveHint">Aditividad declarada FUERA del archivo (el behavior graph envuelve
+    ''' el clip en un DynamicAnimationTaggingGenerator 'Additive*'). OR con el blendHint del binding.</param>
     Public Shared Function Create(skeletonHkxBytes As Byte(),
                                   animationHkxBytes As Byte(),
                                   liveSkeleton As SkeletonInstance,
                                   animationDisplayPath As String,
-                                  skeletonDisplayPath As String) As HkxPoseImportSession
+                                  skeletonDisplayPath As String,
+                                  Optional additiveHint As Boolean = False) As HkxPoseImportSession
         If animationHkxBytes Is Nothing OrElse animationHkxBytes.Length = 0 Then Throw New ArgumentException("Animation HKX is empty.", NameOf(animationHkxBytes))
         If liveSkeleton Is Nothing OrElse liveSkeleton.HasSkeleton = False Then Throw New InvalidOperationException("A live NIF skeleton must be loaded before importing HKX poses.")
 
@@ -216,7 +222,8 @@ Public NotInheritable Class HkxPoseImportSession
         If hkxSkeleton Is Nothing Then skeletonSource = "animation-track-names"
 
         Dim tracks = ResolveTracks(animation, hkxSkeleton, skeletonSource)
-        BindLiveSkeletonTracks(tracks, hkxSkeleton, liveSkeleton, animation)
+        BindLiveSkeletonTracks(tracks, hkxSkeleton, liveSkeleton)
+        AnalyzeTrackContent(animation, tracks)
         Dim diagnostics As New HkxPoseImportDiagnostics With {
             .AnimationDisplayPath = If(animationDisplayPath, ""),
             .SkeletonDisplayPath = If(skeletonDisplayPath, ""),
@@ -230,8 +237,8 @@ Public NotInheritable Class HkxPoseImportSession
             .Tracks = animation.NumTransformTracks
         }
 
-        Logger.LogLazy(Function() $"[HKX-POSE] Track mapping strategy={skeletonSource} resolvedTracks={tracks.Count} hasTrackNames={hasTrackNames} externalAvailable={externalSkeletonAvailable}")
-        Return New HkxPoseImportSession(animation, hkxSkeleton, liveSkeleton, tracks, diagnostics)
+        Logger.LogLazy(Function() $"[HKX-POSE] Track mapping strategy={skeletonSource} resolvedTracks={tracks.Count} hasTrackNames={hasTrackNames} externalAvailable={externalSkeletonAvailable} additiveHint={additiveHint}")
+        Return New HkxPoseImportSession(animation, hkxSkeleton, liveSkeleton, tracks, diagnostics, additiveHint)
     End Function
 
     Public Function BuildPose(frameIndex As Integer,
@@ -257,6 +264,13 @@ Public NotInheritable Class HkxPoseImportSession
 
         Dim skippedInvalidBindings = 0
         Dim skippedMissingLiveBones = 0
+        ' ── ADITIVOS: los tracks son DELTAS cerca de identidad, van DIRECTO a la capa Δ (componentes
+        ' sin dato = identidad — ver BuildFrameLocalTransform). Aditividad declarada por (a) blendHint
+        ' del binding del archivo (CrippledNoise) O (b) el behavior graph vía additiveHint (clip envuelto
+        ' en DynamicAnimationTaggingGenerator 'Additive*', ej. AdditiveDynamicIdle con blendHint=0).
+        ' NORMALES: Δ = inv(S) × frameLocal, donde frameLocal toma del clip SOLO los componentes CON
+        ' CONTENIDO (ver AnalyzeTrackContent) y conserva S en los demás.
+        Dim additive = (_animation.Binding IsNot Nothing AndAlso _animation.Binding.BlendHint <> 0) OrElse _additiveHint
 
         For Each resolved In _tracks
             Dim hkxTransform = _animation.GetTransform(usedFrame, resolved.TrackIndex)
@@ -266,24 +280,23 @@ Public NotInheritable Class HkxPoseImportSession
                 Continue For
             End If
 
-            If resolved.LiveBone Is Nothing OrElse resolved.LiveBoneOriginalInverse Is Nothing Then
+            If resolved.LiveBone Is Nothing OrElse resolved.StructuralLocalInverse Is Nothing Then
                 skippedMissingLiveBones += 1
                 Logger.LogLazy(Function() $"[HKX-POSE] skip track={resolved.TrackIndex} bone='{resolved.BoneName}': not present in live NIF skeleton.")
                 Continue For
             End If
 
-            Dim frameLocal = BuildFrameLocalTransform(hkxTransform, resolved, diagnostics)
-            ' ── ADITIVOS (blendHint≠0, ej. CrippledNoise: ruido/temblor) ────────────────────────────
-            ' Sus tracks NO son locales absolutos: son DELTAS cerca de identidad sobre el bind. Aplicarlos
-            ' como absolutos colapsa los huesos (deforma piernas/brazos). El delta del clip va DIRECTO a la
-            ' capa Δ (el getter O×Mount×Morph×Δ ya lo compone sobre el bind estructural). Los clips
-            ' NORMALES (blendHint=0): Δ = inv(clipBase) × frameLocal, con clipBase fijado por
-            ' BindLiveSkeletonTracks según el frame de autoría del clip (ver doc ahí).
+            ' Track sin NINGÚN componente con contenido (ver AnalyzeTrackContent) = el clip no
+            ' opina sobre este hueso ⇒ queda en su local estructural S (mount incluido).
+            If Not additive AndAlso Not resolved.HasContent Then Continue For
+
+
+            Dim frameLocal = BuildFrameLocalTransform(hkxTransform, resolved, additive, diagnostics)
             Dim delta As Transform_Class
-            If _animation.Binding IsNot Nothing AndAlso _animation.Binding.BlendHint <> 0 Then
+            If additive Then
                 delta = frameLocal
             Else
-                delta = resolved.LiveBoneOriginalInverse.ComposeTransforms(frameLocal)
+                delta = resolved.StructuralLocalInverse.ComposeTransforms(frameLocal)
             End If
             If collectDiagnostics Then TrackDeltaDiagnostics(delta, diagnostics)
 
@@ -325,55 +338,134 @@ Public NotInheritable Class HkxPoseImportSession
         Return result
     End Function
 
-    Private Function BuildFrameLocalTransform(hkxTransform As HkxAnimationTransformGraph_Class,
-                                             resolved As ResolvedTrack,
-                                             diagnostics As HkxPoseImportDiagnostics) As Transform_Class
-        Dim referencePose = resolved.ReferencePose
-        If referencePose Is Nothing AndAlso hkxTransform.HasAnyMissingComponent Then
-            Throw New InvalidDataException($"Track '{resolved.BoneName}' has compressed identity components but no skeleton reference pose is available.")
+    ''' <summary>Clasifica cada COMPONENTE de cada track por TIPO DE DATO, escaneando el clip entero
+    ''' una vez (clasificación medida del archivo, sin decisiones en runtime).
+    ''' <para>SIN OPINIÓN = identity-typed O constante(±ε quantización) e IGUAL al refPose en TODO el
+    ''' clip ⇒ conserva el local estructural S. Probado: los sockets de brazo del Handy (P-ArmsTypeA1
+    ''' publicado en Ring+2.91; rig refPose 2.91 abajo; tracks constantes==refPose — honrarlos despega
+    ''' los brazos del anillo) y los EyeArm (constantes==refPose; su config vive en el mount).</para>
+    ''' <para>CON CONTENIDO = VARÍA en el tiempo (¡los clips crippled ANIMAN C-Head a (9.35,9.51) — la
+    ''' pose del robot derrumbado!) o constante≠refPose (el despliegue del Assaultron: C-Head −3.92 ==
+    ''' P-Head publicado). NO congelar sockets por nombre: el dato crippled lo refuta.</para></summary>
+    Private Shared Sub AnalyzeTrackContent(animation As HkaSplineCompressedAnimationGraph_Class,
+                                           tracks As List(Of ResolvedTrack))
+        Const EPS_CONST_T As Single = 0.02F   ' constancia traslación (ruido de quantización spline)
+        Const EPS_REF_T As Single = 0.08F     ' igualdad a refPose (traslación)
+        Const EPS_CONST_S As Single = 0.002F
+        Const EPS_REF_S As Single = 0.01F
+        Const EPS_ROT_DOT As Single = 0.9997F ' |dot| de quats ≈ igual (≈1.4°, quats comprimidos)
+
+        If animation Is Nothing OrElse tracks Is Nothing Then Return
+        Dim nF = Math.Max(1, animation.NumFrames)
+
+        For Each resolved In tracks
+            If resolved Is Nothing OrElse resolved.LiveBone Is Nothing Then Continue For
+            Dim ht0 = animation.GetTransform(0, resolved.TrackIndex)
+            If ht0 Is Nothing Then Continue For
+            Dim refp = resolved.ReferencePose
+
+            For axis = 0 To 2
+                Dim tAnim = (axis = 0 AndAlso ht0.TranslationXAnimated) OrElse (axis = 1 AndAlso ht0.TranslationYAnimated) OrElse (axis = 2 AndAlso ht0.TranslationZAnimated)
+                Dim sAnim = (axis = 0 AndAlso ht0.ScaleXAnimated) OrElse (axis = 1 AndAlso ht0.ScaleYAnimated) OrElse (axis = 2 AndAlso ht0.ScaleZAnimated)
+                Dim tContent = False, sContent = False
+                If tAnim OrElse sAnim Then
+                    Dim t0 = GetVectorAxis(ht0.Translation, axis, 0.0F), tMin = t0, tMax = t0
+                    Dim s0 = GetVectorAxis(ht0.Scale, axis, 1.0F), sMin = s0, sMax = s0
+                    For f = 1 To nF - 1
+                        Dim htf = animation.GetTransform(f, resolved.TrackIndex)
+                        If htf Is Nothing Then Continue For
+                        If tAnim Then
+                            Dim v = GetVectorAxis(htf.Translation, axis, 0.0F)
+                            tMin = Math.Min(tMin, v) : tMax = Math.Max(tMax, v)
+                        End If
+                        If sAnim Then
+                            Dim v = GetVectorAxis(htf.Scale, axis, 1.0F)
+                            sMin = Math.Min(sMin, v) : sMax = Math.Max(sMax, v)
+                        End If
+                    Next
+                    If tAnim Then tContent = (tMax - tMin) > EPS_CONST_T OrElse refp Is Nothing OrElse Math.Abs(t0 - GetVectorAxis(refp.Translation, axis, 0.0F)) > EPS_REF_T
+                    If sAnim Then sContent = (sMax - sMin) > EPS_CONST_S OrElse refp Is Nothing OrElse Math.Abs(s0 - GetVectorAxis(refp.Scale, axis, 1.0F)) > EPS_REF_S
+                End If
+                Select Case axis
+                    Case 0 : resolved.ContentTX = tContent : resolved.ContentSX = sContent
+                    Case 1 : resolved.ContentTY = tContent : resolved.ContentSY = sContent
+                    Case 2 : resolved.ContentTZ = tContent : resolved.ContentSZ = sContent
+                End Select
+            Next
+
+            If ht0.RotationAnimated AndAlso ht0.Rotation IsNot Nothing Then
+                Dim varies = False
+                For f = 1 To nF - 1
+                    Dim htf = animation.GetTransform(f, resolved.TrackIndex)
+                    If htf Is Nothing OrElse htf.Rotation Is Nothing Then Continue For
+                    If Math.Abs(QuatDot(ht0.Rotation, htf.Rotation)) < EPS_ROT_DOT Then varies = True : Exit For
+                Next
+                Dim refEq = refp IsNot Nothing AndAlso refp.Rotation IsNot Nothing AndAlso
+                            Math.Abs(QuatDot(ht0.Rotation, refp.Rotation)) >= EPS_ROT_DOT
+                resolved.ContentR = varies OrElse Not refEq
+            End If
+
+            resolved.HasContent = resolved.ContentTX OrElse resolved.ContentTY OrElse resolved.ContentTZ OrElse
+                                  resolved.ContentR OrElse
+                                  resolved.ContentSX OrElse resolved.ContentSY OrElse resolved.ContentSZ
+        Next
+    End Sub
+
+    ''' <summary>Producto punto de quats normalizados (|dot|≈1 ⇒ misma rotación).</summary>
+    Private Shared Function QuatDot(a As HkxQuaternionGraph_Class, b As HkxQuaternionGraph_Class) As Single
+        Dim la = CSng(Math.Sqrt(CDbl(a.X) * a.X + CDbl(a.Y) * a.Y + CDbl(a.Z) * a.Z + CDbl(a.W) * a.W))
+        Dim lb = CSng(Math.Sqrt(CDbl(b.X) * b.X + CDbl(b.Y) * b.Y + CDbl(b.Z) * b.Z + CDbl(b.W) * b.W))
+        If la <= 0.000001F OrElse lb <= 0.000001F Then Return 1.0F
+        Return (a.X * b.X + a.Y * b.Y + a.Z * b.Z + a.W * b.W) / (la * lb)
+    End Function
+
+    ''' <summary>Local del frame del clip.
+    ''' <para>NORMAL: componente CON CONTENIDO ← clip; SIN OPINIÓN ← S (local estructural vivo) ⇒
+    ''' Δ=0 en esos ejes. Con la distribución del mount corregida (CHUNK-TREE-FULL: la corrección
+    ''' vive en sockets/ramas como Bethesda, no en los huesos skinneados profundos), S coincide con
+    ''' la base del clip donde el clip tiene contenido — sin doble conteo. Mezclar componentes
+    ''' clip/S es válido: la convención HKX→render es trivial (quat xyzw directo).</para>
+    ''' <para>ADITIVO: componente sin dato = delta CERO.</para></summary>
+    Private Shared Function BuildFrameLocalTransform(hkxTransform As HkxAnimationTransformGraph_Class,
+                                                     resolved As ResolvedTrack,
+                                                     additive As Boolean,
+                                                     diagnostics As HkxPoseImportDiagnostics) As Transform_Class
+        If additive Then
+            Dim txA = If(hkxTransform.TranslationXAnimated, GetVectorAxis(hkxTransform.Translation, 0, 0.0F), 0.0F)
+            Dim tyA = If(hkxTransform.TranslationYAnimated, GetVectorAxis(hkxTransform.Translation, 1, 0.0F), 0.0F)
+            Dim tzA = If(hkxTransform.TranslationZAnimated, GetVectorAxis(hkxTransform.Translation, 2, 0.0F), 0.0F)
+            Dim rA = If(hkxTransform.RotationAnimated, hkxTransform.Rotation, Nothing) ' Nothing → identidad
+            Dim sxA = If(hkxTransform.ScaleXAnimated, GetVectorAxis(hkxTransform.Scale, 0, 1.0F), 1.0F)
+            Dim syA = If(hkxTransform.ScaleYAnimated, GetVectorAxis(hkxTransform.Scale, 1, 1.0F), 1.0F)
+            Dim szA = If(hkxTransform.ScaleZAnimated, GetVectorAxis(hkxTransform.Scale, 2, 1.0F), 1.0F)
+            Return HkxTransformConventionHelper.ToTransform(txA, tyA, tzA, rA, sxA, syA, szA)
         End If
 
-        Dim tx = ResolveTranslationAxis(hkxTransform, referencePose, 0, diagnostics)
-        Dim ty = ResolveTranslationAxis(hkxTransform, referencePose, 1, diagnostics)
-        Dim tz = ResolveTranslationAxis(hkxTransform, referencePose, 2, diagnostics)
-        Dim r = If(hkxTransform.RotationAnimated OrElse referencePose Is Nothing, hkxTransform.Rotation, referencePose.Rotation)
-        If diagnostics IsNot Nothing AndAlso hkxTransform.RotationAnimated = False AndAlso referencePose IsNot Nothing Then diagnostics.RotationComponentsFromReferencePose += 1
+        Dim s = resolved.StructuralLocal
+        Dim tx = If(resolved.ContentTX, GetVectorAxis(hkxTransform.Translation, 0, 0.0F), s.Translation.X)
+        Dim ty = If(resolved.ContentTY, GetVectorAxis(hkxTransform.Translation, 1, 0.0F), s.Translation.Y)
+        Dim tz = If(resolved.ContentTZ, GetVectorAxis(hkxTransform.Translation, 2, 0.0F), s.Translation.Z)
+        Dim sx = If(resolved.ContentSX, GetVectorAxis(hkxTransform.Scale, 0, 1.0F), s.Scale)
+        Dim sy = If(resolved.ContentSY, GetVectorAxis(hkxTransform.Scale, 1, 1.0F), s.Scale)
+        Dim sz = If(resolved.ContentSZ, GetVectorAxis(hkxTransform.Scale, 2, 1.0F), s.Scale)
 
-        Dim sx = ResolveScaleAxis(hkxTransform, referencePose, 0, diagnostics)
-        Dim sy = ResolveScaleAxis(hkxTransform, referencePose, 1, diagnostics)
-        Dim sz = ResolveScaleAxis(hkxTransform, referencePose, 2, diagnostics)
+        If diagnostics IsNot Nothing Then
+            If Not resolved.ContentTX Then diagnostics.TranslationComponentsFromReferencePose += 1
+            If Not resolved.ContentTY Then diagnostics.TranslationComponentsFromReferencePose += 1
+            If Not resolved.ContentTZ Then diagnostics.TranslationComponentsFromReferencePose += 1
+            If Not resolved.ContentR Then diagnostics.RotationComponentsFromReferencePose += 1
+            If Not (resolved.ContentSX AndAlso resolved.ContentSY AndAlso resolved.ContentSZ) Then diagnostics.ScaleComponentsFromReferencePose += 1
+        End If
 
-        Return HkxTransformConventionHelper.ToTransform(tx, ty, tz, r, sx, sy, sz)
-    End Function
-
-    Private Function ResolveReferencePose(resolved As ResolvedTrack) As HkxQsTransformGraph_Class
-        If _hkxSkeleton Is Nothing OrElse _hkxSkeleton.ReferencePose Is Nothing Then Return Nothing
-        If resolved.BoneIndex < 0 OrElse resolved.BoneIndex >= _hkxSkeleton.ReferencePose.Count Then Return Nothing
-        Return _hkxSkeleton.ReferencePose(resolved.BoneIndex)
-    End Function
-
-    Private Shared Function ResolveTranslationAxis(hkxTransform As HkxAnimationTransformGraph_Class,
-                                                   referencePose As HkxQsTransformGraph_Class,
-                                                   axis As Integer,
-                                                   diagnostics As HkxPoseImportDiagnostics) As Single
-        Dim animated = (axis = 0 AndAlso hkxTransform.TranslationXAnimated) OrElse
-                       (axis = 1 AndAlso hkxTransform.TranslationYAnimated) OrElse
-                       (axis = 2 AndAlso hkxTransform.TranslationZAnimated)
-        If animated Then Return GetVectorAxis(hkxTransform.Translation, axis, 0.0F)
-        If diagnostics IsNot Nothing AndAlso referencePose IsNot Nothing Then diagnostics.TranslationComponentsFromReferencePose += 1
-        Return GetVectorAxis(referencePose?.Translation, axis, 0.0F)
-    End Function
-
-    Private Shared Function ResolveScaleAxis(hkxTransform As HkxAnimationTransformGraph_Class,
-                                             referencePose As HkxQsTransformGraph_Class,
-                                             axis As Integer,
-                                             diagnostics As HkxPoseImportDiagnostics) As Single
-        Dim animated = (axis = 0 AndAlso hkxTransform.ScaleXAnimated) OrElse
-                       (axis = 1 AndAlso hkxTransform.ScaleYAnimated) OrElse
-                       (axis = 2 AndAlso hkxTransform.ScaleZAnimated)
-        If animated Then Return GetVectorAxis(hkxTransform.Scale, axis, 1.0F)
-        If diagnostics IsNot Nothing AndAlso referencePose IsNot Nothing Then diagnostics.ScaleComponentsFromReferencePose += 1
-        Return GetVectorAxis(referencePose?.Scale, axis, 1.0F)
+        If resolved.ContentR Then
+            Return HkxTransformConventionHelper.ToTransform(tx, ty, tz, hkxTransform.Rotation, sx, sy, sz)
+        End If
+        ' Rotación sin opinión ← rotación estructural del hueso vivo.
+        Return New Transform_Class With {
+            .Translation = New Vector3(tx, ty, tz),
+            .Rotation = s.Rotation,
+            .Scale = HkxTransformConventionHelper.ResolveUniformScale(sx, sy, sz)
+        }
     End Function
 
     Private Shared Function GetVectorAxis(value As HkxVector4Graph_Class, axis As Integer, fallback As Single) As Single
@@ -429,31 +521,22 @@ Public NotInheritable Class HkxPoseImportSession
         Return result
     End Function
 
-    ''' <summary>Liga cada track al hueso del esqueleto vivo y fija la base del delta (clipBase).
-    ''' <para>MODELO (rediseño 2026-06-10, medido con el probe CLI <c>--clipbase</c>):
-    ''' <c>local_b(t) = M_b × L_anim_b(t)</c> con <c>M_b = assembledLocal_b × inv(clipBase_b)</c>.
-    ''' En la capa Δ del getter <c>O×Mount×Morph×Δ</c> eso equivale a <c>Δ = inv(clipBase) × L_anim</c>
-    ''' — el mount NUNCA entra al Δ; solo cambia contra QUÉ base se computa.</para>
-    ''' <para><c>clipBase_b</c> = el local que el clip juega en base, y es una propiedad del SET de
-    ''' animación (no derivable de rig/chunk/socket — Assaultron y Handy tienen la misma forma de datos
-    ''' y convenciones OPUESTAS): los clips de Assaultron están autoreados sobre el robot ENSAMBLADO
-    ''' (clipBase = O×Mount ⇒ M=I; el clip ya trae el mount: HeadNod +9.8Y, piernas/brazos dT_asm≤0.4);
-    ''' los de Handy sobre el rig PELADO (clipBase = refPose ⇒ M=Mount; Pelvis thruster +8.69 y
-    ''' EyeArm 2.9 NO están en el clip); los humanos sobre su rig (88/95 huesos exactos ⇒ M=I).</para>
-    ''' <para>La autoría se MIDE del propio clip en frame 0, sumando sobre los huesos MONTADOS
-    ''' (|Mount.T|>0.5) la distancia de la traslación del clip a las DOS únicas bases estructurales
-    ''' (refPose vs O×Mount). Margen medido: 4.5–17u contra ruido ≤1.2u. Decisión POR CLIP, no por
-    ''' hueso: el clip reparte un offset de cadena distinto que el mount (Assaultron: clip mueve C-Head
-    ''' −9, el mount mueve Neck −9 — misma cadena, distribución distinta; per-bone duplicaría el offset).
-    ''' Sin votos (humano/criatura/chunk-biped no animado por el clip) ⇒ rig-authored ⇒ camino legacy
-    ''' idéntico (cero regresión bípedos; los mounts persisten vía la capa Mount del getter).</para>
-    ''' <para>La base rig usa el refPose del skeleton DEL CLIP (fix skeleton-mismatch 2026-06-09:
-    ''' humanos skeleton.nif==skeleton.hkx exacto; criaturas ≤0.33u; robots post-MergeHkxSkeleton
-    ''' O==refPose en huesos compartidos).</para></summary>
+    ''' <summary>Liga cada track al hueso del esqueleto vivo, captura su local ESTRUCTURAL
+    ''' <c>S_b = O×Mount</c> y el refPose del rig del clip.
+    ''' <para>MODELO FINAL (2026-06-11): la animación es REEMPLAZO TOTAL del local en el frame del
+    ''' rig del clip — <c>local_b(t) = L_anim_b(t)</c>, con componentes identity ← refPose del
+    ''' skeleton.hkx (semántica del engine). En la capa Δ del getter <c>O×Mount×Morph×Δ</c>:
+    ''' <c>Δ_b = inv(S_b) × L_anim_b</c>, UNIVERSAL, sin modos. Funciona porque el MOUNT EN REPOSO
+    ''' debe ser engine-correcto (= los skin-binds de los chunks bien placeados): para Assaultron
+    ''' los wants del mount coinciden EXACTO con los binds del chunk, con Assaultron.nif y con lo
+    ''' que juegan los clips (Neck −3.921, HeadNod −4.999, clavículas 17.14) ⇒ local=L_anim no
+    ''' doble-cuenta nada. Humano/criatura: S=O≈refPose ⇒ legacy. Si un robot se deforma al animar
+    ''' con esta fórmula, el bug está EN EL MOUNT DE REPOSO (placement del chunk), no acá — ej.
+    ''' detectado: Handy Pelvis mount +8.690/+0.269 == EXACTO el local de C-BotLegs del rig
+    ''' (socket contado dos veces en el placement).</para></summary>
     Private Shared Sub BindLiveSkeletonTracks(tracks As List(Of ResolvedTrack),
                                               hkxSkeleton As HkaSkeletonGraph_Class,
-                                              liveSkeleton As SkeletonInstance,
-                                              animation As HkaSplineCompressedAnimationGraph_Class)
+                                              liveSkeleton As SkeletonInstance)
         If tracks Is Nothing OrElse liveSkeleton Is Nothing OrElse liveSkeleton.SkeletonDictionary Is Nothing Then Return
 
         For Each resolved In tracks
@@ -462,56 +545,15 @@ Public NotInheritable Class HkxPoseImportSession
             Dim liveBone As HierarchiBone_class = Nothing
             If liveSkeleton.SkeletonDictionary.TryGetValue(resolved.BoneName, liveBone) AndAlso liveBone IsNot Nothing Then
                 resolved.LiveBone = liveBone
-                resolved.LiveBoneOriginalInverse = liveBone.OriginalLocaLTransform.Inverse()  ' fallback (sin external skel)
+                Dim s = liveBone.OriginalLocaLTransform
+                If liveBone.MountDeltaTransform IsNot Nothing Then s = s.ComposeTransforms(liveBone.MountDeltaTransform)
+                resolved.StructuralLocal = s
+                resolved.StructuralLocalInverse = s.Inverse()
             End If
 
             If hkxSkeleton IsNot Nothing AndAlso hkxSkeleton.ReferencePose IsNot Nothing AndAlso
                resolved.BoneIndex >= 0 AndAlso resolved.BoneIndex < hkxSkeleton.ReferencePose.Count Then
                 resolved.ReferencePose = hkxSkeleton.ReferencePose(resolved.BoneIndex)
-            End If
-        Next
-
-        ' ── Medición del frame de autoría del clip (ver doc del método) ──────────────────────────
-        Dim votes = 0
-        Dim dRig As Double = 0.0, dAsm As Double = 0.0
-        If animation IsNot Nothing Then
-            For Each resolved In tracks
-                If resolved Is Nothing OrElse resolved.LiveBone Is Nothing OrElse resolved.ReferencePose Is Nothing Then Continue For
-                Dim mount = resolved.LiveBone.MountDeltaTransform
-                If mount Is Nothing OrElse mount.Translation.Length() <= 0.5F Then Continue For
-                Dim ht = animation.GetTransform(0, resolved.TrackIndex)
-                If ht Is Nothing Then Continue For
-                ' frame-0 local del clip: componentes no animados ← refPose (misma semántica que BuildFrameLocalTransform)
-                Dim tx = ResolveTranslationAxis(ht, resolved.ReferencePose, 0, Nothing)
-                Dim ty = ResolveTranslationAxis(ht, resolved.ReferencePose, 1, Nothing)
-                Dim tz = ResolveTranslationAxis(ht, resolved.ReferencePose, 2, Nothing)
-                Dim rr = If(ht.RotationAnimated, ht.Rotation, resolved.ReferencePose.Rotation)
-                Dim sx = ResolveScaleAxis(ht, resolved.ReferencePose, 0, Nothing)
-                Dim sy = ResolveScaleAxis(ht, resolved.ReferencePose, 1, Nothing)
-                Dim sz = ResolveScaleAxis(ht, resolved.ReferencePose, 2, Nothing)
-                Dim clip0T = HkxTransformConventionHelper.ToTransform(tx, ty, tz, rr, sx, sy, sz).Translation
-                Dim rigT = HkxTransformConventionHelper.ToTransform(resolved.ReferencePose).Translation
-                Dim asmT = resolved.LiveBone.OriginalLocaLTransform.ComposeTransforms(mount).Translation
-                dRig += (clip0T - rigT).Length()
-                dAsm += (clip0T - asmT).Length()
-                votes += 1
-            Next
-        End If
-        Dim assembledAuthored = votes > 0 AndAlso dAsm < dRig
-        Dim votesL = votes, dRigL = dRig, dAsmL = dAsm, asmL = assembledAuthored
-        Logger.LogLazy(Function() $"[HKX-POSE] clip authoring frame: {If(asmL, "ASSEMBLED (M=I; el clip trae el mount)", "RIG (M=Mount; la capa Mount persiste)")} votes={votesL} dRig={dRigL:F2} dAsm={dAsmL:F2}")
-
-        ' ── clipBase por track: inv(clipBase) es la base del Δ ──────────────────────────────────
-        For Each resolved In tracks
-            If resolved Is Nothing OrElse resolved.LiveBone Is Nothing OrElse resolved.ReferencePose Is Nothing Then Continue For
-            If assembledAuthored AndAlso resolved.LiveBone.MountDeltaTransform IsNot Nothing Then
-                ' clipBase = O×Mount (local ensamblado) ⇒ getter O×Mount×Δ = L_anim, sin doble-conteo.
-                resolved.LiveBoneOriginalInverse =
-                    resolved.LiveBone.OriginalLocaLTransform.ComposeTransforms(resolved.LiveBone.MountDeltaTransform).Inverse()
-            Else
-                ' clipBase = refPose del rig del clip ⇒ getter O×Mount×Δ = (O×Mount×inv(O))×L_anim = M×L_anim
-                ' con M=Mount en huesos montados (config que el clip no conoce) y M=I en el resto.
-                resolved.LiveBoneOriginalInverse = HkxTransformConventionHelper.ToTransform(resolved.ReferencePose).Inverse()
             End If
         Next
     End Sub
@@ -578,7 +620,21 @@ Public NotInheritable Class HkxPoseImportSession
         Public Property BoneIndex As Integer
         Public Property BoneName As String
         Public Property LiveBone As HierarchiBone_class
-        Public Property LiveBoneOriginalInverse As Transform_Class
+        ''' <summary>S_b = O×Mount del hueso vivo al crear la sesión — el local ESTRUCTURAL.
+        ''' Los componentes SIN OPINIÓN del clip conservan S; Δ = inv(S)×frameLocal.</summary>
+        Public Property StructuralLocal As Transform_Class
+        Public Property StructuralLocalInverse As Transform_Class
+        ''' <summary>refPose del rig DEL CLIP — referencia de la clasificación por componente.</summary>
         Public Property ReferencePose As HkxQsTransformGraph_Class
+        ''' <summary>Clasificación por TIPO DE DATO (AnalyzeTrackContent): True = contenido del clip
+        ''' (varía, o constante≠refPose); False = sin opinión (identity o constante==refPose) ⇒ S.</summary>
+        Public Property ContentTX As Boolean
+        Public Property ContentTY As Boolean
+        Public Property ContentTZ As Boolean
+        Public Property ContentR As Boolean
+        Public Property ContentSX As Boolean
+        Public Property ContentSY As Boolean
+        Public Property ContentSZ As Boolean
+        Public Property HasContent As Boolean
     End Class
 End Class
