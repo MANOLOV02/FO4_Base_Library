@@ -85,24 +85,10 @@ Public NotInheritable Class BehaviorClipEnumerator
         End If
         If graph Is Nothing Then Return
 
-        ' [ADDITIVE-POR-JERARQUÍA] La aditividad de un clip puede declararla el GRAFO, no el binding
-        ' del archivo (probado: 'AdditiveDynamicIdle' del Handy tiene blendHint=0 en DialogueIdle_Long1.hkx
-        ' pero su wrapper en HandyBehavior es un DynamicAnimationTaggingGenerator llamado
-        ' 'AdditiveDynamicAnimationGenerator' — el cuerpo del objeto es todo ceros: el NOMBRE autoreado
-        ' ES la declaración). Recolectar los hkbClipGenerator referenciados por un tagging generator
-        ' 'Additive*' y marcarlos aditivos.
-        Dim additiveClipGenOffsets As New HashSet(Of Integer)
-        For Each datg In graph.GetObjectsByClassName("DynamicAnimationTaggingGenerator")
-            Dim datgName = graph.ReadNodeName(datg)
-            If String.IsNullOrEmpty(datgName) OrElse datgName.IndexOf("Additive", StringComparison.OrdinalIgnoreCase) < 0 Then Continue For
-            For Each gf In graph.GetGlobalFixupsInRange(datg.RelativeOffset, datg.Size)
-                Dim tgt = graph.GetObject(gf.TargetRelativeOffset)
-                If tgt IsNot Nothing AndAlso tgt.ClassName.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then
-                    additiveClipGenOffsets.Add(tgt.RelativeOffset)
-                End If
-            Next
-        Next
-
+        ' NOTA aditivos: la aditividad es CANÓNICA del archivo de animación — hkaAnimationBinding.blendHint
+        ' (=2 en RotateRing*_Add/CrippledNoise/DialogueIdle_Long1; =0 en clips normales). Un offset roto
+        ' del parser (saltaba 2 arrays en vez de 3) la leía mal y motivó un scan por NOMBRE de
+        ' DynamicAnimationTaggingGenerator acá — ELIMINADO: el binding del archivo es la única fuente.
         For Each obj In graph.GetObjectsByClassName("hkbClipGenerator")
             Dim cg = graph.ParseClipGenerator(obj)
             If IsNothing(cg) OrElse String.IsNullOrWhiteSpace(cg.AnimationName) Then Continue For
@@ -119,7 +105,6 @@ Public NotInheritable Class BehaviorClipEnumerator
                 byClip(animFile) = clip
                 result.Add(clip)
             End If
-            If additiveClipGenOffsets.Contains(obj.RelativeOffset) Then clip.IsAdditive = True
             If Not clip.SourceBehaviorFiles.Contains(behFile, StringComparer.OrdinalIgnoreCase) Then clip.SourceBehaviorFiles.Add(behFile)
             If Not clip.Roles.Contains(role) Then clip.Roles.Add(role)
             If Not clip.StateAxes.Contains(stateAxis) Then clip.StateAxes.Add(stateAxis)

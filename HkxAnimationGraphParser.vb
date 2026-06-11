@@ -128,9 +128,14 @@ Public Partial Class HkxObjectGraph_Class
         Dim bindingNameOffset = baseFieldOffset
         Dim animationReferenceOffset = bindingNameOffset + PointerSizeValue
         Dim trackToBoneArrayOffset = animationReferenceOffset + PointerSizeValue
-        Dim blendHintOffset = trackToBoneArrayOffset + (2 * ArrayHeaderSizeValue)
+        ' Layout hk2014: tras transformTrackToBoneIndices vienen DOS arrays más
+        ' (floatTrackToFloatSlotIndices + partitionIndices) y RECIÉN el blendHint (int8).
+        ' El offset viejo (+2 arrays, Int32) caía en el header del array de particiones →
+        ' leía 0 casi siempre (clips aditivos como RotateRing*_Add/CrippledNoise reportaban
+        ' NORMAL y colapsaban el render al aplicarse sus deltas como locales absolutos).
+        Dim blendHintOffset = trackToBoneArrayOffset + (3 * ArrayHeaderSizeValue)
 
-        If source.Size > 0 AndAlso source.Size < blendHintOffset + 4 Then
+        If source.Size > 0 AndAlso source.Size < blendHintOffset + 1 Then
             Throw New InvalidDataException($"hkaAnimationBinding @0x{source.RelativeOffset:X} is truncated.")
         End If
 
@@ -138,7 +143,7 @@ Public Partial Class HkxObjectGraph_Class
             .SourceObject = source,
             .OriginalSkeletonName = ResolveLocalString(source.RelativeOffset + bindingNameOffset),
             .AnimationObject = ResolveGlobalObject(source.RelativeOffset + animationReferenceOffset),
-            .BlendHint = ReadInt32(source.RelativeOffset + blendHintOffset)
+            .BlendHint = CInt(ReadByte(source.RelativeOffset + blendHintOffset))
         }
 
         result.TransformTrackToBoneIndices.AddRange(ReadInt16Array(source.RelativeOffset + trackToBoneArrayOffset))
