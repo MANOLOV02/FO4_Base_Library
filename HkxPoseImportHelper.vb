@@ -216,7 +216,7 @@ Public NotInheritable Class HkxPoseImportSession
         If hkxSkeleton Is Nothing Then skeletonSource = "animation-track-names"
 
         Dim tracks = ResolveTracks(animation, hkxSkeleton, skeletonSource)
-        BindLiveSkeletonTracks(tracks, hkxSkeleton, liveSkeleton)
+        BindLiveSkeletonTracks(tracks, hkxSkeleton, liveSkeleton, animation)
         Dim diagnostics As New HkxPoseImportDiagnostics With {
             .AnimationDisplayPath = If(animationDisplayPath, ""),
             .SkeletonDisplayPath = If(skeletonDisplayPath, ""),
@@ -273,7 +273,18 @@ Public NotInheritable Class HkxPoseImportSession
             End If
 
             Dim frameLocal = BuildFrameLocalTransform(hkxTransform, resolved, diagnostics)
-            Dim delta = resolved.LiveBoneOriginalInverse.ComposeTransforms(frameLocal)
+            ' ── ADITIVOS (blendHint≠0, ej. CrippledNoise: ruido/temblor) ────────────────────────────
+            ' Sus tracks NO son locales absolutos: son DELTAS cerca de identidad sobre el bind. Aplicarlos
+            ' como absolutos colapsa los huesos (deforma piernas/brazos). El delta del clip va DIRECTO a la
+            ' capa Δ (el getter O×Mount×Morph×Δ ya lo compone sobre el bind estructural). Los clips
+            ' NORMALES (blendHint=0): Δ = inv(clipBase) × frameLocal, con clipBase fijado por
+            ' BindLiveSkeletonTracks según el frame de autoría del clip (ver doc ahí).
+            Dim delta As Transform_Class
+            If _animation.Binding IsNot Nothing AndAlso _animation.Binding.BlendHint <> 0 Then
+                delta = frameLocal
+            Else
+                delta = resolved.LiveBoneOriginalInverse.ComposeTransforms(frameLocal)
+            End If
             If collectDiagnostics Then TrackDeltaDiagnostics(delta, diagnostics)
 
             Dim poseData = ToPoseTransformData(delta)
@@ -418,9 +429,31 @@ Public NotInheritable Class HkxPoseImportSession
         Return result
     End Function
 
+    ''' <summary>Liga cada track al hueso del esqueleto vivo y fija la base del delta (clipBase).
+    ''' <para>MODELO (rediseño 2026-06-10, medido con el probe CLI <c>--clipbase</c>):
+    ''' <c>local_b(t) = M_b × L_anim_b(t)</c> con <c>M_b = assembledLocal_b × inv(clipBase_b)</c>.
+    ''' En la capa Δ del getter <c>O×Mount×Morph×Δ</c> eso equivale a <c>Δ = inv(clipBase) × L_anim</c>
+    ''' — el mount NUNCA entra al Δ; solo cambia contra QUÉ base se computa.</para>
+    ''' <para><c>clipBase_b</c> = el local que el clip juega en base, y es una propiedad del SET de
+    ''' animación (no derivable de rig/chunk/socket — Assaultron y Handy tienen la misma forma de datos
+    ''' y convenciones OPUESTAS): los clips de Assaultron están autoreados sobre el robot ENSAMBLADO
+    ''' (clipBase = O×Mount ⇒ M=I; el clip ya trae el mount: HeadNod +9.8Y, piernas/brazos dT_asm≤0.4);
+    ''' los de Handy sobre el rig PELADO (clipBase = refPose ⇒ M=Mount; Pelvis thruster +8.69 y
+    ''' EyeArm 2.9 NO están en el clip); los humanos sobre su rig (88/95 huesos exactos ⇒ M=I).</para>
+    ''' <para>La autoría se MIDE del propio clip en frame 0, sumando sobre los huesos MONTADOS
+    ''' (|Mount.T|>0.5) la distancia de la traslación del clip a las DOS únicas bases estructurales
+    ''' (refPose vs O×Mount). Margen medido: 4.5–17u contra ruido ≤1.2u. Decisión POR CLIP, no por
+    ''' hueso: el clip reparte un offset de cadena distinto que el mount (Assaultron: clip mueve C-Head
+    ''' −9, el mount mueve Neck −9 — misma cadena, distribución distinta; per-bone duplicaría el offset).
+    ''' Sin votos (humano/criatura/chunk-biped no animado por el clip) ⇒ rig-authored ⇒ camino legacy
+    ''' idéntico (cero regresión bípedos; los mounts persisten vía la capa Mount del getter).</para>
+    ''' <para>La base rig usa el refPose del skeleton DEL CLIP (fix skeleton-mismatch 2026-06-09:
+    ''' humanos skeleton.nif==skeleton.hkx exacto; criaturas ≤0.33u; robots post-MergeHkxSkeleton
+    ''' O==refPose en huesos compartidos).</para></summary>
     Private Shared Sub BindLiveSkeletonTracks(tracks As List(Of ResolvedTrack),
                                               hkxSkeleton As HkaSkeletonGraph_Class,
-                                              liveSkeleton As SkeletonInstance)
+                                              liveSkeleton As SkeletonInstance,
+                                              animation As HkaSplineCompressedAnimationGraph_Class)
         If tracks Is Nothing OrElse liveSkeleton Is Nothing OrElse liveSkeleton.SkeletonDictionary Is Nothing Then Return
 
         For Each resolved In tracks
@@ -435,19 +468,50 @@ Public NotInheritable Class HkxPoseImportSession
             If hkxSkeleton IsNot Nothing AndAlso hkxSkeleton.ReferencePose IsNot Nothing AndAlso
                resolved.BoneIndex >= 0 AndAlso resolved.BoneIndex < hkxSkeleton.ReferencePose.Count Then
                 resolved.ReferencePose = hkxSkeleton.ReferencePose(resolved.BoneIndex)
-                ' ── FIX skeleton-mismatch (2026-06-09, verificado con datos, NO es parche) ────────────
-                ' El delta = LiveBoneOriginalInverse · frameLocal, y frameLocal es relativo al bind del
-                ' skeleton del CLIP (hkxSkeleton). Debe computarse contra ESE bind, no contra el bind
-                ' pristino del live render skeleton. Cuando difieren (robot: live pristino 90° off de
-                ' CreateABot) el delta se contamina con la diferencia de skeletons → cabeza/brazos rotos.
-                ' VERIFICADO por comparación de skeletons:
-                '  - humanoides (Character, SuperMutant): skeleton.nif == skeleton.hkx EXACTO ⇒ no-op.
-                '  - criaturas (DeathClaw, Mirelurk): difieren ≤0.33u (dedos/patas) = ruido ⇒ negligible.
-                '  - robots: bind pristino 90° off, PERO el ensamblado O·Mount matchea la orientación de
-                '    CreateABot (Neck dR=0.000) ⇒ con el delta limpio el getter O·Mount·Δ aplica bien.
-                If resolved.LiveBone IsNot Nothing Then
-                    resolved.LiveBoneOriginalInverse = HkxTransformConventionHelper.ToTransform(resolved.ReferencePose).Inverse()
-                End If
+            End If
+        Next
+
+        ' ── Medición del frame de autoría del clip (ver doc del método) ──────────────────────────
+        Dim votes = 0
+        Dim dRig As Double = 0.0, dAsm As Double = 0.0
+        If animation IsNot Nothing Then
+            For Each resolved In tracks
+                If resolved Is Nothing OrElse resolved.LiveBone Is Nothing OrElse resolved.ReferencePose Is Nothing Then Continue For
+                Dim mount = resolved.LiveBone.MountDeltaTransform
+                If mount Is Nothing OrElse mount.Translation.Length() <= 0.5F Then Continue For
+                Dim ht = animation.GetTransform(0, resolved.TrackIndex)
+                If ht Is Nothing Then Continue For
+                ' frame-0 local del clip: componentes no animados ← refPose (misma semántica que BuildFrameLocalTransform)
+                Dim tx = ResolveTranslationAxis(ht, resolved.ReferencePose, 0, Nothing)
+                Dim ty = ResolveTranslationAxis(ht, resolved.ReferencePose, 1, Nothing)
+                Dim tz = ResolveTranslationAxis(ht, resolved.ReferencePose, 2, Nothing)
+                Dim rr = If(ht.RotationAnimated, ht.Rotation, resolved.ReferencePose.Rotation)
+                Dim sx = ResolveScaleAxis(ht, resolved.ReferencePose, 0, Nothing)
+                Dim sy = ResolveScaleAxis(ht, resolved.ReferencePose, 1, Nothing)
+                Dim sz = ResolveScaleAxis(ht, resolved.ReferencePose, 2, Nothing)
+                Dim clip0T = HkxTransformConventionHelper.ToTransform(tx, ty, tz, rr, sx, sy, sz).Translation
+                Dim rigT = HkxTransformConventionHelper.ToTransform(resolved.ReferencePose).Translation
+                Dim asmT = resolved.LiveBone.OriginalLocaLTransform.ComposeTransforms(mount).Translation
+                dRig += (clip0T - rigT).Length()
+                dAsm += (clip0T - asmT).Length()
+                votes += 1
+            Next
+        End If
+        Dim assembledAuthored = votes > 0 AndAlso dAsm < dRig
+        Dim votesL = votes, dRigL = dRig, dAsmL = dAsm, asmL = assembledAuthored
+        Logger.LogLazy(Function() $"[HKX-POSE] clip authoring frame: {If(asmL, "ASSEMBLED (M=I; el clip trae el mount)", "RIG (M=Mount; la capa Mount persiste)")} votes={votesL} dRig={dRigL:F2} dAsm={dAsmL:F2}")
+
+        ' ── clipBase por track: inv(clipBase) es la base del Δ ──────────────────────────────────
+        For Each resolved In tracks
+            If resolved Is Nothing OrElse resolved.LiveBone Is Nothing OrElse resolved.ReferencePose Is Nothing Then Continue For
+            If assembledAuthored AndAlso resolved.LiveBone.MountDeltaTransform IsNot Nothing Then
+                ' clipBase = O×Mount (local ensamblado) ⇒ getter O×Mount×Δ = L_anim, sin doble-conteo.
+                resolved.LiveBoneOriginalInverse =
+                    resolved.LiveBone.OriginalLocaLTransform.ComposeTransforms(resolved.LiveBone.MountDeltaTransform).Inverse()
+            Else
+                ' clipBase = refPose del rig del clip ⇒ getter O×Mount×Δ = (O×Mount×inv(O))×L_anim = M×L_anim
+                ' con M=Mount en huesos montados (config que el clip no conoce) y M=I en el resto.
+                resolved.LiveBoneOriginalInverse = HkxTransformConventionHelper.ToTransform(resolved.ReferencePose).Inverse()
             End If
         Next
     End Sub

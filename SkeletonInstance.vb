@@ -53,12 +53,14 @@ Public Class HierarchiBone_class
     ''' pose/animación (igual que el mount). Excluida de <see cref="OriginalGetGlobalTransform"/>
     ''' (como <c>DeltaTransform</c>). Limpiada por <c>Reset()</c> y <c>ResetMorph()</c>.</summary>
     Public MorphDeltaTransform As Transform_Class = Nothing
-    ''' <summary>Chunk-mount correction layer (V2). NULL = no mount correction.
-    ''' Delta multiplicativo entre <c>OriginalLocaLTransform</c> y <c>MorphDeltaTransform</c>
-    ''' (composición <c>OrigL × MountDelta × Morph × Delta</c>). Computed as
-    ''' <c>MountDelta = inv(OrigL) × newLocal</c> donde
-    ''' <c>newLocal = inv(parent.OriginalGetGlobalTransform) × desiredWorld</c>.
-    ''' Limpiado por <c>Reset()</c>.</summary>
+    ''' <summary>Capa de MOUNT estructural (chunk mounting V2): corrección que lleva el hueso del bind
+    ''' del rig a su posición ENSAMBLADA (la que exige el skin-bind del chunk vía socket). NULL = sin
+    ''' mount. Escrita por el aplicador del mount plan del consumidor (NPC Manager
+    ''' <c>OverrideActorBoneWorld</c>/<c>ApplyMountPlanForActor</c>), re-aplicada tras cada
+    ''' <c>ApplyPose</c> (Reset la limpia). La animación HKX NO pelea con esta capa: el Δ se computa
+    ''' contra el clipBase medido del clip (<c>HkxPoseImportSession.BindLiveSkeletonTracks</c> —
+    ''' clips autoreados sobre el rig conservan el mount, clips autoreados sobre el ensamblado lo
+    ''' traen en sus propios locales). Limpiada por <c>Reset()</c>.</summary>
     Public MountDeltaTransform As Transform_Class = Nothing
     Public OriginalLocaLTransform As Transform_Class
     Public BoneName As String
