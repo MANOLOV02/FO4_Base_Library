@@ -55,24 +55,40 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
         If String.IsNullOrEmpty(socket.ParentBoneName) Then Return 0
         If Not targetSkeleton.SkeletonDictionary.TryGetValue(socket.ParentBoneName, targetBone) Then Return 0
 
-        ' Heurística empírica (NO engine-verified): si chunkRoot.local es identity,
-        ' el chunk fue autorado en actor-world frame con offset del parent_bone pre-baked
-        ' en su NiNode hierarchy (ej. brahmin PackBase02: BaseLagBone.local.Z ≈ Spine3.world.Z).
-        ' En ese caso, NO aplicar socket × parent — daría duplicación. Anchor.world = identity.
-        '
-        ' Si chunkRoot.local NO es identity (ej. Assaultron HeadArmor: 90° Z), el chunk fue
-        ' autorado en chunk-local frame y necesita el attachment via socket × parent.
-        Dim chunkRootNode = chunkNif.GetRootNode()
-        Dim chunkRootLocalT As Transform_Class = If(chunkRootNode IsNot Nothing, New Transform_Class(chunkRootNode), New Transform_Class())
-        Dim chunkRootIsIdentity As Boolean = chunkRootLocalT.Equals(New Transform_Class())
-
-        Dim anchorLocal As Transform_Class
-        If chunkRootIsIdentity Then
-            anchorLocal = targetBone.OriginalGetGlobalTransform.Inverse()
-        Else
-            anchorLocal = SocketToTransform(socket)
+        ' REGLA (2026-06-14, idea del usuario — INFIERE el transform de la DIFERENCIA, sin tocar el
+        ' árbol de nodos del NIF, que puede ser plano). Un hueso privado (no existe en el actor;
+        ' verificado que NO está en skeleton.nif/hkx ni en otro chunk) va a su world ACTOR. El
+        ' transform chunk→actor 'A' se infiere de un hueso COMPARTIDO (que SÍ está en el skeleton,
+        ' posición conocida) vía su bind:
+        '     actorWorld(compartido) = A × inv(bind)(compartido)  ⇒  A = actorWorld × bind.
+        ' Luego cada privado: world = A × inv(bind)(privado). Solo binds + skeleton, cero nodos.
+        '   - Pack base: Spine3 actor=82.9, inv(bind)=0 ⇒ A≈socket ⇒ BaseLagBone=82.9, TopLagBone=126.8.
+        '   - Luz: TopLagBone actor=126.8, inv(bind)=126.8 ⇒ A=identidad ⇒ lagBoneLamp=220.
+        ' El patrón que lo prueba: en el pack base actor = inv(bind) + offset CONSTANTE = Spine3 = socket.
+        ' Sin hueso compartido → ATTACHMENT puro → ancla=socket + node-local (antena: 'miscBone'
+        ' dummy en el root → cae al socket; el bind orienta la malla horizontal).
+        Dim binds = shape.ShapeBoneTransforms
+        Dim hasSharedBone As Boolean = False
+        Dim anchorLocal As Transform_Class = Nothing
+        For ci As Integer = 0 To Math.Min(shape.ShapeBones.Count, binds.Count) - 1
+            Dim bnCal = TryCast(shape.ShapeBones(ci), NiNode)
+            Dim nmCal = bnCal?.Name?.String
+            If String.IsNullOrWhiteSpace(nmCal) Then Continue For
+            Dim sharedHb As HierarchiBone_class = Nothing
+            If targetSkeleton.SkeletonDictionary.TryGetValue(nmCal, sharedHb) AndAlso binds(ci) IsNot Nothing Then
+                hasSharedBone = True
+                ' A = actorWorld(compartido) × bind(compartido)  (= chunk-frame → actor).
+                Dim aChunkToActor = sharedHb.OriginalGetGlobalTransform.ComposeTransforms(binds(ci))
+                ' ancla.world = A ⇒ ancla.local (bajo targetBone) = inv(targetBone.world) × A.
+                anchorLocal = targetBone.OriginalGetGlobalTransform.Inverse().ComposeTransforms(aChunkToActor)
+                Exit For
+            End If
+        Next
+        If Not hasSharedBone Then
+            anchorLocal = SocketToTransform(socket)                          ' attachment puro → ancla=socket
         End If
 
+        Dim chunkRootNode = chunkNif.GetRootNode()
         Dim chunkRootName = If(chunkRootNode?.Name?.String, "chunk")
         Dim anchorName = "__chunkAnchor__" & socket.Name & "__" & chunkRootName
 
@@ -89,18 +105,30 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
             ' Chunk/socket bones son parte de la BASE (el HKX los provee); NO injected. Solo cloth queda injected.
         End If
 
-        Dim effectiveParent As HierarchiBone_class = anchorBone
-
         Dim injected As Integer = 0
-        For Each shapeBoneNode In shape.ShapeBones
-            Dim niNode = TryCast(shapeBoneNode, NiNode)
+        For i As Integer = 0 To Math.Min(shape.ShapeBones.Count, binds.Count) - 1
+            Dim niNode = TryCast(shape.ShapeBones(i), NiNode)
             If niNode Is Nothing Then Continue For
             Dim boneName = niNode.Name?.String
             If String.IsNullOrWhiteSpace(boneName) Then Continue For
-            ' Idempotencia — si ya está en el dict, skip.
+            ' Idempotencia — compartido con el actor: skip (cabalga el actor).
             If targetSkeleton.SkeletonDictionary.ContainsKey(boneName) Then Continue For
 
-            EnsureInjectedChunkBone(niNode, chunkNif, chunkRootNode, effectiveParent, targetSkeleton, injected)
+            If hasSharedBone AndAlso binds(i) IsNot Nothing Then
+                ' Privado en el frame del skin: world = A × inv(bind) (ancla.world=A, local=inv(bind)).
+                Dim nb As New HierarchiBone_class With {
+                    .BoneName = boneName,
+                    .Parent = anchorBone,
+                    .DeltaTransform = Nothing,
+                    .OriginalLocaLTransform = binds(i).Inverse()
+                }
+                anchorBone.Childrens.Add(nb)
+                targetSkeleton.SkeletonDictionary.Add(boneName, nb)
+                injected += 1
+            Else
+                ' Attachment puro: node-local del árbol del NIF bajo el ancla=socket.
+                EnsureInjectedChunkBone(niNode, chunkNif, chunkRootNode, anchorBone, targetSkeleton, injected)
+            End If
         Next
 
         Return injected
