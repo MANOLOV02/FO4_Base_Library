@@ -338,6 +338,113 @@ Public NotInheritable Class HkxPoseImportSession
         Return result
     End Function
 
+    ''' <summary>SAM (ScreenArcher) transforms for the bones the HKX animation defines but the LIVE
+    ''' NIF skeleton does NOT have (LiveBone Is Nothing). Lets the SAM export carry those bones for
+    ''' portability (applied later when the pose is loaded onto a skeleton that HAS them). Built from
+    ''' the HKX rig directly (frame transform + ReferencePose fallback), independent of the live
+    ''' skeleton. Keyed by bone name.</summary>
+    Public Function BuildUnboundBoneSamData(frameIndex As Integer) As Dictionary(Of String, PoseTransformData)
+        Dim usedFrame = Math.Max(0, Math.Min(frameIndex, _animation.NumFrames - 1))
+        Dim result As New Dictionary(Of String, PoseTransformData)(StringComparer.OrdinalIgnoreCase)
+
+        For Each resolved In _tracks
+            Try
+                ' Only the MISSING live bones (LiveBone Is Nothing). Need a name and a rig rest pose
+                ' (refPose) to build a sensible absolute local — skip otherwise.
+                If resolved Is Nothing OrElse resolved.LiveBone IsNot Nothing Then Continue For
+                If String.IsNullOrWhiteSpace(resolved.BoneName) Then Continue For
+                If resolved.ReferencePose Is Nothing Then Continue For
+
+                Dim ht = _animation.GetTransform(usedFrame, resolved.TrackIndex)
+                If ht Is Nothing Then Continue For
+
+                ' Absolute LOCAL transform of the bone at this frame: per component take the HKX frame
+                ' value if animated, else the rig rest (refPose) value. Frame-vector Nothing falls back
+                ' to refPose too. (Shared with the WM-format path via BuildUnboundFrameLocal.)
+                Dim tr = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
+
+                Dim nuevo As New PoseTransformData With {
+                    .X = tr.Translation.X,
+                    .Y = tr.Translation.Y,
+                    .Z = tr.Translation.Z,
+                    .Scale = tr.Scale
+                }
+                Dim degs = Transform_Class.Matrix33ToEulerXYZ(tr.Rotation)
+                nuevo.Yaw = degs.X
+                nuevo.Pitch = degs.Y
+                nuevo.Roll = degs.Z
+
+                If Not result.ContainsKey(resolved.BoneName) Then result.Add(resolved.BoneName, nuevo)
+            Catch ex As Exception
+                Logger.LogLazy(Function() $"[HKX-POSE] BuildUnboundBoneSamData skip track={If(resolved Is Nothing, -1, resolved.TrackIndex)} bone='{If(resolved Is Nothing, "", resolved.BoneName)}': {ex.Message}")
+            End Try
+        Next
+
+        Return result
+    End Function
+
+    ''' <summary>Absolute LOCAL transform of an unbound (missing-live-bone) HKX track at a frame:
+    ''' per component the frame value if animated, else the rig rest (refPose) value; frame-vector
+    ''' Nothing falls back to refPose too; rotation = frame rotation if animated, else refPose.
+    ''' Shared by the SAM (absolute) and WM-delta unbound paths so both derive from identical math.</summary>
+    Private Shared Function BuildUnboundFrameLocal(ht As HkxAnimationTransformGraph_Class,
+                                                   refp As HkxQsTransformGraph_Class) As Transform_Class
+        Dim tx = If(ht.TranslationXAnimated, GetVectorAxis(ht.Translation, 0, GetVectorAxis(refp.Translation, 0, 0.0F)), GetVectorAxis(refp.Translation, 0, 0.0F))
+        Dim ty = If(ht.TranslationYAnimated, GetVectorAxis(ht.Translation, 1, GetVectorAxis(refp.Translation, 1, 0.0F)), GetVectorAxis(refp.Translation, 1, 0.0F))
+        Dim tz = If(ht.TranslationZAnimated, GetVectorAxis(ht.Translation, 2, GetVectorAxis(refp.Translation, 2, 0.0F)), GetVectorAxis(refp.Translation, 2, 0.0F))
+        Dim sx = If(ht.ScaleXAnimated, GetVectorAxis(ht.Scale, 0, GetVectorAxis(refp.Scale, 0, 1.0F)), GetVectorAxis(refp.Scale, 0, 1.0F))
+        Dim sy = If(ht.ScaleYAnimated, GetVectorAxis(ht.Scale, 1, GetVectorAxis(refp.Scale, 1, 1.0F)), GetVectorAxis(refp.Scale, 1, 1.0F))
+        Dim sz = If(ht.ScaleZAnimated, GetVectorAxis(ht.Scale, 2, GetVectorAxis(refp.Scale, 2, 1.0F)), GetVectorAxis(refp.Scale, 2, 1.0F))
+        Dim rot = If(ht.RotationAnimated AndAlso ht.Rotation IsNot Nothing, ht.Rotation, refp.Rotation)
+        Return HkxTransformConventionHelper.ToTransform(tx, ty, tz, rot, sx, sy, sz)
+    End Function
+
+    ''' <summary>The HKX rig REST local of a bone (its refPose) as a Transform_Class. Used as the
+    ''' structural proxy for unbound bones (there is no live structural local): the WM delta is
+    ''' inv(refPoseLocal) × frameLocal, mirroring BuildPose's inv(S) × frameLocal for live bones.</summary>
+    Private Shared Function RefPoseToStructural(refp As HkxQsTransformGraph_Class) As Transform_Class
+        Return HkxTransformConventionHelper.ToTransform(GetVectorAxis(refp.Translation, 0, 0.0F),
+                                                        GetVectorAxis(refp.Translation, 1, 0.0F),
+                                                        GetVectorAxis(refp.Translation, 2, 0.0F),
+                                                        refp.Rotation,
+                                                        GetVectorAxis(refp.Scale, 0, 1.0F),
+                                                        GetVectorAxis(refp.Scale, 1, 1.0F),
+                                                        GetVectorAxis(refp.Scale, 2, 1.0F))
+    End Function
+
+    ''' <summary>WM-format DELTA transforms for the bones the HKX animation defines but the LIVE NIF
+    ''' skeleton does NOT have (LiveBone Is Nothing). Mirrors <see cref="BuildUnboundBoneSamData"/>'s
+    ''' track filtering, but encodes the WM delta (inv(rigRest) × frameLocal → Matrix33ToBSRotation via
+    ''' ToPoseTransformData) instead of the SAM absolute local. Used by the EXPORT/save path only to
+    ''' append the missing bones — NOT by BuildPose (per-frame playback). Identity deltas are skipped,
+    ''' same criterion as BuildPose. Keyed by bone name; never Nothing.</summary>
+    Public Function BuildUnboundBoneWmData(frameIndex As Integer) As Dictionary(Of String, PoseTransformData)
+        Dim usedFrame = Math.Max(0, Math.Min(frameIndex, _animation.NumFrames - 1))
+        Dim result As New Dictionary(Of String, PoseTransformData)(StringComparer.OrdinalIgnoreCase)
+
+        For Each resolved In _tracks
+            Try
+                ' Only the MISSING live bones (LiveBone Is Nothing), with a name and a rig rest pose.
+                If resolved Is Nothing OrElse resolved.LiveBone IsNot Nothing Then Continue For
+                If String.IsNullOrWhiteSpace(resolved.BoneName) Then Continue For
+                If resolved.ReferencePose Is Nothing Then Continue For
+
+                Dim ht = _animation.GetTransform(usedFrame, resolved.TrackIndex)
+                If ht Is Nothing Then Continue For
+
+                Dim frameLocal = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
+                Dim s = RefPoseToStructural(resolved.ReferencePose)   ' structural proxy = HKX rig rest
+                Dim delta = s.Inverse().ComposeTransforms(frameLocal)  ' SAME formula as BuildPose's live delta
+                Dim poseData = ToPoseTransformData(delta)              ' reuse → Matrix33ToBSRotation
+                If Not poseData.Isidentity AndAlso Not result.ContainsKey(resolved.BoneName) Then result.Add(resolved.BoneName, poseData)
+            Catch ex As Exception
+                Logger.LogLazy(Function() $"[HKX-POSE] BuildUnboundBoneWmData skip track={If(resolved Is Nothing, -1, resolved.TrackIndex)} bone='{If(resolved Is Nothing, "", resolved.BoneName)}': {ex.Message}")
+            End Try
+        Next
+
+        Return result
+    End Function
+
     ''' <summary>Clasifica cada COMPONENTE de cada track por TIPO DE DATO, escaneando el clip entero
     ''' una vez (clasificación medida del archivo, sin decisiones en runtime).
     ''' <para>SIN OPINIÓN = identity-typed O constante(±ε quantización) e IGUAL al refPose en TODO el
@@ -494,12 +601,17 @@ Public NotInheritable Class HkxPoseImportSession
                 If binding IsNot Nothing AndAlso binding.Count > 0 AndAlso trackIndex < binding.Count Then
                     boneIndex = CInt(binding(trackIndex))
                     If boneIndex < 0 OrElse boneIndex >= hkxSkeleton.Bones.Count Then
-                        Logger.LogLazy(Function() $"[HKX-POSE] skip mapping track={trackIndex}: binding boneIndex={boneIndex} outside skeleton bones={hkxSkeleton.Bones.Count}.")
+                        Dim ti = trackIndex
+                        Dim bi = boneIndex
+                        Dim boneCount = hkxSkeleton.Bones.Count
+                        Logger.LogLazy(Function() $"[HKX-POSE] skip mapping track={ti}: binding boneIndex={bi} outside skeleton bones={boneCount}.")
                         Continue For
                     End If
                 Else
                     If trackIndex >= hkxSkeleton.Bones.Count Then
-                        Logger.LogLazy(Function() $"[HKX-POSE] skip mapping track={trackIndex}: no binding and track outside skeleton bones={hkxSkeleton.Bones.Count}.")
+                        Dim ti = trackIndex
+                        Dim boneCount = hkxSkeleton.Bones.Count
+                        Logger.LogLazy(Function() $"[HKX-POSE] skip mapping track={ti}: no binding and track outside skeleton bones={boneCount}.")
                         Continue For
                     End If
                     boneIndex = trackIndex
@@ -511,7 +623,8 @@ Public NotInheritable Class HkxPoseImportSession
             End If
 
             If String.IsNullOrWhiteSpace(boneName) Then
-                Logger.LogLazy(Function() $"[HKX-POSE] skip mapping track={trackIndex}: empty bone name strategy={skeletonSource}.")
+                Dim ti = trackIndex
+                Logger.LogLazy(Function() $"[HKX-POSE] skip mapping track={ti}: empty bone name strategy={skeletonSource}.")
                 Continue For
             End If
 

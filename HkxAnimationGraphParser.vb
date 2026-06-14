@@ -110,13 +110,19 @@ Public Partial Class HkxObjectGraph_Class
             remainingBindings.Add(binding)
         Next
 
-        Dim bindingCursor = 0
-        For Each animation In animations
-            If animation.Binding IsNot Nothing Then Continue For
-            If bindingCursor >= remainingBindings.Count Then Exit For
-            animation.Binding = remainingBindings(bindingCursor)
-            bindingCursor += 1
-        Next
+        ' Positional fallback for bindings whose AnimationObject ref did not resolve.
+        ' Only safe when it is UNAMBIGUOUS: exactly one unmatched animation and exactly
+        ' one unmatched binding. Stapling N bindings to N animations by enumeration order
+        ' would silently mis-pair tracks→bones on any file where the ref-match was the
+        ' real mapping, so leave Binding = Nothing and log instead of guessing.
+        Dim unmatchedAnimations = animations.Where(Function(a) a.Binding Is Nothing).ToList()
+        If remainingBindings.Count = 1 AndAlso unmatchedAnimations.Count = 1 Then
+            unmatchedAnimations(0).Binding = remainingBindings(0)
+        ElseIf remainingBindings.Count > 0 Then
+            Dim bindingCount = remainingBindings.Count
+            Dim animCount = unmatchedAnimations.Count
+            Logger.LogLazy(Function() $"[HKX-SPLINE] {bindingCount} binding(s) did not resolve their AnimationObject ref and {animCount} animation(s) are unbound; positional fallback skipped (ambiguous). Affected animations left with Binding=Nothing.")
+        End If
 
         Return animations
     End Function
@@ -693,9 +699,11 @@ Public Partial Class HkxObjectGraph_Class
         Dim a = CUInt(raw And &HFFFUL)
         Dim b = CUInt((raw >> 12) And &HFFFUL)
         Dim c = CUInt((raw >> 24) And &HFFFUL)
-        Dim x = (CSng(a) - 2049.0F) * Fractal
-        Dim y = (CSng(b) - 2049.0F) * Fractal
-        Dim z = (CSng(c) - 2049.0F) * Fractal
+        ' Bias is the 11-bit mask (1<<11)-1 = 2047, per HavokLib hka_spline_decompressor.cpp:67/76
+        ' (constexpr uint64 mask = (1 << 11) - 1; ... IVector4A16(tmpVal) - mask).
+        Dim x = (CSng(a) - 2047.0F) * Fractal
+        Dim y = (CSng(b) - 2047.0F) * Fractal
+        Dim z = (CSng(c) - 2047.0F) * Fractal
         Dim w = MathF.Sqrt(Math.Max(0.0F, 1.0F - ((x * x) + (y * y) + (z * z))))
         If ((raw >> 38) And 1UL) <> 0UL Then w = -w
 
@@ -804,17 +812,32 @@ Public Partial Class HkxObjectGraph_Class
         Dim high = numControlPoints
         Dim middle = (low + high) \ 2
 
+        ' Algorithm A2.1 (The NURBS Book) converges in O(log n) steps on a valid,
+        ' monotonically non-decreasing knot vector. The 100-iteration cap only ever
+        ' trips on a malformed knot vector, which is an upstream stride/offset bug.
+        ' Silently returning the unconverged 'middle' would mask that corruption and
+        ' yield a subtly wrong pose, so throw instead of guessing a span.
+        Dim converged = False
         For iteration = 0 To 99
             If value < knots(middle) Then
                 high = middle
             ElseIf value >= knots(middle + 1) Then
                 low = middle
             Else
+                converged = True
                 Exit For
             End If
 
             middle = (low + high) \ 2
         Next
+
+        If Not converged Then
+            Dim valLocal = value
+            Dim degLocal = degree
+            Dim cpLocal = numControlPoints
+            Logger.LogLazy(Function() $"FindKnotSpan failed to converge for value={valLocal} degree={degLocal} numControlPoints={cpLocal}; knot vector is malformed (upstream stride/offset bug).")
+            Throw New InvalidDataException($"FindKnotSpan did not converge after 100 iterations (value={valLocal}, degree={degLocal}, numControlPoints={cpLocal}); the knot vector is malformed, indicating an upstream offset/stride bug in spline decode.")
+        End If
 
         Return middle
     End Function

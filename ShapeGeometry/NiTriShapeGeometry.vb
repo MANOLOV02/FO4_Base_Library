@@ -628,6 +628,19 @@ Public Class NiTriShapeGeometry
                 If globalVert < 0 OrElse globalVert >= vertCount Then Continue For
                 Dim outBase As Integer = globalVert * wpv
                 Dim partBase As Integer = k * partWpv
+
+                ' Renormalize the kept slots so they still sum to ~1 when we drop weight beyond
+                ' copySlots (partWpv > copySlots). Mirrors FillFromSkinData's truncation handling;
+                ' without this the dropped weight mass is silently lost. No-op when nothing is
+                ' dropped (renorm = 1).
+                Dim sumW As Single = 0.0F
+                If part.VertexWeights IsNot Nothing Then
+                    For j = 0 To copySlots - 1
+                        If (partBase + j) < part.VertexWeights.Count Then sumW += part.VertexWeights(partBase + j)
+                    Next
+                End If
+                Dim renorm As Single = If(sumW > 0.0F AndAlso partWpv > copySlots, 1.0F / sumW, 1.0F)
+
                 For j = 0 To copySlots - 1
                     Dim partBoneIdx As Byte = If(part.BoneIndices IsNot Nothing AndAlso (partBase + j) < part.BoneIndices.Count,
                                                  part.BoneIndices(partBase + j), CByte(0))
@@ -639,7 +652,7 @@ Public Class NiTriShapeGeometry
                     End If
                     Debug.Assert(shapeBoneIdx <= 255, "Bone palette overflow: NiTriShape with >256 bones cannot be encoded as Byte")
                     outIdx(outBase + j) = CByte(shapeBoneIdx And &HFF)
-                    outWgt(outBase + j) = CType(weight, SysHalf)
+                    outWgt(outBase + j) = CType(weight * renorm, SysHalf)
                 Next
             Next
         Next

@@ -28,7 +28,7 @@ Public Module PluginConstants
     ' OMOD-AttachPoint→socket-name lookup works, enabling robot chunk mounting.
     Public ReadOnly SIGS_NPC_RENDERING As New HashSet(Of String)(
         {"NPC_", "RACE", "ARMO", "ARMA", "OTFT", "HDPT", "TXST", "CLFM", "LVLN", "LVLI", "FLST", "MSWP",
-         "CELL", "WRLD", "BPTD", "OMOD", "KYWD"},
+         "CELL", "WRLD", "BPTD", "OMOD", "KYWD", "IDLE", "AACT"},
         StringComparer.Ordinal)
 
     ' Default filter kept for backward compatibility

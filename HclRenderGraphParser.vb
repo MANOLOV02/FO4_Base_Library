@@ -121,11 +121,12 @@ Public NotInheritable Class HclRenderGraphParser_Class
     Private Shared Function ReadUInt32Block(graph As HkxObjectGraph_Class, relativeOffset As Integer, count As Integer) As List(Of UInteger)
         Dim result As New List(Of UInteger)
         If count <= 0 Then Return result
-        Dim startAbs = graph.ContentsSection.AbsoluteDataStart + relativeOffset
-        If startAbs < 0 OrElse startAbs + (count * 4) > graph.Packfile.RawBytes.Length Then Return result
 
+        ' graph.ReadUInt32 es el reader canónico THROWING (bounds-check vía EnsureReadable).
+        ' Si un offset HCL empírico cae fuera del contenido, lanza InvalidDataException en vez
+        ' de devolver una lista vacía silenciosa (HKX-002/HKX-009).
         For i = 0 To count - 1
-            result.Add(BitConverter.ToUInt32(graph.Packfile.RawBytes, startAbs + (i * 4)))
+            result.Add(graph.ReadUInt32(relativeOffset + (i * 4)))
         Next
 
         Return result
@@ -378,7 +379,7 @@ Public NotInheritable Class HclRenderGraphParser_Class
     End Function
 
     Private Shared Function CreateRawStruct(graph As HkxObjectGraph_Class, entryIndex As Integer, entryRelativeOffset As Integer, byteCount As Integer) As HkxRawStructGraph_Class
-        Dim bytes = ReadByteBlock(graph, entryRelativeOffset, byteCount)
+        Dim bytes = graph.ReadBytes(entryRelativeOffset, byteCount)
         Dim result As New HkxRawStructGraph_Class With {
             .EntryIndex = entryIndex,
             .EntryRelativeOffset = entryRelativeOffset,
@@ -399,22 +400,13 @@ Public NotInheritable Class HclRenderGraphParser_Class
 
     Private Shared Function ReadByteArray(graph As HkxObjectGraph_Class, field As HkxObjectArrayHeader_Class) As Byte()
         If IsNothing(field) OrElse field.Count <= 0 OrElse field.DataRelativeOffset < 0 Then Return Array.Empty(Of Byte)()
-        Return ReadByteBlock(graph, field.DataRelativeOffset, field.Count)
-    End Function
-
-    Private Shared Function ReadByteBlock(graph As HkxObjectGraph_Class, relativeOffset As Integer, byteCount As Integer) As Byte()
-        If byteCount <= 0 Then Return Array.Empty(Of Byte)()
-        Dim absoluteOffset = graph.ContentsSection.AbsoluteDataStart + relativeOffset
-        If absoluteOffset < 0 OrElse absoluteOffset + byteCount > graph.Packfile.RawBytes.Length Then Return Array.Empty(Of Byte)()
-        Dim result(byteCount - 1) As Byte
-        Array.Copy(graph.Packfile.RawBytes, absoluteOffset, result, 0, byteCount)
-        Return result
+        Return graph.ReadBytes(field.DataRelativeOffset, field.Count)
     End Function
 
     Private Shared Function ReadMatrix4(graph As HkxObjectGraph_Class, relativeOffset As Integer) As HkxMatrix4Graph_Class
         Dim values(15) As Single
         For i = 0 To 15
-            values(i) = ReadSingle(graph, relativeOffset + (i * 4))
+            values(i) = graph.ReadSingle(relativeOffset + (i * 4))
         Next
 
         Return New HkxMatrix4Graph_Class With {
@@ -423,16 +415,12 @@ Public NotInheritable Class HclRenderGraphParser_Class
         }
     End Function
 
+    ' Thin uint16 wrapper sobre el reader canónico THROWING graph.ReadInt16 (no existe un
+    ' graph.ReadUInt16 escalar). Convierte a unsigned sin sign-extension. Un offset HCL
+    ' (empírico) fuera del contenido lanza InvalidDataException — NO devuelve 0 silencioso
+    ' (HKX-002/HKX-009).
     Private Shared Function ReadUInt16(graph As HkxObjectGraph_Class, relativeOffset As Integer) As UShort
-        Dim absoluteOffset = graph.ContentsSection.AbsoluteDataStart + relativeOffset
-        If absoluteOffset < 0 OrElse absoluteOffset + 2 > graph.Packfile.RawBytes.Length Then Return 0
-        Return BitConverter.ToUInt16(graph.Packfile.RawBytes, absoluteOffset)
-    End Function
-
-    Private Shared Function ReadSingle(graph As HkxObjectGraph_Class, relativeOffset As Integer) As Single
-        Dim absoluteOffset = graph.ContentsSection.AbsoluteDataStart + relativeOffset
-        If absoluteOffset < 0 OrElse absoluteOffset + 4 > graph.Packfile.RawBytes.Length Then Return 0
-        Return BitConverter.ToSingle(graph.Packfile.RawBytes, absoluteOffset)
+        Return CUShort(CInt(graph.ReadInt16(relativeOffset)) And &HFFFF)
     End Function
 End Class
 

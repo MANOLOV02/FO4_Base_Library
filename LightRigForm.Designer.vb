@@ -82,6 +82,9 @@ Partial Class LightRigForm
         btnReset = New Button()
         GroupBox1 = New GroupBox()
         tambient = New FO4_Base_Library.TinySliderTextBox()
+        grpBackground = New GroupBox()
+        lblBackground = New Label()
+        cmbBackground = New ColorComboBox()
         ToolTip1 = New ToolTip(components)
         grpKey.SuspendLayout()
         CType(nudK_F, ComponentModel.ISupportInitialize).BeginInit()
@@ -112,6 +115,7 @@ Partial Class LightRigForm
         CType(nudB_L, ComponentModel.ISupportInitialize).BeginInit()
         CType(nudB_D, ComponentModel.ISupportInitialize).BeginInit()
         GroupBox1.SuspendLayout()
+        grpBackground.SuspendLayout()
         SuspendLayout()
         '
         ' grpKey
@@ -800,6 +804,36 @@ Partial Class LightRigForm
         tambient.Size = New Size(389, 28)
         tambient.TabIndex = 0
         '
+        ' grpBackground
+        '
+        grpBackground.Controls.Add(lblBackground)
+        grpBackground.Controls.Add(cmbBackground)
+        grpBackground.Location = New Point(436, 250)
+        grpBackground.Name = "grpBackground"
+        grpBackground.Size = New Size(418, 68)
+        grpBackground.TabIndex = 6
+        grpBackground.TabStop = False
+        grpBackground.Text = "Background"
+        '
+        ' lblBackground
+        '
+        lblBackground.AutoSize = True
+        lblBackground.Location = New Point(11, 34)
+        lblBackground.Name = "lblBackground"
+        lblBackground.Size = New Size(72, 15)
+        lblBackground.TabIndex = 0
+        lblBackground.Text = "Background"
+        '
+        ' cmbBackground
+        '
+        cmbBackground.DrawMode = DrawMode.OwnerDrawFixed
+        cmbBackground.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbBackground.FormattingEnabled = True
+        cmbBackground.Location = New Point(110, 30)
+        cmbBackground.Name = "cmbBackground"
+        cmbBackground.Size = New Size(290, 24)
+        cmbBackground.TabIndex = 1
+        '
         ' Tooltip
         '
         '
@@ -837,12 +871,14 @@ Partial Class LightRigForm
 
         ToolTip1.SetToolTip(tambient, "Adjust ambient light intensity.")
         ToolTip1.SetToolTip(btnReset, "Restore the default light rig values.")
+        ToolTip1.SetToolTip(cmbBackground, "Select the preview background color.")
         ' LightRigForm
         '
         AutoScaleDimensions = New SizeF(7.0F, 15.0F)
         AutoScaleMode = AutoScaleMode.Font
         AutoScroll = True
         ClientSize = New Size(866, 487)
+        Controls.Add(grpBackground)
         Controls.Add(GroupBox1)
         Controls.Add(btnReset)
         Controls.Add(grpBack)
@@ -889,6 +925,8 @@ Partial Class LightRigForm
         CType(nudB_D, ComponentModel.ISupportInitialize).EndInit()
         GroupBox1.ResumeLayout(False)
         GroupBox1.PerformLayout()
+        grpBackground.ResumeLayout(False)
+        grpBackground.PerformLayout()
         ResumeLayout(False)
 
     End Sub
@@ -953,4 +991,7 @@ Partial Class LightRigForm
     Friend WithEvents GroupBox1 As GroupBox
     Friend WithEvents tambient As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents ToolTip1 As ToolTip
+    Friend WithEvents grpBackground As GroupBox
+    Friend WithEvents lblBackground As Label
+    Friend WithEvents cmbBackground As ColorComboBox
 End Class

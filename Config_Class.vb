@@ -204,32 +204,16 @@ Public Class Config_App
 
     ' Allowed_To_Clone moved to WM_Config
 
-    Private Shared ReadOnly SaveOptions As New JsonSerializerOptions With {.WriteIndented = True}
     Public Shared Sub SaveConfig()
-        Try
-
-            Dim jsonString As String = JsonSerializer.Serialize(Current, SaveOptions)
-            IO.File.WriteAllText(ConfigFilePath, jsonString)
-        Catch ex As Exception
-            MessageBox.Show("Error saving configuration: " & ex.Message,
-                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
+        JsonConfigIO.Save(Current, ConfigFilePath, "configuration")
     End Sub
 
     Public Shared Sub LoadConfig()
-        Try
-            If IO.File.Exists(ConfigFilePath) Then
-                Dim jsonString As String = IO.File.ReadAllText(ConfigFilePath)
-                Dim cfg As Config_App = JsonSerializer.Deserialize(Of Config_App)(jsonString)
-                If cfg IsNot Nothing Then
-                    Current = cfg
-                    If Current.Settings_RenderGrid.Size = 0 Then Current.Settings_RenderGrid = Default_RenderGrid_Settings()
-                End If
-            End If
-        Catch ex As Exception
-            MessageBox.Show("Error loading configuration: " & ex.Message,
-                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
-        End Try
+        Dim cfg = JsonConfigIO.Load(Of Config_App)(ConfigFilePath, "configuration")
+        If cfg IsNot Nothing Then
+            Current = cfg
+            If Current.Settings_RenderGrid.Size = 0 Then Current.Settings_RenderGrid = Default_RenderGrid_Settings()
+        End If
     End Sub
 
     Public Shared Function Check_FOFolder() As Boolean

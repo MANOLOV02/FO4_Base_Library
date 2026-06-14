@@ -3434,6 +3434,7 @@ Public Class FO4UnifiedMaterial_Class
     End Function
 
     Private Const DefaultWetTemplate As String = "template/defaultTemplate_wet.bgsm"
+    Private Const SkinWetTemplate As String = "template/SkinTemplate_Wet.bgsm"
 
     Private Function ResolveEffectiveWetness(bgsm As BGSM) As Single()
         Const SENTINEL As Single = -1.0F
@@ -3445,11 +3446,15 @@ Public Class FO4UnifiedMaterial_Class
         Dim depth = 0
         While depth < 16 AndAlso Array.IndexOf(eff, SENTINEL) >= 0
             If String.IsNullOrEmpty(rootPath) Then
-                ' Explicit chain ended but fields remain -1 → inherit from the engine default
-                ' template, exactly once (defaultTemplate_wet self-refs, so the cycle guard would
-                ' stop us anyway; the flag also covers a parent that itself had an empty root).
+                ' Explicit chain ended but fields remain -1 → inherit from the engine template, once.
+                ' CK resuelve materiales de PIEL/CARA (Facegen/SkinTint) desde SkinTemplate_Wet (0.6...),
+                ' los genéricos desde defaultTemplate_wet (0.8...). Las shapes de cabeza ghoul embeben el
+                ' shader con RootMaterialName='' (matPath='') → caen acá; CK las bakea 0.6 (SkinTemplate),
+                ' no 0.8. Las cabezas humanas referencian su .bgsm externo (root=SkinTemplate explícito) y
+                ' nunca llegan a este fallback. Verificado: GhoulMatProbe + log SHAPEMAT-FINAL (root='')
+                ' 2026-06-13. SkinTemplate_Wet a su vez encadena a defaultTemplate_wet para lo que no cubra.
                 If defaultApplied Then Exit While
-                rootPath = DefaultWetTemplate
+                rootPath = If(bgsm.Facegen OrElse bgsm.SkinTint, SkinWetTemplate, DefaultWetTemplate)
                 defaultApplied = True
             End If
             Dim key = MaterialsPrefix & CorrectMaterialPath(rootPath).StripPrefix(MaterialsPrefix)

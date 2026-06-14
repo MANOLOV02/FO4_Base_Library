@@ -42,6 +42,15 @@ Public Partial Class HkxObjectGraph_Class
     Private ReadOnly _objectsByOffset As New Dictionary(Of Integer, HkxVirtualObjectGraph_Class)
     Private ReadOnly _objectsByClassName As New Dictionary(Of String, List(Of HkxVirtualObjectGraph_Class))(StringComparer.OrdinalIgnoreCase)
 
+    ' Contents-section fixups sorted ascending by SourceRelativeOffset (ties keep original
+    ' enumeration order), with parallel entry arrays. Built once in BuildIndices so the range
+    ' queries can binary-search instead of re-filtering + re-sorting the full fixup list per call
+    ' (HKX-006). Returns the exact same filter + ordering as the previous LINQ implementation.
+    Private _localFixupSourcesSorted As Integer() = Array.Empty(Of Integer)()
+    Private _localFixupsSorted As HkxLocalFixupEntry_Class() = Array.Empty(Of HkxLocalFixupEntry_Class)()
+    Private _globalFixupSourcesSorted As Integer() = Array.Empty(Of Integer)()
+    Private _globalFixupsSorted As HkxGlobalFixupEntry_Class() = Array.Empty(Of HkxGlobalFixupEntry_Class)()
+
     Private ReadOnly Property PointerSizeValue As Integer
         Get
             Return Math.Max(1, CInt(Packfile.Header.PointerSize))
@@ -80,6 +89,8 @@ Public Partial Class HkxObjectGraph_Class
             _globalFixupsBySource.TryAdd(fixup.SourceRelativeOffset, fixup)
         Next
 
+        BuildSortedFixupIndices()
+
         Dim dataRelativeEnd = ContentsSection.DataEndAbsolute - ContentsSection.AbsoluteDataStart
         Dim orderedVirtualFixups = Packfile.VirtualFixups.
             Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).
@@ -116,6 +127,56 @@ Public Partial Class HkxObjectGraph_Class
         Next
     End Sub
 
+    ' Build the sorted contents-section fixup index used by GetLocalFixupsInRange /
+    ' GetGlobalFixupsInRange. Filter = same contents-section predicate as the old LINQ;
+    ' order = ascending SourceRelativeOffset, ties broken by original enumeration index so
+    ' the result is identical to LINQ's stable OrderBy.
+    Private Sub BuildSortedFixupIndices()
+        Dim localList = Packfile.LocalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).ToList()
+        Dim localIndices = Enumerable.Range(0, localList.Count).ToArray()
+        Array.Sort(localIndices, Function(left, right)
+                                     Dim c = localList(left).SourceRelativeOffset.CompareTo(localList(right).SourceRelativeOffset)
+                                     If c <> 0 Then Return c
+                                     Return left.CompareTo(right)
+                                 End Function)
+        _localFixupsSorted = New HkxLocalFixupEntry_Class(localList.Count - 1) {}
+        _localFixupSourcesSorted = New Integer(localList.Count - 1) {}
+        For i = 0 To localIndices.Length - 1
+            _localFixupsSorted(i) = localList(localIndices(i))
+            _localFixupSourcesSorted(i) = _localFixupsSorted(i).SourceRelativeOffset
+        Next
+
+        Dim globalList = Packfile.GlobalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).ToList()
+        Dim globalIndices = Enumerable.Range(0, globalList.Count).ToArray()
+        Array.Sort(globalIndices, Function(left, right)
+                                      Dim c = globalList(left).SourceRelativeOffset.CompareTo(globalList(right).SourceRelativeOffset)
+                                      If c <> 0 Then Return c
+                                      Return left.CompareTo(right)
+                                  End Function)
+        _globalFixupsSorted = New HkxGlobalFixupEntry_Class(globalList.Count - 1) {}
+        _globalFixupSourcesSorted = New Integer(globalList.Count - 1) {}
+        For i = 0 To globalIndices.Length - 1
+            _globalFixupsSorted(i) = globalList(globalIndices(i))
+            _globalFixupSourcesSorted(i) = _globalFixupsSorted(i).SourceRelativeOffset
+        Next
+    End Sub
+
+    ' First index in the ascending-sorted array whose value is >= target (lower bound).
+    ' Returns sources.Length if every value is below target.
+    Private Shared Function LowerBound(sources As Integer(), target As Integer) As Integer
+        Dim low = 0
+        Dim high = sources.Length
+        While low < high
+            Dim mid = low + ((high - low) \ 2)
+            If sources(mid) < target Then
+                low = mid + 1
+            Else
+                high = mid
+            End If
+        End While
+        Return low
+    End Function
+
     Public Function GetObject(relativeOffset As Integer) As HkxVirtualObjectGraph_Class
         Dim value As HkxVirtualObjectGraph_Class = Nothing
         If _objectsByOffset.TryGetValue(relativeOffset, value) Then Return value
@@ -146,10 +207,10 @@ Public Partial Class HkxObjectGraph_Class
         If byteCount <= 0 Then Return result
 
         Dim rangeEnd = relativeOffset + byteCount
-        For Each fixup In Packfile.LocalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).OrderBy(Function(pf) pf.SourceRelativeOffset)
-            If fixup.SourceRelativeOffset < relativeOffset Then Continue For
-            If fixup.SourceRelativeOffset >= rangeEnd Then Exit For
-            result.Add(fixup)
+        Dim start = LowerBound(_localFixupSourcesSorted, relativeOffset)
+        For i = start To _localFixupSourcesSorted.Length - 1
+            If _localFixupSourcesSorted(i) >= rangeEnd Then Exit For
+            result.Add(_localFixupsSorted(i))
         Next
 
         Return result
@@ -160,10 +221,10 @@ Public Partial Class HkxObjectGraph_Class
         If byteCount <= 0 Then Return result
 
         Dim rangeEnd = relativeOffset + byteCount
-        For Each fixup In Packfile.GlobalFixups.Where(Function(pf) pf.SectionIndex = Packfile.Header.ContentsSectionIndex).OrderBy(Function(pf) pf.SourceRelativeOffset)
-            If fixup.SourceRelativeOffset < relativeOffset Then Continue For
-            If fixup.SourceRelativeOffset >= rangeEnd Then Exit For
-            result.Add(fixup)
+        Dim start = LowerBound(_globalFixupSourcesSorted, relativeOffset)
+        For i = start To _globalFixupSourcesSorted.Length - 1
+            If _globalFixupSourcesSorted(i) >= rangeEnd Then Exit For
+            result.Add(_globalFixupsSorted(i))
         Next
 
         Return result

@@ -199,19 +199,30 @@ Public Partial Class HkxObjectGraph_Class
             .Name = ResolveLocalString(source.RelativeOffset + &H60),
             .StateId = ReadInt32(source.RelativeOffset + &H68)
         }
-        For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
-            Dim tgt = GetObject(gf.TargetRelativeOffset)
-            If IsNothing(tgt) Then Continue For
-            Dim cn = If(tgt.ClassName, "")
-            If cn.Equals("hkbStateMachineTransitionInfoArray", StringComparison.OrdinalIgnoreCase) Then
-                result.TransitionsObject = tgt
-            ElseIf IsGeneratorClass(cn) AndAlso result.GeneratorObject Is Nothing Then
-                result.GeneratorObject = tgt
-            End If
-        Next
+        ' Layout hkbStateMachineStateInfo (FO4 64-bit): los punteros van ... m_transitions(+0x50),
+        ' m_generator(+0x58), m_name(+0x60). m_name@0x60 está confirmado (se lee arriba y da nombres
+        ' correctos); m_generator es el puntero INMEDIATAMENTE anterior → +0x58, y m_transitions → +0x50.
+        ' VERIFICADO empíricamente sobre 239 hkbStateMachineStateInfo reales de Fallout4 - Animations.ba2
+        ' (Tools/StateInfoOffsetProbe, 2026-06-13): +0x58 es una clase generator en 239/239, y NINGÚN
+        ' state-info tiene >1 referencia a clase generator. Se lee el campo por OFFSET (determinístico),
+        ' reemplazando el viejo class-scan ("primer generator que aparezca en el rango"), que era una
+        ' heurística (coincidía con +0x58 en los 239, pero era frágil ante múltiples refs a generator).
+        result.TransitionsObject = ResolveGlobalRefAt(source.RelativeOffset + &H50)
+        result.GeneratorObject = ResolveGlobalRefAt(source.RelativeOffset + &H58)
         result.GeneratorSummary = DescribeGenerator(result.GeneratorObject)
         result.Transitions.AddRange(ParseTransitions(result.TransitionsObject))
         Return result
+    End Function
+
+    ''' <summary>Resuelve el objeto referenciado por el puntero que vive EN un offset de source exacto
+    ''' (lectura de campo por offset). Devuelve Nothing si no hay fixup global ahí (puntero null). El
+    ''' puntero ocupa 8 bytes, así que se busca el fixup cuyo SourceRelativeOffset == el offset pedido
+    ''' dentro de un rango de 8.</summary>
+    Private Function ResolveGlobalRefAt(sourceRelativeOffset As Integer) As HkxVirtualObjectGraph_Class
+        For Each gf In GetGlobalFixupsInRange(sourceRelativeOffset, 8)
+            If gf.SourceRelativeOffset = sourceRelativeOffset Then Return GetObject(gf.TargetRelativeOffset)
+        Next
+        Return Nothing
     End Function
 
     ''' <summary>Resumen "qué reproduce" un generador, recursando los wrappers (Fase 3a) hasta los

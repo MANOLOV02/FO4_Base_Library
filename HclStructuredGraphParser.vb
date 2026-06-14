@@ -23,9 +23,8 @@ Option Explicit On
 '      +0x0A8: m_collidables (GLOBAL fixups → hclCollidable) ← offset CORRECTO
 '      +0x0B8: m_staticConstraintSets (GLOBAL fixups)
 '      +0x0D8: m_simClothPoses (GLOBAL fixups)
-'  - BUG: .Name = ResolveLocalString(+0x030) lee el ptr de hkArray (m_collidableTransformIndices)
-'    como string — es semánticamente incorrecto. Devuelve vacío cuando count=0 (todos los samples
-'    conocidos), pero retornaría garbage para arrays no vacíos. La clase no tiene m_name serializado.
+'  - hclSimClothData NO tiene m_name serializado: .Name = String.Empty (+0x030 es el hkArray ptr
+'    de m_collidableTransformIndices, no un string).
 '  - hclCollidable: ShapeObject resuelto vía GLOBAL fixup en +0x88. VERIFICADO.
 '    hclCollidable.m_transform: hkMatrix4 column-major en +0x020 (4×hkVector4). VERIFICADO.
 '  - Operadores de simulación: campos internos parcialmente mapeados.
@@ -36,7 +35,8 @@ Imports System.Collections.Generic
 Imports System.Linq
 
 Public NotInheritable Class HclStructuredGraphParser_Class
-    Public Shared Function ParseSimClothData(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclSimClothDataDetail_Class
+    Public Shared Function ParseSimClothData(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class,
+                                             Optional collidableCache As Dictionary(Of Integer, HclCollidableDetail_Class) = Nothing) As HclSimClothDataDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimClothData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -63,8 +63,15 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         result.FixedParticleIndices.AddRange(result.Field48UInt16.Select(Function(value) CInt(value)))
         result.Triangles.AddRange(ReadUInt16TriangleArray(result.Field58UInt16))
         result.StaticCollisionMasks.AddRange(result.FieldF8UInt32)
+        ' +0x108: array de stride=1 (byte). Confirmado empíricamente (HKX-011) sobre 276 objetos
+        ' hclSimClothData reales en 259 NIFs de cloth (KSHairdos + Armor/Clothes, Tools/PinchStrideProbe):
+        '   - el span físico del dato sólo cabe como 1 byte/elemento (p.ej. Count=113 ocupa span=128 con
+        '     padding de alineación 16; un uint32 exigiría >=452 bytes, imposible) — stride 1 ajusta 264/276,
+        '     stride 2/4/8 ajustan 1-3/276;
+        '   - el 99.8% de los bytes son 0/1 → flags booleanos por partícula.
+        ' => ReadByteArray (stride 1) es el stride correcto; ya no es Guess_.
         result.PinchDetectionFlags.AddRange(ReadByteArray(graph, graph.ReadArrayHeader(source.RelativeOffset + &H108)))
-        result.CollidableDetails.AddRange(collidableObjects.Select(Function(obj) ParseCollidable(graph, obj)).Where(Function(detail) Not IsNothing(detail)))
+        result.CollidableDetails.AddRange(collidableObjects.Select(Function(obj) ParseCollidable(graph, obj, collidableCache)).Where(Function(detail) Not IsNothing(detail)))
         result.DefaultClothPoseDetails.AddRange(defaultPoseObjects.Select(Function(obj) graph.ParseSimClothPose(obj)).Where(Function(detail) Not IsNothing(detail)))
         result.ConstraintDetails.AddRange(constraintObjects.Select(Function(obj) ParseConstraintObject(graph, obj)).Where(Function(detail) Not IsNothing(detail)))
         Return result
@@ -416,13 +423,23 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         }
     End Function
 
-    Public Shared Function ParseCollidable(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCollidableDetail_Class
+    ' HKX-008 — collidableCache opcional (keyed por RelativeOffset = identidad canónica del objeto en el
+    ' grafo): cuando se pasa, memoiza para que un mismo hclCollidable, parseado a nivel package Y luego
+    ' referenciado por uno o más sims, NO se re-parsee. HclCollidableDetail_Class es un DTO inmutable-tras-
+    ' parse (verificado: ningún sitio muta un CollidableDetail después de construirlo), así que compartir la
+    ' instancia entre package.Collidables y sim.CollidableDetails da comportamiento idéntico con menos
+    ' parses/allocs. Sin cache (Nothing) el comportamiento es el de antes.
+    Public Shared Function ParseCollidable(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class,
+                                           Optional collidableCache As Dictionary(Of Integer, HclCollidableDetail_Class) = Nothing) As HclCollidableDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclCollidable", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
+        Dim cached As HclCollidableDetail_Class = Nothing
+        If collidableCache IsNot Nothing AndAlso collidableCache.TryGetValue(source.RelativeOffset, cached) Then Return cached
+
         Dim payloadBytes = ReadPayloadBytes(graph, source, &H18)
         Dim payloadVectors = ReadVector4Block(graph, source.RelativeOffset + &H18, If(IsNothing(payloadBytes), 0, payloadBytes.Length \ 16))
-        Return New HclCollidableDetail_Class With {
+        Dim result As New HclCollidableDetail_Class With {
             .SourceObject = source,
             .Name = graph.ResolveLocalString(source.RelativeOffset + &H10),
             .ShapeObject = graph.ResolveGlobalObject(source.RelativeOffset + &H88),
@@ -435,6 +452,8 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             .AngularVelocity = If(payloadVectors.Count > 5, payloadVectors(5), Nothing),
             .ParameterVector = If(payloadVectors.Count > 6, payloadVectors(6), Nothing)
         }
+        If collidableCache IsNot Nothing Then collidableCache(source.RelativeOffset) = result
+        Return result
     End Function
     Public Shared Function ParseStandardLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclStandardLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
@@ -1136,7 +1155,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             result.Add(New HclSimulateOperatorConfigGraph_Class With {
                 .EntryIndex = i,
                 .EntryRelativeOffset = entryOffset,
-                .Value = ReadUInt32(graph, entryOffset)
+                .Value = graph.ReadUInt32(entryOffset)
             })
         Next
 
@@ -1180,7 +1199,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         If count <= 0 Then Return result
 
         For i = 0 To count - 1
-            result.Add(ReadUInt32(graph, relativeOffset + (i * 4)))
+            result.Add(graph.ReadUInt32(relativeOffset + (i * 4)))
         Next
 
         Return result
@@ -1195,8 +1214,8 @@ Public NotInheritable Class HclStructuredGraphParser_Class
             result.Add(New HkxUInt32PairGraph_Class With {
                 .EntryIndex = i,
                 .EntryRelativeOffset = entryOffset,
-                .FirstValue = ReadUInt32(graph, entryOffset),
-                .SecondValue = ReadUInt32(graph, entryOffset + 4)
+                .FirstValue = graph.ReadUInt32(entryOffset),
+                .SecondValue = graph.ReadUInt32(entryOffset + 4)
             })
         Next
 
@@ -1234,7 +1253,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
     End Function
 
     Private Shared Function CreateRawStruct(graph As HkxObjectGraph_Class, entryIndex As Integer, entryRelativeOffset As Integer, byteCount As Integer) As HkxRawStructGraph_Class
-        Dim bytes = ReadBytes(graph, entryRelativeOffset, byteCount)
+        Dim bytes = graph.ReadBytes(entryRelativeOffset, byteCount)
         Dim result As New HkxRawStructGraph_Class With {
             .EntryIndex = entryIndex,
             .EntryRelativeOffset = entryRelativeOffset,
@@ -1310,7 +1329,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         If IsNothing(field) OrElse field.Count <= 0 OrElse field.DataRelativeOffset < 0 Then Return result
 
         For i = 0 To field.Count - 1
-            result.Add(ReadUInt32(graph, field.DataRelativeOffset + (i * 4)))
+            result.Add(graph.ReadUInt32(field.DataRelativeOffset + (i * 4)))
         Next
 
         Return result
@@ -1318,7 +1337,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
 
     Private Shared Function ReadByteArray(graph As HkxObjectGraph_Class, field As HkxObjectArrayHeader_Class) As Byte()
         If IsNothing(field) OrElse field.Count <= 0 OrElse field.DataRelativeOffset < 0 Then Return Array.Empty(Of Byte)()
-        Return ReadBytes(graph, field.DataRelativeOffset, field.Count)
+        Return graph.ReadBytes(field.DataRelativeOffset, field.Count)
     End Function
 
     Private Shared Function DecodeMaskIndices(mask As Byte()) As List(Of Integer)
@@ -1340,7 +1359,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
     Private Shared Function ReadPayloadBytes(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class, payloadOffset As Integer) As Byte()
         Dim byteCount = Math.Max(0, source.Size - payloadOffset)
         If byteCount <= 0 Then Return Array.Empty(Of Byte)()
-        Return ReadBytes(graph, source.RelativeOffset + payloadOffset, byteCount)
+        Return graph.ReadBytes(source.RelativeOffset + payloadOffset, byteCount)
     End Function
 
     Private Shared Function ReadPayloadUInt32(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class, payloadOffset As Integer) As List(Of UInteger)
@@ -1352,25 +1371,12 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Private Shared Function ReadBytes(graph As HkxObjectGraph_Class, relativeOffset As Integer, byteCount As Integer) As Byte()
-        If IsNothing(graph) OrElse byteCount <= 0 Then Return Array.Empty(Of Byte)()
-        Dim absoluteOffset = graph.ContentsSection.AbsoluteDataStart + relativeOffset
-        If absoluteOffset < 0 OrElse absoluteOffset + byteCount > graph.Packfile.RawBytes.Length Then Return Array.Empty(Of Byte)()
-        Dim result(byteCount - 1) As Byte
-        Array.Copy(graph.Packfile.RawBytes, absoluteOffset, result, 0, byteCount)
-        Return result
-    End Function
-
+    ' Thin uint16 wrapper sobre el reader canónico THROWING graph.ReadInt16 (no existe un
+    ' graph.ReadUInt16 escalar). Convierte a unsigned sin sign-extension. Si el offset HCL
+    ' (empírico) cae fuera del contenido, graph.ReadInt16 lanza InvalidDataException — NO
+    ' devuelve 0 silencioso (HKX-002/HKX-009): un offset mal adivinado debe aflorar como bug.
     Private Shared Function ReadUInt16(graph As HkxObjectGraph_Class, relativeOffset As Integer) As UShort
-        Dim absoluteOffset = graph.ContentsSection.AbsoluteDataStart + relativeOffset
-        If absoluteOffset < 0 OrElse absoluteOffset + 2 > graph.Packfile.RawBytes.Length Then Return 0
-        Return BitConverter.ToUInt16(graph.Packfile.RawBytes, absoluteOffset)
-    End Function
-
-    Private Shared Function ReadUInt32(graph As HkxObjectGraph_Class, relativeOffset As Integer) As UInteger
-        Dim absoluteOffset = graph.ContentsSection.AbsoluteDataStart + relativeOffset
-        If absoluteOffset < 0 OrElse absoluteOffset + 4 > graph.Packfile.RawBytes.Length Then Return 0
-        Return BitConverter.ToUInt32(graph.Packfile.RawBytes, absoluteOffset)
+        Return CUShort(CInt(graph.ReadInt16(relativeOffset)) And &HFFFF)
     End Function
 End Class
 
@@ -1396,6 +1402,8 @@ Public Class HclSimClothDataDetail_Class
     Public ReadOnly Property DefaultClothPoseDetails As New List(Of HclSimClothPoseGraph_Class)
     Public Property FieldF8UInt32 As List(Of UInteger)
     Public ReadOnly Property StaticCollisionMasks As New List(Of UInteger)
+    ' Guess_/UNCONFIRMED: array +0x108 leído con stride 1 (ReadByteArray). Tipo de elemento real sin
+    ' verificar contra el SDK Havok — NO autoritativo. No consumir como flags reales hasta confirmar.
     Public ReadOnly Property PinchDetectionFlags As New List(Of Byte)
     Public Property Field118Pairs As List(Of HkxUInt32PairGraph_Class)
     Public Property CollidableBindingUniformParameter As Single?

@@ -57,7 +57,8 @@ Public Class PluginManager
     ''' that the caller can extend with extra inactive entries before passing in.</summary>
     Public Sub LoadAllPlugins(dataPath As String,
                               pluginsToLoad As IEnumerable(Of String),
-                              Optional progress As IProgress(Of String) = Nothing)
+                              Optional progress As IProgress(Of String) = Nothing,
+                              Optional sigFilter As HashSet(Of String) = Nothing)
         Dim pluginFiles As New List(Of String)
 
         _localizedStrings = New LocalizedStringResolver(dataPath)
@@ -76,7 +77,7 @@ Public Class PluginManager
                 Dim fileName = Path.GetFileName(filePath)
                 progress?.Report($"Loading {fileName} ({i + 1}/{pluginFiles.Count})")
                 Try
-                    Dim reader As New PluginReader()
+                    Dim reader As New PluginReader(sigFilter)
                     reader.Load(filePath)
                     IndexAndMergePlugin(reader)
                 Catch ex As Exception

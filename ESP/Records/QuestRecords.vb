@@ -149,7 +149,9 @@ Public Class SCEN_Data
     Public KeywordFormIDs As New List(Of UInteger)
 End Class
 
-''' <summary>Fallout 4 IDLE record - Idle Animation.</summary>
+''' <summary>Fallout 4 IDLE record - Idle Animation. GNAM (AnimationFile) puede ser un PATRÓN con token
+''' $(Subgraph) (= carpeta SAPT del subgraph activo) y wildcard *. DNAM (BehaviorGraph) = behavior graph.
+''' RaceConditions = de CTDA GetIsRace (wbDefinitionsFO4.pas:9987).</summary>
 Public Class IDLE_Data
     Public FormID As UInteger
     Public EditorID As String = ""
@@ -165,6 +167,9 @@ Public Class IDLE_Data
     Public IdleFlags As Byte
     Public AnimGroupSection As Byte
     Public ReplayDelay As UShort
+
+    ''' <summary>Condiciones CTDA GetIsRace (func #69): qué razas incluye (Positive) o excluye (Not Positive).</summary>
+    Public RaceConditions As New List(Of (RaceFormID As UInteger, Positive As Boolean))
 End Class
 
 ''' <summary>Fallout 4 DLBR record - Dialog Branch.</summary>
@@ -538,6 +543,25 @@ Public Module QuestRecordParsers
                     End If
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 6 Then
                         idle.ReplayDelay = BitConverter.ToUInt16(sr.Data, 4)
+                    End If
+                Case "CTDA"
+                    ' Una o varias condiciones de 32 bytes (wbDefinitionsFO4.pas:5554). GetIsRace = función 69, Param1 = RACE.
+                    ' CTDA struct = 32 bytes: Type@+0(u8), CompVal@+4(f32), Function@+8(u16), Param1@+12(u32 FormID).
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 32 Then
+                        Dim n = sr.Data.Length \ 32
+                        For i = 0 To n - 1
+                            Dim o = i * 32
+                            Dim func = BitConverter.ToUInt16(sr.Data, o + 8)
+                            If func = 69US Then   ' GetIsRace
+                                Dim rawRace = BitConverter.ToUInt32(sr.Data, o + 12)
+                                Dim raceFid = ResolveFIDRaw(rec, rawRace, pluginManager)
+                                Dim comp = BitConverter.ToSingle(sr.Data, o + 4)
+                                Dim typ = sr.Data(o)                       ' operador en los bits altos (0=Equal)
+                                Dim positive = (comp >= 0.5F)              ' "== 1" → aplica a esa raza; "== 0" → la EXCLUYE
+                                If (typ >> 5) = 1 Then positive = Not positive  ' operador NotEqual invierte
+                                idle.RaceConditions.Add((raceFid, positive))
+                            End If
+                        Next
                     End If
             End Select
         Next

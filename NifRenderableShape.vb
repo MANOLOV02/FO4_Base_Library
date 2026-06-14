@@ -31,6 +31,11 @@ Public Class NifRenderableShape
     Private _syntheticBones As IReadOnlyList(Of NiNode)
     Private _syntheticTransforms As IReadOnlyList(Of Transform_Class)
 
+    ' Whether the source NIF declares cloth physics (BSClothExtraData). The NIF is immutable
+    ' for this shape's lifetime, so the block scan runs once in the constructor and the result
+    ' is cached here instead of re-scanning Blocks on every HasPhysics access.
+    Private ReadOnly _hasPhysics As Boolean
+
     Public Sub New(nif As Nifcontent_Class_Manolo, shape As INiShape, index As Integer)
         ArgumentNullException.ThrowIfNull(nif)
         ArgumentNullException.ThrowIfNull(shape)
@@ -40,6 +45,7 @@ Public Class NifRenderableShape
         _index = index
         ResolveSkinData()
         _material = nif.GetRelatedMaterial(shape)
+        _hasPhysics = nif.Blocks IsNot Nothing AndAlso nif.Blocks.Any(Function(b) TypeOf b Is BSClothExtraData)
     End Sub
 
     ''' <summary>
@@ -233,8 +239,7 @@ Public Class NifRenderableShape
 
     Public ReadOnly Property HasPhysics As Boolean Implements IRenderableShape.HasPhysics
         Get
-            If _nif Is Nothing OrElse _nif.Blocks Is Nothing Then Return False
-            Return _nif.Blocks.Any(Function(b) TypeOf b Is BSClothExtraData)
+            Return _hasPhysics
         End Get
     End Property
 

@@ -279,6 +279,13 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _pingW As Integer = 0
     Friend _pingH As Integer = 0
 
+    ' Persistent SCRATCH result FBO container, reused across calls (same rationale as the pings:
+    ' avoid GenFramebuffer/DeleteFramebuffer churn per compose call). The per-call result TEXTURE
+    ' is still freshly allocated and caller-owned; only this FBO container is reused — each call
+    ' attaches its fresh result texture to this FBO via GL.FramebufferTexture2D and re-checks
+    ' completeness. Allocated lazily on first use; released in Dispose().
+    Friend _scratchResultFbo As Integer = 0
+
     ''' <summary>Release all GL handles owned by this state. Caller MUST invoke from the GL
     ''' thread with the owning context current. Idempotent — safe to call when handles are 0.</summary>
     Public Sub Dispose()
@@ -293,6 +300,10 @@ Public NotInheritable Class FaceTintCompositorState
         If _quadVbo <> 0 Then
             Try : GL.DeleteBuffer(_quadVbo) : Catch : End Try
             _quadVbo = 0
+        End If
+        If _scratchResultFbo <> 0 Then
+            Try : GL.DeleteFramebuffer(_scratchResultFbo) : Catch : End Try
+            _scratchResultFbo = 0
         End If
         ReleasePingPongInternal()
     End Sub
@@ -792,17 +803,8 @@ void main() {
         EnsureCompositorInitialized(state)
         If state._program = 0 OrElse state._quadVao = 0 Then Return 0
 
-        ' Save GL state we are about to clobber.
-        Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
-        Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
-        Dim prevVao As Integer = GL.GetInteger(GetPName.VertexArrayBinding)
-        Dim prevActiveTex As Integer = GL.GetInteger(GetPName.ActiveTexture)
-        Dim prevTex0 As Integer = GL.GetInteger(GetPName.TextureBinding2D)
-        Dim prevViewport(3) As Integer
-        GL.GetInteger(GetPName.Viewport, prevViewport)
-        Dim wasBlend As Boolean = GL.IsEnabled(EnableCap.Blend)
-        Dim wasDepth As Boolean = GL.IsEnabled(EnableCap.DepthTest)
-        Dim wasScissor As Boolean = GL.IsEnabled(EnableCap.ScissorTest)
+        ' Save GL state we are about to clobber (FT-014: capture incl. the FT-004 unit-0 fix).
+        Dim glSaved As GlStateSnapshot = SaveGlState()
 
         Dim resultTex As Integer = 0
         Dim resultFbo As Integer = 0
@@ -833,7 +835,16 @@ void main() {
             Dim layerChannelKey As New Dictionary(Of Integer, String)
             Dim layerMaskKey As New Dictionary(Of Integer, String)
             Dim layerHairLutKey As New Dictionary(Of Integer, String)
+            ' De-dupe by key BEFORE the loader runs. The loader/cache returns a dict keyed by
+            ' request key, so two requests with the same key collapse to ONE entry — but the
+            ' loader still generated a GL texture per request, so the earlier IDs would be lost
+            ' and never deleted (cleanup iterates the returned dict). Uploading each unique key
+            ' once and letting all referencing layers reuse it is pixel-identical (same bytes →
+            ' same texture) and closes the leak. Synthetic per-call keys (l{i}c/l{i}m/l{i}lut)
+            ' are already unique per layer/role so they pass through untouched.
+            Dim requestedKeys As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
             Dim addRequest = Sub(reqKey As String, b As Byte(), cacheable As Boolean)
+                                 If Not requestedKeys.Add(reqKey) Then Return
                                  loadKeys.Add(reqKey)
                                  loadBytes.Add(b)
                                  loadCacheable.Add(cacheable)
@@ -880,17 +891,7 @@ void main() {
                     batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
                     ' Library default is Repeat wrap; compositor samples a fullscreen quad over UV [0,1]
                     ' and seams at the edges would bleed, so force ClampToEdge on each loaded texture.
-                    If batchLoaded IsNot Nothing Then
-                        For Each kvp In batchLoaded
-                            Dim e = kvp.Value
-                            If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                                GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
-                                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                            End If
-                        Next
-                        GL.BindTexture(TextureTarget.Texture2D, 0)
-                    End If
+                    ForceClampToEdge(batchLoaded)
                 End If
             End If
 
@@ -899,7 +900,7 @@ void main() {
             ' across calls, eliminating the per-call GenTexture+TexImage2D+DeleteTexture
             ' churn for 1024^2 face textures.
             If Not EnsurePingPongAllocated(state, width, height) Then Return 0
-            If Not AllocateResultTextureAndFbo(width, height, resultTex, resultFbo) Then Return 0
+            If Not AllocateResultTextureAndFbo(state, width, height, resultTex, resultFbo) Then Return 0
 
             GL.Viewport(0, 0, width, height)
             GL.Disable(EnableCap.DepthTest)
@@ -943,8 +944,8 @@ void main() {
             Next
 
             If drawableCount = 0 Then
-                ' Nothing to draw; release the result handles and return 0 (matches legacy behaviour).
-                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
+                ' Nothing to draw; release the per-call result texture and return 0 (matches legacy
+                ' behaviour). The scratch FBO is persistent (state-owned) — do NOT delete it here.
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultFbo = 0
                 resultTex = 0
@@ -1074,9 +1075,11 @@ void main() {
                 GL.BindTexture(TextureTarget.Texture2D, If(hairLutTex <> 0, hairLutTex, layerTex))
                 GL.Uniform1(state._uHairLutLoc, 3)
 
-                ' Unit 4 (uBase): VESTIGIAL desde el cambio a over-RUNNING. El shader ya NO lee uBase
-                ' (la base del blend es el acumulador corriente uPrev). Se sigue bindeando un texture
-                ' valido para que el sampler nunca quede indefinido si el compilador no lo elimina.
+                ' Unit 4 (uBase): el shader SÍ lee uBase en los frameworks OverBase (uFramework==1) y
+                ' AddBase (uFramework==2) — ahí 'base' es el ancla del blend/composite (el original sin
+                ' tintar, en uOutputSpace). En OverPrev (0, default) y ModSrc (3) la base del blend es el
+                ' acumulador corriente uPrev y uBase no se usa; aun así se bindea un texture válido para
+                ' que el sampler nunca quede indefinido (el shader lo samplea incondicionalmente).
                 GL.ActiveTexture(TextureUnit.Texture4)
                 GL.BindTexture(TextureTarget.Texture2D, baseTexForCompose)
                 GL.Uniform1(state._uBaseLoc, 4)
@@ -1166,9 +1169,10 @@ void main() {
                 GL.ActiveTexture(TextureUnit.Texture1)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
 
-                ' Next iteration reads from what we just wrote (resultTex on the last pass,
-                ' otherwise the ping we just bound).
-                readTexId = If(isLast, resultTex, state._pingTex(writeIdx))
+                ' Next iteration reads from what we just wrote (the ping we just bound). On the LAST
+                ' pass there is no next iteration, so updating readTexId would be a dead write (it
+                ' pointed at resultTex, which is never re-read) — guard it (FT-013).
+                If Not isLast Then readTexId = state._pingTex(writeIdx)
 
                 writeIdx = 1 - writeIdx
                 drawnSoFar += 1
@@ -1189,6 +1193,8 @@ void main() {
                 resultTex = 0
             End If
         Catch ex As Exception
+            Dim exType = ex.GetType().Name, exMsg = ex.Message
+            Logger.LogLazy(Function() $"[FACETINT] compose failed: {exType}: {exMsg}")
             If resultTex <> 0 Then
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
@@ -1206,23 +1212,12 @@ void main() {
                 Next
             End If
 
-            ' Free the result FBO (always scratch, the texture is owned by the caller).
-            ' Pings are persistent and stay in the state for next call.
-            If resultFbo <> 0 Then
-                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
-            End If
+            ' The result FBO is the persistent scratch container (state-owned, reused across
+            ' calls) — NOT deleted here. The result TEXTURE is caller-owned (returned). Pings
+            ' and the scratch FBO stay in the state and are released only by state.Dispose().
 
-            ' Restore state.
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
-            GL.UseProgram(prevProg)
-            GL.BindVertexArray(prevVao)
-            GL.ActiveTexture(TextureUnit.Texture0)
-            GL.BindTexture(TextureTarget.Texture2D, prevTex0)
-            GL.ActiveTexture(CType(prevActiveTex, TextureUnit))
-            GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
-            If wasDepth Then GL.Enable(EnableCap.DepthTest) Else GL.Disable(EnableCap.DepthTest)
-            If wasScissor Then GL.Enable(EnableCap.ScissorTest) Else GL.Disable(EnableCap.ScissorTest)
-            If wasBlend Then GL.Enable(EnableCap.Blend) Else GL.Disable(EnableCap.Blend)
+            ' Restore state (FT-014).
+            RestoreGlState(glSaved)
         End Try
 
         Return resultTex
@@ -1312,17 +1307,8 @@ void main() {
         EnsureCompositorInitialized(state)
         If state._program = 0 OrElse state._quadVao = 0 Then Return 0
 
-        ' Save GL state we are about to clobber.
-        Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
-        Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
-        Dim prevVao As Integer = GL.GetInteger(GetPName.VertexArrayBinding)
-        Dim prevActiveTex As Integer = GL.GetInteger(GetPName.ActiveTexture)
-        Dim prevTex0 As Integer = GL.GetInteger(GetPName.TextureBinding2D)
-        Dim prevViewport(3) As Integer
-        GL.GetInteger(GetPName.Viewport, prevViewport)
-        Dim wasBlend As Boolean = GL.IsEnabled(EnableCap.Blend)
-        Dim wasDepth As Boolean = GL.IsEnabled(EnableCap.DepthTest)
-        Dim wasScissor As Boolean = GL.IsEnabled(EnableCap.ScissorTest)
+        ' Save GL state we are about to clobber (FT-014: capture incl. the FT-004 unit-0 fix).
+        Dim glSaved As GlStateSnapshot = SaveGlState()
 
         Dim resultTex As Integer = 0
         Dim resultFbo As Integer = 0
@@ -1346,6 +1332,13 @@ void main() {
             Dim loadCacheable As New List(Of Boolean)
             Dim swapTexKey As New Dictionary(Of Integer, String)
             Dim swapMaskKey As New Dictionary(Of Integer, String)
+            ' De-dupe by key: swaps that share a region mask (or texture) would otherwise enqueue
+            ' the same key twice, and the loader/cache returns one entry per key while generating
+            ' one GL texture per enqueue — the extra IDs would leak (cleanup iterates the returned
+            ' dict). Enqueue each unique key once; every swap reuses the single shared texture. The
+            ' per-swap key maps (swapTexKey/swapMaskKey) still point each swap at its key, so the
+            ' draw loop is unchanged and pixel-identical.
+            Dim seenSwapKeys As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
             For i As Integer = 0 To swaps.Count - 1
                 Dim sw = swaps(i)
                 If sw Is Nothing Then Continue For
@@ -1357,8 +1350,10 @@ void main() {
                 Dim mkCacheKey As String = sw.RegionMaskCacheKey
                 Dim kS As String = If(Not String.IsNullOrEmpty(swCacheKey), swCacheKey, $"s{i}t")
                 Dim kM As String = If(Not String.IsNullOrEmpty(mkCacheKey), mkCacheKey, $"s{i}m")
-                loadKeys.Add(kS) : loadBytes.Add(sb) : loadCacheable.Add(Not String.IsNullOrEmpty(swCacheKey)) : swapTexKey(i) = kS
-                loadKeys.Add(kM) : loadBytes.Add(sw.RegionMaskDdsBytes) : loadCacheable.Add(Not String.IsNullOrEmpty(mkCacheKey)) : swapMaskKey(i) = kM
+                If seenSwapKeys.Add(kS) Then loadKeys.Add(kS) : loadBytes.Add(sb) : loadCacheable.Add(Not String.IsNullOrEmpty(swCacheKey))
+                swapTexKey(i) = kS
+                If seenSwapKeys.Add(kM) Then loadKeys.Add(kM) : loadBytes.Add(sw.RegionMaskDdsBytes) : loadCacheable.Add(Not String.IsNullOrEmpty(mkCacheKey))
+                swapMaskKey(i) = kM
             Next
             If loadKeys.Count = 0 Then
                 Return 0
@@ -1368,23 +1363,13 @@ void main() {
                 batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
             Else
                 batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
-                If batchLoaded IsNot Nothing Then
-                    For Each kvp In batchLoaded
-                        Dim e = kvp.Value
-                        If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                            GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
-                            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                        End If
-                    Next
-                    GL.BindTexture(TextureTarget.Texture2D, 0)
-                End If
+                ForceClampToEdge(batchLoaded)
             End If
 
             ' Reuse persistent ping-pong attachments at this size; allocate caller-owned
             ' result for the final pass.
             If Not EnsurePingPongAllocated(state, width, height) Then Return 0
-            If Not AllocateResultTextureAndFbo(width, height, resultTex, resultFbo) Then Return 0
+            If Not AllocateResultTextureAndFbo(state, width, height, resultTex, resultFbo) Then Return 0
 
             GL.Viewport(0, 0, width, height)
             GL.Disable(EnableCap.DepthTest)
@@ -1402,7 +1387,18 @@ void main() {
             GL.Uniform1(state._uModeLoc, 1)
             ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> el override de convención
             ' (incl. #If DEBUG full-linear) alcanza también los swaps. NON-DEBUG byte-idéntico (paridad con CPU).
-            Dim swConv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True)
+            Dim swConv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
+            ' FT-002 guard: the uMode==1 swap branch of the shader hardcodes blended = src_w (Replace)
+            ' and carries no blend-op uniform. ResolveConvention currently pins swap.Blend = Replace
+            ' (FaceTintConvention.vb), so this is inert. If a future config ever resolves a non-Replace
+            ' swap blend, the GL path would SILENTLY stay on Replace while the CPU path honours the op —
+            ' a GL/CPU divergence. Surface it loudly here instead of producing a wrong-but-quiet result.
+            ' Fixing it properly means adding a blend-op uniform + routing the swap through blendDispatch
+            ' in the shader; left out to preserve the byte-for-byte Replace output until that's needed.
+            If swConv.Blend <> FaceTintBlend.Replace Then
+                Dim bopName = swConv.Blend.ToString()
+                Logger.LogLazy(Function() $"[FACETINT] GL region-swap resolved Blend={bopName} but the shader only implements Replace; GL output will NOT match the CPU path for this swap.")
+            End If
             GL.Uniform1(state._uSrcSpaceLoc, CInt(swConv.SrcSpace))
             GL.Uniform1(state._uOutputSpaceLoc, CInt(swConv.OutputSpace))
             GL.Uniform1(state._uCompositeSpaceLoc, CInt(swConv.CompositeSpace))
@@ -1425,7 +1421,7 @@ void main() {
             Next
 
             If drawableSwaps = 0 Then
-                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
+                ' Persistent scratch FBO is state-owned — do NOT delete it; only free the per-call texture.
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultFbo = 0
                 resultTex = 0
@@ -1508,6 +1504,8 @@ void main() {
                 resultTex = 0
             End If
         Catch ex As Exception
+            Dim exType = ex.GetType().Name, exMsg = ex.Message
+            Logger.LogLazy(Function() $"[FACETINT] compose failed: {exType}: {exMsg}")
             If resultTex <> 0 Then
                 Try : GL.DeleteTexture(resultTex) : Catch : End Try
                 resultTex = 0
@@ -1523,21 +1521,11 @@ void main() {
                 Next
             End If
 
-            ' Result FBO is scratch; pings stay persistent in the state.
-            If resultFbo <> 0 Then
-                Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
-            End If
+            ' Result FBO is the persistent scratch container (state-owned); pings stay persistent
+            ' in the state. Neither is deleted here — both live until state.Dispose().
 
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
-            GL.UseProgram(prevProg)
-            GL.BindVertexArray(prevVao)
-            GL.ActiveTexture(TextureUnit.Texture0)
-            GL.BindTexture(TextureTarget.Texture2D, prevTex0)
-            GL.ActiveTexture(CType(prevActiveTex, TextureUnit))
-            GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
-            If wasDepth Then GL.Enable(EnableCap.DepthTest) Else GL.Disable(EnableCap.DepthTest)
-            If wasScissor Then GL.Enable(EnableCap.ScissorTest) Else GL.Disable(EnableCap.ScissorTest)
-            If wasBlend Then GL.Enable(EnableCap.Blend) Else GL.Disable(EnableCap.Blend)
+            ' Restore state (FT-014).
+            RestoreGlState(glSaved)
         End Try
 
         Return resultTex
@@ -1585,16 +1573,8 @@ void main() {
         EnsureCompositorInitialized(state)
         If state._program = 0 OrElse state._quadVao = 0 Then Return 0
 
-        Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
-        Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
-        Dim prevVao As Integer = GL.GetInteger(GetPName.VertexArrayBinding)
-        Dim prevActiveTex As Integer = GL.GetInteger(GetPName.ActiveTexture)
-        Dim prevTex0 As Integer = GL.GetInteger(GetPName.TextureBinding2D)
-        Dim prevViewport(3) As Integer
-        GL.GetInteger(GetPName.Viewport, prevViewport)
-        Dim wasBlend As Boolean = GL.IsEnabled(EnableCap.Blend)
-        Dim wasDepth As Boolean = GL.IsEnabled(EnableCap.DepthTest)
-        Dim wasScissor As Boolean = GL.IsEnabled(EnableCap.ScissorTest)
+        ' Save GL state we are about to clobber (FT-014: capture incl. the FT-004 unit-0 fix).
+        Dim glSaved As GlStateSnapshot = SaveGlState()
 
         Dim outTex As Integer = 0
         Dim outFbo As Integer = 0
@@ -1672,6 +1652,8 @@ void main() {
         Catch ex As Exception
             resultTex = 0
         Finally
+            ' This path owns its own (inline) FBO — not the FT-007 scratch container — so it is
+            ' still Gen/Delete per call and freed here.
             If outFbo <> 0 Then
                 Try : GL.DeleteFramebuffer(outFbo) : Catch : End Try
             End If
@@ -1679,20 +1661,92 @@ void main() {
                 Try : GL.DeleteTexture(outTex) : Catch : End Try
             End If
 
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
-            GL.UseProgram(prevProg)
-            GL.BindVertexArray(prevVao)
-            GL.ActiveTexture(TextureUnit.Texture0)
-            GL.BindTexture(TextureTarget.Texture2D, prevTex0)
-            GL.ActiveTexture(CType(prevActiveTex, TextureUnit))
-            GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
-            If wasDepth Then GL.Enable(EnableCap.DepthTest) Else GL.Disable(EnableCap.DepthTest)
-            If wasScissor Then GL.Enable(EnableCap.ScissorTest) Else GL.Disable(EnableCap.ScissorTest)
-            If wasBlend Then GL.Enable(EnableCap.Blend) Else GL.Disable(EnableCap.Blend)
+            ' Restore state (FT-014).
+            RestoreGlState(glSaved)
         End Try
 
         Return resultTex
     End Function
+
+
+    ''' <summary>Snapshot of the GL state the compositor passes clobber, captured by
+    ''' <see cref="SaveGlState"/> and replayed by <see cref="RestoreGlState"/>. Holds the six
+    ''' bindings (FBO / program / VAO / active texture unit / unit-0 2D binding / viewport) plus
+    ''' the three enable-caps (Blend / DepthTest / ScissorTest) the compose passes toggle.</summary>
+    Private Structure GlStateSnapshot
+        Public Fbo As Integer
+        Public Prog As Integer
+        Public Vao As Integer
+        Public ActiveTex As Integer
+        Public Tex0 As Integer
+        Public Viewport0 As Integer
+        Public Viewport1 As Integer
+        Public Viewport2 As Integer
+        Public Viewport3 As Integer
+        Public WasBlend As Boolean
+        Public WasDepth As Boolean
+        Public WasScissor As Boolean
+    End Structure
+
+    ''' <summary>Capture the GL state the compose passes are about to clobber. Includes the FT-004
+    ''' fix in ONE place: select texture unit 0 BEFORE reading its 2D binding, because
+    ''' GetInteger(TextureBinding2D) reports the binding of the CURRENTLY ACTIVE unit while the
+    ''' restore rebinds Tex0 onto unit 0. For callers that enter with unit 0 already active this is
+    ''' a no-op (identical capture). MUST run on the GL thread.</summary>
+    Private Function SaveGlState() As GlStateSnapshot
+        Dim s As GlStateSnapshot
+        s.Fbo = GL.GetInteger(GetPName.DrawFramebufferBinding)
+        s.Prog = GL.GetInteger(GetPName.CurrentProgram)
+        s.Vao = GL.GetInteger(GetPName.VertexArrayBinding)
+        s.ActiveTex = GL.GetInteger(GetPName.ActiveTexture)
+        ' FT-004: select unit 0 before reading TextureBinding2D so the captured Tex0 is unit 0's
+        ' binding (the unit the restore rebinds onto), not the previously-active unit's binding.
+        GL.ActiveTexture(TextureUnit.Texture0)
+        s.Tex0 = GL.GetInteger(GetPName.TextureBinding2D)
+        Dim vp(3) As Integer
+        GL.GetInteger(GetPName.Viewport, vp)
+        s.Viewport0 = vp(0) : s.Viewport1 = vp(1) : s.Viewport2 = vp(2) : s.Viewport3 = vp(3)
+        s.WasBlend = GL.IsEnabled(EnableCap.Blend)
+        s.WasDepth = GL.IsEnabled(EnableCap.DepthTest)
+        s.WasScissor = GL.IsEnabled(EnableCap.ScissorTest)
+        Return s
+    End Function
+
+    ''' <summary>Restore the GL state captured by <see cref="SaveGlState"/>. Replays exactly what the
+    ''' compose-pass Finally blocks did pre-refactor: rebind FBO/program/VAO, restore unit-0's 2D
+    ''' binding then reselect the original active unit, restore the viewport, and re-apply the three
+    ''' enable-caps. MUST run on the GL thread.</summary>
+    Private Sub RestoreGlState(s As GlStateSnapshot)
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, s.Fbo)
+        GL.UseProgram(s.Prog)
+        GL.BindVertexArray(s.Vao)
+        GL.ActiveTexture(TextureUnit.Texture0)
+        GL.BindTexture(TextureTarget.Texture2D, s.Tex0)
+        GL.ActiveTexture(CType(s.ActiveTex, TextureUnit))
+        GL.Viewport(s.Viewport0, s.Viewport1, s.Viewport2, s.Viewport3)
+        If s.WasDepth Then GL.Enable(EnableCap.DepthTest) Else GL.Disable(EnableCap.DepthTest)
+        If s.WasScissor Then GL.Enable(EnableCap.ScissorTest) Else GL.Disable(EnableCap.ScissorTest)
+        If s.WasBlend Then GL.Enable(EnableCap.Blend) Else GL.Disable(EnableCap.Blend)
+    End Sub
+
+    ''' <summary>Force ClampToEdge wrap on every texture in a freshly batch-loaded dict. The library
+    ''' loader defaults to Repeat wrap; the compositor samples a fullscreen quad over UV [0,1] and
+    ''' edge seams would bleed under Repeat, so each loaded texture is re-wrapped to ClampToEdge.
+    ''' Only used on the no-cache path (the cache loader applies the same wrap internally via
+    ''' wrapClampToEdge:=True). No-op when <paramref name="batch"/> is Nothing. MUST run on the GL
+    ''' thread.</summary>
+    Private Sub ForceClampToEdge(batch As Dictionary(Of String, PreviewModel.Texture_Loaded_Class))
+        If batch Is Nothing Then Return
+        For Each kvp In batch
+            Dim e = kvp.Value
+            If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
+                GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+            End If
+        Next
+        GL.BindTexture(TextureTarget.Texture2D, 0)
+    End Sub
 
 
     ''' <summary>Allocate (or reuse) the two persistent ping-pong colour attachments at
@@ -1742,12 +1796,16 @@ void main() {
         Return True
     End Function
 
-    ''' <summary>Allocate one fresh RGBA8 texture + framebuffer at (width, height) for the
-    ''' caller-owned final output of a pass. The caller is responsible for deleting
-    ''' <paramref name="resultTex"/> (per existing contract); the FBO is internal scratch and
-    ''' must be deleted by the caller's Finally block. Returns False on FBO incompleteness
-    ''' (handles freed before return). MUST run on the GL thread.</summary>
-    Private Function AllocateResultTextureAndFbo(width As Integer, height As Integer,
+    ''' <summary>Allocate one fresh RGBA32f texture for the caller-owned final output of a pass
+    ''' and attach it to the state's PERSISTENT scratch FBO (reused across calls — see
+    ''' <see cref="FaceTintCompositorState._scratchResultFbo"/>). The caller is responsible for
+    ''' deleting <paramref name="resultTex"/> (per existing contract); the FBO container is
+    ''' persistent and is NOT deleted by the caller — it lives until the state's Dispose().
+    ''' The completed scratch FBO handle is returned via <paramref name="resultFbo"/> (its
+    ''' colour attachment is the fresh <paramref name="resultTex"/>). Returns False on FBO
+    ''' incompleteness (the fresh texture is freed before return; the persistent FBO is left
+    ''' intact for the next call). MUST run on the GL thread.</summary>
+    Private Function AllocateResultTextureAndFbo(state As FaceTintCompositorState, width As Integer, height As Integer,
                                                   ByRef resultTex As Integer, ByRef resultFbo As Integer) As Boolean
         resultTex = GL.GenTexture()
         GL.BindTexture(TextureTarget.Texture2D, resultTex)
@@ -1764,16 +1822,20 @@ void main() {
                       width, height, 0,
                       PixelFormat.Rgba, PixelType.Float, IntPtr.Zero)
 
-        resultFbo = GL.GenFramebuffer()
+        ' Reuse the persistent scratch FBO container instead of Gen/Delete per call. The result
+        ' texture lifetime contract is unchanged (fresh per call, caller-owned); only the FBO
+        ' container is reused. Re-attaching the fresh texture + re-checking completeness produces
+        ' an identical render target to the old per-call GenFramebuffer path.
+        If state._scratchResultFbo = 0 Then state._scratchResultFbo = GL.GenFramebuffer()
+        resultFbo = state._scratchResultFbo
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, resultFbo)
         GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
                                 TextureTarget.Texture2D, resultTex, 0)
         Dim status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)
         If status <> FramebufferErrorCode.FramebufferComplete Then
-            Try : GL.DeleteFramebuffer(resultFbo) : Catch : End Try
             Try : GL.DeleteTexture(resultTex) : Catch : End Try
-            resultFbo = 0
             resultTex = 0
+            resultFbo = 0
             Return False
         End If
         Return True
@@ -1896,6 +1958,11 @@ void main() {
         Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
         Dim prevVao As Integer = GL.GetInteger(GetPName.VertexArrayBinding)
         Dim prevActiveTex As Integer = GL.GetInteger(GetPName.ActiveTexture)
+        ' Select unit 0 BEFORE reading its 2D binding: GetInteger(TextureBinding2D) reports the
+        ' binding of the CURRENTLY ACTIVE unit, but the restore below rebinds prevTex0 onto unit 0.
+        ' Without this the binding of prevActiveTex's unit would be (wrongly) restored onto unit 0.
+        ' For callers that enter with unit 0 already active this is a no-op (identical capture).
+        GL.ActiveTexture(TextureUnit.Texture0)
         Dim prevTex0 As Integer = GL.GetInteger(GetPName.TextureBinding2D)
         Dim prevViewport(3) As Integer
         GL.GetInteger(GetPName.Viewport, prevViewport)
@@ -1903,7 +1970,7 @@ void main() {
         Dim outTex As Integer = 0
         Dim outFbo As Integer = 0
         Try
-            If Not AllocateResultTextureAndFbo(width, height, outTex, outFbo) Then Return 0
+            If Not AllocateResultTextureAndFbo(state, width, height, outTex, outFbo) Then Return 0
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, outFbo)
             GL.Viewport(0, 0, width, height)
             GL.Disable(EnableCap.DepthTest)
@@ -1925,12 +1992,16 @@ void main() {
             Dim msg = ex.Message
             Logger.LogLazy(Function() $"[FACETINT-CONVERT] space convert failed ({msg})")
         Finally
-            If outFbo <> 0 Then Try : GL.DeleteFramebuffer(outFbo) : Catch : End Try
+            ' outFbo is the persistent scratch container (state-owned, reused across calls) — NOT
+            ' deleted here. It lives until state.Dispose().
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
             GL.UseProgram(prevProg)
             GL.BindVertexArray(prevVao)
-            GL.ActiveTexture(CType(prevActiveTex, TextureUnit))
+            ' prevTex0 was captured on unit 0 (see capture), so restore it onto unit 0 first,
+            ' then reselect the caller's original active unit. Matches the other compose paths.
+            GL.ActiveTexture(TextureUnit.Texture0)
             GL.BindTexture(TextureTarget.Texture2D, prevTex0)
+            GL.ActiveTexture(CType(prevActiveTex, TextureUnit))
             GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
         End Try
         Return outTex
@@ -2159,6 +2230,11 @@ Public NotInheritable Class FaceTintTextureCache
         Dim missKeys As New List(Of String)
         Dim missBytes As New List(Of Byte())
         Dim missCacheable As New List(Of Boolean)
+        ' Guard against duplicate keys in the request: the loader returns a dict keyed by key,
+        ' so a key requested twice would generate two GL textures yet keep only one entry,
+        ' leaking the other. Upload each unique miss key once; the dict result is reused by all
+        ' referencing callers. Same bytes per key → pixel-identical.
+        Dim seenMiss As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
         For i As Integer = 0 To keys.Count - 1
             Dim k = keys(i)
@@ -2174,6 +2250,8 @@ Public NotInheritable Class FaceTintTextureCache
                     Continue For
                 End If
             End If
+
+            If Not seenMiss.Add(k) Then Continue For
 
             missKeys.Add(k)
             missBytes.Add(b)

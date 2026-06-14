@@ -55,6 +55,20 @@ Public Partial Class HkxObjectGraph_Class
         Dynamic = 2
     End Enum
 
+    ' Memoizes parsed skeletons by source RelativeOffset so ParseSkeletonMapper does not re-parse
+    ' the same full skeleton once per mapper (HKX-007). ParseSkeleton is a pure function of its
+    ' source object, so the cached HkaSkeletonGraph_Class yields identical bone names.
+    Private ReadOnly _parsedSkeletonCache As New Dictionary(Of Integer, HkaSkeletonGraph_Class)
+
+    Private Function ParseSkeletonMemoized(source As HkxVirtualObjectGraph_Class) As HkaSkeletonGraph_Class
+        If IsNothing(source) Then Return Nothing
+        Dim cached As HkaSkeletonGraph_Class = Nothing
+        If _parsedSkeletonCache.TryGetValue(source.RelativeOffset, cached) Then Return cached
+        Dim parsed = ParseSkeleton(source)
+        _parsedSkeletonCache(source.RelativeOffset) = parsed
+        Return parsed
+    End Function
+
     ' hkArray slot size dentro del objeto (ptr + count(4) + capFlags(4)) = ArrayHeaderSizeValue.
     Private ReadOnly Property LosslessArraysBaseOffset As Integer
         Get
@@ -96,13 +110,19 @@ Public Partial Class HkxObjectGraph_Class
             remainingBindings.Add(binding)
         Next
 
-        Dim bindingCursor = 0
-        For Each animation In animations
-            If animation.Binding IsNot Nothing Then Continue For
-            If bindingCursor >= remainingBindings.Count Then Exit For
-            animation.Binding = remainingBindings(bindingCursor)
-            bindingCursor += 1
-        Next
+        ' Positional fallback for bindings whose AnimationObject ref did not resolve.
+        ' Only safe when it is UNAMBIGUOUS: exactly one unmatched animation and exactly
+        ' one unmatched binding. Stapling N bindings to N animations by enumeration order
+        ' would silently mis-pair tracks→bones on any file where the ref-match was the
+        ' real mapping, so leave Binding = Nothing and log instead of guessing.
+        Dim unmatchedAnimations = animations.Where(Function(a) a.Binding Is Nothing).ToList()
+        If remainingBindings.Count = 1 AndAlso unmatchedAnimations.Count = 1 Then
+            unmatchedAnimations(0).Binding = remainingBindings(0)
+        ElseIf remainingBindings.Count > 0 Then
+            Dim bindingCount = remainingBindings.Count
+            Dim animCount = unmatchedAnimations.Count
+            Logger.LogLazy(Function() $"[HKX-LOSSLESS] {bindingCount} binding(s) did not resolve their AnimationObject ref and {animCount} animation(s) are unbound; positional fallback skipped (ambiguous). Affected animations left with Binding=Nothing.")
+        End If
 
         Return animations
     End Function
@@ -335,8 +355,8 @@ Public Partial Class HkxObjectGraph_Class
         }
 
         ' Nombres de hueso (índice → nombre) para legibilidad; depende de poder parsear los hkaSkeleton.
-        Dim bonesA = If(IsNothing(result.SkeletonA), Nothing, ParseSkeleton(result.SkeletonA)?.Bones)
-        Dim bonesB = If(IsNothing(result.SkeletonB), Nothing, ParseSkeleton(result.SkeletonB)?.Bones)
+        Dim bonesA = If(IsNothing(result.SkeletonA), Nothing, ParseSkeletonMemoized(result.SkeletonA)?.Bones)
+        Dim bonesB = If(IsNothing(result.SkeletonB), Nothing, ParseSkeletonMemoized(result.SkeletonB)?.Bones)
         result.SkeletonAName = If(IsNothing(result.SkeletonA), "", ResolveLocalString(result.SkeletonA.RelativeOffset + BaseObjectFieldOffset))
         result.SkeletonBName = If(IsNothing(result.SkeletonB), "", ResolveLocalString(result.SkeletonB.RelativeOffset + BaseObjectFieldOffset))
 

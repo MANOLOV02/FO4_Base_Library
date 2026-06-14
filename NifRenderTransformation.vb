@@ -229,11 +229,19 @@ Public Class Transform_Class
             .M31 = m.M31 / sz, .M32 = m.M32 / sz, .M33 = m.M33 / sz
         }
     End Sub
-    Public Overloads Function Equals(other As Transform_Class, Optional Tolerancia As Single = 0.00001)
+    Public Overloads Function Equals(other As Transform_Class, Optional Tolerancia As Single = 0.00001) As Boolean
         If Math.Abs(Translation.X - other.Translation.X) > Tolerancia Then Return False
         If Math.Abs(Translation.Y - other.Translation.Y) > Tolerancia Then Return False
         If Math.Abs(Translation.Z - other.Translation.Z) > Tolerancia Then Return False
-        If Math.Abs(Scale - other.Scale) > Tolerancia Then Return False
+        ' Compare the per-axis effective scale (Scale · ScaleVector). The scalar Scale alone
+        ' misses non-uniform differences (two transforms differing only in ScaleVector would
+        ' otherwise compare equal). EffectiveScale folds both fields, so a legacy uniform
+        ' transform still matches exactly (ScaleVector = (1,1,1)).
+        Dim s1 = EffectiveScale
+        Dim s2 = other.EffectiveScale
+        If Math.Abs(s1.X - s2.X) > Tolerancia Then Return False
+        If Math.Abs(s1.Y - s2.Y) > Tolerancia Then Return False
+        If Math.Abs(s1.Z - s2.Z) > Tolerancia Then Return False
         Dim rot1 = Matrix33ToBSRotation(Rotation)
         Dim rot2 = Matrix33ToBSRotation(other.Rotation)
         If Math.Abs(rot1.X - rot2.X) > Tolerancia Then Return False
@@ -565,9 +573,11 @@ Public Class Transform_Class
             }
         End If
 
-        ' Translation: t_a + aRotEff^T · b.Translation (row-vector convention; ver comentario en
-        ' análisis de la fórmula original). aRotEff ya absorbió a.Scale y a.ScaleVector,
-        ' por eso b.Translation se pasa directo (sin escalar separadamente por a.Scale).
+        ' Translation: t_a + b.Translation · aRotEff (row-vector convention, consistente con
+        ' ToMatrix4d = S·R·T donde el vector multiplica POR la fila). El cómputo de abajo es
+        ' exactamente eso: out.X = bT·columna0(aRotEff) = bT.X·M11 + bT.Y·M21 + bT.Z·M31, etc.
+        ' aRotEff ya absorbió a.Scale y a.ScaleVector, por eso b.Translation se pasa directo
+        ' (sin escalar separadamente por a.Scale).
         Dim rotatedB As New Numerics.Vector3(
             b.Translation.X * aRotEff.M11 + b.Translation.Y * aRotEff.M21 + b.Translation.Z * aRotEff.M31,
             b.Translation.X * aRotEff.M12 + b.Translation.Y * aRotEff.M22 + b.Translation.Z * aRotEff.M32,

@@ -43,6 +43,8 @@ Public NotInheritable Class RaceBehaviorResolver
 
     Private Shared _kwType As Dictionary(Of UInteger, UInteger)        ' KYWD FormID → TNAM Type
     Private Shared _raceIdentityKw As HashSet(Of UInteger)             ' keywords None-typed declaradas en ALGUNA KWDA de RACE
+    Private Shared _parsedIdles As List(Of IDLE_Data)                  ' TODOS los IDLE parseados UNA vez (tabla global, race-independiente)
+    Private Shared _rbCache As Dictionary(Of UInteger, ResolvedRaceBehavior)  ' ResolveRaceBehavior cacheado por raceFormID
     Private Shared _kwMapsPm As PluginManager                          ' pm con el que se construyeron (rebuild si cambia)
 
     ''' <summary>Construye (una vez por pm) el mapa KYWD→tipo y el set de keywords de IDENTIDAD de raza (None-typed
@@ -68,7 +70,17 @@ Public NotInheritable Class RaceBehaviorResolver
                 If kt.TryGetValue(k, tt) AndAlso tt = KwTypeNone Then ident.Add(k)   ' None-typed ∧ declarada por una raza = identidad
             Next
         Next
-        _kwType = kt : _raceIdentityKw = ident : _kwMapsPm = pm
+        ' Parse de TODOS los records IDLE UNA sola vez (la tabla IDLE es global, no por-raza). ResolveRaceIdles solo
+        ' FILTRA esta lista por condición de raza — evita re-parsear ~3691 IDLE (CTDA) en cada render.
+        Dim idles As New List(Of IDLE_Data)
+        For Each rec In pm.GetRecordsOfType("IDLE")
+            Dim idle As IDLE_Data = Nothing
+            Try : idle = QuestRecordParsers.ParseIDLE(rec, pm) : Catch : Continue For : End Try
+            If idle IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(idle.AnimationFile) Then idles.Add(idle)
+        Next
+        _kwType = kt : _raceIdentityKw = ident : _parsedIdles = idles
+        _rbCache = New Dictionary(Of UInteger, ResolvedRaceBehavior)   ' nuevo pm → invalida el cache de rb
+        _kwMapsPm = pm
     End Sub
 
     ''' <summary>Tipo (TNAM) de una keyword; 0 ('None') si no se conoce. Requiere EnsureKeywordMaps previo.</summary>
@@ -115,7 +127,10 @@ Public NotInheritable Class RaceBehaviorResolver
     ''' <summary>RACE → behavior: project por gender + subgraphs (propios, o heredados vía SRAC + SADD).</summary>
     Public Shared Function ResolveRaceBehavior(raceFormID As UInteger, pm As PluginManager) As ResolvedRaceBehavior
         If raceFormID = 0UI OrElse IsNothing(pm) Then Return Nothing
-        EnsureKeywordMaps(pm)   ' mapas KYWD-type + identidades-de-raza listos para el filtro type-driven de EnumerateClips
+        EnsureKeywordMaps(pm)   ' mapas KYWD-type + identidades-de-raza + parse IDLE (1×/pm) listos para el filtro de EnumerateClips
+        ' Cache por raza: ParseRACE (hasta 2601 subgraphs vía SRAC) + filtro IDLE se hacen UNA vez por raza, no por render.
+        Dim cachedRb As ResolvedRaceBehavior = Nothing
+        If _rbCache IsNot Nothing AndAlso _rbCache.TryGetValue(raceFormID, cachedRb) Then Return cachedRb
         Dim rec = pm.GetRecord(raceFormID)
         If IsNothing(rec) OrElse rec.Header.Signature <> "RACE" Then Return Nothing
         Dim race = RecordParsers.ParseRACE(rec, pm)
@@ -143,8 +158,30 @@ Public NotInheritable Class RaceBehaviorResolver
             result.Subgraphs.AddRange(ResolveRaceSubgraphs(race.SubgraphAdditiveRaceFormID, pm, New HashSet(Of UInteger)()))
             result.SubgraphSource = (result.SubgraphSource & " +SADD:0x" & race.SubgraphAdditiveRaceFormID.ToString("X8")).Trim()
         End If
+        ResolveRaceIdles(result)
+        If _rbCache IsNot Nothing Then _rbCache(raceFormID) = result
         Return result
     End Function
+
+    ''' <summary>Resuelve los patrones IDLE aplicables a la raza (gestos/poses/turns que ningún clip-generator
+    ''' referencia). NO filtra por DNAM acá (eso lo hace el enumerador contra el set COMPLETO de behaviors caminados,
+    ''' que incluye los alcanzados por hkbBehaviorReferenceGenerator). Acá solo gatea por condiciones GetIsRace (CTDA).
+    ''' Categoría = el evento ENAM del propio record (campo autoritativo, sin manipular strings del filename).</summary>
+    Private Shared Sub ResolveRaceIdles(rb As ResolvedRaceBehavior)
+        If _parsedIdles Is Nothing Then Return
+        For Each idle In _parsedIdles   ' parseados 1×/pm en EnsureKeywordMaps — acá SOLO se filtra por raza (barato)
+            ' GetIsRace: si hay condiciones positivas, alguna debe ser esta raza; si hay una negativa para esta raza, excluir.
+            If idle.RaceConditions.Count > 0 Then
+                Dim pos = idle.RaceConditions.Where(Function(c) c.Positive).ToList()
+                If idle.RaceConditions.Any(Function(c) Not c.Positive AndAlso c.RaceFormID = rb.RaceFormID) Then Continue For
+                If pos.Count > 0 AndAlso Not pos.Any(Function(c) c.RaceFormID = rb.RaceFormID) Then Continue For
+            End If
+            rb.IdleAnimations.Add(New RaceIdleAnimation With {
+                .GnamPattern = idle.AnimationFile,
+                .Category = If(idle.AnimationEvent, ""),
+                .DnamBasename = If(String.IsNullOrWhiteSpace(idle.BehaviorGraph), "", System.IO.Path.GetFileNameWithoutExtension(idle.BehaviorGraph))})
+        Next
+    End Sub
 
     ' Subgraphs de una raza referenciada por SRAC/SADD: propios, o recursivamente su propio SRAC.
     Private Shared Function ResolveRaceSubgraphs(raceFormID As UInteger, pm As PluginManager, visited As HashSet(Of UInteger)) As List(Of RACE_SubgraphData)
@@ -180,6 +217,9 @@ Public Class ResolvedRaceBehavior
     Public ReadOnly Property ActorKeywords As New List(Of UInteger)
     ''' <summary>Diagnóstico: "own" / "SRAC:0x… +SADD:0x…" — de dónde salieron los subgraphs.</summary>
     Public Property SubgraphSource As String = ""
+    ''' <summary>Patrones IDLE.GNAM aplicables a esta raza (DNAM ∈ behaviors de la raza ∧ no excluida por GetIsRace).
+    ''' El enumerador los expande ($(Subgraph)→carpetas SAPT, *→glob) para mapear el pool de gestos/poses/turns.</summary>
+    Public ReadOnly Property IdleAnimations As New List(Of RaceIdleAnimation)
 
     ''' <summary>Project .hkx del gender resuelto (fallback al otro gender si falta).</summary>
     Public ReadOnly Property Project As String
@@ -215,4 +255,13 @@ Public Class ResolvedRaceBehavior
         If p.EndsWith(".hkt", StringComparison.OrdinalIgnoreCase) Then Return p.Substring(0, p.Length - 4) & ".hkx"
         Return p
     End Function
+End Class
+
+''' <summary>Un patrón IDLE.GNAM + el evento ENAM (categoría, campo del record) + el basename del DNAM (behavior).
+''' El enumerador expande GnamPattern ($(Subgraph)→carpetas SAPT, *→glob) gateando los patrones $(Subgraph) por
+''' DnamBasename ∈ behaviors REALMENTE caminados.</summary>
+Public Class RaceIdleAnimation
+    Public Property GnamPattern As String = ""
+    Public Property Category As String = ""      ' = IDLE.ENAM (Animation Event), campo autoritativo del record
+    Public Property DnamBasename As String = ""  ' = basename de IDLE.DNAM (Behavior Graph), "" si no tiene
 End Class

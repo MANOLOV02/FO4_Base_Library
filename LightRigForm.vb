@@ -50,6 +50,9 @@ Partial Public Class LightRigForm
         nudB_L.Value = Config_App.Current.Setting_Lightrig.BackLight.Left : nudB_R.Value = Config_App.Current.Setting_Lightrig.BackLight.Right
         nudB_F.Value = Config_App.Current.Setting_Lightrig.BackLight.Forward : nudB_B.Value = Config_App.Current.Setting_Lightrig.BackLight.Back
 
+        ' Background color picker (handler is wired later in AddHandlers, so this init does not fire it)
+        cmbBackground.Rellena()
+        cmbBackground.SelectedColor = Config_App.Current.Setting_BackColor
 
         VolcarUIenModelo()
     End Sub
@@ -70,6 +73,15 @@ Partial Public Class LightRigForm
             nudB_U, nudB_D, nudB_L, nudB_R, nudB_F, nudB_B}
             AddHandler nud.ValueChanged, nudChanged
         Next
+
+        AddHandler cmbBackground.SelectedIndexChanged, AddressOf BackgroundChanged
+    End Sub
+
+    Private Sub BackgroundChanged(sender As Object, e As EventArgs)
+        If _preventchanges = False Then
+            Config_App.Current.Setting_BackColorName = cmbBackground.SelectedColor.Name
+            RaiseEvent LightsChanged()
+        End If
     End Sub
 
     Private Sub SliderChanged(sender As Object, e As EventArgs)

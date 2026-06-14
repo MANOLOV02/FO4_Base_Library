@@ -237,7 +237,19 @@ Public Class PluginReader
         Dim output(CInt(uncompressedSize) - 1) As Byte
         Dim inflater As New Inflater()
         inflater.SetInput(compressedData)
-        inflater.Inflate(output)
+        ' Inflater.Inflate may not fill the buffer in one call — loop until the full
+        ' uncompressedSize is produced (or the stream finishes / stalls). A short inflate
+        ' means the record's ZLIB payload is corrupt or truncated.
+        Dim total As Integer = 0
+        While total < output.Length AndAlso Not inflater.IsFinished
+            Dim n = inflater.Inflate(output, total, output.Length - total)
+            If n = 0 Then Exit While
+            total += n
+        End While
+        If total <> output.Length Then
+            Throw New InvalidDataException(
+                $"Short inflate of compressed record: expected {output.Length} bytes, got {total} (corrupt or truncated data)")
+        End If
         Return output
     End Function
 End Class

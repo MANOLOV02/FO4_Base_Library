@@ -177,8 +177,22 @@ Public Class SkeletonInstance
     ''' la cache las capas ya están finales.</para>
     ''' <para>Huesos en <see cref="SkeletonDictionary"/> pero NO alcanzables desde
     ''' <see cref="SkeletonStructure"/> quedan fuera de la cache → el caller (RecomputeGPUBoneMatrices)
-    ''' cae al camino recursivo para ellos (fallback seguro).</para></summary>
+    ''' cae al camino recursivo para ellos (fallback seguro).</para>
+    ''' <para><b>Contrato de threading (INVARIANTE — leer antes de tocar el lock)</b>: la
+    ''' construcción toma <c>_lock</c> (abajo), pero los consumidores leen
+    ''' <see cref="SkeletonDictionary"/> y el cache resultante SIN lock — el resolver serial las
+    ''' resuelve por mesh y el <c>Parallel.ForEach</c> de la pose sólo lee
+    ''' (<c>SkinningHelper.RecomputeGPUBoneMatrices</c> → <c>CachedBindMount</c>/<c>CachedDisplay</c>,
+    ''' y <c>Render.PipelineStep_*</c>). La seguridad descansa en una invariante por convención:
+    ''' <b>toda mutación del esqueleto (ApplyPose / ApplyBoneMorphPose / mount / inyección de
+    ''' cloth-bones) y la construcción de esta cache COMPLETAN antes de que arranque cualquier
+    ''' lectura de render</b>. No hay solapamiento mutación↔lectura, por eso los lectores no toman
+    ''' lock. NO agregar locks en el lado lector (riesgo de perf/deadlock); preservar este orden
+    ''' build-then-read es lo que mantiene la corrección.</para></summary>
     Friend Function BuildGlobalTransformCacheForRenderPass() As SkeletonGlobalTransformCache
+        ' INVARIANTE de threading: ver el <summary> arriba. El _lock acá serializa builds concurrentes,
+        ' pero los lectores (render pass) corren lock-free confiando en "toda mutación + esta build
+        ' completan antes de leer". No agregar locks en los read sites.
         SyncLock _lock
             Dim cache As New SkeletonGlobalTransformCache(SkeletonDictionary.Count)
             Dim queue As New Queue(Of HierarchiBone_class)
@@ -331,13 +345,73 @@ Public Class SkeletonInstance
                         Skeleton.Load_Manolo(skel.GetBytes)
                     End If
                 End If
-                Return BuildSkeletonStructure()
+                Dim built = BuildSkeletonStructure()
+                If built Then
+                    Dim siblingHkx = TryResolveConfiguredSkeletonHkxBytes()
+                    If siblingHkx IsNot Nothing AndAlso siblingHkx.Length > 0 Then
+                        Dim merged = MergeHkxSkeleton(siblingHkx)
+                        Logger.LogLazy(Function() $"[SKEL-HKX] LoadFromConfig merged sibling skeleton.hkx: {merged} bone(s) re-positioned/added.")
+                    End If
+                End If
+                Return built
             Catch ex As Exception
                 Skeleton = Nothing
                 InjectedBones.Clear()
                 Return False
             End Try
         End SyncLock
+    End Function
+
+    ''' <summary>Resolves the animation skeleton.hkx that sits next to the configured skeleton NIF
+    ''' (<see cref="Config_App.SkeletonFilePath"/>), mirroring the resolver used by the Wardrobe Manager
+    ''' pose importer. Candidates: the skeleton path with extension changed to .hkx, then a sibling
+    ''' "skeleton.hkx" in the same folder. Each candidate is tried as a loose file first, then via the
+    ''' data-relative <see cref="FilesDictionary_class.Dictionary"/> (BA2/loose). Returns the HKX bytes or
+    ''' Nothing if none resolves. Any failure is swallowed (returns Nothing): the caller falls back to the
+    ''' pure-NIF skeleton.</summary>
+    Private Shared Function TryResolveConfiguredSkeletonHkxBytes() As Byte()
+        Try
+            Dim skeletonNif = Config_App.Current.SkeletonFilePath
+            If String.IsNullOrWhiteSpace(skeletonNif) Then Return Nothing
+
+            Dim candidates As New List(Of String)
+            candidates.Add(IO.Path.ChangeExtension(skeletonNif, ".hkx"))
+            Dim skeletonDir = IO.Path.GetDirectoryName(skeletonNif)
+            If String.IsNullOrWhiteSpace(skeletonDir) = False Then candidates.Add(IO.Path.Combine(skeletonDir, "skeleton.hkx"))
+
+            Dim dataRoot = Config_App.Current.FO4EDataPath
+            Dim seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            For Each candidate In candidates
+                If String.IsNullOrWhiteSpace(candidate) OrElse seen.Add(candidate) = False Then Continue For
+
+                If IO.File.Exists(candidate) Then
+                    Dim bytes = IO.File.ReadAllBytes(candidate)
+                    Logger.LogLazy(Function() $"[SKEL-HKX] resolved loose sibling skeleton.hkx '{candidate}' ({If(bytes Is Nothing, 0, bytes.Length)} bytes).")
+                    Return bytes
+                End If
+
+                If String.IsNullOrWhiteSpace(dataRoot) Then Continue For
+                Dim rel As String = ""
+                Dim fullPath = IO.Path.GetFullPath(candidate)
+                Dim fullRoot = IO.Path.GetFullPath(dataRoot)
+                If fullPath.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase) Then
+                    rel = IO.Path.GetRelativePath(fullRoot, fullPath).Correct_Path_Separator
+                End If
+                If String.IsNullOrEmpty(rel) Then Continue For
+
+                Dim location As FilesDictionary_class.File_Location = Nothing
+                If FilesDictionary_class.Dictionary.TryGetValue(rel, location) AndAlso location IsNot Nothing Then
+                    Dim bytes = location.GetBytes()
+                    If bytes IsNot Nothing AndAlso bytes.Length > 0 Then
+                        Logger.LogLazy(Function() $"[SKEL-HKX] resolved dictionary sibling skeleton.hkx '{rel}' ({bytes.Length} bytes).")
+                        Return bytes
+                    End If
+                End If
+            Next
+            Return Nothing
+        Catch
+            Return Nothing
+        End Try
     End Function
 
     Private Function BuildSkeletonStructure() As Boolean
@@ -440,15 +514,17 @@ Public Class SkeletonInstance
         End SyncLock
     End Function
 
-    ''' <summary>Hace AUTORITATIVO al HKX de animación (skeleton.hkx) sobre los huesos COMPARTIDOS del
-    ''' skeleton base: cada hueso que existe en el render-NIF Y en el HKX se RE-POSICIONA al world del HKX
-    ''' (no-op cuando NIF==HKX = 100/113 razas; flipea oddballs como Behemoth/Turret a la orientación del
-    ''' HKX, que es la correcta). NO agrega los huesos solo-HKX: el dato (--mountvalidate) muestra que el
-    ''' ensamblaje real del robot está 7–18u LEJOS de CreateABot ⇒ los chunk-bones del HKX NO son la posición
-    ''' de render (la define el socket+mount); y Weapon/IK son inertes. hkxBytes Nothing/vacío → no-op
-    ''' (fallback NIF puro, ej. Wardrobe Manager). El skeleton de animación se elige porque su root existe en
-    ''' el NIF base (el de ragdoll, 'Ragdoll_*', nunca). Ver [[arch_race_behavior_resolution]] / [[arch_mountdelta]].</summary>
-    ''' <returns>Cantidad de huesos compartidos re-posicionados al world del HKX (0 si no hay HKX/anim skel).</returns>
+    ''' <summary>Hace AUTORITATIVO al HKX de animación (skeleton.hkx) sobre el skeleton base, en dos pasadas:
+    ''' <para>Pass A — COMPARTIDOS: cada hueso que existe en el render-NIF Y en el HKX se RE-POSICIONA al world
+    ''' del HKX (no-op cuando NIF==HKX = 100/113 razas; flipea oddballs como Behemoth/Turret a la orientación
+    ''' del HKX, que es la correcta).</para>
+    ''' <para>Pass B — SOLO-HKX: AGREGA todos los huesos que el HKX define y el NIF no tiene (Weapon/IK +
+    ''' chunk-bones de robot + connect-points 'C-'), colgando de su padre HKX en el bind ensamblado. Esto deja
+    ''' presentes los huesos solo-HKX para que la importación de pose los bindee nativamente.</para>
+    ''' hkxBytes Nothing/vacío → no-op (fallback NIF puro). El skeleton de animación se elige porque su root
+    ''' existe en el NIF base (el de ragdoll, 'Ragdoll_*', nunca).
+    ''' Ver [[arch_race_behavior_resolution]] / [[arch_mountdelta]].</summary>
+    ''' <returns>Cantidad de huesos re-posicionados (Pass A) más agregados (Pass B); 0 si no hay HKX/anim skel.</returns>
     Public Function MergeHkxSkeleton(hkxBytes As Byte()) As Integer
         If hkxBytes Is Nothing OrElse hkxBytes.Length = 0 Then Return 0
 

@@ -390,10 +390,31 @@ Public Class HkxPackfile_Class
         Return Sections(index)
     End Function
 
+    ' Lazily-built lookup keyed by EntryRelativeOffset AND StringRelativeOffset, mapping each
+    ' offset value to the FIRST ClassNames entry (in list order) matching it by either field.
+    ' Replaces a per-object linear FirstOrDefault scan (HKX-010); returns the identical entry
+    ' FirstOrDefault would have returned. Built on first use because ClassNames is populated
+    ' during parsing and is stable thereafter.
+    Private _classNameByOffset As Dictionary(Of Integer, HkxClassNameEntry_Class)
+
     Public Function GetClassName(sectionIndex As Integer, entryRelativeOffset As Integer) As HkxClassNameEntry_Class
         Dim section = GetSection(sectionIndex)
         If IsNothing(section) OrElse Not section.Name.Equals("__classnames__", StringComparison.OrdinalIgnoreCase) Then Return Nothing
-        Return ClassNames.FirstOrDefault(Function(pf) pf.EntryRelativeOffset = entryRelativeOffset OrElse pf.StringRelativeOffset = entryRelativeOffset)
+
+        If _classNameByOffset Is Nothing Then
+            Dim lookup As New Dictionary(Of Integer, HkxClassNameEntry_Class)
+            For Each entry In ClassNames
+                ' TryAdd keeps the earliest entry in list order for each offset value, matching
+                ' FirstOrDefault's behavior. An entry registers under both its offsets.
+                lookup.TryAdd(entry.EntryRelativeOffset, entry)
+                lookup.TryAdd(entry.StringRelativeOffset, entry)
+            Next
+            _classNameByOffset = lookup
+        End If
+
+        Dim result As HkxClassNameEntry_Class = Nothing
+        If _classNameByOffset.TryGetValue(entryRelativeOffset, result) Then Return result
+        Return Nothing
     End Function
 End Class
 

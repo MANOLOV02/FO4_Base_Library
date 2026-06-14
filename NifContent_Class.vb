@@ -342,6 +342,68 @@ Public Class Nifcontent_Class_Manolo
         Next
     End Sub
 
+    ''' <summary>Copia el/los BSClothExtraData del root de <paramref name="srcNif"/> al root de Me.
+    ''' Versión NO-interactiva (sin MsgBox) e IDEMPOTENTE de <see cref="CloneRootClothExtraData"/>:
+    ''' si Me ya tiene un BSClothExtraData en el root, no hace nada. La usa el FaceGen bake para
+    ''' preservar el cloth-physics del pelo (CloneShape_Original no transfiere el cloth extradata
+    ''' porque es extradata del ROOT, no de la shape). El bloque es un blob HKX self-contained
+    ''' (refs por índice a su propio hkaSkeleton), así que clonarlo tal cual es válido en el destino.</summary>
+    Public Sub TransferRootClothExtraDataFrom(srcNif As Nifcontent_Class_Manolo)
+        If srcNif Is Nothing Then Exit Sub
+        Dim destRoot = Me.GetRootNode()
+        If IsNothing(destRoot) Then Exit Sub
+
+        Dim sourceCloth = srcNif.Blocks.OfType(Of BSClothExtraData).ToList()
+        If sourceCloth.Count = 0 Then Exit Sub
+
+        ' Idempotente: si el root del destino ya tiene cloth, no duplicar.
+        Dim destCloth = GetRootExtraData(destRoot, Me).OfType(Of BSClothExtraData).ToList()
+        If destCloth.Count > 0 Then Exit Sub
+
+        If IsNothing(destRoot.ExtraDataList) Then destRoot.ExtraDataList = New NiBlockRefArray(Of NiExtraData)
+        For Each srcCloth In sourceCloth
+            Dim cloned = TryCast(srcCloth.Clone(), BSClothExtraData)
+            If IsNothing(cloned) Then Continue For
+            If Not IsNothing(cloned.NextExtraData) Then cloned.NextExtraData.Clear()
+            Dim blockId = Me.AddBlock(cloned)
+            destRoot.ExtraDataList.AddBlockRef(blockId)
+            If IsNothing(destRoot.ExtraData) Then
+                destRoot.ExtraData = New NiBlockRef(Of NiExtraData) With {.Index = blockId}
+            End If
+        Next
+    End Sub
+
+    ''' <summary>Preserva el/los BSEyeCenterExtraData('ECED') de la shape <paramref name="srcShape"/>
+    ''' (en <paramref name="srcNif"/>) copiándolos al ExtraDataList de <paramref name="destShape"/> (en Me).
+    ''' CloneShape no transfiere el extradata de la shape; CK SÍ lo preserva (el iris MaleEyes.nif trae
+    ''' un ECED con Data constante; FemaleEyes.nif NO → female no recibe = CK). Idempotente: si la
+    ''' dest-shape ya tiene un ECED no duplica. Source-driven → gender/parte correctos solos.
+    ''' Ver reference_facegen_ck_must_come_from_ba2 (#c ECED).</summary>
+    Public Sub TransferShapeEyeCenterExtraData(srcNif As Nifcontent_Class_Manolo, srcShape As INiShape, destShape As INiShape)
+        If srcNif Is Nothing OrElse srcShape Is Nothing OrElse destShape Is Nothing Then Exit Sub
+        Dim srcAv = TryCast(srcShape, NiAVObject)
+        Dim destAv = TryCast(destShape, NiAVObject)
+        If srcAv Is Nothing OrElse destAv Is Nothing OrElse srcAv.ExtraDataList Is Nothing Then Exit Sub
+
+        ' Idempotente: si la dest-shape ya tiene un ECED, no duplicar.
+        If destAv.ExtraDataList IsNot Nothing Then
+            For Each di In destAv.ExtraDataList.Indices
+                If di >= 0 AndAlso di < Blocks.Count AndAlso TypeOf Blocks(di) Is BSEyeCenterExtraData Then Exit Sub
+            Next
+        End If
+
+        For Each si In srcAv.ExtraDataList.Indices
+            If si < 0 OrElse si >= srcNif.Blocks.Count Then Continue For
+            Dim ece = TryCast(srcNif.Blocks(si), BSEyeCenterExtraData)
+            If ece Is Nothing Then Continue For
+            Dim cloned = TryCast(ece.Clone(), BSEyeCenterExtraData)
+            If cloned Is Nothing Then Continue For
+            Dim blockId = Me.AddBlock(cloned)
+            If destAv.ExtraDataList Is Nothing Then destAv.ExtraDataList = New NiBlockRefArray(Of NiExtraData)
+            destAv.ExtraDataList.AddBlockRef(blockId)
+        Next
+    End Sub
+
     Private Shared Iterator Function GetRootExtraData(root As NiNode, nif As Nifcontent_Class_Manolo) As IEnumerable(Of NiExtraData)
         If IsNothing(root) OrElse IsNothing(nif) Then Return
 
@@ -375,6 +437,32 @@ Public Class Nifcontent_Class_Manolo
         End If
 
         Dim destShape = Me.CloneShape(srcShape, destShapeName, srcNif)
+
+        ' Preservar el ExtraDataList de la shape (REGLA GENERAL, no solo ECED). NiflySharp.CloneShape
+        ' hace srcShape.Clone() que copia las REFS del ExtraDataList (índices) pero NO re-clona los
+        ' BLOQUES cross-file → las refs apuntan a bloques del NIF source, quedan colgando en el destino
+        ' y se pierden (RemoveUnreferencedBlocks las evicta). Verificado: el BSEyeCenterExtraData('ECED')
+        ' de los ojos desaparecía. Afecta a TODO consumidor de CloneShape_Original (FaceGen bake, WM
+        ' Merge_Shapes/SplitShape). Re-clonamos cada NiExtraData del source a Me y re-referenciamos,
+        ' preservando el orden. Solo cross-file (same-file las refs ya son válidas). Las flags
+        ' (NiAVObject.Flags) ya las preserva Clone(); el BSClothExtraData es root-level (aparte).
+        If destShape IsNot Nothing AndAlso Not Object.ReferenceEquals(srcNif, Me) Then
+            Dim srcAvEd = TryCast(srcShape, NiAVObject)
+            Dim destAvEd = TryCast(destShape, NiAVObject)
+            If srcAvEd IsNot Nothing AndAlso destAvEd IsNot Nothing AndAlso srcAvEd.ExtraDataList IsNot Nothing Then
+                Dim rebuilt As New NiBlockRefArray(Of NiExtraData)
+                For Each si In srcAvEd.ExtraDataList.Indices
+                    If si < 0 OrElse si >= srcNif.Blocks.Count Then Continue For
+                    Dim ed = TryCast(srcNif.Blocks(si), NiExtraData)
+                    If ed Is Nothing Then Continue For
+                    Dim clonedEd = TryCast(ed.Clone(), NiExtraData)
+                    If clonedEd Is Nothing Then Continue For
+                    If Not IsNothing(clonedEd.NextExtraData) Then clonedEd.NextExtraData.Clear()
+                    rebuilt.AddBlockRef(Me.AddBlock(clonedEd))
+                Next
+                destAvEd.ExtraDataList = rebuilt
+            End If
+        End If
 
         ' Cross-file clone: NiflySharp.NifFile.CloneShape parents the cloned shape to destRoot
         ' (NifFile.cs:758-762), losing intermediate NiNodes between srcShape and srcRoot. Para

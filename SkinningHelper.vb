@@ -1041,6 +1041,12 @@ Public Class SkinningHelper
             If geo.BoneMatsPose Is Nothing OrElse geo.BoneMatsPose.Length <> bones.Length Then
                 ReDim geo.BoneMatsPose(bones.Length - 1)
             End If
+            ' Threading contract (lock-free read): SkeletonDictionary y globalCache se leen aquí SIN
+            ' lock. Es seguro por la invariante documentada en
+            ' SkeletonInstance.BuildGlobalTransformCacheForRenderPass: toda mutación del esqueleto y
+            ' la construcción de la cache COMPLETAN antes de que arranque este render pass, así que no
+            ' hay solapamiento mutación↔lectura. No agregar locks acá (riesgo perf/deadlock); el
+            ' contrato a preservar es el orden build-then-read del caller.
             For k = 0 To bones.Length - 1
                 Dim localT = boneTrans(k)
                 Dim boneName = bones(k).Name.String

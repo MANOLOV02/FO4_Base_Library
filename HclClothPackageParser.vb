@@ -45,8 +45,14 @@ Public NotInheritable Class HclClothPackageParser_Class
             result.Skeleton = graph.ParseSkeleton(skeletonObject)
         End If
 
+        ' HKX-008 — un único memo de collidables por pasada de Parse: lo comparten el parseo a nivel
+        ' package (acá) y el parseo por-sim (ParseSimClothData más abajo), de modo que cada hclCollidable
+        ' se parsea UNA vez aunque esté a nivel package y/o referenciado por varios sims. Keyed por
+        ' RelativeOffset (identidad canónica del objeto en el grafo). Ver nota en ParseCollidable.
+        Dim collidableCache As New Dictionary(Of Integer, HclCollidableDetail_Class)
+
         Dim collidables = graph.GetObjectsByClassName("hclCollidable").
-            Select(Function(obj) HclStructuredGraphParser_Class.ParseCollidable(graph, obj)).
+            Select(Function(obj) HclStructuredGraphParser_Class.ParseCollidable(graph, obj, collidableCache)).
             Where(Function(detail) Not IsNothing(detail)).
             ToList()
         result.Collidables.AddRange(collidables)
@@ -61,73 +67,83 @@ Public NotInheritable Class HclClothPackageParser_Class
             Dim clothData = graph.ParseClothData(clothObject)
             If IsNothing(clothData) Then Continue For
 
-            Dim clothConfig As New HclClothConfigGraph_Class With {
-                .ClothData = clothData
-            }
+            ' Degradación per-cloth-config: los readers HCL ahora LANZAN (InvalidDataException) en vez
+            ' de devolver ceros silenciosos cuando un offset empírico cae fuera de rango (HKX-002/HKX-009).
+            ' Si UNA config explota por un layout inesperado, se loguea y se omite ESA config — el resto
+            ' del package se sigue parseando (no se pierde todo). Mismo patrón de degradación que el
+            ' consumidor app-level (PhysicsWeightCollapseHelper) ya aplica alrededor de Parse().
+            Try
+                Dim clothConfig As New HclClothConfigGraph_Class With {
+                    .ClothData = clothData
+                }
 
-            clothConfig.SimClothDatas.AddRange(
-                clothData.SimClothDatas.
-                    Select(Function(obj) HclStructuredGraphParser_Class.ParseSimClothData(graph, obj)).
-                    Where(Function(detail) Not IsNothing(detail)))
+                clothConfig.SimClothDatas.AddRange(
+                    clothData.SimClothDatas.
+                        Select(Function(obj) HclStructuredGraphParser_Class.ParseSimClothData(graph, obj, collidableCache)).
+                        Where(Function(detail) Not IsNothing(detail)))
 
-            clothConfig.BufferDefinitions.AddRange(
-                clothData.BufferDefinitions.
-                    Select(Function(obj)
-                               If obj.ClassName.Equals("hclScratchBufferDefinition", StringComparison.OrdinalIgnoreCase) Then
-                                   Return Nothing
-                               End If
-                               Return HclStructuredGraphParser_Class.ParseBufferDefinition(graph, obj)
-                           End Function).
-                    Where(Function(detail) Not IsNothing(detail)))
+                clothConfig.BufferDefinitions.AddRange(
+                    clothData.BufferDefinitions.
+                        Select(Function(obj)
+                                   If obj.ClassName.Equals("hclScratchBufferDefinition", StringComparison.OrdinalIgnoreCase) Then
+                                       Return Nothing
+                                   End If
+                                   Return HclStructuredGraphParser_Class.ParseBufferDefinition(graph, obj)
+                               End Function).
+                        Where(Function(detail) Not IsNothing(detail)))
 
-            clothConfig.ScratchBufferDefinitions.AddRange(
-                clothData.BufferDefinitions.
-                    Select(Function(obj) HclStructuredGraphParser_Class.ParseScratchBufferDefinition(graph, obj)).
-                    Where(Function(detail) Not IsNothing(detail)))
+                clothConfig.ScratchBufferDefinitions.AddRange(
+                    clothData.BufferDefinitions.
+                        Select(Function(obj) HclStructuredGraphParser_Class.ParseScratchBufferDefinition(graph, obj)).
+                        Where(Function(detail) Not IsNothing(detail)))
 
-            clothConfig.TransformSets.AddRange(
-                clothData.TransformSetDefinitions.
-                    Select(Function(obj) HclRenderGraphParser_Class.ParseTransformSetDefinition(graph, obj)).
-                    Where(Function(detail) Not IsNothing(detail)))
+                clothConfig.TransformSets.AddRange(
+                    clothData.TransformSetDefinitions.
+                        Select(Function(obj) HclRenderGraphParser_Class.ParseTransformSetDefinition(graph, obj)).
+                        Where(Function(detail) Not IsNothing(detail)))
 
-            For Each op In clothData.Operators
-                Select Case NormalizeOperatorClassName(op.ClassName)
-                    Case "hclobjectspaceskinpnoperator"
-                        clothConfig.ObjectSpaceSkin = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
-                        PopulateSkinBoneNames(clothConfig.ObjectSpaceSkin, result.Skeleton)
-                    Case "hclmoveparticlesoperator"
-                        clothConfig.MoveParticles = HclStructuredGraphParser_Class.ParseMoveParticlesOperator(graph, op)
-                    Case "hclsimulateoperator"
-                        clothConfig.Simulate = HclStructuredGraphParser_Class.ParseSimulateOperator(graph, op)
-                    Case "hclsimplemeshbonedeformoperator"
-                        clothConfig.SimpleMeshBoneDeform = HclRenderGraphParser_Class.ParseSimpleMeshBoneDeformOperator(graph, op, result.Skeleton)
-                    Case "hclcopyverticesoperator"
-                        clothConfig.CopyVertices = HclStructuredGraphParser_Class.ParseCopyVerticesOperator(graph, op)
-                    Case "hclgatherallverticesoperator"
-                        clothConfig.GatherAllVertices = HclStructuredGraphParser_Class.ParseGatherAllVerticesOperator(graph, op)
-                    Case "hclgathersomeverticesoperator"
-                        clothConfig.GatherSomeVertices = HclStructuredGraphParser_Class.ParseGatherSomeVerticesOperator(graph, op)
-                    Case Else
-                        clothConfig.UnknownOperators.Add(op)
-                End Select
-            Next
+                For Each op In clothData.Operators
+                    Select Case NormalizeOperatorClassName(op.ClassName)
+                        Case "hclobjectspaceskinpnoperator"
+                            clothConfig.ObjectSpaceSkin = HclRenderGraphParser_Class.ParseObjectSpaceSkinPNOperator(graph, op)
+                            PopulateSkinBoneNames(clothConfig.ObjectSpaceSkin, result.Skeleton)
+                        Case "hclmoveparticlesoperator"
+                            clothConfig.MoveParticles = HclStructuredGraphParser_Class.ParseMoveParticlesOperator(graph, op)
+                        Case "hclsimulateoperator"
+                            clothConfig.Simulate = HclStructuredGraphParser_Class.ParseSimulateOperator(graph, op)
+                        Case "hclsimplemeshbonedeformoperator"
+                            clothConfig.SimpleMeshBoneDeform = HclRenderGraphParser_Class.ParseSimpleMeshBoneDeformOperator(graph, op, result.Skeleton)
+                        Case "hclcopyverticesoperator"
+                            clothConfig.CopyVertices = HclStructuredGraphParser_Class.ParseCopyVerticesOperator(graph, op)
+                        Case "hclgatherallverticesoperator"
+                            clothConfig.GatherAllVertices = HclStructuredGraphParser_Class.ParseGatherAllVerticesOperator(graph, op)
+                        Case "hclgathersomeverticesoperator"
+                            clothConfig.GatherSomeVertices = HclStructuredGraphParser_Class.ParseGatherSomeVerticesOperator(graph, op)
+                        Case Else
+                            clothConfig.UnknownOperators.Add(op)
+                    End Select
+                Next
 
-            clothConfig.ClothStates.AddRange(
-                clothData.ClothStates.
-                    Select(Function(obj) HclStructuredGraphParser_Class.ParseClothState(graph, obj)).
-                    Where(Function(detail) Not IsNothing(detail)))
-            PopulateStateOperatorLinks(clothConfig)
-            PopulateStateAccessLinks(clothConfig, result.Skeleton)
-            PopulateResolvedMoveParticles(clothConfig)
-            PopulateResolvedCollidableBindings(clothConfig, result.Skeleton)
-            PopulateResolvedSimulateConfigs(clothConfig)
-            PopulateResolvedBendTopology(clothConfig)
-            PopulateResolvedTriangles(clothConfig)
-            PopulateSkinCoverage(clothConfig)
-            PopulateSkinDefaultPoseMatches(clothConfig)
-            PopulateResolvedVolumeConstraintLinks(clothConfig)
+                clothConfig.ClothStates.AddRange(
+                    clothData.ClothStates.
+                        Select(Function(obj) HclStructuredGraphParser_Class.ParseClothState(graph, obj)).
+                        Where(Function(detail) Not IsNothing(detail)))
+                PopulateStateOperatorLinks(clothConfig)
+                PopulateStateAccessLinks(clothConfig, result.Skeleton)
+                PopulateResolvedMoveParticles(clothConfig)
+                PopulateResolvedCollidableBindings(clothConfig, result.Skeleton)
+                PopulateResolvedSimulateConfigs(clothConfig)
+                PopulateResolvedBendTopology(clothConfig)
+                PopulateResolvedTriangles(clothConfig)
+                PopulateSkinCoverage(clothConfig)
+                PopulateSkinDefaultPoseMatches(clothConfig)
+                PopulateResolvedVolumeConstraintLinks(clothConfig)
 
-            result.ClothConfigs.Add(clothConfig)
+                result.ClothConfigs.Add(clothConfig)
+            Catch ex As Exception
+                Dim clothName = clothData.Name
+                Logger.LogLazy(Function() $"[CLOTH-HCL] se omite hclClothData '{clothName}' (offset +0x{clothObject.RelativeOffset:X}): el parseo lanzó {ex.GetType().Name}: {ex.Message}")
+            End Try
         Next
 
         result.ConstraintSets.AddRange(

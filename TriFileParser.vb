@@ -327,7 +327,17 @@ Public Module TriHeadParser
                     Dim deltas(CInt(numVertices) - 1) As Vector3
                     For k = 0 To CInt(blockLength) - 1
                         Dim vertIdx = CInt(affectedIndices(k))
-                        If modVertsIndex >= modVertsPool.Length Then Exit For
+                        If modVertsIndex >= modVertsPool.Length Then
+                            ' Pool underflow: the mod-vert pool (numModVertices) is exhausted before this
+                            ' modifier's affected-index list is consumed. Surfaces a corrupt/misparsed
+                            ' FRTRI003 instead of silently yielding a partial (wrong) mod-morph.
+                            Dim capturedName = morphName
+                            Dim capturedMod = i
+                            Dim capturedK = k
+                            Dim capturedBlock = CInt(blockLength)
+                            Logger.LogLazy(Function() $"[TRI] FRTRI003 mod-morph pool underflow: modifier #{capturedMod} '{capturedName}' ran out of modVertsPool ({modVertsPool.Length} verts) at affected-index {capturedK}/{capturedBlock}; remaining deltas dropped.")
+                            Exit For
+                        End If
                         If vertIdx >= 0 AndAlso vertIdx < numVertices Then
                             deltas(vertIdx) = modVertsPool(modVertsIndex) - baseVerts(vertIdx)
                         End If

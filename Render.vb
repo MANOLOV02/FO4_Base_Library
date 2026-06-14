@@ -692,8 +692,16 @@ Public Class PreviewControl
             ' PipelineStep_Skeleton (inyección, arriba) y de que la app aplicó pose/morph/mount → capas
             ' finales. WM: 1 instancia (Default). NPC: base + clones por-ARMA (vía resolver).
             Dim globalCaches As New Dictionary(Of SkeletonInstance, SkeletonGlobalTransformCache)
+            ' Resolve each mesh's SkeletonInstance ONCE here (serial), then read it back in the
+            ' parallel body below. This removes the redundant per-mesh ResolveFor call inside the
+            ' Parallel.ForEach (which also dropped the implicit thread-safety requirement on custom
+            ' resolvers). Stores the raw resolver result (may be Nothing) — the parallel body folds
+            ' Nothing → Default for the cache lookup exactly as before.
+            Dim resolvedSkels As New Dictionary(Of RenderableMesh, SkeletonInstance)
             For Each mesh In dirtyMeshes
-                Dim inst As SkeletonInstance = If(intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape), SkeletonInstance.Default)
+                Dim resolved As SkeletonInstance = intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape)
+                resolvedSkels(mesh) = resolved
+                Dim inst As SkeletonInstance = If(resolved, SkeletonInstance.Default)
                 If inst IsNot Nothing AndAlso Not globalCaches.ContainsKey(inst) Then
                     globalCaches(inst) = inst.BuildGlobalTransformCacheForRenderPass()
                 End If
@@ -705,9 +713,16 @@ Public Class PreviewControl
             ' (memoria distinta por mesh) y leen el SkeletonInstance read-only (GetGlobalTransform
             ' recompone y devuelve objetos nuevos, no muta). Orden por-mesh recompute→bounds
             ' preservado (bounds lee el PerVertexSkinMatrix que recompute acaba de poblar).
+            ' Threading contract (lock-free read): este Parallel.ForEach lee globalCaches /
+            ' SkeletonInstance.SkeletonDictionary SIN lock. Es seguro por la invariante de
+            ' SkeletonInstance.BuildGlobalTransformCacheForRenderPass: toda mutación del esqueleto
+            ' (pose/morph/mount/inyección) y la construcción de las caches (serial, arriba) COMPLETAN
+            ' antes de esta lectura → sin solapamiento mutación↔lectura. No agregar locks acá.
             Parallel.ForEach(dirtyMeshes,
                 Sub(mesh)
-                    Dim meshSkel As SkeletonInstance = intent.SkeletonResolver?.ResolveFor(mesh.MeshData.Shape)
+                    ' Read the SkeletonInstance resolved once in the serial pre-pass (no ResolveFor here).
+                    Dim meshSkel As SkeletonInstance = Nothing
+                    resolvedSkels.TryGetValue(mesh, meshSkel)
                     Dim meshGlobalCache As SkeletonGlobalTransformCache = Nothing
                     globalCaches.TryGetValue(If(meshSkel, SkeletonInstance.Default), meshGlobalCache)
                     ' Option B (GPU y CPU). Pasada 3 (world-cache/bounds): solo fuera de play, o para
@@ -3303,6 +3318,14 @@ Public Class PreviewModel
                         Dim result = DirectXDDSLoader.UploadTextureToGL(tex, path)
 
                         If result IsNot Nothing AndAlso result.Loaded AndAlso result.Texture_ID > 0 Then
+                            ' Re-upload to an existing key: free the previous GL texture before
+                            ' overwriting, or its handle leaks. Render buckets are rebuilt this frame
+                            ' via MarkRenderBucketsDirty (below), so no live bucket keeps the old ID.
+                            Dim old As Texture_Loaded_Class = Nothing
+                            If Textures_Dictionary.TryGetValue(path, old) AndAlso old IsNot Nothing AndAlso
+                               old.Texture_ID > 0 AndAlso old.Texture_ID <> result.Texture_ID Then
+                                GL.DeleteTexture(old.Texture_ID)
+                            End If
                             Textures_Dictionary(path) = result
                             Last_Loaded_Textures.Add(path)
                             _uploadFailureCount.Remove(path)

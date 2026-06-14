@@ -77,8 +77,16 @@ Public Class FacialBoneRegionsFile
 
                 Dim result As New FacialBoneRegionsFile
                 For Each regionElem In doc.RootElement.EnumerateArray()
-                    Dim region = ParseRegion(regionElem)
-                    If region IsNot Nothing Then result.Regions(region.ID) = region
+                    ' Parse each region in isolation: a single malformed region (bad ID, an out-of-range
+                    ' number that throws in GetUInt32/GetSingle, etc.) must skip only that region, not
+                    ' discard the whole file. ParseRegion returns Nothing for a missing/invalid ID, and
+                    ' a throw is caught here and the region is skipped.
+                    Try
+                        Dim region = ParseRegion(regionElem)
+                        If region IsNot Nothing Then result.Regions(region.ID) = region
+                    Catch
+                        ' Skip this region only; keep parsing the rest of the file.
+                    End Try
                 Next
                 Return result
             End Using
