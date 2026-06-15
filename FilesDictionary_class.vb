@@ -295,6 +295,61 @@ Public Class FilesDictionary_class
             Return located_File.GetBytes
         End If
     End Function
+
+    ''' <summary>
+    ''' Reads the ARCHIVED (BA2/BSA) original bytes for <paramref name="path"/>, IGNORING any loose
+    ''' override AND the path-keyed <see cref="_bytesCache"/>. The cache is keyed by File_Location.FullPath,
+    ''' which is identical for the loose winner and the BA2 loser of the same logical path — so a cached
+    ''' read of the loose winner would otherwise be returned for the BA2 entry too (collision). This reads
+    ''' straight from the archive via ExtractToMemory and never touches the cache.
+    '''
+    ''' Resolution: if the winning entry is itself archived (no loose override), use it; otherwise take the
+    ''' first IsLosseFile=False entry shadowed in the override stack. Returns Nothing when no archived entry
+    ''' exists at all (the caller should then fall back to the normal resolver, whose winner is already vanilla).
+    ''' </summary>
+    Public Shared Function GetArchiveOriginalBytes(path As String) As Byte()
+        Dim key = NormalizeDictionaryKey(path)
+        If String.IsNullOrEmpty(key) Then Return Nothing
+
+        ' Pick the archived (non-loose) entry: the winner if it's already archived, else the first
+        ' archived loser shadowed behind the loose override.
+        Dim entry As File_Location = Nothing
+        Dim winner As File_Location = Nothing
+        If _dictionary.TryGetValue(key, winner) AndAlso winner IsNot Nothing AndAlso Not winner.IsLosseFile Then
+            entry = winner
+        Else
+            For Each loser In GetOverriddenEntries(key)
+                If loser IsNot Nothing AndAlso Not loser.IsLosseFile Then
+                    entry = loser
+                    Exit For
+                End If
+            Next
+        End If
+
+        If entry Is Nothing Then Return Nothing
+
+        ' Read directly from the archive, bypassing _bytesCache. Reuse the reader pool.
+        Dim archivePath = IO.Path.Combine(FO4Path, entry.BA2File)
+        Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream) = Nothing
+        Dim returned As Boolean = False
+        Try
+            leased = LeaseReader(archivePath)
+            Dim result = entry.GetBytesFromOpenArchive(leased.Reader)
+            ReturnReader(archivePath, leased)
+            returned = True
+            Return result
+        Catch
+            If Not returned Then
+                If leased.Reader IsNot Nothing Then
+                    Try : leased.Reader.Dispose() : Catch : End Try
+                End If
+                If leased.Stream IsNot Nothing Then
+                    Try : leased.Stream.Dispose() : Catch : End Try
+                End If
+            End If
+            Return Nothing
+        End Try
+    End Function
     Private Shared ReadOnly _looseEnumOptions As New EnumerationOptions() With {
         .RecurseSubdirectories = True,
         .IgnoreInaccessible = True
