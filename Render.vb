@@ -1677,6 +1677,14 @@ Public Class PreviewModel
 
         Public MeshData As MeshData_Class
         Private indexCount As Integer
+
+        ' Clean CPU-side zap state. When ApplyZaps is on we filter the element buffer to drop every
+        ' triangle that references a zapped vertex (VertexMask = -1) instead of relying on the ragged
+        ' 'flat ZappedVert' shader discard. EnsureZapIndexBuffer rebuilds only when the geometry's
+        ' ZapTopologyDirty flag is set (MorphEngine.ApplyMorphPlan is the single writer of VertexMask=-1)
+        ' or when the ApplyZaps toggle flips (_lastApplyZaps tracks the last observed state).
+        Private _zapFilteredActive As Boolean = False
+        Private _lastApplyZaps As Boolean = False
         Public Class MaterialData
             Sub New(Parent As MeshData_Class)
                 ParentMeshData = Parent
@@ -2277,6 +2285,73 @@ Public Class PreviewModel
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
         End Sub
 
+        ' Clean CPU-side zap: when ApplyZaps is on, exclude every triangle that has ANY vertex with
+        ' VertexMask = -1 (the same rule the NIF export uses). This replaces the ragged 'flat ZappedVert'
+        ' shader discard, which dropped triangles by provoking-vertex only and left boundary slivers.
+        ' Vertices are NOT compacted (render keeps the full VBO); only the index buffer is filtered, so
+        ' zapped verts simply stop being referenced. Dirty-gated: rebuilds only when ApplyMorphPlan
+        ' re-touched the zap mask (geom.ZapTopologyDirty) or the ApplyZaps toggle flipped — no per-frame
+        ' signature scan. ApplyMorphPlan is the single writer of VertexMask=-1, so the flag can't go stale.
+        ' VertexMask is a Single() array whose zapped sentinel is -1.0F (= -1 here), matching the
+        ' existing '= -1' comparisons used elsewhere in this file and the export's RemoveZaps.
+        '
+        ' NOTE: SkinnedGeometry is a Structure (value type); 'geom' below is a COPY of the field, so the
+        ' ZapTopologyDirty clear must be written back to MeshData.Meshgeometry.ZapTopologyDirty (the field),
+        ' not to the local copy. Reads through 'geom' are fine — Indices/VertexMask are reference arrays.
+        Private Sub EnsureZapIndexBuffer()
+            Dim geom = MeshData.Meshgeometry
+            Dim full = geom.Indices
+            If full Is Nothing OrElse full.Length = 0 Then Return
+
+            Dim applyZaps As Boolean = MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.ApplyZaps
+            ' Dirty-gated: only rebuild when ApplyMorphPlan re-touched the zap mask (ZapTopologyDirty) or the
+            ' ApplyZaps toggle flipped. Otherwise two bool checks and out — no per-frame scan. ApplyMorphPlan is
+            ' the single writer of VertexMask=-1, so this can never go stale.
+            If Not geom.ZapTopologyDirty AndAlso applyZaps = _lastApplyZaps Then Return
+
+            Dim shouldFilter As Boolean = applyZaps
+            If shouldFilter Then
+                Dim vm = geom.VertexMask
+                Dim anyZap As Boolean = False
+                If vm IsNot Nothing Then
+                    For i = 0 To vm.Length - 1
+                        If vm(i) = -1 Then anyZap = True : Exit For
+                    Next
+                End If
+                If Not anyZap Then shouldFilter = False
+            End If
+
+            If Not shouldFilter Then
+                If _zapFilteredActive Then
+                    GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+                    GL.BufferData(BufferTarget.ElementArrayBuffer, full.Length * 4, full, BufferUsageHint.StaticDraw)
+                    indexCount = full.Length
+                    _zapFilteredActive = False
+                End If
+                _lastApplyZaps = applyZaps
+                MeshData.Meshgeometry.ZapTopologyDirty = False
+                Return
+            End If
+
+            Dim vmask = geom.VertexMask
+            Dim filtered As New List(Of UInteger)(full.Length)
+            Dim t As Integer = 0
+            Do While t + 2 < full.Length
+                Dim a = full(t) : Dim b = full(t + 1) : Dim c = full(t + 2)
+                If vmask(CInt(a)) <> -1 AndAlso vmask(CInt(b)) <> -1 AndAlso vmask(CInt(c)) <> -1 Then
+                    filtered.Add(a) : filtered.Add(b) : filtered.Add(c)
+                End If
+                t += 3
+            Loop
+            Dim arr = filtered.ToArray()
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, ebo)
+            GL.BufferData(BufferTarget.ElementArrayBuffer, arr.Length * 4, arr, BufferUsageHint.DynamicDraw)
+            indexCount = arr.Length
+            _zapFilteredActive = True
+            _lastApplyZaps = applyZaps
+            MeshData.Meshgeometry.ZapTopologyDirty = False
+        End Sub
+
         Public Sub SetupMesh_GL()
             vao = GL.GenVertexArray()
             ebo = GL.GenBuffer()
@@ -2541,6 +2616,10 @@ Public Class PreviewModel
 
             '=============================== DRAW ===============================
             GL.BindVertexArray(vao)
+            ' Clean CPU-side zap: filter the element buffer to drop zapped triangles before drawing,
+            ' so indexCount is correct for the DrawElements calls below. Cheap (re-uploads only when
+            ' the zapped vertex set changes); no-op when ApplyZaps is off or nothing is zapped.
+            EnsureZapIndexBuffer()
             Dim mat = MeshData.Material.MaterialBase
             Dim faceMode = ResolveEffectiveFaceMode(MeshData.Shape, mat)
             Dim writeDepth As Boolean = ResolveDepthWriteEnabled(mat, MeshData.Material.HasAlphaBlend, MeshData.Material.HasAlphaTest, MeshData.Shape.Wireframe)
@@ -2827,7 +2906,7 @@ Public Class PreviewModel
             ' ?? TOGGLES DE EFECTOS Y SOMBREADO
             '===============================
             shader.SetBool("bCubemap", hasCubemap)
-            shader.SetBool("bEnvMap", materialBase.EnvironmentMapping)
+            shader.SetBool("bEnvMap", materialBase.EnvironmentMapping OrElse materialBase.EyeEnvironmentMapping)
             shader.SetBool("bAlphaTest", hasAlphaTest)
             shader.SetBool("bEnvMask", envmapMaskTextureId <> 0)
             shader.SetBool("bNormalMap", normalTextureId <> 0)
@@ -2840,6 +2919,8 @@ Public Class PreviewModel
             shader.SetBool("bGlowmap", materialBase.Glowmap AndAlso glowTextureId <> 0)
             If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0 AndAlso Not materialBase.Facegen)
             shader.SetFloat("shininess", materialBase.Smoothness)
+            ' SSE: exponente de glossiness CRUDO (shad.Glossiness), no reconstruido por el shader.
+            If isSSE Then shader.SetFloat("glossiness", materialBase.NifGlossiness)
             shader.SetVector3("specularColor", Shader_Base_Class.Color_to_Vector(materialBase.SpecularColor))
             shader.SetFloat("specularStrength", materialBase.SpecularMult)
             shader.SetVector3("emissiveColor", Shader_Base_Class.Color_to_Vector(materialBase.EmittanceColor))

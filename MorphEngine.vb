@@ -128,6 +128,12 @@ Public Class MorphEngine
                                      recalculateNormals As Boolean,
                                      Optional allowMask As Boolean = False,
                                      Optional maskedVertices As HashSet(Of Integer) = Nothing)
+        ' Single chokepoint that (re)computes the zap mask (clears VertexMask, then re-applies
+        ' VertexMask=-1 for zap channels). Mark the zap topology dirty on entry so
+        ' Render.EnsureZapIndexBuffer rebuilds the filtered element buffer exactly once after this
+        ' recompute. Covers every internal path (zap applied, mask-only cleared, null/empty-plan reset).
+        ' SkinnedGeometry is a Structure passed ByRef, so this writes back to the caller's field.
+        geom.ZapTopologyDirty = True
         Dim count = geom.NifLocalVertices.Length
         If count = 0 Then Return
 
@@ -161,7 +167,11 @@ Public Class MorphEngine
 
         ' Zap channels — mask flag setup (mismo paso ANTES en el bucle anterior; preserva
         ' comportamiento exacto del runtime para el toggle on/off de zaps).
-        If plan IsNot Nothing AndAlso plan.HasMorphs Then
+        ' Gate por HasZaps (no HasMorphs): un plan SÓLO-zap (sin canales de posición — el caso de la
+        ' hairline HNAM-extra, que recibe el zap pero ningún chargen-TRI morph) debe entrar igual a
+        ' setear VertexMask=-1. HasMorphs (=Channels.Count>0) ya lo cubría, pero HasZaps deja explícito
+        ' que el zap-only NO se puede saltear y blinda el gate ante futuros cambios del predicado.
+        If plan IsNot Nothing AndAlso plan.HasZaps Then
             For Each channel In plan.Channels
                 If Not channel.IsZap Then Continue For
                 If channel.Deltas Is Nothing Then Continue For

@@ -21,6 +21,12 @@ Public Structure SkinnedGeometry
     Public NifLocalVertices() As Vector3d      ' pre-skinning NIF local space — base for morph application
     Public PerVertexSkinMatrix() As Matrix4d   ' per-vertex blended Mtot = GlobalTransform * skin; filled once in ExtractSkinnedGeometry
     Public dirtyMaskIndices As HashSet(Of Integer)              ' Para dirty-tracking de máscara
+    ' Set by MorphEngine.ApplyMorphPlan whenever it (re)computes the zap mask; consumed + cleared by
+    ' Render.EnsureZapIndexBuffer to rebuild the filtered element buffer only when the zap set changed.
+    ' Initialized True in ExtractSkinnedGeometry so the first draw filters (a Structure can't have an
+    ' instance field initializer in VB — BC31049 — so the default is set at construction instead).
+    ' (See render-zap-clean-cpu-index-filter.)
+    Public ZapTopologyDirty As Boolean
     Public dirtyVertexIndices As HashSet(Of Integer)
     Public dirtyMaskFlags() As Boolean
     Public dirtyVertexFlags() As Boolean
@@ -470,7 +476,8 @@ Public Class SkinningHelper
              .GPUBoneWeights = gpuBoneWgt,
              .GPUBoneMatrices = gpuBoneMats,
              .WorldCacheValid = False,
-             .PerVertexMatrixValid = True
+             .PerVertexMatrixValid = True,
+             .ZapTopologyDirty = True
         }
 
         ' Uvs_Weight packs per-vertex UV (X,Y) and the first bone weight (Z) — used by the

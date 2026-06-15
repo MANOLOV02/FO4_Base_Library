@@ -1193,6 +1193,17 @@ Public Class RACE_Data
     Public FemaleDefaultWeightMuscular As Single? = Nothing
     Public FemaleDefaultWeightFat As Single? = Nothing
 
+    ''' <summary>RACE.DATA "FaceGen Head" flag (bit 0x00000002 of the DATA Flags u32, per
+    ''' wbDefinitionsFO4.pas:11454). Read version-aware: the Flags u32 sits at byte offset 32 when the
+    ''' record form-version &gt;= 109 (all vanilla FO4, after the per-gender Default Weight 3xf32 blocks),
+    ''' else at offset 8. This flag is the canonical, 0-exception discriminator for "is this race a
+    ''' FaceGen race" (has a head/face to bake &amp; edit): set on Human/Ghoul/Child/SuperMutant/Synth/
+    ''' PowerArmor races (+DLC variants), CLEAR on dogs/creatures/robots/turrets/feral ghouls/
+    ''' HumanRaceSubGraphData/AlienRace/SupermutantBehemothRace/DefaultRace/LibertyPrimeRace. Verified
+    ''' exact (faceGenHead &lt;=&gt; race has &gt;=1 head-part default) across all 110 races. Use the shared
+    ''' RaceUtil.RaceSupportsFaceGen helper to gate bake + FaceGen-only UI. See [[arch_race_behavior_resolution]].</summary>
+    Public FaceGenHead As Boolean = False
+
     ''' <summary>APPR — Attach Parent Slots declarados a nivel race. Lista de KYWD FormIDs
     ''' (KeywordType=Attach Point). Para HandyRace = [ap_Bot_BotCore, ap_Bot_BotLegs] que
     ''' autorizan el set de OMODs raíz del NPC.OBTE — los chunks anidados se autorizan después
@@ -1223,6 +1234,25 @@ Public Class RACE_Data
             Next
         Next
         Return result
+    End Function
+End Class
+
+''' <summary>Shared, cheap, robust race-level helpers. Canonical home for the FaceGen-eligibility
+''' gate so that BOTH the FaceGen bake and the FaceGen-only UI buttons (Edit Face, bake-this-NPC, etc.)
+''' agree on a single discriminator instead of weaker signals (head-part presence, race name).</summary>
+Public Class RaceUtil
+    ''' <summary>True when the given race is a FaceGen race (has a head/face to bake &amp; edit), keyed off
+    ''' the RACE.DATA "FaceGen Head" flag (bit 0x2, version-aware) parsed by ParseRACE into
+    ''' RACE_Data.FaceGenHead. This is the canonical, 0-exception discriminator: set on Human/Ghoul/
+    ''' Child/SuperMutant/Synth/PowerArmor races (+DLC variants), CLEAR on dogs/creatures/robots/
+    ''' turrets/feral ghouls/HumanRaceSubGraphData/AlienRace/SupermutantBehemothRace/DefaultRace/
+    ''' LibertyPrimeRace. Returns False for a missing/zero FormID or a record that isn't a RACE — so
+    ''' it is safe to call as a preventive gate without throwing. See [[arch_race_behavior_resolution]].</summary>
+    Public Shared Function RaceSupportsFaceGen(raceFormID As UInteger, pm As PluginManager) As Boolean
+        If raceFormID = 0UI OrElse pm Is Nothing Then Return False
+        Dim rec = pm.GetRecord(raceFormID)
+        If rec Is Nothing OrElse rec.Header.Signature <> "RACE" Then Return False
+        Return RecordParsers.ParseRACE(rec, pm).FaceGenHead
     End Function
 End Class
 
@@ -3022,7 +3052,7 @@ Public Module RecordParsers
                     '   +4  float FemaleHeight
                     '   +8  Male Default Weight   { float Thin, float Muscular, float Fat }   (v109+)
                     '   +20 Female Default Weight { float Thin, float Muscular, float Fat }   (v109+)
-                    '   +32 uint Flags  ...
+                    '   +32 uint Flags  ...   (bit 0x2 = "FaceGen Head", pas:11454)
                     ' Only read at RACE top level (not inside head sections).
                     If Not inMaleHead AndAlso Not inFemaleHead AndAlso Not inMaleBody AndAlso Not inFemaleBody _
                        AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
@@ -3035,6 +3065,19 @@ Public Module RecordParsers
                             race.FemaleDefaultWeightThin = ReadOptionalFloat(sr.Data, 20)
                             race.FemaleDefaultWeightMuscular = ReadOptionalFloat(sr.Data, 24)
                             race.FemaleDefaultWeightFat = ReadOptionalFloat(sr.Data, 28)
+                        End If
+                        ' Flags u32 — offset is version-aware: 32 for form ver>=109 (after both Default
+                        ' Weight blocks), else 8 (pre-v109 layout has no Default Weight). Bit 0x2 =
+                        ' "FaceGen Head". Defensive: if the version-based offset doesn't fit the payload,
+                        ' fall back to the other layout (mirrors RaceFaceGenFlagProbe.ReadRaceFlags).
+                        Dim flagsOffset As Integer = If(rec.Header.Version >= 109US, 32, 8)
+                        If sr.Data.Length < flagsOffset + 4 Then
+                            Dim altOffset As Integer = If(flagsOffset = 32, 8, 32)
+                            If sr.Data.Length >= altOffset + 4 Then flagsOffset = altOffset Else flagsOffset = -1
+                        End If
+                        If flagsOffset >= 0 Then
+                            Dim dataFlags = BitConverter.ToUInt32(sr.Data, flagsOffset)
+                            race.FaceGenHead = (dataFlags And &H2UI) <> 0UI
                         End If
                     End If
                 Case "NNAM"

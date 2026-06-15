@@ -269,6 +269,7 @@ Public Class FO4UnifiedMaterial_Class
         copy._blendFunctionSource = _blendFunctionSource
         copy._blendFunctionDest = _blendFunctionDest
         copy._skinTintAlpha = _skinTintAlpha
+        copy._NifGlossiness = _NifGlossiness
         Return copy
     End Function
 
@@ -318,8 +319,9 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As NiflySharp.Enums.BSLightingShaderType)
             Select Case Underlying_Material.GetType
                 Case GetType(BGSM)
+                    ' Desacoplado: setear el tipo NO toca flags. Tipo y flags son ejes
+                    ' ortogonales; los flags se editan por separado en el grid.
                     _NifShaderType = value
-                    ApplyShaderTypeToBgsm(TryCast(Underlying_Material, BGSM), value)
                 Case GetType(BGEM)
             End Select
         End Set
@@ -343,6 +345,18 @@ Public Class FO4UnifiedMaterial_Class
         Set(value As Single)
             _skinTintAlpha = value
         End Set
+    End Property
+
+    ' Glossiness CRUDA del shader SSE (shad.Glossiness, exponente ~2..2048). NO es campo BGSM:
+    ' el BGSM guarda la Smoothness normalizada (0..1). Se transporta para que el shader SSE use
+    ' el exponente crudo directo (pow(NdotH, glossiness)) en vez de reconstruirlo con exp2 desde
+    ' Smoothness. Friend para que GetDifferences/AreEqualWithTrace (reflexion solo Public) no lo
+    ' dupliquen con Smoothness. Solo se usa en el path SSE; en FO4 el shader deriva de Smoothness.
+    Private _NifGlossiness As Single = 1.0F
+    Friend ReadOnly Property NifGlossiness As Single
+        Get
+            Return _NifGlossiness
+        End Get
     End Property
 
     ' Alpha-blend state model:
@@ -2778,39 +2792,9 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
-    ' SOLO el trío probado (probe typeflags 2026-06-11, 1.110.323 shapes vanilla). Derive corre
-    ' únicamente cuando el NIF inline quedó en Default; vanilla tiene 446 materiales con
-    ' bEnvironmentMapping y 42 con bGlowmap cuyo tipo inline ES Default, así que derivar
-    ' EnvironmentMap/GlowShader desde el flag CONTRADICE el authoring real. bTree viaja siempre
-    ' con tipo Default (118.996 shapes; TreeAnim jamás aparece inline), bTerrain no existe en v2,
-    ' y bEnvironmentMappingEye aparece mayormente bajo EnvironmentMap/Default. El trío
-    ' Facegen/SkinTint/Hair sí tiene casos reales validados (fix 2026-05-07, HairFemale03_Hairline).
-    Public Shared Function DeriveShaderTypeFromBgsm(bgsm As BGSM) As NiflySharp.Enums.BSLightingShaderType
-        If bgsm Is Nothing Then Return NiflySharp.Enums.BSLightingShaderType.Default
-        If bgsm.Facegen Then Return NiflySharp.Enums.BSLightingShaderType.FaceTint
-        If bgsm.SkinTint Then Return NiflySharp.Enums.BSLightingShaderType.SkinTint
-        If bgsm.Hair Then Return NiflySharp.Enums.BSLightingShaderType.HairTint
-        Return NiflySharp.Enums.BSLightingShaderType.Default
-    End Function
-
-    ' ASSERT-ON del trío tipo↔flag, nada más. Elegir FaceTint/SkinTint/HairTint enciende SU flag
-    ' (bicondicional ~100% en vanilla en dirección tipo→flag; sin el flag el engine no tintea).
-    ' JAMÁS se apaga un flag ni se tocan Glowmap/EnvironmentMapping/EnvironmentMappingEye/Tree/
-    ' Terrain: son capacidades independientes del tipo (vanilla las combina libremente) y la
-    ' semántica de asignación anterior PISABA flags legítimos — probado con vanilla: humanhair01
-    ' (EnvironmentMap + bHair) perdía bHair y los 118.996 tree shapes (Default + bTree) perdían
-    ' bTree al pasar por aquí. Todos los flags están expuestos en el grid para apagarlos a mano.
-    Public Shared Sub ApplyShaderTypeToBgsm(bgsm As BGSM, type As NiflySharp.Enums.BSLightingShaderType)
-        If bgsm Is Nothing Then Exit Sub
-        Select Case type
-            Case NiflySharp.Enums.BSLightingShaderType.FaceTint
-                bgsm.Facegen = True
-            Case NiflySharp.Enums.BSLightingShaderType.SkinTint
-                bgsm.SkinTint = True
-            Case NiflySharp.Enums.BSLightingShaderType.HairTint
-                bgsm.Hair = True
-        End Select
-    End Sub
+    ' Helpers DeriveShaderTypeFromBgsm / ApplyShaderTypeToBgsm ELIMINADOS (2026-06): tipo y flags
+    ' desacoplados. El tipo se lee/escribe fiel del shader (Create/Save) y los flags se editan
+    ' independientes en el grid; no se deriva el tipo desde los flags ni viceversa.
 
     ' P1 — Versiones. El probe (25.082 materiales reales) solo observó v1/v2; vanilla = v2.
     ' Crear material (FO4 y contenedor Skyrim opción (b)) ⇒ siempre v2. El roundtrip preserva
@@ -3123,7 +3107,7 @@ Public Class FO4UnifiedMaterial_Class
                 .EmittanceMult = shad.EmissiveMultiple,
                 .Alpha = shad.Alpha,
                 .EnvironmentMapping = shad.HasEnvironmentMapping,
-                .EnvironmentMappingMaskScale = shad.EnvironmentMapScale,
+                .EnvironmentMappingMaskScale = If(shad.IsTypeEyeEnvironmentMap, shad.EyeCubemapScale, shad.EnvironmentMapScale),
                 .ModelSpaceNormals = shad.ModelSpace,
                 .Facegen = If(Nif.Header.Version.IsSSE, shad.IsTypeFaceTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Face) <> 0),
                 .Hair = If(Nif.Header.Version.IsSSE, shad.IsTypeHairTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair) <> 0),
@@ -3191,9 +3175,11 @@ Public Class FO4UnifiedMaterial_Class
         If Not IsNothing(shad) Then
             _NifShaderType = shad.ShaderType_SK_FO4
             _skinTintAlpha = shad.SkinTintAlpha
+            _NifGlossiness = shad.Glossiness
         Else
             _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default
             _skinTintAlpha = 1.0F
+            _NifGlossiness = 1.0F
         End If
         ApplyAlphaPropertyFromNif(shap, Nif)
         ' NO llamar ApplyShaderTypeToBgsm acá: los flags ya vienen FIELES del shader (Facegen/
@@ -3312,6 +3298,7 @@ Public Class FO4UnifiedMaterial_Class
         shad.DoubleSided = Mat.TwoSided
         shad.UVOffset = New TexCoord(Mat.UOffset, Mat.VOffset)
         shad.UVScale = New TexCoord(Mat.UScale, Mat.VScale)
+        shad.HasEnvironmentMapping = Mat.EnvironmentMapping
         shad.EnvironmentMapScale = Mat.EnvironmentMappingMaskScale
         shad.EmittanceColor = MaterialRgbToNifColor3(Mat.EmittanceColor)
         EnsureNiString4(shad.SourceTexture, Mat.BaseTexture)
@@ -3513,9 +3500,13 @@ Public Class FO4UnifiedMaterial_Class
         ' que SÍ se conserva: EnvironmentMapScale = 1.0 cuando env mapping está OFF (882k shapes).
         Dim effectiveShaderType = shaderType
         Dim effectiveEnvMapping = Mat.EnvironmentMapping
-
         shad.HasEnvironmentMapping = effectiveEnvMapping
-        shad.EnvironmentMapScale = If(effectiveEnvMapping, Mat.EnvironmentMappingMaskScale, 1.0F)
+        If effectiveShaderType = NiflySharp.Enums.BSLightingShaderType.EyeEnvmap Then
+            ' Simétrico a Create (lee EyeCubemapScale para IsTypeEyeEnvironmentMap).
+            shad.EyeCubemapScale = Mat.EnvironmentMappingMaskScale
+        Else
+            shad.EnvironmentMapScale = If(effectiveEnvMapping, Mat.EnvironmentMappingMaskScale, 1.0F)
+        End If
         If Nif.Header.Version.IsSSE Then
             shad.Glossiness = CSng(Math.Pow(2.0, CDbl(Mat.Smoothness) * 10.0 + 1.0))
         Else
@@ -3814,11 +3805,11 @@ Public Class FO4UnifiedMaterial_Class
         End If
         If type Is GetType(BGSM) Then
             If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
-                _NifShaderType = DeriveShaderTypeFromBgsm(CType(Underlying_Material, BGSM))
-                If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
-                    Dim bslsp = TryCast(Nif.GetShader(shap), BSLightingShaderProperty)
-                    If bslsp IsNot Nothing Then _NifShaderType = bslsp.ShaderType_SK_FO4
-                End If
+                ' Desacoplado: el tipo NO se deriva de los flags del .bgsm (el .bgsm no lleva
+                ' tipo). Se preserva el tipo real del shader inline del NIF. Tipo y flags son
+                ' ejes ortogonales.
+                Dim bslsp = TryCast(Nif.GetShader(shap), BSLightingShaderProperty)
+                If bslsp IsNot Nothing Then _NifShaderType = bslsp.ShaderType_SK_FO4
             End If
         End If
         ' NOTE: ClearDirty() is NOT called here. The single snapshot is taken by the caller
@@ -4071,21 +4062,18 @@ Public Class FO4UnifiedMaterial_Class
     ''' "&lt;instance&gt;" reflejando esa asimetría — equivalente al `a Is b` que
     ''' AreEqualWithTrace devuelve para el caso degenerado.
     '''
-    ''' Diferencia con AreEqualWithTrace: éste NO excluye <c>NifShaderType</c>. La exclusión
-    ''' que hace AreEqualWithTrace asume que NifShaderType es redundante con los flags
-    ''' Facegen/SkinTint/Hair del BGSM (ver helpers DeriveShaderTypeFromBgsm /
-    ''' ApplyShaderTypeToBgsm y los call-sites en el setter NifShaderType y Deserialize);
-    ''' bajo ese supuesto, ignorarlo evita reportar el mismo dato dos veces. Pero cuando el
-    ''' material entra desde un shader embedded en un NIF (Create_From_Shader BGSM) la
-    ''' derivación va shader→propiedad sin pasar por los flags del BGSM, y la simetría
-    ''' puede romperse. Para fines diagnósticos (NPC_Manager.FaceGenComparator validando un
-    ''' bake contra el FaceGen de CK) preferimos ver ese campo si difiere; si en realidad
-    ''' es ruido derivado, aparecerá junto con el flag fuente y el lector lo identifica.
+    ''' Cobertura de <c>NifShaderType</c>: GetDifferences itera TODAS las propiedades públicas
+    ''' por reflexión, así que NifShaderType (propiedad pública) se compara como cualquier otra,
+    ''' y AreEqualWithTrace delega aquí — NINGUNO de los dos lo excluye. Tipo y flags están
+    ''' desacoplados (el tipo se lee/escribe fiel del shader, no se deriva de los flags), por lo
+    ''' que comparar el tipo es legítimo y no es ruido redundante. Para diagnóstico
+    ''' (NPC_Manager.FaceGenComparator validando un bake contra el FaceGen de CK) preferimos ver
+    ''' ese campo si difiere.
     '''
     ''' Diseño: este método existe para que call sites que necesitan reportar QUÉ difiere
     ''' (no sólo si difiere algo) no tengan que duplicar el bucle de reflexión. AreEqualWithTrace
-    ''' delega a este método (con la salvedad de NifShaderType arriba); agregar nuevas
-    ''' propiedades a FO4UnifiedMaterial_Class las cubre automáticamente en los dos call paths.
+    ''' delega a este método; agregar nuevas propiedades a FO4UnifiedMaterial_Class las cubre
+    ''' automáticamente en los dos call paths.
     ''' </summary>
     Public Shared Function GetDifferences(a As FO4UnifiedMaterial_Class, b As FO4UnifiedMaterial_Class) As List(Of MaterialDifference)
         Dim diffs As New List(Of MaterialDifference)
@@ -4141,8 +4129,8 @@ Public Class FO4UnifiedMaterial_Class
     ''' Nothing vs Nothing = True; Nothing vs objeto real = False.
     '''
     ''' Implementado en términos de <see cref="GetDifferences"/>: cualquier propiedad nueva
-    ''' se cubre automáticamente, incluyendo <c>NifShaderType</c> (preservado por el
-    ''' setter para los 5 flags BGSM y por el shader NIF para los 16 valores no-flag).
+    ''' se cubre automáticamente, incluyendo <c>NifShaderType</c>, que ahora es un campo
+    ''' independiente (tipo y flags desacoplados; el tipo no se deriva de los flags).
     ''' </summary>
     Public Shared Function AreEqualWithTrace(a As FO4UnifiedMaterial_Class, b As FO4UnifiedMaterial_Class) As Boolean
         ' Edge case nulls — preservar contrato histórico exacto.

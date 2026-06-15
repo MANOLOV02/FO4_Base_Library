@@ -322,6 +322,7 @@ uniform vec2 uvScale;
 uniform	vec3 specularColor;
 uniform	float specularStrength;
 uniform	float shininess;
+uniform float glossiness;
 uniform float envReflection;
 uniform vec3 emissiveColor;
 uniform float emissiveMultiple;
@@ -640,7 +641,7 @@ void main(void)
 				if (bGreyscaleColor && !bIsEffectShader)
 				{
                     // BGSM: palette lookup for armor recoloring
-                    vec4 luG = colorLookup(baseMap.g, paletteScale - (1.0 - vColor.r));
+                    vec4 luG = colorLookup(baseMap.g, paletteScale * vColor.r);
 					albedo = luG.rgb;
 				}
 			}
@@ -720,7 +721,7 @@ void main(void)
 			emissive += backlightEmissive;
 
 			// SkinTint / HairTint: applied after lighting so soft/backlight use untinted albedo (matches NifSkope)
-			if (bHasTintColor && !bIsEffectShader)
+			if (bHasTintColor && !bIsEffectShader && !bGreyscaleColor)
 			{
 				albedo *= tintColor;
 			}
@@ -928,7 +929,7 @@ if (bHide)
    	if (!bWireframe)
 	{
 		// BGSM: apply material alpha (NifSkope fo4_default.frag does this)
-		// BGEM: alpha already baked as effectBaseColorAlpha² (NifSkope fo4_effectshader.frag does NOT)
+		// BGEM: alpha already baked as effectBaseColorAlpha^2 (NifSkope fo4_effectshader.frag does NOT)
 		if (!bIsEffectShader)
 			fragColor.a *= alpha;
 
@@ -1260,6 +1261,7 @@ uniform vec2 uvScale;
 uniform	vec3 specularColor;
 uniform	float specularStrength;
 uniform	float shininess;
+uniform float glossiness;
 uniform float envReflection;
 uniform vec3 emissiveColor;
 uniform float emissiveMultiple;
@@ -1457,11 +1459,12 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 	{
 		smoothness = specGloss * shininess;
 		roughness = 1.0 - smoothness;
-		float fSpecularPower = exp2(smoothness * 10.0 + 1.0);
 		specMask = specFactor * specularStrength;
 
-		outSpec += TorranceSparrow(NdotL0, NdotH, NdotV, VdotH, vec3(specMask), fSpecularPower, 0.2) * NdotL0 * light.diffuse * specularColor;
-		outSpec += ambient * specMask * fresnelSchlick(VdotH, 0.2) * (1.0 - NdotV) * light.diffuse;
+		// SSE: Blinn-Phong with the RAW glossiness exponent passed from the app
+		// (uniform glossiness = shad.Glossiness): no exp2 reconstruction, no specGloss
+		// modulation. Matches NifSkope sk_default and OutfitStudio default.frag.
+		outSpec += clamp(specularColor * specMask * pow(NdotH, glossiness), 0.0, 1.0) * light.diffuse;
 	}
 
 	// Back lighting: simulates translucency (light through thin cloth/hair)
@@ -1617,7 +1620,7 @@ void main(void)
 				if (bGreyscaleColor && !bIsEffectShader)
 				{
                     // BGSM: palette lookup for armor recoloring
-                    vec4 luG = colorLookup(baseMap.g, paletteScale - (1.0 - vColor.r));
+                    vec4 luG = colorLookup(baseMap.g, paletteScale * vColor.r);
 					albedo = luG.rgb;
 				}
 			}
@@ -1939,7 +1942,7 @@ if (bHide)
    	if (!bWireframe)
 	{
 		// BGSM: apply material alpha (NifSkope sk_default.frag does this)
-		// BGEM: alpha already baked as effectBaseColorAlpha² (NifSkope sk_effectshader.frag does NOT)
+		// BGEM: alpha already baked as effectBaseColorAlpha^2 (NifSkope sk_effectshader.frag does NOT)
 		if (!bIsEffectShader)
 			fragColor.a *= alpha;
 

@@ -188,7 +188,7 @@ Public NotInheritable Class BSConnectPointBoneInjector_Class
 
     ''' <summary>Convierte un socket.Name del lado parent ("P-X" / "P_X") al nombre counterpart
     ''' del lado children ("C-X" / "C_X"). Si el name no empieza con prefix P-/P_ devuelve "".</summary>
-    Private Shared Function TryGetSocketCounterpartName(socketName As String) As String
+    Public Shared Function TryGetSocketCounterpartName(socketName As String) As String
         If String.IsNullOrEmpty(socketName) OrElse socketName.Length < 2 Then Return ""
         If socketName.StartsWith("P-", StringComparison.OrdinalIgnoreCase) Then Return String.Concat("C-", socketName.AsSpan(2))
         If socketName.StartsWith("P_", StringComparison.OrdinalIgnoreCase) Then Return String.Concat("C_", socketName.AsSpan(2))

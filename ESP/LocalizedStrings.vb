@@ -84,8 +84,22 @@ Friend NotInheritable Class LocalizedStringTable
         Dim language = ExtractLanguageToken(resourceName)
         Dim primary = PluginTextDecoding.GetLocalizationPrimaryEncoding(language)
         Dim fallback = PluginTextDecoding.GetLocalizationFallbackEncoding(language)
-        Dim overrideEncoding = PluginTextDecoding.TryGetCodePageOverride(looseFilePath)
 
+        ' Global INI override (OverridePluginEncoding.ini Translatable=): apply the same primary+fallback
+        ' chain the inline DecodeTranslatable path uses, so EXTERNAL STRINGS honor the user's encoding
+        ' escape hatch (canonical: Korean FO4 fan translations shipped under an _en suffix whose bytes
+        ' are actually UTF-8/CP949). Opt-in only — Nothing here leaves the xEdit-faithful filename-suffix
+        ' encodings untouched (so e.g. an _ru.STRINGS still decodes cp1251). The override REPLACES the
+        ' primary on purpose: the _en filename-suffix primary is cp1252, which never throws and would
+        ' shadow any UTF-8/CP949 fallback, so layering it in as a mere fallback would never trigger.
+        Dim primaryOverride = PluginEncodingSettings.TryGetLocalizationPrimaryOverride()
+        If primaryOverride IsNot Nothing Then
+            primary = primaryOverride
+            fallback = PluginEncodingSettings.TranslatableInlineFallback
+        End If
+
+        ' Per-file .cpoverride sidecar is the most specific signal — wins over the global INI override.
+        Dim overrideEncoding = PluginTextDecoding.TryGetCodePageOverride(looseFilePath)
         If overrideEncoding IsNot Nothing Then
             primary = overrideEncoding
         End If

@@ -678,6 +678,116 @@ Public Class BSTriShapeGeometry
         Return result
     End Function
 
+    ''' <summary>Biped objects occupied by a BSSubIndexTriShape's segmentation. The "biped object"
+    ''' (the slot index that drives head-part/headwear occlusion, like Skyrim's body part types) is
+    ''' <c>ps.UserIndex</c> for each <c>PerSegmentData</c> record whose <c>BoneID != 0xFFFFFFFF</c>
+    ''' (when BoneID IS 0xFFFFFFFF the UserIndex instead points at a parent segment, per nif.xml
+    ''' BSGeometryPerSegmentSharedData). Returns an empty set if the shape has no segment data.
+    ''' Pure read — no mutation. Shared by the render-path occlusion (MainForm.CandidateBiped30Only)
+    ''' and the offline bake (FaceGenBuilder) so both compute the same biped slot footprint.</summary>
+    Public Shared Function GetBipedObjects(subIndex As BSSubIndexTriShape) As HashSet(Of UInteger)
+        Dim result As New HashSet(Of UInteger)()
+        If subIndex Is Nothing Then Return result
+        Dim sd As BSGeometrySegmentSharedData = subIndex.SegmentData
+        If sd.PerSegmentData Is Nothing Then Return result
+        For Each ps In sd.PerSegmentData
+            If ps.BoneID <> &HFFFFFFFFUI Then result.Add(ps.UserIndex)
+        Next
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' Builds the two FaceGen-hair partition vertex sets in one segmentation walk: <paramref name="v30"/>
+    ''' = vertices touched by a biped-30 (Hair Top) sub-segment, <paramref name="v31"/> = vertices touched
+    ''' by a biped-31 (Hair Long) sub-segment. Vertices on the border ring appear in BOTH sets; the
+    ''' callers subtract one set from the other to drop that shared ring so neither partition is torn.
+    '''
+    ''' Derivation (mirrors <see cref="GetSegmentation(BSSubIndexTriShape)"/> exactly): walk every
+    ''' sub-segment to build a partID → UserSlotID map, then for each triangle look up its partID via
+    ''' <c>TriParts</c> and route the triangle's three vertices to the 30-set or 31-set according to that
+    ''' sub-segment's UserSlotID. Returns False (both sets empty) when the shape has no segmentation or is
+    ''' not BSSubIndex. Pure read — no mutation.
+    ''' </summary>
+    Private Shared Function BuildHairPartitionVertexSets(subIndex As BSSubIndexTriShape,
+                                                         ByRef v30 As HashSet(Of Integer),
+                                                         ByRef v31 As HashSet(Of Integer)) As Boolean
+        v30 = New HashSet(Of Integer)()
+        v31 = New HashSet(Of Integer)()
+        If subIndex Is Nothing Then Return False
+
+        Dim snap = GetSegmentation(subIndex)
+        If snap.IsEmpty Then Return False
+
+        ' partID → UserSlotID. Only sub-segments carry a biped UserSlotID; parent segments do not
+        ' (their partID maps to no biped slot). Triangles assigned to a parent partID therefore fall
+        ' into neither set and are ignored, which is correct — they are not part of the 30/31 split.
+        Dim partToSlot As New Dictionary(Of Integer, UInteger)()
+        For Each seg In snap.Info.Segs
+            For Each sub_ In seg.Subs
+                partToSlot(sub_.PartID) = sub_.UserSlotID
+            Next
+        Next
+
+        Dim tris = subIndex.Triangles
+        If tris Is Nothing Then Return False
+
+        Dim n As Integer = Math.Min(snap.TriParts.Count, tris.Count)
+        For ti = 0 To n - 1
+            Dim pid As Integer = snap.TriParts(ti)
+            Dim slot As UInteger
+            If pid < 0 OrElse Not partToSlot.TryGetValue(pid, slot) Then Continue For
+            If slot <> 30UI AndAlso slot <> 31UI Then Continue For
+            Dim t = tris(ti)
+            Dim target = If(slot = 30UI, v30, v31)
+            target.Add(CInt(t.V1))
+            target.Add(CInt(t.V2))
+            target.Add(CInt(t.V3))
+        Next
+        Return True
+    End Function
+
+    ''' <summary>
+    ''' Vertex indices belonging to the FaceGen-hair "top" partition that are NOT shared with the
+    ''' "long" partition, i.e. <c>v(biped30) − v(biped31)</c>. Used by the render/export path to ZAP
+    ''' only the hair crown when headwear covers biped slot 30 (Hair Top) but not 31 (Hair Long): a
+    ''' cap hides the crown while the long strands keep showing. Subtracting the biped-31 vertex set
+    ''' keeps the border ring (vertices the two partitions share) intact so the long mesh is not torn.
+    '''
+    ''' This is a stable property of the mesh segmentation (does not depend on pose/morph), so the
+    ''' caller SHOULD cache the result per shape. Returns an empty set when the shape has no
+    ''' segmentation, no biped-30 partition, or is not BSSubIndex. Pure read — no mutation.
+    ''' </summary>
+    Public Shared Function GetTopOnlyVertexIndices(subIndex As BSSubIndexTriShape) As HashSet(Of Integer)
+        Dim v30 As HashSet(Of Integer) = Nothing
+        Dim v31 As HashSet(Of Integer) = Nothing
+        BuildHairPartitionVertexSets(subIndex, v30, v31)
+        ' v30 − v31: drop the shared border ring so the long partition stays watertight.
+        v30.ExceptWith(v31)
+        Return v30
+    End Function
+
+    ''' <summary>
+    ''' Mirror of <see cref="GetTopOnlyVertexIndices(BSSubIndexTriShape)"/>: vertex indices belonging to
+    ''' the FaceGen-hair "long" partition that are NOT shared with the "top" partition, i.e.
+    ''' <c>v(biped31) − v(biped30)</c>. Used by the render/export path to ZAP only the long strands of a
+    ''' hair's HAIRLINE (HNAM-extra) when headwear covers biped slot 30 (Hair Top) but not 31 (Hair Long):
+    ''' the hairline is the inverse complement of the main, so under a cap its LONG part is hidden while
+    ''' its TOP forehead border keeps showing. Subtracting the biped-30 vertex set keeps the shared border
+    ''' ring intact so the top partition stays watertight.
+    '''
+    ''' This is a stable property of the mesh segmentation (does not depend on pose/morph), so the
+    ''' caller SHOULD cache the result per shape. Returns an empty set when the shape has no
+    ''' segmentation, no biped-31 partition, or is not BSSubIndex. Pure read — no mutation.
+    ''' </summary>
+    Public Shared Function GetLongOnlyVertexIndices(subIndex As BSSubIndexTriShape) As HashSet(Of Integer)
+        Dim v30 As HashSet(Of Integer) = Nothing
+        Dim v31 As HashSet(Of Integer) = Nothing
+        BuildHairPartitionVertexSets(subIndex, v30, v31)
+        ' v31 − v30: drop the shared border ring so the top partition stays watertight.
+        v31.ExceptWith(v30)
+        Return v31
+    End Function
+
     ''' <summary>
     ''' Reconstructs BSSubIndexTriShape segmentation from semantic info + per-triangle
     ''' partID assignments.  Replicates BS-OS Geometry.cpp:1408-1514

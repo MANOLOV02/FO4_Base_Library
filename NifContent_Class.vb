@@ -373,6 +373,37 @@ Public Class Nifcontent_Class_Manolo
         Next
     End Sub
 
+    ''' <summary>Copia el/los BSClothExtraData de <paramref name="srcNif"/> al ExtraDataList de la
+    ''' SHAPE <paramref name="destShape"/> (en Me). Audit byte-fidelity vs CK: CK cuelga el cloth del
+    ''' pelo de la SHAPE, no del root (256/256 NIFs FaceGen de CK; 0 en el root). CloneShape_Original
+    ''' NO transfiere el cloth extradata, así que lo clonamos del NIF source y lo colgamos de la
+    ''' dest-shape, replicando a CK. Idempotente: si la dest-shape ya tiene un BSClothExtraData no
+    ''' duplica. Source-driven. NO setea el ref único ExtraData (igual que TransferShapeEyeCenterExtraData).</summary>
+    Public Sub TransferShapeClothExtraDataFrom(srcNif As Nifcontent_Class_Manolo, destShape As INiShape)
+        If srcNif Is Nothing OrElse destShape Is Nothing Then Exit Sub
+        Dim destAv = TryCast(destShape, NiAVObject)
+        If destAv Is Nothing Then Exit Sub
+
+        Dim sourceCloth = srcNif.Blocks.OfType(Of BSClothExtraData).ToList()
+        If sourceCloth.Count = 0 Then Exit Sub
+
+        ' Idempotente: si la dest-shape ya tiene un BSClothExtraData, no duplicar.
+        If destAv.ExtraDataList IsNot Nothing Then
+            For Each di In destAv.ExtraDataList.Indices
+                If di >= 0 AndAlso di < Blocks.Count AndAlso TypeOf Blocks(di) Is BSClothExtraData Then Exit Sub
+            Next
+        End If
+
+        For Each srcCloth In sourceCloth
+            Dim cloned = TryCast(srcCloth.Clone(), BSClothExtraData)
+            If IsNothing(cloned) Then Continue For
+            If Not IsNothing(cloned.NextExtraData) Then cloned.NextExtraData.Clear()
+            Dim blockId = Me.AddBlock(cloned)
+            If destAv.ExtraDataList Is Nothing Then destAv.ExtraDataList = New NiBlockRefArray(Of NiExtraData)
+            destAv.ExtraDataList.AddBlockRef(blockId)
+        Next
+    End Sub
+
     ''' <summary>Preserva el/los BSEyeCenterExtraData('ECED') de la shape <paramref name="srcShape"/>
     ''' (en <paramref name="srcNif"/>) copiándolos al ExtraDataList de <paramref name="destShape"/> (en Me).
     ''' CloneShape no transfiere el extradata de la shape; CK SÍ lo preserva (el iris MaleEyes.nif trae

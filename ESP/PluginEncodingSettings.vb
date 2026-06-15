@@ -123,6 +123,17 @@ Public Module PluginEncodingSettings
     ''' Set from SetLanguage = GetEncodingForLanguage(sLanguage, True). Default cp1252 pre-SetLanguage.
     ''' </summary>
     Private _translatableInlineFallback As Encoding = Nothing
+
+    ''' <summary>
+    ''' Persistent global override for decoding EXTERNAL localized string files
+    ''' (.STRINGS/.DLSTRINGS/.ILSTRINGS). Nothing unless OverridePluginEncoding.ini Translatable=
+    ''' set it. When non-Nothing, LocalizedStringTable uses this as the primary encoding (with
+    ''' _translatableInlineFallback as the fallback) instead of the filename-suffix language map.
+    ''' DELIBERATELY separate from _translatable: the SaveEsp dialog combo mutates _translatable
+    ''' (a transient write-time choice) via SetTranslatableOverride, and that must NOT leak into
+    ''' external STRINGS read-decoding. Only ApplyOverrideIni (persistent, startup) sets this.
+    ''' </summary>
+    Private _localizationPrimaryOverride As Encoding = Nothing
     Private _initialized As Boolean = False
 
     ''' <summary>
@@ -171,6 +182,33 @@ Public Module PluginEncodingSettings
     Public ReadOnly Property TranslatableFallback As Encoding
         Get
             Return TranslatableDefaultFallback
+        End Get
+    End Property
+
+    ''' <summary>
+    ''' Primary encoding override for EXTERNAL localized string files, or Nothing when no explicit
+    ''' override is active (the loader then uses its xEdit-faithful filename-suffix encodings). Set by
+    ''' OverridePluginEncoding.ini Translatable=. See _localizationPrimaryOverride.
+    ''' </summary>
+    Public Function TryGetLocalizationPrimaryOverride() As Encoding
+        EnsureInitialized()
+        SyncLock _syncRoot
+            Return _localizationPrimaryOverride
+        End SyncLock
+    End Function
+
+    ''' <summary>
+    ''' Inline/localization fallback codepage retried when the primary throws DecoderFallbackException.
+    ''' Derived from sLanguage (SetLanguage) or forced by OverridePluginEncoding.ini TranslatableInlineFallback=.
+    ''' Consumed by DecodeTranslatable (inline) and, when TryGetLocalizationPrimaryOverride is active,
+    ''' by LocalizedStringTable (external STRINGS). Always non-Nothing after init (cp1252 default).
+    ''' </summary>
+    Public ReadOnly Property TranslatableInlineFallback As Encoding
+        Get
+            EnsureInitialized()
+            SyncLock _syncRoot
+                Return _translatableInlineFallback
+            End SyncLock
         End Get
     End Property
 
@@ -303,6 +341,20 @@ Public Module PluginEncodingSettings
         End SyncLock
     End Sub
 
+    ''' <summary>
+    ''' Set the persistent localization primary override consumed by external STRINGS decoding.
+    ''' Called ONLY from ApplyOverrideIni (Translatable key) — NOT from the transient SaveEsp combo —
+    ''' so the write-time encoding choice never leaks into vanilla/mod STRINGS read-decoding.
+    ''' </summary>
+    Public Sub SetLocalizationPrimaryOverride(codePageOrName As String)
+        EnsureInitialized()
+        Dim enc = ParseEncoding(codePageOrName)
+        If enc Is Nothing Then Return
+        SyncLock _syncRoot
+            _localizationPrimaryOverride = enc
+        End SyncLock
+    End Sub
+
     ''' <summary>Read OverridePluginEncoding.ini from the given directory (typically appdir) and apply
     ''' Translatable / General / TranslatableInlineFallback overrides. File-based mirror of xEdit's
     ''' -cp-trans / -cp-general CLI params, matching the SkipEyebrowsTone.ini convention
@@ -324,7 +376,8 @@ Public Module PluginEncodingSettings
                 Select Case key
                     Case "translatable"
                         SetTranslatableOverride(val)
-                        Logger.LogLazy(Function() $"[ENCODING-OVERRIDE-INI] Translatable={val}")
+                        SetLocalizationPrimaryOverride(val)
+                        Logger.LogLazy(Function() $"[ENCODING-OVERRIDE-INI] Translatable={val} (inline + external STRINGS)")
                     Case "general"
                         SetGeneralOverride(val)
                         Logger.LogLazy(Function() $"[ENCODING-OVERRIDE-INI] General={val}")
