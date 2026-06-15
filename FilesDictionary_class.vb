@@ -303,28 +303,36 @@ Public Class FilesDictionary_class
     ''' read of the loose winner would otherwise be returned for the BA2 entry too (collision). This reads
     ''' straight from the archive via ExtractToMemory and never touches the cache.
     '''
-    ''' Resolution: if the winning entry is itself archived (no loose override), use it; otherwise take the
-    ''' first IsLosseFile=False entry shadowed in the override stack. Returns Nothing when no archived entry
-    ''' exists at all (the caller should then fall back to the normal resolver, whose winner is already vanilla).
+    ''' Resolution: among ALL archived (IsLosseFile=False) candidates for the key — the dictionary winner
+    ''' (if archived) plus every archived entry in the override stack — pick the one with the LOWEST
+    ''' File_Location.SourceOrder. That is the VANILLA archive: BuildArchivePriority assigns the base game
+    ''' (Fallout4*) + DLC archives the lowest SourceOrder (they're processed first), active-mod BA2s rank
+    ''' higher, and loose files get Integer.MaxValue (excluded here since they're loose). "First non-loose"
+    ''' was wrong: the override stack is a ConcurrentStack filled in parallel, so when a mod ships its
+    ''' override inside a .ba2 (multiple archived candidates) the first could be the MOD's archive.
+    ''' NPC_Manager loads with includeInactive=False, so inactive-mod archives aren't in the dictionary at
+    ''' all and can't be picked. Returns Nothing when no archived candidate exists at all (the caller should
+    ''' then fall back to the normal resolver, whose winner is already vanilla).
     ''' </summary>
     Public Shared Function GetArchiveOriginalBytes(path As String) As Byte()
         Dim key = NormalizeDictionaryKey(path)
         If String.IsNullOrEmpty(key) Then Return Nothing
 
-        ' Pick the archived (non-loose) entry: the winner if it's already archived, else the first
-        ' archived loser shadowed behind the loose override.
+        ' Pick the vanilla archived entry = the archived candidate with the minimum SourceOrder.
+        ' Candidates: the dictionary winner (only if it's archived) plus every archived loser shadowed
+        ' in the override stack. Loose entries (SourceOrder = Integer.MaxValue) are excluded.
         Dim entry As File_Location = Nothing
         Dim winner As File_Location = Nothing
         If _dictionary.TryGetValue(key, winner) AndAlso winner IsNot Nothing AndAlso Not winner.IsLosseFile Then
             entry = winner
-        Else
-            For Each loser In GetOverriddenEntries(key)
-                If loser IsNot Nothing AndAlso Not loser.IsLosseFile Then
-                    entry = loser
-                    Exit For
-                End If
-            Next
         End If
+        For Each loser In GetOverriddenEntries(key)
+            If loser IsNot Nothing AndAlso Not loser.IsLosseFile Then
+                If entry Is Nothing OrElse loser.SourceOrder < entry.SourceOrder Then
+                    entry = loser
+                End If
+            End If
+        Next
 
         If entry Is Nothing Then Return Nothing
 
