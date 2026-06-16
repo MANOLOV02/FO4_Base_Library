@@ -261,8 +261,8 @@ Public NotInheritable Class HclRenderGraphParser_Class
         Next
 
         For lane = 0 To Math.Min(7, result.Lanes.Count - 1)
-            result.DecodedPositions.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorAInt16Values, 256.0R, lane, 0))
-            result.DecodedPositions.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorBInt16Values, 256.0R, lane, 1))
+            result.DecodedPositions.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorAInt16Values, PositionScaleFromW(result.Lanes(lane).VectorAInt16Values), lane, 0))
+            result.DecodedPositions.Add(DecodeQuantizedVector3(result.Lanes(lane).VectorBInt16Values, PositionScaleFromW(result.Lanes(lane).VectorBInt16Values), lane, 1))
         Next
 
         For lane = 8 To Math.Min(15, result.Lanes.Count - 1)
@@ -271,6 +271,16 @@ Public NotInheritable Class HclRenderGraphParser_Class
         Next
 
         Return result
+    End Function
+
+    ' ObjectSpaceSkin POSITION quantization: la escala es per-vértice {256, 512}, seleccionada por el
+    ' bit 7 del 4º int16 ('w' tag) del propio vector: w=0x3380 (bit7=1) -> 256, w=0x3300 (bit7=0) -> 512.
+    ' Derivado bit-exacto del dato vanilla (reproduce DefaultClothPose a ~0.001u; antes /256 fijo daba
+    ' ~2× para el 85% de los vértices). Solo aplica a posiciones; las normales usan 32767 fijo.
+    ' Ver memoria arch_cloth_objectspaceskin.
+    Private Shared Function PositionScaleFromW(values As IReadOnlyList(Of Short)) As Double
+        If values Is Nothing OrElse values.Count < 4 Then Return 256.0R
+        Return If((values(3) And &H80) <> 0, 256.0R, 512.0R)
     End Function
 
     Private Shared Function DecodeQuantizedVector3(values As IReadOnlyList(Of Short), scale As Double, laneIndex As Integer, pairIndex As Integer) As HclObjectSpaceSkinQuantizedVectorGraph_Class

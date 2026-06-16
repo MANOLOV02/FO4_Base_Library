@@ -1225,6 +1225,120 @@ Public Class BSTriShapeGeometry
         ' which don't affect _vertices, but call SyncDynamicIfNeeded defensively so every
         ' write path on BSTriShapeGeometry leaves the dynamic buffer coherent.
         SyncDynamicIfNeeded()
+
+        ' SSE-only: also rebuild NiSkinData from the SAME `skinning` so the inline skin and
+        ' NiSkinData agree per-vertex (cpu_gpu_skinning_parity).  See RebuildNiSkinData.
+        RebuildNiSkinData(skinning)
+    End Sub
+
+    ''' <summary>
+    ''' SSE companion to the inline BSVertexDataSSE skin write: rebuilds
+    ''' NiSkinData.BoneList[].VertexWeights from the SAME per-vertex <paramref name="skinning"/>
+    ''' data so both encodings carry identical per-vertex influences.
+    '''
+    ''' WHY THIS EXISTS: an SSE BSTriShape carries BOTH an inline skin (BSVertexDataSSE
+    ''' BoneIndices/BoneWeights) AND a NiSkinInstance → NiSkinData.  WM renders from the inline
+    ''' skin, but after vertex compaction (split/zap/merge) NiflySharp's UpdateSkinPartitions
+    ''' rebuilds NiSkinPartition FROM NiSkinData (NifFile.cs UpdateSkinPartitions, the
+    ''' NiSkinInstance branch).  If only the inline skin is rewritten here, NiSkinData stays
+    ''' STALE (e.g. still referencing pre-compaction vertex indices), the partition follows the
+    ''' stale NiSkinData, and the saved NIF skins wrong in-game.  This pivots the same per-vertex
+    ''' 4-slot data back into NiSkinData's per-bone (vertex,weight) lists — exactly mirroring
+    ''' NiTriShapeGeometry.SetSkinning, which already rebuilds NiSkinData inside SetSkinning.
+    '''
+    ''' GATE (canonical block presence, NOT a Version.IsSSE string check): resolve the skin
+    ''' instance via _nif.GetBlock(Of NiSkinInstance).  FO4 (BSSkin_Instance) is NOT a
+    ''' NiSkinInstance → GetBlock returns Nothing → we skip and leave the FO4 inline-only path
+    ''' exactly as before.  SSE (BSDismemberSkinInstance, a NiSkinInstance) + its NiSkinData →
+    ''' rebuild.  No NiSkinData (e.g. partition-only / unbuilt) → skip.
+    '''
+    ''' CALL-SITE SAFETY (verified): SetSkinning's only callers are InjectToTrishape (save
+    ''' write-back), SkinningHelper.ApplyShapeGeometry (split/merge/zap), and
+    ''' PhysicsWeightCollapseHelper — all mutation/save paths.  Render reads
+    ''' SetSyntheticSkinning, never SetSkinning, so rebuilding NiSkinData here has no
+    ''' render-time side effect (same as NiTriShapeGeometry).
+    '''
+    ''' BONE INDEX SPACE: inline BoneIndices are LOCAL indices into skinInst.Bones
+    ''' (0..numBones-1); NiSkinData.BoneList[i] corresponds 1:1 to skinInst.Bones[i], so a
+    ''' per-vertex local bone index maps directly to a BoneList index.  Per-bone SkinTransform /
+    ''' bounding sphere are bind data and are left untouched.
+    ''' </summary>
+    Private Sub RebuildNiSkinData(skinning As ShapeSkinningData)
+        ' Gate on actual block presence (see method summary).  GetBlock(Of NiSkinInstance)
+        ' returns Nothing for FO4's BSSkin_Instance → FO4 stays inline-only.
+        Dim skinInst = _nif.GetBlock(Of NiSkinInstance)(_tri.SkinInstanceRef)
+        If skinInst Is Nothing Then Return
+        Dim skinData = _nif.GetBlock(skinInst.Data)
+        If skinData Is Nothing OrElse skinData.BoneList Is Nothing Then Return
+
+        ' OS-faithful: SetShapeBoneWeights (NifFile.cpp:2866 — sole writer of the flag)
+        ' unconditionally sets skinData->hasVertWeights=true when it authors per-bone weights
+        ' for an SSE edit (Anim.cpp:635-636, !isFO branch).  An SSE NiSkinData that loaded with
+        ' HasVertexWeights=false (weights only in the partition) is normalized false→true by the
+        ' edit-save.  Match it here: without the flag, NiSkinData.BeforeSync (NiSkinData.cs:18-21)
+        ' forces NumVertices=0 and discards the weight arrays we populate below → weightless on
+        ' disk.  Reached only for SSE (FO4 BSSkin_Instance returned early above).
+        skinData.HasVertexWeights = True
+
+        Dim n As Integer = skinning.VertexCount
+        Dim wpv As Integer = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, 4)
+
+        ' Grow BoneList if a referenced local bone index is beyond the current palette.
+        ' Mirrors MergeShapesHelper step 5b: add New BoneData() and re-init VertexWeights.
+        ' (Normally numBones already matches skinInst.Bones, but a compaction step may have
+        ' expanded the bone palette before the skin write reaches here.)
+        Dim numBones As Integer = skinData.BoneList.Count
+        Dim maxBoneIdx As Integer = -1
+        Dim flatLen As Integer = n * wpv
+        For i = 0 To flatLen - 1
+            If i >= skinning.BoneIndices.Length OrElse i >= skinning.BoneWeights.Length Then Exit For
+            Dim w As Single = CType(skinning.BoneWeights(i), Single)
+            If w <= 0.0F Then Continue For
+            Dim bIdx As Integer = CInt(skinning.BoneIndices(i))
+            If bIdx > maxBoneIdx Then maxBoneIdx = bIdx
+        Next
+        Do While skinData.BoneList.Count <= maxBoneIdx
+            skinData.BoneList.Add(New BoneData())
+        Loop
+        numBones = skinData.BoneList.Count
+        skinData.NumBones = CUInt(numBones)
+
+        ' Re-init each bone's VertexWeights list with a fresh List(Of BoneVertData)().
+        ' BoneData is a struct and DeepCopyHelper historically left clones aliasing the
+        ' source list; re-initialising (rather than .Clear()) is the safe workaround used
+        ' across the codebase (NiTriShapeGeometry note + MergeShapesHelper step 5b).
+        For b = 0 To numBones - 1
+            Dim bd = skinData.BoneList(b)
+            bd.VertexWeights = New List(Of BoneVertData)()
+            skinData.BoneList(b) = bd
+        Next
+
+        ' Pivot per-vertex 4-slot influences → per-bone (vertex, weight) entries.  Skip
+        ' zero-weight slots so the per-bone lists stay sparse.  Half→Single weight conversion
+        ' and CUShort vertex index match NiTriShapeGeometry's rebuild.
+        For i = 0 To n - 1
+            Dim vBase As Integer = i * wpv
+            For j = 0 To wpv - 1
+                Dim flatIdx As Integer = vBase + j
+                If flatIdx >= skinning.BoneIndices.Length OrElse flatIdx >= skinning.BoneWeights.Length Then Continue For
+                Dim w As Single = CType(skinning.BoneWeights(flatIdx), Single)
+                If w <= 0.0F Then Continue For
+                Dim bIdx As Integer = CInt(skinning.BoneIndices(flatIdx))
+                If bIdx < 0 OrElse bIdx >= numBones Then Continue For
+                skinData.BoneList(bIdx).VertexWeights.Add(New BoneVertData() With {
+                    .Index = CUShort(i),
+                    .Weight = w
+                })
+            Next
+        Next
+
+        ' Update per-bone NumVertices to match the rebuilt lists (NiflySharp reads this on
+        ' write; if stale, the binary output is truncated/corrupt).
+        For b = 0 To numBones - 1
+            Dim bd = skinData.BoneList(b)
+            bd.NumVertices = CUShort(bd.VertexWeights.Count)
+            skinData.BoneList(b) = bd
+        Next
     End Sub
 
     ' ─────────────── Helpers ───────────────

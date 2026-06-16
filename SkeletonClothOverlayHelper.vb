@@ -36,50 +36,55 @@ Imports OpenTK.Mathematics
 
 Public NotInheritable Class SkeletonClothOverlayHelper_Class
 
-    ' Caché por-NIF del cloth hkaSkeleton parseado. ParseClothSkeleton se invoca desde
+    ' Caché por-BLOQUE del cloth hkaSkeleton parseado. La clave es el bloque BSClothExtraData (objeto
+    ' estable, multi-block-safe). ParseClothSkeleton/ParseClothSkeletonFromBlock se invocan desde
     ' PrepareForShapes, que el path de pose-update corre EN CADA FRAME — sin caché, durante el play
     ' de una animación se re-parseaba el packfile Havok entero (Parse + BuildGraph + ParseSkeleton)
     ' de cada prenda con física ~60 veces/seg (el costo es del parse, no de la geometría: por eso
-    ' lento aun con pocas shapes). El cloth-skeleton es INVARIANTE para un NIF dado, así que se
-    ' cachea por instancia de NIF.
-    ' ConditionalWeakTable: clave DÉBIL → cuando el NIF se libera (shape descargada/reemplazada por
-    ' otra instancia), la entrada se evacúa sola por GC. Sin clear manual y sin mantener NIFs vivos
-    ' (no leak). TryGetValue/AddOrUpdate son thread-safe.
+    ' lento aun con pocas shapes). El cloth-skeleton es INVARIANTE para un bloque dado, así que se
+    ' parsea UNA vez por vida del bloque (no por NIF).
+    ' ConditionalWeakTable: clave DÉBIL → cuando el bloque/NIF se libera (shape descargada/reemplazada
+    ' por otra instancia), la entrada se evacúa sola por GC. Sin clear manual y sin mantener bloques
+    ' vivos (no leak). TryGetValue/AddOrUpdate son thread-safe.
     Private Shared ReadOnly _clothSkeletonCache As _
-        New Runtime.CompilerServices.ConditionalWeakTable(Of Nifcontent_Class_Manolo, HkaSkeletonGraph_Class)
+        New Runtime.CompilerServices.ConditionalWeakTable(Of BSClothExtraData, HkaSkeletonGraph_Class)
 
-    ' Parses the BSClothExtraData from a NIF and returns the HKX skeleton (cached per NIF instance).
-    ' Returns Nothing if the NIF has no cloth data or the skeleton cannot be parsed.
+    ' Parses the first BSClothExtraData from a NIF and returns the HKX skeleton (cached per block).
+    ' Returns Nothing if the NIF has no cloth data or the skeleton cannot be parsed. Observable result
+    ' idéntico al histórico (primer bloque), ahora vía el caché por-bloque. FaceGen bake depende de esta firma.
     Public Shared Function ParseClothSkeleton(nifContent As Nifcontent_Class_Manolo) As HkaSkeletonGraph_Class
-        If nifContent Is Nothing Then Return Nothing
-
-        Dim cached As HkaSkeletonGraph_Class = Nothing
-        If _clothSkeletonCache.TryGetValue(nifContent, cached) Then Return cached
-
-        Dim parsed = ParseClothSkeletonUncached(nifContent)
-        ' Solo se cachean resultados no-nulos: ConditionalWeakTable no admite Nothing como value, y un
-        ' Nothing (sin BSClothExtraData o parse fallido) es barato de re-evaluar. En la práctica los
-        ' callers (PrepareForShapes) solo pasan NIFs de shapes con HasPhysics → parsed no-nulo → cachea.
-        ' AddOrUpdate (no Add): si dos hilos parsean a la vez, el último gana; ambos resultados son
-        ' equivalentes (el parse es determinístico para un NIF dado), así que es idempotente.
-        If parsed IsNot Nothing Then _clothSkeletonCache.AddOrUpdate(nifContent, parsed)
-        Return parsed
-    End Function
-
-    Private Shared Function ParseClothSkeletonUncached(nifContent As Nifcontent_Class_Manolo) As HkaSkeletonGraph_Class
         Dim cloth = nifContent?.Blocks.OfType(Of BSClothExtraData)().FirstOrDefault()
         If cloth Is Nothing Then Return Nothing
+        Return ParseClothSkeletonFromBlock(cloth)
+    End Function
+
+    ' Parses a specific BSClothExtraData block and returns the HKX skeleton (cached per block instance).
+    Private Shared Function ParseClothSkeletonFromBlock(cloth As BSClothExtraData) As HkaSkeletonGraph_Class
+        Dim cached As HkaSkeletonGraph_Class = Nothing
+        If _clothSkeletonCache.TryGetValue(cloth, cached) Then Return cached
+
+        Dim parsed As HkaSkeletonGraph_Class = Nothing
         Try
             Dim graph = HkxObjectGraphParser_Class.BuildGraph(HkxPackfileParser_Class.Parse(cloth))
             Dim skeletonObject = graph.GetObjectsByClassName("hkaSkeleton").FirstOrDefault()
-            If skeletonObject Is Nothing Then Return Nothing
-            Dim skeleton = graph.ParseSkeleton(skeletonObject)
-            If skeleton Is Nothing OrElse skeleton.Bones Is Nothing OrElse skeleton.ReferencePose Is Nothing OrElse skeleton.ParentIndices Is Nothing Then Return Nothing
-            If skeleton.Bones.Count = 0 OrElse skeleton.ReferencePose.Count <> skeleton.Bones.Count Then Return Nothing
-            Return skeleton
+            If skeletonObject IsNot Nothing Then
+                Dim skeleton = graph.ParseSkeleton(skeletonObject)
+                If skeleton IsNot Nothing AndAlso skeleton.Bones IsNot Nothing AndAlso skeleton.ReferencePose IsNot Nothing AndAlso skeleton.ParentIndices IsNot Nothing Then
+                    If skeleton.Bones.Count > 0 AndAlso skeleton.ReferencePose.Count = skeleton.Bones.Count Then
+                        parsed = skeleton
+                    End If
+                End If
+            End If
         Catch ex As Exception
-            Return Nothing
+            parsed = Nothing
         End Try
+
+        ' Solo se cachean resultados no-nulos: ConditionalWeakTable no admite Nothing como value, y un
+        ' Nothing (parse fallido) es barato de re-evaluar.
+        ' AddOrUpdate (no Add): si dos hilos parsean a la vez, el último gana; ambos resultados son
+        ' equivalentes (el parse es determinístico para un bloque dado), así que es idempotente.
+        If parsed IsNot Nothing Then _clothSkeletonCache.AddOrUpdate(cloth, parsed)
+        Return parsed
     End Function
 
     ''' <param name="targetSkeleton">SkeletonInstance into which missing bones get injected.
@@ -106,7 +111,10 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
             ' BSClothExtraData embebe la rebanada del hkaSkeleton de AUTORÍA con los cloth-bones + su
             ' ancla y bind/jerarquía — la fuente directa y correcta. (El .hkx de autoría suelto tiene el
             ' skeleton completo de 201 huesos, mismo bind, pero el render no tiene el path para cargarlo.)
-            skeleton = ParseClothSkeleton(shape.NifContent)
+            ' Resuelve PER-SHAPE el bloque referenciado desde el ExtraDataList de la propia shape; si la
+            ' shape no tiene cloth atado, cae al scan plano del primer bloque (no-op para NIFs single-cloth).
+            Dim shapeBlock = ResolveShapeClothBlock(nifShape, shape.NifContent)
+            skeleton = If(shapeBlock IsNot Nothing, ParseClothSkeletonFromBlock(shapeBlock), ParseClothSkeleton(shape.NifContent))
             If skeleton Is Nothing Then Exit Sub
         End If
 
@@ -154,6 +162,20 @@ Public NotInheritable Class SkeletonClothOverlayHelper_Class
             If expectedNames.Any(Function(name) String.IsNullOrWhiteSpace(name) = False AndAlso String.Equals(name, nifName, StringComparison.OrdinalIgnoreCase)) Then Return nifShape
         Next
 
+        Return Nothing
+    End Function
+
+    ' Returns the first BSClothExtraData referenced from the shape's own ExtraDataList, or Nothing.
+    ' Espeja la lógica probada de Tools\HkxLoadOrderAudit\Program.vb (AvHasClothRef): recorre
+    ' av.ExtraDataList.References y resuelve cada uno con GetBlock(Of NiExtraData).
+    Private Shared Function ResolveShapeClothBlock(nifShape As INiShape, nifContent As Nifcontent_Class_Manolo) As BSClothExtraData
+        Dim av = TryCast(nifShape, NiAVObject)
+        If av Is Nothing OrElse av.ExtraDataList Is Nothing Then Return Nothing
+        For Each reference In av.ExtraDataList.References
+            If reference Is Nothing Then Continue For
+            Dim ed = nifContent.GetBlock(Of NiExtraData)(reference)
+            If TypeOf ed Is BSClothExtraData Then Return CType(ed, BSClothExtraData)
+        Next
         Return Nothing
     End Function
 

@@ -501,6 +501,14 @@ Public Class NiTriShapeGeometry
         Dim skinData = ResolveSkinData(skinInst)
         If skinData Is Nothing OrElse skinData.BoneList Is Nothing Then Return
 
+        ' OS-faithful (mirrors BSTriShapeGeometry.RebuildNiSkinData fix): SetShapeBoneWeights
+        ' (NifFile.cpp:2866) unconditionally sets skinData->hasVertWeights=true for !isFO edits
+        ' (LE/OB/SSE — all NiTriShape skinned shapes).  Without the flag, NiSkinData.BeforeSync
+        ' (NiSkinData.cs:18-21) zeroes NumVertices and discards the weight arrays we populate
+        ' below → weightless on disk.  Reached only for skinned shapes (Not _shape.IsSkinned
+        ' returned early above), matching OS.
+        skinData.HasVertexWeights = True
+
         Dim n As Integer = skinning.VertexCount
         Dim wpv As Integer = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, 4)
         Dim numBones As Integer = skinData.BoneList.Count

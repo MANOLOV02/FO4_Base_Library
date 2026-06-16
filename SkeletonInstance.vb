@@ -621,20 +621,8 @@ Public Class SkeletonInstance
 
             ClearInjectedBones()
             Try
-                Dim skeletonCache = shapes.
-                    Where(Function(s) s.HasPhysics AndAlso s.NifContent IsNot Nothing).
-                    Select(Function(s) s.NifContent).
-                    Distinct().
-                    ToDictionary(
-                        Function(nif) nif,
-                        Function(nif) SkeletonClothOverlayHelper_Class.ParseClothSkeleton(nif))
-
                 For Each shape In shapes
-                    Dim cached As HkaSkeletonGraph_Class = Nothing
-                    If shape.NifContent IsNot Nothing Then
-                        skeletonCache.TryGetValue(shape.NifContent, cached)
-                    End If
-                    SkeletonClothOverlayHelper_Class.InjectMissingBonesIntoLiveSkeleton(shape, Me, cached)
+                    SkeletonClothOverlayHelper_Class.InjectMissingBonesIntoLiveSkeleton(shape, Me)
                 Next
             Catch ex As Exception
                 Debugger.Break()

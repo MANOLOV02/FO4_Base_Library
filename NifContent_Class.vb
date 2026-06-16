@@ -462,11 +462,9 @@ Public Class Nifcontent_Class_Manolo
     End Function
 
     Public Function CloneShape_Original(srcShape As INiShape, destShapeName As String, srcNif As Nifcontent_Class_Manolo) As INiShape
-        If srcShape.GetType Is GetType(BSDynamicTriShape) Then
-            ' TESTEAR QUE ANDA !!!!!
-            Debugger.Break()
-        End If
-
+        ' BSDynamicTriShape clone path validated 2026-06-15 via TestNifFile_Skinned_Dynamic_SE
+        ' roundtrip (dynamic _vertices stay in sync with vertData via CalcDynamicData; skin
+        ' consistent after the SSE NiSkinData rebuild fix).  Earlier Debugger.Break guard removed.
         Dim destShape = Me.CloneShape(srcShape, destShapeName, srcNif)
 
         ' Preservar el ExtraDataList de la shape (REGLA GENERAL, no solo ECED). NiflySharp.CloneShape
