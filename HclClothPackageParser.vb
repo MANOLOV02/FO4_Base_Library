@@ -606,6 +606,19 @@ Public NotInheritable Class HclClothPackageParser_Class
         Dim pose = sim?.DefaultClothPoseDetails?.FirstOrDefault()
         If IsNothing(skin) OrElse IsNothing(sim) OrElse IsNothing(pose) Then Return
 
+        ' El VertexIndex del ObjectSpaceSkin es el índice del BUFFER DE SKIN, que NO es el índice de
+        ' PARTÍCULA de DefaultClothPose (difieren cuando el skin cubre un espacio distinto — p.ej.
+        ' maxVertexIndex >= particleCount, visto en CBBE Far Harbor Hunter). El puente correcto
+        ' skin→partícula es MoveParticles; sin par, el vértice de skin no tiene partícula correspondiente.
+        ' (Antes: pose.Pose(VertexIndex) directo = cruce de espacios → match/PositionError errados en esos
+        ' items. Es solo metadata diagnóstica, pero ahora correcta. Ver arch_cloth_deform_algorithm.)
+        Dim vertToParticle As New Dictionary(Of Integer, Integer)
+        If config.MoveParticles?.Pairs IsNot Nothing Then
+            For Each mpPair In config.MoveParticles.Pairs
+                If mpPair IsNot Nothing Then vertToParticle(CInt(mpPair.VertexIndex)) = CInt(mpPair.ParticleIndex)
+            Next
+        End If
+
         Const epsilon As Double = (1.0R / 256.0R) + 0.00001R
 
         For Each block In skin.SkinBlocks
@@ -616,9 +629,14 @@ Public NotInheritable Class HclClothPackageParser_Class
 
             For Each entry In block.VertexEntries
                 If IsNothing(entry?.Position) Then Continue For
-                If entry.VertexIndex < 0 OrElse entry.VertexIndex >= pose.Pose.Count Then Continue For
+                Dim particleIdx As Integer
+                If Not vertToParticle.TryGetValue(CInt(entry.VertexIndex), particleIdx) Then
+                    entry.MatchesDefaultPosePosition = Nothing   ' sin par MoveParticles → sin partícula correspondiente
+                    Continue For
+                End If
+                If particleIdx < 0 OrElse particleIdx >= pose.Pose.Count Then Continue For
 
-                Dim expected = pose.Pose(CInt(entry.VertexIndex))
+                Dim expected = pose.Pose(particleIdx)
                 entry.ExpectedPositionX = expected.X
                 entry.ExpectedPositionY = expected.Y
                 entry.ExpectedPositionZ = expected.Z

@@ -60,6 +60,12 @@ Public Class FacialBoneRegion
     Public Property DefaultRotation As Vector3
     Public Property DefaultScale As Vector3
     Public Property Bones As New List(Of FacialBoneEntry)
+    ''' <summary>True for the single region the JSON flags <c>"IsNeckRegion": true</c> (e.g. Human
+    ''' male: ID 921646270, Name "Neck"). The CK applies the RACE NNAM ("Neck Fat Adjustments
+    ''' Scale") additive non-uniform scale to the "Neck" bone driven by this region's FaceMorph
+    ''' PositionZ. Data-driven: the region ID is NOT hardcoded — it is whichever region carries
+    ''' this flag in the race's FacialBoneRegions JSON.</summary>
+    Public Property IsNeckRegion As Boolean
 End Class
 
 ''' <summary>Parsed FacialBoneRegions JSON file. Maps FMRI index → region data.</summary>
@@ -121,6 +127,13 @@ Public Class FacialBoneRegionsFile
 
         If elem.TryGetProperty("AssociatedHeadPartType", prop) AndAlso prop.ValueKind = JsonValueKind.String Then
             region.AssociatedHeadPartType = prop.GetString()
+        End If
+
+        ' The single region flagged "IsNeckRegion":true drives the RACE NNAM neck-fat scale.
+        ' Vanilla JSON uses a JSON boolean; accept True/False kinds only (absent → False default).
+        If elem.TryGetProperty("IsNeckRegion", prop) AndAlso
+           (prop.ValueKind = JsonValueKind.True OrElse prop.ValueKind = JsonValueKind.False) Then
+            region.IsNeckRegion = prop.GetBoolean()
         End If
 
         If elem.TryGetProperty("Defaults", prop) AndAlso prop.ValueKind = JsonValueKind.Object Then
