@@ -622,8 +622,8 @@ Public Module FaceTintInputBuilder
             '                    shader's TS branch substitutes uColor for layerSample.rgb while
             '                    keeping shape via alpha.
             '   HCLF.HasRemappingIndex (palette CLFM): set UseHairPalette + LUT + row. The shader
-            '     picks the X source per-kind (mask.r for Palette, grayscale of layerSample.rgb
-            '     for TextureSet), mirroring the formula the brow MESH grayscale-to-palette uses.
+            '     samples the LUT at X = layer diffuse green channel (layerSample.g) for BOTH kinds,
+            '     mirroring the hair MESH grayscale-to-palette lookup (baseMap.g).
             ' No-op when the NPC has no HCLF, when the CLFM resolves to neither flag, or (in the
             ' palette branch) when the LUT bytes don't load.
             If opt.Slot = CUShort(TintSlot.Brows) AndAlso eyebrowLut.Enabled Then

@@ -144,22 +144,32 @@ Public Module FaceTintPaletteResolver
         Return PickTemplateColor(matches, opt, npcOpacity)
     End Function
 
+    ''' <summary>BlendOp por capa = regla del Creation-Kit (<see cref="ResolveBlendOpCk"/>: last-color-match)
+    ''' sobre el color efectivo, con la red SkinTone (slot-12 + 0 -&gt; 3/SoftLight). UNICA fuente del blend-op
+    ''' por capa usada por <see cref="ResolvePaletteLayerEffective"/> en cada return.</summary>
+    Private Function CkBlendOpWithSkinToneNet(opt As RACE_TintTemplateOption, color As Color, value As Integer, pm As PluginManager) As UInteger
+        Dim bop As UInteger = ResolveBlendOpCk(opt, color, value, pm)
+        If opt IsNot Nothing AndAlso opt.Slot = CUShort(TintSlot.SkinTone) AndAlso bop = 0UI Then bop = 3UI
+        Return bop
+    End Function
+
     ''' <summary>Resuelve Color/BlendOp/Matched/OpacityScale para una Palette (disc=1) layer.
-    ''' Cadena:
+    ''' COLOR + OpacityScale + Matched (cadena Step1 index / Step2 color):
     '''   Step 1: TemplateColorIndex match — honra el índice con cualquier Alpha (sin gate Alpha&gt;0).
     '''   Step 2: Color match via FindTemplateColorByColor (alpha-closest a la opacidad, acepta Alpha=0).
-    '''   Step 3: ResolveFallbackBlendOp (F2 mode) cuando no hay match de color.
-    ''' COLOR: index>=0 (Step1) -> color del TEMPLATE (CLFM del RACE); custom -1 (Step2/3) -> TEND del NPC
+    ''' COLOR: index>=0 (Step1) -> color del TEMPLATE (CLFM del RACE); custom -1 (Step2) -> TEND del NPC
     ''' verbatim. Replica build_3.effective_palette_color (el engine sustituye el color cuando hay index).
+    ''' BLEND-OP: regla del Creation-Kit (ResolveBlendOpCk: last-color-match sobre el color efectivo) +
+    ''' red SkinTone slot-12->3, via CkBlendOpWithSkinToneNet, en TODO return. Color/OpacityScale/Matched
+    ''' sin cambios respecto de la cadena Step1/Step2.
     ''' </summary>
     Public Function ResolvePaletteLayerEffective(tl As NPC_FaceTintLayerData, opt As RACE_TintTemplateOption, pm As PluginManager) As (Color As Color, BlendOp As UInteger, Matched As Boolean, OpacityScale As Single)
         Dim resolvedColor As Color = tl.Color
-        Dim resolvedBlendOp As UInteger = ResolveFallbackBlendOp(opt, tl.Value / 100.0F)
         Dim matched As Boolean = False
         Dim opacityScale As Single = 1.0F
 
         If opt Is Nothing OrElse opt.TemplateColors Is Nothing OrElse opt.TemplateColors.Count = 0 Then
-            Return (resolvedColor, resolvedBlendOp, matched, opacityScale)
+            Return (resolvedColor, CkBlendOpWithSkinToneNet(opt, resolvedColor, tl.Value, pm), matched, opacityScale)
         End If
 
         ' Step 1: TemplateColorIndex
@@ -168,16 +178,13 @@ Public Module FaceTintPaletteResolver
             Dim tplByIdx As RACE_TintTemplateColor = opt.TemplateColors.FirstOrDefault(
                 Function(t) t.TemplateIndex = needle)
             ' Honour the index regardless of the preset's Alpha: the TemplateColorIndex is resolved
-            ' by colour, so Alpha=0 is a legitimate target. Gating the BlendOp on Alpha>0 dropped the
-            ' matched preset's BlendOp and fell through to the fallback — wrong now that the index is
-            ' colour-derived.
+            ' by colour, so Alpha=0 is a legitimate target.
             If tplByIdx IsNot Nothing Then
-                resolvedBlendOp = tplByIdx.BlendOperation
                 opacityScale = tplByIdx.Alpha
                 matched = True
                 ' COLOR: con TemplateColorIndex>=0 el engine usa el color del TEMPLATE (CLFM del RACE),
                 ' NO el TEND del NPC. Replica build_3.effective_palette_color (TTEC[tplcolidx]); el TEND
-                ' del entry solo manda en custom (index=-1, Step2/3). Sin esto el dirt (TEND azul/purpura,
+                ' del entry solo manda en custom (index=-1, Step2). Sin esto el dirt (TEND azul/purpura,
                 ' template NEGRO) se pintaba azul y cubre ~60% de la cara (+40 byte en B). Si el CLFM no
                 ' resuelve, se conserva el TEND (= build_3 cae a TEND cuando el indice no esta en TTEC).
                 If tplByIdx.ColorFormID <> 0UI AndAlso pm IsNot Nothing Then
@@ -189,10 +196,7 @@ Public Module FaceTintPaletteResolver
                         End If
                     End If
                 End If
-                If opt.Slot = CUShort(TintSlot.SkinTone) AndAlso resolvedBlendOp = 0UI Then
-                    resolvedBlendOp = 3UI
-                End If
-                Return (resolvedColor, resolvedBlendOp, matched, opacityScale)
+                Return (resolvedColor, CkBlendOpWithSkinToneNet(opt, resolvedColor, tl.Value, pm), matched, opacityScale)
             End If
         End If
 
@@ -202,17 +206,33 @@ Public Module FaceTintPaletteResolver
         ' the opacity wins — identical to how the TemplateColorIndex itself is chosen.
         Dim byColor = FindTemplateColorByColor(resolvedColor, tl.Value / 100.0F, opt, pm)
         If byColor IsNot Nothing Then
-            resolvedBlendOp = byColor.BlendOperation
             opacityScale = byColor.Alpha
             matched = True
         End If
 
-        ' Step 3: resolvedBlendOp ya tiene F2 fallback.
-        If opt.Slot = CUShort(TintSlot.SkinTone) AndAlso resolvedBlendOp = 0UI Then
-            resolvedBlendOp = 3UI
-        End If
+        Return (resolvedColor, CkBlendOpWithSkinToneNet(opt, resolvedColor, tl.Value, pm), matched, opacityScale)
+    End Function
 
-        Return (resolvedColor, resolvedBlendOp, matched, opacityScale)
+    ''' <summary>Blend-op EXACTO del CK (FUN_14041D220): itera TemplateColors EN ORDEN; por cada preset cuyo
+    ''' CLFM color == layerColor (RGB exacto) recuerda su BlendOp (LAST gana); si ademas Alpha == value*0.0099999998
+    ''' EXACTO corta. Sin color-match -> 0. THE rule: unica fuente del blend-op por capa (via
+    ''' ResolvePaletteLayerEffective).</summary>
+    Public Function ResolveBlendOpCk(opt As RACE_TintTemplateOption, layerColor As Color, value As Integer, pm As PluginManager) As UInteger
+        If opt Is Nothing OrElse opt.TemplateColors Is Nothing OrElse pm Is Nothing Then Return 0UI
+        Dim vScaled As Single = CSng(value) * 0.0099999998F
+        Dim result As UInteger = 0UI
+        For Each tc In opt.TemplateColors
+            If tc Is Nothing OrElse tc.ColorFormID = 0UI Then Continue For
+            Dim rec = pm.GetRecord(tc.ColorFormID)
+            If rec Is Nothing OrElse rec.Header.Signature <> "CLFM" Then Continue For
+            Dim clfm = RecordParsers.ParseCLFM(rec, pm)
+            If clfm Is Nothing OrElse Not clfm.HasColor Then Continue For
+            If clfm.Color.R = layerColor.R AndAlso clfm.Color.G = layerColor.G AndAlso clfm.Color.B = layerColor.B Then
+                result = tc.BlendOperation
+                If tc.Alpha = vScaled Then Return result
+            End If
+        Next
+        Return result
     End Function
 
 End Module

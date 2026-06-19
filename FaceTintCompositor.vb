@@ -147,12 +147,12 @@ Public Class FaceTintLayerInput
 
     ''' <summary>Opt-in for the per-pixel grayscale-to-palette path on the Diffuse channel. When
     ''' True, the shader samples the per-fragment colour from a hair palette LUT instead of the
-    ''' authored RGB. The X coordinate depends on the layer kind: PaletteMask uses mask.r (the
-    ''' .r channel of the diffuse mask), TextureSet uses <c>dot(layerSample.rgb, vec3(0.299,
-    ''' 0.587, 0.114))</c> -- the standard luminance grayscale of the layer's own diffuse.
-    ''' The Y coordinate is always <see cref="HairPaletteRow"/> (= CLFM.RemappingIndex). Caller
-    ''' must supply <see cref="HairLutDdsBytes"/>; missing LUT bytes silently fall through to
-    ''' the default path. No-op on Normal/Specular channels.</summary>
+    ''' authored RGB. The X coordinate is the layer diffuse's green channel (<c>layerSample.g</c>)
+    ''' for BOTH layer kinds (PaletteMask and TextureSet), mirroring the hair mesh shader's
+    ''' <c>baseMap.g</c> grayscale-to-palette lookup. The Y coordinate is always
+    ''' <see cref="HairPaletteRow"/> (= CLFM.RemappingIndex). Caller must supply
+    ''' <see cref="HairLutDdsBytes"/>; missing LUT bytes silently fall through to the default
+    ''' path. No-op on Normal/Specular channels.</summary>
     Public Property UseHairPalette As Boolean = False
     ''' <summary>Force the shader's TextureSet diffuse branch to use the uniform <c>uColor</c>
     ''' instead of the layer's authored RGB, while keeping coverage from the layer's diffuse
@@ -162,7 +162,7 @@ Public Class FaceTintLayerInput
     Public Property ForceUniformColor As Boolean = False
     ''' <summary>Hair palette LUT DDS bytes (the same 2D texture the hair shader samples). Rows =
     ''' hair-tone gradients (highlight→shadow). Loaded into a GL texture by the compositor's batch
-    ''' loader, sampled at <c>(mask.r, HairPaletteRow)</c> when <see cref="UseHairPalette"/> is True.</summary>
+    ''' loader, sampled at <c>(layerSample.g, HairPaletteRow)</c> when <see cref="UseHairPalette"/> is True.</summary>
     Public Property HairLutDdsBytes As Byte()
     ''' <summary>Optional cache key for <see cref="HairLutDdsBytes"/> (typically the normalized
     ''' texture path). Same caching semantics as <see cref="LayerCacheKey"/>: when supplied
