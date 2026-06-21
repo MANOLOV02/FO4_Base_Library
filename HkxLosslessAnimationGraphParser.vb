@@ -302,20 +302,28 @@ Public Partial Class HkxObjectGraph_Class
         }
     End Function
 
-    ''' <summary>hkaDefaultAnimatedReferenceFrame → ROOT MOTION. Layout verificado por --dump:
-    ''' m_up@+0x20 (hkVector4), m_forward@+0x30, m_duration@+0x40, m_referenceFrameSamples@+0x48
-    ''' (hkArray&lt;hkVector4&gt;: por-frame {X,Y,Z = desplazamiento del root, W = ángulo alrededor de up}).
-    ''' Esto es lo que hace que walk/run DESPLACEN al actor (no animar en el lugar).</summary>
+    ''' <summary>hkaDefaultAnimatedReferenceFrame → ROOT MOTION (hkArray&lt;hkVector4&gt; por-frame
+    ''' {X,Y,Z = desplazamiento del root, W = ángulo alrededor de up}; es lo que hace que walk/run
+    ''' DESPLACEN al actor). El layout difiere entre Skyrim (hk2010/2011) y FO4 (hk2014) — canonical
+    ''' HavokLib (hka_animated_reference_frame_default.inl LAYOUTS, ptr=8):
+    '''   Skyrim HK500..HK2011_3: up=0x10, forward=0x20, duration=0x30, samples=0x38.
+    '''   FO4    HK2012_1..HK2019: up=0x20, forward=0x30, duration=0x40, samples=0x48 (--dump confirmó).
+    ''' Gateado por formato, igual que blendHint del binding y partitions del skeleton.</summary>
     Public Function ParseAnimatedReferenceFrame(source As HkxVirtualObjectGraph_Class) As HkaAnimatedReferenceFrameGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkaDefaultAnimatedReferenceFrame", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim rel = source.RelativeOffset
+        Dim isFo4 = (Packfile.Header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64)
+        Dim upOff = If(isFo4, &H20, &H10)
+        Dim fwdOff = If(isFo4, &H30, &H20)
+        Dim durOff = If(isFo4, &H40, &H30)
+        Dim sampOff = If(isFo4, &H48, &H38)
         Dim result As New HkaAnimatedReferenceFrameGraph_Class With {
             .SourceObject = source,
-            .Up = New HkxVector4Graph_Class With {.X = ReadSingle(rel + &H20), .Y = ReadSingle(rel + &H24), .Z = ReadSingle(rel + &H28), .W = ReadSingle(rel + &H2C)},
-            .Forward = New HkxVector4Graph_Class With {.X = ReadSingle(rel + &H30), .Y = ReadSingle(rel + &H34), .Z = ReadSingle(rel + &H38), .W = ReadSingle(rel + &H3C)},
-            .Duration = ReadSingle(rel + &H40)
+            .Up = New HkxVector4Graph_Class With {.X = ReadSingle(rel + upOff), .Y = ReadSingle(rel + upOff + 4), .Z = ReadSingle(rel + upOff + 8), .W = ReadSingle(rel + upOff + 12)},
+            .Forward = New HkxVector4Graph_Class With {.X = ReadSingle(rel + fwdOff), .Y = ReadSingle(rel + fwdOff + 4), .Z = ReadSingle(rel + fwdOff + 8), .W = ReadSingle(rel + fwdOff + 12)},
+            .Duration = ReadSingle(rel + durOff)
         }
-        result.Samples.AddRange(ReadVector4ArrayFromOffset(rel + &H48))
+        result.Samples.AddRange(ReadVector4ArrayFromOffset(rel + sampOff))
         Return result
     End Function
 

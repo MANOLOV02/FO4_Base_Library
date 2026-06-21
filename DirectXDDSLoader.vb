@@ -127,7 +127,7 @@ Public Module DirectXDDSLoader
         Return False
     End Function
 
-    Public Function CreateOpenGL_FromTextureLoaded_PBO(tex As TextureLoaded) As Integer
+    Public Function CreateOpenGL_FromTextureLoaded_PBO(tex As TextureLoaded, srgb As Boolean) As Integer
         If tex Is Nothing OrElse Not tex.Loaded Then
             Return 0
         End If
@@ -339,6 +339,25 @@ Public Module DirectXDDSLoader
                 glType = &H8365     ' GL_UNSIGNED_SHORT_4_4_4_4_REV
         End Select
 
+        ' sRGB decode AT LOAD, exactly like the engine: the renderer carries a per-texture sRGB flag and,
+        ' for color textures, MakeSRGB (Fallout4.exe FUN_14183e1c0) rewrites the texture format UNORM->_SRGB
+        ' BEFORE the SRV is created, so the GPU gamma-decodes on sample (that is why the engine shaders never
+        ' pow() the diffuse). The previewer mirrors it here. 'srgb' is True only for COLOR textures (diffuse /
+        ' base color), passed by the caller from the material's texture role. We upgrade the chosen UNORM GL
+        ' format to its sRGB variant. Formats already sRGB (DDS authored _SRGB, e.g. BC7_UNORM_SRGB mods) were
+        ' mapped to an sRGB GL format above and DO NOT appear here -> idempotent, NO double decode. Data formats
+        ' (BC5/BC4/single-channel) have no sRGB variant and fall through untouched.
+        If srgb Then
+            Select Case glInternal
+                Case &H83F0 : glInternal = GL_COMPRESSED_SRGB_S3TC_DXT1_EXT          ' BC1 RGB  -> sRGB
+                Case &H83F1 : glInternal = GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT    ' BC1 RGBA -> sRGB
+                Case &H83F2 : glInternal = &H8C4E                                    ' BC2 (DXT3) -> SRGB_ALPHA
+                Case &H83F3 : glInternal = &H8C4F                                    ' BC3 (DXT5) -> SRGB_ALPHA
+                Case &H8E8C : glInternal = &H8E8D                                    ' BC7_UNORM -> BC7_SRGB
+                Case &H8058 : glInternal = &H8C43                                    ' RGBA8 -> SRGB8_ALPHA8
+            End Select
+        End If
+
         If glInternal = 0 Then
             Return 0
         End If
@@ -523,7 +542,7 @@ Public Module DirectXDDSLoader
     End Function
 
 
-    Public Function Load_And_GenerateOpenGLTextures_FromFiles(fullpaths As String(), useCompress As Boolean, forceOpenGL As Boolean) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
+    Public Function Load_And_GenerateOpenGLTextures_FromFiles(fullpaths As String(), useCompress As Boolean, forceOpenGL As Boolean, srgb As Boolean()) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
         Dim ddsFiles As Byte()() = fullpaths.Select(Function(p)
                                                         If File.Exists(p) Then
                                                             Return File.ReadAllBytes(p)
@@ -532,21 +551,21 @@ Public Module DirectXDDSLoader
                                                         End If
                                                     End Function).ToArray()
 
-        Return Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL)
+        Return Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL, srgb)
     End Function
 
     ''' <summary>
     ''' Carga DDS, genera IDs OpenGL y llena Diccionario con metadatos completos.
     ''' </summary>
-    Public Function Load_And_GenerateOpenGLTextures_FromDictionary(fullpaths As String(), useCompress As Boolean, forceOpenGL As Boolean) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
+    Public Function Load_And_GenerateOpenGLTextures_FromDictionary(fullpaths As String(), useCompress As Boolean, forceOpenGL As Boolean, srgb As Boolean()) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
         Dim ddsFiles As Byte()()
         Dim result As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
         If fullpaths.Length = 1 Then
             ddsFiles = {FilesDictionary_class.GetBytes(fullpaths(0))}
-            result = Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL)
+            result = Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL, srgb)
         Else
             ddsFiles = FilesDictionary_class.GetMultipleFilesBytes(fullpaths)
-            result = Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL)
+            result = Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL, srgb)
         End If
 
         If result.Count <> fullpaths.Length Then Debugger.Break() : Throw New Exception("el loader no esta devolviendo la misma cantidad que las enviadas")
@@ -613,7 +632,7 @@ Public Module DirectXDDSLoader
     ''' On failure returns a Texture_Loaded_Class with Texture_ID = 0.
     ''' After upload, nulls out the TextureLoaded.Levels data to free memory.
     ''' </summary>
-    Public Function UploadTextureToGL(tex As DirectXTexWrapperCLI.TextureLoaded, path As String) As PreviewModel.Texture_Loaded_Class
+    Public Function UploadTextureToGL(tex As DirectXTexWrapperCLI.TextureLoaded, path As String, srgb As Boolean) As PreviewModel.Texture_Loaded_Class
         If tex Is Nothing OrElse Not tex.Loaded Then
             Return New PreviewModel.Texture_Loaded_Class With {
                 .Texture_ID = 0,
@@ -622,11 +641,12 @@ Public Module DirectXDDSLoader
                 .DGXFormat_Original = If(tex IsNot Nothing, tex.DxgiCodeOriginal, 0),
                 .DGXFormat_Final = If(tex IsNot Nothing, tex.DxgiCodeFinal, 0),
                 .Loaded = False,
-                .Path = path
+                .Path = path,
+                .IsSRGB = srgb
             }
         End If
 
-        Dim id As Integer = CreateOpenGL_FromTextureLoaded_PBO(tex)
+        Dim id As Integer = CreateOpenGL_FromTextureLoaded_PBO(tex, srgb)
         Dim lvl0Size As Size
         If tex.Levels IsNot Nothing AndAlso tex.Levels.Count > 0 Then
             lvl0Size = New Size(tex.Levels(0).Width, tex.Levels(0).Height)
@@ -641,7 +661,8 @@ Public Module DirectXDDSLoader
             .DGXFormat_Original = tex.DxgiCodeOriginal,
             .DGXFormat_Final = tex.DxgiCodeFinal,
             .Loaded = (tex.Loaded AndAlso id > 0),
-            .Path = path
+            .Path = path,
+            .IsSRGB = srgb
         }
 
         ' Free pixel data now that it has been uploaded to GPU
@@ -655,7 +676,7 @@ Public Module DirectXDDSLoader
         Return result
     End Function
 
-    Public Function Load_And_GenerateOpenGLTextures_Memory(fullpaths As String(), ddsFiles As Byte()(), useCompress As Boolean, forceOpenGL As Boolean) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
+    Public Function Load_And_GenerateOpenGLTextures_Memory(fullpaths As String(), ddsFiles As Byte()(), useCompress As Boolean, forceOpenGL As Boolean, Srgb As Boolean()) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
         Dim diccionario As New Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
         Dim results = Loader.LoadTextures(ddsFiles.ToArray, useCompress, forceOpenGL)
 
@@ -669,10 +690,11 @@ Public Module DirectXDDSLoader
                     .DGXFormat_Original = tex.DxgiCodeOriginal,
                     .DGXFormat_Final = tex.DxgiCodeFinal,
                     .Loaded = tex.Loaded,
-                    .Path = fullpaths(i)
+                    .Path = fullpaths(i),
+                    .IsSRGB = Srgb(i)
                     }
             Else
-                Dim id = CreateOpenGL_FromTextureLoaded_PBO(tex)
+                Dim id = CreateOpenGL_FromTextureLoaded_PBO(tex, Srgb(i))
                 Dim lvl0 = tex.Levels(0)
                 diccionario(fullpaths(i)) = New PreviewModel.Texture_Loaded_Class With {
                     .Texture_ID = id,
@@ -681,7 +703,8 @@ Public Module DirectXDDSLoader
                     .DGXFormat_Original = tex.DxgiCodeOriginal,
                     .DGXFormat_Final = tex.DxgiCodeFinal,
                     .Loaded = (tex.Loaded AndAlso id > 0),
-                    .Path = fullpaths(i)
+                    .Path = fullpaths(i),
+                    .IsSRGB = Srgb(i)
                     }
             End If
 

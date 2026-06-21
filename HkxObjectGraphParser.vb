@@ -548,9 +548,11 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseSkeleton(source As HkxVirtualObjectGraph_Class) As HkaSkeletonGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkaSkeleton", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
-        ' hkaSkeleton layout (autoritativo: HavokLib classgen/reader, HK2012_1..HK2015 = FO4 hk_2014, ptr=8):
-        '   name, parentIndices, bones, transforms(referencePose), referenceFloats, floatSlots, localFrames, partitions.
-        ' OJO: hay que contar referenceFloats entre referencePose y floatSlots (antes se omitía → campos corridos).
+        ' hkaSkeleton layout (autoritativo: HavokLib classgen, HavokLib/source/packfile/hka_skeleton.inl LAYOUTS):
+        '   name, parentIndices, bones, transforms(referencePose), referenceFloats, floatSlots, localFrames, [partitions]
+        ' Skyrim (hk2010/2011, HK2010_1..HK2011_3) y FO4 (hk2014, HK2012_1..HK2015) comparten offsets EXACTOS para
+        ' todos esos campos (referenceFloats incluido); la ÚNICA diferencia es que `partitions` se agregó en hk2014:
+        ' Skyrim NO lo tiene (numPartitions=-1, partitions=-1; objeto 16 bytes más corto, 120 vs 136 en 64-bit).
         Dim nameFieldOffset = BaseObjectFieldOffset
         Dim parentIndicesOffset = nameFieldOffset + PointerSizeValue
         Dim bonesOffset = parentIndicesOffset + ArrayHeaderSizeValue
@@ -558,7 +560,11 @@ Public Partial Class HkxObjectGraph_Class
         Dim referenceFloatsOffset = referencePoseOffset + ArrayHeaderSizeValue
         Dim floatSlotsOffset = referenceFloatsOffset + ArrayHeaderSizeValue
         Dim localFramesOffset = floatSlotsOffset + ArrayHeaderSizeValue
-        Dim partitionsOffset = localFramesOffset + ArrayHeaderSizeValue
+        ' partitions SOLO existe en hk2014 (Fallout 4). En Skyrim leerlo caía pasado el fin del objeto
+        ' (OOB → particiones basura, inofensivo porque WM no las usa). Gateado por formato, igual que el
+        ' blendHint del binding. -1 = ausente.
+        Dim hasPartitions = (Packfile.Header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64)
+        Dim partitionsOffset = If(hasPartitions, localFramesOffset + ArrayHeaderSizeValue, -1)
 
         Dim result As New HkaSkeletonGraph_Class With {
             .SourceObject = source,
@@ -570,13 +576,13 @@ Public Partial Class HkxObjectGraph_Class
             .ReferenceFloatsField = CreateArrayField(source, referenceFloatsOffset, "ReferenceFloats"),
             .FloatSlotsField = CreateArrayField(source, floatSlotsOffset, "FloatSlots"),
             .LocalFramesField = CreateArrayField(source, localFramesOffset, "LocalFrames"),
-            .PartitionsField = CreateArrayField(source, partitionsOffset, "Partitions")
+            .PartitionsField = If(hasPartitions, CreateArrayField(source, partitionsOffset, "Partitions"), Nothing)
         }
 
         result.Bones = ReadSkeletonBones(result.BonesField)
         result.ReferencePose = ReadQsTransformArray(result.ReferencePoseField)
         result.FloatSlotNames = ReadFloatSlotNames(source, floatSlotsOffset)
-        result.Partitions = ReadSkeletonPartitions(source, partitionsOffset)
+        result.Partitions = If(hasPartitions, ReadSkeletonPartitions(source, partitionsOffset), New List(Of HkaPartitionGraph_Class))
         Return result
     End Function
 

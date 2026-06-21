@@ -1517,6 +1517,11 @@ End Class
 Public Class PreviewModel
 
     Public Textures_Dictionary As New Dictionary(Of String, Texture_Loaded_Class)(StringComparer.OrdinalIgnoreCase)
+    ''' <summary>Paths of COLOR textures (diffuse / base color) that must be sampled as sRGB so the GPU
+    ''' gamma-decodes them on load (mirroring the engine's per-texture sRGB flag + MakeSRGB). Populated in
+    ''' Process_Textures_GL from each material's color-texture roles; read by the Phase-2 GL upload. Data
+    ''' textures (normal/spec/mask/flow) are NOT added -> they stay linear.</summary>
+    Public ReadOnly SRGBTexturePaths As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
     Public Can_Render As Boolean = False
     Public Property TexturesReady As Boolean = True
 
@@ -1611,6 +1616,11 @@ Public Class PreviewModel
         Public Property DGXFormat_Original As Integer
         Public Property DGXFormat_Final As Integer
         Public Property Texture_ID As Integer
+        ''' <summary>True si se subió como SRV sRGB (color/diffuse): la GPU gamma-decodea al samplear ⇒ el
+        ''' sample devuelve LINEAL. False = cruda. Se setea AL CARGAR con la decisión de rol (SRGBTexturePaths
+        ''' / ColorTextures_Path_List). Viaja con la textura y se reusa (el compositor FaceTint lee el IsSRGB
+        ''' del base para no doble-decodear el seed).</summary>
+        Public Property IsSRGB As Boolean = False
 
     End Class
     Public Class RenderableMesh
@@ -1704,6 +1714,15 @@ Public Class PreviewModel
             ''' cloning — each RenderableMesh keeps its own composed overlay.</summary>
             Public Property FaceTintOverlay_ID As Integer = 0
 
+            ''' <summary>"Ya está" flag — the skin tone is ALREADY baked into this mesh's diffuse, so the
+            ''' render shader's own SkinTint soft-light (tintColor branch) must be a no-op for it; otherwise
+            ''' the tone is applied twice. Set True by the NPC manager after the FaceTint compositor bakes
+            ''' the slot-12 tone into the FACE diffuse (TryApplyFaceTints), and on the Skyrim legacy BODY
+            ''' bake path. Stays False for the FO4 BODY, whose tone is soft-lit at render from
+            ''' <see cref="SkinToneColor"/> (engine model, NOT a double). Per-mesh on MaterialData so it
+            ''' survives material cloning, same as <see cref="SkinToneColor"/> / <see cref="FaceTintOverlay_ID"/>.</summary>
+            Public Property SkinToneBaked As Boolean = False
+
             ' OS-faithful blend decision. Two independent triggers, either suffices:
             '   1. NIF NiAlphaProperty.Flags.AlphaBlend (bit 0) — carried in the wrapper's
             '      AlphaBlendEnabled field (Apply'd from the shape's NiAlphaProperty at load).
@@ -1776,6 +1795,25 @@ Public Class PreviewModel
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.DistanceFieldAlphaTexture),
                      FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapMaskTexture)
                                               }
+                End Get
+            End Property
+
+            ''' <summary>The COLOR textures of this material that the GPU must gamma-decode (sRGB) at load,
+            ''' decided PER-SLOT from how the engine shaders sample each one (a slot is sRGB iff its sample is
+            ''' used as a color feeding linear lighting). Returns: Diffuse (unless grayscale-recolor, where it
+            ''' is a data index map), InnerLayer (inner base color), and the Envmap cube (a color reflection
+            ''' added to the linear output; format-aware -> only LDR cubes upgrade). NOT data slots
+            ''' (Normal/SmoothSpec/Specular/EnvMask/Flow/Wrinkles/Displacement/Lighting/DistanceField), NOT the
+            ''' palette LUT (decoded in-shader), NOT Glow (ambiguous + dual-use hair flow), NOT BGEM (display
+            ''' space). See the body for the per-slot rationale.</summary>
+            Public ReadOnly Property ColorTextures_Path_List As IEnumerable(Of String)
+                Get
+                    If MaterialBase.IsBGEM Then Return Array.Empty(Of String)()
+                    Dim colors As New List(Of String)()
+                    If Not MaterialBase.GrayscaleToPaletteColor Then colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.Diffuse_or_Base_Texture))
+                    colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.InnerLayerTexture))
+                    colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture))
+                    Return colors
                 End Get
             End Property
             Private Function GetTextureID(texturePath As String) As UInteger
@@ -1870,11 +1908,6 @@ Public Class PreviewModel
             Public ReadOnly Property DetailMaskTexture_ID As UInteger
                 Get
                     Return GetTextureID(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.DetailMaskTexture))
-                End Get
-            End Property
-            Public ReadOnly Property TintMaskTexture_ID As UInteger
-                Get
-                    Return GetTextureID(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.TintMaskTexture))
                 End Get
             End Property
 
@@ -2543,11 +2576,34 @@ Public Class PreviewModel
         Private Const DecalDepthBiasPolygonOffsetFactor As Single = 0.0F
         Private Const DecalDepthBiasPolygonOffsetUnits As Single = 0.0F
 
+        ' T11: engine decal depth-bias. Fallout4.exe selects rasterizer preset 1 (FUN_141855cb0)
+        ' for the Decal flag (SF1 bit 26) via the global ToggleDepthBias (console 'tdb', default on),
+        ' NOT the material DepthBias field (that field is N/A in FO4 v2). Preset 1 = D3D11
+        ' DepthBias=-3, SlopeScaledDepthBias=-0.4 under reversed-Z.
+        '
+        ' SIGN: derived from THIS app's convention (standard-Z, DepthFunc Lequal, near=0, decals drawn
+        '   after the opaque base) -- pulling the decal toward the viewer (smaller depth) to win Lequal
+        '   = NEGATIVE GL offset. (Correct independently of the engine's reversed-Z sign.)
+        ' factor <- D3D SlopeScaledDepthBias = -0.4: a TRUE 1:1 map (both scale max-slope, which is
+        '   format-independent).
+        ' units  <- D3D DepthBias = -3: NOT a faithful cross-API translation -- the engine measured -3
+        '   on a reversed-Z D32_FLOAT buffer (per-primitive r), this app uses a standard-Z D24_UNORM
+        '   buffer (constant r ~ 2^-24). -3.0 is kept only as a sane in-range GL starting value
+        '   (typical GL decals use -1..-8); TUNE if z-fighting/peter-panning appears.
+        ' DepthBiasClamp=-100 has no GL 4.3-core equivalent (no glPolygonOffsetClamp) -> dropped.
+        Private Const DecalEnginePolygonOffsetFactor As Single = -0.4F
+        Private Const DecalEnginePolygonOffsetUnits As Single = -3.0F
+
         Private Shared Function ResolvePolygonOffset(materialBase As FO4UnifiedMaterial_Class) As PolygonOffsetState
             If materialBase Is Nothing Then Return PolygonOffsetState.Disabled
 
             If Not materialBase.Decal Then
                 Return PolygonOffsetState.Disabled
+            End If
+
+            ' FO4: bias the Decal pass with the engine preset (preset 1). Skyrim keeps its own decal handling.
+            If Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Fallout4 Then
+                Return New PolygonOffsetState(True, DecalEnginePolygonOffsetFactor, DecalEnginePolygonOffsetUnits)
             End If
 
             If materialBase.DepthBias Then
@@ -2762,19 +2818,24 @@ Public Class PreviewModel
             Dim lightingTextureId = material.LightingTexture_ID
             Dim WrinklesTextureId = material.WrinklesTexture_ID
 
+            ' FO4 = engine-faithful path (Fragment_FO4, always on); Skyrim = Fragment_SSE (its own path).
+            ' The shader instance is the single source of truth for which game we are rendering.
+            Dim isSSE As Boolean = TypeOf shader Is Shader_Class_SSE
+
             Dim hasBacklightTexture As Boolean = materialBase.BackLighting
 
             If materialBase.EyeEnvironmentMapping AndAlso smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
                 envmapMaskTextureId = smoothSpecTextureId
                 smoothSpecTextureId = 0
             End If
-            If materialBase.Facegen AndAlso WrinklesTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
+            ' T13: Wrinkles is a FaceGen WrinkleSampler, NOT a reflection mask. FO4 never routes it to
+            ' env-mask; only the Skyrim path does this.
+            If isSSE AndAlso materialBase.Facegen AndAlso WrinklesTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
                 envmapMaskTextureId = WrinklesTextureId
                 WrinklesTextureId = 0
             End If
 
             Dim hasSpecMap As Boolean = (smoothSpecTextureId <> 0)
-            Dim isSSE As Boolean = TypeOf shader Is Shader_Class_SSE
             ' SSE: specular can come from normalMap.a even without a dedicated spec map
             Dim hasSpecularSource As Boolean = hasSpecMap OrElse (isSSE AndAlso normalTextureId <> 0)
 
@@ -2807,6 +2868,9 @@ Public Class PreviewModel
             ' Triggered by either the BGSM.Tree flag OR the BSLightingShaderType.TreeAnim shader type;
             ' vanilla content often sets only one of them for vegetation/grass.
             Dim isTreeAnim As Boolean = materialBase.Tree OrElse materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
+            ' Tree leaf-color gamma: FO4 only (the engine TreeAnim path gamma-decodes vColor; SSE keeps
+            ' its own handling). Static — no wind displacement (user choice).
+            shader.SetBool("bTreeAnim", isTreeAnim AndAlso Not (TypeOf shader Is Shader_Class_SSE))
             shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVertexColorData)
             shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso Not isTreeAnim)
             shader.SetBool("bApplyZap", shape.ApplyZaps)
@@ -2822,20 +2886,26 @@ Public Class PreviewModel
             Dim cam = ParentModel.ParentControl.camera
 
             shader.SetBool("bLightEnabled", True)
-            shader.SetFloat("ambient", Config_App.Current.Setting_Lightrig.Ambient)
+            ' Light rig: authored in perceptual (sRGB) space, decoded to linear (pow 2.2) AT UPLOAD so
+            ' the rig config stays untouched and one rig serves both games. Both FO4 and SSE run the
+            ' engine's linear pipeline (verified: the LightingShader PS samples diffuse via sRGB SRV and
+            ' lights/outputs in linear, with tonemap + sRGB-encode in a separate ImageSpace pass; the app
+            ' folds that tonemap + encode into the fragment tail). Directions are geometric, never converted.
+            Dim ambientVal As Single = Config_App.Current.Setting_Lightrig.Ambient
+            shader.SetFloat("ambient", CSng(Math.Pow(ambientVal, 2.2)))
 
-            shader.SetVector3("frontal.diffuse", Config_App.Current.Setting_Lightrig.DirectL.GetDifuse)
+            shader.SetVector3("frontal.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.DirectL.GetDifuse))
             shader.SetVector3("frontal.direction", Config_App.Current.Setting_Lightrig.DirectL.GetDirection(cam))
             ' Luz direccional 0
-            shader.SetVector3("directional0.diffuse", Config_App.Current.Setting_Lightrig.FillLight_1.GetDifuse)
+            shader.SetVector3("directional0.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.FillLight_1.GetDifuse))
             shader.SetVector3("directional0.direction", Config_App.Current.Setting_Lightrig.FillLight_1.GetDirection(cam))
 
             ' Luz direccional 1
-            shader.SetVector3("directional1.diffuse", Config_App.Current.Setting_Lightrig.FillLight_2.GetDifuse)
+            shader.SetVector3("directional1.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.FillLight_2.GetDifuse))
             shader.SetVector3("directional1.direction", Config_App.Current.Setting_Lightrig.FillLight_2.GetDirection(cam))
 
             ' Luz direccional 2
-            shader.SetVector3("directional2.diffuse", Config_App.Current.Setting_Lightrig.BackLight.GetDifuse)
+            shader.SetVector3("directional2.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.BackLight.GetDifuse))
             shader.SetVector3("directional2.direction", Config_App.Current.Setting_Lightrig.BackLight.GetDirection(cam))
 
             '===============================
@@ -2884,9 +2954,13 @@ Public Class PreviewModel
             End If
 
 
-            ' texLightmask is SSE-only (rimlight/softlight masking); FO4 does not use it
-            ' For FaceTint, slot 6 (LightingTexture) is the tint mask, not lightmask
-            If isSSE AndAlso Not materialBase.Facegen Then
+            ' texLightmask is SSE-only (rim/soft-light masking); FO4 does not use it. For FaceTint
+            ' (technique 4) the LightingTexture (texture-set slot 6, the _sk map) is the SUBSURFACE
+            ' map -- VERIFIED in SkyrimSE.exe BSLightingShader::SetupGeometry @0x1414DC310: the facegen
+            ' branch binds texture-set slots {3,5,6} -> PS registers t3(detail)/t4(skintone)/t12(subsurface),
+            ' and the facegen-skin PS modulates SSS by t12. So bind it for facegen too (it is the
+            ' subsurface, NOT a tint-mask overlay). The same slot is reused at other registers per technique.
+            If isSSE Then
                 If lightingTextureId <> 0 Then
                     shader.BindTexture("texLightmask", lightingTextureId, TextureUnit.Texture7)
                 Else
@@ -2907,6 +2981,10 @@ Public Class PreviewModel
             '===============================
             shader.SetBool("bCubemap", hasCubemap)
             shader.SetBool("bEnvMap", materialBase.EnvironmentMapping OrElse materialBase.EyeEnvironmentMapping)
+            ' Alpha-blend (forward b6) vs opaque (deferred): gates the strong forward material-cube envmap.
+            ' Opaque BGSM (pierce-type chrome gems) render deferred where the engine uses the scene IBL,
+            ' not the material cube -- so the forward *3 over-grays them. (Eye keeps it via its inline path.)
+            shader.SetBool("bHasAlphaBlend", hasAlphaBlend OrElse materialBase.EyeEnvironmentMapping)
             shader.SetBool("bAlphaTest", hasAlphaTest)
             shader.SetBool("bEnvMask", envmapMaskTextureId <> 0)
             shader.SetBool("bNormalMap", normalTextureId <> 0)
@@ -2915,15 +2993,22 @@ Public Class PreviewModel
             If isSSE Then shader.SetBool("bHasSpecMap", hasSpecMap)
             shader.SetBool("bModelSpace", materialBase.ModelSpaceNormals)
             shader.SetBool("bEmissive", materialBase.EmitEnabled)
-            shader.SetBool("bSoftlight", materialBase.SubsurfaceLighting)
+            ' FaceTint (technique 4) does subsurface unconditionally in the engine PS (no Soft_Lighting gate,
+            ' verified sse_facegen_skin.asm); force it on for facegen since the head's flag may not be set.
+            shader.SetBool("bSoftlight", materialBase.SubsurfaceLighting OrElse (isSSE AndAlso materialBase.Facegen))
             shader.SetBool("bGlowmap", materialBase.Glowmap AndAlso glowTextureId <> 0)
-            If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0 AndAlso Not materialBase.Facegen)
+            ' Hair (FO4 carries Hair=true AND Glowmap=true): the glow slot holds the _f strand FLOW map,
+            ' not a glow. bHair drives the Kajiya-Kay anisotropic specular + hair tint, robust vs the type.
+            shader.SetBool("bHair", materialBase.Hair)
+            shader.SetBool("bHasGlowTex", glowTextureId <> 0)
+            ' bLightmask: the _sk subsurface map drives the SSS/rim mask, incl. facegen (engine t12, above).
+            If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0)
             shader.SetFloat("shininess", materialBase.Smoothness)
             ' SSE: exponente de glossiness CRUDO (shad.Glossiness), no reconstruido por el shader.
             If isSSE Then shader.SetFloat("glossiness", materialBase.NifGlossiness)
-            shader.SetVector3("specularColor", Shader_Base_Class.Color_to_Vector(materialBase.SpecularColor))
+            shader.SetVector3("specularColor", Shader_Base_Class.Color_to_Vector_Linear(materialBase.SpecularColor))
             shader.SetFloat("specularStrength", materialBase.SpecularMult)
-            shader.SetVector3("emissiveColor", Shader_Base_Class.Color_to_Vector(materialBase.EmittanceColor))
+            shader.SetVector3("emissiveColor", Shader_Base_Class.Color_to_Vector_Linear(materialBase.EmittanceColor))
             shader.SetFloat("emissiveMultiple", materialBase.EmittanceMult)
             shader.SetFloat("fresnelPower", materialBase.FresnelPower)
             shader.SetFloat("subsurfaceRolloff", materialBase.SubsurfaceLightingRolloff)
@@ -2934,36 +3019,50 @@ Public Class PreviewModel
             shader.SetBool("bRimlight", materialBase.RimLighting)
             shader.SetFloat("rimlightPower", materialBase.RimPower)
             shader.SetBool("bDoubleSided", materialBase.TwoSided)
+            shader.SetBool("bDiffuseIsColor", materialBase.IsColorDiffuse())
 
-            ' SkinTint / HairTint
-            ' SkinTint path: el tinte de piel ya fue aplicado upstream sobre la textura diffuse
-            ' (compositor face slot-12 SkinTone, o TryApplyBodySkinSoftLight QNAM para body/hands).
-            ' Forzar tintColor=White para que el render multiply quede no-op. Sin esto el BGSM
-            ' default HairTintColor=DefaultGray (128,128,128) oscurecería al 50% (síntoma "body
-            ' marrón" 2026-05-15 con Sturges). El chargen bake SÍ escribe SkinTintColor al inline
-            ' shader del HeadRear (HDPT type 9) — eso es para el engine in-game que consume el
-            ' .nif2, no afecta este render.
-            ' Hair path: el multiply ES la única fuente de coloreo (no hay compositor de hair).
-            ' Toma HairTintColor del BGSM, seteado per-NPC desde CLFM (HairColorFormID).
+            ' SkinTint / HairTint tint color.
+            ' FO4 (engine): SkinTint = the per-actor SKIN TONE soft-lit at render (the FaceGen genetic-blend
+            '   pass writes it to material+0xC0 for every SkinTint shape; SetupMaterial case 5 gamma-corrects
+            '   pow 2.2 -> cb1[1]). Source = the per-mesh SkinToneColor (NPC) or the material SkinTintColor (WM).
+            '   The body diffuse stays UNTONED (no bake). Hair = HairTintColor.
+            ' Skyrim (SSE): SkinTint forces White (no-op); Hair = HairTintColor.
             Dim hasTint As Boolean = materialBase.SkinTint OrElse materialBase.Hair
+            ' "Ya está": if the skin tone is already baked into this mesh's diffuse (FaceTint composite,
+            ' or Skyrim legacy body bake), the shader's own SkinTint soft-light must be a no-op for it —
+            ' otherwise the tone is applied twice. Hair tint is independent of skin-tone baking, never suppressed.
+            If material.SkinToneBaked AndAlso Not materialBase.Hair Then hasTint = False
             shader.SetBool("bHasTintColor", hasTint)
+            ' SSE Hair: engine applies HairTintColor to the LIT color masked by vertex-green
+            ' (mix(1, tint, vColor.g)), not as a flat albedo multiply. Route via bHairTint.
+            shader.SetBool("bHairTint", isSSE AndAlso materialBase.Hair)
             If hasTint Then
-                Dim tint As Color = If(materialBase.SkinTint, Color.White, materialBase.HairTintColor)
-                shader.SetVector3("tintColor", Shader_Base_Class.Color_to_Vector(tint))
+                Dim tint As Color
+                If materialBase.SkinTint Then
+                    ' SkinTint tone = per-actor SkinToneColor (NPC, set by the manager) or the material
+                    ' SkinTintColor (WM / fallback). No White special-case: the engine never bakes the
+                    ' tone into the texture; it is soft-lit at render from this color.
+                    tint = materialBase.SkinTintColor
+                Else
+                    tint = materialBase.HairTintColor
+                End If
+                shader.SetVector3("tintColor", Shader_Base_Class.Color_to_Vector_Linear(tint))
             End If
 
-            ' FaceTint: detail mask + tint mask (SSE only)
+            ' SkinTint deferred W3C soft-light strength = the skin tone .w (engine material+0xCC). The app
+            ' SkinTintAlpha carries it (default 1.0 = full). Consumed by Fragment_FO4 uEffectiveType==4.
+            shader.SetFloat("skinTintStrength", materialBase.SkinTintAlpha)
+
+            ' FaceTint detail map (SSE only): texture-set slot 3 (DisplacementTexture) -> engine t3, applied as
+            ' a soft-light onto the diffuse. (The old slot-6 "tint mask" overlay was removed: slot 6 is the _sk
+            ' SUBSURFACE map -> engine t12, handled above via texLightmask + SSS, not a per-channel overlay --
+            ' the facegen PS has no such op, verified sse_facegen_skin.asm.)
             If isSSE Then
                 Dim detailMaskId = material.DetailMaskTexture_ID
-                Dim tintMaskId = material.TintMaskTexture_ID
                 Dim isFaceTint As Boolean = materialBase.Facegen
                 shader.SetBool("bHasDetailMask", isFaceTint AndAlso detailMaskId <> 0)
-                shader.SetBool("bHasTintMask", isFaceTint AndAlso tintMaskId <> 0)
                 If isFaceTint AndAlso detailMaskId <> 0 Then
                     shader.BindTexture("texDetailMask", detailMaskId, TextureUnit.Texture8)
-                End If
-                If isFaceTint AndAlso tintMaskId <> 0 Then
-                    shader.BindTexture("texTintMask", tintMaskId, TextureUnit.Texture9)
                 End If
             End If
 
@@ -2982,13 +3081,23 @@ Public Class PreviewModel
             Dim isBGEM As Boolean = materialBase.IsBGEM
             shader.SetBool("bIsEffectShader", isBGEM)
             shader.SetBool("bDecal", materialBase.Decal)
-            shader.SetInt("shaderType", CInt(materialBase.NifShaderType))
+            ' T2: 'shaderType' (NifShaderType enum) was dead code in the GLSL. Send the effective type
+            ' (factory priority) instead, consumed by the engine-faithful per-type branch (linear path).
+            shader.SetInt("uEffectiveType", CInt(materialBase.ResolveEffectiveType()))
             shader.SetBool("bEffectFalloff", materialBase.FalloffEnabled)
             shader.SetBool("bEffectFalloffColor", materialBase.FalloffColorEnabled)
             shader.SetBool("bEffectGreyscaleAlpha", materialBase.GrayscaleToPaletteAlpha)
             shader.SetFloat("effectLightingInfluence", If(materialBase.EffectLightingEnabled, materialBase.LightingInfluence, 0.0F))
             shader.SetVector4("effectFalloffParams", New OpenTK.Mathematics.Vector4(materialBase.FalloffStartAngle, materialBase.FalloffStopAngle, materialBase.FalloffStartOpacity, materialBase.FalloffStopOpacity))
+            ' BGEM (BSEffectShader) is a separate shader family; the BSLighting linear pipeline does
+            ' NOT touch its color path (would mix linear color with the un-decoded sRGB base texture).
+            ' Keep effectBaseColor in the legacy space; the BGEM block + C3 are gated !bIsEffectShader.
             shader.SetVector3("effectBaseColor", Shader_Base_Class.Color_to_Vector(materialBase.BaseColor))
+            ' BGEM output alpha = diffuse.a * cb1[0].w(BaseColor.a) * cb2[13].w(PropertyColor.w) (rec1026).
+            ' En el formato BGEM el BaseColor field es RGB-only y la opacidad la lleva el common Alpha
+            ' (bgem.Alpha): el app YA aliasa BaseColor.A = ClampByte(bgem.Alpha) -> son LA MISMA propiedad,
+            ' NO multiplicar (seria alpha^2). cb1[0].w (BaseColor field .a) = 1.0; el alpha real = el
+            ' common Alpha = PropertyColor.w (cb2[13].w). effectBaseColorAlpha = materialBase.Alpha.
             shader.SetFloat("effectBaseColorAlpha", materialBase.Alpha)
             shader.SetFloat("effectBaseColorScale", materialBase.BaseColorScale)
 
@@ -3279,6 +3388,15 @@ Public Class PreviewModel
                 Distinct(StringComparer.OrdinalIgnoreCase).
                 Where(Function(pf) Textures_Dictionary.ContainsKey(pf) = False))
 
+        ' Record which of those paths are COLOR textures (base color) so the GL upload decodes them sRGB,
+        ' like the engine's per-texture sRGB flag. Persistent + additive: a path's role is stable, and the
+        ' set is consulted by name at upload time. Data textures are never added -> they stay linear.
+        For Each m In Me.meshes
+            For Each cp In m.MeshData.Material.ColorTextures_Path_List
+                If cp <> "" Then SRGBTexturePaths.Add(cp)
+            Next
+        Next
+
         texturas.ExceptWith(Last_Loaded_Textures)
 
         ' Also exclude paths already queued for background loading
@@ -3396,7 +3514,7 @@ Public Class PreviewModel
                     Dim tex = kvp.Value
 
                     Try
-                        Dim result = DirectXDDSLoader.UploadTextureToGL(tex, path)
+                        Dim result = DirectXDDSLoader.UploadTextureToGL(tex, path, SRGBTexturePaths.Contains(path))
 
                         If result IsNot Nothing AndAlso result.Loaded AndAlso result.Texture_ID > 0 Then
                             ' Re-upload to an existing key: free the previous GL texture before

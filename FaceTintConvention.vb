@@ -5,11 +5,17 @@
 ''' empíricamente (single-layer B03-06, 2026-05-28) en UN resolver, con enums, para que WS / FW /
 ''' MaskConv / Blend sean cambiables y unificables sin tocar el shader ni el builder.
 '''
-''' Modelo derivado (ver memoria arch_facetint_mask_src_conventions):
-'''   - mask conv = G22Encode universal (outlier: Brow D = Raw, post-LUT)
-'''   - ws: SkinTone→G22 ; TextureSet+softlight→Srgb ; resto→Linear (default)
-'''   - blend: BlendOp 0→Replace, 3→SoftLight (1/2/4 mapean directo)
-'''   - framework: D = AdditiveOverBase ; N/S = mask-gated (binary-cov)
+''' Modelo ENGINE-FAITHFUL (re-derivado del b12 BSFaceCustomizationShader, V2 DXBC + V1 CK builder
+''' FUN_140ED0E40 — ck_bake_facetint_RULE_verified; reemplaza el modelo empírico "ws=entry_type" que
+''' arch_facetint_mask_src_conventions describía y que el shader REFUTÓ):
+'''   - mask conv = G22Encode (= shader pow(mask,1/2.2)), universal D y N/S.
+'''   - DIFFUSE: acumulador en G22 (os), lerp por cobertura en LINEAR (cs). El BLEND OP corre en su
+'''     espacio intrínseco del engine: SoftLight en G22 (modelo GIMP, sqrt siempre) ; Normal/Multiply/
+'''     Overlay/HardLight en LINEAR. El ws NO depende de entry_type/slot — depende del blend op (lo
+'''     aplica ResolveConvention: G22 sólo para SoftLight). Replace cancela el ws (irrelevante).
+'''   - colores de capa en SrcSpace=G22 (= los colores pre-decodificados a lineal del engine).
+'''   - N/S: todo Linear, lerp puro por el MISMO alpha del diffuse (sin blend op, sin gamma).
+'''   - framework = OverPrev (over-running); seed D = srgb→g22.
 '''
 ''' SYNC: el sweep del analyzer Python (auto_analyze_esp.py / test_conventions.py) replica estos
 ''' mismos ejes. Cambiar la tabla acá = cambiar el modelo del compositor; mantener el sweep alineado.
@@ -188,6 +194,34 @@ Public Module FaceTintConvention
         Public Property SoftLight As FaceTintSoftLight
     End Class
 
+    ''' <summary>WORKING SPACE del blend op POR CADA op del record (0..4) en el canal DIFFUSE. PARAMETRIZABLE
+    ''' (config.json, NO hardcodeado): el espacio donde corre el blend depende del op, y el usuario lo puede
+    ''' cambiar por op. Defaults ENGINE-FAITHFUL (b12 BSFaceCustomizationShader V2 DXBC + V1 CK builder
+    ''' FUN_140ED0E40 — ck_bake_facetint_RULE_verified §4): el engine corre SoftLight en gamma-2.2 (decode
+    ''' dst+color, GIMP, re-encode) y Normal/Multiply/Overlay/HardLight en LINEAR. Replace cancela el ws por
+    ''' construcción (Cvt(Cvt(src,ss→ws),ws→cs)=Cvt(src,ss→cs)) — se expone igual por completitud. Persistido
+    ''' como objeto plano (System.Text.Json); configs viejos sin el campo caen al default del constructor.</summary>
+    Public Class FaceTintBlendWorkingSpaces
+        Public Property Replace As FaceTintWorkingSpace = FaceTintWorkingSpace.Linear
+        Public Property Multiply As FaceTintWorkingSpace = FaceTintWorkingSpace.Linear
+        Public Property Overlay As FaceTintWorkingSpace = FaceTintWorkingSpace.Linear
+        Public Property SoftLight As FaceTintWorkingSpace = FaceTintWorkingSpace.G22
+        Public Property HardLight As FaceTintWorkingSpace = FaceTintWorkingSpace.Linear
+
+        ''' <summary>ws para el blend op resuelto. Ops 0..4 = la prop correspondiente; modos extendidos
+        ''' 5..19 (app-only, NO emitidos por el record) → <paramref name="fallback"/> (= bucket.WorkingSpace).</summary>
+        Public Function ForBlend(b As FaceTintBlend, fallback As FaceTintWorkingSpace) As FaceTintWorkingSpace
+            Select Case b
+                Case FaceTintBlend.Replace : Return Replace
+                Case FaceTintBlend.Multiply : Return Multiply
+                Case FaceTintBlend.Overlay : Return Overlay
+                Case FaceTintBlend.SoftLight : Return SoftLight
+                Case FaceTintBlend.HardLight : Return HardLight
+                Case Else : Return fallback
+            End Select
+        End Function
+    End Class
+
     ''' <summary>La ley FaceTint completa, persistida en Config_App (config.json). Los defaults del
     ''' constructor = la ley derivada actual (byte-match con CK si no se tocan). Si el usuario los cambia
     ''' (UI o config.json) ESOS pasan a ser la ley: ResolveConvention los lee siempre. Sin nulos, sin
@@ -196,7 +230,24 @@ Public Module FaceTintConvention
         Public Property Diffuse As FaceTintBucketConvention
         Public Property NormalSpecular As FaceTintBucketConvention
         Public Property Swap As FaceTintBucketConvention
+        ''' <summary>Working space del blend op POR op del record en el DIFFUSE (parametrizable). Default
+        ''' engine-faithful: SoftLight=G22, resto=Linear. Reemplaza el uso plano de Diffuse.WorkingSpace
+        ''' para el tint diffuse (Diffuse.WorkingSpace queda de fallback de los modos extendidos 5..19).</summary>
+        Public Property DiffuseWorkingSpaceByBlend As FaceTintBlendWorkingSpaces
+        ''' <summary>SrcSpace de las capas TextureSet-diffuse (textura de COLOR) del DIFFUSE. Engine-faithful =
+        ''' Srgb: el engine bindea las texturas color como SRV sRGB (MakeSRGB FUN_14183e1c0) → el shader las
+        ''' recibe ya lineales (IEC), por eso NO les hace pow(). El color SÓLIDO (uColor PaletteMask/QNAM) NO
+        ''' pasa por acá: usa Diffuse.SrcSpace (G22, pre-decode γ2.2 puro del CK bake, DAT_142F99744). Las
+        ''' MÁSCARAS tampoco (van crudas + MaskConv g22encode). Parametrizable; default Srgb.</summary>
+        Public Property DiffuseTextureSrcSpace As FaceTintWorkingSpace
         Public Property SeedDiffuseG22 As Boolean
+        ''' <summary>Hair/brow grayscale→palette LUT lookup: gamma-encode (pow 1/2.2) las COORDENADAS antes
+        ''' de samplear el LUT — engine-faithful. Verificado del binario (RE_RECOLOR_PALETTE §2a, BGEM rec1103/
+        ''' rec550 + prepass BSLighting rec2637): el engine samplea Palette[U,V] con U=pow(diffuse.G,1/2.2) y
+        ''' V=pow(GrayscaleToPaletteScale,1/2.2)·texcoord, NO con el verde/scale crudos. Aplica al brow (slot 23,
+        ''' UseHairPalette) en ambos compositores y al recolor de pelo en el shader. Parametrizable (config.json);
+        ''' default True. False = comportamiento legacy (coords crudas, brow==pelo pero ambos ≠ engine).</summary>
+        Public Property HairLutCoordGamma As Boolean
 
         Public Sub New()
             ' Defaults = ley derivada actual. Diffuse: blend tonal en G22. N·S: datos lineales (raw).
@@ -226,7 +277,16 @@ Public Module FaceTintConvention
                 .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
                 .SoftLight = FaceTintSoftLight.Gimp}
+            ' Working space por blend op (engine-faithful: SoftLight=G22, resto=Linear). Parametrizable.
+            DiffuseWorkingSpaceByBlend = New FaceTintBlendWorkingSpaces()
+            ' SrcSpace de las texturas color TextureSet-diffuse: Srgb (SRV sRGB del engine, IEC). El uColor
+            ' sólido queda en Diffuse.SrcSpace (G22). Parametrizable; engine-faithful por default.
+            DiffuseTextureSrcSpace = FaceTintWorkingSpace.Srgb
             SeedDiffuseG22 = True
+            ' BAKE-faithful = coords CRUDAS (medido vs vanilla en la región de ceja: crudo 6.55 vs pow 16.77).
+            ' El CK FaceGen bake NO pow-ea las coords del LUT; el pow(1/2.2) (RE_RECOLOR_PALETTE §2a) es del
+            ' path RUNTIME, no del bake. Default False (crudo). True disponible para el render runtime si se cablea.
+            HairLutCoordGamma = False
         End Sub
     End Class
 
@@ -236,6 +296,15 @@ Public Module FaceTintConvention
         Get
             Dim s = Config_App.Current?.Setting_FaceTintConvention
             Return s IsNot Nothing AndAlso s.SeedDiffuseG22
+        End Get
+    End Property
+
+    ''' <summary>Hair/brow LUT: pow(1/2.2) en las coordenadas del lookup (engine-faithful). Lo leen ambos
+    ''' compositores (GL y CPU). Null-safe; default True si el config no está cargado.</summary>
+    Public ReadOnly Property HairLutCoordGammaEnabled As Boolean
+        Get
+            Dim s = Config_App.Current?.Setting_FaceTintConvention
+            Return s IsNot Nothing AndAlso s.HairLutCoordGamma   ' default False (crudo = bake-faithful)
         End Get
     End Property
 
@@ -282,6 +351,30 @@ Public Module FaceTintConvention
         c.SoftLight = bucket.SoftLight
         ' Blend: record-driven (MapBlend) en el tint diffuse; Replace en N·S y en swaps. Read-only en UI.
         c.Blend = If(forSwap OrElse channel <> FaceTintChannel.Diffuse, FaceTintBlend.Replace, MapBlend(blendOp))
+
+        ' WORKING SPACE del DIFFUSE = POR BLEND OP, leído del config (PARAMETRIZABLE, no hardcodeado):
+        ' s.DiffuseWorkingSpaceByBlend. Defaults engine-faithful (b12 BSFaceCustomizationShader V2 DXBC +
+        ' V1 CK builder FUN_140ED0E40, ck_bake_facetint_RULE_verified §4): SoftLight en gamma-2.2 (decode
+        ' dst+color, GIMP, re-encode), Normal/Multiply/Overlay/HardLight en LINEAR. Replace cancela el ws por
+        ' construcción (Cvt(Cvt(src,ss→ws),ws→cs)=Cvt(src,ss→cs)) ⇒ con los defaults esto es BYTE-IDÉNTICO en
+        ' TODA la data vanilla (scan 2026-06-20: 4008/4008 TemplateColors de las 110 RACE de Fallout4.esm+DLCs
+        ' son bop 0 ó 3; CERO Multiply/Overlay/HardLight) y sólo corrige RACEs modeadas con bop 1/2/4 (antes en
+        ' G22, ≠ engine). El usuario puede cambiar el espacio de cada op en config.json. Fallback (modos 5..19
+        ' app-only y config viejo/null) = bucket.WorkingSpace. GL y CPU lo heredan juntos (mismo resolver).
+        If channel = FaceTintChannel.Diffuse AndAlso Not forSwap Then
+            Dim wsb = s.DiffuseWorkingSpaceByBlend
+            c.WorkingSpace = If(wsb IsNot Nothing, wsb.ForBlend(c.Blend, bucket.WorkingSpace), bucket.WorkingSpace)
+        End If
+
+        ' SRC SPACE engine-faithful para capas TextureSet-diffuse (textura de COLOR): el engine las bindea
+        ' como SRV sRGB (MakeSRGB) → entran IEC-lineales (el shader no las pow()). El color SÓLIDO (uColor de
+        ' PaletteMask) NO entra acá: usa bucket.SrcSpace (G22, γ2.2 puro del CK bake). Las máscaras tampoco
+        ' (van crudas + MaskConv). Parametrizable (s.DiffuseTextureSrcSpace, default Srgb). GL==CPU (mismo
+        ' resolver). Nota: con ForceUniformColor (brow-tint con HCLF) el src es uColor aunque isTextureSet —
+        ' caso borde raro; el delta IEC-vs-γ2.2 sobre un color sólido es <1/255, despreciable.
+        If channel = FaceTintChannel.Diffuse AndAlso Not forSwap AndAlso isTextureSet Then
+            c.SrcSpace = s.DiffuseTextureSrcSpace
+        End If
 
         Return c
     End Function

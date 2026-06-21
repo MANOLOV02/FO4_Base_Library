@@ -134,12 +134,18 @@ Public Partial Class HkxObjectGraph_Class
         Dim bindingNameOffset = baseFieldOffset
         Dim animationReferenceOffset = bindingNameOffset + PointerSizeValue
         Dim trackToBoneArrayOffset = animationReferenceOffset + PointerSizeValue
-        ' Layout hk2014: tras transformTrackToBoneIndices vienen DOS arrays más
-        ' (floatTrackToFloatSlotIndices + partitionIndices) y RECIÉN el blendHint (int8).
-        ' El offset viejo (+2 arrays, Int32) caía en el header del array de particiones →
-        ' leía 0 casi siempre (clips aditivos como RotateRing*_Add/CrippledNoise reportaban
-        ' NORMAL y colapsaban el render al aplicarse sus deltas como locales absolutos).
-        Dim blendHintOffset = trackToBoneArrayOffset + (3 * ArrayHeaderSizeValue)
+        ' blendHint (int8) viene DESPUÉS de los hkArray de hkaAnimationBinding, y CUÁNTOS arrays
+        ' hay depende de la versión de contenido Havok — NO es fijo entre juegos. Fuente canónica:
+        ' HavokLib classgen (HavokLib/source/packfile/hka_animation_binding.inl, tabla LAYOUTS):
+        '   hk_2014 (Fallout 4): transformTrackToBone[] + floatTrackToFloatSlot[] + partitionIndices[]
+        '       → 3 arrays; blendHint @ trackToBone+3 (offset 80 en 64-bit).
+        '   hk_2010/2011 (Skyrim LE + SE): SIN partitionIndices (numPartitionIndices=-1 en la tabla)
+        '       → 2 arrays; blendHint @ trackToBone+2 (offset 64 en 64-bit, 40 en 32-bit).
+        ' Clavar +3 (correcto solo para FO4) leía PAST-END en Skyrim (objeto de 72 bytes) → byte
+        ' basura (p.ej. 78) → clips NORMALES se marcaban ADITIVOS y el render colapsaba (cuerpo se
+        ' dispersa). Discriminador = PackfileFormat (FileVersion 11=FO4/hk2014, 8=Skyrim/hk2010).
+        Dim arraysBeforeBlendHint = If(Packfile.Header.PackfileFormat = HkxPackfileFormat_Enum.Fallout64, 3, 2)
+        Dim blendHintOffset = trackToBoneArrayOffset + (arraysBeforeBlendHint * ArrayHeaderSizeValue)
 
         If source.Size > 0 AndAlso source.Size < blendHintOffset + 1 Then
             Throw New InvalidDataException($"hkaAnimationBinding @0x{source.RelativeOffset:X} is truncated.")

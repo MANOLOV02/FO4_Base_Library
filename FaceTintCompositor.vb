@@ -268,8 +268,8 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _quadVbo As Integer = 0
 
 
-    ' Persistent ping-pong colour attachments shared by ComposeOntoFaceTexture,
-    ' ApplyRegionSwapsOntoFaceTexture and ApplyUniformBlendOntoFaceTexture. Allocated lazily
+    ' Persistent ping-pong colour attachments shared by ComposeOntoFaceTexture
+    ' and ApplyRegionSwapsOntoFaceTexture. Allocated lazily
     ' to (_pingW, _pingH); reused across calls when dims match, re-allocated when dims change.
     ' The "result snapshot" is a fresh texture per call — it carries the final pass output to
     ' the caller, who owns its lifetime. Pings stay private to the state and are only released
@@ -888,7 +888,9 @@ void main() {
                 If cache IsNot Nothing Then
                     batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
                 Else
-                    batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
+                    ' srgb=False para TODAS: las texturas del compositor se cargan CRUDAS; el decode lo hace el
+                    ' shader por convención (uSrcSpace/ss) por-capa. sRGB-loadearlas acá = doble decode.
+                    batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True, New Boolean(loadKeys.Count - 1) {})
                     ' Library default is Repeat wrap; compositor samples a fullscreen quad over UV [0,1]
                     ' and seams at the edges would bleed, so force ClampToEdge on each loaded texture.
                     ForceClampToEdge(batchLoaded)
@@ -1362,7 +1364,9 @@ void main() {
             If cache IsNot Nothing Then
                 batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
             Else
-                batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True)
+                ' srgb=False para TODAS: las texturas del compositor se cargan CRUDAS; el decode lo hace el
+                ' shader por convención (uSrcSpace/ss) por-capa. sRGB-loadearlas acá = doble decode.
+                batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True, New Boolean(loadKeys.Count - 1) {})
                 ForceClampToEdge(batchLoaded)
             End If
 
@@ -1531,142 +1535,6 @@ void main() {
         Return resultTex
     End Function
 
-    ' Uniform-blend fragment shader. Applies a single per-pixel blend op against a uniform
-    ' colour over the entire texture (no mask, full coverage). Used by ApplyUniformBlendOntoFaceTexture
-    ' for the body SkinTone pre-pass: softlight(body_diffuse, QNAM_color). The body has no
-    ' equivalent of the face's TTET mask layers, so the blend covers the whole texture.
-    '
-    ' Alpha contract: input alpha is PRESERVED into the output. The blend operations
-    ' (Multiply/Overlay/SoftLight/HardLight) are colour-space operations defined for RGB only;
-    ' touching alpha would silently corrupt callers that pass alpha-tested diffuses (regression
-    ' 2026-05-15: pre-Bug-A fix, chunks marcados Kind=Skin → SkinTint=True → este pase corría
-    ' sobre pack_d.dds y reescribia su alpha a 1.0, rompiendo el discard del alpha test). Even
-    ' though the current callers (face / body skin) do not use alpha-test on the diffuse, the
-    ' shader stays honest about its scope: blend RGB, leave alpha alone.
-
-    ''' <summary>Apply a single uniform-colour blend onto an entire face texture and return
-    ''' the new GL texture ID. The original is left untouched. Returns 0 on failure.
-    ''' MUST run on the GL thread.
-    '''
-    ''' Used by the body SkinTone pre-pass (softlight(body_diffuse, QNAM)) and the face
-    ''' fallback (TryApplyFaceSkinSoftLight). This is a WHOLE-texture uniform blend with no TTET
-    ''' mask and no FaceGen gamma-2.2 base, so it does NOT use the main compositor's masked
-    ''' additive-over-base math; attenuation is <c>mix(prev, blended, opacity)</c>. The caller
-    ''' passes the FULL source colour (not pre-attenuated toward neutral grey) plus an opacity
-    ''' scalar (typically tl.Value/100 or qnam.A/255); the shader interpolates between prev
-    ''' (no-op) and the full-strength blend by the opacity factor.
-    '''
-    ''' blendOp follows the BGSCharacterTint enum: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight.</summary>
-    ''' <param name="workingSpace">Working space (FaceTintWorkingSpace: 0=Linear 1=Srgb 2=G22) en el
-    ''' que se hace el blend, igual que la cara. El body SkinTone debe pasar la ws que el resolver
-    ''' (FaceTintConvention.ResolveConvention slot=SkinTone) da, para matchear la cara byte-a-byte.</param>
-    Public Function ApplyUniformBlendOntoFaceTexture(state As FaceTintCompositorState,
-                                                      originalTexId As Integer,
-                                                      width As Integer, height As Integer,
-                                                      r As Single, g As Single, b As Single,
-                                                      blendOp As Integer,
-                                                      opacity As Single,
-                                                      Optional workingSpace As Integer = 1) As Integer
-        ArgumentNullException.ThrowIfNull(state)
-        If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
-
-        EnsureCompositorInitialized(state)
-        If state._program = 0 OrElse state._quadVao = 0 Then Return 0
-
-        ' Save GL state we are about to clobber (FT-014: capture incl. the FT-004 unit-0 fix).
-        Dim glSaved As GlStateSnapshot = SaveGlState()
-
-        Dim outTex As Integer = 0
-        Dim outFbo As Integer = 0
-        Dim resultTex As Integer = 0
-
-        Try
-            outTex = GL.GenTexture()
-            GL.BindTexture(TextureTarget.Texture2D, outTex)
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba8,
-                          width, height, 0,
-                          PixelFormat.Rgba, PixelType.UnsignedByte, IntPtr.Zero)
-
-            outFbo = GL.GenFramebuffer()
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, outFbo)
-            GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.ColorAttachment0,
-                                    TextureTarget.Texture2D, outTex, 0)
-            Dim status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)
-            If status <> FramebufferErrorCode.FramebufferComplete Then Return 0
-
-            GL.Viewport(0, 0, width, height)
-            GL.Disable(EnableCap.DepthTest)
-            GL.Disable(EnableCap.ScissorTest)
-            GL.Disable(EnableCap.Blend)
-
-            ' Shader unico: body skin = uMode=0 + uLayerKind=2 (UniformColor). Single pass whole-texture,
-            ' base==prev==la textura del cuerpo (bind a uPrev unit0 Y uBase unit4). src=uColor, mask=1.
-            ' workingSpace lo da el resolver SkinTone (sync con la cara). uBlendOp=SoftLight.
-            GL.UseProgram(state._program)
-            GL.BindVertexArray(state._quadVao)
-            GL.Uniform1(state._uModeLoc, 0)
-            GL.Uniform1(state._uFrameworkLoc, 0)   ' body = OverPrev (single pass, prev==base)
-            GL.Uniform1(state._uLayerKindLoc, 2)
-            GL.Uniform1(state._uChannelLoc, 0)
-            GL.Uniform1(state._uUseHairPaletteLoc, 0)
-            GL.Uniform1(state._uForceUniformColorLoc, 0)
-            GL.Uniform1(state._uForceOpaqueAlphaLoc, 1)
-            GL.Uniform1(state._uHasDiffuseMaskLoc, 0)
-            GL.Uniform1(state._uMaskConvFullLoc, 0)
-            GL.Uniform1(state._uWorkingSpaceLoc, workingSpace)
-            ' body skin = diffuse color, acumulador sRGB (src srgb, output srgb); el blend (softlight)
-            ' corre en workingSpace (g22). El COMPOSITE (lerp por op) corre en LINEAR = igual que la cara
-            ' (ley gen3). El body es textura sRGB (NO FaceCustomization g22) -> output queda sRGB.
-            GL.Uniform1(state._uSrcSpaceLoc, 1)
-            GL.Uniform1(state._uOutputSpaceLoc, 1)
-            GL.Uniform1(state._uCompositeSpaceLoc, 0)   ' linear = como la cara
-
-            GL.ActiveTexture(TextureUnit.Texture0)
-            GL.BindTexture(TextureTarget.Texture2D, originalTexId)
-            GL.Uniform1(state._uPrevLoc, 0)
-            ' uLayer (unit1) se samplea aunque kind=2 no lo use; bind algo valido.
-            GL.ActiveTexture(TextureUnit.Texture1)
-            GL.BindTexture(TextureTarget.Texture2D, originalTexId)
-            GL.Uniform1(state._uLayerLoc, 1)
-            ' uBase (unit4) = la misma textura del cuerpo (prev==base en single pass).
-            GL.ActiveTexture(TextureUnit.Texture4)
-            GL.BindTexture(TextureTarget.Texture2D, originalTexId)
-            GL.Uniform1(state._uBaseLoc, 4)
-
-            GL.Uniform3(state._uColorLoc, r, g, b)
-            GL.Uniform1(state._uBlendOpLoc, blendOp)
-            GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, opacity)))
-            ' body skin: sin pre-tono TakesSkinTone (no aplica). Bind unit5 valido por completitud del sampler.
-            GL.Uniform1(state._uPreToneSkinLoc, 0)
-            GL.ActiveTexture(TextureUnit.Texture5)
-            GL.BindTexture(TextureTarget.Texture2D, originalTexId)
-            GL.Uniform1(state._uSkinMaskLoc, 5)
-
-            GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
-            resultTex = outTex
-
-        Catch ex As Exception
-            resultTex = 0
-        Finally
-            ' This path owns its own (inline) FBO — not the FT-007 scratch container — so it is
-            ' still Gen/Delete per call and freed here.
-            If outFbo <> 0 Then
-                Try : GL.DeleteFramebuffer(outFbo) : Catch : End Try
-            End If
-            If outTex <> 0 AndAlso outTex <> resultTex Then
-                Try : GL.DeleteTexture(outTex) : Catch : End Try
-            End If
-
-            ' Restore state (FT-014).
-            RestoreGlState(glSaved)
-        End Try
-
-        Return resultTex
-    End Function
 
 
     ''' <summary>Snapshot of the GL state the compositor passes clobber, captured by
@@ -2043,11 +1911,11 @@ void main() {
     '''   • Bake: GL.GetTexImage from result IDs, encode to DDS on disk, GL.DeleteTexture the
     '''     fresh result IDs (and any temporaries the bake itself uploaded as inputs).
     '''
-    ''' QNAM softlight is intentionally NOT included: in the render path it runs after this
-    ''' function as a separate pass (TryApplyFaceSkinSoftLight) gated on NpcHasSkinToneLayer;
-    ''' the bake replicates that final pass on its own. Folding it in here would force the
-    ''' render to thread the QNAM color and the skip flag into TryApplyFaceTints, breaking
-    ''' the existing TryApplyFaceSkinSoftLight contract that lives outside.
+    ''' The face QNAM/skin-tone is composited HERE as the synthetic slot-12 SkinTone layer
+    ''' (InjectSyntheticSkinToneLayer), sequenced in engine rank order with the other tint layers —
+    ''' NOT as a separate post-pass. The BODY skin tone is handled elsewhere and never baked: the
+    ''' SkinTint shader soft-lights it at render from material SkinTintColor/SkinTintAlpha
+    ''' (uEffectiveType==4).
     '''
     ''' This function does NOT touch any dictionary, model, or NIF — it is pure GL on the
     ''' supplied state + cache. <paramref name="state"/> + <paramref name="cache"/> must be
@@ -2067,7 +1935,8 @@ void main() {
                                           height As Integer,
                                           layers As IList(Of FaceTintLayerInput),
                                           swaps As IList(Of FaceRegionSwapInput),
-                                          Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing) As FaceTintPipelineResult
+                                          Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing,
+                                          Optional baseDiffuseIsLinearOnGpu As Boolean = False) As FaceTintPipelineResult
         ArgumentNullException.ThrowIfNull(state)
 
         ' Target de resolución POR CANAL (Inherit -> nativo = width/height del source). El acumulador GL
@@ -2087,11 +1956,18 @@ void main() {
         If width <= 0 OrElse height <= 0 Then Return result
 
         ' --- SEED/RESIZE del PATH UNICO al target por canal ---
-        ' Seed = BASEIN DIRECTO (sRGB) en los 3 canales (cambio 2026-06-01: g22(BASEIN) era conclusion errada;
-        ' CK NO aplica gamma). D acumula en sRGB (= CPU seedG22=False); N/S lineal raw. Ningun canal convierte
-        ' espacio en el seed: solo se resizea si el target != nativo (igual que el CPU, paridad GL/CPU).
-
-        If SeedConventionIs_G22 Then
+        ' El acumulador del DIFFUSE vive en G22. El seed lleva el base a G22 según el ESPACIO REAL del base GL:
+        '  - baseDiffuseIsLinearOnGpu=True (el base es un SRV sRGB del render → el sample YA es lineal):
+        '    encode-only Linear→G22 (0→2). NO srgbToLin (si no, DOBLE DECODE: el render ya decodeó). Es el caso
+        '    LIVE (la cara reusa diffuseEntry, cargada sRGB; MainForm pasa diffuseEntry.IsSRGB).
+        '  - base crudo (bake/CLI: cargado UNORM) + SeedDiffuseG22: Srgb→G22 (1→2) = decode+encode (correcto, el
+        '    byte ES sRGB). Es el camino byte-exact del bake, INTACTO (el caller pasa False).
+        '  - base crudo + SeedDiffuseG22=False: sin conversión de espacio (legacy).
+        ' N/S = lineal raw (sin conversión). GL==CPU: el CPU siempre tiene base crudo (DecodeDds raw) → su seed
+        ' equivale al caso "crudo" de acá; el caso linear-on-gpu es exclusivo del GL live.
+        If baseDiffuseIsLinearOnGpu Then
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, 0, 2)
+        ElseIf SeedConventionIs_G22 Then
             ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, 1, 2)
         Else
             ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height)
@@ -2111,6 +1987,17 @@ void main() {
             ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing)
             ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, layers, Nothing)
             ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing)
+        End If
+
+        ' --- B: salida LIVE del DIFFUSE en LINEAL ---
+        ' El render reusa la textura fresca (Rgba32f = float; los float NO tienen decode sRGB) y la samplea
+        ' CRUDA. El acumulador del diffuse está en G22 (os); para que el render obtenga LINEAL (su contrato: el
+        ' sample del diffuse es albedo lineal) hay que convertir el resultado del diffuse G22→Linear. SOLO en el
+        ' path live (baseDiffuseIsLinearOnGpu): el BAKE mantiene G22 (hornea el _d.dds vía GetTexImage, que toma
+        ' el byte G22 crudo, = vanilla). N/S ya están en Linear (os=Linear). Sin pérdida (float). Junto con el
+        ' seed encode-only, el path live queda lineal-consistente extremo a extremo.
+        If baseDiffuseIsLinearOnGpu Then
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dT.W, dT.H, 2, 0)
         End If
 
         Return result
@@ -2259,7 +2146,8 @@ Public NotInheritable Class FaceTintTextureCache
         Next
 
         If missKeys.Count > 0 Then
-            Dim loaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(missKeys.ToArray(), missBytes.ToArray(), True, True)
+            ' srgb=False: texturas del compositor crudas; el decode lo hace el shader por convención (ss).
+            Dim loaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(missKeys.ToArray(), missBytes.ToArray(), True, True, New Boolean(missKeys.Count - 1) {})
             If loaded IsNot Nothing Then
                 If wrapClampToEdge Then
                     For Each kvp In loaded

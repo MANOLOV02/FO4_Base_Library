@@ -516,6 +516,11 @@ Public Module FaceTintCpuCompositor
                 Dim op = Math.Max(0.0, Math.Min(1.0, CDbl(layer.Opacity)))
                 Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
                 Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
+                ' Engine-faithful LUT lookup: pow(1/2.2) en las coords (U=verde, V=row) antes de samplear,
+                ' = RE_RECOLOR_PALETTE §2a (U=pow(diffuse.G,1/2.2), V=pow(GrayscaleToPaletteScale,1/2.2)).
+                ' Parametrizable (HairLutCoordGamma); luY es por-capa (row constante), luX se computa por-pixel.
+                Dim coordGamma As Boolean = FaceTintConvention.HairLutCoordGammaEnabled
+                Dim luY As Double = If(coordGamma, Math.Pow(row, 1.0 / 2.2), row)
                 Dim kind = layer.Kind
                 ' GUARD del pre-tono TakesSkinTone: solo D, capa flagged, y skintone ya compuesto antes.
                 ' Pre-tono si: capa flagged (D) Y hay skintone Y (ya se compuso antes -> over-running tona
@@ -528,20 +533,22 @@ Public Module FaceTintCpuCompositor
                     Dim lg = SampleChannelAt(layerTex, i, w, h, 1)
                     Dim lb = SampleChannelAt(layerTex, i, w, h, 2)
                     Dim la = SampleChannelAt(layerTex, i, w, h, 3)
+                    ' U del LUT = verde (crudo) o pow(verde,1/2.2) si HairLutCoordGamma (engine-faithful runtime).
+                    Dim luX As Double = If(coordGamma, Math.Pow(lg, 1.0 / 2.2), lg)
 
                     ' mask + src por kind (= rama uLayerKind del shader)
                     Dim maskV As Double
                     Dim srcR As Double, srcG As Double, srcB As Double
                     If kind = FaceTintLayerKind.PaletteMask Then
                         If useHairPalette Then
-                            srcR = SampleBilinear(lutTex, lg, row, 0) : srcG = SampleBilinear(lutTex, lg, row, 1) : srcB = SampleBilinear(lutTex, lg, row, 2)
+                            srcR = SampleBilinear(lutTex, luX, luY, 0) : srcG = SampleBilinear(lutTex, luX, luY, 1) : srcB = SampleBilinear(lutTex, luX, luY, 2)
                         Else
                             srcR = uColR : srcG = uColG : srcB = uColB
                         End If
                         maskV = lg
                     Else ' TextureSetDiffuse
                         If useHairPalette Then
-                            srcR = SampleBilinear(lutTex, lg, row, 0) : srcG = SampleBilinear(lutTex, lg, row, 1) : srcB = SampleBilinear(lutTex, lg, row, 2)
+                            srcR = SampleBilinear(lutTex, luX, luY, 0) : srcG = SampleBilinear(lutTex, luX, luY, 1) : srcB = SampleBilinear(lutTex, luX, luY, 2)
                         ElseIf forceUniform Then
                             srcR = uColR : srcG = uColG : srcB = uColB
                         Else

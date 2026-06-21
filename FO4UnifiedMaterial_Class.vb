@@ -472,6 +472,40 @@ Public Class FO4UnifiedMaterial_Class
         End Select
     End Function
 
+    ''' <summary>Tipo efectivo de BSLightingShader que el engine resuelve por prioridad del factory
+    ''' (Fallout4.exe FUN_142163BE0): Eye&gt;Envmap&gt;Glowmap&gt;Face&gt;SkinTint&gt;HairTint&gt;Default.
+    ''' MultiLayer se omite (no hay PS forward en Shaders011.fxp block 6). Sirve para rutear el GLSL
+    ''' engine-faithful de forma MUTUAMENTE EXCLUYENTE (el engine corre UN shader por tipo).</summary>
+    Public Enum EffectiveLightingType
+        [Default] = 0
+        Envmap = 1
+        Glowmap = 2
+        Face = 3
+        SkinTint = 4
+        HairTint = 5
+        Eye = 6
+    End Enum
+
+    ''' <summary>True si el slot diffuse es una textura de COLOR (sRGB), no datos. Excluye
+    ''' greyscale-to-palette (usa baseMap.g como indice de LUT) y BGEM. Gatea el decode
+    ''' sRGB-&gt;lineal in-shader (C1; el engine samplea t0 como SRV sRGB).</summary>
+    Public Function IsColorDiffuse() As Boolean
+        Return Not GrayscaleToPaletteColor AndAlso Not IsBGEM()
+    End Function
+
+    ''' <summary>Tipo efectivo por la prioridad del factory del engine (FUN_142163BE0).
+    ''' BGEM devuelve Default (su render va por el path bIsEffectShader, no por este tipo).</summary>
+    Public Function ResolveEffectiveType() As EffectiveLightingType
+        If IsBGEM() Then Return EffectiveLightingType.[Default]
+        If EyeEnvironmentMapping Then Return EffectiveLightingType.Eye
+        If EnvironmentMapping Then Return EffectiveLightingType.Envmap
+        If Glowmap Then Return EffectiveLightingType.Glowmap
+        If Facegen Then Return EffectiveLightingType.Face
+        If SkinTint Then Return EffectiveLightingType.SkinTint
+        If Hair Then Return EffectiveLightingType.HairTint
+        Return EffectiveLightingType.[Default]
+    End Function
+
     <Category("Textures")>
     <Editor(GetType(DictionaryFilePickerEditor), GetType(UITypeEditor))>
     Public Property Diffuse_or_Base_Texture As String
@@ -766,9 +800,10 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
-    <Category("Textures")>
+    ' Hidden from the grid: SEMANTIC ALIAS of DisplacementTexture (slot 3, SSE FaceTint detail mask).
+    ' Same backing slot -> showing both duplicated it. Kept as code accessor; edit via DisplacementTexture.
+    <Browsable(False)>
     <BGSMOnly()>
-    <Editor(GetType(DictionaryFilePickerEditor), GetType(UITypeEditor))>
     Public Property DetailMaskTexture As String
         Get
             ' BGSM: shares slot 3 with DisplacementTexture (FO4=displacement, SSE FaceTint=detail mask)
@@ -790,9 +825,10 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
-    <Category("Textures")>
+    ' Hidden from the grid: SEMANTIC ALIAS of LightingTexture (slot 6). Same backing slot -> showing both
+    ' duplicated it. The old tint-overlay use was removed; kept as code accessor; edit via LightingTexture.
+    <Browsable(False)>
     <BGSMOnly()>
-    <Editor(GetType(DictionaryFilePickerEditor), GetType(UITypeEditor))>
     Public Property TintMaskTexture As String
         Get
             ' BGSM: shares slot 6 with LightingTexture (SSE FaceTint=tint mask)
@@ -3682,9 +3718,12 @@ Public Class FO4UnifiedMaterial_Class
         End If
         mat.SmoothSpecTexture = texset.Textures(textset_SmoothSpecTextureAs).Content
 
-        ' Slot 2: glow OR lightmask (SSE dual-purpose)
+        ' Slot 2: glow OR lightmask/subsurface (SSE dual-purpose). FaceTint (technique 4) does subsurface
+        ' UNCONDITIONALLY in the engine -- the facegen PS has NO Soft_Lighting gate (verified
+        ' sse_facegen_skin.asm) -- so include Facegen: the _sk lands on LightingTexture even when the
+        ' head's Soft_Lighting flag is not set (it often isn't).
         Dim slot2 = texset.Textures(textset_GlowTexture).Content
-        If isSSE AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting) Then
+        If isSSE AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
             mat.LightingTexture = slot2
             mat.GlowTexture = ""
         Else
@@ -3723,8 +3762,9 @@ Public Class FO4UnifiedMaterial_Class
         End If
         texset.Textures(textset_SmoothSpecTextureAs).Content = mat.SmoothSpecTexture
 
-        ' Slot 2/6: glow vs lightmask remapping (SSE dual-purpose)
-        If isSSE AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting) Then
+        ' Slot 2/6: glow vs lightmask/subsurface remapping (SSE dual-purpose). Mirror the read: facegen
+        ' ignores the Soft_Lighting flag (engine does subsurface unconditionally for technique 4).
+        If isSSE AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
             texset.Textures(textset_GlowTexture).Content = mat.LightingTexture
             texset.Textures(textset_LightingTexture).Content = ""
         Else
