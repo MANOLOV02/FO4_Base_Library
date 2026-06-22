@@ -254,6 +254,7 @@ Public Class NifRenderableShape
     Public Property WireAlpha As Single = 0.5F Implements IRenderableShape.WireAlpha
     Public Property TintColor As Color = Color.White Implements IRenderableShape.TintColor
     Public Property ApplyZaps As Boolean = False Implements IRenderableShape.ApplyZaps
+    Public Property CoveredSlotsMask As UInteger = 0 Implements IRenderableShape.CoveredSlotsMask
     Public Property MaskedVertices As New HashSet(Of Integer)() Implements IRenderableShape.MaskedVertices
 
     ''' <summary>

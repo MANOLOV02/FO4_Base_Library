@@ -225,6 +225,16 @@ Public Class FO4UnifiedMaterial_Class
     ' the diff automatically.
     Private _cleanSnapshot As FO4UnifiedMaterial_Class = Nothing
 
+    ' Propiedades que NO viven en el archivo de material (.bgsm/.bgem) sino en el shader del NIF:
+    ' Save_To_Bgsm/Bgem nunca las escribe (NifShaderType es campo transitorio, ver más abajo). Un
+    ' cambio en ellas NO es una "modificación del material a guardar a archivo" — se persiste con el
+    ' NIF en el guardado normal del proyecto. El gating de los botones "Save/Save As material" y de
+    ' Revisa_Material (WM Editor_Form) las ignora vía IsMaterialFileDirty/AreEqualToMaterialFile, así
+    ' que cambiar el shader type a mano NO marca el material como sucio ni exige grabar un .bgsm.
+    ' GetDifferences / AreEqualTo (FaceGenComparator, diagnóstico de bake) SÍ las comparan — esa
+    ' comparación quiere ver el tipo de shader. Hoy solo el shader type; ampliar con evidencia.
+    Public Shared ReadOnly NifShaderOnlyPropertyNames As String() = {NameOf(NifShaderType)}
+
     Public Sub ClearDirty()
         _cleanSnapshot = Clone()
     End Sub
@@ -232,6 +242,24 @@ Public Class FO4UnifiedMaterial_Class
     Public Function IsDirty() As Boolean
         If _cleanSnapshot Is Nothing Then Return False
         Return GetDifferences(Me, _cleanSnapshot).Count > 0
+    End Function
+
+    ''' <summary>Dirty restringido al estado del ARCHIVO de material (lo que Save_To_Bgsm/Bgem
+    ''' persiste): ignora los campos solo-NIF de <see cref="NifShaderOnlyPropertyNames"/>. Es el que
+    ''' debe gatear los botones "Save/Save As material" — cambiar el shader type (que va al shader del
+    ''' NIF, no al .bgsm) no debe encenderlos.</summary>
+    Public Function IsMaterialFileDirty() As Boolean
+        If _cleanSnapshot Is Nothing Then Return False
+        Return GetDifferences(Me, _cleanSnapshot, NifShaderOnlyPropertyNames).Count > 0
+    End Function
+
+    ''' <summary>Diagnóstico: la lista COMPLETA de propiedades que difieren del snapshot de carga
+    ''' (las que hacen True a <see cref="IsDirty"/>), sin filtrar campos solo-NIF. Sirve para
+    ''' instrumentar "por qué se marca modificado" sin adivinar: el call site loguea los nombres.
+    ''' Vacía si no hay snapshot (material nunca cargado/limpiado).</summary>
+    Public Function GetDirtyDifferences() As List(Of MaterialDifference)
+        If _cleanSnapshot Is Nothing Then Return New List(Of MaterialDifference)
+        Return GetDifferences(Me, _cleanSnapshot)
     End Function
 
     ''' <summary>Deep-copy the wrapper by a FIELD-WISE copy of the concrete BGSM/BGEM (NOT a
@@ -3433,6 +3461,13 @@ Public Class FO4UnifiedMaterial_Class
     End Property
     Private _resolvedWetnessCache As Single()
     Private _resolvedWetnessRaw As Single()
+    ' Entradas NO-crudas de la resolución (eligen el template del fallback / la cadena). El cache
+    ' debe invalidarse si cambian, no solo la wetness cruda — si no, queda stale: el valor cacheado
+    ' en el primer render refleja el estado de ESE momento aunque luego cambien flags/root.
+    Private _resolvedWetnessRootPath As String = Nothing
+    Private _resolvedWetnessFacegen As Boolean
+    Private _resolvedWetnessSkinTint As Boolean
+    Private _resolvedWetnessValid As Boolean = False
 
     Private Function ResolvedWetness() As Single()
         Dim bgsm = TryCast(Underlying_Material, BGSM)
@@ -3442,9 +3477,21 @@ Public Class FO4UnifiedMaterial_Class
         Dim raw() As Single = {bgsm.WetnessControlSpecScale, bgsm.WetnessControlSpecPowerScale,
                                bgsm.WetnessControlSpecMinvar, bgsm.WetnessControlEnvMapScale,
                                bgsm.WetnessControlFresnelPower, bgsm.WetnessControlMetalness}
-        If _resolvedWetnessCache Is Nothing OrElse Not SameRawWetness(raw, _resolvedWetnessRaw) Then
+        ' Cache válido solo si TODAS las entradas de ResolveEffectiveWetness coinciden con las
+        ' cacheadas: wetness cruda + RootMaterialPath + Facegen + SkinTint. (Medido 2026-06-21:
+        ' keyear solo por la cruda dejaba el Resolved* stale y producía falso "material modificado"
+        ' en WM Revisa_Material — live cacheado 0.8 vs recomputado 0.6 con entradas idénticas.)
+        If Not _resolvedWetnessValid _
+           OrElse Not SameRawWetness(raw, _resolvedWetnessRaw) _
+           OrElse Not String.Equals(If(bgsm.RootMaterialPath, ""), If(_resolvedWetnessRootPath, ""), StringComparison.OrdinalIgnoreCase) _
+           OrElse bgsm.Facegen <> _resolvedWetnessFacegen _
+           OrElse bgsm.SkinTint <> _resolvedWetnessSkinTint Then
             _resolvedWetnessCache = ResolveEffectiveWetness(bgsm)
             _resolvedWetnessRaw = raw
+            _resolvedWetnessRootPath = bgsm.RootMaterialPath
+            _resolvedWetnessFacegen = bgsm.Facegen
+            _resolvedWetnessSkinTint = bgsm.SkinTint
+            _resolvedWetnessValid = True
         End If
         Return _resolvedWetnessCache
     End Function
@@ -4115,7 +4162,11 @@ Public Class FO4UnifiedMaterial_Class
     ''' delega a este método; agregar nuevas propiedades a FO4UnifiedMaterial_Class las cubre
     ''' automáticamente en los dos call paths.
     ''' </summary>
-    Public Shared Function GetDifferences(a As FO4UnifiedMaterial_Class, b As FO4UnifiedMaterial_Class) As List(Of MaterialDifference)
+    ''' <param name="ignoreNames">Nombres de propiedad a OMITIR de la comparación. Default Nothing =
+    ''' compara todo (contrato histórico; lo usan FaceGenComparator y AreEqualTo). El gating del
+    ''' editor pasa <see cref="NifShaderOnlyPropertyNames"/> para excluir el estado solo-NIF.</param>
+    Public Shared Function GetDifferences(a As FO4UnifiedMaterial_Class, b As FO4UnifiedMaterial_Class,
+                                          Optional ignoreNames As ICollection(Of String) = Nothing) As List(Of MaterialDifference)
         Dim diffs As New List(Of MaterialDifference)
 
         ' Edge case nulls — replica el contrato de AreEqualWithTrace ("a Is b").
@@ -4130,6 +4181,7 @@ Public Class FO4UnifiedMaterial_Class
                        .Where(Function(p) p.GetIndexParameters().Length = 0)
 
         For Each prop In props
+            If ignoreNames IsNot Nothing AndAlso ignoreNames.Contains(prop.Name) Then Continue For
             Dim valA = prop.GetValue(a, Nothing)
             Dim valB = prop.GetValue(b, Nothing)
             Dim equal As Boolean
@@ -4186,6 +4238,14 @@ Public Class FO4UnifiedMaterial_Class
     Public Function AreEqualTo(b As FO4UnifiedMaterial_Class) As Boolean
         If Me Is Nothing OrElse b Is Nothing Then Return Me Is b
         Return AreEqualWithTrace(Me, b)
+    End Function
+
+    ''' <summary>Igualdad restringida al estado del ARCHIVO de material: ignora los campos solo-NIF
+    ''' de <see cref="NifShaderOnlyPropertyNames"/>. La usa Revisa_Material (WM) para no exigir
+    ''' "grabar el material" cuando el único cambio es el shader type (que vive en el NIF).</summary>
+    Public Function AreEqualToMaterialFile(b As FO4UnifiedMaterial_Class) As Boolean
+        If Me Is Nothing OrElse b Is Nothing Then Return Me Is b
+        Return GetDifferences(Me, b, NifShaderOnlyPropertyNames).Count = 0
     End Function
 
     ' --- ShouldSerialize / Reset for Color properties (PropertyGrid bold detection) ---

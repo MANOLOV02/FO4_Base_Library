@@ -789,6 +789,96 @@ Public Class BSTriShapeGeometry
     End Function
 
     ''' <summary>
+    ''' Per-triangle biped-object footprint: <c>result(ti)</c> = the biped slot (sub-segment
+    ''' <c>UserSlotID</c>, e.g. 30 Hair-Top / 31 Hair-Long / 32 / 48 …) of the sub-segment that
+    ''' triangle <paramref name="ti"/> belongs to, or <b>-1</b> when the triangle's partition is a
+    ''' PARENT segment (parents carry no biped slot) or the shape has no segmentation. The array
+    ''' length equals <c>subIndex.TriangleCount</c>; any triangle past <c>TriParts.Count</c> stays -1.
+    '''
+    ''' Derivation mirrors <see cref="BuildHairPartitionVertexSets"/> / <see cref="GetSegmentation(BSSubIndexTriShape)"/>
+    ''' exactly: build a partID → UserSlotID map over every sub-segment (only sub-segments carry a
+    ''' UserSlotID), then map each triangle's partID via <c>TriParts</c>. Fully general over biped
+    ''' objects — no slot number is special-cased; the biped numbers come from the record, never from
+    ''' literals.
+    '''
+    ''' Pure read — no mutation. The result depends only on the shape's segmentation (not on
+    ''' pose/morph), so callers MAY cache it per shape; it feeds the render per-segment occlusion filter.
+    ''' </summary>
+    Public Shared Function GetTriangleBipedObjects(subIndex As BSSubIndexTriShape) As Integer()
+        If subIndex Is Nothing Then Return Array.Empty(Of Integer)()
+
+        Dim snap = GetSegmentation(subIndex)
+        If snap.IsEmpty Then Return Array.Empty(Of Integer)()
+
+        Dim triCount As Integer = subIndex.TriangleCount
+        If triCount <= 0 Then Return Array.Empty(Of Integer)()
+
+        ' partID → UserSlotID. Only sub-segments carry a biped UserSlotID; parent segments do not,
+        ' so triangles assigned to a parent partID stay -1 (no sub-segment biped slot).
+        Dim partToSlot As New Dictionary(Of Integer, UInteger)()
+        For Each seg In snap.Info.Segs
+            For Each sub_ In seg.Subs
+                partToSlot(sub_.PartID) = sub_.UserSlotID
+            Next
+        Next
+
+        Dim result(triCount - 1) As Integer
+        For ti = 0 To triCount - 1
+            result(ti) = -1
+        Next
+
+        Dim n As Integer = Math.Min(snap.TriParts.Count, triCount)
+        For ti = 0 To n - 1
+            Dim pid As Integer = snap.TriParts(ti)
+            Dim slot As UInteger
+            If pid >= 0 AndAlso partToSlot.TryGetValue(pid, slot) Then
+                result(ti) = CInt(slot)
+            End If
+        Next
+        Return result
+    End Function
+
+    ''' <summary>
+    ''' Engine-faithful SYMMETRIC per-segment occlusion: <c>result(ti)</c> is True (hidden) iff
+    ''' triangle <paramref name="ti"/>'s segment biped-object slot is covered by an equipped item, per
+    ''' the Fallout4.exe resolver at 0x14035E0B9 (verified by RE this session). A triangle whose segment
+    ''' carries no biped slot (parent segment, or no segmentation) is never hidden.
+    '''
+    ''' <paramref name="coveredSlotsMask"/> convention: <b>bit (N-30) = biped slot N</b> — the SAME
+    ''' convention as <c>SlotConflictResolver.OccupiedSlots</c> and the FO4 biped-object format spec
+    ''' (wbDefinitionsFO4.pas:3745). Biped objects span 30..61, so only those slots can hide a triangle;
+    ''' a slot outside that range (including the -1 "no biped" marker) leaves the triangle visible.
+    '''
+    ''' N+100 "occupied variant" range (130..161): the engine resolver at 0x14035E344 swaps to a
+    ''' segment's with-item geometry (addonSlot+0x82 → biped N+100) when the base slot N is occupied.
+    ''' Such a triangle is the INVERSE of the base: SHOWN only when its base slot (b-100) is covered,
+    ''' HIDDEN otherwise (b-130 = (b-100)-30 = the base slot bit). This is the Pipboy forearm swap: at
+    ''' mask 0 the N+100 segment is hidden (no item, the default), at the Pipboy-covered mask it shows.
+    '''
+    ''' Pure read — no mutation. Result is a function of (shape segmentation, coveredSlotsMask) only, so
+    ''' callers MAY cache it per (shape, coveredSlotsMask); it feeds the render per-segment occlusion filter.
+    ''' </summary>
+    Public Shared Function ComputeHiddenTriangles(subIndex As BSSubIndexTriShape, coveredSlotsMask As UInteger) As Boolean()
+        Dim tb = GetTriangleBipedObjects(subIndex)
+        If tb.Length = 0 Then Return Array.Empty(Of Boolean)()
+
+        Dim result(tb.Length - 1) As Boolean
+        For ti = 0 To tb.Length - 1
+            Dim b As Integer = tb(ti)
+            If b >= 30 AndAlso b <= 61 Then
+                result(ti) = (coveredSlotsMask And (1UI << (b - 30))) <> 0UI
+            ElseIf b >= 130 AndAlso b <= 161 Then
+                ' N+100 occupied-variant (engine resolver 0x14035E344): the "with-item" geometry is SHOWN only
+                ' when its base slot (b-100) is covered, HIDDEN otherwise. b-130 = (b-100)-30 = base slot bit.
+                result(ti) = (coveredSlotsMask And (1UI << (b - 130))) = 0UI
+            Else
+                result(ti) = False
+            End If
+        Next
+        Return result
+    End Function
+
+    ''' <summary>
     ''' Reconstructs BSSubIndexTriShape segmentation from semantic info + per-triangle
     ''' partID assignments.  Replicates BS-OS Geometry.cpp:1408-1514
     ''' (BSSubIndexTriShape::SetSegmentation) line-by-line.

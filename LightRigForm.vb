@@ -54,6 +54,21 @@ Partial Public Class LightRigForm
         cmbBackground.Rellena()
         cmbBackground.SelectedColor = Config_App.Current.Setting_BackColor
 
+        ' Ambient = 3 perillas independientes: intensidad (tambient), hemisferio (tGroundLevel) y tinte
+        ' (swatches Sky/Ground). NormalizeAmbient migra configs viejos (deriva el groundLevel del brillo del
+        ' color ground del modelo intermedio; tintes a blanco) y se persiste para que el resto del app lo vea.
+        ' Tints (0,0,0)=unset -> blanco. Cada swatch de luz vive ahora al lado del slider de su grupo.
+        Dim rig = Config_App.Current.Setting_Lightrig
+        Config_App.NormalizeAmbient(rig)
+        Config_App.Current.Setting_Lightrig = rig
+        tGroundLevel.Value = rig.AmbientGroundLevel
+        btnAmbSky.BackColor = VecToCol(rig.AmbientSky, Color.White)
+        btnAmbGround.BackColor = VecToCol(rig.AmbientGround, Color.White)
+        btnKeyColor.BackColor = VecToCol(rig.DirectL.Tint, Color.White)
+        btnFillLColor.BackColor = VecToCol(rig.FillLight_1.Tint, Color.White)
+        btnFillRColor.BackColor = VecToCol(rig.FillLight_2.Tint, Color.White)
+        btnBackColor.BackColor = VecToCol(rig.BackLight.Tint, Color.White)
+
         VolcarUIenModelo()
     End Sub
 
@@ -63,6 +78,7 @@ Partial Public Class LightRigForm
         AddHandler tbFillR.ValueChanged, AddressOf SliderChanged
         AddHandler tbBack.ValueChanged, AddressOf SliderChanged
         AddHandler tambient.ValueChanged, AddressOf SliderChanged
+        AddHandler tGroundLevel.ValueChanged, AddressOf SliderChanged
 
         Dim nudChanged As EventHandler = Sub(sender, e) VolcarUIenModelo()
 
@@ -75,6 +91,30 @@ Partial Public Class LightRigForm
         Next
 
         AddHandler cmbBackground.SelectedIndexChanged, AddressOf BackgroundChanged
+
+        For Each b In New Button() {btnAmbSky, btnAmbGround, btnKeyColor, btnFillLColor, btnFillRColor, btnBackColor}
+            AddHandler b.Click, AddressOf PickColor
+        Next
+    End Sub
+
+    ' Color <-> Vector3 (0..1). Vector3(0,0,0) se muestra con el fallback (legacy/unset).
+    Private Shared Function ColToVec(c As Color) As System.Numerics.Vector3
+        Return New System.Numerics.Vector3(c.R / 255.0F, c.G / 255.0F, c.B / 255.0F)
+    End Function
+    Private Shared Function VecToCol(v As System.Numerics.Vector3, fallback As Color) As Color
+        If v.X = 0 AndAlso v.Y = 0 AndAlso v.Z = 0 Then Return fallback
+        Dim Clamp = Function(f As Single) Math.Max(0, Math.Min(255, CInt(f * 255.0F)))
+        Return Color.FromArgb(255, Clamp(v.X), Clamp(v.Y), Clamp(v.Z))
+    End Function
+
+    Private Sub PickColor(sender As Object, e As EventArgs)
+        Dim b = CType(sender, Button)
+        Using dlg As New ColorDialog() With {.Color = b.BackColor, .FullOpen = True, .AnyColor = True}
+            If dlg.ShowDialog(Me) = DialogResult.OK Then
+                b.BackColor = dlg.Color
+                VolcarUIenModelo()
+            End If
+        End Using
     End Sub
 
     Private Sub BackgroundChanged(sender As Object, e As EventArgs)
@@ -93,10 +133,14 @@ Partial Public Class LightRigForm
     Private Sub VolcarUIenModelo()
         If _PreventChanges = False Then
             Dim Lrig = New LightsRig_struct With {.Ambient = CSng(tambient.Value),
-            .DirectL = New LightData_struct With {.Strength = CSng(tbKey.Value), .Left = CSng(nudK_L.Value), .Right = CSng(nudK_R.Value), .Back = CSng(nudK_B.Value), .Down = CSng(nudK_D.Value), .Forward = CSng(nudK_F.Value), .Up = CSng(nudK_U.Value)},
-            .FillLight_1 = New LightData_struct With {.Strength = CSng(tbFillL.Value), .Left = CSng(nudL_L.Value), .Right = CSng(nudL_R.Value), .Back = CSng(nudL_B.Value), .Down = CSng(nudL_D.Value), .Forward = CSng(nudL_F.Value), .Up = CSng(nudL_U.Value)},
-            .FillLight_2 = New LightData_struct With {.Strength = CSng(tbFillR.Value), .Left = CSng(nudR_L.Value), .Right = CSng(nudR_R.Value), .Back = CSng(nudR_B.Value), .Down = CSng(nudR_D.Value), .Forward = CSng(nudR_F.Value), .Up = CSng(nudR_U.Value)},
-            .BackLight = New LightData_struct With {.Strength = CSng(tbBack.Value), .Left = CSng(nudB_L.Value), .Right = CSng(nudB_R.Value), .Back = CSng(nudB_B.Value), .Down = CSng(nudB_D.Value), .Forward = CSng(nudB_F.Value), .Up = CSng(nudB_U.Value)}}
+            .AmbientGroundLevel = CSng(tGroundLevel.Value),
+            .AmbientConfigured = True,
+            .AmbientSky = ColToVec(btnAmbSky.BackColor),
+            .AmbientGround = ColToVec(btnAmbGround.BackColor),
+            .DirectL = New LightData_struct With {.Strength = CSng(tbKey.Value), .Tint = ColToVec(btnKeyColor.BackColor), .Left = CSng(nudK_L.Value), .Right = CSng(nudK_R.Value), .Back = CSng(nudK_B.Value), .Down = CSng(nudK_D.Value), .Forward = CSng(nudK_F.Value), .Up = CSng(nudK_U.Value)},
+            .FillLight_1 = New LightData_struct With {.Strength = CSng(tbFillL.Value), .Tint = ColToVec(btnFillLColor.BackColor), .Left = CSng(nudL_L.Value), .Right = CSng(nudL_R.Value), .Back = CSng(nudL_B.Value), .Down = CSng(nudL_D.Value), .Forward = CSng(nudL_F.Value), .Up = CSng(nudL_U.Value)},
+            .FillLight_2 = New LightData_struct With {.Strength = CSng(tbFillR.Value), .Tint = ColToVec(btnFillRColor.BackColor), .Left = CSng(nudR_L.Value), .Right = CSng(nudR_R.Value), .Back = CSng(nudR_B.Value), .Down = CSng(nudR_D.Value), .Forward = CSng(nudR_F.Value), .Up = CSng(nudR_U.Value)},
+            .BackLight = New LightData_struct With {.Strength = CSng(tbBack.Value), .Tint = ColToVec(btnBackColor.BackColor), .Left = CSng(nudB_L.Value), .Right = CSng(nudB_R.Value), .Back = CSng(nudB_B.Value), .Down = CSng(nudB_D.Value), .Forward = CSng(nudB_F.Value), .Up = CSng(nudB_U.Value)}}
             Config_App.Current.Setting_Lightrig = Lrig
             RaiseEvent LightsChanged()
         End If
@@ -105,6 +149,9 @@ Partial Public Class LightRigForm
     Private Sub BtnReset_Click(sender As Object, e As EventArgs) Handles btnReset.Click
         _preventchanges = True
         Config_App.Current.Setting_Lightrig = Default_Lights()
+        ' Reset también el background al default del config (DarkGray). CargarValoresIniciales recarga
+        ' el combo desde Setting_BackColor; el VolcarUIenModelo final (LightsChanged) refresca el preview.
+        Config_App.Current.Setting_BackColorName = Color.DarkGray.Name
         CargarValoresIniciales()
         _preventchanges = False
         VolcarUIenModelo()

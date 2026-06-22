@@ -1695,6 +1695,14 @@ Public Class PreviewModel
         ' or when the ApplyZaps toggle flips (_lastApplyZaps tracks the last observed state).
         Private _zapFilteredActive As Boolean = False
         Private _lastApplyZaps As Boolean = False
+        ' Per-segment worn-slot occlusion (Fase 2): last observed Shape.CoveredSlotsMask + cached
+        ' hidden-triangle set. The dirty gate also rebuilds when the mask changes; _occlHidden is
+        ' indexed by the shape's triangle index (same order as geom.Indices, see EnsureZapIndexBuffer).
+        ' Initialized to a sentinel no real mask equals so the FIRST draw always computes occlusion —
+        ' an N+100 occupied-variant segment is HIDDEN at mask 0 (the "no item" default), so a shape
+        ' with coveredMask=0 must not skip its first pass and leave those segments showing.
+        Private _lastCoveredSlotsMask As UInteger = &HFFFFFFFFUI
+        Private _occlHidden As Boolean() = Nothing
         Public Class MaterialData
             Sub New(Parent As MeshData_Class)
                 ParentMeshData = Parent
@@ -2337,10 +2345,26 @@ Public Class PreviewModel
             If full Is Nothing OrElse full.Length = 0 Then Return
 
             Dim applyZaps As Boolean = MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.ApplyZaps
-            ' Dirty-gated: only rebuild when ApplyMorphPlan re-touched the zap mask (ZapTopologyDirty) or the
-            ' ApplyZaps toggle flipped. Otherwise two bool checks and out — no per-frame scan. ApplyMorphPlan is
-            ' the single writer of VertexMask=-1, so this can never go stale.
-            If Not geom.ZapTopologyDirty AndAlso applyZaps = _lastApplyZaps Then Return
+            ' Per-segment worn-slot occlusion (Fase 2): the actor's worn biped-slot mask. 0 = no occlusion
+            ' (the default — Wardrobe_Manager never sets it, so its render is unaffected).
+            Dim coveredMask As UInteger = If(MeshData.Shape IsNot Nothing, MeshData.Shape.CoveredSlotsMask, 0UI)
+            ' Dirty-gated: only rebuild when ApplyMorphPlan re-touched the zap mask (ZapTopologyDirty), the
+            ' ApplyZaps toggle flipped, or the worn-slot mask changed. Otherwise a few cheap checks and out —
+            ' no per-frame scan. ApplyMorphPlan is the single writer of VertexMask=-1, so this can never go stale.
+            If Not geom.ZapTopologyDirty AndAlso applyZaps = _lastApplyZaps AndAlso coveredMask = _lastCoveredSlotsMask Then Return
+
+            ' Recompute the per-segment hidden-triangle set only when the dirty gate above tripped (mask
+            ' changed, etc.). occl is indexed by the SHAPE's triangle index — the SAME order as geom.Indices
+            ' (ExtractSkinnedGeometry flattens GetTriangles() in order; ComputeHiddenTriangles indexes
+            ' GetSegmentation.TriParts in subIndex.Triangles order — verified aligned). Nothing when no mask.
+            ' Computed whenever the shape is a BSSubIndexTriShape, REGARDLESS of coveredMask: an N+100
+            ' occupied-variant segment is HIDDEN at mask 0 (the "no item" default), so mask 0 is NOT a
+            ' no-op for segmented shapes. (The dirty gate above + the sentinel-initialized field ensure
+            ' the first pass still runs even at mask 0.)
+            Dim occl As Boolean() = Nothing
+            Dim subIdx = TryCast(If(MeshData.Shape Is Nothing, Nothing, MeshData.Shape.NifShape), NiflySharp.Blocks.BSSubIndexTriShape)
+            If subIdx IsNot Nothing Then occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask)
+            _occlHidden = occl
 
             Dim shouldFilter As Boolean = applyZaps
             If shouldFilter Then
@@ -2353,6 +2377,12 @@ Public Class PreviewModel
                 End If
                 If Not anyZap Then shouldFilter = False
             End If
+            ' Also filter when any triangle is hidden per-segment (independent of the vertex-zap path).
+            If Not shouldFilter AndAlso occl IsNot Nothing Then
+                For i = 0 To occl.Length - 1
+                    If occl(i) Then shouldFilter = True : Exit For
+                Next
+            End If
 
             If Not shouldFilter Then
                 If _zapFilteredActive Then
@@ -2362,6 +2392,7 @@ Public Class PreviewModel
                     _zapFilteredActive = False
                 End If
                 _lastApplyZaps = applyZaps
+                _lastCoveredSlotsMask = coveredMask
                 MeshData.Meshgeometry.ZapTopologyDirty = False
                 Return
             End If
@@ -2371,7 +2402,11 @@ Public Class PreviewModel
             Dim t As Integer = 0
             Do While t + 2 < full.Length
                 Dim a = full(t) : Dim b = full(t + 1) : Dim c = full(t + 2)
-                If vmask(CInt(a)) <> -1 AndAlso vmask(CInt(b)) <> -1 AndAlso vmask(CInt(c)) <> -1 Then
+                Dim triHidden As Boolean = (occl IsNot Nothing AndAlso (t \ 3) < occl.Length AndAlso occl(t \ 3))
+                ' vmask is non-Nothing whenever the vertex-zap path is active (anyZap requires vm IsNot Nothing);
+                ' the per-segment-only path may run with no zaps, so the vertex test is null-safe here.
+                Dim vertZapped As Boolean = (vmask IsNot Nothing AndAlso (vmask(CInt(a)) = -1 OrElse vmask(CInt(b)) = -1 OrElse vmask(CInt(c)) = -1))
+                If Not triHidden AndAlso Not vertZapped Then
                     filtered.Add(a) : filtered.Add(b) : filtered.Add(c)
                 End If
                 t += 3
@@ -2382,6 +2417,7 @@ Public Class PreviewModel
             indexCount = arr.Length
             _zapFilteredActive = True
             _lastApplyZaps = applyZaps
+            _lastCoveredSlotsMask = coveredMask
             MeshData.Meshgeometry.ZapTopologyDirty = False
         End Sub
 
@@ -2867,10 +2903,11 @@ Public Class PreviewModel
             ' Tree_Anim interpretation of vertex alpha (anim param vs transparency).
             ' Triggered by either the BGSM.Tree flag OR the BSLightingShaderType.TreeAnim shader type;
             ' vanilla content often sets only one of them for vegetation/grass.
+            ' Tree vertex-alpha semantics: TreeAnim uses vertex ALPHA as a wind/anim param, not
+            ' transparency, so it must not feed the vertex-alpha display. (The vColor RGB gamma-decode
+            ' that used to be Tree-only is now universal in the BGSM base path -- the engine decodes
+            ' vColor for every BGSM, not just trees.)
             Dim isTreeAnim As Boolean = materialBase.Tree OrElse materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
-            ' Tree leaf-color gamma: FO4 only (the engine TreeAnim path gamma-decodes vColor; SSE keeps
-            ' its own handling). Static — no wind displacement (user choice).
-            shader.SetBool("bTreeAnim", isTreeAnim AndAlso Not (TypeOf shader Is Shader_Class_SSE))
             shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVertexColorData)
             shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso Not isTreeAnim)
             shader.SetBool("bApplyZap", shape.ApplyZaps)
@@ -2891,8 +2928,22 @@ Public Class PreviewModel
             ' engine's linear pipeline (verified: the LightingShader PS samples diffuse via sRGB SRV and
             ' lights/outputs in linear, with tonemap + sRGB-encode in a separate ImageSpace pass; the app
             ' folds that tonemap + encode into the fragment tail). Directions are geometric, never converted.
-            Dim ambientVal As Single = Config_App.Current.Setting_Lightrig.Ambient
-            shader.SetFloat("ambient", CSng(Math.Pow(ambientVal, 2.2)))
+            ' Ambient HEMISFÉRICO (engine-faithful: FO4/SSE iluminan el ambient dependiente de la normal,
+            ' no plano). Dos colores -- cielo (normal hacia world +Z) y suelo (-Z) -- que el shader mezcla
+            ' por la componente up de la normal. Config legacy (sin hemisferio) -> derivar uno neutro del
+            ' escalar Ambient (cielo=Ambient, suelo=Ambient/2). Se linealizan (pow 2.2) como el resto del rig.
+            ' Ambient = 3 perillas independientes (NormalizeAmbient migra configs viejos): intensidad global
+            ' (Ambient), hemisferio (AmbientGroundLevel = brillo del suelo respecto del cielo) y tinte
+            ' (Sky/Ground, blanco = neutro). sky = skyTint*intensity ; ground = groundTint*intensity*groundLevel.
+            ' Linealizado (pow 2.2) como el resto del rig.
+            Dim arig = Config_App.Current.Setting_Lightrig
+            Config_App.NormalizeAmbient(arig)
+            Dim ambientVal As Single = arig.Ambient
+            Dim aSky = arig.AmbientSky
+            Dim aGround = arig.AmbientGround
+            Dim gLevel As Single = arig.AmbientGroundLevel
+            shader.SetVector3("ambientSky", Shader_Base_Class.Vector_to_Linear(New OpenTK.Mathematics.Vector3(aSky.X, aSky.Y, aSky.Z) * ambientVal))
+            shader.SetVector3("ambientGround", Shader_Base_Class.Vector_to_Linear(New OpenTK.Mathematics.Vector3(aGround.X, aGround.Y, aGround.Z) * (ambientVal * gLevel)))
 
             shader.SetVector3("frontal.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.DirectL.GetDifuse))
             shader.SetVector3("frontal.direction", Config_App.Current.Setting_Lightrig.DirectL.GetDirection(cam))
@@ -2981,6 +3032,13 @@ Public Class PreviewModel
             '===============================
             shader.SetBool("bCubemap", hasCubemap)
             shader.SetBool("bEnvMap", materialBase.EnvironmentMapping OrElse materialBase.EyeEnvironmentMapping)
+            ' SSE Eye technique (16): the engine reflects the cubemap about the eyeball's radial (geometric)
+            ' normal, not the bump normal (Fragment_SSE bEye branch; sse_eye.asm L108-118 / eye VS o7).
+            If isSSE Then shader.SetBool("bEye", materialBase.EyeEnvironmentMapping)
+            ' SSE Hair + ANISO_LIGHTING (SLSF2 Anisotropic_Lighting): 2-lobe shifted-normal Kajiya-Kay
+            ' (Fragment_SSE; sse_hair_aniso.asm). FO4 hair is always KK via flow map; SSE only when the
+            ' aniso flag is set (plain sse_hair vs sse_hair_aniso). Gated isSSE; the shader also needs bHairTint.
+            If isSSE Then shader.SetBool("bAnisoLighting", materialBase.AnisoLighting)
             ' Alpha-blend (forward b6) vs opaque (deferred): gates the strong forward material-cube envmap.
             ' Opaque BGSM (pierce-type chrome gems) render deferred where the engine uses the scene IBL,
             ' not the material cube -- so the forward *3 over-grays them. (Eye keeps it via its inline path.)

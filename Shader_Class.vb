@@ -300,7 +300,6 @@ uniform bool bCubemap;
 uniform bool bEnvMap;
 uniform bool bEnvMask;
 uniform bool bSpecular;
-uniform bool bTreeAnim;   // BSLightingShaderType TreeAnim: gamma-decode the leaf vertex color (engine VS rec1494 L78-80)
 uniform bool bEmissive;
 uniform bool bBacklight;
 uniform bool bRimlight;
@@ -348,7 +347,8 @@ uniform float WireAlpha;
 
 uniform float alphaThreshold;
 
-uniform float ambient;
+uniform vec3 ambientSky;       // hemispheric ambient: color when N points world-up (+Z)
+uniform vec3 ambientGround;    // hemispheric ambient: color when N points world-down (-Z)
 uniform bool bHasTintColor;
 uniform vec3 tintColor;
 
@@ -584,15 +584,30 @@ vec4 colorLookup(in float x, in float y)
 	return texture(texGreyscale, vec2(clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)));
 }
 
+// Hemispheric ambient = engine-faithful STRUCTURE: FO4/SSE light the ambient as a normal-dependent
+// term (DirectionalAmbient . vec4(N,1)), NOT a flat scalar. We have no cell ambient matrix, so we
+// synthesize it from two preview colors: sky from world-up (+Z), ground from world-down (-Z). The
+// shading normal is view-space; transform to world (reusing the envmap matrices) and blend by its
+// up (Z) component. Anchored to world up so the hemisphere stays put as the camera orbits.
+vec3 hemiAmbient(in vec3 nrm)
+{
+	vec3 nWS = normalize(vec3(matModel * (matModelViewInverse * vec4(nrm, 0.0))));
+	return mix(ambientGround, ambientSky, clamp(nWS.z * 0.5 + 0.5, 0.0, 1.0));
+}
+
 void main(void)
 {
     uv = vUV * uvScale + uvOffset;
 	vec4 color = vColor;
-	// Tree (BSLightingShaderType TreeAnim): the engine gamma-decodes the leaf vertex color
-	// (VS rec1494 L78-80: o7 = pow(vColor.rgb, 2.2)) before the lit-albedo multiply, unlike the
-	// Default forward (rec1498) which uses raw vColor. RGB only; vColor.a (color.a) stays raw for
-	// the alpha-test, matching o7.w = vColor.w. Static (no wind displacement) per user choice.
-	albedo = bTreeAnim ? pow(max(vColor.rgb, 0.0), vec3(2.2)) : vColor.rgb;
+	// vColor RGB -> LINEAR (pow 2.2) before the lit-albedo multiply. The FO4 engine ALWAYS gamma-decodes
+	// the vertex color: BGSM does it in the VERTEX shader (forward rec1481 + deferred rec2288, both
+	// L119-121: o = pow(COLOR0,2.2)) and the PS multiplies that linear value; BGEM does it in the PS
+	// (rec1083 base*=pow(vColor,2.2), its VS rec0260 L46 passes vColor raw). NET for both = albedo *
+	// pow(vColor,2.2). The old raw-vColor here (BGSM-crudo) was a misread: the PS not re-powing it
+	// did NOT mean raw, because the VS had already decoded it. Universal (NOT tree-gated -- Tree was
+	// just one BGSM with non-white vColor). RGB only; vColor.a (color.a) stays raw for the alpha-test
+	// (the VS decodes rgb only: o.w = vColor.w). White verts (=1) -> pow=1 -> no change.
+	albedo = pow(max(vColor.rgb, 0.0), vec3(2.2));
 	vec3 outDiffuse = vec3(0.0);
 	vec3 outSpecular = vec3(0.0);
 
@@ -687,15 +702,19 @@ void main(void)
 				if (bGreyscaleColor && !bIsEffectShader)
 				{
                     // FO4 grayscale-to-palette RECOLOR, reconstructed EXACT from the GAME deferred
-                    // prepass (Shaders011.fxp b09 rec2985/rec2963) AND forward (b06 rec1514):
+                    // prepass (Shaders011.fxp b09 rec2985/rec2963):
                     //   U = pow(diffuse.green, 1/2.2)   (index re-encoded to gamma; log/mul 0.454545/exp)
                     //   V = PaletteScale (GrayscaleToPaletteScale material value), and WHEN the mesh has
-                    //       vertex colors the engine ADDS a per-vertex offset: V = PaletteScale - 1 +
-                    //       pow(vColor.r, 1/2.2)  (rec2963 L63-67 / rec1514 L60-67). With white verts
-                    //       (vColor.r=1 -> pow=1) this is exactly PaletteScale (rec2985, no-vColor perm).
+                    //       vertex colors the engine ADDS a per-vertex offset: V = PaletteScale - 1 + vColor.r
+                    //       with vColor.r RAW (NOT gamma-encoded): the prepass VS rec2389 L119-121 gamma-DECODES
+                    //       the vertex color (o6 = pow(COLOR0,2.2)) and the PS rec2963 L63-65 re-ENCODES it
+                    //       (pow(v6.x,1/2.2)); the two CANCEL -> net = raw vertex red. (A pow(vColor.r,1/2.2)
+                    //       here was an extra encode the engine does not have -> wrong palette row on
+                    //       non-white verts, e.g. Mr Handy arms went blue instead of gray.) White verts
+                    //       (vColor.r=1 -> +0) -> exactly PaletteScale (rec2985, no-vColor perm).
                     //   palette = sample_l(LUT, U,V) lod0; sRGB-authored -> pow(2.2) decode to linear.
                     float palU = pow(max(baseMap.g, 0.0), 1.0/2.2);
-                    float palV = paletteScale + (bShowVertexColor ? pow(max(vColor.r, 0.0), 1.0/2.2) - 1.0 : 0.0);
+                    float palV = paletteScale + (bShowVertexColor ? max(vColor.r, 0.0) - 1.0 : 0.0);
                     vec4 luG = colorLookup(palU, palV);
 					albedo = luG.rgb;
 					albedo = pow(max(albedo, vec3(0.0)), vec3(2.2));
@@ -803,7 +822,7 @@ void main(void)
 				float envScale = envReflection;
 				float envIntensity = envMaskR * (bHasAlphaBlend ? 3.0 : 1.0) * glossGate * envScale * specularStrength;
 
-				outSpecular += cube * envIntensity * (vec3(ambient) + outDiffuse);
+				outSpecular += cube * envIntensity * (hemiAmbient(normal) + outDiffuse);
 			}
 
 			// Emissive (self-illumination). Engine DEFERRED prepass writes the emissive G-buffer o4 =
@@ -830,7 +849,7 @@ void main(void)
 			// Glowmap ambient modulation = the FORWARD/alpha-blend path ONLY (rec1512 `ambient*glowmap`).
 			// The DEFERRED (opaque) path does NOT modulate ambient by the glow map -- it masks the EMISSIVE
 			// instead (handled above). So gate this on bHasAlphaBlend. (hair's glow slot = the _f FLOW map.)
-			vec3 ambientTerm = vec3(ambient);
+			vec3 ambientTerm = hemiAmbient(normal);
 			if (bHasAlphaBlend && uEffectiveType == 2 && !bHair)
 				ambientTerm *= texture(texGlowmap, uv).rgb;
 
@@ -929,7 +948,7 @@ void main(void)
 			
 			// Lighting influence: lerp base toward base*sceneLight (PropertyColor ~ rig light = outDiffuse+ambient).
 			if (bLightEnabled)
-				effRgb = mix(effRgb, effRgb * (outDiffuse + vec3(ambient)), effectLightingInfluence);
+				effRgb = mix(effRgb, effRgb * (outDiffuse + hemiAmbient(normal)), effectLightingInfluence);
 			
 			// NO emissive add: the engine b05 BGEM family has NO emissive term (verified -- none of the b05
 			// PS sample a glow or add an emissive). A glow on an effect material is its base color + the
@@ -1378,12 +1397,14 @@ uniform bool bNormalMap;
 uniform bool bModelSpace;
 uniform bool bCubemap;
 uniform bool bEnvMap;
+uniform bool bEye;
 uniform bool bEnvMask;
 uniform bool bSpecular;
 uniform bool bHasSpecMap;
 uniform bool bEmissive;
 uniform bool bBacklight;
 uniform bool bRimlight;
+uniform bool bAnisoLighting;
 uniform bool bSoftlight;
 uniform bool bAlphaTest;
 uniform bool bGlowmap;
@@ -1431,7 +1452,8 @@ uniform float WireAlpha;
 
 uniform float alphaThreshold;
 
-uniform float ambient;
+uniform vec3 ambientSky;       // hemispheric ambient: color when N points world-up (+Z)
+uniform vec3 ambientGround;    // hemispheric ambient: color when N points world-down (-Z)
 uniform vec3 tintColor;
 
 struct DirectionalLight
@@ -1617,10 +1639,37 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 		roughness = 1.0 - smoothness;
 		specMask = specFactor * specularStrength;
 
-		// SSE: Blinn-Phong with the RAW glossiness exponent passed from the app
-		// (uniform glossiness = shad.Glossiness): no exp2 reconstruction, no specGloss
-		// modulation. Matches NifSkope sk_default and OutfitStudio default.frag.
-		outSpec += clamp(specularColor * specMask * pow(NdotH, glossiness), 0.0, 1.0) * light.diffuse;
+		if (bHairTint && bAnisoLighting)
+		{
+			// SSE HAIR anisotropic specular = technique 6 (Hair) + ANISO_LIGHTING define
+			// (sse_hair_aniso.asm L21-56). FO4 differs (flow-map Kajiya-Kay rec3110); SSE uses TWO
+			// shifted-NORMAL lobes built from the geometric normal + tangent of the TBN (engine
+			// v3.z/v4.z/v5.z = N_geo, v3.x/v4.x/v5.x = T -> mv_tbn[2], mv_tbn[0]):
+			//   sh1 = normalize(0.5*bumpN + N_geo)                              (L21-27)
+			//   sh2 = normalize(sh1 - 0.05*T)                                   (L36-41)
+			//   a_i = pow(1 - min(|sh_i.(L - H)|, 1), Glossiness)              (L28-35 / L42-49)
+			//   aniso = (0.7*a1 + a2*hairTint) * SpecularColor * specMask * lightColor
+			//   hairTint = mix(1, HairTintColor, vColor.g)                     (L50-54)
+			// Omitted: engine max(L.z,0) sun-elevation clamp (L52) -- a rig term; the app keeps its
+			// own multi-light rig (porting the material response, not the engine's single-sun rig).
+			// The app re-tints this spec at the hair-tint multiply below (engine tints lit color
+			// separately, tail L1-3): minor composition-order deviation, documented, not invented.
+			vec3 Ngeo = normalize(mv_tbn[2]);
+			vec3 Ttan = normalize(mv_tbn[0]);
+			vec3 sh1  = normalize(0.5 * normal + Ngeo);
+			vec3 sh2  = normalize(sh1 - 0.05 * Ttan);
+			float a1  = pow(1.0 - min(abs(dot(sh1, lightDir) - dot(sh1, halfDir)), 1.0), glossiness);
+			float a2  = pow(1.0 - min(abs(dot(sh2, lightDir) - dot(sh2, halfDir)), 1.0), glossiness);
+			vec3 hairTint = mix(vec3(1.0), tintColor, vColor.g);
+			outSpec += (0.7 * a1 + a2 * hairTint) * specularColor * specMask * light.diffuse;
+		}
+		else
+		{
+			// SSE: Blinn-Phong with the RAW glossiness exponent passed from the app
+			// (uniform glossiness = shad.Glossiness): no exp2 reconstruction, no specGloss
+			// modulation. Matches NifSkope sk_default and OutfitStudio default.frag.
+			outSpec += clamp(specularColor * specMask * pow(NdotH, glossiness), 0.0, 1.0) * light.diffuse;
+		}
 	}
 
 	// Back lighting: simulates translucency (light through thin cloth/hair)
@@ -1664,6 +1713,17 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 vec4 colorLookup(in float x, in float y)
 {
 	return texture(texGreyscale, vec2(clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)));
+}
+
+// Hemispheric ambient = engine-faithful STRUCTURE: FO4/SSE light the ambient as a normal-dependent
+// term (DirectionalAmbient . vec4(N,1)), NOT a flat scalar. We have no cell ambient matrix, so we
+// synthesize it from two preview colors: sky from world-up (+Z), ground from world-down (-Z). The
+// shading normal is view-space; transform to world (reusing the envmap matrices) and blend by its
+// up (Z) component. Anchored to world up so the hemisphere stays put as the camera orbits.
+vec3 hemiAmbient(in vec3 nrm)
+{
+	vec3 nWS = normalize(vec3(matModel * (matModelViewInverse * vec4(nrm, 0.0))));
+	return mix(ambientGround, ambientSky, clamp(nWS.z * 0.5 + 0.5, 0.0, 1.0));
 }
 
 void main(void)
@@ -1785,12 +1845,15 @@ void main(void)
 					}
 				}
 
-				if (bGreyscaleColor && !bIsEffectShader)
-				{
-                    // BGSM: palette lookup for armor recoloring
-                    vec4 luG = colorLookup(baseMap.g, paletteScale * vColor.r);
-					albedo = luG.rgb;
-				}
+				// GREYSCALE-TO-PALETTE: SSE-only divergence from FO4. The Skyrim BSLightingShader
+				// pixel shader has NO greyscale path: VanillaGetLightingShaderDefines (0x14151C2D0)
+				// emits no greyscale #define, and GRAYSCALE_TO_COLOR/GRAYSCALE_TO_ALPHA live ONLY in
+				// the BSEffectShader define block (BSXShaderSamplers, 0x1ac7840/58) alongside the
+				// dedicated GrayscaleSampler. In SSE the recolor is exclusively a BSEffectShaderProperty
+				// feature, handled in the effect path below (bIsEffectShader). So a BSLightingShaderProperty
+				// that carries the SLSF1 greyscale flag is rendered WITHOUT recolor by the engine -> no-op
+				// here. (FO4 differs: its lighting shader rec2389/rec2963 DO recolor; see Fragment_FO4.)
+				// The material flag is preserved for round-trip; only the lit render ignores it.
 			}
 
 			// FaceTint detail map: engine facegen (idx 8126) uses a SOFT-LIGHT blend onto the diffuse,
@@ -1827,7 +1890,16 @@ void main(void)
 			{
 				float cubeSmooth = (bSpecular && bShowTexture) ? specGloss * shininess : 1.0;
 
-				vec3 reflected = reflect(viewDir, normal);
+				// EYE technique (16): the engine reflects the cubemap about the eyeball's RADIAL
+				// normal (sse_eye L108-111 reflects about v7), NOT the bump normal that lighting uses
+				// (L73-80). The eye VS builds v7 = normalize(worldPos - eyeCenter), eyeCenter =
+				// lerp(cb1[0],cb1[1], v6.x) -> a procedural sphere normal, so the iris normal-map does
+				// NOT distort the cornea reflection. The eye-center constants + per-vertex blend are not
+				// loaded here, but for a spherical eye the radial normal == the mesh geometric normal
+				// (mv_tbn[2]); reflecting about it is faithful to the engine (and strictly closer than the
+				// bump-normal reflection). Non-eye envmap keeps the bump-normal reflection (sse_envmap L12-14).
+				vec3 reflNormal = bEye ? normalize(mv_tbn[2]) : normal;
+				vec3 reflected = reflect(viewDir, reflNormal);
 				vec3 reflectedWS = vec3(matModel * (matModelViewInverse * vec4(reflected, 0.0)));
 
 				vec4 cube = textureLod(texCubemap, reflectedWS, 8.0 - cubeSmooth * 8.0);
@@ -1841,7 +1913,7 @@ void main(void)
 					cube.rgb *= specFactor;
 				}
 
-				outSpecular += cube.rgb * (vec3(ambient) + outDiffuse);
+				outSpecular += cube.rgb * (hemiAmbient(normal) + outDiffuse);
 			}
 
 			// Emissive
@@ -1872,7 +1944,7 @@ void main(void)
 
 			// Engine (idx 4032 / 7473): color = albedo * (diffuse + ambient + emissive) + specular.
 			// Emissive/glow are INSIDE the albedo multiply (albedo-modulated); specular added on top.
-			color.rgb = albedo * (outDiffuse + vec3(ambient) + emissive);
+			color.rgb = albedo * (outDiffuse + hemiAmbient(normal) + emissive);
 			color.rgb += outSpecular;
 
 			// Hair tint (engine idx 8985): litColor *= mix(1, HairTintColor, vertexColor.g).
@@ -1930,7 +2002,7 @@ void main(void)
 			// Lighting influence (AFTER greyscale, BEFORE cubemap - NifSkope order)
 			if (bLightEnabled)
 			{
-				color.rgb = mix(color.rgb, color.rgb * (outDiffuse + vec3(ambient)), effectLightingInfluence);
+				color.rgb = mix(color.rgb, color.rgb * (outDiffuse + hemiAmbient(normal)), effectLightingInfluence);
 			}
 
 			// Emissive (WM addition - NifSkope effect shader has no separate emissive)

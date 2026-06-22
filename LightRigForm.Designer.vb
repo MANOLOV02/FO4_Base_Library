@@ -82,9 +82,20 @@ Partial Class LightRigForm
         btnReset = New Button()
         GroupBox1 = New GroupBox()
         tambient = New FO4_Base_Library.TinySliderTextBox()
+        tGroundLevel = New FO4_Base_Library.TinySliderTextBox()
+        lblIntensity = New Label()
+        lblGroundLvl = New Label()
         grpBackground = New GroupBox()
         lblBackground = New Label()
         cmbBackground = New ColorComboBox()
+        lblAmbSky = New Label()
+        btnAmbSky = New Button()
+        lblAmbGround = New Label()
+        btnAmbGround = New Button()
+        btnKeyColor = New Button()
+        btnFillLColor = New Button()
+        btnFillRColor = New Button()
+        btnBackColor = New Button()
         ToolTip1 = New ToolTip(components)
         grpKey.SuspendLayout()
         CType(nudK_F, ComponentModel.ISupportInitialize).BeginInit()
@@ -121,6 +132,7 @@ Partial Class LightRigForm
         ' grpKey
         '
         grpKey.Controls.Add(tbKey)
+        grpKey.Controls.Add(btnKeyColor)
         grpKey.Controls.Add(nudK_F)
         grpKey.Controls.Add(nudK_R)
         grpKey.Controls.Add(nudK_U)
@@ -144,7 +156,7 @@ Partial Class LightRigForm
         '
         tbKey.Location = New Point(11, 30)
         tbKey.Minimum = 0R
-        tbKey.Maximum = 1.5R
+        tbKey.Maximum = 2R
         tbKey.DisplayFormat = "0.00%"
         tbKey.InputScale = 0.01R
         tbKey.SmallChange = 0.05R
@@ -152,7 +164,7 @@ Partial Class LightRigForm
         tbKey.TickFrequency = 0.1R
         tbKey.ShowTicks = True
         tbKey.Name = "tbKey"
-        tbKey.Size = New Size(389, 28)
+        tbKey.Size = New Size(300, 28)
         tbKey.TabIndex = 0
         '
         ' nudK_F
@@ -248,7 +260,7 @@ Partial Class LightRigForm
         ' lblK_F
         '
         lblK_F.AutoSize = True
-        lblK_F.Location = New Point(300, 112)
+        lblK_F.Location = New Point(284, 112)
         lblK_F.Name = "lblK_F"
         lblK_F.Size = New Size(50, 15)
         lblK_F.TabIndex = 11
@@ -275,7 +287,7 @@ Partial Class LightRigForm
         ' lblK_B
         '
         lblK_B.AutoSize = True
-        lblK_B.Location = New Point(300, 82)
+        lblK_B.Location = New Point(284, 82)
         lblK_B.Name = "lblK_B"
         lblK_B.Size = New Size(32, 15)
         lblK_B.TabIndex = 5
@@ -284,6 +296,7 @@ Partial Class LightRigForm
         ' grpFillL
         '
         grpFillL.Controls.Add(tbFillL)
+        grpFillL.Controls.Add(btnFillLColor)
         grpFillL.Controls.Add(nudL_F)
         grpFillL.Controls.Add(nudL_R)
         grpFillL.Controls.Add(nudL_U)
@@ -307,7 +320,7 @@ Partial Class LightRigForm
         '
         tbFillL.Location = New Point(11, 30)
         tbFillL.Minimum = 0R
-        tbFillL.Maximum = 1.5R
+        tbFillL.Maximum = 2R
         tbFillL.DisplayFormat = "0.00%"
         tbFillL.InputScale = 0.01R
         tbFillL.SmallChange = 0.05R
@@ -315,7 +328,7 @@ Partial Class LightRigForm
         tbFillL.TickFrequency = 0.1R
         tbFillL.ShowTicks = True
         tbFillL.Name = "tbFillL"
-        tbFillL.Size = New Size(389, 28)
+        tbFillL.Size = New Size(300, 28)
         tbFillL.TabIndex = 0
         '
         ' nudL_F
@@ -411,7 +424,7 @@ Partial Class LightRigForm
         ' Label3
         '
         Label3.AutoSize = True
-        Label3.Location = New Point(300, 82)
+        Label3.Location = New Point(284, 82)
         Label3.Name = "Label3"
         Label3.Size = New Size(32, 15)
         Label3.TabIndex = 5
@@ -438,7 +451,7 @@ Partial Class LightRigForm
         ' Label6
         '
         Label6.AutoSize = True
-        Label6.Location = New Point(300, 112)
+        Label6.Location = New Point(284, 112)
         Label6.Name = "Label6"
         Label6.Size = New Size(50, 15)
         Label6.TabIndex = 11
@@ -447,6 +460,7 @@ Partial Class LightRigForm
         ' grpFillR
         '
         grpFillR.Controls.Add(tbFillR)
+        grpFillR.Controls.Add(btnFillRColor)
         grpFillR.Controls.Add(nudR_F)
         grpFillR.Controls.Add(nudR_R)
         grpFillR.Controls.Add(nudR_U)
@@ -464,13 +478,13 @@ Partial Class LightRigForm
         grpFillR.Size = New Size(418, 150)
         grpFillR.TabIndex = 2
         grpFillR.TabStop = False
-        grpFillR.Text = "Right Ligh"
+        grpFillR.Text = "Right Light"
         '
         ' tbFillR
         '
         tbFillR.Location = New Point(11, 30)
         tbFillR.Minimum = 0R
-        tbFillR.Maximum = 1.5R
+        tbFillR.Maximum = 2R
         tbFillR.DisplayFormat = "0.00%"
         tbFillR.InputScale = 0.01R
         tbFillR.SmallChange = 0.05R
@@ -478,7 +492,7 @@ Partial Class LightRigForm
         tbFillR.TickFrequency = 0.1R
         tbFillR.ShowTicks = True
         tbFillR.Name = "tbFillR"
-        tbFillR.Size = New Size(389, 28)
+        tbFillR.Size = New Size(300, 28)
         tbFillR.TabIndex = 0
         '
         ' nudR_F
@@ -574,7 +588,7 @@ Partial Class LightRigForm
         ' Label9
         '
         Label9.AutoSize = True
-        Label9.Location = New Point(300, 82)
+        Label9.Location = New Point(284, 82)
         Label9.Name = "Label9"
         Label9.Size = New Size(32, 15)
         Label9.TabIndex = 15
@@ -601,7 +615,7 @@ Partial Class LightRigForm
         ' Label12
         '
         Label12.AutoSize = True
-        Label12.Location = New Point(300, 112)
+        Label12.Location = New Point(284, 112)
         Label12.Name = "Label12"
         Label12.Size = New Size(50, 15)
         Label12.TabIndex = 18
@@ -610,6 +624,7 @@ Partial Class LightRigForm
         ' grpBack
         '
         grpBack.Controls.Add(tbBack)
+        grpBack.Controls.Add(btnBackColor)
         grpBack.Controls.Add(nudB_F)
         grpBack.Controls.Add(nudB_R)
         grpBack.Controls.Add(nudB_U)
@@ -633,7 +648,7 @@ Partial Class LightRigForm
         '
         tbBack.Location = New Point(11, 30)
         tbBack.Minimum = 0R
-        tbBack.Maximum = 1.5R
+        tbBack.Maximum = 2R
         tbBack.DisplayFormat = "0.00%"
         tbBack.InputScale = 0.01R
         tbBack.SmallChange = 0.05R
@@ -641,7 +656,7 @@ Partial Class LightRigForm
         tbBack.TickFrequency = 0.1R
         tbBack.ShowTicks = True
         tbBack.Name = "tbBack"
-        tbBack.Size = New Size(389, 28)
+        tbBack.Size = New Size(300, 28)
         tbBack.TabIndex = 0
         '
         ' nudB_F
@@ -737,7 +752,7 @@ Partial Class LightRigForm
         ' Label15
         '
         Label15.AutoSize = True
-        Label15.Location = New Point(300, 82)
+        Label15.Location = New Point(284, 82)
         Label15.Name = "Label15"
         Label15.Size = New Size(32, 15)
         Label15.TabIndex = 10
@@ -764,7 +779,7 @@ Partial Class LightRigForm
         ' Label18
         '
         Label18.AutoSize = True
-        Label18.Location = New Point(300, 112)
+        Label18.Location = New Point(284, 112)
         Label18.Name = "Label18"
         Label18.Size = New Size(50, 15)
         Label18.TabIndex = 13
@@ -772,7 +787,7 @@ Partial Class LightRigForm
         '
         ' btnReset
         '
-        btnReset.Location = New Point(436, 425)
+        btnReset.Location = New Point(436, 388)
         btnReset.Name = "btnReset"
         btnReset.Size = New Size(418, 49)
         btnReset.TabIndex = 4
@@ -781,19 +796,32 @@ Partial Class LightRigForm
         '
         ' GroupBox1
         '
+        GroupBox1.Controls.Add(lblIntensity)
         GroupBox1.Controls.Add(tambient)
+        GroupBox1.Controls.Add(lblGroundLvl)
+        GroupBox1.Controls.Add(tGroundLevel)
+        GroupBox1.Controls.Add(lblAmbSky)
+        GroupBox1.Controls.Add(btnAmbSky)
+        GroupBox1.Controls.Add(lblAmbGround)
+        GroupBox1.Controls.Add(btnAmbGround)
         GroupBox1.Location = New Point(436, 168)
         GroupBox1.Name = "GroupBox1"
-        GroupBox1.Size = New Size(418, 68)
+        GroupBox1.Size = New Size(418, 130)
         GroupBox1.TabIndex = 5
         GroupBox1.TabStop = False
-        GroupBox1.Text = "Ambient"
+        GroupBox1.Text = "Ambient (intensity + hemisphere)"
         '
         ' tambient
         '
-        tambient.Location = New Point(11, 30)
+        lblIntensity.AutoSize = True
+        lblIntensity.Location = New Point(11, 32)
+        lblIntensity.Name = "lblIntensity"
+        lblIntensity.Size = New Size(54, 15)
+        lblIntensity.Text = "Intensity"
+        '
+        tambient.Location = New Point(98, 28)
         tambient.Minimum = 0R
-        tambient.Maximum = 1.5R
+        tambient.Maximum = 2R
         tambient.DisplayFormat = "0.00%"
         tambient.InputScale = 0.01R
         tambient.SmallChange = 0.05R
@@ -801,14 +829,33 @@ Partial Class LightRigForm
         tambient.TickFrequency = 0.1R
         tambient.ShowTicks = True
         tambient.Name = "tambient"
-        tambient.Size = New Size(389, 28)
+        tambient.Size = New Size(300, 28)
         tambient.TabIndex = 0
+        '
+        lblGroundLvl.AutoSize = True
+        lblGroundLvl.Location = New Point(11, 64)
+        lblGroundLvl.Name = "lblGroundLvl"
+        lblGroundLvl.Size = New Size(78, 15)
+        lblGroundLvl.Text = "Ground level"
+        '
+        tGroundLevel.Location = New Point(98, 60)
+        tGroundLevel.Minimum = 0R
+        tGroundLevel.Maximum = 1R
+        tGroundLevel.DisplayFormat = "0.00%"
+        tGroundLevel.InputScale = 0.01R
+        tGroundLevel.SmallChange = 0.05R
+        tGroundLevel.LargeChange = 0.1R
+        tGroundLevel.TickFrequency = 0.1R
+        tGroundLevel.ShowTicks = True
+        tGroundLevel.Name = "tGroundLevel"
+        tGroundLevel.Size = New Size(300, 28)
+        tGroundLevel.TabIndex = 1
         '
         ' grpBackground
         '
         grpBackground.Controls.Add(lblBackground)
         grpBackground.Controls.Add(cmbBackground)
-        grpBackground.Location = New Point(436, 250)
+        grpBackground.Location = New Point(436, 308)
         grpBackground.Name = "grpBackground"
         grpBackground.Size = New Size(418, 68)
         grpBackground.TabIndex = 6
@@ -822,7 +869,7 @@ Partial Class LightRigForm
         lblBackground.Name = "lblBackground"
         lblBackground.Size = New Size(72, 15)
         lblBackground.TabIndex = 0
-        lblBackground.Text = "Background"
+        lblBackground.Text = "Color"
         '
         ' cmbBackground
         '
@@ -872,6 +919,63 @@ Partial Class LightRigForm
         ToolTip1.SetToolTip(tambient, "Adjust ambient light intensity.")
         ToolTip1.SetToolTip(btnReset, "Restore the default light rig values.")
         ToolTip1.SetToolTip(cmbBackground, "Select the preview background color.")
+        ToolTip1.SetToolTip(btnAmbSky, "Ambient color when a surface faces UP (world +Z). Engine ambient is normal-dependent.")
+        ToolTip1.SetToolTip(btnAmbGround, "Ambient color when a surface faces DOWN (world -Z) -- ground bounce.")
+        ToolTip1.SetToolTip(btnKeyColor, "Tint (color) of the frontal light. Strength is the slider on the left.")
+        ToolTip1.SetToolTip(btnFillLColor, "Tint (color) of the left light.")
+        ToolTip1.SetToolTip(btnFillRColor, "Tint (color) of the right light.")
+        ToolTip1.SetToolTip(btnBackColor, "Tint (color) of the back light.")
+        '
+        ' light color swatches (each one lives in its light group, beside the strength slider)
+        '
+        btnKeyColor.Location = New Point(340, 31)
+        btnKeyColor.Name = "btnKeyColor"
+        btnKeyColor.Size = New Size(60, 23)
+        btnKeyColor.TabIndex = 1
+        btnKeyColor.UseVisualStyleBackColor = False
+        '
+        btnFillLColor.Location = New Point(340, 31)
+        btnFillLColor.Name = "btnFillLColor"
+        btnFillLColor.Size = New Size(60, 23)
+        btnFillLColor.TabIndex = 1
+        btnFillLColor.UseVisualStyleBackColor = False
+        '
+        btnFillRColor.Location = New Point(340, 31)
+        btnFillRColor.Name = "btnFillRColor"
+        btnFillRColor.Size = New Size(60, 23)
+        btnFillRColor.TabIndex = 1
+        btnFillRColor.UseVisualStyleBackColor = False
+        '
+        btnBackColor.Location = New Point(340, 31)
+        btnBackColor.Name = "btnBackColor"
+        btnBackColor.Size = New Size(60, 23)
+        btnBackColor.TabIndex = 1
+        btnBackColor.UseVisualStyleBackColor = False
+        '
+        lblAmbSky.AutoSize = True
+        lblAmbSky.Location = New Point(11, 102)
+        lblAmbSky.Name = "lblAmbSky"
+        lblAmbSky.Size = New Size(46, 15)
+        lblAmbSky.Text = "Sky tint"
+        '
+        btnAmbSky.Location = New Point(98, 98)
+        btnAmbSky.Name = "btnAmbSky"
+        btnAmbSky.Size = New Size(60, 23)
+        btnAmbSky.TabIndex = 2
+        btnAmbSky.UseVisualStyleBackColor = False
+        '
+        lblAmbGround.AutoSize = True
+        lblAmbGround.Location = New Point(266, 102)
+        lblAmbGround.Name = "lblAmbGround"
+        lblAmbGround.Size = New Size(68, 15)
+        lblAmbGround.Text = "Ground tint"
+        '
+        btnAmbGround.Location = New Point(338, 98)
+        btnAmbGround.Name = "btnAmbGround"
+        btnAmbGround.Size = New Size(60, 23)
+        btnAmbGround.TabIndex = 3
+        btnAmbGround.UseVisualStyleBackColor = False
+        '
         ' LightRigForm
         '
         AutoScaleDimensions = New SizeF(7.0F, 15.0F)
@@ -994,4 +1098,15 @@ Partial Class LightRigForm
     Friend WithEvents grpBackground As GroupBox
     Friend WithEvents lblBackground As Label
     Friend WithEvents cmbBackground As ColorComboBox
+    Friend WithEvents lblAmbSky As Label
+    Friend WithEvents btnAmbSky As Button
+    Friend WithEvents lblAmbGround As Label
+    Friend WithEvents btnAmbGround As Button
+    Friend WithEvents btnKeyColor As Button
+    Friend WithEvents btnFillLColor As Button
+    Friend WithEvents btnFillRColor As Button
+    Friend WithEvents btnBackColor As Button
+    Friend WithEvents tGroundLevel As FO4_Base_Library.TinySliderTextBox
+    Friend WithEvents lblIntensity As Label
+    Friend WithEvents lblGroundLvl As Label
 End Class
