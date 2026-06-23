@@ -1204,6 +1204,20 @@ Public Class RACE_Data
     ''' RaceUtil.RaceSupportsFaceGen helper to gate bake + FaceGen-only UI. See [[arch_race_behavior_resolution]].</summary>
     Public FaceGenHead As Boolean = False
 
+    ''' <summary>RACE.DATA head-part occlusion "biped object" fields — the engine's per-RACE rule for which
+    ''' worn biped slot hides each head-part channel (face / hair / facial-hair). Each is a little-endian s32
+    ''' whose value <c>v</c> maps to an AFFECTED biped slot of <c>30 + v</c> when <c>0 ≤ v ≤ 31</c>; a value of
+    ''' -1 (0xFFFFFFFF) or <c>v &gt; 31</c> means None (that channel occludes nothing). Verified against
+    ''' Fallout4.exe + Fallout4.esm: FILE byte offsets inside the DATA payload (form version ≥109 layout, i.e.
+    ''' all vanilla = v200): A=face-cull @0x30, B=hair @0x34, C=facial-hair(beard) @0x40 (the C / Beard Biped
+    ''' Object field is present only when form version ≥ 124, else None). Distinct vanilla values confirm these
+    ''' are per-race, NOT constant: A∈{-1,0,2}, B∈{-1,0,1}, C∈{-1,18} (HumanRace A=2→slot32, B=0→slots30&amp;31,
+    ''' C=18→slot48). Default -1 = None (also the value for a record that doesn't carry the field). Turn these
+    ''' into slot-30-relative bit masks via the RaceUtil.Race*Mask helpers; see [[project_re_occlusion_engine]].</summary>
+    Public OcclusionFaceCullBiped As Integer = -1   ' A — face-cull biped object  (DATA[0x30], v109+)
+    Public OcclusionHairBiped As Integer = -1       ' B — hair biped object       (DATA[0x34], v109+, occludes 30+B AND 30+B+1)
+    Public OcclusionFacialHairBiped As Integer = -1 ' C — facial-hair (beard) biped object (DATA[0x40], v124+)
+
     ''' <summary>APPR — Attach Parent Slots declarados a nivel race. Lista de KYWD FormIDs
     ''' (KeywordType=Attach Point). Para HandyRace = [ap_Bot_BotCore, ap_Bot_BotLegs] que
     ''' autorizan el set de OMODs raíz del NPC.OBTE — los chunks anidados se autorizan después
@@ -1253,6 +1267,43 @@ Public Class RaceUtil
         Dim rec = pm.GetRecord(raceFormID)
         If rec Is Nothing OrElse rec.Header.Signature <> "RACE" Then Return False
         Return RecordParsers.ParseRACE(rec, pm).FaceGenHead
+    End Function
+
+    ''' <summary>Convert a RACE.DATA "biped object" value to a slot-30-relative bit (bit N = biped slot 30+N,
+    ''' the same convention as the app's occupiedSlots mask). Value v -> (1 &lt;&lt; v) when 0&lt;=v&lt;=31, else 0
+    ''' (None: -1 or v&gt;31). Verified engine rule, see RACE_Data.OcclusionFaceCullBiped et al.</summary>
+    Private Shared Function BipedValueToBit(v As Integer) As UInteger
+        Return If(v >= 0 AndAlso v <= 31, 1UI << v, 0UI)
+    End Function
+
+    ''' <summary>Face-cull slot mask (A) for a race — the full-face slot whose coverage hides the whole head
+    ''' (HumanRace=2 -> slot 32). slot-30-relative bit; 0 when None.</summary>
+    Public Shared Function RaceFaceCullMask(race As RACE_Data) As UInteger
+        If race Is Nothing Then Return 0UI
+        Return BipedValueToBit(race.OcclusionFaceCullBiped)
+    End Function
+
+    ''' <summary>Hair slot mask (B) for a race. The engine's hair channel uses BOTH 30+B AND 30+B+1
+    ''' (HumanRace B=0 -> slots 30 &amp; 31). Both bits are bounded to the valid 0..31 range. 0 when None.</summary>
+    Public Shared Function RaceHairMask(race As RACE_Data) As UInteger
+        If race Is Nothing Then Return 0UI
+        Dim b = race.OcclusionHairBiped
+        Return BipedValueToBit(b) Or BipedValueToBit(b + 1)
+    End Function
+
+    ''' <summary>Facial-hair (beard) slot mask (C) for a race — HumanRace=18 -> slot 48. Present only when the
+    ''' RACE form version is >=124 (else the field is None). slot-30-relative bit; 0 when None.</summary>
+    Public Shared Function RaceFacialHairMask(race As RACE_Data) As UInteger
+        If race Is Nothing Then Return 0UI
+        Return BipedValueToBit(race.OcclusionFacialHairBiped)
+    End Function
+
+    ''' <summary>The union of the three head-part occlusion slot masks (face-cull A | hair B | facial-hair C)
+    ''' for a race. This is the per-NPC, RACE-driven replacement for the old fixed HeadwearOcclusionSlots
+    ''' const: the slice of the rendered worn-slot set that can hide head parts for THIS race. For HumanRace
+    ''' it resolves to {30,31,32,48}.</summary>
+    Public Shared Function RaceHeadOcclusionMask(race As RACE_Data) As UInteger
+        Return RaceFaceCullMask(race) Or RaceHairMask(race) Or RaceFacialHairMask(race)
     End Function
 End Class
 
@@ -3078,6 +3129,20 @@ Public Module RecordParsers
                         If flagsOffset >= 0 Then
                             Dim dataFlags = BitConverter.ToUInt32(sr.Data, flagsOffset)
                             race.FaceGenHead = (dataFlags And &H2UI) <> 0UI
+                        End If
+
+                        ' Head-part occlusion biped objects (verified vs Fallout4.exe + .esm). FILE offsets
+                        ' inside the DATA payload, form-version >=109 layout (all vanilla = v200): A face-cull
+                        ' @0x30, B hair @0x34. Each is an s32: value v -> affected biped slot (30+v) when
+                        ' 0<=v<=31, else -1/>31 = None. B occludes BOTH 30+B and 30+B+1 (see RaceHairMask). The
+                        ' C / Beard Biped Object @0x40 exists only when form version >= 124. Length-guarded so a
+                        ' truncated/older payload simply leaves the field at its None (-1) default.
+                        If rec.Header.Version >= 109US AndAlso sr.Data.Length >= &H38 Then
+                            race.OcclusionFaceCullBiped = BitConverter.ToInt32(sr.Data, &H30)
+                            race.OcclusionHairBiped = BitConverter.ToInt32(sr.Data, &H34)
+                        End If
+                        If rec.Header.Version >= 124US AndAlso sr.Data.Length >= &H44 Then
+                            race.OcclusionFacialHairBiped = BitConverter.ToInt32(sr.Data, &H40)
                         End If
                     End If
                 Case "NNAM"

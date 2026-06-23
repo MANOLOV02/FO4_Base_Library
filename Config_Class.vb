@@ -117,6 +117,12 @@ Public Class Config_App
     ' BSAFiles, BSAFiles_Clonables, Allowed_To_Clone, and all WM-only settings moved to WM_Config
     Public Property Setting_SingleBoneSkinning As Boolean = False
     Public Property Setting_GPUSkinning As Boolean = True
+    ' WM inspection toggle: when True, EnsureZapIndexBuffer bypasses per-segment occlusion so all geometry
+    ' draws. Default TRUE = "draw everything" (the neutral renderer default; WM wants it ON, and an existing
+    ' WM config without the key deserializes to this default → ON, while a saved True/False is respected).
+    ' FO4_NPC_Manager FORCES this False at startup (Program/MainForm) because its render RELIES on the
+    ' per-segment occlusion (Pip-Boy 60/160 swap, head-part hiding) — see the "= False" there.
+    Public Property Setting_DrawHiddenSegments As Boolean = True
     Public Property Setting_RecalculateNormals As Boolean = True
     Public Property Setting_KeepPhysics As Boolean = True
     Public Property theme As AppTheme = AppTheme.Light

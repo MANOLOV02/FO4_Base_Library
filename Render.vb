@@ -1702,6 +1702,10 @@ Public Class PreviewModel
         ' an N+100 occupied-variant segment is HIDDEN at mask 0 (the "no item" default), so a shape
         ' with coveredMask=0 must not skip its first pass and leave those segments showing.
         Private _lastCoveredSlotsMask As UInteger = &HFFFFFFFFUI
+        ' Last observed Config_App.Setting_DrawHiddenSegments. Sentinel-init True (opposite of the
+        ' lib default False) so the dirty gate's first pass always recomputes occlusion regardless
+        ' of the runtime value.
+        Private _lastDrawHidden As Boolean = True
         Private _occlHidden As Boolean() = Nothing
         Public Class MaterialData
             Sub New(Parent As MeshData_Class)
@@ -2348,10 +2352,13 @@ Public Class PreviewModel
             ' Per-segment worn-slot occlusion (Fase 2): the actor's worn biped-slot mask. 0 = no occlusion
             ' (the default — Wardrobe_Manager never sets it, so its render is unaffected).
             Dim coveredMask As UInteger = If(MeshData.Shape IsNot Nothing, MeshData.Shape.CoveredSlotsMask, 0UI)
+            ' drawHidden = WM inspection toggle: when True we bypass per-segment occlusion (occl stays
+            ' Nothing -> nothing hidden -> all drawn). Default False keeps NPC occlusion active.
+            Dim drawHidden As Boolean = Config_App.Current.Setting_DrawHiddenSegments
             ' Dirty-gated: only rebuild when ApplyMorphPlan re-touched the zap mask (ZapTopologyDirty), the
-            ' ApplyZaps toggle flipped, or the worn-slot mask changed. Otherwise a few cheap checks and out —
-            ' no per-frame scan. ApplyMorphPlan is the single writer of VertexMask=-1, so this can never go stale.
-            If Not geom.ZapTopologyDirty AndAlso applyZaps = _lastApplyZaps AndAlso coveredMask = _lastCoveredSlotsMask Then Return
+            ' ApplyZaps toggle flipped, the worn-slot mask changed, or drawHidden flipped. Otherwise a few
+            ' cheap checks and out — no per-frame scan. ApplyMorphPlan is the single writer of VertexMask=-1.
+            If Not geom.ZapTopologyDirty AndAlso applyZaps = _lastApplyZaps AndAlso coveredMask = _lastCoveredSlotsMask AndAlso drawHidden = _lastDrawHidden Then Return
 
             ' Recompute the per-segment hidden-triangle set only when the dirty gate above tripped (mask
             ' changed, etc.). occl is indexed by the SHAPE's triangle index — the SAME order as geom.Indices
@@ -2362,8 +2369,13 @@ Public Class PreviewModel
             ' no-op for segmented shapes. (The dirty gate above + the sentinel-initialized field ensure
             ' the first pass still runs even at mask 0.)
             Dim occl As Boolean() = Nothing
-            Dim subIdx = TryCast(If(MeshData.Shape Is Nothing, Nothing, MeshData.Shape.NifShape), NiflySharp.Blocks.BSSubIndexTriShape)
-            If subIdx IsNot Nothing Then occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask)
+            ' Only compute the per-segment hidden set when occlusion is active. When drawHidden (WM
+            ' inspection toggle) is True, occl stays Nothing so no per-segment triangle is hidden ->
+            ' all geometry draws. The vertex-zap (applyZaps/VertexMask) path is untouched below.
+            If Not drawHidden Then
+                Dim subIdx = TryCast(If(MeshData.Shape Is Nothing, Nothing, MeshData.Shape.NifShape), NiflySharp.Blocks.BSSubIndexTriShape)
+                If subIdx IsNot Nothing Then occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask)
+            End If
             _occlHidden = occl
 
             Dim shouldFilter As Boolean = applyZaps
@@ -2393,6 +2405,7 @@ Public Class PreviewModel
                 End If
                 _lastApplyZaps = applyZaps
                 _lastCoveredSlotsMask = coveredMask
+                _lastDrawHidden = drawHidden
                 MeshData.Meshgeometry.ZapTopologyDirty = False
                 Return
             End If
@@ -2418,6 +2431,7 @@ Public Class PreviewModel
             _zapFilteredActive = True
             _lastApplyZaps = applyZaps
             _lastCoveredSlotsMask = coveredMask
+            _lastDrawHidden = drawHidden
             MeshData.Meshgeometry.ZapTopologyDirty = False
         End Sub
 
