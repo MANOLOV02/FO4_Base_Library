@@ -422,6 +422,31 @@ Public Class PluginManager
     ''' como única fuente. Plugins.txt + .ccc + implicits son las fuentes autoritativas de
     ''' activación. Si loadorder.txt existe, lo usamos como ORDEN para los actives; si no,
     ''' usamos el orden canónico (implicits → CC → Plugins.txt).</summary>
+    ''' <summary>Cuando True, ReadActiveLoadOrder devuelve SOLO los plugins OFICIALES de Bethesda
+    ''' (vanilla + DLCs + Creation Club), excluyendo los mods del usuario del Plugins.txt. Lo usan TANTO
+    ''' el load de plugins COMO el mount de archivos (FilesDictionary llama a ReadActiveLoadOrder), así que
+    ''' con este flag el entorno headless queda 100% vanilla (records Y texturas) — para comparar FaceGen
+    ''' vs CK sin contaminación de mods. Lo prende el CLI con --vanillaonly. Default False (comportamiento app).</summary>
+    Public Shared OfficialPluginsOnly As Boolean = False
+
+    ''' <summary>Plugin oficial de Bethesda (vanilla + DLC FO4/SSE + Creation Club cc*). Lo demás = mod del usuario.</summary>
+    Public Shared Function IsOfficialPlugin(name As String) As Boolean
+        If String.IsNullOrEmpty(name) Then Return False
+        Dim n = name.ToLowerInvariant()
+        Select Case n
+            Case "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm", "dlccoast.esm",
+                 "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm", "dlcultrahighresolution.esm",
+                 "skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm"
+                Return True
+        End Select
+        Return n.StartsWith("cc")   ' Creation Club (FO4 + SSE)
+    End Function
+
+    Private Shared Function FilterOfficialIfRequested(list As List(Of String)) As List(Of String)
+        If Not OfficialPluginsOnly Then Return list
+        Return list.Where(AddressOf IsOfficialPlugin).ToList()
+    End Function
+
     Public Shared Function ReadActiveLoadOrder() As List(Of String)
         Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
         Dim appDataSubdir As String = If(isFO4, "Fallout4", "Skyrim Special Edition")
@@ -538,7 +563,7 @@ Public Class PluginManager
             For Each p In activeFromPluginsTxt
                 If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
             Next
-            Return ordered
+            Return FilterOfficialIfRequested(ordered)
         End If
 
         ' Fallback: implicits + CC + Plugins.txt activos en orden literal.
@@ -549,7 +574,7 @@ Public Class PluginManager
         For Each p In activeFromPluginsTxt
             If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
         Next
-        Return ordered
+        Return FilterOfficialIfRequested(ordered)
     End Function
 
     ''' <summary>Backward-compat alias. Old callers expected "all plugins from loadorder.txt"

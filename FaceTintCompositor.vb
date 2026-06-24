@@ -690,7 +690,8 @@ void main() {
         srcColor = uColor;
         maskV = 1.0;
     } else if (uLayerKind == 1) {
-        if (uUseHairPalette == 1)        srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
+        vec2 lutUV1 = vec2(layerSample.g, uPaletteRow); // grayscale->palette: U=verde, V=row, AMBOS crudos (camino unico, sin gamma de coords)
+        if (uUseHairPalette == 1)        srcColor = texture(uHairLut, lutUV1).rgb;
         else if (uForceUniformColor == 1) srcColor = uColor;
         else                              srcColor = layerSample.rgb;
         if (uChannel == 0) {
@@ -700,7 +701,8 @@ void main() {
                                            : max(max(layerSample.r, layerSample.g), layerSample.b);
         }
     } else {
-        if (uUseHairPalette == 1) srcColor = texture(uHairLut, vec2(layerSample.g, uPaletteRow)).rgb;
+        vec2 lutUV2 = vec2(layerSample.g, uPaletteRow);
+        if (uUseHairPalette == 1) srcColor = texture(uHairLut, lutUV2).rgb;
         else                      srcColor = uColor;
         maskV = layerSample.g;
     }
@@ -1965,10 +1967,13 @@ void main() {
         '  - base crudo + SeedDiffuseG22=False: sin conversión de espacio (legacy).
         ' N/S = lineal raw (sin conversión). GL==CPU: el CPU siempre tiene base crudo (DecodeDds raw) → su seed
         ' equivale al caso "crudo" de acá; el caso linear-on-gpu es exclusivo del GL live.
+        ' Seed config-driven (ya no literales): la base es textura de color → src = SeedDiffuseSrcSpaceValue
+        ' (=DiffuseTextureSrcSpace, Srgb), target = SeedDiffuseOutputSpaceValue (=Diffuse.OutputSpace, G22).
+        ' Caso live (baseDiffuseIsLinearOnGpu): el GPU ya decodeó el SRV sRGB → la base entra LINEAL (0).
         If baseDiffuseIsLinearOnGpu Then
-            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, 0, 2)
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, 0, SeedDiffuseOutputSpaceValue)
         ElseIf SeedConventionIs_G22 Then
-            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, 1, 2)
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, SeedDiffuseSrcSpaceValue, SeedDiffuseOutputSpaceValue)
         Else
             ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height)
         End If
@@ -1997,7 +2002,7 @@ void main() {
         ' el byte G22 crudo, = vanilla). N/S ya están en Linear (os=Linear). Sin pérdida (float). Junto con el
         ' seed encode-only, el path live queda lineal-consistente extremo a extremo.
         If baseDiffuseIsLinearOnGpu Then
-            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dT.W, dT.H, 2, 0)
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dT.W, dT.H, SeedDiffuseOutputSpaceValue, 0)
         End If
 
         Return result

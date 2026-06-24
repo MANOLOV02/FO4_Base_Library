@@ -396,12 +396,15 @@ Public Module FaceTintCpuCompositor
         ' El storage del engine FaceCustomization es sRGB (= formato de CK en disco); no se acumula en g22.
         ' Seed via SampleChannelAt (índice directo si tamaños iguales; bilineal si difieren = resize).
         Dim accR(n - 1) As Double, accG(n - 1) As Double, accB(n - 1) As Double
+        ' Seed del base diffuse: la base ES una textura de color ⇒ src→output config-driven (no literal 1,2):
+        ' SeedDiffuseSrcSpaceValue (=DiffuseTextureSrcSpace, Srgb) → SeedDiffuseOutputSpaceValue (=Diffuse.OutputSpace, G22).
+        Dim seedSrc = SeedDiffuseSrcSpaceValue, seedOut = SeedDiffuseOutputSpaceValue
         System.Threading.Tasks.Parallel.For(0, n, Sub(i)
                                                       Dim r0 = SampleChannelAt(src, i, w, h, 0)
                                                       Dim g0 = SampleChannelAt(src, i, w, h, 1)
                                                       Dim b0 = SampleChannelAt(src, i, w, h, 2)
                                                       If SeedConventionIs_G22 AndAlso isD Then
-                                                          accR(i) = Cvt1(r0, 1, 2) : accG(i) = Cvt1(g0, 1, 2) : accB(i) = Cvt1(b0, 1, 2)
+                                                          accR(i) = Cvt1(r0, seedSrc, seedOut) : accG(i) = Cvt1(g0, seedSrc, seedOut) : accB(i) = Cvt1(b0, seedSrc, seedOut)
                                                       Else
                                                           accR(i) = r0 : accG(i) = g0 : accB(i) = b0
                                                       End If
@@ -516,11 +519,10 @@ Public Module FaceTintCpuCompositor
                 Dim op = Math.Max(0.0, Math.Min(1.0, CDbl(layer.Opacity)))
                 Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
                 Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
-                ' Engine-faithful LUT lookup: pow(1/2.2) en las coords (U=verde, V=row) antes de samplear,
-                ' = RE_RECOLOR_PALETTE §2a (U=pow(diffuse.G,1/2.2), V=pow(GrayscaleToPaletteScale,1/2.2)).
-                ' Parametrizable (HairLutCoordGamma); luY es por-capa (row constante), luX se computa por-pixel.
-                Dim coordGamma As Boolean = FaceTintConvention.HairLutCoordGammaEnabled
-                Dim luY As Double = If(coordGamma, Math.Pow(row, 1.0 / 2.2), row)
+                ' grayscale->palette LUT lookup: U=verde, V=row, AMBOS crudos (camino unico, sin gamma de
+                ' coords). Espeja al hair render (Shader_Class palV=paletteScale crudo). luY es por-capa (row
+                ' constante); luX se computa por-pixel mas abajo.
+                Dim luY As Double = row
                 Dim kind = layer.Kind
                 ' GUARD del pre-tono TakesSkinTone: solo D, capa flagged, y skintone ya compuesto antes.
                 ' Pre-tono si: capa flagged (D) Y hay skintone Y (ya se compuso antes -> over-running tona
@@ -533,8 +535,8 @@ Public Module FaceTintCpuCompositor
                     Dim lg = SampleChannelAt(layerTex, i, w, h, 1)
                     Dim lb = SampleChannelAt(layerTex, i, w, h, 2)
                     Dim la = SampleChannelAt(layerTex, i, w, h, 3)
-                    ' U del LUT = verde (crudo) o pow(verde,1/2.2) si HairLutCoordGamma (engine-faithful runtime).
-                    Dim luX As Double = If(coordGamma, Math.Pow(lg, 1.0 / 2.2), lg)
+                    ' U del LUT = verde crudo.
+                    Dim luX As Double = lg
 
                     ' mask + src por kind (= rama uLayerKind del shader)
                     Dim maskV As Double

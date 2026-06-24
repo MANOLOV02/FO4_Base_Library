@@ -8,14 +8,16 @@
 ''' Modelo ENGINE-FAITHFUL (re-derivado del b12 BSFaceCustomizationShader, V2 DXBC + V1 CK builder
 ''' FUN_140ED0E40 — ck_bake_facetint_RULE_verified; reemplaza el modelo empírico "ws=entry_type" que
 ''' arch_facetint_mask_src_conventions describía y que el shader REFUTÓ):
-'''   - mask conv = G22Encode (= shader pow(mask,1/2.2)), universal D y N/S.
-'''   - DIFFUSE: acumulador en G22 (os), lerp por cobertura en LINEAR (cs). El BLEND OP corre en su
-'''     espacio intrínseco del engine: SoftLight en G22 (modelo GIMP, sqrt siempre) ; Normal/Multiply/
-'''     Overlay/HardLight en LINEAR. El ws NO depende de entry_type/slot — depende del blend op (lo
-'''     aplica ResolveConvention: G22 sólo para SoftLight). Replace cancela el ws (irrelevante).
-'''   - colores de capa en SrcSpace=G22 (= los colores pre-decodificados a lineal del engine).
+'''   - mask conv = G22Encode (= shader pow(maskSample,1/2.2)·opacity), universal D y N/S.
+'''   - DIFFUSE: el ENGINE acumula en LINEAL y lerpea por cobertura en LINEAL (cs). El BLEND OP corre en su
+'''     espacio intrínseco: SoftLight encodea base+src a G22 (pow 1/2.2), GIMP/sqrt, y vuelve a LINEAL (pow
+'''     2.2) ANTES del lerp ; Normal/Multiply/Overlay/HardLight directos en LINEAL. El ws depende del blend
+'''     op (G22 sólo para SoftLight). NOSOTROS guardamos el acumulador en G22 (os=G22) = pow(1/2.2) del
+'''     acumulador lineal del engine — EQUIVALENTE (el lerp sigue en cs=Linear). Replace cancela el ws.
+'''   - SRC SPACE por TIPO DE FUENTE (dos curvas del engine, ver ResolveConvention): TEXTURA de color
+'''     (base/tint/swap) = SRV sRGB → Srgb ; COLOR SÓLIDO de paleta = builder γ2.2 → G22. NO "todo G22".
 '''   - N/S: todo Linear, lerp puro por el MISMO alpha del diffuse (sin blend op, sin gamma).
-'''   - framework = OverPrev (over-running); seed D = srgb→g22.
+'''   - framework = OverPrev (over-running); seed D (base = textura de color) = Srgb→OutputSpace.
 '''
 ''' SYNC: el sweep del analyzer Python (auto_analyze_esp.py / test_conventions.py) replica estos
 ''' mismos ejes. Cambiar la tabla acá = cambiar el modelo del compositor; mantener el sweep alineado.
@@ -234,25 +236,23 @@ Public Module FaceTintConvention
         ''' engine-faithful: SoftLight=G22, resto=Linear. Reemplaza el uso plano de Diffuse.WorkingSpace
         ''' para el tint diffuse (Diffuse.WorkingSpace queda de fallback de los modos extendidos 5..19).</summary>
         Public Property DiffuseWorkingSpaceByBlend As FaceTintBlendWorkingSpaces
-        ''' <summary>SrcSpace de las capas TextureSet-diffuse (textura de COLOR) del DIFFUSE. Engine-faithful =
-        ''' Srgb: el engine bindea las texturas color como SRV sRGB (MakeSRGB FUN_14183e1c0) → el shader las
-        ''' recibe ya lineales (IEC), por eso NO les hace pow(). El color SÓLIDO (uColor PaletteMask/QNAM) NO
-        ''' pasa por acá: usa Diffuse.SrcSpace (G22, pre-decode γ2.2 puro del CK bake, DAT_142F99744). Las
-        ''' MÁSCARAS tampoco (van crudas + MaskConv g22encode). Parametrizable; default Srgb.</summary>
+        ''' <summary>SrcSpace de TODA TEXTURA de color del DIFFUSE — tint TextureSet, SWAP, y la base-seed
+        ''' (las 3 son texturas de color sampleadas). Engine-faithful = Srgb: el engine las bindea como SRV
+        ''' sRGB (MakeSRGB FUN_14183e1c0) → el shader las recibe LINEALES (IEC) y el softlight les hace
+        ''' pow(1/2.2). El color SÓLIDO (uColor PaletteMask) NO pasa por acá: el builder lo decodea con γ2.2
+        ''' (powf, FUN_140ED0E40 ~363-369) ⇒ usa Diffuse.SrcSpace=G22. Las MÁSCARAS tampoco (crudas + MaskConv
+        ''' g22encode). Parametrizable; default Srgb. (Lo consume ResolveConvention para tint+swap y el seed
+        ''' del base en ambos compositores.)</summary>
         Public Property DiffuseTextureSrcSpace As FaceTintWorkingSpace
         Public Property SeedDiffuseG22 As Boolean
-        ''' <summary>Hair/brow grayscale→palette LUT lookup: gamma-encode (pow 1/2.2) las COORDENADAS antes
-        ''' de samplear el LUT — engine-faithful. Verificado del binario (RE_RECOLOR_PALETTE §2a, BGEM rec1103/
-        ''' rec550 + prepass BSLighting rec2637): el engine samplea Palette[U,V] con U=pow(diffuse.G,1/2.2) y
-        ''' V=pow(GrayscaleToPaletteScale,1/2.2)·texcoord, NO con el verde/scale crudos. Aplica al brow (slot 23,
-        ''' UseHairPalette) en ambos compositores y al recolor de pelo en el shader. Parametrizable (config.json);
-        ''' default True. False = comportamiento legacy (coords crudas, brow==pelo pero ambos ≠ engine).</summary>
-        Public Property HairLutCoordGamma As Boolean
 
         Public Sub New()
             ' Defaults = ley derivada actual. Diffuse: blend tonal en G22. N·S: datos lineales (raw).
             ' Swap: convención del DIFFUSE swap (los swaps de N·S usan el bucket NormalSpecular, no éste).
             ' Cambiar acá = cambiar el default de fábrica.
+            ' Diffuse.SrcSpace = G22 = src del COLOR SÓLIDO de paleta (uColor): el builder lo decodea con γ2.2
+            ' ⇒ el softlight ve el byte crudo (G22). Las TEXTURAS de color (tint/swap/base) NO usan esto: usan
+            ' DiffuseTextureSrcSpace=Srgb (SRV sRGB), lo aplica ResolveConvention por tipo de fuente.
             Diffuse = New FaceTintBucketConvention With {
                 .WorkingSpace = FaceTintWorkingSpace.G22,
                 .CompositeSpace = FaceTintWorkingSpace.Linear,
@@ -269,10 +269,16 @@ Public Module FaceTintConvention
                 .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
                 .SoftLight = FaceTintSoftLight.Gimp}
+            ' Swap.SrcSpace es LIVE: ResolveConvention YA NO lo pisa (se sacó el override hardcodeado). Es el src
+            ' del swap de diffuse (textura de color) y se consume tal cual; default Srgb porque el engine bindea
+            ' las texturas de color como SRV sRGB. Medido (00005C80): swap→Srgb subió las manchitas de las
+            ' regiones de swap 35%→55% de CK sin regresión full-face. (WorkingSpace=G22 es inerte: el swap es
+            ' Replace, que cancela el ws.) El path EXACTO del swap quedó inconcluso en el RE — no hay pre-pass
+            ' byte-space separado en el FaceTint bake; Srgb es el best-fit vs CK, ajustable en la UI/config.
             Swap = New FaceTintBucketConvention With {
                 .WorkingSpace = FaceTintWorkingSpace.G22,
                 .CompositeSpace = FaceTintWorkingSpace.Linear,
-                .SrcSpace = FaceTintWorkingSpace.G22,
+                .SrcSpace = FaceTintWorkingSpace.Srgb,
                 .OutputSpace = FaceTintWorkingSpace.G22,
                 .MaskConv = FaceTintMaskConv.G22Encode,
                 .Framework = FaceTintFramework.OverPrev,
@@ -283,10 +289,6 @@ Public Module FaceTintConvention
             ' sólido queda en Diffuse.SrcSpace (G22). Parametrizable; engine-faithful por default.
             DiffuseTextureSrcSpace = FaceTintWorkingSpace.Srgb
             SeedDiffuseG22 = True
-            ' BAKE-faithful = coords CRUDAS (medido vs vanilla en la región de ceja: crudo 6.55 vs pow 16.77).
-            ' El CK FaceGen bake NO pow-ea las coords del LUT; el pow(1/2.2) (RE_RECOLOR_PALETTE §2a) es del
-            ' path RUNTIME, no del bake. Default False (crudo). True disponible para el render runtime si se cablea.
-            HairLutCoordGamma = False
         End Sub
     End Class
 
@@ -299,12 +301,22 @@ Public Module FaceTintConvention
         End Get
     End Property
 
-    ''' <summary>Hair/brow LUT: pow(1/2.2) en las coordenadas del lookup (engine-faithful). Lo leen ambos
-    ''' compositores (GL y CPU). Null-safe; default True si el config no está cargado.</summary>
-    Public ReadOnly Property HairLutCoordGammaEnabled As Boolean
+    ''' <summary>SrcSpace del seed del base diffuse — la base ES una textura de color (SRV sRGB → lineal),
+    ''' así que usa la MISMA regla que tint/swap: DiffuseTextureSrcSpace (default Srgb). Config-driven (ya no
+    ''' literal "1"). Lo leen ambos compositores.</summary>
+    Public ReadOnly Property SeedDiffuseSrcSpaceValue As Integer
         Get
             Dim s = Config_App.Current?.Setting_FaceTintConvention
-            Return s IsNot Nothing AndAlso s.HairLutCoordGamma   ' default False (crudo = bake-faithful)
+            Return If(s Is Nothing, CInt(FaceTintWorkingSpace.Srgb), CInt(s.DiffuseTextureSrcSpace))
+        End Get
+    End Property
+
+    ''' <summary>OutputSpace del acumulador diffuse (= Diffuse.OutputSpace, default G22). El seed lleva la
+    ''' base a ESE espacio. Config-driven (ya no literal "2"). Lo leen ambos compositores.</summary>
+    Public ReadOnly Property SeedDiffuseOutputSpaceValue As Integer
+        Get
+            Dim s = Config_App.Current?.Setting_FaceTintConvention
+            Return If(s Is Nothing OrElse s.Diffuse Is Nothing, CInt(FaceTintWorkingSpace.G22), CInt(s.Diffuse.OutputSpace))
         End Get
     End Property
 
@@ -366,14 +378,20 @@ Public Module FaceTintConvention
             c.WorkingSpace = If(wsb IsNot Nothing, wsb.ForBlend(c.Blend, bucket.WorkingSpace), bucket.WorkingSpace)
         End If
 
-        ' SRC SPACE engine-faithful para capas TextureSet-diffuse (textura de COLOR): el engine las bindea
-        ' como SRV sRGB (MakeSRGB) → entran IEC-lineales (el shader no las pow()). El color SÓLIDO (uColor de
-        ' PaletteMask) NO entra acá: usa bucket.SrcSpace (G22, γ2.2 puro del CK bake). Las máscaras tampoco
-        ' (van crudas + MaskConv). Parametrizable (s.DiffuseTextureSrcSpace, default Srgb). GL==CPU (mismo
-        ' resolver). Nota: con ForceUniformColor (brow-tint con HCLF) el src es uColor aunque isTextureSet —
-        ' caso borde raro; el delta IEC-vs-γ2.2 sobre un color sólido es <1/255, despreciable.
-        If channel = FaceTintChannel.Diffuse AndAlso Not forSwap AndAlso isTextureSet Then
-            c.SrcSpace = s.DiffuseTextureSrcSpace
+        ' SRC SPACE del DIFFUSE = por TIPO DE FUENTE, todo PARAMETRIZABLE (sin override hardcodeado):
+        '   · TINT de TEXTURA del diffuse (TextureSet, isTextureSet) + el base-seed → s.DiffuseTextureSrcSpace
+        '     (default Srgb: el engine la bindea SRV sRGB/MakeSRGB → entra lineal y el softlight le hace pow(1/2.2)).
+        '   · COLOR SÓLIDO de paleta (PaletteMask uColor) → bucket.SrcSpace del Diffuse (default G22: el builder
+        '     lo decodea con γ2.2 a cb12; el shader le hace el MISMO pow(1/2.2) ⇒ el softlight ve el byte crudo).
+        '   · SWAP (forSwap) → su PROPIO bucket.SrcSpace (= s.Swap.SrcSpace, default Srgb). YA NO se pisa con
+        '     DiffuseTextureSrcSpace: el campo Swap.SrcSpace es LIVE/configurable. (El path exacto del swap quedó
+        '     inconcluso en el RE del engine — no hay pre-pass byte-space separado en el FaceTint bake; default
+        '     Srgb = best-fit vs CK, pendiente de test controlado para fijar G22-vs-Srgb.) El bucket ya se eligió
+        '     arriba (forSwap+Diffuse → s.Swap), así que para el swap bucket.SrcSpace YA es Swap.SrcSpace.
+        '   · N/S → su bucket.SrcSpace (Linear). Las MÁSCARAS espaciales no entran (van crudas + MaskConv).
+        ' GL==CPU (mismo resolver). Cada fuente usa SU campo de config; nadie pisa a nadie.
+        If channel = FaceTintChannel.Diffuse Then
+            c.SrcSpace = If(isTextureSet, s.DiffuseTextureSrcSpace, bucket.SrcSpace)
         End If
 
         Return c
