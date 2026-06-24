@@ -690,7 +690,7 @@ void main() {
         srcColor = uColor;
         maskV = 1.0;
     } else if (uLayerKind == 1) {
-        vec2 lutUV1 = vec2(layerSample.g, uPaletteRow); // grayscale->palette: U=verde, V=row, AMBOS crudos (camino unico, sin gamma de coords)
+        vec2 lutUV1 = vec2(layerSample.g, uPaletteRow); // brow grayscale->palette: U=verde, V=row, AMBOS CRUDOS. CK bakea el brow con coords crudas (MEDIDO 2026-06-23: pow EMPEORA vs CK, incl. pow-solo-U); el pow de U del hair render es RUNTIME, el bake no. Solo se consume si uUseHairPalette==1 (brow).
         if (uUseHairPalette == 1)        srcColor = texture(uHairLut, lutUV1).rgb;
         else if (uForceUniformColor == 1) srcColor = uColor;
         else                              srcColor = layerSample.rgb;

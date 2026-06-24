@@ -1272,10 +1272,9 @@ Public Class FilesDictionary_class
         Next
         Dim diskSet = New HashSet(Of String)(diskPlugins, StringComparer.OrdinalIgnoreCase)
 
-        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
-        Dim appDataSubdir As String = If(isFO4, "Fallout4", "Skyrim Special Edition")
-        Dim loadorderTxt = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                         appDataSubdir, "loadorder.txt")
+        ' VR builds (Fallout4VR / Skyrim VR) keep loadorder.txt in their own LocalAppData subdir; the
+        ' shared resolver falls back to the VR folder when the base game folder is absent.
+        Dim loadorderTxt = Path.Combine(PluginManager.ResolveGameAppDataDir(), "loadorder.txt")
 
         Dim emitted As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         If File.Exists(loadorderTxt) Then

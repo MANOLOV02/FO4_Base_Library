@@ -447,12 +447,27 @@ Public Class PluginManager
         Return list.Where(AddressOf IsOfficialPlugin).ToList()
     End Function
 
+    ''' <summary>Resolves the LocalAppData game directory that holds Plugins.txt / loadorder.txt.
+    ''' Base folder is "Fallout4" (FO4) or "Skyrim Special Edition" (SSE). If the base folder does NOT
+    ''' exist but the VR variant does ("Fallout4VR" / "Skyrim VR"), the VR folder is returned instead —
+    ''' the VR builds ship their load order under a separate LocalAppData subdir. Folder names confirmed
+    ''' against xEdit (wbGameName2 = 'Fallout4VR' / 'Skyrim VR', see xeInit.pas where Plugins.txt is built
+    ''' as LocalAppData + wbGameName2 + '\Plugins.txt'). Always returns the base path when neither exists,
+    ''' so callers can still build a (non-existent) file path without crashing.</summary>
+    Public Shared Function ResolveGameAppDataDir() As String
+        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
+        Dim appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+        Dim basePath = Path.Combine(appData, If(isFO4, "Fallout4", "Skyrim Special Edition"))
+        Dim vrPath = Path.Combine(appData, If(isFO4, "Fallout4VR", "Skyrim VR"))
+        If Not Directory.Exists(basePath) AndAlso Directory.Exists(vrPath) Then Return vrPath
+        Return basePath
+    End Function
+
     Public Shared Function ReadActiveLoadOrder() As List(Of String)
         Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
-        Dim appDataSubdir As String = If(isFO4, "Fallout4", "Skyrim Special Edition")
-        Dim appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-        Dim pluginsTxt = Path.Combine(appData, appDataSubdir, "Plugins.txt")
-        If Not File.Exists(pluginsTxt) Then pluginsTxt = Path.Combine(appData, appDataSubdir, "plugins.txt")
+        Dim gameDir = ResolveGameAppDataDir()
+        Dim pluginsTxt = Path.Combine(gameDir, "Plugins.txt")
+        If Not File.Exists(pluginsTxt) Then pluginsTxt = Path.Combine(gameDir, "plugins.txt")
 
         ' Implicit masters: el engine carga estos siempre primero, no aparecen en Plugins.txt.
         ' Spec verificada contra ejecución vanilla y herramientas LOOT/xEdit.
@@ -528,7 +543,7 @@ Public Class PluginManager
         ' bytes aligned with the runtime engine; otherwise a `loadorder.txt` that places any plugin
         ' before Fallout4.esm would shove the game master to slot 1+, desyncing every FormID
         ' diagnostic / clipboard helper / FaceGen path lookup that depends on the high byte.
-        Dim loadorderTxt = Path.Combine(appData, appDataSubdir, "loadorder.txt")
+        Dim loadorderTxt = Path.Combine(gameDir, "loadorder.txt")
         Dim ordered As New List(Of String)
         If File.Exists(loadorderTxt) Then
             Dim implicitsSet As New HashSet(Of String)(implicits, StringComparer.OrdinalIgnoreCase)

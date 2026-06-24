@@ -519,9 +519,9 @@ Public Module FaceTintCpuCompositor
                 Dim op = Math.Max(0.0, Math.Min(1.0, CDbl(layer.Opacity)))
                 Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
                 Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
-                ' grayscale->palette LUT lookup: U=verde, V=row, AMBOS crudos (camino unico, sin gamma de
-                ' coords). Espeja al hair render (Shader_Class palV=paletteScale crudo). luY es por-capa (row
-                ' constante); luX se computa por-pixel mas abajo.
+                ' brow grayscale->palette LUT lookup: U=verde, V=row, AMBOS CRUDOS. CK bakea el brow con
+                ' coords crudas (MEDIDO 2026-06-23: pow EMPEORA vs CK, incl. pow-solo-U); el pow de U del
+                ' hair render es runtime, el bake no. luY es por-capa (row constante); luX por-pixel abajo.
                 Dim luY As Double = row
                 Dim kind = layer.Kind
                 ' GUARD del pre-tono TakesSkinTone: solo D, capa flagged, y skintone ya compuesto antes.
@@ -535,7 +535,7 @@ Public Module FaceTintCpuCompositor
                     Dim lg = SampleChannelAt(layerTex, i, w, h, 1)
                     Dim lb = SampleChannelAt(layerTex, i, w, h, 2)
                     Dim la = SampleChannelAt(layerTex, i, w, h, 3)
-                    ' U del LUT = verde crudo.
+                    ' U del LUT = verde CRUDO (CK bakea crudo; pow EMPEORA la medicion vs CK).
                     Dim luX As Double = lg
 
                     ' mask + src por kind (= rama uLayerKind del shader)
