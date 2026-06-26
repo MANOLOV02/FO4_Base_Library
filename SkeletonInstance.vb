@@ -336,10 +336,16 @@ Public Class SkeletonInstance
                 Skeleton = New Nifcontent_Class_Manolo
                 SkeletonStructure.Clear()
                 SkeletonDictionary.Clear()
-                If relative = False Then
-                    Skeleton.Load_Manolo(Config_App.Current.SkeletonFilePath)
-                Else
-                    Dim relativestr = IO.Path.GetRelativePath(Config_App.Current.DataPath, Config_App.Current.SkeletonFilePath)
+                Dim skeletonPath = Config_App.Current.SkeletonFilePath
+                If relative = False AndAlso Not String.IsNullOrEmpty(skeletonPath) AndAlso IO.File.Exists(skeletonPath) Then
+                    ' Loose file present on disk (or a skeleton outside the data folder): load it directly.
+                    Skeleton.Load_Manolo(skeletonPath)
+                ElseIf Not String.IsNullOrEmpty(skeletonPath) Then
+                    ' relative load requested, OR the loose file is absent: resolve the configured skeleton
+                    ' through the FilesDictionary so a BA2/BSA-packed skeleton is found too (loose entries
+                    ' still win inside the dictionary). Keeps the WM "skeleton available" indicator
+                    ' (HasSkeleton) correct when the skeleton lives only in an archive.
+                    Dim relativestr = IO.Path.GetRelativePath(Config_App.Current.DataPath, skeletonPath)
                     Dim skel As FilesDictionary_class.File_Location = Nothing
                     If FilesDictionary_class.Dictionary.TryGetValue(relativestr, skel) Then
                         Skeleton.Load_Manolo(skel.GetBytes)
