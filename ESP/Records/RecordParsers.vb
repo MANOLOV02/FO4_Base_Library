@@ -1096,6 +1096,12 @@ Public Class RACE_Data
     Public SubgraphTemplateRaceFormID As UInteger
     ''' <summary>SADD - Subgraph Additive Race (FormID→RACE). Subgraphs que se SUMAN encima. pas:11675.</summary>
     Public SubgraphAdditiveRaceFormID As UInteger
+    ''' <summary>RNAM - Armor Race (FormID→RACE). El motor matchea armatures (ARMA) contra ESTA raza en
+    ''' lugar de la raza propia del actor cuando está presente, permitiendo que las razas-copia reusen las
+    ''' armaduras de una raza base. 0 = usar la raza misma. MEDIDO: ccOTMFO4001_EnclaveTurretRace.RNAM =
+    ''' TurretTripodRace (0x000B1F08), la raza que su skin ARMA targetea. wbDefinitionsFO4.pas:11673.
+    ''' Ver [[arch_armor_race_redirect]].</summary>
+    Public ArmorRaceFormID As UInteger
     ''' <summary>Subgraph Data (RArray). Cada entry = un behaviour graph .hkx (SGNM) enchufado a un slot,
     ''' con su Role/Perspective (SRAF, terminator de cada entry) + keywords (SAKD actor/STKD target) +
     ''' animation paths (SAPT). wbDefinitionsFO4.pas:11676.</summary>
@@ -2805,6 +2811,9 @@ Public Module RecordParsers
                     race.SubgraphTemplateRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "SADD"
                     race.SubgraphAdditiveRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "RNAM"
+                    ' Armor Race redirect — see RACE_Data.ArmorRaceFormID / [[arch_armor_race_redirect]].
+                    race.ArmorRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "SAKD"
                     ' Actor keyword del subgraph; precede al SGNM → bufferizar y asignar al crear el entry.
                     Dim kw = ResolveFormIDReference(rec, sr, pluginManager)

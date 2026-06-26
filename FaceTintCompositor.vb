@@ -690,8 +690,16 @@ void main() {
         srcColor = uColor;
         maskV = 1.0;
     } else if (uLayerKind == 1) {
-        vec2 lutUV1 = vec2(layerSample.g, uPaletteRow); // brow grayscale->palette: U=verde, V=row, AMBOS CRUDOS. CK bakea el brow con coords crudas (MEDIDO 2026-06-23: pow EMPEORA vs CK, incl. pow-solo-U); el pow de U del hair render es RUNTIME, el bake no. Solo se consume si uUseHairPalette==1 (brow).
-        if (uUseHairPalette == 1)        srcColor = texture(uHairLut, lutUV1).rgb;
+        // brow grayscale->palette ENGINE-EXACT (BSFaceCustomizationShader PS, `ld` t4; PARIDAD con CPU
+        // SampleLutEngine): mask sRGB->lin, U=pow(lin,1/2.2), texel=ftoi(U*W, row*H), texelFetch NEAREST
+        // (sin bilineal ni half-texel). Verificado byte-exact vs CK.
+        if (uUseHairPalette == 1) {
+            ivec2 lsz1 = textureSize(uHairLut, 0);
+            float lu1 = cvt(vec3(layerSample.g), uSrcSpace, uOutputSpace).x; // U = Cvt(green, conv.SrcSpace(=DiffuseTextureSrcSpace,Srgb), conv.OutputSpace(=G22)) = engine pow(srgbToLin(green),1/2.2). Sin hardcode; PARIDAD CPU Cvt1(green,ss,os).
+            int ltx1 = clamp(int(lu1 * float(lsz1.x)), 0, lsz1.x - 1);
+            int lty1 = clamp(int(uPaletteRow * float(lsz1.y)), 0, lsz1.y - 1);
+            srcColor = texelFetch(uHairLut, ivec2(ltx1, lty1), 0).rgb;
+        }
         else if (uForceUniformColor == 1) srcColor = uColor;
         else                              srcColor = layerSample.rgb;
         if (uChannel == 0) {
@@ -701,8 +709,13 @@ void main() {
                                            : max(max(layerSample.r, layerSample.g), layerSample.b);
         }
     } else {
-        vec2 lutUV2 = vec2(layerSample.g, uPaletteRow);
-        if (uUseHairPalette == 1) srcColor = texture(uHairLut, lutUV2).rgb;
+        if (uUseHairPalette == 1) {  // engine-exact (= rama uLayerKind==1 y CPU SampleLutEngine)
+            ivec2 lsz2 = textureSize(uHairLut, 0);
+            float lu2 = cvt(vec3(layerSample.g), uSrcSpace, uOutputSpace).x; // = Cvt(green, conv.SrcSpace, conv.OutputSpace); sin hardcode
+            int ltx2 = clamp(int(lu2 * float(lsz2.x)), 0, lsz2.x - 1);
+            int lty2 = clamp(int(uPaletteRow * float(lsz2.y)), 0, lsz2.y - 1);
+            srcColor = texelFetch(uHairLut, ivec2(ltx2, lty2), 0).rgb;
+        }
         else                      srcColor = uColor;
         maskV = layerSample.g;
     }

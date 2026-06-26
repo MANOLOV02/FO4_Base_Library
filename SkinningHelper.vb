@@ -147,10 +147,13 @@ Public Class SkinningHelper
         Dim shapeGeom = shape.Geometry
         If shapeGeom Is Nothing Then Throw New InvalidOperationException("IRenderableShape.Geometry is null")
         Dim backing = shapeGeom.BackingShape
-        Dim bones = shape.ShapeBones.ToArray()
-        Dim boneTrans = shape.ShapeBoneTransforms.ToArray()
+        ' Capture the bone palette ONCE. Do NOT re-read shape.ShapeBones/ShapeBoneTransforms inline
+        ' (.Count or (k) on the property): some IRenderableShape impls (Wardrobe OSP_Clases) re-parse
+        ' the NIF skin instance on every getter call, so repeated reads would be O(bones) re-parses.
+        Dim bones = shape.ShapeBones
+        Dim boneTrans = shape.ShapeBoneTransforms
 
-        If boneTrans.Length <> bones.Length Then Throw New Exception("BonesTransform y Bones desincronizados")
+        If boneTrans.Count <> bones.Count Then Throw New Exception("BonesTransform y Bones desincronizados")
         Dim Nifversion = shape.NifContent.Header.Version
         ' 1) Transformación global del shape
         Dim shapeNode = TryCast(shape.NifContent.GetParentNode(backing), NiNode)
@@ -222,9 +225,9 @@ Public Class SkinningHelper
 
 
         ' 3) Calcular matrices bind-pose y pose actual
-        Dim matsBind(bones.Length - 1) As Matrix4d
-        Dim matsPose(bones.Length - 1) As Matrix4d
-        For k = 0 To bones.Length - 1
+        Dim matsBind(bones.Count - 1) As Matrix4d
+        Dim matsPose(bones.Count - 1) As Matrix4d
+        For k = 0 To bones.Count - 1
             Dim localT = boneTrans(k)
             Dim boneName = bones(k).Name.String
             Dim bindT As Transform_Class
@@ -271,16 +274,16 @@ Public Class SkinningHelper
         ' degenerado, no como unskinned. bones.Length>0 sigue como guard secundario para
         ' acceso seguro a matsBind/matsPose.
         Select Case True
-            Case shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Length > 0
+            Case shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Count > 0
                 ' Pre-compute bone matrices (shapeGlobalTransform * matsPose(k))
-                Dim precomputedBoneMatrices(bones.Length - 1) As Matrix4d
-                For k = 0 To bones.Length - 1
+                Dim precomputedBoneMatrices(bones.Count - 1) As Matrix4d
+                For k = 0 To bones.Count - 1
                     precomputedBoneMatrices(k) = GlobalTransform * matsPose(k)
                 Next
 
                 ' GPU Skinning: compute float-precision bone matrices for SSBO upload
-                gpuBoneMats = New Matrix4(bones.Length - 1) {}
-                For k = 0 To bones.Length - 1
+                gpuBoneMats = New Matrix4(bones.Count - 1) {}
+                For k = 0 To bones.Count - 1
                     Dim m = precomputedBoneMatrices(k)
                     gpuBoneMats(k) = New Matrix4(
                         CSng(m.M11), CSng(m.M12), CSng(m.M13), CSng(m.M14),
@@ -340,7 +343,7 @@ Public Class SkinningHelper
                     Next
                 End If
 
-            Case shape.IsSkinned AndAlso singleboneskinning AndAlso bones.Length > 0
+            Case shape.IsSkinned AndAlso singleboneskinning AndAlso bones.Count > 0
                 ' Single-bone: pre-compute once — GPU path: do NOT transform rawVerts/N/T/B
                 Dim Mtot = GlobalTransform * matsPose(0)
                 Array.Fill(perVertexMtot, Mtot)
@@ -504,34 +507,6 @@ Public Class SkinningHelper
             RecalculateNormalsTangentsBitangents(geo, opts)
         End If
         Return geo
-    End Function
-    ''' <summary>
-    ''' Converts an OpenTK Matrix4d (double, row-major) to a System.Numerics.Matrix4x4 (float, row-major SIMD).
-    ''' Both use row-vector convention so this is a direct element-wise cast.
-    ''' </summary>
-    Private Shared Function ToNumericsMatrix(m As Matrix4d) As SysNumerics.Matrix4x4
-        Return New SysNumerics.Matrix4x4(
-            CSng(m.M11), CSng(m.M12), CSng(m.M13), CSng(m.M14),
-            CSng(m.M21), CSng(m.M22), CSng(m.M23), CSng(m.M24),
-            CSng(m.M31), CSng(m.M32), CSng(m.M33), CSng(m.M34),
-            CSng(m.M41), CSng(m.M42), CSng(m.M43), CSng(m.M44))
-    End Function
-
-    ''' <summary>
-    ''' Computes the normal matrix (inverse-transpose of upper-left 3x3) using SIMD-accelerated System.Numerics.
-    ''' Returns a 4x4 with the 3x3 normal matrix in the upper-left and zero translation.
-    ''' </summary>
-    Private Shared Function CreateNormalMatrix_SIMD(mtot As SysNumerics.Matrix4x4) As SysNumerics.Matrix4x4
-        Dim success As Boolean
-        Dim inv As SysNumerics.Matrix4x4
-        success = SysNumerics.Matrix4x4.Invert(mtot, inv)
-        If Not success Then Return SysNumerics.Matrix4x4.Identity
-        ' Transpose the 3x3 part, zero out translation
-        Return New SysNumerics.Matrix4x4(
-            inv.M11, inv.M21, inv.M31, 0,
-            inv.M12, inv.M22, inv.M32, 0,
-            inv.M13, inv.M23, inv.M33, 0,
-            0, 0, 0, 1)
     End Function
 
     Private Shared Function Create_Normal_Matrix(Origen As Matrix4d) As Matrix4d
@@ -1025,9 +1000,12 @@ Public Class SkinningHelper
         If geo.GPUBoneMatrices Is Nothing Then Exit Sub
         Dim effectiveSkel As SkeletonInstance = If(skeleton, SkeletonInstance.Default)
 
-        Dim bones = shape.ShapeBones.ToArray()
-        Dim boneTrans = shape.ShapeBoneTransforms.ToArray()
-        If boneTrans.Length <> bones.Length Then Exit Sub
+        ' Capture the bone palette ONCE (per-frame hot path). Do NOT re-read shape.ShapeBones/
+        ' ShapeBoneTransforms inline — some IRenderableShape impls (Wardrobe OSP_Clases) re-parse the
+        ' NIF skin instance on every getter call, which would make repeated reads O(bones) re-parses.
+        Dim bones = shape.ShapeBones
+        Dim boneTrans = shape.ShapeBoneTransforms
+        If boneTrans.Count <> bones.Count Then Exit Sub
 
         ' Recompute GlobalTransform
         Dim backing = shape.Geometry?.BackingShape
@@ -1036,17 +1014,17 @@ Public Class SkinningHelper
         Dim GlobalTransform = Matrix4d.Identity
         ' Branching predicate: shape.IsSkinned (consistente con ExtractSkinnedGeometry).
         ' bones.Length>0 secundario para acceso seguro a array.
-        If shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Length > 0 Then
+        If shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Count > 0 Then
             ' Multi-bone path: recompute bone matrices once, use for both SSBO and per-vertex blending.
             ' Keep geo.BoneMatsBind/BoneMatsPose in sync too — BakeFromMemoryUsingOriginal reads
             ' them to compute bindTimesInvPose, and if they're stale from the previous Extract
             ' the first bake after a pose change collapses to identity.
-            Dim precomputedBoneMatrices(bones.Length - 1) As Matrix4d
-            If geo.BoneMatsBind Is Nothing OrElse geo.BoneMatsBind.Length <> bones.Length Then
-                ReDim geo.BoneMatsBind(bones.Length - 1)
+            Dim precomputedBoneMatrices(bones.Count - 1) As Matrix4d
+            If geo.BoneMatsBind Is Nothing OrElse geo.BoneMatsBind.Length <> bones.Count Then
+                ReDim geo.BoneMatsBind(bones.Count - 1)
             End If
-            If geo.BoneMatsPose Is Nothing OrElse geo.BoneMatsPose.Length <> bones.Length Then
-                ReDim geo.BoneMatsPose(bones.Length - 1)
+            If geo.BoneMatsPose Is Nothing OrElse geo.BoneMatsPose.Length <> bones.Count Then
+                ReDim geo.BoneMatsPose(bones.Count - 1)
             End If
             ' Threading contract (lock-free read): SkeletonDictionary y globalCache se leen aquí SIN
             ' lock. Es seguro por la invariante documentada en
@@ -1054,7 +1032,7 @@ Public Class SkinningHelper
             ' la construcción de la cache COMPLETAN antes de que arranque este render pass, así que no
             ' hay solapamiento mutación↔lectura. No agregar locks acá (riesgo perf/deadlock); el
             ' contrato a preservar es el orden build-then-read del caller.
-            For k = 0 To bones.Length - 1
+            For k = 0 To bones.Count - 1
                 Dim localT = boneTrans(k)
                 Dim boneName = bones(k).Name.String
                 Dim SkeletonBone As HierarchiBone_class = Nothing
@@ -1132,7 +1110,7 @@ Public Class SkinningHelper
             ' AndAlso bones=0), (3) unskinned puro. La rama (2) matchea OS Anim.cpp:711 →
             ' identity. La rama (3) matchea OS Anim.cpp:692-704 → shape.T/R/S × parent_chain.
             Dim Mtot As Matrix4d
-            If shape.IsSkinned AndAlso bones.Length > 0 Then
+            If shape.IsSkinned AndAlso bones.Count > 0 Then
                 ' (1) Skinned single-bone: ignora pose animada por diseño (single-bone es modo
                 ' preview rigido), pero debe respetar bindT(0) * localT(0) del hueso 0. Si no
                 ' lo hiciera, el shape salta cada vez que cambia la pose porque se pierde el

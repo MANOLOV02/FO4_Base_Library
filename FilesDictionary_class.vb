@@ -10,6 +10,7 @@ Imports NiflySharp.Enums
 Public Module Extensions
     Public Const MaterialsPrefix As String = "Materials\"
     Public Const TexturesPrefix As String = "Textures\"
+    Public Const MeshesPrefix As String = "Meshes\"
 
     <Extension>
     Public Function Correct_Path_Separator(St As String) As String

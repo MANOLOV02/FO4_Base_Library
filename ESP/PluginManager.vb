@@ -346,6 +346,43 @@ Public Class PluginManager
         End Try
     End Function
 
+    ''' <summary>Run <paramref name="body"/> while holding the records READ lock for its whole duration,
+    ''' so no writer (the Save read-back's <see cref="MergeOverridePlugin"/>) can interleave a record-set
+    ''' rewrite in the middle. Multiple readers still run concurrently (a read lock does not block the
+    ''' render thread's own read-locked lookups), so only the rare Save writer waits for the body to
+    ''' finish. Use together with <see cref="GetRecordNoLock"/> for record fetches inside the body — the
+    ''' lock is already held, so re-fetching through the lock-taking <see cref="GetRecord"/> is
+    ''' unnecessary (the SupportsRecursion policy makes it harmless, but the lock-free path is the intent).
+    '''
+    ''' <para>Deadlock-safe: a read-lock holder must NOT reach any WRITE-lock path (a read lock cannot
+    ''' upgrade), so <paramref name="body"/> may only call read-locked / lock-free PluginManager members.
+    ''' The only write-lock callers are <see cref="LoadAllPlugins"/> and <see cref="MergeOverridePlugin"/>,
+    ''' neither of which is reachable from a record-resolution walk.</para>
+    ''' <para>Thread-affine: <paramref name="body"/> MUST be fully synchronous — no Await, no resuming on
+    ''' a different thread before it returns. ReaderWriterLockSlim requires the same thread that entered
+    ''' the read lock to exit it, so an awaited continuation on another pool thread would throw
+    ''' SynchronizationLockException. Only wrap synchronous walks here.</para></summary>
+    Public Function RunUnderRecordsReadLock(Of T)(body As Func(Of T)) As T
+        _rwLock.EnterReadLock()
+        Try
+            Return body()
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+    End Function
+
+    ''' <summary>Lock-free sibling of <see cref="GetRecord"/>: returns the SAME final resolved record
+    ''' (same <c>AllRecords</c> dictionary, same <c>TryGetValue</c>, same Nothing-on-miss) WITHOUT
+    ''' acquiring the read lock. Only valid when the caller already holds the records read lock — e.g.
+    ''' inside a <see cref="RunUnderRecordsReadLock"/> body — so the whole sequence of fetches observes
+    ''' one consistent, writer-frozen <c>AllRecords</c>. Calling it without the lock held is unsafe (could
+    ''' observe a half-rebuilt record set under a concurrent write).</summary>
+    Public Function GetRecordNoLock(formID As UInteger) As PluginRecord
+        Dim rec As PluginRecord = Nothing
+        AllRecords.TryGetValue(formID, rec)
+        Return rec
+    End Function
+
     ''' <summary>Get all records of a specific type.</summary>
     Public Function GetRecordsOfType(sig As String) As List(Of PluginRecord)
         _rwLock.EnterReadLock()
@@ -440,6 +477,17 @@ Public Class PluginManager
                 Return True
         End Select
         Return n.StartsWith("cc")   ' Creation Club (FO4 + SSE)
+    End Function
+
+    ''' <summary>Local FormID used in the FaceGen file name, per CK convention. Full plugins: strip the
+    ''' high (load-order) byte (&amp; 0xFFFFFF). ESL/light plugins (high byte 0xFE): ALSO strip the 12-bit
+    ''' light slot, leaving only the 12-bit record (&amp; 0xFFF). Matches the engine/xEdit ESL FileID scheme
+    ''' used by ResolveFormID / ToLocalFormID above (0xFE | lightSlot&lt;&lt;12 | object12). Verified: ESL runtime
+    ''' 0xFE032800 → CK writes "00000800" (record 0x800), NOT "00032800"; without the ESL mask the light
+    ''' slot leaks into the FaceGen mesh/texture name and the game can't find it. Stateless.</summary>
+    Public Shared Function ToFaceGenLocalFormID(globalFormID As UInteger) As UInteger
+        If (globalFormID >> 24) = &HFEUI Then Return globalFormID And &HFFFUI
+        Return globalFormID And &HFFFFFFUI
     End Function
 
     Private Shared Function FilterOfficialIfRequested(list As List(Of String)) As List(Of String)

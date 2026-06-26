@@ -209,7 +209,7 @@ Public Class Config_App
         Dim white As New Vector3(1, 1, 1)
         ' Ambient = intensidad global (slider). AmbientGroundLevel = hemisferio (brillo del suelo vs cielo,
         ' 0.5 = mitad). AmbientSky/Ground = solo TINTE (blanco = neutro). Tres perillas independientes.
-        Dim Lrig = New LightsRig_struct With {.Ambient = 0.2,
+        Dim Lrig = New LightsRig_struct With {.Ambient = 0.4,
             .AmbientSky = white,
             .AmbientGround = white,
             .AmbientGroundLevel = 0.5F,

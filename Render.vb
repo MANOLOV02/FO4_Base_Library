@@ -669,18 +669,22 @@ Public Class PreviewControl
             End If
             Dim _msSkel = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
 
+            ' Dirty-mesh list — only for shapes the caller marked dirty.
+            ' Empty DirtyShapes (default) means "all shapes" (back-compat single-actor flow).
+            ' Se computa UNA vez por frame y se reusa: PipelineStep_Morphs (abajo) y las dos
+            ' pasadas de skinning leen la misma lista (mismo predicado, mismo orden).
+            Dim dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
+
             ' Morphs (if also dirty — preset+pose changed simultaneously)
             If needsMorphUpdate Then
-                PipelineStep_Morphs(intent)
+                PipelineStep_Morphs(intent, dirtyMeshes)
             End If
             Dim _msMorph = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
 
-            ' Recompute bone matrices + GPU upload — only for shapes the caller marked dirty.
-            ' Empty DirtyShapes (default) means "all shapes" (back-compat single-actor flow).
+            ' Recompute bone matrices + GPU upload.
             ' Two-pass split (mismo patrón que LoadShapesParallel → Setup_GL):
             '   Pasada 1 = CPU puro (sin GL) → paralela sobre los meshes dirty.
             '   Pasada 2 = GL (MakeCurrent + BufferSubData) → serial en el hilo del contexto.
-            Dim dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
             Dim cpuSkinMode As Boolean = Not Config_App.Current.Setting_GPUSkinning
             Dim playingNow As Boolean = PlayingAnimation
             Dim computeBoundsThisFrame As Boolean = (Not playingNow) OrElse needsMorphUpdate
@@ -784,7 +788,9 @@ Public Class PreviewControl
             Dim _scMs As Double = _skinComputeMs : Dim _suMs As Double = _skinUploadMs : Dim _sdMs As Double = _skinDirtyMs   ' snapshot p/ el closure
             Dim _sfMs As Double = _skinFuncMs : Dim _gc0n As Integer = _gc0 : Dim _sctxMs As Double = _skinCtxMs
             Dim _sbMs As Double = _skinBoundsMs : Dim _smMs As Double = _skinMaskMs
-            Logger.LogLazy(Function() $"[RENDER-MS] period={_periodMs:F2} meshes={dirtyMeshes.Count} skel={_msSkel:F2} morph={_msMorph:F2} cache={_msCache:F2} pass1={_msPass1:F2} ctx={_sctxMs:F2} skinCompute={_scMs:F2} skinUpload={_suMs:F2} skinDirty={_sdMs:F2} skinBounds={_sbMs:F2} skinMask={_smMs:F2} skinFunc={_sfMs:F2} skin={_msSkin:F2} gc0={_gc0n} ssbo={_msSsbo:F2} present={_msPresent:F2} total={(_msSkel + _msMorph + _msCache + _msPass1 + _msSkin + _msSsbo + _msPresent):F2} play={playingNow} cpuSkin={cpuSkinMode}")
+            If Logger.Enabled Then
+                Logger.LogLazy(Function() $"[RENDER-MS] period={_periodMs:F2} meshes={dirtyMeshes.Count} skel={_msSkel:F2} morph={_msMorph:F2} cache={_msCache:F2} pass1={_msPass1:F2} ctx={_sctxMs:F2} skinCompute={_scMs:F2} skinUpload={_suMs:F2} skinDirty={_sdMs:F2} skinBounds={_sbMs:F2} skinMask={_smMs:F2} skinFunc={_sfMs:F2} skin={_msSkin:F2} gc0={_gc0n} ssbo={_msSsbo:F2} present={_msPresent:F2} total={(_msSkel + _msMorph + _msCache + _msPass1 + _msSkin + _msSsbo + _msPresent):F2} play={playingNow} cpuSkin={cpuSkinMode}")
+            End If
 
         ElseIf needsMorphUpdate Then
             ' -- Morph-only (lightweight) -----------------------------
@@ -841,13 +847,17 @@ Public Class PreviewControl
     ''' resets that shape's geometry to NifLocalVertices (raw, pre-skin) — this is the
     ''' explicit "no morphs" contract, so callers can toggle morphs OFF simply by
     ''' clearing the resolver instead of carrying stale deltas.</summary>
-    Private Sub PipelineStep_Morphs(intent As RenderIntent)
+    Private Sub PipelineStep_Morphs(intent As RenderIntent, Optional dirtyMeshes As List(Of RenderableMesh) = Nothing)
         ' CPU puro (sin GL): por cada shape dirty resuelve su MorphPlan y lo aplica a su geo.
         ' Paralelizado across-shapes — cada mesh escribe SOLO su propio geo; ResolveMorphPlan se
         ' llama concurrente sobre la misma instancia de resolver (sus campos son read-only y las
         ' cachés TRI Shared están protegidas con SyncLock: NpcMorphResolver, BodySlideTriResolver._pirtCache).
         ' Ver el contrato de concurrencia en IMorphResolver.ResolveMorphPlan.
-        Dim dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
+        ' El caller del pose-path ya computó esta lista (mismo predicado); la reusamos para no
+        ' rehacer el .Where(...).ToList() sobre todos los meshes. Sin lista → computar como antes.
+        If dirtyMeshes Is Nothing Then
+            dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
+        End If
         Parallel.ForEach(dirtyMeshes,
             Sub(mesh)
                 Dim plan As MorphPlan = Nothing

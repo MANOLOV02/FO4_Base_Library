@@ -3908,12 +3908,32 @@ Public Class FO4UnifiedMaterial_Class
 
     Public Sub Deserialize(Diccionario As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
         Deserialize(FilesDictionary_class.GetBytes(Diccionario), type, shap, Nif)
-        ' Sidecar JSON resolution: `<file>.bgsm.json` (or `.bgem.json`) lives next to the
-        ' material, resolvable via FilesDictionary the same way (loose or BA2/BSA). Carries
-        ' fields the binary BGSM/BGEM cannot persist — today: envmapMaskTexture for BGSM.
-        ' Missing or invalid sidecar is silent (regla Q3=a): _EnvmapMaskPath stays "".
+        ResolveSidecarJson(Diccionario, type)
+        ' Fresh load (including sidecar) → clean state.
+        ClearDirty()
+    End Sub
+
+    ''' <summary>Byte-source overload that mirrors <see cref="Deserialize(String, Type, INiShape, Nifcontent_Class_Manolo)"/>
+    ''' exactly: deserialize from the already-fetched <paramref name="memory"/> bytes, then resolve the
+    ''' `&lt;file&gt;.bgsm.json` / `.bgem.json` sidecar via <paramref name="diccionarioForSidecar"/>, then
+    ''' ClearDirty. Lets a caller that has already located the dictionary entry pass the bytes directly
+    ''' (avoiding a redundant dictionary lookup) without dropping the sidecar. The extra String parameter
+    ''' disambiguates this from the <c>(Byte(), Type, …)</c> overload.</summary>
+    Public Sub Deserialize(memory As Byte(), diccionarioForSidecar As String, type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
+        Deserialize(memory, type, shap, Nif)
+        ResolveSidecarJson(diccionarioForSidecar, type)
+        ' Fresh load (including sidecar) → clean state.
+        ClearDirty()
+    End Sub
+
+    ''' <summary>Resolve the `&lt;file&gt;.bgsm.json` (or `.bgem.json`) sidecar that lives next to the
+    ''' material, resolvable via FilesDictionary the same way (loose or BA2/BSA). Carries fields the
+    ''' binary BGSM/BGEM cannot persist — today: envmapMaskTexture for BGSM, plus the Skyrim-container
+    ''' flow/lighting textures. Missing or invalid sidecar is silent (regla Q3=a): _EnvmapMaskPath stays "".
+    ''' Extracted verbatim from the Diccionario overload so both byte and string entry points share it.</summary>
+    Private Sub ResolveSidecarJson(diccionario As String, type As Type)
         Try
-            Dim sidecarKey = Diccionario & ".json"
+            Dim sidecarKey = diccionario & ".json"
             Dim sidecarBytes = FilesDictionary_class.GetBytes(sidecarKey)
             If sidecarBytes IsNot Nothing AndAlso sidecarBytes.Length > 0 Then
                 Try
@@ -3947,8 +3967,6 @@ Public Class FO4UnifiedMaterial_Class
         Catch ex As Exception
             ' Q3=a: any failure (read, dictionary miss, etc.) is silent.
         End Try
-        ' Fresh load (including sidecar) → clean state.
-        ClearDirty()
     End Sub
 
     ''' <summary>Serialize the underlying BGSM to disk and write a `.bgsm.json` sidecar
@@ -4086,6 +4104,10 @@ Public Class FO4UnifiedMaterial_Class
 
     Public Shared Function CorrectMaterialPath(Texture As String) As String
         Return NormalizeGameRelativePath(Texture, MaterialsPrefix)
+    End Function
+
+    Public Shared Function CorrectMeshPath(Mesh As String) As String
+        Return NormalizeGameRelativePath(Mesh, MeshesPrefix)
     End Function
 
 

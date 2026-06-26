@@ -287,6 +287,20 @@ Public Module FaceTintCpuCompositor
         Return c00 * (1 - tx) * (1 - ty) + c10 * tx * (1 - ty) + c01 * (1 - tx) * ty + c11 * tx * ty
     End Function
 
+    ''' <summary>LUT lookup ENGINE-EXACT del brow grayscale->palette (BSFaceCustomizationShader PS, `ld` t4):
+    ''' U = Cvt(green, <paramref name="srcSpace"/>, <paramref name="coordSpace"/>) — el verde (textura diffuse)
+    ''' se decodea de srcSpace (=conv.SrcSpace=DiffuseTextureSrcSpace, Srgb) al espacio del coord (=conv.
+    ''' OutputSpace, G22) — la MISMA conversión que el seed del base diffuse (no hardcode). Con defaults Srgb->G22
+    ''' eso es pow(srgbToLin(green),1/2.2), que es lo que hace el engine. Luego texel (tx,ty)=ftoi(U*W, v01*H),
+    ''' fetch NEAREST (`ld`; sin bilineal ni half-texel), clamp a [0,size-1]. Verificado byte-exact vs CK.
+    ''' <paramref name="v01"/> = RemappingIndex (row, 0..1). PARIDAD con el shader GPU (cvt + texelFetch).</summary>
+    Private Function SampleLutEngine(t As DecodedTex, green01 As Double, v01 As Double, ch As Integer, srcSpace As Integer, coordSpace As Integer) As Double
+        Dim u As Double = Cvt1(green01, srcSpace, coordSpace)
+        Dim tx As Integer = Math.Max(0, Math.Min(t.Width - 1, CInt(Math.Floor(u * t.Width))))
+        Dim ty As Integer = Math.Max(0, Math.Min(t.Height - 1, CInt(Math.Floor(v01 * t.Height))))
+        Return t.Rgba((ty * t.Width + tx) * 4 + ch)
+    End Function
+
     ' ---- Resultado de la pipeline CPU (espejo de FaceTintPipelineResult) ----
     Public Class CpuChannelResult
         Public Width As Integer
@@ -519,9 +533,10 @@ Public Module FaceTintCpuCompositor
                 Dim op = Math.Max(0.0, Math.Min(1.0, CDbl(layer.Opacity)))
                 Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
                 Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
-                ' brow grayscale->palette LUT lookup: U=verde, V=row, AMBOS CRUDOS. CK bakea el brow con
-                ' coords crudas (MEDIDO 2026-06-23: pow EMPEORA vs CK, incl. pow-solo-U); el pow de U del
-                ' hair render es runtime, el bake no. luY es por-capa (row constante); luX por-pixel abajo.
+                ' brow grayscale->palette LUT lookup = ENGINE-EXACT (BSFaceCustomizationShader PS, `ld` t4):
+                ' el mask (verde) se decodea sRGB->linear (t1 = SRV sRGB), U=pow(lin,1/2.2), texel=ftoi(U*W,
+                ' row*H), fetch NEAREST (ld; sin bilineal ni half-texel). Verificado byte-exact vs CK (resid 0.4).
+                ' El verde crudo (lg) se pasa a SampleLutEngine, que hace sRGB-decode + pow + ftoi + nearest.
                 Dim luY As Double = row
                 Dim kind = layer.Kind
                 ' GUARD del pre-tono TakesSkinTone: solo D, capa flagged, y skintone ya compuesto antes.
@@ -535,22 +550,20 @@ Public Module FaceTintCpuCompositor
                     Dim lg = SampleChannelAt(layerTex, i, w, h, 1)
                     Dim lb = SampleChannelAt(layerTex, i, w, h, 2)
                     Dim la = SampleChannelAt(layerTex, i, w, h, 3)
-                    ' U del LUT = verde CRUDO (CK bakea crudo; pow EMPEORA la medicion vs CK).
-                    Dim luX As Double = lg
 
                     ' mask + src por kind (= rama uLayerKind del shader)
                     Dim maskV As Double
                     Dim srcR As Double, srcG As Double, srcB As Double
                     If kind = FaceTintLayerKind.PaletteMask Then
                         If useHairPalette Then
-                            srcR = SampleBilinear(lutTex, luX, luY, 0) : srcG = SampleBilinear(lutTex, luX, luY, 1) : srcB = SampleBilinear(lutTex, luX, luY, 2)
+                            srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
                         Else
                             srcR = uColR : srcG = uColG : srcB = uColB
                         End If
                         maskV = lg
                     Else ' TextureSetDiffuse
                         If useHairPalette Then
-                            srcR = SampleBilinear(lutTex, luX, luY, 0) : srcG = SampleBilinear(lutTex, luX, luY, 1) : srcB = SampleBilinear(lutTex, luX, luY, 2)
+                            srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
                         ElseIf forceUniform Then
                             srcR = uColR : srcG = uColG : srcB = uColB
                         Else

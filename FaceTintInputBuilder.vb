@@ -408,40 +408,8 @@ Public Module FaceTintInputBuilder
         ' las cejas usan una LUT SINTÉTICA de degradé entre Dark y Light (campos del INI, default negro).
         Dim eyebrowLut = BuildSyntheticEyebrowLut(tintBytesCache)
 
-        Dim stat_added_palette As Integer = 0
-        Dim stat_added_textureSet As Integer = 0
-        Dim stat_added_takesSkinTone As Integer = 0
-        Dim stat_skip_zeroOpacity As Integer = 0
-        Dim stat_skip_zeroOpacity_takesSkinTone As Integer = 0
-        Dim stat_skip_missingOption As Integer = 0
-        Dim stat_skip_missingMask As Integer = 0
-        Dim stat_skip_unknownDiscriminator As Integer = 0
-        Dim stat_byFlags_added As New Dictionary(Of UShort, Integer)
-        Dim stat_byFlags_skipped As New Dictionary(Of UShort, Integer)
-
-        Dim raceDefaultCount As Integer = Enumerable.Count(mergedLayers, Function(m) m.IsRaceDefault)
-        Dim npcOwnCount As Integer = mergedLayers.Count - raceDefaultCount
-
         Dim tintGroupsForRender = If(isFemale, race.FemaleTintTemplateGroups, race.MaleTintTemplateGroups)
-        Dim totalOptionsAcrossGroups As Integer = 0
-        If tintGroupsForRender IsNot Nothing Then
-            For Each grpDiag In tintGroupsForRender
-                totalOptionsAcrossGroups += If(grpDiag.Options Is Nothing, 0, grpDiag.Options.Count)
-            Next
-        End If
-        Dim totalGroupsLog As Integer = If(tintGroupsForRender Is Nothing, 0, tintGroupsForRender.Count)
 
-        For Each mDiag In mergedLayers
-            Dim tlDiag = mDiag.Layer
-            Dim optDiag = race.FindTintOption(tlDiag.Index, isFemale)
-            Dim optName = If(optDiag IsNot Nothing AndAlso Not String.IsNullOrEmpty(optDiag.Name), optDiag.Name, "<no-option>")
-            Dim slotName = If(optDiag IsNot Nothing, TintSlotName(optDiag.Slot), "?")
-            Dim slotNum = If(optDiag IsNot Nothing, optDiag.Slot, CUShort(0))
-            Dim flagsHex = If(optDiag IsNot Nothing, $"0x{optDiag.Flags:X4}", "?")
-            Dim takesSkin = If(optDiag IsNot Nothing AndAlso (optDiag.Flags And &H4US) <> 0US, "TakesSkinTone", "-")
-            Dim valueLog = tlDiag.Value
-            Dim origin = If(mDiag.IsRaceDefault, "RACE-DEFAULT", "NPC")
-        Next
         ' Orden de composicion = ORDEN FISICO del record del template del RACE (reverse). El engine itera las
         ' tint-options en el orden en que estan ALMACENADAS en el RACE (grupo por grupo, opcion por opcion) y la
         ' PRIMERA listada queda ENCIMA (over-running: la de MAYOR posicion fisica se pinta PRIMERO=fondo, la de
@@ -485,14 +453,7 @@ Public Module FaceTintInputBuilder
 
         For Each tl In orderedLayers
             Dim opt = race.FindTintOption(tl.Index, isFemale)
-            Dim rawOptFlagsU = If(opt IsNot Nothing, opt.Flags, CUShort(0))
-            Dim rawOptFlagsHex = If(opt IsNot Nothing, $"0x{opt.Flags:X4}", "?")
-            Dim rawOptFlagsName = If(opt IsNot Nothing, FormatTintFlagsName(opt.Flags), "?")
-
             If opt Is Nothing OrElse opt.Textures Is Nothing OrElse opt.Textures.Count = 0 Then
-                stat_skip_missingOption += 1
-                If Not stat_byFlags_skipped.ContainsKey(rawOptFlagsU) Then stat_byFlags_skipped(rawOptFlagsU) = 0
-                stat_byFlags_skipped(rawOptFlagsU) += 1
                 Continue For
             End If
 
@@ -529,9 +490,6 @@ Public Module FaceTintInputBuilder
             Dim ttet2Snap = If(opt.Textures.Count > 2, opt.Textures(2), "")
             Dim diffuseLoad = LoadTintLayerBytesAndKey(opt.Textures(0), tintBytesCache)
             If diffuseLoad.Bytes Is Nothing Then
-                stat_skip_missingMask += 1
-                If Not stat_byFlags_skipped.ContainsKey(rawOptFlagsU) Then stat_byFlags_skipped(rawOptFlagsU) = 0
-                stat_byFlags_skipped(rawOptFlagsU) += 1
                 Continue For
             End If
             Dim diffuseBytes = diffuseLoad.Bytes
@@ -605,9 +563,6 @@ Public Module FaceTintInputBuilder
                 layerInput.Kind = FaceTintLayerKind.TextureSetDiffuse
                 layerInput.BlendOp = CInt(ResolveFallbackBlendOp(opt, opacity))
             Else
-                stat_skip_unknownDiscriminator += 1
-                If Not stat_byFlags_skipped.ContainsKey(rawOptFlagsU) Then stat_byFlags_skipped(rawOptFlagsU) = 0
-                stat_byFlags_skipped(rawOptFlagsU) += 1
                 Continue For
             End If
 
@@ -862,25 +817,7 @@ Public Module FaceTintInputBuilder
             End If
 
             layerInputs.Add(layerInput)
-
-            If layerInput.Kind = FaceTintLayerKind.PaletteMask Then
-                stat_added_palette += 1
-            Else
-                stat_added_textureSet += 1
-            End If
-            If takesSkinTone Then stat_added_takesSkinTone += 1
-            If Not stat_byFlags_added.ContainsKey(rawOptFlagsU) Then stat_byFlags_added(rawOptFlagsU) = 0
-            stat_byFlags_added(rawOptFlagsU) += 1
         Next
-
-        Dim allFlagKeys As New SortedSet(Of UShort)
-        For Each k In stat_byFlags_added.Keys : allFlagKeys.Add(k) : Next
-        For Each k In stat_byFlags_skipped.Keys : allFlagKeys.Add(k) : Next
-        For Each fk In allFlagKeys
-            Dim a As Integer = 0 : stat_byFlags_added.TryGetValue(fk, a)
-            Dim s As Integer = 0 : stat_byFlags_skipped.TryGetValue(fk, s)
-        Next
-
 
         Return layerInputs
     End Function
