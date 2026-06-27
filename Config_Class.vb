@@ -150,6 +150,14 @@ Public Class Config_App
     Public Property Setting_FaceGenSpecularCompression As FaceTintConvention.FaceTintNormalSpecularCompression = FaceTintConvention.FaceTintNormalSpecularCompression.Bc5
     Public Property Setting_FaceGenGenerateTga As Boolean = False
 
+    ' === Fixes (botón "CharGen Options" → tab "Fixes") ===
+    ' Eyebrows fixed-color override (SkipEyebrowsTone.ini → LUT sintética Dark->Light). Antes el feature
+    ' se activaba SOLO por la presencia del archivo; ahora requiere AMBOS: este toggle persistido Y el
+    ' archivo en el appdir. Default = True (= comportamiento previo: si el archivo está, el override aplica).
+    ' Vive en Config_App (no NPC_Config) porque lo consume FaceTintInputBuilder en la librería, que lee
+    ' Config_App.Current directamente (igual que Setting_FaceTintSort). Ver BuildSyntheticEyebrowLut.
+    Public Property Setting_ApplyEyebrowsFixedColor As Boolean = True
+
     ' === FaceTint convention (botón "CharGen Options" → tab "FaceTint Conventions") ===
     ' La convención de composición FaceTint por bucket (Diffuse / Normal+Specular / Swaps), valores
     ' CONCRETOS. Los defaults los pone el constructor de FaceTintConventionSettings = la ley derivada

@@ -50,4 +50,9 @@ Public Interface IRenderableShape
     ''' render per-segment index filter (EnsureZapIndexBuffer → BSTriShapeGeometry.ComputeHiddenTriangles).</summary>
     Property CoveredSlotsMask As UInteger
     Property MaskedVertices As HashSet(Of Integer)
+    ''' <summary>Render-only extra material layers drawn as coplanar decals over this shape's deformed
+    ''' geometry (LooksMenu overlays/tattoos). Nothing/empty = no overlay (the default; WM never sets
+    ''' it). Drawn in list order = draw order (the app pre-sorts by LooksMenu priority ascending, so
+    ''' higher priority ends up on top); the lib just honors the order.</summary>
+    Property OverlayLayers As IReadOnlyList(Of OverlayMaterialLayer)
 End Interface

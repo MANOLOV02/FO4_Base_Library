@@ -1722,8 +1722,23 @@ Public Class PreviewModel
                 ParentMeshData = Parent
             End Sub
             Public Property ParentMeshData As MeshData_Class
+
+            ''' <summary>Optional render-only material override (LooksMenu overlay layer). When set,
+            ''' MaterialBase (and everything that flows through it: Textures_Path_List, the *_ID props,
+            ''' HasAlphaBlend, ...) reads this material instead of the shape's own ShapeMaterial — so a
+            ''' transient MaterialData can render an overlay layer's material over the SAME base geometry.
+            ''' Defaults Nothing, so every existing mesh resolves through ParentMeshData.Shape.ShapeMaterial
+            ''' exactly as before (the no-overlay path is unchanged).</summary>
+            Public Property OverrideRelatedMaterial As Nifcontent_Class_Manolo.RelatedMaterial_Class = Nothing
+
             Public ReadOnly Property MaterialBase As FO4UnifiedMaterial_Class
                 Get
+                    ' Overlay layer: bind the override material (the app pre-configured it). Same
+                    ' null-safety as the base path below.
+                    If OverrideRelatedMaterial IsNot Nothing Then
+                        If OverrideRelatedMaterial.material Is Nothing Then Return New FO4UnifiedMaterial_Class()
+                        Return OverrideRelatedMaterial.material
+                    End If
                     Dim rel = ParentMeshData.Shape.ShapeMaterial
                     If rel Is Nothing OrElse rel.material Is Nothing Then Return New FO4UnifiedMaterial_Class()
                     Return rel.material
@@ -1756,14 +1771,17 @@ Public Class PreviewModel
             ' el modelo de tres campos restauró, pero el render todavía consultaba el enum.
             Public ReadOnly Property HasAlphaBlend
                 Get
-                    If IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
+                    ' An overlay layer carries its own material in OverrideRelatedMaterial, so the
+                    ' "no material on the shape" guard must consult the override too — otherwise an
+                    ' overlay over a shape with no ShapeMaterial would wrongly report not-blended.
+                    If OverrideRelatedMaterial Is Nothing AndAlso IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
                     Return MaterialBase.AlphaBlendEnabled OrElse MaterialBase.Alpha < 1.0F
                 End Get
             End Property
 
             Public ReadOnly Property HasAlphaTest
                 Get
-                    If IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
+                    If OverrideRelatedMaterial Is Nothing AndAlso IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
                     Return MaterialBase.AlphaTest
                 End Get
             End Property
@@ -2775,6 +2793,139 @@ Public Class PreviewModel
 
         End Sub
 
+        ' Per-layer transient MaterialData cache for the overlay render path. Built once per layer
+        ' (keyed on the layer instance) so RenderOverlayLayer does not allocate a MaterialData every
+        ' frame. Each entry has OverrideRelatedMaterial = layer.Material so MaterialBase + all the
+        ' *_ID/Has* props flow from the overlay material; ParentMeshData stays this mesh's MeshData so
+        ' Shape-derived state (TintColor/ShowTexture/...) still resolves to the BASE shape, matching
+        ' how ApplyMaterial reads MeshData.Shape directly (~2905-2925).
+        Private _overlayMaterialCache As Dictionary(Of OverlayMaterialLayer, MaterialData)
+
+        Private Function GetOverlayMaterialData(layer As OverlayMaterialLayer) As MaterialData
+            If _overlayMaterialCache Is Nothing Then _overlayMaterialCache = New Dictionary(Of OverlayMaterialLayer, MaterialData)
+            Dim md As MaterialData = Nothing
+            If Not _overlayMaterialCache.TryGetValue(layer, md) Then
+                md = New MaterialData(MeshData) With {.OverrideRelatedMaterial = layer.Material}
+                _overlayMaterialCache(layer) = md
+            End If
+            Return md
+        End Function
+
+        ''' <summary>Texture paths of every OverlayLayer's material on <paramref name="meshData"/>'s shape,
+        ''' reusing the standard 14-slot MaterialData.Textures_Path_List via a transient override MaterialData.
+        ''' Returns empty when the shape has no overlay layers (Nothing/empty) — so the no-overlay path adds
+        ''' nothing to the texture-load set. Used only at texture-gather time, not per frame.</summary>
+        Friend Shared Function EnumerateOverlayTexturePaths(meshData As MeshData_Class) As IEnumerable(Of String)
+            Dim layers = meshData.Shape?.OverlayLayers
+            If layers Is Nothing OrElse layers.Count = 0 Then Return Array.Empty(Of String)()
+            Dim paths As New List(Of String)
+            For Each layer In layers
+                If layer Is Nothing OrElse layer.Material Is Nothing Then Continue For
+                Dim md As New MaterialData(meshData) With {.OverrideRelatedMaterial = layer.Material}
+                paths.AddRange(md.Textures_Path_List)
+            Next
+            Return paths
+        End Function
+
+        ''' <summary>Color (sRGB) texture paths of every OverlayLayer's material, mirroring
+        ''' MaterialData.ColorTextures_Path_List. Empty when there are no overlay layers.</summary>
+        Friend Shared Function EnumerateOverlayColorTexturePaths(meshData As MeshData_Class) As IEnumerable(Of String)
+            Dim layers = meshData.Shape?.OverlayLayers
+            If layers Is Nothing OrElse layers.Count = 0 Then Return Array.Empty(Of String)()
+            Dim paths As New List(Of String)
+            For Each layer In layers
+                If layer Is Nothing OrElse layer.Material Is Nothing Then Continue For
+                Dim md As New MaterialData(meshData) With {.OverrideRelatedMaterial = layer.Material}
+                paths.AddRange(md.ColorTextures_Path_List)
+            Next
+            Return paths
+        End Function
+
+        ''' <summary>
+        ''' Draws ONE overlay material layer over this mesh's ALREADY-deformed (morphed + skinned)
+        ''' geometry as a coplanar decal — the LooksMenu overlay/tattoo model. REUSES the existing
+        ''' VAO / SSBO / EBO / indexCount (no re-skin, no re-morph): same vertices, same skinning,
+        ''' only the bound material differs. Modeled on <see cref="Render"/> (~2695).
+        '''
+        ''' Coplanar-decal GL state: depth-test Lequal so the coplanar fragment passes against the
+        ''' base's own depth, DepthMask(False) so the overlay NEVER writes depth, blend as configured
+        ''' by ApplyMaterial for the (alpha-blended BGEM) material. Back-face culling uses the same
+        ''' effective face mode as the base draw. Restored at the end exactly like Render; DepthFunc is
+        ''' left at Lequal (the frame-wide default this code uses — see the restore block).
+        ''' </summary>
+        Public Sub RenderOverlayLayer(projection As Matrix4, ByRef camera As OrbitCamera, layer As OverlayMaterialLayer)
+            If layer Is Nothing OrElse layer.Material Is Nothing Then Exit Sub
+            If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide = True Then Exit Sub
+            If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
+
+            '=============================== MATRICES (identical to Render) ===============================
+            Dim model As Matrix4 = MeshData.Transform
+            Dim view As Matrix4 = camera.GetViewMatrix()
+            Dim modelView As Matrix4 = view * model
+
+            Dim normalMatrix As New OpenTK.Mathematics.Matrix3(modelView)
+            normalMatrix.Invert()
+            normalMatrix.Transpose()
+
+            Dim modelViewInverse As Matrix4 = modelView.Inverted()
+
+            '=============================== SHADER ===============================
+            Dim shader = Me.ParentModel.ParentControl.CurrentShader
+            shader.Use()
+            shader.SetMatrix4("matProjection", projection)
+            shader.SetMatrix4("matView", view)
+            shader.SetMatrix4("matModel", model)
+            shader.SetMatrix4("matModelView", modelView)
+            shader.SetMatrix4("matModelViewInverse", modelViewInverse)
+            shader.SetMatrix3("mv_normalMatrix", normalMatrix)
+
+            ' Bind the LAYER's material (transient MaterialData with OverrideRelatedMaterial).
+            Dim overlayMat = GetOverlayMaterialData(layer)
+            Dim materialBase = overlayMat.MaterialBase
+            shader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
+            ApplyMaterial(overlayMat)
+
+            ' GPU Skinning: bind the SAME SSBO / bone uniforms as the base draw (geometry is shared).
+            shader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
+            Dim boneCount As Integer = If(MeshData.Meshgeometry.GPUBoneMatrices IsNot Nothing, MeshData.Meshgeometry.GPUBoneMatrices.Length, 0)
+            shader.SetInt("uBoneCount", boneCount)
+            If ssbo_BoneMatrices > 0 Then
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, ssbo_BoneMatrices)
+            End If
+
+            '=============================== DRAW ===============================
+            GL.BindVertexArray(vao)
+            EnsureZapIndexBuffer()
+            Dim faceMode = ResolveEffectiveFaceMode(MeshData.Shape, materialBase)
+
+            ' Coplanar decal: never write depth, depth-test Lequal so the coplanar overlay passes
+            ' against the base mesh's depth. ApplyMaterial already enabled blend (HasAlphaBlend) and
+            ' set DepthFunc(Lequal); reassert both here so the overlay never writes depth regardless
+            ' of the material's ZBufferWrite.
+            GL.DepthFunc(DepthFunction.Lequal)
+            GL.DepthMask(False)
+            ApplyFaceMode(faceMode)
+            GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+
+            ' Unbind SSBO after draw — same hygiene as Render.
+            If ssbo_BoneMatrices > 0 Then
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
+            End If
+
+            ' Restore GL state exactly like Render (~2787-2792). DepthFunc is intentionally left at
+            ' Lequal: that is the prior value here (the one-time GL init sets Lequal @ line 911 and
+            ' ApplyMaterial re-sets Lequal every draw @ line 3344) — Render itself never restores
+            ' DepthFunc, so re-setting it would diverge from the inert base path. The Lequal we set
+            ' above (for the coplanar decal) already equals the frame-wide default, so later passes/
+            ' frames are unaffected. (The spec's "restore to Less" assumed a Less default this code
+            ' does not have.)
+            GL.DepthMask(True)
+            GL.Disable(EnableCap.Blend)
+            GL.Disable(EnableCap.PolygonOffsetFill)
+            GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+            GL.CullFace(TriangleFace.Back)
+        End Sub
+
         Private Enum EffectiveFaceMode
             DrawCCW = 1
             DrawCW = 2
@@ -3470,11 +3621,28 @@ Public Class PreviewModel
                 Distinct(StringComparer.OrdinalIgnoreCase).
                 Where(Function(pf) Textures_Dictionary.ContainsKey(pf) = False))
 
+        ' Overlay layers (LooksMenu/tattoos): each layer's material textures MUST also be uploaded or
+        ' the overlay renders untextured/white. Reuse the SAME 14-slot Textures_Path_List by building
+        ' a transient MaterialData with OverrideRelatedMaterial = layer.Material (no path-list dup).
+        ' No-overlay path (every WM render, every untattooed NPC): OverlayLayers is Nothing -> this
+        ' adds nothing, so the loaded set is byte-identical to before.
+        texturas.UnionWith(
+            Me.meshes.
+                SelectMany(Function(pf) RenderableMesh.EnumerateOverlayTexturePaths(pf.MeshData)).
+                Where(Function(pf) pf <> "").
+                Distinct(StringComparer.OrdinalIgnoreCase).
+                Where(Function(pf) Textures_Dictionary.ContainsKey(pf) = False))
+
         ' Record which of those paths are COLOR textures (base color) so the GL upload decodes them sRGB,
         ' like the engine's per-texture sRGB flag. Persistent + additive: a path's role is stable, and the
         ' set is consulted by name at upload time. Data textures are never added -> they stay linear.
         For Each m In Me.meshes
             For Each cp In m.MeshData.Material.ColorTextures_Path_List
+                If cp <> "" Then SRGBTexturePaths.Add(cp)
+            Next
+            ' Same for each overlay layer's color textures (transient MaterialData over the layer
+            ' material). No-overlay path adds nothing (OverlayLayers Nothing -> zero iterations).
+            For Each cp In RenderableMesh.EnumerateOverlayColorTexturePaths(m.MeshData)
                 If cp <> "" Then SRGBTexturePaths.Add(cp)
             Next
         Next
@@ -3891,20 +4059,38 @@ Public Class PreviewModel
             Next
         End If
 
-        If BlendedMeshes.Count = 0 Then Exit Sub
+        ' 4. BLENDED — requiere ordenamiento por profundidad.
+        ' (Was an early `Exit Sub` when empty; now a guarded block so the overlay pass 5 below still
+        ' runs even with zero blended meshes — tattoos live on the OPAQUE skin body, not a blended mesh.)
+        If BlendedMeshes.Count > 0 Then
+            BlendedDepthBuffer.Clear()
 
-        ' 4. BLENDED — requiere ordenamiento por profundidad
-        BlendedDepthBuffer.Clear()
+            For Each mesh In BlendedMeshes
+                ' O3.3: Frustum cull blended meshes too
+                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
+                Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
+                BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
+            Next
+            BlendedDepthBuffer.Sort(Function(a, b) b.Depth.CompareTo(a.Depth))
+            For Each item In BlendedDepthBuffer
+                item.Mesh.Render(projection, camera)
+            Next
+        End If
 
-        For Each mesh In BlendedMeshes
-            ' O3.3: Frustum cull blended meshes too
+        ' 5. OVERLAY LAYERS (LooksMenu/tattoos) — drawn LAST, after every base mesh, as coplanar
+        ' decals over each shape's already-deformed geometry (RenderableMesh.RenderOverlayLayer).
+        ' INERTNESS: when no shape carries OverlayLayers (every Wardrobe_Manager render, every NPC
+        ' render with no tattoos), MeshData.Shape.OverlayLayers is Nothing/empty for all meshes, so
+        ' this loop binds nothing and draws nothing — behavior is identical to before this pass existed.
+        For Each mesh In meshes
+            Dim layers = mesh.MeshData.Shape?.OverlayLayers
+            If layers Is Nothing OrElse layers.Count = 0 Then Continue For
+            ' Frustum-cull like the other passes (same AABB as the base shape — geometry is shared).
             If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
-            Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
-            BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
-        Next
-        BlendedDepthBuffer.Sort(Function(a, b) b.Depth.CompareTo(a.Depth))
-        For Each item In BlendedDepthBuffer
-            item.Mesh.Render(projection, camera)
+            ' List order = draw order (app pre-sorts by LooksMenu priority ascending).
+            For Each layer In layers
+                mesh.RenderOverlayLayer(projection, camera, layer)
+            Next
         Next
     End Sub
 End Class

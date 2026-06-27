@@ -941,11 +941,15 @@ Public Module FaceTintInputBuilder
         Return LoadTintLayerBytesByKey(normalized, tintBytesCache)
     End Function
 
-    ''' <summary>SkipEyebrowsTone.ini en el appdir (case-insensitive via File.Exists): si existe,
-    ''' sintetiza una LUT de degradé Dark->Light (campos "Light=R,G,B" / "Dark=R,G,B", ambos default
-    ''' negro -> cejas negras) en BGRA8 sin compresión ni mips, devuelta como bytes DDS para el path
-    ''' UseHairPalette del override de cejas. Cachea por color en tintBytesCache.</summary>
+    ''' <summary>Override de color fijo de cejas. Gateado por DOS condiciones (ambas requeridas):
+    ''' (1) el toggle persistido Config_App.Setting_ApplyEyebrowsFixedColor (CharGen Options → Fixes,
+    ''' default True) y (2) la presencia de SkipEyebrowsTone.ini en el appdir (case-insensitive via
+    ''' File.Exists). Con ambas, sintetiza una LUT de degradé Dark->Light (campos "Light=R,G,B" /
+    ''' "Dark=R,G,B", ambos default negro -> cejas negras) en BGRA8 sin compresión ni mips, devuelta como
+    ''' bytes DDS para el path UseHairPalette del override de cejas. Cachea por color en tintBytesCache.</summary>
     Private Function BuildSyntheticEyebrowLut(tintBytesCache As Dictionary(Of String, Byte())) As (Enabled As Boolean, Bytes As Byte(), Key As String)
+        ' Persisted toggle (default True if no config loaded): debe estar prendido Y el archivo presente.
+        If Not If(Config_App.Current?.Setting_ApplyEyebrowsFixedColor, True) Then Return (False, Nothing, Nothing)
         Dim iniPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SkipEyebrowsTone.ini")
         If Not System.IO.File.Exists(iniPath) Then Return (False, Nothing, Nothing)
 

@@ -256,6 +256,10 @@ Public Class NifRenderableShape
     Public Property ApplyZaps As Boolean = False Implements IRenderableShape.ApplyZaps
     Public Property CoveredSlotsMask As UInteger = 0 Implements IRenderableShape.CoveredSlotsMask
     Public Property MaskedVertices As New HashSet(Of Integer)() Implements IRenderableShape.MaskedVertices
+    ''' <summary>Render-only extra material layers drawn as coplanar decals over this shape's deformed
+    ''' geometry (LooksMenu overlays/tattoos). Nothing/empty = no overlay (the default; WM never sets
+    ''' it). The app attaches layers in a later phase; treated as empty everywhere when Nothing.</summary>
+    Public Property OverlayLayers As IReadOnlyList(Of OverlayMaterialLayer) = Nothing Implements IRenderableShape.OverlayLayers
 
     ''' <summary>
     ''' Factory: instantiates a NifRenderableShape for every shape in <paramref name="nif"/>
