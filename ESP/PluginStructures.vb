@@ -26,9 +26,13 @@ Public Module PluginConstants
     ' with dump v2 — 513 OMOD chunks NPC_-target with AttachPoint, ALL resolved as "not loaded"
     ' before this fix because KYWD records were never indexed). With KYWD in the filter the
     ' OMOD-AttachPoint→socket-name lookup works, enabling robot chunk mounting.
+    ' ACHR added 2026-06-27: placed-actor references live nested inside CELL/WRLD sub-groups (never as a
+    ' top-level group), and are consumed by PluginManager.GetPlacedNPCFormIDs. Adding ACHR to the filter
+    ' lets the now-uniform record-level filter (PluginReader.ReadRecord) KEEP ACHR while skip-seeking the
+    ' unused cell children (REFR/NAVM/LAND/PGRE/PHZD). Inocuo at top level: ACHR is never a top-level group.
     Public ReadOnly SIGS_NPC_RENDERING As New HashSet(Of String)(
         {"NPC_", "RACE", "ARMO", "ARMA", "OTFT", "HDPT", "TXST", "CLFM", "LVLN", "LVLI", "FLST", "MSWP",
-         "CELL", "WRLD", "BPTD", "OMOD", "KYWD", "IDLE", "AACT"},
+         "CELL", "WRLD", "BPTD", "OMOD", "KYWD", "IDLE", "AACT", "ACHR"},
         StringComparer.Ordinal)
 
     ' Default filter kept for backward compatibility
@@ -212,5 +216,18 @@ Public Structure ResolvedFormID
     Public Overrides Function ToString() As String
         Return $"[{PluginName}:{FormID:X8}]"
     End Function
+End Structure
+
+''' <summary>Rich progress payload for <see cref="PluginManager.LoadAllPlugins"/>: byte-weighted so the
+''' UI advances smoothly even inside a single large master (Fallout4.esm), plus a file count. Reported
+''' from the parallel parse threads through the caller's <c>IProgress(Of PluginLoadProgress)</c> (a
+''' <c>Progress(Of T)</c> marshals to the UI thread). <see cref="BytesDone"/> is monotonic and ends ==
+''' <see cref="BytesTotal"/>; <see cref="FilesDone"/> ends == the number of plugins actually parsed.</summary>
+Public Structure PluginLoadProgress
+    Public FilesDone As Integer
+    Public FilesTotal As Integer
+    Public BytesDone As Long
+    Public BytesTotal As Long
+    Public CurrentName As String
 End Structure
 

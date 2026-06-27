@@ -29,13 +29,27 @@ Public Class PluginReader
 
     Private ReadOnly _sigFilter As HashSet(Of String)
 
+    ' Byte-progress plumbing for LoadAllPlugins' rich progress bar. Invokes a SYNCHRONOUS callback with the
+    ' ABSOLUTE stream position periodically (throttled in ReadRecord) so the parallel wrapper can turn it into
+    ' a byte delta on this reader's own parse thread. A synchronous Action (not IProgress) on purpose: an
+    ' IProgress built off the UI thread has no SynchronizationContext and posts the handler to the thread pool,
+    ' which would run the wrapper's delta logic concurrently/out-of-order and race its per-reader lastPos. Both
+    ' fields are per-reader state, set only at the start of Load and read only on this reader's own parse
+    ' thread — no sharing across readers.
+    Private _byteProgress As Action(Of Long)
+    Private _recordCount As Integer
+
     Public Sub New(Optional sigFilter As HashSet(Of String) = Nothing)
         _sigFilter = If(sigFilter, SIGS_OF_INTEREST)
     End Sub
 
-    ''' <summary>Load a plugin file, reading only records whose group signature is in the filter set.</summary>
-    Public Sub Load(filePath As String)
+    ''' <summary>Load a plugin file, reading only records whose group signature is in the filter set.
+    ''' <paramref name="byteProgress"/> (optional) is invoked SYNCHRONOUSLY with the absolute stream position
+    ''' periodically (throttled) so a caller can drive a byte-weighted progress bar.</summary>
+    Public Sub Load(filePath As String, Optional byteProgress As Action(Of Long) = Nothing)
         FileName = Path.GetFileName(filePath)
+        _byteProgress = byteProgress
+        _recordCount = 0
         Using fs As New FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read)
             Using br As New BinaryReader(fs, Encoding.UTF8, True)
                 ReadTES4(br)
@@ -166,7 +180,25 @@ Public Class PluginReader
         Dim header = RecordHeader.Read(br)
         Dim dataEndPos = stream.Position + header.DataSize
 
+        ' Throttle byte-progress: report the absolute position once per 1024 records (the &H3FF mask) so
+        ' the parallel wrapper can convert it to a delta without flooding the IProgress with one event per
+        ' record. The 1024 is the only magic number allowed here (progress throttle).
+        _recordCount += 1
+        If _byteProgress IsNot Nothing AndAlso (_recordCount And &H3FF) = 0 Then
+            _byteProgress(stream.Position)
+        End If
+
         If header.Signature = "TES4" Then
+            stream.Position = dataEndPos
+            Return
+        End If
+
+        ' Uniform record-level filter: a record whose signature is not in the filter is skip-seeked here
+        ' (no decompress, no ParseSubrecords, no PluginRecord alloc). Top-level groups are still pre-filtered
+        ' in ReadTopLevelGroup; this additionally drops UNwanted records nested inside KEPT groups — the cell
+        ' children (REFR/NAVM/LAND/PGRE/PHZD) under CELL/WRLD that nothing consumes. ACHR is in the filter so
+        ' it survives (see SIGS_NPC_RENDERING). TES4 is handled above.
+        If Not _sigFilter.Contains(header.Signature) Then
             stream.Position = dataEndPos
             Return
         End If

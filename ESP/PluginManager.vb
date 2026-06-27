@@ -1,6 +1,8 @@
 Imports System.IO
 Imports System.Linq
 Imports System.Text
+Imports System.Threading
+Imports System.Threading.Tasks
 
 ''' <summary>
 ''' Manages multiple plugins with load order, FormID resolution, and record override logic.
@@ -45,7 +47,7 @@ Public Class PluginManager
     ''' 2) Plugins.txt with `*activated` markers + hardcoded implicits prepended.
     ''' Plugins NOT in the active set are ignored (no Data folder scan). Replicates engine load:
     ''' un .esp suelto en Data sin estar activado NO se carga in-game; tampoco acá.</summary>
-    Public Sub LoadAllPlugins(dataPath As String, Optional progress As IProgress(Of String) = Nothing)
+    Public Sub LoadAllPlugins(dataPath As String, Optional progress As IProgress(Of PluginLoadProgress) = Nothing)
         LoadAllPlugins(dataPath, ReadActiveLoadOrder(), progress)
     End Sub
 
@@ -57,32 +59,100 @@ Public Class PluginManager
     ''' that the caller can extend with extra inactive entries before passing in.</summary>
     Public Sub LoadAllPlugins(dataPath As String,
                               pluginsToLoad As IEnumerable(Of String),
-                              Optional progress As IProgress(Of String) = Nothing,
+                              Optional progress As IProgress(Of PluginLoadProgress) = Nothing,
                               Optional sigFilter As HashSet(Of String) = Nothing)
         Dim pluginFiles As New List(Of String)
+        Dim fileSizes As New List(Of Long)
 
         _localizedStrings = New LocalizedStringResolver(dataPath)
 
+        Dim bytesTotal As Long = 0
         For Each pluginName In pluginsToLoad
             Dim fullPath = Path.Combine(dataPath, pluginName)
             If File.Exists(fullPath) Then
+                Dim len As Long = New FileInfo(fullPath).Length
                 pluginFiles.Add(fullPath)
+                fileSizes.Add(len)
+                bytesTotal += len
             End If
         Next
 
-        _rwLock.EnterWriteLock()
-        Try
-            For i = 0 To pluginFiles.Count - 1
+        Dim n = pluginFiles.Count
+
+        ' ---- Fan-out parse (parallel, NO shared PluginManager state touched) ----
+        ' Each plugin is parsed into its own PluginReader (reader.Records / .Masters / flags are 100%
+        ' per-reader; PluginReader.Load opens its own FileStream). Results land in a pre-sized array indexed
+        ' by LOAD-ORDER position so the merge below can replay them in exactly the sequential order. A failed
+        ' parse leaves readers(i) = Nothing (and logs, same as before). Nothing here writes Plugins /
+        ' AllRecords / the slot dicts, so this runs BEFORE taking the write lock.
+        Dim readers(Math.Max(0, n - 1)) As PluginReader
+        Dim bytesDone As Long = 0
+        Dim filesDone As Integer = 0
+        ' Per-reader last-reported absolute position, for translating absolute → delta under Interlocked.Add.
+        Dim lastPos(Math.Max(0, n - 1)) As Long
+
+        ' DOP capped at ProcessorCount (not unbounded) — parse is CPU/IO bound; more threads than cores just
+        ' thrashes. Parallel.For preserves the index i, so load order is never lost. (n = 0 → no-op.)
+        Dim parallelOpts As New ParallelOptions With {.MaxDegreeOfParallelism = Math.Max(1, Environment.ProcessorCount)}
+
+        Parallel.For(0, n, parallelOpts,
+            Sub(i)
                 Dim filePath = pluginFiles(i)
                 Dim fileName = Path.GetFileName(filePath)
-                progress?.Report($"Loading {fileName} ({i + 1}/{pluginFiles.Count})")
+                Dim sizeI = fileSizes(i)
                 Try
+                    ' Per-reader byte-progress: a SYNCHRONOUS callback (NOT New Progress(Of Long)) so it runs
+                    ' inline on THIS i's parse thread — lastPos(i) stays genuinely single-threaded and the only
+                    ' cross-thread state is bytesDone (Interlocked). A Progress(Of Long) built here would have no
+                    ' UI SynchronizationContext and post the handler to the thread pool, running it concurrently/
+                    ' out-of-order and racing lastPos(i). The outer `progress` (PluginLoadProgress) DOES marshal
+                    ' to the UI — it was created by the app with New Progress — so .Report from here is safe.
+                    Dim bp As Action(Of Long) = Nothing
+                    If progress IsNot Nothing Then
+                        bp = Sub(absPos)
+                                 Dim delta = absPos - lastPos(i)
+                                 If delta <= 0 Then Return
+                                 lastPos(i) = absPos
+                                 Dim bd = Interlocked.Add(bytesDone, delta)
+                                 progress.Report(New PluginLoadProgress With {
+                                     .FilesDone = Volatile.Read(filesDone),
+                                     .FilesTotal = n,
+                                     .BytesDone = bd,
+                                     .BytesTotal = bytesTotal,
+                                     .CurrentName = fileName
+                                 })
+                             End Sub
+                    End If
+
                     Dim reader As New PluginReader(sigFilter)
-                    reader.Load(filePath)
-                    IndexAndMergePlugin(reader)
+                    reader.Load(filePath, bp)
+                    readers(i) = reader
                 Catch ex As Exception
                     Logger.LogLazy(Function() $"[ESP] Failed to load {fileName}: {ex.Message}")
+                Finally
+                    ' On completion add this plugin's remaining bytes (so BytesDone is monotonic and ends ==
+                    ' BytesTotal whether the parse threw or finished mid-file) and bump the file count.
+                    Dim remaining = sizeI - lastPos(i)
+                    If remaining > 0 Then Interlocked.Add(bytesDone, remaining)
+                    Dim fd = Interlocked.Increment(filesDone)
+                    progress?.Report(New PluginLoadProgress With {
+                        .FilesDone = fd,
+                        .FilesTotal = n,
+                        .BytesDone = Volatile.Read(bytesDone),
+                        .BytesTotal = bytesTotal,
+                        .CurrentName = fileName
+                    })
                 End Try
+            End Sub)
+
+        ' ---- Fan-in merge (sequential, load order 0..N-1, under the write lock) ----
+        ' Replaying IndexAndMergePlugin in order preserves: FileID slot assignment order, last-override-wins,
+        ' and the order AllRecords / RecordsByType are populated — byte-identical to the old sequential loop.
+        ' readers(i) = Nothing (a failed parse) is skipped, exactly as the old per-plugin catch dropped it.
+        _rwLock.EnterWriteLock()
+        Try
+            For i = 0 To n - 1
+                If readers(i) IsNot Nothing Then IndexAndMergePlugin(readers(i))
             Next
 
             BuildTypeIndex()

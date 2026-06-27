@@ -157,7 +157,7 @@ Public Class FilesDictionary_class
     Private Shared _dictionary As New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
     ''' <summary>Stack of overridden entries per key. When a loose overrides a BA2 (or a BA2 overrides another), the loser is pushed here.</summary>
     Private Shared ReadOnly _overriddenEntries As New ConcurrentDictionary(Of String, ConcurrentStack(Of File_Location))(StringComparer.OrdinalIgnoreCase)
-    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt", ".json", ".xml", ".hkx"}
+    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt", ".json", ".xml", ".ssf", ".sclp", ".hkx", ".hkt"}
 
     ''' <summary>App-specific data store. Apps register their own data here (presets, high heels, etc.) keyed by type.</summary>
     Private Shared ReadOnly _appData As New ConcurrentDictionary(Of Type, Object)
@@ -442,6 +442,14 @@ Public Class FilesDictionary_class
 
     Private Shared totalCount As Integer
     Private Shared completed As Integer
+
+    ' Byte-weighted progress for the archive (BA2/BSA) phase only. Mirrors the completed/totalCount
+    ' pattern above (module-level Shared, read/incremented by ProcessBa2File). Loose files are NOT
+    ' counted here (stat'ing thousands of loose files would be expensive); this bar reaches 100% when
+    ' the BA2/BSA set is done. Nothing when the caller didn't request a byte progress (CLI/WM/MainForm).
+    Private Shared _archiveBytesDone As Long
+    Private Shared _archiveBytesTotal As Long
+    Private Shared _archiveByteProgress As IProgress(Of (Done As Long, Total As Long))
 
     ''' <summary>
     ''' Errores acumulados por workers durante Fill_DictionaryAsync. Se drenan en el
@@ -1033,7 +1041,8 @@ Public Class FilesDictionary_class
     ''' indexed. False matches the engine; True is a WM-specific extension.</param>
     Public Shared Async Function Fill_DictionaryAsync(Fo4DataPath As String,
                                                       progress As IProgress(Of (Stepn As String, Value As Integer, Max As Integer)),
-                                                      Optional includeInactiveArchives As Boolean = False) As Task
+                                                      Optional includeInactiveArchives As Boolean = False,
+                                                      Optional archiveByteProgress As IProgress(Of (Done As Long, Total As Long)) = Nothing) As Task
         Try
             FO4Path = Fo4DataPath
             Dictionary.Clear()
@@ -1075,6 +1084,12 @@ Public Class FilesDictionary_class
 
             Dim workQueue As New ConcurrentQueue(Of DictionaryScanWorkItem)
 
+            ' Sum the byte size of ONLY the archives we will actually index (those that passed the
+            ' archivePriority filter and get enqueued below as IsArchive=True). This drives the
+            ' byte-weighted Detail bar. A FileInfo.Length is a cheap stat; there are only tens-to-
+            ' hundreds of archives. Wrap each in Try so a vanished file just contributes 0, no throw.
+            Dim archiveBytesTotal As Long = 0
+
             For Each ba2 In ba2Files
                 Dim ba2Name = Path.GetFileName(ba2)
                 Dim sourceOrder As Integer = Integer.MinValue
@@ -1086,12 +1101,25 @@ Public Class FilesDictionary_class
                     Continue For
                 End If
 
+                Try
+                    archiveBytesTotal += New FileInfo(ba2).Length
+                Catch
+                    ' File vanished between enumeration and stat — counts as 0, don't abort the scan.
+                End Try
+
                 workQueue.Enqueue(New DictionaryScanWorkItem With {
                 .IsArchive = True,
                 .FilePath = ba2,
                 .SourceOrder = sourceOrder
             })
             Next
+
+            ' Reset and publish the byte total upfront. If there are no indexable archives (all loose),
+            ' total is 0 and the (0,0) report + the consumer's b.Total>0 guard handle it gracefully.
+            _archiveByteProgress = archiveByteProgress
+            _archiveBytesDone = 0
+            _archiveBytesTotal = archiveBytesTotal
+            archiveByteProgress?.Report((0L, _archiveBytesTotal))
 
             For Each pair In looseFiles
                 workQueue.Enqueue(New DictionaryScanWorkItem With {
@@ -1304,11 +1332,14 @@ Public Class FilesDictionary_class
                                       sourceOrder As Integer,
                                       progress As IProgress(Of (String, Integer, Integer)),
                                       Optional addedKeys As ConcurrentBag(Of String) = Nothing)
+        ' Declared at method scope with a safe default so the Finally can attribute this archive's
+        ' bytes even if the FileInfo below throws (vanished file). Assigned once we have the FileInfo.
+        Dim ba2Size As Long = 0
         Try
             ' O5.4: Intern the BA2 filename since it is stored in many File_Location instances
             Dim ba2FileName = String.Intern(Path.GetFileName(ba2))
             Dim fi As New FileInfo(ba2)
-            Dim ba2Size As Long = fi.Length
+            ba2Size = fi.Length
             Dim ba2DateLocal As Date = fi.LastWriteTime   ' preserved for File_Location.FileDate
             Dim ba2DateUtc As Date = fi.LastWriteTimeUtc  ' cache signature component
             Dim extsCanonical = _canonicalExtensionsSnapshot
@@ -1404,6 +1435,13 @@ Public Class FilesDictionary_class
         Finally
             Dim current = Interlocked.Increment(completed)
             progress.Report(($"Procesado: {Path.GetFileName(ba2)}", current, totalCount))
+
+            ' Byte-weighted Detail bar (archives only). _archiveByteProgress is a Progress(Of T)
+            ' created on the UI thread, so Report marshals back safely from this worker.
+            If _archiveByteProgress IsNot Nothing Then
+                Dim bd = Interlocked.Add(_archiveBytesDone, ba2Size)
+                _archiveByteProgress.Report((bd, _archiveBytesTotal))
+            End If
         End Try
     End Sub
 
