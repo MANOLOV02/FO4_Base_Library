@@ -147,7 +147,10 @@ Public Module NpcSubrecordWriter
         WriteRawSubrecord(bw, sig, payload)
     End Sub
 
-    Private Sub EmitVmad(bw As BinaryWriter, vmad As NPC_VmadData, remap As FormIdRemapper)
+    ''' <summary>Emit a VMAD subrecord, patching each FormID at its scanned position through the remapper.
+    ''' Widened to Friend (lib-internal) so the ARMO/ARMA override path can reuse this exact logic when
+    ''' preserving a source VMAD, instead of duplicating the position-patching loop.</summary>
+    Friend Sub EmitVmad(bw As BinaryWriter, vmad As NPC_VmadData, remap As FormIdRemapper)
         If vmad Is Nothing OrElse vmad.RawBytes Is Nothing OrElse vmad.RawBytes.Length = 0 Then Return
 
         ' Apply FormID re-mapping by patching high bytes in a copy of the raw payload.

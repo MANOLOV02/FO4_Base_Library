@@ -1401,6 +1401,22 @@ Public Class ARMO_Data
     Public MaleWorldModelPath As String = ""
     ''' <summary>Female 'World Model' mesh filename (ARMO.MOD4 subrecord). Analogous to the male path.</summary>
     Public FemaleWorldModelPath As String = ""
+    ''' <summary>Male 'World Model' material swap (ARMO.MO2S inside the Male wbTexturedModel,
+    ''' wbDefinitionsFO4.pas:6164 — wbMO2S is [MSWP]). Resolved to GLOBAL at parse. 0 = absent.</summary>
+    Public MaleMaterialSwapFormID As UInteger
+    ''' <summary>Female 'World Model' material swap (ARMO.MO4S inside the Female wbTexturedModel,
+    ''' wbDefinitionsFO4.pas:6172 — wbMO4S is [MSWP]). Resolved to GLOBAL at parse. 0 = absent.</summary>
+    Public FemaleMaterialSwapFormID As UInteger
+    ''' <summary>DATA 'Value' (itS32 @0, wbDefinitionsFO4.pas:6194). Item gold value.</summary>
+    Public Value As Integer
+    ''' <summary>DATA 'Weight' (float @4, wbDefinitionsFO4.pas:6195).</summary>
+    Public Weight As Single
+    ''' <summary>DATA 'Health' (itU32 @8, wbDefinitionsFO4.pas:6196).</summary>
+    Public Health As UInteger
+    ''' <summary>FNAM 'Armor Rating' (itU16 @0, wbDefinitionsFO4.pas:6199).</summary>
+    Public ArmorRating As UShort
+    ''' <summary>FNAM 'Stagger Rating' (itU8 @4, wbDefinitionsFO4.pas:6201, wbStaggerEnum).</summary>
+    Public StaggerRating As Byte
     ''' <summary>APPR — Attach Parent Slots declarados por la ARMO. Lista de KYWD FormIDs que
     ''' actúan como seed inicial del AP-pool para resolver OBTS combinations chunk-mount.
     ''' Per wbDefinitionsFO4.pas:6206 (wbAPPR aparece en el record ARMO después de TNAM y antes
@@ -3329,7 +3345,10 @@ Public Module RecordParsers
                         hasPendingIndex = False
                     End If
                 Case "FNAM"
-                    ' wbDefinitionsFO4.pas:6198-6203: FNAM struct = u16 ArmorRating + u16 BaseAddonIndex + u8 StaggerRating + 3 unused.
+                    ' wbDefinitionsFO4.pas:6198-6203: FNAM struct = u16 ArmorRating @0 + u16 BaseAddonIndex @2 + u8 StaggerRating @4 + 3 unused.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
+                        armo.ArmorRating = BitConverter.ToUInt16(sr.Data, 0)
+                    End If
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         Dim baseIdx As UShort = BitConverter.ToUInt16(sr.Data, 2)
                         ' Convention: 0xFFFF means "no override"; treat as -1 → fallback to 0 in resolver.
@@ -3339,6 +3358,23 @@ Public Module RecordParsers
                             armo.BaseAddonIndex = CInt(baseIdx)
                         End If
                     End If
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 5 Then
+                        armo.StaggerRating = sr.Data(4)
+                    End If
+                Case "DATA"
+                    ' wbDefinitionsFO4.pas:6193-6197: DATA struct = s32 Value @0 + float Weight @4 + u32 Health @8 (required).
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        armo.Value = BitConverter.ToInt32(sr.Data, 0)
+                        armo.Weight = BitConverter.ToSingle(sr.Data, 4)
+                        armo.Health = BitConverter.ToUInt32(sr.Data, 8)
+                    End If
+                Case "MO2S"
+                    ' Male World Model material swap (wbMO2S = [MSWP], wbDefinitionsFO4.pas:6164). Top-level
+                    ' in the stream so a flat Case works (the Male wbRStruct is flattened on emit).
+                    armo.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "MO4S"
+                    ' Female World Model material swap (wbMO4S = [MSWP], wbDefinitionsFO4.pas:6172).
+                    armo.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "OBTS"
                     Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
                     If combo IsNot Nothing Then armo.Combinations.Add(combo)
