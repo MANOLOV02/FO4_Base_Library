@@ -291,12 +291,21 @@ Public NotInheritable Class HkxPoseImportSession
             If Not additive AndAlso Not resolved.HasContent Then Continue For
 
 
+            ' [NO-ANIM-SYNC — REGLA UNIVERSAL, = pose-writer del motor 0x1413995D0] Se aplica SIEMPRE, por-componente,
+            ' según el mask del NIF (bits 16-19). Con mask=0 (hueso sin flag) BuildNoAnimSyncLocal es passthrough
+            ' (honored ≡ frameLocal) ⇒ Δ = inv(S)∘frameLocal = EXACTO el base. Con mask≠0, mantiene la traslación/escala
+            ' ESTRUCTURAL (S = OriginalLocaL∘Mount = socket ensamblado) y solo aplica la ROTACIÓN del clip por eje
+            ' flagueado ⇒ chunk montado anima RÍGIDO rooteado en el socket. NO hay dos caminos: es la misma regla del
+            ' motor (por-bit), mask=0 = sin lock. (Validado --animsynccheck: bone-len honored = bind; LForearm1 1.611u.)
             Dim frameLocal = BuildFrameLocalTransform(hkxTransform, resolved, additive, diagnostics)
+            Dim naMask As Byte = If(resolved.LiveBone IsNot Nothing, resolved.LiveBone.NoAnimSyncMask, CByte(0))
             Dim delta As Transform_Class
             If additive Then
-                delta = frameLocal
+                ' Aditivo: el clip YA es un delta cerca de identidad ⇒ va directo a la capa Δ. El "estructural" a
+                ' mantener es la IDENTIDAD ⇒ las componentes flagueadas se suprimen (T=0, S=1), la rotación se conserva.
+                delta = BuildNoAnimSyncLocal(frameLocal, New Transform_Class(), naMask)
             Else
-                delta = resolved.StructuralLocalInverse.ComposeTransforms(frameLocal)
+                delta = resolved.StructuralLocalInverse.ComposeTransforms(BuildNoAnimSyncLocal(frameLocal, resolved.StructuralLocal, naMask))
             End If
             If collectDiagnostics Then TrackDeltaDiagnostics(delta, diagnostics)
 
@@ -517,6 +526,22 @@ Public NotInheritable Class HkxPoseImportSession
                                   resolved.ContentSX OrElse resolved.ContentSY OrElse resolved.ContentSZ
         Next
     End Sub
+
+    ''' <summary>[NO-ANIM-SYNC] Local que produce el motor para un hueso con flag No Anim Sync: ROTACIÓN del clip
+    ''' (siempre) + traslación/escala de <paramref name="structural"/> (S) para las componentes flagueadas
+    ''' (mask bit0=X, 1=Y, 2=Z, 3=S), o del clip para las no flagueadas. = pose-writer 0x1413995D0 (mantiene
+    ''' [out+0x30/34/38] existente por eje flagueado; escala en [out+0x3c]).</summary>
+    Private Shared Function BuildNoAnimSyncLocal(clipLocal As Transform_Class, structural As Transform_Class, mask As Byte) As Transform_Class
+        Dim ct = clipLocal.Translation, st = structural.Translation
+        Dim fx = (mask And 1) <> 0, fy = (mask And 2) <> 0, fz = (mask And 4) <> 0, fs = (mask And 8) <> 0
+        Dim scaleSrc = If(fs, structural, clipLocal)
+        Return New Transform_Class With {
+            .Rotation = clipLocal.Rotation,
+            .Scale = scaleSrc.Scale,
+            .ScaleVector = scaleSrc.ScaleVector,
+            .Translation = New Vector3(If(fx, st.X, ct.X), If(fy, st.Y, ct.Y), If(fz, st.Z, ct.Z))
+        }
+    End Function
 
     ''' <summary>Producto punto de quats normalizados (|dot|≈1 ⇒ misma rotación).</summary>
     Private Shared Function QuatDot(a As HkxQuaternionGraph_Class, b As HkxQuaternionGraph_Class) As Single

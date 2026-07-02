@@ -112,6 +112,7 @@ Public Class NifRenderableShape
                 End If
         End Select
         _boneTransforms = transforms
+        _boneTransformsOriginal = transforms   ' bind AUTORADO original (para rebind agnóstico; nunca se muta)
     End Sub
 
     ' --- IRenderableShape Implementation ---
@@ -178,6 +179,26 @@ Public Class NifRenderableShape
             Return If(_syntheticTransforms, _boneTransforms)
         End Get
     End Property
+
+    ''' <summary>REBIND directo del skin del chunk (opción B): reemplaza los binds autorados por
+    ''' <c>newBind_b = inv(rigFK_rest_b) ∘ (W_B_b ∘ bind_b)</c>, de modo que la malla cuelgue del
+    ''' esqueleto compartido (en rigFK) en vez de necesitar el mount. El reposo queda idéntico
+    ''' (probado álgebra + numérico, 3 robots) y la animación sigue al clip. Idempotente: se aplica
+    ''' UNA vez por shape (el reskin corre por render). Ver NpcMountingResolver.CollectV2PlanForShape.</summary>
+    ''' <summary>Bind AUTORADO original del NIF (capturado en el ctor; NUNCA se muta). El rebind computa
+    ''' newBind SIEMPRE desde acá ⇒ agnóstico/idempotente: recomputar N veces da lo mismo.</summary>
+    Private _boneTransformsOriginal As IReadOnlyList(Of Transform_Class)
+    Public ReadOnly Property AuthoredBoneTransforms As IReadOnlyList(Of Transform_Class)
+        Get
+            Return If(_boneTransformsOriginal, _boneTransforms)
+        End Get
+    End Property
+    ''' <summary>Reemplaza el bind de render por el rebind (opción B). SkinningHelper lee ShapeBoneTransforms
+    ''' (= esto). El autorado queda intacto en AuthoredBoneTransforms para recomputar.</summary>
+    Public Sub SetChunkRebindTransforms(newBinds As IReadOnlyList(Of Transform_Class))
+        If newBinds Is Nothing Then Return
+        _boneTransforms = newBinds
+    End Sub
 
     Public ReadOnly Property ShapeMaterial As Nifcontent_Class_Manolo.RelatedMaterial_Class Implements IRenderableShape.ShapeMaterial
         Get

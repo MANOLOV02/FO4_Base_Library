@@ -62,6 +62,13 @@ Public Class HierarchiBone_class
     ''' clips autoreados sobre el rig conservan el mount, clips autoreados sobre el ensamblado lo
     ''' traen en sus propios locales). Limpiada por <c>Reset()</c>.</summary>
     Public MountDeltaTransform As Transform_Class = Nothing
+    ''' <summary>[NO-ANIM-SYNC] Máscara de los flags NiAVObject "No Anim Sync X/Y/Z/S" (bits 16-19 del campo Flags
+    ''' del NIF) del nodo del CHUNK montado correspondiente a este hueso: bit0=X, bit1=Y, bit2=Z, bit3=S. La setea
+    ''' <c>NpcMountingResolver.PlumbNoAnimSyncMasks</c> (lee <c>nn.Flags_ui</c> del chunk NIF; el esqueleto base = 0,
+    ''' MEDIDO). La lee <c>HkxPoseImportSession.BuildPose</c>: para las componentes flagueadas mantiene la
+    ''' traslación/escala ESTRUCTURAL (S = OriginalLocaL∘Mount = socket ensamblado) y solo aplica la ROTACIÓN del
+    ''' clip = pose-writer del motor (Fallout4.exe 0x1413995D0, gate .data 0x2F32638=0). 0 = sin flag ⇒ anim normal.</summary>
+    Public NoAnimSyncMask As Byte = 0
     Public OriginalLocaLTransform As Transform_Class
     Public BoneName As String
     Public Parent As HierarchiBone_class

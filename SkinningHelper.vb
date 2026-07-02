@@ -250,6 +250,15 @@ Public Class SkinningHelper
                 matsPose(k) = matsBind(k)
             End If
 
+            ' [SKIN-MAT] DIAG A/B: skin-matrix REAL de render por shape/hueso (poseT ∘ localT = world de un
+            ' vértice bone-local-origin). Comparar OFF (baseline) vs ON (rebind) revela qué shapes/huesos
+            ' divergen (p.ej. armaduras no rebindeadas). Read-only, gateado a Logger.Enabled.
+            If Logger.Enabled Then
+                Dim skm = poseT.ComposeTransforms(localT)
+                Dim skt = skm.Translation
+                Dim shNm = shape.ShapeName, bnNm = boneName, kIdx = k
+                Logger.LogLazy(Function() $"[SKIN-MAT] shape='{shNm}' bone[{kIdx}]='{bnNm}' skin.T=({skt.X:F3},{skt.Y:F3},{skt.Z:F3})")
+            End If
         Next
 
         ' 4) Aplicar skinning CPU

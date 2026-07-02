@@ -19,6 +19,8 @@ Public Module ShapeMaterialOverrides
         ADD = 2
     End Enum
 
+    ''' <summary>FormID overload: resolve the MSWP record via the plugin manager (GetRecord + ParseMSWP),
+    ''' then delegate to the parsed-data overload. Behavior + signature unchanged (robot/OMOD/WM callers).</summary>
     Public Sub ApplyMaterialSwap(mswpFormID As UInteger,
                                  funcType As MaterialSwapFunction,
                                  shapes As IEnumerable(Of IRenderableShape),
@@ -40,6 +42,22 @@ Public Module ShapeMaterialOverrides
         End If
 
         Dim mswp = RecordParsers.ParseMSWP(mswpRec, pluginManager)
+        ' Delegate the material-path matching + replacement CORE to the parsed-data overload (no PluginManager
+        ' needed past this point — it's pure path matching on the shapes).
+        ApplyMaterialSwap(mswp, funcType, shapes)
+    End Sub
+
+    ''' <summary>Parsed-data overload (additive): applies an ALREADY-PARSED <see cref="MSWP_Data"/> to the
+    ''' shapes. Extracted from the FormID overload so the app can apply a DRAFT MSWP (no record to resolve by
+    ''' FormID) directly from its parsed substitutions. No <see cref="PluginManager"/> is needed — this is pure
+    ''' material-path matching + replacement on the shapes.</summary>
+    Public Sub ApplyMaterialSwap(mswp As MSWP_Data,
+                                 funcType As MaterialSwapFunction,
+                                 shapes As IEnumerable(Of IRenderableShape))
+        If mswp Is Nothing Then Return
+        Dim logEnabled = Logger.Enabled
+        Dim mswpFormID = mswp.FormID
+
         If mswp.Substitutions.Count = 0 Then
             If logEnabled Then
                 Logger.LogLazy(Function() $"[MSWP-LOAD] mswp=0x{mswpFormID:X8} subs=0 (empty MSWP)")
