@@ -1341,6 +1341,14 @@ End Class
 ''' (Default flag, ParentCombinationIndex, level fields). El engine selecciona la combination
 ''' matcheando los keywords del LVLI.LLKC contra esta lista.</summary>
 Public Class ARMO_Combination
+    ''' <summary>Combination 'Editor Only' flag — the empty OBTF marker that (when present) precedes
+    ''' the FULL/OBTS pair inside the OBTE block (wbDefinitionsFO4.pas:5890, wbEmpty 'OBTF'). Captured
+    ''' per combination so the writer can re-emit the marker only for combinations that carried it.</summary>
+    Public IsEditorOnly As Boolean = False
+    ''' <summary>Combination display name — the per-combination FULL that follows OBTF and precedes OBTS
+    ''' inside the OBTE block (wbDefinitionsFO4.pas:5891). Distinct from the ARMO's own FULL (which comes
+    ''' before OBTE). Empty when the combination has no name subrecord.</summary>
+    Public DisplayName As String = ""
     Public IsDefault As Boolean
     ''' <summary>Parent Combination Index (s16 @ offset 12 del OBTS payload, wbDefinitionsFO4.pas:5874).
     ''' Display name de xEdit es "Parent Combination Index" pero el handler `wbOBTEAddonIndexToStr` indica
@@ -3298,16 +3306,28 @@ Public Module RecordParsers
         ' (Predeterminado/Estándar/etc.), NOT the ARMO. Per wbDefinitionsFO4.pas:5888-5896 the order is
         ' OBTE → per-combination [OBTF, FULL, OBTS]; the ARMO's own FULL precedes OBTE.
         Dim inObjectTemplate As Boolean = False
+        ' Pending per-combination metadata for the current OBTE entry. Per wbDefinitionsFO4.pas:5888-5896
+        ' each combination is the sequence [OBTF (empty, optional)][FULL (name, optional)] OBTS. We stash
+        ' the OBTF/FULL as they arrive and attach them to the combination when its OBTS is parsed.
+        Dim pendingComboEditorOnly As Boolean = False
+        Dim pendingComboDisplayName As String = ""
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL"
-                    ' Only the ARMO's own FULL (before OBTE). Without this guard the last combination
-                    ' name overwrote the armor's real name (e.g. "Estándar" instead of
-                    ' "Blindaje de seguridad de Covenant").
-                    If Not inObjectTemplate Then armo.FullName = ResolveDisplayString(rec, sr, pluginManager)
+                    ' The ARMO's own FULL precedes OBTE; a FULL seen AFTER OBTE is a combination name.
+                    ' Without this guard the last combination name overwrote the armor's real name (e.g.
+                    ' "Estándar" instead of "Blindaje de seguridad de Covenant").
+                    If Not inObjectTemplate Then
+                        armo.FullName = ResolveDisplayString(rec, sr, pluginManager)
+                    Else
+                        pendingComboDisplayName = ResolveDisplayString(rec, sr, pluginManager)
+                    End If
                 Case "OBTE"
                     inObjectTemplate = True
+                Case "OBTF"
+                    ' Empty 'Editor Only' marker for the combination whose OBTS follows.
+                    pendingComboEditorOnly = True
                 Case "BOD2", "BODT"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then armo.SlotMask = BitConverter.ToUInt32(sr.Data, 0)
                 Case "RNAM"
@@ -3377,7 +3397,13 @@ Public Module RecordParsers
                     armo.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "OBTS"
                     Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
-                    If combo IsNot Nothing Then armo.Combinations.Add(combo)
+                    If combo IsNot Nothing Then
+                        combo.IsEditorOnly = pendingComboEditorOnly
+                        combo.DisplayName = pendingComboDisplayName
+                        armo.Combinations.Add(combo)
+                    End If
+                    pendingComboEditorOnly = False
+                    pendingComboDisplayName = ""
                 Case "MOD2"
                     ' ARMO.Male 'World Model' mesh path — used by robots/special armors where the mesh
                     ' is authored at ARMO level instead of ARMA (e.g. Assaultron skin).

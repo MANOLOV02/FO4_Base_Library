@@ -611,6 +611,87 @@ Public Module NpcSubrecordWriter
         Return payload
     End Function
 
+    ''' <summary>Build an OBTS payload buffer FROM THE STRUCTURED MODEL — the inverse of
+    ''' <see cref="RecordParsers.ParseOBTSPayload"/> (RecordParsers.vb:1763, wbDefinitionsFO4.pas:5867-5886).
+    ''' Unlike <see cref="ApplyObtsRemap"/> (which patches preserved raw bytes) this reconstructs the whole
+    ''' payload from the parsed <see cref="ARMO_Combination"/>, so it is the authoring path for NEW records
+    ''' that have no source bytes. Counts (IncludeCount / PropertyCount / KeywordCount) are derived from the
+    ''' model lists; all padding/unused bytes are written as 0. FormIDs (keywords, include OMODs, and each
+    ''' Property's Value1 when it is a FormID type) are routed through <paramref name="remap"/>.
+    ''' Layout (offsets verified against ParseOBTSPayload):
+    '''   u32 IncludeCount @0, u32 PropertyCount @4, u8 LevelMin @8, u8 pad, u8 LevelMax @10, u8 pad,
+    '''   s16 ParentCombinationIndex @12, u8 Default @14, u8 KeywordCount @15 (wbArray(..., -4) 1-byte prefix),
+    '''   KeywordCount × u32, u8 MinLevelForRanks, u8 AltLevelsPerTier,
+    '''   IncludeCount × 7 bytes (u32 Mod FormID + u8 AttachPointIndex + u8 Optional + u8 DontUseAll),
+    '''   PropertyCount × 24 bytes (wbObjectModProperties, wbDefinitionsFO4.pas:5826-5865).</summary>
+    Friend Function BuildObtsPayload(combo As ARMO_Combination, remap As FormIdRemapper) As Byte()
+        Using ms As New MemoryStream()
+            Using w As New BinaryWriter(ms)
+                w.Write(CUInt(combo.Includes.Count))                        ' @0  IncludeCount
+                w.Write(CUInt(combo.Properties.Count))                      ' @4  PropertyCount
+                w.Write(combo.LevelMin)                                     ' @8  LevelMin
+                w.Write(CByte(0))                                           ' @9  pad
+                w.Write(combo.LevelMax)                                     ' @10 LevelMax
+                w.Write(CByte(0))                                           ' @11 pad
+                w.Write(CShort(combo.ParentCombinationIndex))               ' @12 s16 Parent Combination Index
+                w.Write(If(combo.IsDefault, CByte(1), CByte(0)))            ' @14 Default
+                w.Write(CByte(combo.Keywords.Count))                        ' @15 KeywordCount (u8 prefix)
+                For Each kw In combo.Keywords
+                    w.Write(remap(kw))
+                Next
+                w.Write(combo.MinLevelForRanks)                            ' u8 Min Level For Ranks
+                w.Write(combo.AltLevelsPerTier)                           ' u8 Alt Levels Per Tier
+                For Each inc In combo.Includes
+                    w.Write(remap(inc.ModFormID))                          ' u32 Mod FormID
+                    w.Write(inc.AttachPointIndex)                          ' u8  Attach Point Index
+                    w.Write(If(inc.IsOptional, CByte(1), CByte(0)))        ' u8  Optional
+                    w.Write(If(inc.DontUseAll, CByte(1), CByte(0)))        ' u8  Don't Use All
+                Next
+                For Each prop In combo.Properties
+                    WriteObtsProperty(w, prop, remap)
+                Next
+            End Using
+            Return ms.ToArray()
+        End Using
+    End Function
+
+    ''' <summary>Write one 24-byte OMOD Property entry (wbObjectModProperties, wbDefinitionsFO4.pas:5826-5865)
+    ''' from the model. Layout: u8 ValueType @0 (+3 unused), u8 FunctionType @4 (+3 unused), u16 PropertyIndex
+    ''' @8 (+2 unused), 4B Value1 @12, 4B Value2 @16, float Step @20. Value1 is a remapped FormID when
+    ''' ValueType is FormIDInt(4)/FormIDFloat(6) — the parser resolved it into <c>Value1FormID</c>; otherwise
+    ''' the raw 4-byte float/int bits captured in <c>Value1</c> are written verbatim.</summary>
+    Private Sub WriteObtsProperty(w As BinaryWriter, prop As OMOD_Property, remap As FormIdRemapper)
+        w.Write(CByte(prop.ValueType))            ' @0  ValueType
+        w.Write(CByte(0)) : w.Write(CByte(0)) : w.Write(CByte(0))   ' @1..3 unused
+        w.Write(prop.FunctionType)                ' @4  FunctionType
+        w.Write(CByte(0)) : w.Write(CByte(0)) : w.Write(CByte(0))   ' @5..7 unused
+        w.Write(prop.PropertyIndex)               ' @8  PropertyIndex (u16)
+        w.Write(CByte(0)) : w.Write(CByte(0))     ' @10..11 unused
+        If prop.ValueType = OMOD_ValueType.FormIDInt OrElse prop.ValueType = OMOD_ValueType.FormIDFloat Then
+            w.Write(remap(prop.Value1FormID))     ' @12 Value1 = FormID
+        Else
+            w.Write(prop.Value1)                  ' @12 Value1 = raw float/int bits (Single, 4 bytes)
+        End If
+        w.Write(prop.Value2)                      ' @16 Value2
+        w.Write(prop.StepValue)                   ' @20 Step
+    End Sub
+
+    ''' <summary>Emit the ARMO/NPC_ Object Template block FROM THE MODEL: OBTE(u32 count) → per combination
+    ''' [OBTF if IsEditorOnly][FULL if DisplayName][OBTS = <see cref="BuildObtsPayload"/>] → STOP. Mirror of
+    ''' <see cref="EmitObjectTemplate"/> (the NPC_ path) but sourced from a plain combination list so the ARMO
+    ''' new-record writer can reuse the exact same block structure. No-op for an empty list (record simply
+    ''' carries no OBTE/STOP). wbDefinitionsFO4.pas:5888-5898.</summary>
+    Friend Sub EmitArmoObjectTemplate(bw As BinaryWriter, combos As List(Of ARMO_Combination), remap As FormIdRemapper)
+        If combos Is Nothing OrElse combos.Count = 0 Then Return
+        WriteRawSubrecord(bw, "OBTE", BitConverter.GetBytes(CUInt(combos.Count)))
+        For Each combo In combos
+            If combo.IsEditorOnly Then EmitEmptyMarker(bw, "OBTF")
+            If combo.DisplayName <> "" Then EmitLString(bw, "FULL", combo.DisplayName)
+            WriteRawSubrecord(bw, "OBTS", BuildObtsPayload(combo, remap))
+        Next
+        EmitEmptyMarker(bw, "STOP")
+    End Sub
+
     Private Sub EmitDnam(bw As BinaryWriter, stats As NPC_CalculatedStats)
         If stats Is Nothing Then Return
         Using ms As New MemoryStream()

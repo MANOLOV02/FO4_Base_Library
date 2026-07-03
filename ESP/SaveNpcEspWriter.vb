@@ -275,6 +275,19 @@ Public Module SaveNpcEspWriter
         Public ArmorAddons As New List(Of ARMO_AddonEntry)   ' Models: INDX + ArmaFormID
         Public KeywordFormIDs As New List(Of UInteger)       ' KWDA
         Public AttachParentSlotFormIDs As New List(Of UInteger)  ' APPR (KYWD)
+        ''' <summary>Object Template combinations (OBTE/OBTF/FULL/OBTS block, wbDefinitionsFO4.pas:5888-5898).
+        ''' Populated from the structured model (ARMO_Data.Combinations). When non-empty on a NEW record the
+        ''' writer emits the whole block via NpcSubrecordWriter.EmitArmoObjectTemplate; empty = no OBTE block.
+        ''' On OVERRIDE the writer preserves the source OBTS bytes verbatim UNLESS <see cref="CombinationsAuthored"/>
+        ''' is set, in which case it re-emits the whole Object Template block from this list instead.</summary>
+        Public Combinations As New List(Of ARMO_Combination)
+        ''' <summary>OVERRIDE-only signal that the caller EDITED the Object Template and populated
+        ''' <see cref="Combinations"/> as the authoritative model. When True the override writer emits the whole
+        ''' OBTE/OBTF/FULL/OBTS/STOP block from <see cref="Combinations"/> (via NpcSubrecordWriter.EmitArmoObjectTemplate)
+        ''' at the source block's position and SKIPS the preserved source template subrecords. When False (default)
+        ''' the override path is byte-exact verbatim as before — the list is not consulted. Distinct from merely
+        ''' having the list populated so the intent is explicit. The NEW path ignores this flag.</summary>
+        Public CombinationsAuthored As Boolean = False
         Public MaleWorldModelPath As String = ""    ' MOD2 (robots)
         Public FemaleWorldModelPath As String = ""  ' MOD4
         Public MaleMaterialSwapFormID As UInteger   ' MO2S at ARMO level (MSWP)
@@ -1615,7 +1628,10 @@ Public Module SaveNpcEspWriter
                 EmitArmoFnam(bw, entry)
                 EmitArmoTnam(bw, entry, remapper)
                 EmitArmoAppr(bw, entry, remapper)
-                ' OBTE/OBTS (Object Template) — SKIP for new records.
+                ' OBTE/OBTF/FULL/OBTS (Object Template) — emit from the model when the entry carries
+                ' combinations (built from ARMO_Data.Combinations). No-op when empty (unchanged behavior
+                ' for records with no object template). wbDefinitionsFO4.pas:5888-5898.
+                NpcSubrecordWriter.EmitArmoObjectTemplate(bw, entry.Combinations, remapper)
             End Using
             body = bms.ToArray()
         End Using
@@ -2133,20 +2149,31 @@ Public Module SaveNpcEspWriter
                 consumed += EmitPreservedStep(bw, "DAMA", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' Damage Type Array [pres]
                 EmitArmoTnam(bw, entry, remapper)                                        ' TNAM  [owned]
                 EmitArmoAppr(bw, entry, remapper)                                        ' APPR  [owned]
-                ' Object Template block [pres]: emit the whole captured block (OBTE, per-combo OBTF/FULL/OBTS,
-                ' STOP) preserving structure, with OBTS FormIDs remapped.
-                For Each sr In templateBlock
-                    If sr.Signature = "OBTS" Then
-                        Dim obtsData = If(sr.Data, Array.Empty(Of Byte)())
-                        WriteSubrecordHeader(bw, "OBTS", obtsData.Length)
-                        bw.Write(RemapObtsPayload(obtsData, mapLocal))
-                    Else
-                        ' OBTE/OBTF/FULL(combo)/STOP — no FormIDs, copy verbatim.
-                        Dim d = If(sr.Data, Array.Empty(Of Byte)())
-                        WriteSubrecordHeader(bw, sr.Signature, d.Length)
-                        If d.Length > 0 Then bw.Write(d)
-                    End If
-                Next
+                ' Object Template block. Two modes at this SAME stream position:
+                '   • AUTHORED (entry.CombinationsAuthored, Phase 4): the user edited the Object Template, so
+                '     emit the whole OBTE/OBTF/FULL/OBTS/STOP block FROM THE MODEL. The captured source
+                '     templateBlock is deliberately NOT emitted (it was never indexed into preservedBySig, so
+                '     skipping it does not affect the drop-nothing assertion). FormIDs go through `remapper`
+                '     (the GLOBAL remapper), matching the NEW-record path — EmitArmoObjectTemplate's OBTS
+                '     payloads carry global FormIDs from the edited model, not source-local wire values.
+                '   • VERBATIM (default): emit the captured source block preserving structure, with OBTS
+                '     FormIDs remapped through the source-local map. Byte-exact with prior behavior.
+                If entry.CombinationsAuthored Then
+                    NpcSubrecordWriter.EmitArmoObjectTemplate(bw, entry.Combinations, remapper)
+                Else
+                    For Each sr In templateBlock
+                        If sr.Signature = "OBTS" Then
+                            Dim obtsData = If(sr.Data, Array.Empty(Of Byte)())
+                            WriteSubrecordHeader(bw, "OBTS", obtsData.Length)
+                            bw.Write(RemapObtsPayload(obtsData, mapLocal))
+                        Else
+                            ' OBTE/OBTF/FULL(combo)/STOP — no FormIDs, copy verbatim.
+                            Dim d = If(sr.Data, Array.Empty(Of Byte)())
+                            WriteSubrecordHeader(bw, sr.Signature, d.Length)
+                            If d.Length > 0 Then bw.Write(d)
+                        End If
+                    Next
+                End If
             End Using
             body = bms.ToArray()
         End Using

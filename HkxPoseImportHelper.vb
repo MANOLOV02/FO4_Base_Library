@@ -270,7 +270,13 @@ Public NotInheritable Class HkxPoseImportSession
         ' en DynamicAnimationTaggingGenerator 'Additive*', ej. AdditiveDynamicIdle con blendHint=0).
         ' NORMALES: Δ = inv(S) × frameLocal, donde frameLocal toma del clip SOLO los componentes CON
         ' CONTENIDO (ver AnalyzeTrackContent) y conserva S en los demás.
-        Dim additive = (_animation.Binding IsNot Nothing AndAlso _animation.Binding.BlendHint <> 0) OrElse _additiveHint
+        ' blendHint aditivo ⟺ ∈ {1=ADDITIVE_DEPRECATED, 2=ADDITIVE} (enum hkaAnimationBinding, verificado en el binario:
+        ' NORMAL=0/ADDITIVE_DEPRECATED=1/ADDITIVE=2). Engine-faithful: hkbClipGenerator::generate (0x1414AFBBD) lee
+        ' binding.blendHint en [binding+0x50] y marca aditivo con `(bh−1) ≤ 1` unsigned ⇒ SOLO 1 y 2 (NO cualquier ≠0:
+        ' bh=0 y bh≥3 son NORMALES). El motor COLAPSA 1 y 2 al MISMO tag aditivo (bool output+0x8f) ⇒ procesamiento
+        ' idéntico; la diferencia 1/2 es histórica (SSE viejo usa 1, FO4 usa 2). (b) behavior graph vía _additiveHint.
+        Dim bh = If(_animation.Binding IsNot Nothing, _animation.Binding.BlendHint, 0)
+        Dim additive = (bh = 1 OrElse bh = 2) OrElse _additiveHint
 
         For Each resolved In _tracks
             Dim hkxTransform = _animation.GetTransform(usedFrame, resolved.TrackIndex)
@@ -300,13 +306,22 @@ Public NotInheritable Class HkxPoseImportSession
             Dim frameLocal = BuildFrameLocalTransform(hkxTransform, resolved, additive, diagnostics)
             Dim naMask As Byte = If(resolved.LiveBone IsNot Nothing, resolved.LiveBone.NoAnimSyncMask, CByte(0))
             Dim delta As Transform_Class
+            ' [UNIFICADO additive/no-additive 2026-07-03] Ambos paths hacen lo MISMO: (1) construir el LOCAL ABSOLUTO
+            ' del hueso en el frame, (2) re-basarlo a la skeleton viva ⇒ Δ = inv(S)∘absoluto (S=OriginalLocaL∘Mount).
+            ' Difieren SOLO en cómo se arma el absoluto:
+            '   • no-additive: el clip YA es el absoluto (componentes no-animadas ← S).
+            '   • additive: el clip es un DELTA relativo al reference pose ⇒ absoluto = additive × base = delta∘S
+            '     (base=S ADENTRO, additive AFUERA). PROBADO con --animsynccheck [ADD-ORDER] (LeftPropeller vertibird
+            '     f110): additive×base ⇒ d(rest)=0.2 (root fijo, gira en su lugar) vs base×additive ⇒ d=748.1 (vuela).
+            '     La traslación del delta compensa EXACTO la rotación, así que SOLO con la rotación afuera el root queda
+            '     fijo. El orden viejo (S∘delta = base×additive) desarmaba el vertibird (palas a las esquinas).
+            Dim absoluteLocal As Transform_Class
             If additive Then
-                ' Aditivo: el clip YA es un delta cerca de identidad ⇒ va directo a la capa Δ. El "estructural" a
-                ' mantener es la IDENTIDAD ⇒ las componentes flagueadas se suprimen (T=0, S=1), la rotación se conserva.
-                delta = BuildNoAnimSyncLocal(frameLocal, New Transform_Class(), naMask)
+                absoluteLocal = BuildNoAnimSyncLocal(frameLocal, New Transform_Class(), naMask).ComposeTransforms(resolved.StructuralLocal)
             Else
-                delta = resolved.StructuralLocalInverse.ComposeTransforms(BuildNoAnimSyncLocal(frameLocal, resolved.StructuralLocal, naMask))
+                absoluteLocal = BuildNoAnimSyncLocal(frameLocal, resolved.StructuralLocal, naMask)
             End If
+            delta = resolved.StructuralLocalInverse.ComposeTransforms(absoluteLocal)
             If collectDiagnostics Then TrackDeltaDiagnostics(delta, diagnostics)
 
             Dim poseData = ToPoseTransformData(delta)
