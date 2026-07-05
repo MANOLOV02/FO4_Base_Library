@@ -30,9 +30,17 @@ Public Module PluginConstants
     ' top-level group), and are consumed by PluginManager.GetPlacedNPCFormIDs. Adding ACHR to the filter
     ' lets the now-uniform record-level filter (PluginReader.ReadRecord) KEEP ACHR while skip-seeking the
     ' unused cell children (REFR/NAVM/LAND/PGRE/PHZD). Inocuo at top level: ACHR is never a top-level group.
+    ' 2026-07-03: added the ARMO/ARMA authoring-editor FormID target signatures so the editors'
+    ' FormIdPicker lists populate and DisplayFor resolves names. Without these the pickers for
+    ' EITM/PTRN/ETYP/YNAM/ZNAM/BAMT/INRD (ARMO) and ONAM/SNDD footstep (ARMA) + the DAMA Damage-Type
+    ' entries came up EMPTY and their FormIDs showed only hex (records were never indexed). All are
+    ' small record types → negligible load cost:
+    '   ENCH(EITM), TRNS(PTRN), EQUP(ETYP), SNDR(YNAM/ZNAM), MATT(BAMT), INNR(INRD),
+    '   ARTO(ONAM), FSTS(SNDD footstep), DMGT(DAMA damage-type array entries).
     Public ReadOnly SIGS_NPC_RENDERING As New HashSet(Of String)(
         {"NPC_", "RACE", "ARMO", "ARMA", "OTFT", "HDPT", "TXST", "CLFM", "LVLN", "LVLI", "FLST", "MSWP",
-         "CELL", "WRLD", "BPTD", "OMOD", "KYWD", "IDLE", "AACT", "ACHR"},
+         "CELL", "WRLD", "BPTD", "OMOD", "KYWD", "IDLE", "AACT", "ACHR",
+         "ENCH", "TRNS", "EQUP", "SNDR", "MATT", "INNR", "ARTO", "FSTS", "DMGT"},
         StringComparer.Ordinal)
 
     ' Default filter kept for backward compatibility

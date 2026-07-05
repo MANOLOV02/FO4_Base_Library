@@ -3891,7 +3891,12 @@ Public Class FO4UnifiedMaterial_Class
             End Try
         End If
         If type Is GetType(BGSM) Then
-            If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default Then
+            ' Nif/shap pueden venir Nothing cuando se carga un material SUELTO sin NIF asociado
+            ' (p.ej. el preview de paleta greyscale del editor MSWP, que sólo necesita los campos
+            ' de textura del .bgsm). Sin NIF no hay shader inline que preservar → saltar el bloque.
+            ' Antes, Nif.GetShader(Nothing) lanzaba NullReferenceException, que el Catch de
+            ' TryLoadMaterialFromDictionary tragaba devolviendo Nothing (= "no palette").
+            If _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default AndAlso Nif IsNot Nothing AndAlso shap IsNot Nothing Then
                 ' Desacoplado: el tipo NO se deriva de los flags del .bgsm (el .bgsm no lleva
                 ' tipo). Se preserva el tipo real del shader inline del NIF. Tipo y flags son
                 ' ejes ortogonales.

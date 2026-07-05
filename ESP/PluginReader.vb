@@ -25,6 +25,10 @@ Public Class PluginReader
     ''' the plugin's TES4 description has no recognizable tag (default → use global).
     ''' </summary>
     Public Property TranslatableEncoding As Encoding
+    ''' <summary>TES4.CNAM author string, captured at load. Lets callers identify plugins authored by a
+    ''' particular app (e.g. this app's save flow writes <c>NPC Manager - Auto generated</c>), so the editors
+    ''' can list "my records" (new AND override) by source plugin. "" when the plugin has no CNAM.</summary>
+    Public Property Author As String = ""
     Public Property Records As New Dictionary(Of UInteger, PluginRecord)
 
     Private ReadOnly _sigFilter As HashSet(Of String)
@@ -132,6 +136,13 @@ Public Class PluginReader
             If subrecord.Data IsNot Nothing AndAlso subrecord.Data.Length >= 12 Then
                 NextObjectId = BitConverter.ToUInt32(subrecord.Data, 8)
             End If
+            Exit For
+        Next
+
+        ' CNAM (author, ZSTRING) — ASCII app marker (e.g. "NPC Manager - Auto generated"); general decode is fine.
+        For Each subrecord In tes4Subrecords
+            If subrecord.Signature <> "CNAM" Then Continue For
+            Author = subrecord.AsStringGeneral
             Exit For
         Next
 

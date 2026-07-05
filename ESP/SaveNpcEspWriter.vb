@@ -223,6 +223,10 @@ Public Module SaveNpcEspWriter
         Public EditorID As String = ""
         Public SlotMask As UInteger                 ' BOD2 (u32)
         Public RaceFormID As UInteger               ' RNAM
+        Public FootstepSetFormID As UInteger        ' SNDD (FSTS)
+        Public ArtObjectFormID As UInteger          ' ONAM (ARTO) — owned optional
+        Public MaleFPMaterialSwapFormID As UInteger   ' MO4S (MSWP) — owned optional
+        Public FemaleFPMaterialSwapFormID As UInteger ' MO5S (MSWP) — owned optional
         Public MalePriority As Byte = 0
         Public FemalePriority As Byte = 0
         Public MaleWeightSliderFlags As Byte = 0
@@ -271,6 +275,24 @@ Public Module SaveNpcEspWriter
         Public FullName As String = ""              ' FULL (optional)
         Public SlotMask As UInteger                 ' BOD2
         Public RaceFormID As UInteger               ' RNAM
+        Public InstanceNamingFormID As UInteger     ' INRD (INNR)
+        Public EnchantmentFormID As UInteger        ' EITM (ENCH) — owned optional
+        Public PatternFormID As UInteger            ' PTRN (TRNS) — owned optional
+        Public EquipTypeFormID As UInteger          ' ETYP (EQUP) — owned optional
+        Public PickupSoundFormID As UInteger        ' YNAM (SNDR) — owned optional
+        Public DropSoundFormID As UInteger          ' ZNAM (SNDR) — owned optional
+        Public AlternateBlockMaterialFormID As UInteger ' BAMT (MATT) — owned optional
+        Public Description As String = ""           ' DESC (translatable) — owned optional
+        Public NonPlayable As Boolean = False       ' header flag bit 2 — owned
+        ''' <summary>OBND — Object Bounds 6×i16 min/max XYZ (required, always emitted).</summary>
+        Public ObndX1 As Short
+        Public ObndY1 As Short
+        Public ObndZ1 As Short
+        Public ObndX2 As Short
+        Public ObndY2 As Short
+        Public ObndZ2 As Short
+        ''' <summary>DAMA — Damage Type Array / Resistances (owned, omit block when empty).</summary>
+        Public DamageResistances As New List(Of ARMO_DamageResist)
         Public TemplateArmorFormID As UInteger      ' TNAM (ARMO)
         Public ArmorAddons As New List(Of ARMO_AddonEntry)   ' Models: INDX + ArmaFormID
         Public KeywordFormIDs As New List(Of UInteger)       ' KWDA
@@ -963,6 +985,7 @@ Public Module SaveNpcEspWriter
     ''' new MAST list — otherwise the override-merge remapper would fall back to "keep raw" and corrupt them.</summary>
     Private Sub CollectFormIDsFromArma(entry As ArmaRecordEntry, sink As HashSet(Of UInteger), pluginManager As PluginManager)
         AddRefFormID(sink, entry.RaceFormID)
+        AddRefFormID(sink, entry.FootstepSetFormID)             ' SNDD (owned)
         For Each fid In entry.AdditionalRaces
             AddRefFormID(sink, fid)
         Next
@@ -972,6 +995,9 @@ Public Module SaveNpcEspWriter
         AddRefFormID(sink, entry.FemaleSkinTextureSwapListFormID) ' NAM3
         AddRefFormID(sink, entry.MaleMaterialSwapFormID)        ' MO2S
         AddRefFormID(sink, entry.FemaleMaterialSwapFormID)      ' MO3S
+        AddRefFormID(sink, entry.MaleFPMaterialSwapFormID)      ' MO4S (owned)
+        AddRefFormID(sink, entry.FemaleFPMaterialSwapFormID)    ' MO5S (owned)
+        AddRefFormID(sink, entry.ArtObjectFormID)               ' ONAM (owned)
         If entry.IsOverride AndAlso entry.FormID <> 0UI AndAlso Not IsProvisionalDraftFormID(entry.FormID) Then sink.Add(entry.FormID)
         If entry.IsOverride AndAlso entry.SourceRecord IsNot Nothing Then
             CollectPreservedSourceFormIDs(entry.SourceRecord, pluginManager, sink)
@@ -982,6 +1008,16 @@ Public Module SaveNpcEspWriter
     ''' for the draft-skip / own-FormID / OVERRIDE-preserved rules.</summary>
     Private Sub CollectFormIDsFromArmo(entry As ArmoRecordEntry, sink As HashSet(Of UInteger), pluginManager As PluginManager)
         AddRefFormID(sink, entry.RaceFormID)             ' RNAM
+        AddRefFormID(sink, entry.InstanceNamingFormID)   ' INRD (owned)
+        AddRefFormID(sink, entry.EnchantmentFormID)      ' EITM (owned)
+        AddRefFormID(sink, entry.PatternFormID)          ' PTRN (owned)
+        AddRefFormID(sink, entry.EquipTypeFormID)        ' ETYP (owned)
+        AddRefFormID(sink, entry.PickupSoundFormID)      ' YNAM (owned)
+        AddRefFormID(sink, entry.DropSoundFormID)        ' ZNAM (owned)
+        AddRefFormID(sink, entry.AlternateBlockMaterialFormID) ' BAMT (owned)
+        For Each dr In entry.DamageResistances
+            AddRefFormID(sink, dr.DamageTypeFormID)      ' DAMA Type [DMGT] (owned)
+        Next
         AddRefFormID(sink, entry.TemplateArmorFormID)    ' TNAM
         For Each addon In entry.ArmorAddons
             AddRefFormID(sink, addon.ArmaFormID)         ' MODL
@@ -994,6 +1030,29 @@ Public Module SaveNpcEspWriter
         Next
         AddRefFormID(sink, entry.MaleMaterialSwapFormID)   ' MO2S
         AddRefFormID(sink, entry.FemaleMaterialSwapFormID) ' MO4S
+        ' OBTS Object Template combinations: when the record emits its OBTS block FROM THE MODEL — a NEW record
+        ' ALWAYS does; an OVERRIDE only when CombinationsAuthored (else the source bytes are preserved verbatim and
+        ' their masters arrive via existingMasters) — the referenced FormIDs live in entry.Combinations, NOT in a
+        ' source record. Without collecting them here the defining plugin of an authored Include OMOD / FormID
+        ' Property Value1 / combination Keyword never enters the MAST list → the OBTS FormID is written raw
+        ' (dangling) by the remapper's "unknown plugin" fallback. Matches BuildObtsPayload's own remap set
+        ' (NpcSubrecordWriter: keywords, Include.ModFormID, FormID-typed Property Value1).
+        If (Not entry.IsOverride) OrElse entry.CombinationsAuthored Then
+            For Each combo In entry.Combinations
+                If combo Is Nothing Then Continue For
+                For Each kw In combo.Keywords
+                    AddRefFormID(sink, kw)
+                Next
+                For Each inc In combo.Includes
+                    AddRefFormID(sink, inc.ModFormID)
+                Next
+                For Each prop In combo.Properties
+                    If prop.ValueType = OMOD_ValueType.FormIDInt OrElse prop.ValueType = OMOD_ValueType.FormIDFloat Then
+                        AddRefFormID(sink, prop.Value1FormID)
+                    End If
+                Next
+            Next
+        End If
         If entry.IsOverride AndAlso entry.FormID <> 0UI AndAlso Not IsProvisionalDraftFormID(entry.FormID) Then sink.Add(entry.FormID)
         If entry.IsOverride AndAlso entry.SourceRecord IsNot Nothing Then
             CollectPreservedSourceFormIDs(entry.SourceRecord, pluginManager, sink)
@@ -1025,7 +1084,10 @@ Public Module SaveNpcEspWriter
         For Each sr In src.Subrecords
             Dim data = If(sr.Data, Array.Empty(Of Byte)())
             Select Case sr.Signature
-                Case "PTRN", "EITM", "YNAM", "ZNAM", "ETYP", "BIDS", "BAMT", "INRD", "DMDS", "SNDD", "ONAM", "MO4S", "MO5S"
+                Case "BIDS", "DMDS"
+                    ' Owned single-FormID sigs are collected from the entry, NOT here: ARMO INRD/EITM/PTRN/YNAM/
+                    ' ZNAM/ETYP/BAMT (CollectFormIDsFromArmo) and ARMA SNDD/ONAM/MO4S/MO5S (CollectFormIDsFromArma).
+                    ' Only BIDS (still preserved) and DMDS (inside DEST) remain preserved single-FormID here.
                     If data.Length >= 4 Then addLocal(BitConverter.ToUInt32(data, 0))
                 Case "DAMC"
                     Dim n = data.Length \ 8
@@ -1037,21 +1099,8 @@ Public Module SaveNpcEspWriter
                         addLocal(BitConverter.ToUInt32(data, 8))
                         addLocal(BitConverter.ToUInt32(data, 12))
                     End If
-                Case "DAMA"
-                    ' Type FormID @0 every 8 or 12 bytes; Curve Table @8 when stride 12. Best-effort: collect
-                    ' @0 of each 8-byte slot (covers both strides for Type) plus @8 of each 12-byte slot.
-                    If data.Length Mod 12 = 0 AndAlso data.Length Mod 8 <> 0 Then
-                        Dim n12 = data.Length \ 12
-                        For i = 0 To n12 - 1
-                            addLocal(BitConverter.ToUInt32(data, i * 12))
-                            addLocal(BitConverter.ToUInt32(data, i * 12 + 8))
-                        Next
-                    Else
-                        Dim n8 = data.Length \ 8
-                        For i = 0 To n8 - 1
-                            addLocal(BitConverter.ToUInt32(data, i * 8))
-                        Next
-                    End If
+                ' DAMA is now OWNED by the ARMO entry (CollectFormIDsFromArmo walks its DamageResistances) —
+                ' no preserved-source collection here.
                 Case "OBTS"
                     CollectObtsLocalFormIDs(data, addLocal)
                 Case "VMAD"
@@ -1453,6 +1502,8 @@ Public Module SaveNpcEspWriter
                 EmitArmaFirstPersonModel(bw, entry, remapper)
                 EmitArmaSkinTextures(bw, entry, remapper)
                 EmitArmaAdditionalRaces(bw, entry, remapper)
+                EmitArmaSndd(bw, entry, remapper)
+                EmitArmaOnam(bw, entry, remapper)                ' ONAM [ARTO]
                 EmitArmaBoneScale(bw, entry)
             End Using
             body = bms.ToArray()
@@ -1486,18 +1537,26 @@ Public Module SaveNpcEspWriter
         End If
     End Sub
 
-    Private Sub EmitArmaDnam(bw As BinaryWriter, entry As ArmaRecordEntry)
+    Private Sub EmitArmaDnam(bw As BinaryWriter, entry As ArmaRecordEntry, Optional srcDnam As Byte() = Nothing)
         ' DNAM — 12-byte struct, REQUIRED (always emit). Layout per wbDefinitionsFO4.pas:6219-6234:
         ' u8 MalePriority, u8 FemalePriority, u8 MaleWeightSlider, u8 FemaleWeightSlider,
-        ' 2 bytes unknown(0), u8 DetectionSoundValue, 1 byte unknown(0), float WeaponAdjust.
+        ' 2 bytes 'Unknown' [4-5], u8 DetectionSoundValue, 1 byte 'Unknown' [7], float WeaponAdjust.
+        ' The two 'Unknown' fields ([4],[5],[7]) are NOT modelled by ArmaRecordEntry (the editor
+        ' exposes only the named fields), yet vanilla ARMAs carry non-zero values there (e.g. 02 00 / 17).
+        ' On OVERRIDE we PRESERVE them verbatim from the source DNAM so the record round-trips faithfully;
+        ' for a brand-NEW ARMA there is no source, so they default to 0 (CK/xEdit default too). Passing the
+        ' source bytes (not plumbing them through draft/entry) keeps the fix local and survives re-edits,
+        ' because the override's SourceRecord is always the current winning record (which carries them).
+        Dim hasSrc As Boolean = srcDnam IsNot Nothing AndAlso srcDnam.Length >= 8
         WriteSubrecordHeader(bw, "DNAM", 12)
         bw.Write(entry.MalePriority)
         bw.Write(entry.FemalePriority)
         bw.Write(entry.MaleWeightSliderFlags)
         bw.Write(entry.FemaleWeightSliderFlags)
-        bw.Write(CUShort(0))                ' 2 bytes unknown
+        bw.Write(If(hasSrc, srcDnam(4), CByte(0)))    ' Unknown [4]
+        bw.Write(If(hasSrc, srcDnam(5), CByte(0)))    ' Unknown [5]
         bw.Write(entry.DetectionSoundValue)
-        bw.Write(CByte(0))                  ' 1 byte unknown
+        bw.Write(If(hasSrc, srcDnam(7), CByte(0)))    ' Unknown [7]
         bw.Write(entry.WeaponAdjust)
     End Sub
 
@@ -1532,16 +1591,34 @@ Public Module SaveNpcEspWriter
     End Sub
 
     Private Sub EmitArmaFirstPersonModel(bw As BinaryWriter, entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
-        ' 1st Person — MOD4/MO4F male, MOD5/MO5F female. MO4S/MO5S not modeled (skipped).
+        ' 1st Person — MOD4/MO4S/MO4F male, MOD5/MO5S/MO5F female (mirror the biped model member order). MO4C/MO5C
+        ' (color-remap floats) are NOT modeled by the entry → preserved on override.
         If Not String.IsNullOrEmpty(entry.MaleFPMeshPath) Then WriteZString(bw, "MOD4", entry.MaleFPMeshPath)
+        If entry.MaleFPMaterialSwapFormID <> 0UI Then
+            WriteSubrecordHeader(bw, "MO4S", 4)
+            bw.Write(remapper(entry.MaleFPMaterialSwapFormID))
+        End If
         If entry.MaleFPModelFlags <> 0 Then
             WriteSubrecordHeader(bw, "MO4F", 1)
             bw.Write(entry.MaleFPModelFlags)
         End If
         If Not String.IsNullOrEmpty(entry.FemaleFPMeshPath) Then WriteZString(bw, "MOD5", entry.FemaleFPMeshPath)
+        If entry.FemaleFPMaterialSwapFormID <> 0UI Then
+            WriteSubrecordHeader(bw, "MO5S", 4)
+            bw.Write(remapper(entry.FemaleFPMaterialSwapFormID))
+        End If
         If entry.FemaleFPModelFlags <> 0 Then
             WriteSubrecordHeader(bw, "MO5F", 1)
             bw.Write(entry.FemaleFPModelFlags)
+        End If
+    End Sub
+
+    Private Sub EmitArmaOnam(bw As BinaryWriter, entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        ' ONAM — Art Object FormID (optional, [ARTO] per wbDefinitionsFO4.pas:6252). Owned single FormID: emitted
+        ' after SNDD, before the Bone Scale block. Loaded from the source on override → unchanged re-emit byte-exact.
+        If entry.ArtObjectFormID <> 0UI Then
+            WriteSubrecordHeader(bw, "ONAM", 4)
+            bw.Write(remapper(entry.ArtObjectFormID))
         End If
     End Sub
 
@@ -1571,6 +1648,16 @@ Public Module SaveNpcEspWriter
             WriteSubrecordHeader(bw, "MODL", 4)
             bw.Write(remapper(raceFid))
         Next
+    End Sub
+
+    Private Sub EmitArmaSndd(bw As BinaryWriter, entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        ' SNDD — Footstep Sound FormID (optional, [FSTS] per wbDefinitionsFO4.pas:6251). Owned single FormID:
+        ' emitted at the canonical position (after Additional Races, before ONAM). The value comes from the
+        ' model (loaded from the source on override), so an unchanged override re-emits it byte-exact.
+        If entry.FootstepSetFormID <> 0UI Then
+            WriteSubrecordHeader(bw, "SNDD", 4)
+            bw.Write(remapper(entry.FootstepSetFormID))
+        End If
     End Sub
 
     Private Sub EmitArmaBoneScale(bw As BinaryWriter, entry As ArmaRecordEntry)
@@ -1614,18 +1701,25 @@ Public Module SaveNpcEspWriter
                 ' Owned subrecords in canonical order (wbDefinitionsFO4.pas:6151). Each EmitArmoXxx is the
                 ' SINGLE source of truth for that subrecord's byte layout — shared with the override path.
                 EmitArmoEdid(bw, entry)
-                ' OBND — required for NEW records (no source to preserve): 12 zero bytes (mirror LVLI).
-                WriteSubrecordHeader(bw, "OBND", 12)
-                bw.Write(New Byte(11) {})
+                EmitArmoObnd(bw, entry)                          ' OBND (required, from model — zeroed for a blank new)
+                EmitArmoPtrn(bw, entry, remapper)                ' PTRN
                 EmitArmoFull(bw, entry)
+                EmitArmoEitm(bw, entry, remapper)                ' EITM
                 EmitArmoMaleModel(bw, entry, remapper)
                 EmitArmoFemaleModel(bw, entry, remapper)
                 EmitArmoBod2(bw, entry)
+                EmitArmoYnam(bw, entry, remapper)                ' YNAM
+                EmitArmoZnam(bw, entry, remapper)                ' ZNAM
+                EmitArmoEtyp(bw, entry, remapper)                ' ETYP
+                EmitArmoBamt(bw, entry, remapper)                ' BAMT
                 EmitArmoRnam(bw, entry, remapper)
                 EmitArmoKeywords(bw, entry, remapper)
+                EmitArmoDesc(bw, entry)                          ' DESC
+                EmitArmoInrd(bw, entry, remapper)
                 EmitArmoModels(bw, entry, remapper)
                 EmitArmoData(bw, entry)
                 EmitArmoFnam(bw, entry)
+                EmitArmoDama(bw, entry, remapper)                ' DAMA
                 EmitArmoTnam(bw, entry, remapper)
                 EmitArmoAppr(bw, entry, remapper)
                 ' OBTE/OBTF/FULL/OBTS (Object Template) — emit from the model when the entry carries
@@ -1636,7 +1730,7 @@ Public Module SaveNpcEspWriter
             body = bms.ToArray()
         End Using
 
-        Return WrapRecord("ARMO", body, 0UI, remapper(entry.FormID), entry.OriginalVcs1, entry.OriginalVcs2, game)
+        Return WrapRecord("ARMO", body, ComputeArmoHeaderFlags(entry), remapper(entry.FormID), entry.OriginalVcs1, entry.OriginalVcs2, game)
     End Function
 
     ' ------------------------------------------------------------------------
@@ -1689,6 +1783,89 @@ Public Module SaveNpcEspWriter
             bw.Write(remapper(entry.RaceFormID))
         End If
     End Sub
+
+    Private Sub EmitArmoInrd(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        ' INRD — Instance Naming FormID (optional, [INNR] per wbDefinitionsFO4.pas:6186/5632). Owned single
+        ' FormID: emitted at the canonical position (after DESC, before the Models array). The value comes from
+        ' the model (loaded from the source on override), so an unchanged override re-emits it byte-exact.
+        If entry.InstanceNamingFormID <> 0UI Then
+            WriteSubrecordHeader(bw, "INRD", 4)
+            bw.Write(remapper(entry.InstanceNamingFormID))
+        End If
+    End Sub
+
+    ''' <summary>Emit one owned optional single-FormID ARMO subrecord (omit when 0). Shared by EITM/PTRN/YNAM/
+    ''' ZNAM/ETYP/BAMT — each is a 4-byte remapped FormID at its canonical position.</summary>
+    Private Sub EmitArmoOptionalFormId(bw As BinaryWriter, sig As String, globalFormID As UInteger, remapper As NpcSubrecordWriter.FormIdRemapper)
+        If globalFormID <> 0UI Then
+            WriteSubrecordHeader(bw, sig, 4)
+            bw.Write(remapper(globalFormID))
+        End If
+    End Sub
+
+    Private Sub EmitArmoEitm(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        EmitArmoOptionalFormId(bw, "EITM", entry.EnchantmentFormID, remapper)   ' Object Effect [ENCH]
+    End Sub
+
+    Private Sub EmitArmoPtrn(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        EmitArmoOptionalFormId(bw, "PTRN", entry.PatternFormID, remapper)       ' Preview Transform [TRNS]
+    End Sub
+
+    Private Sub EmitArmoYnam(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        EmitArmoOptionalFormId(bw, "YNAM", entry.PickupSoundFormID, remapper)   ' Pickup Sound [SNDR]
+    End Sub
+
+    Private Sub EmitArmoZnam(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        EmitArmoOptionalFormId(bw, "ZNAM", entry.DropSoundFormID, remapper)     ' Drop Sound [SNDR]
+    End Sub
+
+    Private Sub EmitArmoEtyp(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        EmitArmoOptionalFormId(bw, "ETYP", entry.EquipTypeFormID, remapper)     ' Equip Type [EQUP]
+    End Sub
+
+    Private Sub EmitArmoBamt(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        EmitArmoOptionalFormId(bw, "BAMT", entry.AlternateBlockMaterialFormID, remapper)  ' Alternate Block Material [MATT]
+    End Sub
+
+    Private Sub EmitArmoDesc(bw As BinaryWriter, entry As ArmoRecordEntry)
+        ' DESC — optional translatable lstring (mirror EmitArmoFull). Omit when empty.
+        If Not String.IsNullOrEmpty(entry.Description) Then
+            Dim descBytes = PluginEncodingSettings.EncodeTranslatable(entry.Description)
+            WriteSubrecordHeader(bw, "DESC", descBytes.Length + 1)
+            bw.Write(descBytes)
+            bw.Write(CByte(0))
+        End If
+    End Sub
+
+    Private Sub EmitArmoObnd(bw As BinaryWriter, entry As ArmoRecordEntry)
+        ' OBND — required struct, 6×i16 min/max XYZ. Always emitted (from the model — zeroed for a blank new).
+        WriteSubrecordHeader(bw, "OBND", 12)
+        bw.Write(entry.ObndX1)
+        bw.Write(entry.ObndY1)
+        bw.Write(entry.ObndZ1)
+        bw.Write(entry.ObndX2)
+        bw.Write(entry.ObndY2)
+        bw.Write(entry.ObndZ2)
+    End Sub
+
+    Private Sub EmitArmoDama(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+        ' DAMA — Damage Type Array. FO4 stride 8: Type FormID [DMGT] @0 + Amount u32 @4. Omit when empty.
+        Dim list = entry.DamageResistances
+        If list Is Nothing OrElse list.Count = 0 Then Return
+        WriteSubrecordHeader(bw, "DAMA", list.Count * 8)
+        For Each dr In list
+            bw.Write(remapper(dr.DamageTypeFormID))
+            bw.Write(dr.Value)
+        Next
+    End Sub
+
+    ''' <summary>ARMO header flags from the modeled booleans: bit 2 (Non-Playable). Other source flag bits are
+    ''' preserved by the override path; NEW records only carry this bit.</summary>
+    Private Function ComputeArmoHeaderFlags(entry As ArmoRecordEntry) As UInteger
+        Dim flags As UInteger = 0UI
+        If entry.NonPlayable Then flags = flags Or (1UI << 2)
+        Return flags
+    End Function
 
     Private Sub EmitArmoKeywords(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
         ' Keywords — KSIZ (u32 count) + KWDA (count*4 remapped FormIDs). Mirror NpcSubrecordWriter.EmitKeywords.
@@ -1796,11 +1973,17 @@ Public Module SaveNpcEspWriter
     ''' <summary>Preserved-subrecord signatures that carry exactly ONE 4-byte FormID at offset 0 (the
     ''' whole payload is the FormID). Confirmed against wbDefinitionsFO4.pas:
     '''   ARMO: PTRN(5626), EITM(wbEnchantment→wbFormIDCk EITM), YNAM(5629), ZNAM(5630), ETYP(5236),
-    '''         BIDS(6180), BAMT(6181), INRD(5632), DMDS(inside DEST stage = [MSWP]).
-    '''   ARMA: SNDD(6207 [FSTS]), ONAM(6208 [ARTO]), MO4S/MO5S (1st-person material swap [MSWP], not
-    '''         modeled by ArmaRecordEntry so PRESERVED).</summary>
+    '''         BIDS(6180), BAMT(6181), DMDS(inside DEST stage = [MSWP]).
+    '''   ARMA: ONAM(6252 [ARTO]), MO4S/MO5S (1st-person material swap [MSWP], not modeled by ArmaRecordEntry
+    '''         so PRESERVED).
+    ''' NOTE: ARMO INRD (5632 [INNR]) and ARMA SNDD (6251 [FSTS]) are NOT here — they are OWNED single-FormID
+    ''' subrecords (entry.InstanceNamingFormID / entry.FootstepSetFormID), emitted at their canonical position by
+    ''' EmitArmoInrd / EmitArmaSndd, so they never route through EmitPreservedSubrecord.</summary>
+    ''' NOTE: EITM/PTRN/YNAM/ZNAM/ETYP/BAMT (ARMO) and ONAM/MO4S/MO5S (ARMA) were promoted to OWNED single-FormID
+    ''' subrecords (emitted from the entry at their canonical position) — they are no longer preserved. Only BIDS
+    ''' ([IPDS], ARMO) and DMDS ([MSWP], inside DEST) remain preserved single-FormID subrecords.
     Private ReadOnly _singleFormIdPreservedSigs As New HashSet(Of String)(
-        {"PTRN", "EITM", "YNAM", "ZNAM", "ETYP", "BIDS", "BAMT", "INRD", "DMDS", "SNDD", "ONAM", "MO4S", "MO5S"},
+        {"BIDS", "DMDS"},
         StringComparer.Ordinal)
 
     ''' <summary>Preserved-subrecord signatures that carry NO FormIDs — copied byte-for-byte. Confirmed
@@ -1811,9 +1994,10 @@ Public Module SaveNpcEspWriter
     ''' EAMT(wbEnchantment Capacity = u16 amount, NOT a FormID — wbDefinitionsFO4.pas wbEnchantment).
     ''' NOTE: this set is consulted only for signatures NOT otherwise classified (single-FormID / complex /
     ''' owned). It is the "known non-FormID" allow-list; anything outside ALL classifications throws.</summary>
+    ''' NOTE: OBND (now editable 6×i16) and DESC (now owned translatable) were promoted to OWNED — removed here.
     Private ReadOnly _verbatimPreservedSigs As New HashSet(Of String)(
-        {"OBND", "MO2T", "MO3T", "MO4T", "MO5T", "MODC", "MO2C", "MO3C", "MO4C", "MO5C",
-         "MO2F", "MO3F", "MO4F", "MO5F", "ICON", "MICO", "ICO2", "MIC2", "DESC", "EAMT",
+        {"MO2T", "MO3T", "MO4T", "MO5T", "MODC", "MO2C", "MO3C", "MO4C", "MO5C",
+         "MO2F", "MO3F", "MO4F", "MO5F", "ICON", "MICO", "ICO2", "MIC2", "EAMT",
          "DSTA", "DMDL", "DMDT", "DMDC", "DMDF", "DSTF", "STOP", "OBTF"},
         StringComparer.Ordinal)
 
@@ -2036,8 +2220,9 @@ Public Module SaveNpcEspWriter
         ' Owned signatures (emitted from the entry, NOT copied from source). FULL is owned only BEFORE the
         ' Object Template block (inside OBTE..STOP a FULL is a combination name → preserved).
         Static armoOwned As New HashSet(Of String)(
-            {"EDID", "FULL", "MOD2", "MO2S", "MOD4", "MO4S", "BOD2", "RNAM", "KSIZ", "KWDA",
-             "INDX", "MODL", "DATA", "FNAM", "TNAM", "APPR"}, StringComparer.Ordinal)
+            {"EDID", "OBND", "PTRN", "FULL", "EITM", "MOD2", "MO2S", "MOD4", "MO4S", "BOD2",
+             "YNAM", "ZNAM", "ETYP", "BAMT", "RNAM", "KSIZ", "KWDA", "DESC", "INRD",
+             "INDX", "MODL", "DATA", "FNAM", "DAMA", "TNAM", "APPR"}, StringComparer.Ordinal)
 
         ' Split source subrecords into three groups, each emitted preserving source order:
         '   • templateBlock  — everything from the FIRST OBTE onward (Object Template, OBTE..STOP).
@@ -2108,10 +2293,10 @@ Public Module SaveNpcEspWriter
                 ' signature in source order (FormIDs remapped). EmitPreservedStep returns count consumed.
                 EmitArmoEdid(bw, entry)                                                  ' EDID  [owned]
                 consumed += EmitPreservedStep(bw, "VMAD", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' VMAD  [pres]
-                consumed += EmitPreservedStep(bw, "OBND", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' OBND  [pres]
-                consumed += EmitPreservedStep(bw, "PTRN", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' PTRN  [pres]
+                EmitArmoObnd(bw, entry)                                                  ' OBND  [owned] (was preserved — now editable)
+                EmitArmoPtrn(bw, entry, remapper)                                        ' PTRN  [owned] (was preserved)
                 EmitArmoFull(bw, entry)                                                  ' FULL  [owned]
-                consumed += EmitPreservedStep(bw, "EITM", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' EITM  [pres] FormID [ENCH]
+                EmitArmoEitm(bw, entry, remapper)                                        ' EITM  [owned] (was preserved) [ENCH]
                 consumed += EmitPreservedStep(bw, "EAMT", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' EAMT  [pres] u16 amount (verbatim)
                 ' Male world model: MOD2[owned], MO2T[pres], MODC[pres], MO2S[owned], ICON[pres], MICO[pres]
                 EmitArmoMaleModel(bw, entry, remapper)                                   ' MOD2 + MO2S [owned]
@@ -2134,19 +2319,19 @@ Public Module SaveNpcEspWriter
                     EmitPreservedSubrecord(bw, sr, "ARMO", src, remapper, pluginManager, mapLocal)
                 Next
                 consumed += destructionBlock.Count
-                consumed += EmitPreservedStep(bw, "YNAM", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' YNAM [pres]
-                consumed += EmitPreservedStep(bw, "ZNAM", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' ZNAM [pres]
-                consumed += EmitPreservedStep(bw, "ETYP", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' ETYP [pres]
+                EmitArmoYnam(bw, entry, remapper)                                        ' YNAM  [owned] (was preserved)
+                EmitArmoZnam(bw, entry, remapper)                                        ' ZNAM  [owned] (was preserved)
+                EmitArmoEtyp(bw, entry, remapper)                                        ' ETYP  [owned] (was preserved)
                 consumed += EmitPreservedStep(bw, "BIDS", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' BIDS [pres]
-                consumed += EmitPreservedStep(bw, "BAMT", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' BAMT [pres]
+                EmitArmoBamt(bw, entry, remapper)                                        ' BAMT  [owned] (was preserved)
                 EmitArmoRnam(bw, entry, remapper)                                        ' RNAM  [owned]
                 EmitArmoKeywords(bw, entry, remapper)                                    ' KSIZ + KWDA [owned]
-                consumed += EmitPreservedStep(bw, "DESC", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' DESC [pres]
-                consumed += EmitPreservedStep(bw, "INRD", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' INRD [pres]
+                EmitArmoDesc(bw, entry)                                                  ' DESC  [owned] (was preserved)
+                EmitArmoInrd(bw, entry, remapper)                                        ' INRD  [owned] (was preserved)
                 EmitArmoModels(bw, entry, remapper)                                      ' INDX + MODL [owned]
                 EmitArmoData(bw, entry)                                                  ' DATA  [owned]
                 EmitArmoFnam(bw, entry)                                                  ' FNAM  [owned]
-                consumed += EmitPreservedStep(bw, "DAMA", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' Damage Type Array [pres]
+                EmitArmoDama(bw, entry, remapper)                                        ' DAMA  [owned] (was preserved)
                 EmitArmoTnam(bw, entry, remapper)                                        ' TNAM  [owned]
                 EmitArmoAppr(bw, entry, remapper)                                        ' APPR  [owned]
                 ' Object Template block. Two modes at this SAME stream position:
@@ -2188,27 +2373,30 @@ Public Module SaveNpcEspWriter
                 $"ARMO override: {expectedConsumed - consumed} preserved subrecord(s) not emitted by the canonical template (would be dropped): {String.Join(", ", leftover)}. Add a template step.")
         End If
 
-        ' Header: source flags (COMPRESSED stripped — we emit uncompressed), source Version preserved.
-        Dim flags = src.Header.Flags And Not FLAG_COMPRESSED
+        ' Header: preserve the source's UNMODELED flag bits (COMPRESSED stripped), but apply the ONE modeled
+        ' flag — Non-Playable (bit 2) — from the entry boolean. For an UNCHANGED override the boolean was captured
+        ' from the same source flag, so the result is byte-identical; toggling the checkbox actually takes effect.
+        Const ARMO_MODELED_FLAGS As UInteger = (1UI << 2)
+        Dim flags = (src.Header.Flags And Not FLAG_COMPRESSED And Not ARMO_MODELED_FLAGS) Or ComputeArmoHeaderFlags(entry)
         Return WrapRecord("ARMO", body, flags, remapper(entry.FormID), entry.OriginalVcs1, entry.OriginalVcs2, game, src.Header.Version)
     End Function
 
     ''' <summary>Serialize an ARMA OVERRIDE: canonical xEdit order (wbDefinitionsFO4.pas:6210), OWNED from
-    ''' the entry, PRESERVED (SNDD/ONAM only) copied with FormIDs remapped. Asserts nothing dropped.</summary>
+    ''' the entry, PRESERVED (ONAM only) copied with FormIDs remapped. Asserts nothing dropped.</summary>
     Private Function SerializeArmaRecordOverride(entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper, game As Config_App.Game_Enum, pluginManager As PluginManager) As Byte()
         Dim src = entry.SourceRecord
         If src Is Nothing Then Throw New ArgumentException("ARMA override requires SourceRecord.", NameOf(entry))
         Dim mapLocal = MakeLocalRemap(src, remapper, pluginManager)
 
         ' Owned signatures = those the ArmaRecordEntry actually models. The entry does NOT model the
-        ' texture-set hashes (MO2T/MO3T/MO4T/MO5T) nor the 1st-person color-remap / material-swap members
-        ' (MO4C/MO4S/MO5C/MO5S), so those stay PRESERVED — dropping them would corrupt the record. SNDD/ONAM
-        ' are the only NON-model ARMA preserved subrecords (wbDefinitionsFO4.pas:6207-6208).
+        ' texture-set hashes (MO2T/MO3T/MO4T/MO5T) nor the 1st-person color-remap members (MO4C/MO5C), so those
+        ' stay PRESERVED — dropping them would corrupt the record. SNDD (FootstepSetFormID), ONAM (ArtObjectFormID),
+        ' and MO4S/MO5S (1st-person material swaps) are now OWNED (wbDefinitionsFO4.pas:6242-6243/6251-6252).
         Static armaOwned As New HashSet(Of String)(
             {"EDID", "BOD2", "RNAM", "DNAM",
              "MOD2", "MO2C", "MO2S", "MO2F", "MOD3", "MO3C", "MO3S", "MO3F",
-             "MOD4", "MO4F", "MOD5", "MO5F",
-             "NAM0", "NAM1", "NAM2", "NAM3", "MODL", "BSMP", "BSMB", "BSMS"}, StringComparer.Ordinal)
+             "MOD4", "MO4S", "MO4F", "MOD5", "MO5S", "MO5F",
+             "NAM0", "NAM1", "NAM2", "NAM3", "MODL", "SNDD", "ONAM", "BSMP", "BSMB", "BSMS"}, StringComparer.Ordinal)
 
         Dim preservedBySig As New Dictionary(Of String, Queue(Of SubrecordData))(StringComparer.Ordinal)
         Dim preservedTotal As Integer = 0
@@ -2230,7 +2418,10 @@ Public Module SaveNpcEspWriter
                 EmitArmaEdid(bw, entry)                          ' EDID  [owned]
                 EmitArmaBod2(bw, entry)                          ' BOD2  [owned]
                 EmitArmaRnam(bw, entry, remapper)                ' RNAM  [owned]
-                EmitArmaDnam(bw, entry)                          ' DNAM  [owned]
+                ' DNAM [owned] — preserve the source's 'Unknown' bytes [4],[5],[7] (not modelled by the
+                ' entry; vanilla carries non-zero e.g. 02 00 / 17) so the override round-trips faithfully.
+                Dim srcDnamSr = src.GetSubrecord("DNAM")
+                EmitArmaDnam(bw, entry, If(srcDnamSr.HasValue, srcDnamSr.Value.Data, Nothing))
                 ' Biped Model [owned MOD2/MO2C/MO2S/MO2F + MOD3/MO3C/MO3S/MO3F] with preserved texture-set
                 ' hashes (MO2T/MO3T) — wbTexturedModel members; xEdit RStruct is dfAllowAnyMember so emitting
                 ' the preserved members adjacent to the owned group is canonical-equivalent.
@@ -2239,17 +2430,17 @@ Public Module SaveNpcEspWriter
                 consumed += EmitPreservedStep(bw, "MO3T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
                 ' 1st Person [owned MOD4/MO4F + MOD5/MO5F] with preserved members the entry doesn't model:
                 ' MO4T/MO5T (texture hashes), MO4C/MO5C (color-remap floats), MO4S/MO5S (material swap FormIDs).
+                ' 1st Person [owned MOD4/MO4S/MO4F + MOD5/MO5S/MO5F] with preserved members the entry doesn't model:
+                ' MO4T/MO5T (texture hashes), MO4C/MO5C (color-remap floats). MO4S/MO5S are now OWNED.
                 EmitArmaFirstPersonModel(bw, entry, remapper)
                 consumed += EmitPreservedStep(bw, "MO4T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
                 consumed += EmitPreservedStep(bw, "MO4C", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
-                consumed += EmitPreservedStep(bw, "MO4S", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
                 consumed += EmitPreservedStep(bw, "MO5T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
                 consumed += EmitPreservedStep(bw, "MO5C", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
-                consumed += EmitPreservedStep(bw, "MO5S", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
                 EmitArmaSkinTextures(bw, entry, remapper)        ' NAM0..NAM3  [owned]
                 EmitArmaAdditionalRaces(bw, entry, remapper)     ' MODL Additional Races [owned]
-                consumed += EmitPreservedStep(bw, "SNDD", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)  ' SNDD [pres]
-                consumed += EmitPreservedStep(bw, "ONAM", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)  ' ONAM [pres]
+                EmitArmaSndd(bw, entry, remapper)                ' SNDD  [owned] (was preserved)
+                EmitArmaOnam(bw, entry, remapper)                ' ONAM  [owned] (was preserved)
                 EmitArmaBoneScale(bw, entry)                     ' BSMP/BSMB/BSMS [owned]
             End Using
             body = bms.ToArray()
@@ -2261,9 +2452,15 @@ Public Module SaveNpcEspWriter
                 $"ARMA override: {preservedTotal - consumed} preserved subrecord(s) not emitted by the canonical template (would be dropped): {String.Join(", ", leftover)}. Add a template step.")
         End If
 
-        ' Header: source flags PRESERVED (ARMA keeps its source flags on override per task — do NOT recompute
-        ' from the booleans), COMPRESSED stripped; source Version preserved.
-        Dim flags = src.Header.Flags And Not FLAG_COMPRESSED
+        ' Header: preserve the source's UNMODELED flag bits (COMPRESSED stripped), but apply the THREE editable
+        ' flags the entry models — No Underarmor Scaling(6) / Has Sculpt Data(9) / Hi-Res 1st Person Only(30) —
+        ' from the booleans. For an UNCHANGED override these booleans were captured from the same source flags, so
+        ' the result is byte-identical; when the user toggles a checkbox (or adds sculpt data → HasSculptData) it
+        ' actually takes effect instead of being silently dropped. Only these 3 bits are owned; every other source
+        ' flag is preserved verbatim. (Previously the whole source flag word was kept, making those checkboxes inert
+        ' on override — e.g. adding sculpt to a source without it wrote the BSMB/BSMS but never set bit 9.)
+        Const ARMA_MODELED_FLAGS As UInteger = (1UI << 6) Or (1UI << 9) Or (1UI << 30)
+        Dim flags = (src.Header.Flags And Not FLAG_COMPRESSED And Not ARMA_MODELED_FLAGS) Or ComputeArmaHeaderFlags(entry)
         Return WrapRecord("ARMA", body, flags, remapper(entry.FormID), entry.OriginalVcs1, entry.OriginalVcs2, game, src.Header.Version)
     End Function
 

@@ -1033,14 +1033,29 @@ Public Class RACE_TintTemplateOption
     Public DefaultValue As Single
     Public HasDefaultValue As Boolean
 
+    ''' <summary>True when this option was injected from a LooksMenu CUSTOM tint template
+    ''' (Data\F4SE\Plugins\F4EE\Tints\&lt;plugin&gt;\templates.json), NOT parsed from the RACE record.
+    ''' Set by LmCustomTintLoader; used by the editor to badge the row "[LM]". Always False for
+    ''' vanilla record-parsed options, so it is inert unless custom tints are present.</summary>
+    Public IsCustomLm As Boolean = False
+
+    ''' <summary>Explicit entry-type declared by a LooksMenu custom template ("Type" in templates.json).
+    ''' When set it OVERRIDES the structural classification in <see cref="EntryType"/>. Needed because
+    ''' many custom TextureSet templates ship only a Diffuse (Textures.Count=1), which the structural
+    ''' heuristic would otherwise mis-read as Mask. Nothing for vanilla record-parsed options (they are
+    ''' always classified structurally, preserving today's behaviour byte-for-byte).</summary>
+    Public DeclaredEntryType As RACE_TintEntryType? = Nothing
+
     ''' <summary>Classify by subrecord structure. Verified empirically on HumanRace (162 female options,
     ''' 131 male): the clusters are perfectly separable by Textures.Count + TemplateColors.Count alone:
     '''   T=3  C=0   → TextureSet (diffuse+normal+specular triples, FaceDetail/Scars/Brow slots)
     '''   T=1  C>0   → Palette    (1 gradient mask + TTEC color array, makeup/paint slots)
     '''   T=1  C=0   → Mask       (anatomical region selectors, slots 0..6)
-    ''' HasDefaultValue is NOT a reliable discriminator — all Palette entries in HumanRace also have TTED.</summary>
+    ''' HasDefaultValue is NOT a reliable discriminator — all Palette entries in HumanRace also have TTED.
+    ''' A LooksMenu custom template can override this via <see cref="DeclaredEntryType"/>.</summary>
     Public ReadOnly Property EntryType As RACE_TintEntryType
         Get
+            If DeclaredEntryType.HasValue Then Return DeclaredEntryType.Value
             If Textures.Count >= 2 Then Return RACE_TintEntryType.TextureSet
             If TemplateColors.Count > 0 Then Return RACE_TintEntryType.Palette
             Return RACE_TintEntryType.Mask
@@ -1052,6 +1067,9 @@ Public Class RACE_TintTemplateGroup
     Public GroupName As String = ""
     Public Options As New List(Of RACE_TintTemplateOption)
     Public CategoryIndex As UInteger
+    ''' <summary>True when this whole group (category) was created from a LooksMenu custom tint
+    ''' definition rather than the RACE record. Set by LmCustomTintLoader. False for vanilla groups.</summary>
+    Public IsCustomLm As Boolean = False
 End Class
 
 ''' <summary>Una entrada de RACE.Subgraph Data: un behaviour graph .hkx enchufado a un slot, con su
@@ -1159,6 +1177,12 @@ Public Class RACE_Data
     Public FemaleMorphGroupSliders As New List(Of UInteger)
     Public MaleTintTemplateGroups As New List(Of RACE_TintTemplateGroup)
     Public FemaleTintTemplateGroups As New List(Of RACE_TintTemplateGroup)
+
+    ''' <summary>Set once LmCustomTintLoader.EnsureMerged has appended this race's LooksMenu custom
+    ''' tint templates (Data\F4SE\Plugins\F4EE\Tints\...) into the tint groups above. Guards against
+    ''' re-appending on the shared cached RACE_Data instance. Reset naturally when the RACE cache is
+    ''' cleared (a fresh parse starts False). Never serialized — RACE is a read-only reference record.</summary>
+    Public CustomLmTintsMerged As Boolean = False
 
     ''' <summary>Per-gender bone data from the RACE's BSMP/BSMB/BSMS sequence (xEdit's wbBSMPSequence).
     ''' Each entry has a list of bones, each with a name + a raw array of floats. The float array
@@ -1323,6 +1347,14 @@ Public Class ARMO_AddonEntry
     Public ArmaFormID As UInteger
 End Class
 
+''' <summary>One ARMO Damage Type Array (DAMA) entry (wbDamageTypeArray, wbDefinitionsCommon.pas:5677).
+''' FO4 stride = 8 bytes: Type FormID [DMGT] @0 + Amount u32 @4. (The Curve Table field is FromVersion 152
+''' = FO76/SF1 only, never present in FO4, so it is not modelled.) DamageTypeFormID resolved to GLOBAL at parse.</summary>
+Public Class ARMO_DamageResist
+    Public DamageTypeFormID As UInteger
+    Public Value As UInteger
+End Class
+
 ''' <summary>Single Include entry inside an OBTS combination (wbDefinitionsFO4.pas:5879-5884).
 ''' Each Include is 7 bytes: u32 Mod FormID + u8 AttachPointIndex + u8 Optional + u8 DontUseAll.
 ''' AttachPointIndex indexes into OMOD.AttachParentSlots when the engine resolves the socket
@@ -1390,6 +1422,36 @@ Public Class ARMO_Data
     Public RaceFormID As UInteger
     Public SlotMask As UInteger
     Public TemplateArmorFormID As UInteger
+    ''' <summary>INRD — Instance Naming rules ref (wbDefinitionsFO4.pas:6186/5632 → [INNR]). Resolved to
+    ''' GLOBAL at parse. 0 = absent. Single 4-byte FormID; emitted after DESC, before the Models array.</summary>
+    Public InstanceNamingFormID As UInteger
+    ''' <summary>EITM — Object Effect / Enchantment (wbEnchantment, wbDefinitionsFO4.pas:6163 → [ENCH]).
+    ''' Resolved to GLOBAL at parse. 0 = absent. Owned single 4-byte FormID; emitted after FULL.</summary>
+    Public EnchantmentFormID As UInteger
+    ''' <summary>PTRN — Preview Transform (wbDefinitionsFO4.pas:6161 → [TRNS]). 0 = absent. Emitted after OBND.</summary>
+    Public PatternFormID As UInteger
+    ''' <summary>ETYP — Equip Type (wbDefinitionsFO4.pas:6180 → [EQUP]). 0 = absent.</summary>
+    Public EquipTypeFormID As UInteger
+    ''' <summary>YNAM — Pickup Sound (wbDefinitionsFO4.pas:6178 → [SNDR]). 0 = absent.</summary>
+    Public PickupSoundFormID As UInteger
+    ''' <summary>ZNAM — Drop Sound (wbDefinitionsFO4.pas:6179 → [SNDR]). 0 = absent.</summary>
+    Public DropSoundFormID As UInteger
+    ''' <summary>BAMT — Alternate Block Material (wbDefinitionsFO4.pas:6182 → [MATT]). 0 = absent.</summary>
+    Public AlternateBlockMaterialFormID As UInteger
+    ''' <summary>DESC — Description (wbDefinitionsFO4.pas:6185, translatable lstring, optional). Empty = absent.</summary>
+    Public Description As String = ""
+    ''' <summary>OBND — Object Bounds (wbDefinitionsFO4.pas:6160, required 6×i16 min/max XYZ). Modelled as 6
+    ''' signed shorts so the editor can adjust each; re-emitted verbatim from these on an unedited override.</summary>
+    Public ObndX1 As Short
+    Public ObndY1 As Short
+    Public ObndZ1 As Short
+    Public ObndX2 As Short
+    Public ObndY2 As Short
+    Public ObndZ2 As Short
+    ''' <summary>Header flag bit 2 = 'Non-Playable' (wbDefinitionsFO4.pas:6153). Set from the record header flags at parse.</summary>
+    Public NonPlayable As Boolean
+    ''' <summary>DAMA — Damage Type Array / Resistances (wbDefinitionsFO4.pas:6204). Owned list, emitted after FNAM.</summary>
+    Public DamageResistances As New List(Of ARMO_DamageResist)
     ''' <summary>Lista plana de FormIDs ARMA — derivada de Models, en orden de aparición.
     ''' Mantenida por compat con consumers existentes; los nuevos consumers deben usar
     ''' <see cref="ArmorAddons"/> para conocer el AddonIndex (INDX) asociado a cada FormID.</summary>
@@ -1460,6 +1522,15 @@ Public Class ARMA_Data
     Public EditorID As String = ""
     Public RaceFormID As UInteger
     Public SlotMask As UInteger
+    ''' <summary>SNDD — Footstep Sound ref (wbDefinitionsFO4.pas:6251 → [FSTS, NULL]). Resolved to GLOBAL
+    ''' at parse. 0 = absent. Single 4-byte FormID; emitted after the Additional Races array, before ONAM.</summary>
+    Public FootstepSetFormID As UInteger
+    ''' <summary>ONAM — Art Object ref (wbDefinitionsFO4.pas:6252 → [ARTO]). 0 = absent. Owned single FormID; emitted after SNDD.</summary>
+    Public ArtObjectFormID As UInteger
+    ''' <summary>MO4S — 1st-person Male material swap (wbDefinitionsFO4.pas:6242 → [MSWP]). 0 = absent.</summary>
+    Public MaleFPMaterialSwapFormID As UInteger
+    ''' <summary>MO5S — 1st-person Female material swap (wbDefinitionsFO4.pas:6243 → [MSWP]). 0 = absent.</summary>
+    Public FemaleFPMaterialSwapFormID As UInteger
     Public MalePriority As Integer
     Public FemalePriority As Integer
     Public MaleMeshPath As String = ""
@@ -3296,6 +3367,9 @@ Public Module RecordParsers
             .EditorID = rec.EditorID
         }
 
+        ' Header flag bit 2 = 'Non-Playable' (wbDefinitionsFO4.pas:6153).
+        armo.NonPlayable = (rec.Header.Flags And (1UI << 2)) <> 0
+
         ' ARMO Models layout (wbDefinitionsFO4.pas:6187-6192):
         '   wbRArray('Models', wbRStruct('Model', [INDX u16 'Addon Index', MODL FormIDCk(ARMA)]))
         ' xEdit emits as INTERLEAVED subrecords: INDX → MODL → INDX → MODL → ...
@@ -3345,6 +3419,51 @@ Public Module RecordParsers
                     End If
                 Case "TNAM"
                     armo.TemplateArmorFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "INRD"
+                    ' Instance Naming (wbDefinitionsFO4.pas:6186 → [INNR]). Single 4-byte FormID.
+                    armo.InstanceNamingFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "EITM"
+                    ' Object Effect / Enchantment (wbEnchantment, wbDefinitionsFO4.pas:6163 → [ENCH]).
+                    armo.EnchantmentFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "PTRN"
+                    ' Preview Transform (wbDefinitionsFO4.pas:6161 → [TRNS]).
+                    armo.PatternFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "ETYP"
+                    ' Equip Type (wbDefinitionsFO4.pas:6180 → [EQUP]).
+                    armo.EquipTypeFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "YNAM"
+                    ' Pickup Sound (wbDefinitionsFO4.pas:6178 → [SNDR]).
+                    armo.PickupSoundFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "ZNAM"
+                    ' Drop Sound (wbDefinitionsFO4.pas:6179 → [SNDR]).
+                    armo.DropSoundFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "BAMT"
+                    ' Alternate Block Material (wbDefinitionsFO4.pas:6182 → [MATT]).
+                    armo.AlternateBlockMaterialFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "DESC"
+                    ' Description (wbDefinitionsFO4.pas:6185, translatable lstring).
+                    armo.Description = ResolveDisplayString(rec, sr, pluginManager)
+                Case "OBND"
+                    ' Object Bounds (wbDefinitionsFO4.pas:6160, 6×i16 min/max XYZ).
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                        armo.ObndX1 = BitConverter.ToInt16(sr.Data, 0)
+                        armo.ObndY1 = BitConverter.ToInt16(sr.Data, 2)
+                        armo.ObndZ1 = BitConverter.ToInt16(sr.Data, 4)
+                        armo.ObndX2 = BitConverter.ToInt16(sr.Data, 6)
+                        armo.ObndY2 = BitConverter.ToInt16(sr.Data, 8)
+                        armo.ObndZ2 = BitConverter.ToInt16(sr.Data, 10)
+                    End If
+                Case "DAMA"
+                    ' Damage Type Array / Resistances (wbDefinitionsFO4.pas:6204). FO4 stride = 8 (DMGT + u32).
+                    Dim dd = sr.Data
+                    If dd IsNot Nothing AndAlso dd.Length >= 8 Then
+                        Dim damaCount = dd.Length \ 8
+                        For i = 0 To damaCount - 1
+                            armo.DamageResistances.Add(New ARMO_DamageResist With {
+                                .DamageTypeFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(dd, i * 8), pluginManager),
+                                .Value = BitConverter.ToUInt32(dd, i * 8 + 4)})
+                        Next
+                    End If
                 Case "INDX"
                     ' Addon Index (u16) — paired with the next MODL.
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
@@ -3505,12 +3624,24 @@ Public Module RecordParsers
                     arma.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO3S"
                     arma.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "MO4S"
+                    ' 1st-person Male material swap (wbDefinitionsFO4.pas:6242 → [MSWP]).
+                    arma.MaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "MO5S"
+                    ' 1st-person Female material swap (wbDefinitionsFO4.pas:6243 → [MSWP]).
+                    arma.FemaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "ONAM"
+                    ' Art Object (wbDefinitionsFO4.pas:6252 → [ARTO]).
+                    arma.ArtObjectFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO2C"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then arma.MaleColorRemapIndex = BitConverter.ToSingle(sr.Data, 0)
                 Case "MO3C"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then arma.FemaleColorRemapIndex = BitConverter.ToSingle(sr.Data, 0)
                 Case "MODL"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then arma.AdditionalRaces.Add(ResolveFormIDReference(rec, sr, pluginManager))
+                Case "SNDD"
+                    ' Footstep Sound (wbDefinitionsFO4.pas:6251 → [FSTS, NULL]). Single 4-byte FormID.
+                    arma.FootstepSetFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "BSMP"
                     ' Open a new per-gender Bone Scale Modifier block.
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then

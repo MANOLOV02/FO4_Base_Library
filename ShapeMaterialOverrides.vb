@@ -123,12 +123,24 @@ Public Module ShapeMaterialOverrides
                     If newMaterial IsNot Nothing Then
                         relatedMaterial.material = newMaterial
                         relatedMaterial.path = FO4UnifiedMaterial_Class.CorrectMaterialPath(targetPath)
+                        ' Per-substitution Color Remap Index (CNAM): in the engine a material-swap
+                        ' substitution's color-remap index overrides the swapped-IN material's
+                        ' grayscale-to-palette scale (the palette column selected on lookup). Without
+                        ' applying it here the replacement always rendered at its AUTHORED
+                        ' GrayscaleToPaletteScale, so the value edited in the substitution dialog had no
+                        ' visual effect (same color regardless). Only on SET/ADD (the swap-in direction);
+                        ' a REMOVE restores the original material, whose scale we must not touch. Setting
+                        ' it on a non-grayscale material is a harmless visual no-op (matches ApplyColorRemap).
+                        If Not isRemove AndAlso sub_.HasColorRemapIndex Then
+                            newMaterial.GrayscaleToPaletteScale = sub_.ColorRemapIndex
+                        End If
                         If logEnabled Then
                             Dim shapeNameLog = shape.ShapeName
                             Dim fromL = fromPath
                             Dim toL = targetPath
                             Dim dirLog = If(isRemove, "REM", "SET/ADD")
-                            Logger.LogLazy(Function() $"[MSWP-APPLIED] shape='{shapeNameLog}' from='{fromL}' -> to='{toL}' dir={dirLog} loadResult=OK")
+                            Dim cnamLog = If(sub_.HasColorRemapIndex, sub_.ColorRemapIndex.ToString("F4"), "none")
+                            Logger.LogLazy(Function() $"[MSWP-APPLIED] shape='{shapeNameLog}' from='{fromL}' -> to='{toL}' dir={dirLog} cnam={cnamLog} loadResult=OK")
                         End If
                     ElseIf logEnabled Then
                         Dim shapeNameLog = shape.ShapeName

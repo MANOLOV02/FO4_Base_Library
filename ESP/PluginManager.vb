@@ -465,6 +465,21 @@ Public Class PluginManager
         End Try
     End Function
 
+    ''' <summary>True if the plugin named <paramref name="pluginName"/> was authored by this app's NPC Manager
+    ''' save flow — identified by its TES4.CNAM author = <see cref="PluginWriter.NPC_MANAGER_AUTHOR_CNAM"/>. Lets
+    ''' the editors list "my records" (new AND override) by their source plugin, robustly across sessions.</summary>
+    Public Function IsNpcManagerPlugin(pluginName As String) As Boolean
+        If String.IsNullOrEmpty(pluginName) Then Return False
+        _rwLock.EnterReadLock()
+        Try
+            Dim idx As Integer
+            If Not _pluginIndex.TryGetValue(pluginName, idx) Then Return False
+            Return String.Equals(Plugins(idx).Author, PluginWriter.NPC_MANAGER_AUTHOR_CNAM, StringComparison.Ordinal)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+    End Function
+
     ''' <summary>Get all NPC_ records.</summary>
     Public Function GetNPCs() As List(Of PluginRecord)
         Return GetRecordsOfType("NPC_")
