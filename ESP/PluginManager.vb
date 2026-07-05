@@ -385,7 +385,13 @@ Public Class PluginManager
 
         If rec IsNot Nothing AndAlso rec.SourcePluginIsLocalized AndAlso rec.SourcePluginName <> "" AndAlso sr.Data.Length >= 4 Then
             Dim stringId = BitConverter.ToUInt32(sr.Data, 0)
-            If stringId <> 0UI AndAlso _localizedStrings IsNot Nothing Then
+            ' lstring ID 0 is the canonical "no string" sentinel (an ABSENT/empty translatable field) — xEdit shows
+            ' it BLANK, it is NOT an error. Returning the "<Error: Unknown lstring ID 00000000>" placeholder here was
+            ' the bug: that human-readable placeholder got stored as the field's TEXT (e.g. ARMO DESC / FULL) and then
+            ' re-emitted verbatim on save, so an override of a record whose DESC is a 0-id sprouted a bogus description.
+            ' Only a NON-ZERO id that fails to resolve is a real error (missing STRINGS sidecar).
+            If stringId = 0UI Then Return ""
+            If _localizedStrings IsNot Nothing Then
                 Dim resolved = _localizedStrings.Resolve(rec.SourcePluginName, stringId, kind)
                 If resolved <> "" Then Return resolved
             End If

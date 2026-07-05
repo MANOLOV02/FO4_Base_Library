@@ -1560,9 +1560,16 @@ Public Module SaveNpcEspWriter
         bw.Write(entry.WeaponAdjust)
     End Sub
 
-    Private Sub EmitArmaBipedModel(bw As BinaryWriter, entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+    ''' <summary><paramref name="afterMod2"/>/<paramref name="afterMod3"/> (override path only) emit the PRESERVED
+    ''' texture-set hashes (MO2T/MO3T) INSIDE the wbTexturedModel struct — right after MOD2/MOD3, before the color/
+    ''' swap/flags members. xEdit's ARMA model struct is NOT order-free: emitting MO2T/MO3T as a separate group AFTER
+    ''' both models (the old behaviour) makes xEdit report "unexpected (or out of order) subrecord MO2T" and cascade
+    ''' every following subrecord as out-of-order, so the whole tail (MOD4/MOD5/MODL/SNDD/BSMx) reads as missing.</summary>
+    Private Sub EmitArmaBipedModel(bw As BinaryWriter, entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper,
+                                   Optional afterMod2 As Action = Nothing, Optional afterMod3 As Action = Nothing)
         ' Biped Model — male textured model first, then female (per xEdit RStruct order).
         If Not String.IsNullOrEmpty(entry.MaleMeshPath) Then WriteZString(bw, "MOD2", entry.MaleMeshPath)
+        If afterMod2 IsNot Nothing Then afterMod2()   ' MO2T (preserved) — inside the male model struct, after MOD2
         If entry.MaleColorRemapIndex.HasValue Then
             WriteSubrecordHeader(bw, "MO2C", 4)
             bw.Write(entry.MaleColorRemapIndex.Value)
@@ -1576,6 +1583,7 @@ Public Module SaveNpcEspWriter
             bw.Write(entry.MaleModelFlags)
         End If
         If Not String.IsNullOrEmpty(entry.FemaleMeshPath) Then WriteZString(bw, "MOD3", entry.FemaleMeshPath)
+        If afterMod3 IsNot Nothing Then afterMod3()   ' MO3T (preserved) — inside the female model struct, after MOD3
         If entry.FemaleColorRemapIndex.HasValue Then
             WriteSubrecordHeader(bw, "MO3C", 4)
             bw.Write(entry.FemaleColorRemapIndex.Value)
@@ -1590,10 +1598,16 @@ Public Module SaveNpcEspWriter
         End If
     End Sub
 
-    Private Sub EmitArmaFirstPersonModel(bw As BinaryWriter, entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+    ''' <summary><paramref name="afterMod4"/>/<paramref name="afterMod5"/> (override path only) emit the PRESERVED
+    ''' 1st-person members (MO4T/MO4C, MO5T/MO5C) INSIDE the wbTexturedModel struct — right after MOD4/MOD5. Same
+    ''' xEdit strict-order requirement as <see cref="EmitArmaBipedModel"/>: emitting them as a separate trailing
+    ''' group corrupts the record's subrecord ordering.</summary>
+    Private Sub EmitArmaFirstPersonModel(bw As BinaryWriter, entry As ArmaRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper,
+                                         Optional afterMod4 As Action = Nothing, Optional afterMod5 As Action = Nothing)
         ' 1st Person — MOD4/MO4S/MO4F male, MOD5/MO5S/MO5F female (mirror the biped model member order). MO4C/MO5C
         ' (color-remap floats) are NOT modeled by the entry → preserved on override.
         If Not String.IsNullOrEmpty(entry.MaleFPMeshPath) Then WriteZString(bw, "MOD4", entry.MaleFPMeshPath)
+        If afterMod4 IsNot Nothing Then afterMod4()   ' MO4T/MO4C (preserved) — inside the male 1st-person struct
         If entry.MaleFPMaterialSwapFormID <> 0UI Then
             WriteSubrecordHeader(bw, "MO4S", 4)
             bw.Write(remapper(entry.MaleFPMaterialSwapFormID))
@@ -1603,6 +1617,7 @@ Public Module SaveNpcEspWriter
             bw.Write(entry.MaleFPModelFlags)
         End If
         If Not String.IsNullOrEmpty(entry.FemaleFPMeshPath) Then WriteZString(bw, "MOD5", entry.FemaleFPMeshPath)
+        If afterMod5 IsNot Nothing Then afterMod5()   ' MO5T/MO5C (preserved) — inside the female 1st-person struct
         If entry.FemaleFPMaterialSwapFormID <> 0UI Then
             WriteSubrecordHeader(bw, "MO5S", 4)
             bw.Write(remapper(entry.FemaleFPMaterialSwapFormID))
@@ -1752,18 +1767,25 @@ Public Module SaveNpcEspWriter
         End If
     End Sub
 
-    Private Sub EmitArmoMaleModel(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+    ''' <summary><paramref name="afterMod2"/> (override path) emits the PRESERVED textured-model members (MO2T/MODC)
+    ''' INSIDE the struct — right after MOD2, before MO2S — mirroring the ARMA fix. xEdit's ARMO world-model struct
+    ''' is strict-order too, so emitting them after MO2S corrupts the subrecord ordering (drops the tail on read).</summary>
+    Private Sub EmitArmoMaleModel(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper,
+                                  Optional afterMod2 As Action = Nothing)
         ' Male world model (MOD2) + ARMO-level material swap (MO2S).
         If Not String.IsNullOrEmpty(entry.MaleWorldModelPath) Then WriteZString(bw, "MOD2", entry.MaleWorldModelPath)
+        If afterMod2 IsNot Nothing Then afterMod2()   ' MO2T/MODC (preserved) — inside the struct, after MOD2, before MO2S
         If entry.MaleMaterialSwapFormID <> 0UI Then
             WriteSubrecordHeader(bw, "MO2S", 4)
             bw.Write(remapper(entry.MaleMaterialSwapFormID))
         End If
     End Sub
 
-    Private Sub EmitArmoFemaleModel(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper)
+    Private Sub EmitArmoFemaleModel(bw As BinaryWriter, entry As ArmoRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper,
+                                    Optional afterMod4 As Action = Nothing)
         ' Female world model (MOD4) + material swap (MO4S).
         If Not String.IsNullOrEmpty(entry.FemaleWorldModelPath) Then WriteZString(bw, "MOD4", entry.FemaleWorldModelPath)
+        If afterMod4 IsNot Nothing Then afterMod4()   ' MO4T/MODC (preserved) — inside the struct, after MOD4, before MO4S
         If entry.FemaleMaterialSwapFormID <> 0UI Then
             WriteSubrecordHeader(bw, "MO4S", 4)
             bw.Write(remapper(entry.FemaleMaterialSwapFormID))
@@ -2298,16 +2320,19 @@ Public Module SaveNpcEspWriter
                 EmitArmoFull(bw, entry)                                                  ' FULL  [owned]
                 EmitArmoEitm(bw, entry, remapper)                                        ' EITM  [owned] (was preserved) [ENCH]
                 consumed += EmitPreservedStep(bw, "EAMT", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)  ' EAMT  [pres] u16 amount (verbatim)
-                ' Male world model: MOD2[owned], MO2T[pres], MODC[pres], MO2S[owned], ICON[pres], MICO[pres]
-                EmitArmoMaleModel(bw, entry, remapper)                                   ' MOD2 + MO2S [owned]
-                consumed += EmitPreservedStep(bw, "MO2T", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
-                consumed += EmitPreservedStep(bw, "MODC", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
+                ' Male world model struct: MOD2[owned], MO2T[pres], MODC[pres], MO2S[owned], then ICON/MICO[pres]
+                ' AFTER the struct. MO2T/MODC MUST sit between MOD2 and MO2S (strict-order struct) — the old
+                ' placement after MO2S corrupted the ordering (same bug as ARMA), so interleave via the callback.
+                EmitArmoMaleModel(bw, entry, remapper,
+                    afterMod2:=Sub()
+                                   consumed += EmitPreservedStep(bw, "MO2T", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
+                                   consumed += EmitPreservedStep(bw, "MODC", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
+                               End Sub)
                 consumed += EmitPreservedStep(bw, "ICON", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
                 consumed += EmitPreservedStep(bw, "MICO", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
-                ' Female world model: MOD4[owned], MO4T[pres], MODC(already drained above? — distinct slot,
-                ' but MODC appears in both Male & Female structs; drain remaining), MO4S[owned], ICO2/MIC2[pres]
-                EmitArmoFemaleModel(bw, entry, remapper)                                 ' MOD4 + MO4S [owned]
-                consumed += EmitPreservedStep(bw, "MO4T", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
+                ' Female world model struct: MOD4[owned], MO4T[pres], MO4S[owned], then ICO2/MIC2[pres] AFTER.
+                EmitArmoFemaleModel(bw, entry, remapper,
+                    afterMod4:=Sub() consumed += EmitPreservedStep(bw, "MO4T", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig))
                 consumed += EmitPreservedStep(bw, "ICO2", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
                 consumed += EmitPreservedStep(bw, "MIC2", "ARMO", src, remapper, pluginManager, mapLocal, preservedBySig)
                 EmitArmoBod2(bw, entry)                                                  ' BOD2  [owned]
@@ -2422,21 +2447,26 @@ Public Module SaveNpcEspWriter
                 ' entry; vanilla carries non-zero e.g. 02 00 / 17) so the override round-trips faithfully.
                 Dim srcDnamSr = src.GetSubrecord("DNAM")
                 EmitArmaDnam(bw, entry, If(srcDnamSr.HasValue, srcDnamSr.Value.Data, Nothing))
-                ' Biped Model [owned MOD2/MO2C/MO2S/MO2F + MOD3/MO3C/MO3S/MO3F] with preserved texture-set
-                ' hashes (MO2T/MO3T) — wbTexturedModel members; xEdit RStruct is dfAllowAnyMember so emitting
-                ' the preserved members adjacent to the owned group is canonical-equivalent.
-                EmitArmaBipedModel(bw, entry, remapper)
-                consumed += EmitPreservedStep(bw, "MO2T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
-                consumed += EmitPreservedStep(bw, "MO3T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
-                ' 1st Person [owned MOD4/MO4F + MOD5/MO5F] with preserved members the entry doesn't model:
-                ' MO4T/MO5T (texture hashes), MO4C/MO5C (color-remap floats), MO4S/MO5S (material swap FormIDs).
+                ' Biped Model [owned MOD2/MO2C/MO2S/MO2F + MOD3/MO3C/MO3S/MO3F] with preserved texture-set hashes
+                ' (MO2T/MO3T). These MUST be emitted INSIDE each wbTexturedModel struct (right after MOD2/MOD3), NOT
+                ' as a separate group after both models: xEdit's ARMA model struct is strict-order, and the old
+                ' "adjacent group" placement made xEdit flag MO2T (and every subrecord after it) as out-of-order,
+                ' silently dropping the whole tail (MOD4/MOD5/MODL/SNDD/BSMx) on read. Interleave via callbacks.
+                EmitArmaBipedModel(bw, entry, remapper,
+                    afterMod2:=Sub() consumed += EmitPreservedStep(bw, "MO2T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig),
+                    afterMod3:=Sub() consumed += EmitPreservedStep(bw, "MO3T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig))
                 ' 1st Person [owned MOD4/MO4S/MO4F + MOD5/MO5S/MO5F] with preserved members the entry doesn't model:
-                ' MO4T/MO5T (texture hashes), MO4C/MO5C (color-remap floats). MO4S/MO5S are now OWNED.
-                EmitArmaFirstPersonModel(bw, entry, remapper)
-                consumed += EmitPreservedStep(bw, "MO4T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
-                consumed += EmitPreservedStep(bw, "MO4C", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
-                consumed += EmitPreservedStep(bw, "MO5T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
-                consumed += EmitPreservedStep(bw, "MO5C", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
+                ' MO4T/MO5T (texture hashes), MO4C/MO5C (color-remap floats) — emitted INSIDE each struct after
+                ' MOD4/MOD5 (same strict-order rule). MO4S/MO5S are OWNED (emitted from the entry).
+                EmitArmaFirstPersonModel(bw, entry, remapper,
+                    afterMod4:=Sub()
+                                   consumed += EmitPreservedStep(bw, "MO4T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
+                                   consumed += EmitPreservedStep(bw, "MO4C", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
+                               End Sub,
+                    afterMod5:=Sub()
+                                   consumed += EmitPreservedStep(bw, "MO5T", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
+                                   consumed += EmitPreservedStep(bw, "MO5C", "ARMA", src, remapper, pluginManager, mapLocal, preservedBySig)
+                               End Sub)
                 EmitArmaSkinTextures(bw, entry, remapper)        ' NAM0..NAM3  [owned]
                 EmitArmaAdditionalRaces(bw, entry, remapper)     ' MODL Additional Races [owned]
                 EmitArmaSndd(bw, entry, remapper)                ' SNDD  [owned] (was preserved)
