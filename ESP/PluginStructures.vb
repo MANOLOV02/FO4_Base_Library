@@ -37,10 +37,17 @@ Public Module PluginConstants
     ' small record types → negligible load cost:
     '   ENCH(EITM), TRNS(PTRN), EQUP(ETYP), SNDR(YNAM/ZNAM), MATT(BAMT), INNR(INRD),
     '   ARTO(ONAM), FSTS(SNDD footstep), DMGT(DAMA damage-type array entries).
+    ' NPC editor pickers (2nd batch): FACT (Factions), VTYP (Voice VTCK), CLAS (Class CNAM),
+    ' CSTY (Combat Style ZNAM) are small; the inventory item types (WEAP/ALCH/AMMO/MISC/BOOK/KEYM/
+    ' NOTE/INGR) are the only non-negligible additions — needed for the NPC editor's Inventory tab
+    ' picker. Trim these if load time regresses on very large load orders.
     Public ReadOnly SIGS_NPC_RENDERING As New HashSet(Of String)(
         {"NPC_", "RACE", "ARMO", "ARMA", "OTFT", "HDPT", "TXST", "CLFM", "LVLN", "LVLI", "FLST", "MSWP",
          "CELL", "WRLD", "BPTD", "OMOD", "KYWD", "IDLE", "AACT", "ACHR",
-         "ENCH", "TRNS", "EQUP", "SNDR", "MATT", "INNR", "ARTO", "FSTS", "DMGT"},
+         "ENCH", "TRNS", "EQUP", "SNDR", "MATT", "INNR", "ARTO", "FSTS", "DMGT",
+         "FACT", "VTYP", "CLAS", "CSTY",
+         "WEAP", "ALCH", "AMMO", "MISC", "BOOK", "KEYM", "NOTE", "INGR",
+         "PERK", "SPEL", "AVIF"},
         StringComparer.Ordinal)
 
     ' Default filter kept for backward compatibility

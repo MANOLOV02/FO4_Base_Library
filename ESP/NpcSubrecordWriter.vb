@@ -499,14 +499,17 @@ Public Module NpcSubrecordWriter
         For Each combo In npc.ObjectTemplateCombinations
             If combo.IsEditorOnly Then EmitEmptyMarker(bw, "OBTF")
             If combo.DisplayName <> "" Then EmitLString(bw, "FULL", combo.DisplayName)
-            ' OBTS payload: emit raw bytes preserved by parser. FormID re-mapping inside OBTS
-            ' (Includes OMOD list, Keywords) requires patching the raw buffer at known offsets.
-            ' For now we trust that the captured FormIDs in combo.Combination.{Keywords,IncludeOMODFormIDs}
-            ' are the source of truth, and patch the raw bytes accordingly. If raw is Nothing
-            ' (defensive fallback), reconstruct minimally from the parsed combination.
+            ' OBTS payload — two paths (mirror of the ARMO EmitArmoObjectTemplate contract):
+            '   • UNEDITED (RawObtsBytes present): preserve the source bytes verbatim and only patch the
+            '     master-bound FormIDs (Includes OMOD list, Keywords, FormID-typed Property Value1) at their
+            '     known offsets — keeps the round-trip byte-exact for combos the user never touched.
+            '   • EDITED / NEW (RawObtsBytes cleared to Nothing by the editor on commit): reconstruct the whole
+            '     payload from the structured model via BuildObtsPayload — the same authoring serializer the ARMO
+            '     editor uses. Without this branch an edited/new combination would emit NO OBTS at all.
             If combo.RawObtsBytes IsNot Nothing Then
-                Dim payload = ApplyObtsRemap(combo, remap)
-                WriteRawSubrecord(bw, "OBTS", payload)
+                WriteRawSubrecord(bw, "OBTS", ApplyObtsRemap(combo, remap))
+            ElseIf combo.Combination IsNot Nothing Then
+                WriteRawSubrecord(bw, "OBTS", BuildObtsPayload(combo.Combination, remap))
             End If
         Next
         EmitEmptyMarker(bw, "STOP")

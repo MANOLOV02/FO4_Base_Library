@@ -274,6 +274,33 @@ Public Class Nifcontent_Class_Manolo
         End Select
     End Sub
 
+    ''' <summary>
+    ''' Fix de build: el engine (FO4/SSE) resuelve el material de una shape leyendo el Name del
+    ''' shader como path relativo a Data\, por lo que DEBE empezar con "Materials\" (las NIF vanilla
+    ''' siempre lo llevan). WM guarda el path pelado internamente — ver SetRelatedMaterial, que hace
+    ''' CorrectMaterialPath y luego StripPrefix(MaterialsPrefix) — así que una NIF grabada directo
+    ''' desde ese estado se ve bien in-app (GetRelatedMaterial le vuelve a poner el prefijo al leer)
+    ''' pero deja al engine buscando en Data\&lt;path pelado&gt; y el material nunca carga. Llamar
+    ''' esto justo antes de grabar una NIF destinada al juego garantiza que cada Name lleve el prefijo.
+    ''' Idempotente: no-op si el Name ya contiene el ancla "materials\" — tal cual la resuelve el
+    ''' engine, sea prefijo limpio ("Materials\...") o path absoluto de build ("C:\...\Data\materials\...");
+    ''' en ambos casos preservamos los bytes originales. Salta shapes cuyo shader no tiene material
+    ''' (Name vacío) para no inventar uno. Sólo antepone cuando NO hay ancla (p.ej. "ManoloCloned\...").
+    ''' </summary>
+    Public Sub EnsureMaterialPrefixForGame()
+        Dim anchor = MaterialsPrefix.ToLowerInvariant()   ' "materials\"
+        For Each shap In NifShapes
+            Dim shad = TryCast(GetShader(shap), BSShaderProperty)
+            If shad Is Nothing OrElse shad.Name Is Nothing Then Continue For
+            Dim name = shad.Name.String
+            If String.IsNullOrEmpty(name) Then Continue For
+            ' Ya trae el ancla (prefijo limpio o path absoluto): el engine la resuelve → no-op.
+            If name.Replace("/"c, "\"c).ToLowerInvariant().Contains(anchor) Then Continue For
+            ' Sin ancla: el engine buscaría en Data\<path pelado> y no encontraría el .bgsm/.bgem.
+            shad.Name.String = MaterialsPrefix & name.TrimStart("\"c)
+        Next
+    End Sub
+
     Public Sub Save_As_Manolo(Filename As String, Overwrite As Boolean)
         If IO.File.Exists(Filename) AndAlso Overwrite = False Then
             If MsgBox("NIF File already exists, replace?", vbYesNo, "Warning") = MsgBoxResult.No Then

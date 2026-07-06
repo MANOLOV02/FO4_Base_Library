@@ -39,6 +39,16 @@ Public Class PluginManager
     ''' <summary>Global FormID -> final PluginRecord (last override wins).</summary>
     Public Property AllRecords As New Dictionary(Of UInteger, PluginRecord)
 
+    ''' <summary>For a FormID an app-authored (NPC_Manager) plugin OVERRIDES, the record that was WINNING right
+    ''' BEFORE the app override — i.e. the LAST non-app override in load order (NOT the base master; if ModA then ModB
+    ''' both override a Fallout4.esm record, this holds ModB's version). Lets <see cref="RevertAppOverride"/> restore
+    ''' exactly what the game would show with the app plugin absent, IN MEMORY, since <see cref="AllRecords"/> keeps
+    ''' only the winning (app override) record. Captured in MergeRecords the FIRST time an app plugin overrides a
+    ''' FormID: app plugins load LAST, so at that instant AllRecords[fid] already holds the winning non-app version;
+    ''' the ContainsKey guard then keeps it (a 2nd app plugin won't clobber it with an app record). A FormID the app
+    ''' CREATED NEW has no entry here → revert removes it entirely.</summary>
+    Private ReadOnly _recordBeforeAppOverride As New Dictionary(Of UInteger, PluginRecord)
+
     ''' <summary>Records grouped by signature type.</summary>
     Public Property RecordsByType As New Dictionary(Of String, List(Of PluginRecord))
 
@@ -501,12 +511,72 @@ Public Class PluginManager
         ' Intento previo de subrecord-level merge: REVERTIDO. Era un invento mío que rompía
         ' el caso CBBEHeadRearFix (heredaba TNAM=SkinHeadRearCBBE de CBBE.esp pisando la
         ' decisión del modder de borrarlo).
+        ' When an APP-authored (NPC_Manager) plugin is about to override a FormID, remember the record it's
+        ' overriding — the WINNING non-app version (app plugins load last, so AllRecords[fid] currently holds it) —
+        ' so "revert override" can restore exactly that in memory. ContainsKey guard keeps the FIRST such capture,
+        ' so a 2nd app plugin can't replace the real non-app record with an app one. See _recordBeforeAppOverride.
+        Dim readerIsApp = String.Equals(reader.Author, PluginWriter.NPC_MANAGER_AUTHOR_CNAM, StringComparison.Ordinal)
         For Each kvp In reader.Records
             Dim globalFormID = ResolveFormID(kvp.Key, reader)
             kvp.Value.Header.FormID = globalFormID
+            If readerIsApp Then
+                Dim existing As PluginRecord = Nothing
+                ' Capture ONLY a NON-app predecessor: the record must exist, not already be captured, and not itself
+                ' be app-authored (so the post-save readback re-merging the app plugin can't record an APP record as
+                ' the "before" — which would make a later revert restore an app override instead of the mod's / dropping).
+                If AllRecords.TryGetValue(globalFormID, existing) AndAlso existing IsNot Nothing _
+                   AndAlso Not _recordBeforeAppOverride.ContainsKey(globalFormID) _
+                   AndAlso Not RecordIsAppAuthoredNoLock(existing) Then
+                    _recordBeforeAppOverride(globalFormID) = existing
+                End If
+            End If
             AllRecords(globalFormID) = kvp.Value
         Next
     End Sub
+
+    ''' <summary>Revert an app-authored override IN MEMORY: make <paramref name="fid"/> resolve again to the record
+    ''' that was WINNING before the app override — the last non-app override captured in
+    ''' <see cref="_recordBeforeAppOverride"/> — or REMOVE it entirely when the app created it new (no prior record).
+    ''' So GetRecord / render / pickers immediately reflect "the app override is gone", matching what the next Save
+    ''' writes via RecordsToRemove. Rebuilds the type index. Returns True if <see cref="AllRecords"/> changed. The
+    ''' caller must clear parse caches + re-render (the app record objects stay valid; only the winner map changes).</summary>
+    Public Function RevertAppOverride(fid As UInteger) As Boolean
+        If fid = 0UI Then Return False
+        _rwLock.EnterWriteLock()
+        Try
+            Dim prior As PluginRecord = Nothing
+            If _recordBeforeAppOverride.TryGetValue(fid, prior) AndAlso prior IsNot Nothing Then
+                ' The app OVERRODE a non-app record → restore that (the mod's winning version).
+                AllRecords(fid) = prior
+                _recordBeforeAppOverride.Remove(fid)
+                BuildTypeIndex()
+                Return True
+            End If
+            ' No captured predecessor. Only remove if the CURRENT winner is actually an app-authored record (an
+            ' app-CREATED new record → drop it). If it's already a non-app record (a prior revert restored it, or the
+            ' app never overrode it), this is a no-op — guards a double-revert from deleting the restored mod record.
+            Dim current As PluginRecord = Nothing
+            If AllRecords.TryGetValue(fid, current) AndAlso RecordIsAppAuthoredNoLock(current) Then
+                AllRecords.Remove(fid)
+                BuildTypeIndex()
+                Return True
+            End If
+            Return False
+        Finally
+            _rwLock.ExitWriteLock()
+        End Try
+    End Function
+
+    ''' <summary>True if <paramref name="rec"/> comes from an app-authored (NPC_Manager) plugin. Caller MUST already
+    ''' hold <see cref="_rwLock"/> (read or write) — this reads <c>_pluginIndex</c>/<c>Plugins</c> without taking it,
+    ''' so it is safe to call from inside <see cref="RevertAppOverride"/>'s write lock (no read-lock re-entry).</summary>
+    Private Function RecordIsAppAuthoredNoLock(rec As PluginRecord) As Boolean
+        If rec Is Nothing OrElse String.IsNullOrEmpty(rec.SourcePluginName) Then Return False
+        Dim idx As Integer
+        If Not _pluginIndex.TryGetValue(rec.SourcePluginName, idx) Then Return False
+        If idx < 0 OrElse idx >= Plugins.Count Then Return False
+        Return String.Equals(Plugins(idx).Author, PluginWriter.NPC_MANAGER_AUTHOR_CNAM, StringComparison.Ordinal)
+    End Function
 
     Private Sub BuildTypeIndex()
         RecordsByType.Clear()
