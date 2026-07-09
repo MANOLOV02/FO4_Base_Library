@@ -183,6 +183,13 @@ Public Module FaceTintCpuCompositor
         End Select
     End Function
 
+    ''' <summary>Per-channel blend op, PUBLIC re-use of the CPU/GL-parity dispatch (BlendDispatch1 = shader
+    ''' blendDispatchBop). Used by the SSE RaceMenu-overlay compositor so it shares the SAME blend math as the
+    ''' FO4 facetint (one source of truth, CPU==GL). blendOp/softLightModel per the enum above.</summary>
+    Public Function BlendChannel(blendOp As Integer, softLightModel As Integer, base As Double, src As Double) As Double
+        Return BlendDispatch1(blendOp, softLightModel, base, src)
+    End Function
+
     ' ---- Decode DDS -> RGBA float [0,1] (mirror de FaceTintCompositor.WritePristineTga) ----
     Public Class DecodedTex
         Public Width As Integer

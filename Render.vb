@@ -2402,7 +2402,21 @@ Public Class PreviewModel
             ' all geometry draws. The vertex-zap (applyZaps/VertexMask) path is untouched below.
             If Not drawHidden Then
                 Dim subIdx = TryCast(If(MeshData.Shape Is Nothing, Nothing, MeshData.Shape.NifShape), NiflySharp.Blocks.BSSubIndexTriShape)
-                If subIdx IsNot Nothing Then occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask)
+                If subIdx IsNot Nothing Then
+                    ' FO4: per-segment occlusion via BSSubIndexTriShape/BSGeometrySegmentData.
+                    occl = BSTriShapeGeometry.ComputeHiddenTriangles(subIdx, coveredMask, MeshData.Shape.OwnSlotsMask)
+                ElseIf coveredMask <> 0UI AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso
+                       MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.NifContent IsNot Nothing AndAlso MeshData.Shape.NifShape IsNot Nothing Then
+                    ' SSE: per-partition occlusion via BSDismemberSkinInstance partitions (engine
+                    ' ApplyOcclusionToGeometry 0x1403C56B0). Keyed on the mesh's REAL partition SBP slot,
+                    ' NOT the ARMA BOD2 (which declares incidental extra slots — e.g. NakedTorso BOD2
+                    ' includes calves(38), so boots would whole-hide the body under a BOD2 check; the
+                    ' body mesh's partition is SBP 32, so per-partition hides it only when slot 32 is
+                    ' covered). The app sets CoveredSlotsMask only on SKIN shapes (see NpcRenderHost),
+                    ' so this never runs on outfit shapes. For vanilla single-partition skin meshes every
+                    ' triangle shares one SBP → whole-mesh result, insensitive to triangle order.
+                    occl = MeshData.Shape.NifContent.ComputeHiddenTrianglesDismember(MeshData.Shape.NifShape, coveredMask)
+                End If
             End If
             _occlHidden = occl
 
@@ -3194,6 +3208,16 @@ Public Class PreviewModel
                 End If
             End If
 
+            ' SSE FaceGen albedo tint: the FACETINT (texture-set slot 6 -> engine PS t4) MULTIPLIES the albedo
+            ' (amplified) -- that is where the baked makeup/skin-tone shows (lips/eyes/tint). VERIFIED
+            ' sse_facegen_skin.asm: r1 = t4_amp * softlight(diffuse, detail). Bind it to texGlowmap (faces have
+            ' no glow); the _sk stays the subsurface on texLightmask above (engine t12). SSE + facegen gated,
+            ' so FO4 and non-face SSE are untouched.
+            If isSSE AndAlso materialBase.Facegen Then
+                Dim facetintId As UInteger = material.InnerLayerTexture_ID
+                shader.BindTexture("texGlowmap", If(facetintId <> 0, facetintId, Me.ParentModel.ParentControl.defaultWhiteTex), TextureUnit.Texture6)
+            End If
+
             '===============================
             ' ?? PROPIEDADES DEL MATERIAL
             '===============================
@@ -3236,6 +3260,8 @@ Public Class PreviewModel
             shader.SetBool("bHasGlowTex", glowTextureId <> 0)
             ' bLightmask: the _sk subsurface map drives the SSS/rim mask, incl. facegen (engine t12, above).
             If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0)
+            ' bFacetintAlbedo: facegen multiplies the albedo by the facetint (engine t4, slot 6 on texGlowmap).
+            If isSSE Then shader.SetBool("bFacetintAlbedo", materialBase.Facegen AndAlso material.InnerLayerTexture_ID <> 0)
             shader.SetFloat("shininess", materialBase.Smoothness)
             ' SSE: exponente de glossiness CRUDO (shad.Glossiness), no reconstruido por el shader.
             If isSSE Then shader.SetFloat("glossiness", materialBase.NifGlossiness)
@@ -3271,25 +3297,34 @@ Public Class PreviewModel
             shader.SetBool("bHairTint", isSSE AndAlso materialBase.Hair)
             If hasTint Then
                 Dim tint As Color
+                Dim tintVec As Vector3
                 If materialBase.SkinTint Then
                     ' SkinTint tone = per-actor SkinToneColor (NPC, set by the manager) or the material
                     ' SkinTintColor (WM / fallback). No White special-case: the engine never bakes the
                     ' tone into the texture; it is soft-lit at render from this color.
                     tint = materialBase.SkinTintColor
+                    ' SSE: el motor copia el skin tone resuelto (QNAM = lerp(0.5,TINC/255,TINV)) al
+                    ' tintColor del material CRUDO (×1/255, SIN gamma) — verificado en SkyrimSE.exe
+                    ' 0x3B8D80 (resolver, mulss 1/255) + 0x4365E0 (copy verbatim al material type-5).
+                    ' FO4: el engine gamma-corrige (pow 2.2) el skin tone en SetupMaterial → mantener Linear.
+                    tintVec = If(isSSE, Shader_Base_Class.Color_to_Vector(tint),
+                                        Shader_Base_Class.Color_to_Vector_Linear(tint))
                 Else
                     tint = materialBase.HairTintColor
+                    tintVec = Shader_Base_Class.Color_to_Vector_Linear(tint)
                 End If
-                shader.SetVector3("tintColor", Shader_Base_Class.Color_to_Vector_Linear(tint))
+                shader.SetVector3("tintColor", tintVec)
             End If
 
             ' SkinTint deferred W3C soft-light strength = the skin tone .w (engine material+0xCC). The app
             ' SkinTintAlpha carries it (default 1.0 = full). Consumed by Fragment_FO4 uEffectiveType==4.
             shader.SetFloat("skinTintStrength", materialBase.SkinTintAlpha)
 
-            ' FaceTint detail map (SSE only): texture-set slot 3 (DisplacementTexture) -> engine t3, applied as
-            ' a soft-light onto the diffuse. (The old slot-6 "tint mask" overlay was removed: slot 6 is the _sk
-            ' SUBSURFACE map -> engine t12, handled above via texLightmask + SSS, not a per-channel overlay --
-            ' the facegen PS has no such op, verified sse_facegen_skin.asm.)
+            ' FaceGen detail map (SSE only): texture-set slot 3 (DisplacementTexture) -> engine t3, soft-lighted
+            ' onto the diffuse BEFORE the facetint albedo tint. Full engine-faithful facegen albedo chain
+            ' (sse_facegen_skin.asm): albedo = facetint(t4, slot 6) * softlight(diffuse(t0), detail(t3)); the
+            ' _sk map (slot 2) is the SUBSURFACE colour -> engine t12 (texLightmask + SSS, above). CORRECTED:
+            ' the earlier note had slot 6/2 swapped -- slot 6 is the FACETINT (albedo tint), NOT the _sk.
             If isSSE Then
                 Dim detailMaskId = material.DetailMaskTexture_ID
                 Dim isFaceTint As Boolean = materialBase.Facegen

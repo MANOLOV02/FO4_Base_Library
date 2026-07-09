@@ -33,4 +33,24 @@ Public Module Ba2VersionUI
         combo.Items.Add("1 - Old Gen (OG / universal)")
         If includeLoose Then combo.Items.Add("None - Loose files (skip BA2 pack)")
     End Sub
+
+    ' --- SSE (Skyrim) archive target ---
+    ' SSE has no BA2 header-version choice: it either packs a BSA (v105) or leaves the bake loose.
+    ' Config field NPC_Config.Archive_SSE: 0 = Loose, 1 = BSA. Combo idx 0 = BSA, 1 = Loose.
+    Public Sub PopulateArchiveComboSSE(combo As System.Windows.Forms.ComboBox)
+        If combo Is Nothing Then Return
+        combo.Items.Clear()
+        combo.Items.Add("BSA (v105)")
+        combo.Items.Add("None - Loose files (skip BSA pack)")
+    End Sub
+
+    ' Archive_SSE value → combo index (1 BSA → 0, 0 Loose → 1).
+    Public Function ArchiveSseToComboIndex(v As UInteger) As Integer
+        Return If(v = 0UI, 1, 0)
+    End Function
+
+    ' Combo index → Archive_SSE value (0 → 1 BSA, 1 → 0 Loose).
+    Public Function ComboIndexToArchiveSse(idx As Integer) As UInteger
+        Return If(idx = 1, 0UI, 1UI)
+    End Function
 End Module

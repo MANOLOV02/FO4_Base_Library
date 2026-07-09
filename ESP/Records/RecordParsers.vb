@@ -127,37 +127,55 @@ End Class
 ' Each helper class corresponds to one subrecord struct in the xEdit definition.
 ' ============================================================================
 
-''' <summary>NPC_.ACBS struct (24 bytes typical, 20 bytes minimum). wbDefinitionsFO4.pas:10629-10677.
-''' Required subrecord. Holds actor flags, level (or level mult), level bracket and template
-''' inheritance flags.</summary>
+''' <summary>NPC_.ACBS struct. GAME-AWARE LAYOUT — the field set and offsets differ between engines:
+''' <para>• FO4 (20 bytes, wbDefinitionsFO4.pas:10629-10677): Flags u32(0) · XP Value Offset s16(4) ·
+''' Level u16(6) · Calc min u16(8) · Calc max u16(10) · Disposition Base s16(12) · Template Flags u16(14) ·
+''' Bleedout Override u16(16) · Unknown byte[2](18).</para>
+''' <para>• SSE (24 bytes, wbDefinitionsTES5.pas:8618-8668): Flags u32(0) · Magicka Offset s16(4) ·
+''' Stamina Offset s16(6) · Level u16(8) · Calc min u16(10) · Calc max u16(12) · Speed Multiplier u16(14) ·
+''' Disposition Base s16(16) · Template Flags u16(18) · Health Offset s16(20) · Bleedout Override u16(22).</para>
+''' The shared fields below (Flags, LevelOrLevelMult, CalcMinLevel, CalcMaxLevel, DispositionBase,
+''' TemplateFlags, BleedoutOverride) hold the SEMANTIC value for whichever game parsed the record; the
+''' game-specific fields (XpValueOffset FO4-only; MagickaOffset/StaminaOffset/SpeedMultiplier/HealthOffset
+''' SSE-only) carry the rest. ParseNPC + NpcSubrecordWriter.EmitAcbs branch on the game so the emit
+''' reproduces the exact byte layout it was parsed from. Required subrecord.</summary>
 Public Class NPC_AcbsData
-    ''' <summary>+0 u32 Flags. Bit 0x01 Female, 0x02 Essential, 0x04 IsCharGenFacePreset, 0x08 Respawn,
-    ''' 0x10 AutoCalcStats, 0x20 Unique, 0x40 DoesntAffectStealth, 0x80 PCLevelMult, 0x800 Protected,
-    ''' 0x4000 Summonable, 0x10000 DoesntBleed, 0x80000 OppositeGenderAnims, 0x100000 SimpleActor,
-    ''' 0x800000 NoActivationHellos, 0x20000000 IsGhost, 0x80000000 Invulnerable.</summary>
+    ''' <summary>+0 u32 Flags (both games). Bit 0x01 Female, 0x02 Essential, 0x04 IsCharGenFacePreset,
+    ''' 0x08 Respawn, 0x10 AutoCalcStats, 0x20 Unique, 0x40 DoesntAffectStealth, 0x80 PCLevelMult,
+    ''' 0x800 Protected, 0x4000 Summonable, 0x10000 DoesntBleed, 0x80000 OppositeGenderAnims,
+    ''' 0x100000 SimpleActor, 0x20000000 IsGhost, 0x80000000 Invulnerable. (Some bits differ per game —
+    ''' e.g. SSE 0x100 UseTemplate; only bit 0 Female is common — but the raw u32 round-trips as-is.)</summary>
     Public Flags As UInteger
-    ''' <summary>+4 s16 XP Value Offset.</summary>
+    ''' <summary>+4 s16 XP Value Offset. FO4-only (SSE has Magicka/Stamina Offset there instead).</summary>
     Public XpValueOffset As Short
-    ''' <summary>+6 u16. UNION wbACBSLevelDecider (wbDefinitionsCommon.pas:4089): if Flags &amp; 0x80
-    ''' (PCLevelMult) is set this is "Level Mult" raw u16 (xEdit divides by 1000 for display);
-    ''' otherwise this is a fixed Level u16. Stored raw — callers decide which interpretation by
-    ''' inspecting Flags bit 0x80.</summary>
+    ''' <summary>SSE +4 s16 Magicka Offset. SSE-only.</summary>
+    Public MagickaOffset As Short
+    ''' <summary>SSE +6 s16 Stamina Offset. SSE-only.</summary>
+    Public StaminaOffset As Short
+    ''' <summary>FO4 +6 / SSE +8 u16. UNION wbACBSLevelDecider (wbDefinitionsCommon.pas:4089): if Flags &amp;
+    ''' 0x80 (PCLevelMult) is set this is "Level Mult" raw u16 (xEdit divides by 1000 for display);
+    ''' otherwise a fixed Level u16. Stored raw — callers decide by inspecting Flags bit 0x80.</summary>
     Public LevelOrLevelMult As UShort
-    ''' <summary>+8 u16 Calc Min Level.</summary>
+    ''' <summary>FO4 +8 / SSE +10 u16 Calc Min Level.</summary>
     Public CalcMinLevel As UShort
-    ''' <summary>+10 u16 Calc Max Level.</summary>
+    ''' <summary>FO4 +10 / SSE +12 u16 Calc Max Level.</summary>
     Public CalcMaxLevel As UShort
-    ''' <summary>+12 s16 Disposition Base.</summary>
+    ''' <summary>SSE +14 u16 Speed Multiplier. SSE-only (FO4 has no speed field in ACBS).</summary>
+    Public SpeedMultiplier As UShort
+    ''' <summary>FO4 +12 / SSE +16 s16 Disposition Base (marked "unused" in the SSE struct).</summary>
     Public DispositionBase As Short
-    ''' <summary>+14 u16 Template Flags (bitmask wbTemplateFlags). Mirrors NPC_Data.TemplateFlags
-    ''' but lives natively here. Same value.</summary>
+    ''' <summary>FO4 +14 / SSE +18 u16 Template Flags (bitmask wbTemplateFlags). Mirrors
+    ''' NPC_Data.TemplateFlags. Same (semantic) value in both games.</summary>
     Public TemplateFlags As UShort
-    ''' <summary>+16 u16 Bleedout Override.</summary>
+    ''' <summary>SSE +20 s16 Health Offset. SSE-only.</summary>
+    Public HealthOffset As Short
+    ''' <summary>FO4 +16 / SSE +22 u16 Bleedout Override.</summary>
     Public BleedoutOverride As UShort
-    ''' <summary>+18 bytearray[2] Unknown / padding. Preserved verbatim.</summary>
+    ''' <summary>FO4 +18 bytearray[2] Unknown / padding. Preserved verbatim. FO4-only (SSE has no
+    ''' trailing pad — its 24 bytes are fully structured).</summary>
     Public Unknown18 As Byte() = New Byte() {0, 0}
-    ''' <summary>Bytes after offset 20 if subrecord length &gt; 20. Some FO4 NPCs emit 24-byte ACBS;
-    ''' the extra 4 bytes are preserved verbatim for round-trip equivalence.</summary>
+    ''' <summary>Bytes after the known struct end (FO4 &gt;20 / SSE &gt;24) preserved verbatim for
+    ''' round-trip equivalence.</summary>
     Public TrailingBytes As Byte() = Array.Empty(Of Byte)()
 End Class
 
@@ -168,6 +186,11 @@ End Class
 Public Class NPC_FactionEntry
     Public FactionFormID As UInteger
     Public Rank As SByte
+    ''' <summary>SSE-only: the 3 trailing wbUnused bytes of an 8-byte Skyrim SNAM faction (FO4 SNAM
+    ''' is 5 bytes with no trailing — see wbFaction IsFO4Plus branch). Captured verbatim so the SSE
+    ''' writer reproduces them byte-for-byte (they are usually 0 but xEdit preserves any garbage).
+    ''' Nothing for FO4 entries.</summary>
+    Public SseUnused As Byte() = Nothing
 End Class
 
 ''' <summary>NPC_.PRPS (Properties) entry. wbDefinitionsFO4.pas:10725 + 5634-5640. 8 bytes:
@@ -183,6 +206,34 @@ End Class
 Public Class NPC_PerkEntry
     Public PerkFormID As UInteger
     Public Rank As Byte
+    ''' <summary>SSE-only: the 3 trailing bytes of an 8-byte Skyrim PRKR entry (FO4 PRKR is 5 bytes).
+    ''' Unlike SNAM these are frequently NON-ZERO in vanilla Skyrim.esm, so they MUST be preserved
+    ''' verbatim for a byte-exact round-trip. Nothing for FO4 entries.</summary>
+    Public SseUnused As Byte() = Nothing
+End Class
+
+''' <summary>An opaque SSE subrecord captured verbatim for byte-exact round-trip (tint layers,
+''' actor sounds). <see cref="IsFormId"/> marks a 4-byte FormID payload (e.g. CSDI sound) that the
+''' writer must route through the master remapper; otherwise <see cref="Data"/> is emitted as-is.</summary>
+Public Class NPC_RawSubrecord
+    Public Sig As String = ""
+    Public Data As Byte() = Nothing
+    Public IsFormId As Boolean = False
+End Class
+
+''' <summary>RaceMenu (.jslot) per-vertex head sculpt delta — vertex index + WORLD-space delta (already
+''' divided by the .jslot sculptDivisor).</summary>
+Public Class NPC_SculptVert
+    Public Index As Integer
+    Public Dx As Single
+    Public Dy As Single
+    Public Dz As Single
+End Class
+
+''' <summary>RaceMenu (.jslot) NiOverride custom morph — a named chargen morph (CME_/EFM_) at a weight.</summary>
+Public Class NPC_CustomMorph
+    Public Name As String = ""
+    Public Value As Single
 End Class
 
 ''' <summary>NPC_.CNTO + COED (Inventory item). wbDefinitionsFO4.pas:3696-3705. CNTO mandatory,
@@ -368,10 +419,15 @@ Public Class NPC_DestructionData
 End Class
 
 ''' <summary>NPC_.CS2H + CS2K + CS2D entry (Actor Sounds). wbDefinitionsCommon.pas:7117-7129.
-''' Each entry is keyword (CS2K) + sound (CS2D) pair.</summary>
+''' CS2K (Keyword) is OPTIONAL — vanilla AudioTemplate/UnarmedWeapon NPCs have a bare CS2D with no
+''' preceding CS2K. <see cref="HasKeyword"/> records whether CS2K was present so the writer doesn't
+''' emit a spurious CS2K(0) on round-trip.</summary>
 Public Class NPC_ActorSound
     Public KeywordFormID As UInteger
     Public SoundFormID As UInteger
+    ''' <summary>True iff a CS2K subrecord preceded this entry's CS2D in the source. False = bare CS2D
+    ''' (the writer must NOT emit CS2K for it).</summary>
+    Public HasKeyword As Boolean = False
 End Class
 
 ''' <summary>VMAD opaque payload. wbDefinitionsFO4.pas:4383-4388.
@@ -410,6 +466,12 @@ End Class
 Public Class NPC_Data
     Public FormID As UInteger
     Public EditorID As String = ""
+    ''' <summary>Game this NPC record belongs to — the FO4-vs-SSE discriminator that selects the byte
+    ''' layout for the parser and writer (ACBS offsets, SNAM/PRKR width, AIDT/DNAM size, NAM7 semantics,
+    ''' actor-sound + tint + face-morph subrecord sets). Defaults to the current session game so drafts
+    ''' created in-editor inherit the right target; ParseNPC/ParseNPCLight set it explicitly from
+    ''' Config_App.Current.Game. Consumed by NpcSubrecordWriter to pick the FO4/SSE emit path.</summary>
+    Public Game As Config_App.Game_Enum = Config_App.Current.Game
     Public FullName As String = ""
     Public RaceFormID As UInteger
     Public SkinFormID As UInteger
@@ -827,6 +889,61 @@ Public Class NPC_Data
     Public HasHairColor As Boolean = False
     Public HasFacialHairColor As Boolean = False
     Public HasHeadTexture As Boolean = False
+
+    ' ========================================================================
+    ' SSE-specific captures (Game = Skyrim). All Nothing/empty for FO4 data, so they never touch the
+    ' FO4 emit path. Consumed by NpcSubrecordWriter's SSE branches for a byte-exact round-trip.
+    ' Structs whose SSE semantics we don't need for editing yet are preserved verbatim (DNAM 52B
+    ' Player-Skills block, NAM9 19 sliders, NAMA 4 face-parts). See reference_sse_engine_facegen_re.
+    ' ========================================================================
+    ''' <summary>DNAM Player Skills block (52 bytes, SSE) preserved verbatim. FO4 uses the 8-byte
+    ''' CalculatedStats struct instead; on SSE that struct is left Nothing and this raw drives writeback.</summary>
+    Public DnamRawSse As Byte() = Nothing
+    ''' <summary>NAM9 (19×f32 face-morph sliders, 76 bytes) — SSE-only. Preserved verbatim.</summary>
+    Public Nam9Raw As Byte() = Nothing
+    ''' <summary>NAMA (4×u32 face-parts Nose/Unknown/Eyes/Mouth, 16 bytes) — SSE-only. Verbatim.</summary>
+    Public NamaRaw As Byte() = Nothing
+    ''' <summary>SSE face-tint layers as a flat ordered list of TINI/TINC/TINV/TIAS subrecords (no
+    ''' FormIDs) captured verbatim and re-emitted in order at the very end of the record.</summary>
+    Private _sseTintRaw As List(Of NPC_RawSubrecord)
+    Public Property SseTintRaw As List(Of NPC_RawSubrecord)
+        Get
+            If _sseTintRaw Is Nothing Then _sseTintRaw = New List(Of NPC_RawSubrecord)
+            Return _sseTintRaw
+        End Get
+        Set(value As List(Of NPC_RawSubrecord))
+            _sseTintRaw = value
+        End Set
+    End Property
+    ''' <summary>RaceMenu-only per-layer CUSTOM tint-mask texture override (tint layer index → texture path),
+    ''' from a .jslot / the tint editor. PresetInterface.cpp:203 overrides the RACE layer's TINT path by index;
+    ''' SseFaceTintComposer composites this path instead of the RACE default for that index (render + bake).
+    ''' NOT in the ESP (TINI/TINC/TINV/TIAS carry no path) — lives in the .bssliders sidecar; carried on the
+    ''' overlay shadow for preview/bake. Nothing/absent index = use the RACE layer's own mask.</summary>
+    Public Property SseTintTexOverride As Dictionary(Of Integer, String) = Nothing
+    ''' <summary>RaceMenu (.jslot sidecar) per-vertex head SCULPT deltas — WORLD deltas (already divided by
+    ''' sculptDivisor) for the HEAD shape. Applied on top of the NAM9/NAMA chargen morphs in render + bake.
+    ''' Nothing = no sculpt. NOT in the ESP — lives in the .jslot sidecar; carried on the overlay for preview/bake.</summary>
+    Public Property SseSculptHead As List(Of NPC_SculptVert) = Nothing
+    ''' <summary>RaceMenu NiOverride CUSTOM morphs (CME_/EFM_ names + value) from the .jslot. Applied by name
+    ''' against the chargen TriHead (no-op for names the tri doesn't carry). Nothing = none.</summary>
+    Public Property SseCustomMorphs As List(Of NPC_CustomMorph) = Nothing
+    ''' <summary>RaceMenu skin/face overlay layers (from the .jslot tintInfo overlay entries) composited ON TOP
+    ''' of the facetint in render + bake (SseOverlayCompositor). Nothing = none. Sidecar-only.</summary>
+    Public Property SseOverlays As List(Of SseOverlayCompositor.SseOverlay) = Nothing
+    ''' <summary>SSE actor sounds as a flat ordered list of CSDT/CSDI/CSDC subrecords. CSDI entries
+    ''' are marked IsFormId (resolved to GLOBAL at parse) so the writer remaps them; CSDT/CSDC are
+    ''' emitted verbatim. Replaces the FO4 CS2H/CS2K/CS2D/CS2E/CS2F block on SSE.</summary>
+    Private _sseActorSounds As List(Of NPC_RawSubrecord)
+    Public Property SseActorSounds As List(Of NPC_RawSubrecord)
+        Get
+            If _sseActorSounds Is Nothing Then _sseActorSounds = New List(Of NPC_RawSubrecord)
+            Return _sseActorSounds
+        End Get
+        Set(value As List(Of NPC_RawSubrecord))
+            _sseActorSounds = value
+        End Set
+    End Property
 
     Public Overrides Function ToString() As String
         If FullName <> "" Then Return $"{FullName} [{EditorID}]"
@@ -1313,11 +1430,16 @@ Public Class RaceUtil
         Return BipedValueToBit(race.OcclusionFaceCullBiped)
     End Function
 
-    ''' <summary>Hair slot mask (B) for a race. The engine's hair channel uses BOTH 30+B AND 30+B+1
-    ''' (HumanRace B=0 -> slots 30 &amp; 31). Both bits are bounded to the valid 0..31 range. 0 when None.</summary>
+    ''' <summary>Hair slot mask (B) for a race. GAME-AWARE:
+    ''' • FO4: the hair channel covers BOTH 30+B AND 30+B+1 (HumanRace B=0 -> slots 30 &amp; 31, the two
+    '''   FO4 hair slots HairTop/HairLong).
+    ''' • SSE: a SINGLE slot 30+B (the byte-level engine reader at [race+0x130] tests one slot; Skyrim
+    '''   hair = slot 31, so B=1 -> slot 31, and 30+B+1 would wrongly add slot 32=Body).
+    ''' Bits bounded to 0..31. 0 when None (B=-1 / >31).</summary>
     Public Shared Function RaceHairMask(race As RACE_Data) As UInteger
         If race Is Nothing Then Return 0UI
         Dim b = race.OcclusionHairBiped
+        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then Return BipedValueToBit(b)
         Return BipedValueToBit(b) Or BipedValueToBit(b + 1)
     End Function
 
@@ -1953,7 +2075,8 @@ Public Module RecordParsers
         Dim npc As New NPC_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID,
-            .PluginName = pluginName
+            .PluginName = pluginName,
+            .Game = Config_App.Current.Game
         }
 
         For Each sr In rec.Subrecords
@@ -1967,9 +2090,8 @@ Public Module RecordParsers
                         npc.AcbsFlags = BitConverter.ToUInt32(d, 0)
                         npc.IsFemale = (npc.AcbsFlags And 1UI) <> 0UI
                     End If
-                    If d IsNot Nothing AndAlso d.Length >= 16 Then
-                        npc.TemplateFlags = BitConverter.ToUInt16(d, 14)
-                    End If
+                    ' Template Flags — game-aware offset (FO4 @14, SSE @18). See ReadAcbsTemplateFlags.
+                    npc.TemplateFlags = ReadAcbsTemplateFlags(d, npc.Game)
                 Case "RNAM"
                     npc.RaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                     npc.HasRace = True
@@ -1990,6 +2112,23 @@ Public Module RecordParsers
         Next
 
         Return npc
+    End Function
+
+    ''' <summary>Read the ACBS "Template Flags" (u16) game-aware. The field sits at a DIFFERENT byte
+    ''' offset per engine: FO4 @14 (wbDefinitionsFO4.pas:10673) but SSE @18 (wbDefinitionsTES5.pas:8664 —
+    ''' the TES5 ACBS struct inserts Stamina Offset + Speed Multiplier ahead of Template Flags). Reading
+    ''' @14 in SSE yields the Speed Multiplier instead (typically 100 = 0x64, whose bit 6 = "Model/
+    ''' Animation"), which misclassifies nearly every humanoid NPC as inheriting its appearance and drops
+    ''' it from the "Unique faces" filter (only creatures whose speed lacks bits 0/6 slip through).
+    ''' Returns 0 when the payload is too short.
+    ''' <para>Used by the fast ParseNPCLight path (which reads Template Flags directly without building an
+    ''' NPC_AcbsData). The full ParseNPC parses the whole ACBS struct game-aware into NPC_AcbsData instead.
+    ''' See project_npc_manager_multigame_plan.</para></summary>
+    Private Function ReadAcbsTemplateFlags(d As Byte(), game As Config_App.Game_Enum) As UShort
+        If d Is Nothing Then Return 0US
+        Dim off As Integer = If(game = Config_App.Game_Enum.Skyrim, 18, 14)
+        If d.Length < off + 2 Then Return 0US
+        Return BitConverter.ToUInt16(d, off)
     End Function
 
     ' ============================================================================
@@ -2013,7 +2152,8 @@ Public Module RecordParsers
         Dim npc As New NPC_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID,
-            .PluginName = pluginName
+            .PluginName = pluginName,
+            .Game = Config_App.Current.Game
         }
 
         ' Streaming state for paired/RArray subrecords (counters, multi-subrecord items, etc.).
@@ -2059,31 +2199,54 @@ Public Module RecordParsers
                     npc.AnimationSoundFormID = ResolveFormIDReference(rec, sr, pluginManager)
                     npc.HasAnimationSound = True
 
-                ' wbDefinitionsFO4.pas:10629-10677 — ACBS (required, 24 bytes typical)
+                ' ACBS (required). GAME-AWARE struct — FO4 20B (wbDefinitionsFO4.pas:10629-10677) vs SSE 24B
+                ' (wbDefinitionsTES5.pas:8618-8668): SSE inserts Magicka/Stamina Offset before Level and
+                ' Speed Multiplier + Health Offset around Template Flags, shifting Template Flags from @14 to
+                ' @18. Parse into the semantically-correct fields per game; NpcSubrecordWriter.EmitAcbs emits
+                ' the matching order so the bytes round-trip. See NPC_AcbsData + project_npc_manager_multigame_plan.
                 Case "ACBS"
                     Dim a As New NPC_AcbsData
                     Dim d = sr.Data
-                    If d IsNot Nothing Then
-                        If d.Length >= 4 Then a.Flags = BitConverter.ToUInt32(d, 0)
-                        If d.Length >= 6 Then a.XpValueOffset = BitConverter.ToInt16(d, 4)
-                        If d.Length >= 8 Then a.LevelOrLevelMult = BitConverter.ToUInt16(d, 6)
-                        If d.Length >= 10 Then a.CalcMinLevel = BitConverter.ToUInt16(d, 8)
-                        If d.Length >= 12 Then a.CalcMaxLevel = BitConverter.ToUInt16(d, 10)
-                        If d.Length >= 14 Then a.DispositionBase = BitConverter.ToInt16(d, 12)
-                        If d.Length >= 16 Then a.TemplateFlags = BitConverter.ToUInt16(d, 14)
-                        If d.Length >= 18 Then a.BleedoutOverride = BitConverter.ToUInt16(d, 16)
-                        If d.Length >= 20 Then
-                            a.Unknown18 = New Byte() {d(18), d(19)}
+                    If d IsNot Nothing AndAlso d.Length >= 4 Then a.Flags = BitConverter.ToUInt32(d, 0)
+                    If npc.Game = Config_App.Game_Enum.Skyrim Then
+                        If d IsNot Nothing Then
+                            If d.Length >= 6 Then a.MagickaOffset = BitConverter.ToInt16(d, 4)
+                            If d.Length >= 8 Then a.StaminaOffset = BitConverter.ToInt16(d, 6)
+                            If d.Length >= 10 Then a.LevelOrLevelMult = BitConverter.ToUInt16(d, 8)
+                            If d.Length >= 12 Then a.CalcMinLevel = BitConverter.ToUInt16(d, 10)
+                            If d.Length >= 14 Then a.CalcMaxLevel = BitConverter.ToUInt16(d, 12)
+                            If d.Length >= 16 Then a.SpeedMultiplier = BitConverter.ToUInt16(d, 14)
+                            If d.Length >= 18 Then a.DispositionBase = BitConverter.ToInt16(d, 16)
+                            If d.Length >= 20 Then a.TemplateFlags = BitConverter.ToUInt16(d, 18)
+                            If d.Length >= 22 Then a.HealthOffset = BitConverter.ToInt16(d, 20)
+                            If d.Length >= 24 Then a.BleedoutOverride = BitConverter.ToUInt16(d, 22)
+                            If d.Length > 24 Then
+                                a.TrailingBytes = New Byte(d.Length - 24 - 1) {}
+                                Buffer.BlockCopy(d, 24, a.TrailingBytes, 0, a.TrailingBytes.Length)
+                            End If
                         End If
-                        If d.Length > 20 Then
-                            a.TrailingBytes = New Byte(d.Length - 20 - 1) {}
-                            Buffer.BlockCopy(d, 20, a.TrailingBytes, 0, a.TrailingBytes.Length)
+                    Else
+                        If d IsNot Nothing Then
+                            If d.Length >= 6 Then a.XpValueOffset = BitConverter.ToInt16(d, 4)
+                            If d.Length >= 8 Then a.LevelOrLevelMult = BitConverter.ToUInt16(d, 6)
+                            If d.Length >= 10 Then a.CalcMinLevel = BitConverter.ToUInt16(d, 8)
+                            If d.Length >= 12 Then a.CalcMaxLevel = BitConverter.ToUInt16(d, 10)
+                            If d.Length >= 14 Then a.DispositionBase = BitConverter.ToInt16(d, 12)
+                            If d.Length >= 16 Then a.TemplateFlags = BitConverter.ToUInt16(d, 14)
+                            If d.Length >= 18 Then a.BleedoutOverride = BitConverter.ToUInt16(d, 16)
+                            If d.Length >= 20 Then a.Unknown18 = New Byte() {d(18), d(19)}
+                            If d.Length > 20 Then
+                                a.TrailingBytes = New Byte(d.Length - 20 - 1) {}
+                                Buffer.BlockCopy(d, 20, a.TrailingBytes, 0, a.TrailingBytes.Length)
+                            End If
                         End If
                     End If
                     npc.Acbs = a
                     ' Mirror to legacy fields for renderer compatibility.
                     npc.AcbsFlags = a.Flags
                     npc.IsFemale = (a.Flags And 1UI) <> 0UI
+                    ' a.TemplateFlags now holds the game-correct value (parsed @14 FO4 / @18 SSE), so the
+                    ' semantic mirror is a straight copy again.
                     npc.TemplateFlags = a.TemplateFlags
 
                 ' wbDefinitionsFO4.pas:10678 — SNAM (Faction, RArrayS) — wbDefinitionsCommon.pas:7070
@@ -2098,6 +2261,11 @@ Public Module RecordParsers
                             .FactionFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager),
                             .Rank = ReadInt8(d(4))
                         }
+                        ' SSE SNAM = 8 bytes (formid + s8 rank + 3 wbUnused); capture the trailing for
+                        ' byte-exact writeback. FO4 SNAM is 5 bytes with no trailing.
+                        If npc.Game = Config_App.Game_Enum.Skyrim AndAlso d.Length >= 8 Then
+                            entry.SseUnused = New Byte() {d(5), d(6), d(7)}
+                        End If
                         npc.Factions.Add(entry)
                     End If
 
@@ -2302,6 +2470,11 @@ Public Module RecordParsers
                             .PerkFormID = ResolveFormIDReference(rec, BitConverter.ToUInt32(d, 0), pluginManager),
                             .Rank = d(4)
                         }
+                        ' SSE PRKR = 8 bytes (formid + u8 rank + 3 trailing). The trailing is often
+                        ' NON-ZERO in vanilla Skyrim.esm, so it MUST be preserved for byte-exactness.
+                        If npc.Game = Config_App.Game_Enum.Skyrim AndAlso d.Length >= 8 Then
+                            entry.SseUnused = New Byte() {d(5), d(6), d(7)}
+                        End If
                         npc.Perks.Add(entry)
                     End If
 
@@ -2470,8 +2643,19 @@ Public Module RecordParsers
 
                 ' wbDefinitionsFO4.pas:10738 — FULL (Display name)
                 Case "FULL"
-                    npc.FullName = ResolveDisplayString(rec, sr, pluginManager)
-                    npc.HasFull = True
+                    If insideObjectTemplate Then
+                        ' A FULL *inside* the Object Template block (OBTE…STOP) is the pending
+                        ' combination's display name, NOT the NPC's own FULL (which appears after
+                        ' STOP). Routing it to npc.FullName unconditionally was a round-trip bug: it
+                        ' left combo.DisplayName = "" so EmitObjectTemplate dropped the combo FULL on
+                        ' save, corrupting the OBTS block (verified on EncProtectron*Legendary). OBTF
+                        ' usually created the pending combo already; create one if a combo omits OBTF.
+                        If pendingCombination Is Nothing Then pendingCombination = New NPC_ObjectTemplateCombination
+                        pendingCombination.DisplayName = ResolveDisplayString(rec, sr, pluginManager)
+                    Else
+                        npc.FullName = ResolveDisplayString(rec, sr, pluginManager)
+                        npc.HasFull = True
+                    End If
 
                 ' wbDefinitionsFO4.pas:10739 — SHRT (Short Name)
                 Case "SHRT"
@@ -2482,10 +2666,14 @@ Public Module RecordParsers
                 Case "DATA"
                     npc.HasDataMarker = True
 
-                ' wbDefinitionsFO4.pas:10741-10747 — DNAM (Calculated stats, 8 bytes)
+                ' DNAM — FO4: 8-byte Calculated Stats (wbDefinitionsFO4.pas:10741-10747). SSE: 52-byte
+                ' Player Skills block (wbDefinitionsTES5.pas). Different sizes AND semantics; for SSE we
+                ' preserve the whole block verbatim (byte-exact round-trip; editing lands in F5).
                 Case "DNAM"
                     Dim d = sr.Data
-                    If d IsNot Nothing AndAlso d.Length >= 8 Then
+                    If npc.Game = Config_App.Game_Enum.Skyrim Then
+                        npc.DnamRawSse = d
+                    ElseIf d IsNot Nothing AndAlso d.Length >= 8 Then
                         npc.CalculatedStats = New NPC_CalculatedStats With {
                             .CalculatedHealth = BitConverter.ToUInt16(d, 0),
                             .CalculatedActionPoints = BitConverter.ToUInt16(d, 2),
@@ -2567,7 +2755,8 @@ Public Module RecordParsers
                         npc.ActorSounds.Add(pendingActorSound)
                     End If
                     pendingActorSound = New NPC_ActorSound With {
-                        .KeywordFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                        .KeywordFormID = ResolveFormIDReference(rec, sr, pluginManager),
+                        .HasKeyword = True
                     }
                 Case "CS2D"
                     If pendingActorSound Is Nothing Then pendingActorSound = New NPC_ActorSound
@@ -2764,6 +2953,24 @@ Public Module RecordParsers
                 Case "ATTX"
                     npc.ActivateTextOverride = ResolveDisplayString(rec, sr, pluginManager)
                     npc.HasActivateTextOverride = True
+
+                ' ---- SSE-only subrecords (wbDefinitionsTES5.pas). These signatures never appear in
+                '      FO4 NPC_ records, so the cases are inert under FO4. ----
+                ' NAM9 (19×f32 face sliders) + NAMA (4×u32 face parts): preserved verbatim.
+                Case "NAM9"
+                    npc.Nam9Raw = sr.Data
+                Case "NAMA"
+                    npc.NamaRaw = sr.Data
+                ' Face-tint layers (RArrayS of TINI/TINC/TINV/TIAS). No FormIDs — captured verbatim.
+                Case "TINI", "TINC", "TINV", "TIAS"
+                    npc.SseTintRaw.Add(New NPC_RawSubrecord With {.Sig = sr.Signature, .Data = sr.Data})
+                ' Actor sounds (CSDT type + CSDI sound FormID + CSDC). CSDI resolved to GLOBAL so the
+                ' writer remaps it; CSDT/CSDC carry no FormID and are emitted verbatim.
+                Case "CSDT", "CSDC"
+                    npc.SseActorSounds.Add(New NPC_RawSubrecord With {.Sig = sr.Signature, .Data = sr.Data})
+                Case "CSDI"
+                    Dim gid = ResolveFormIDReference(rec, sr, pluginManager)
+                    npc.SseActorSounds.Add(New NPC_RawSubrecord With {.Sig = "CSDI", .Data = BitConverter.GetBytes(gid), .IsFormId = True})
 
             End Select
         Next
@@ -3210,43 +3417,66 @@ Public Module RecordParsers
                     '   +32 uint Flags  ...   (bit 0x2 = "FaceGen Head", pas:11454)
                     ' Only read at RACE top level (not inside head sections).
                     If Not inMaleHead AndAlso Not inFemaleHead AndAlso Not inMaleBody AndAlso Not inFemaleBody _
-                       AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
-                        race.MaleHeight = BitConverter.ToSingle(sr.Data, 0)
-                        race.FemaleHeight = BitConverter.ToSingle(sr.Data, 4)
-                        If sr.Data.Length >= 32 Then
-                            race.MaleDefaultWeightThin = ReadOptionalFloat(sr.Data, 8)
-                            race.MaleDefaultWeightMuscular = ReadOptionalFloat(sr.Data, 12)
-                            race.MaleDefaultWeightFat = ReadOptionalFloat(sr.Data, 16)
-                            race.FemaleDefaultWeightThin = ReadOptionalFloat(sr.Data, 20)
-                            race.FemaleDefaultWeightMuscular = ReadOptionalFloat(sr.Data, 24)
-                            race.FemaleDefaultWeightFat = ReadOptionalFloat(sr.Data, 28)
-                        End If
-                        ' Flags u32 — offset is version-aware: 32 for form ver>=109 (after both Default
-                        ' Weight blocks), else 8 (pre-v109 layout has no Default Weight). Bit 0x2 =
-                        ' "FaceGen Head". Defensive: if the version-based offset doesn't fit the payload,
-                        ' fall back to the other layout (mirrors RaceFaceGenFlagProbe.ReadRaceFlags).
-                        Dim flagsOffset As Integer = If(rec.Header.Version >= 109US, 32, 8)
-                        If sr.Data.Length < flagsOffset + 4 Then
-                            Dim altOffset As Integer = If(flagsOffset = 32, 8, 32)
-                            If sr.Data.Length >= altOffset + 4 Then flagsOffset = altOffset Else flagsOffset = -1
-                        End If
-                        If flagsOffset >= 0 Then
-                            Dim dataFlags = BitConverter.ToUInt32(sr.Data, flagsOffset)
-                            race.FaceGenHead = (dataFlags And &H2UI) <> 0UI
+                       AndAlso sr.Data IsNot Nothing Then
+                        If Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then
+                            ' SSE RACE.DATA layout (wbDefinitionsTES5.pas:9665): Skill Boosts[7]=14B + Unknown[2],
+                            ' then Male Height @16, Female Height @20, Male/Female Weight @24/28, Flags u32 @32
+                            ' (bit 0x2 = "FaceGen Head"). The FO4 version-gated flags offset (8/32) misreads SSE
+                            ' (SSE RACE form version < 109 → would read flags @8 = skill-boost bytes). Verified
+                            ' correct against the vanilla facegeom-NIF ground truth (--gatecheck).
+                            If sr.Data.Length >= 24 Then
+                                race.MaleHeight = BitConverter.ToSingle(sr.Data, 16)
+                                race.FemaleHeight = BitConverter.ToSingle(sr.Data, 20)
+                            End If
+                            If sr.Data.Length >= 36 Then
+                                race.FaceGenHead = (BitConverter.ToUInt32(sr.Data, 32) And &H2UI) <> 0UI
+                            End If
+                        ElseIf sr.Data.Length >= 8 Then
+                            race.MaleHeight = BitConverter.ToSingle(sr.Data, 0)
+                            race.FemaleHeight = BitConverter.ToSingle(sr.Data, 4)
+                            If sr.Data.Length >= 32 Then
+                                race.MaleDefaultWeightThin = ReadOptionalFloat(sr.Data, 8)
+                                race.MaleDefaultWeightMuscular = ReadOptionalFloat(sr.Data, 12)
+                                race.MaleDefaultWeightFat = ReadOptionalFloat(sr.Data, 16)
+                                race.FemaleDefaultWeightThin = ReadOptionalFloat(sr.Data, 20)
+                                race.FemaleDefaultWeightMuscular = ReadOptionalFloat(sr.Data, 24)
+                                race.FemaleDefaultWeightFat = ReadOptionalFloat(sr.Data, 28)
+                            End If
+                            ' Flags u32 — offset is version-aware: 32 for form ver>=109 (after both Default
+                            ' Weight blocks), else 8 (pre-v109 layout has no Default Weight). Bit 0x2 =
+                            ' "FaceGen Head". Defensive: if the version-based offset doesn't fit the payload,
+                            ' fall back to the other layout (mirrors RaceFaceGenFlagProbe.ReadRaceFlags).
+                            Dim flagsOffset As Integer = If(rec.Header.Version >= 109US, 32, 8)
+                            If sr.Data.Length < flagsOffset + 4 Then
+                                Dim altOffset As Integer = If(flagsOffset = 32, 8, 32)
+                                If sr.Data.Length >= altOffset + 4 Then flagsOffset = altOffset Else flagsOffset = -1
+                            End If
+                            If flagsOffset >= 0 Then
+                                race.FaceGenHead = (BitConverter.ToUInt32(sr.Data, flagsOffset) And &H2UI) <> 0UI
+                            End If
                         End If
 
-                        ' Head-part occlusion biped objects (verified vs Fallout4.exe + .esm). FILE offsets
-                        ' inside the DATA payload, form-version >=109 layout (all vanilla = v200): A face-cull
-                        ' @0x30, B hair @0x34. Each is an s32: value v -> affected biped slot (30+v) when
-                        ' 0<=v<=31, else -1/>31 = None. B occludes BOTH 30+B and 30+B+1 (see RaceHairMask). The
-                        ' C / Beard Biped Object @0x40 exists only when form version >= 124. Length-guarded so a
-                        ' truncated/older payload simply leaves the field at its None (-1) default.
-                        If rec.Header.Version >= 109US AndAlso sr.Data.Length >= &H38 Then
-                            race.OcclusionFaceCullBiped = BitConverter.ToInt32(sr.Data, &H30)
-                            race.OcclusionHairBiped = BitConverter.ToInt32(sr.Data, &H34)
-                        End If
-                        If rec.Header.Version >= 124US AndAlso sr.Data.Length >= &H44 Then
-                            race.OcclusionFacialHairBiped = BitConverter.ToInt32(sr.Data, &H40)
+                        ' Head-part occlusion biped objects. GAME-AWARE FILE offsets inside the DATA payload
+                        ' (the RACE DATA struct differs between engines). Each is an s32: value v -> affected
+                        ' biped slot (30+v) when 0<=v<=31, else -1/>31 = None.
+                        '   • FO4 (wbDefinitionsFO4.pas, v>=109): A face-cull @0x30, B hair @0x34, C beard @0x40
+                        '     (C only v>=124). B occludes BOTH 30+B and 30+B+1 (see RaceHairMask).
+                        '   • SSE (wbDefinitionsTES5.pas:9693-9694 + byte-level engine RE 0x1403BB880 reading
+                        '     [race+0x12C]/[race+0x130]): 'Head Biped Object' @DATA+0x44 (A, whole-cull),
+                        '     'Hair Biped Object' @DATA+0x48 (B). No dedicated facial-hair occlusion object.
+                        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then
+                            If sr.Data.Length >= &H4C Then
+                                race.OcclusionFaceCullBiped = BitConverter.ToInt32(sr.Data, &H44)
+                                race.OcclusionHairBiped = BitConverter.ToInt32(sr.Data, &H48)
+                            End If
+                        Else
+                            If rec.Header.Version >= 109US AndAlso sr.Data.Length >= &H38 Then
+                                race.OcclusionFaceCullBiped = BitConverter.ToInt32(sr.Data, &H30)
+                                race.OcclusionHairBiped = BitConverter.ToInt32(sr.Data, &H34)
+                            End If
+                            If rec.Header.Version >= 124US AndAlso sr.Data.Length >= &H44 Then
+                                race.OcclusionFacialHairBiped = BitConverter.ToInt32(sr.Data, &H40)
+                            End If
                         End If
                     End If
                 Case "NNAM"

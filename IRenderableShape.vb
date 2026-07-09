@@ -49,6 +49,12 @@ Public Interface IRenderableShape
     ''' (the default; e.g. Wardrobe_Manager never sets it, so its render is unaffected). Read by the
     ''' render per-segment index filter (EnsureZapIndexBuffer → BSTriShapeGeometry.ComputeHiddenTriangles).</summary>
     Property CoveredSlotsMask As UInteger
+    ''' <summary>This shape's OWN worn biped-slot mask (bit N-30 = slot N) = the item's BOD2 footprint.
+    ''' Lets the per-segment filter tell a SELF-tagged segment (slot the item occupies → hide-if-covered,
+    ''' engine self-exclude/occluder-order) from a FOREIGN one (slot the item does NOT occupy → the engine
+    ''' coverage-key companion branch, inverse polarity). 0 = unknown owner ⇒ the foreign branch is skipped
+    ''' (current behaviour). Only NpcRenderHost sets it, on FO4 worn items; WM/SSE leave it 0.</summary>
+    Property OwnSlotsMask As UInteger
     Property MaskedVertices As HashSet(Of Integer)
     ''' <summary>Render-only extra material layers drawn as coplanar decals over this shape's deformed
     ''' geometry (LooksMenu overlays/tattoos). Nothing/empty = no overlay (the default; WM never sets

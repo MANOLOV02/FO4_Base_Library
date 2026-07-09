@@ -858,7 +858,7 @@ Public Class BSTriShapeGeometry
     ''' Pure read — no mutation. Result is a function of (shape segmentation, coveredSlotsMask) only, so
     ''' callers MAY cache it per (shape, coveredSlotsMask); it feeds the render per-segment occlusion filter.
     ''' </summary>
-    Public Shared Function ComputeHiddenTriangles(subIndex As BSSubIndexTriShape, coveredSlotsMask As UInteger) As Boolean()
+    Public Shared Function ComputeHiddenTriangles(subIndex As BSSubIndexTriShape, coveredSlotsMask As UInteger, Optional ownSlotsMask As UInteger = 0UI) As Boolean()
         Dim tb = GetTriangleBipedObjects(subIndex)
         If tb.Length = 0 Then Return Array.Empty(Of Boolean)()
 
@@ -866,7 +866,20 @@ Public Class BSTriShapeGeometry
         For ti = 0 To tb.Length - 1
             Dim b As Integer = tb(ti)
             If b >= 30 AndAlso b <= 61 Then
-                result(ti) = (coveredSlotsMask And (1UI << (b - 30))) <> 0UI
+                Dim bit As UInteger = 1UI << (b - 30)
+                ' A segment tagged with a slot the item does NOT occupy (FOREIGN, and not the Pipboy-60
+                ' occluder slot) goes through the engine coverage-key branch (resolver 0x14035E243-0x14035E289),
+                ' NOT the self-exclude/occupancy branch. With the default coverage-key ("") that branch SHOWS
+                ' the segment only when the foreign slot is OCCUPIED by another item and HIDES it when the slot
+                ' is empty — the INVERSE of the occlusion polarity. <paramref name="ownSlotsMask"/>=0 (unknown
+                ' owner) or slot 60 (Pipboy occluder-order) skip this and use the occlusion polarity.
+                ' No-op on vanilla: measured 0 of 1267 vanilla ARMA meshes carry a foreign (tag not in own
+                ' BOD2, !=60) segment, so this branch never fires on vanilla content.
+                If ownSlotsMask <> 0UI AndAlso b <> 60 AndAlso (ownSlotsMask And bit) = 0UI Then
+                    result(ti) = (coveredSlotsMask And bit) = 0UI          ' foreign: SHOW iff slot occupied
+                Else
+                    result(ti) = (coveredSlotsMask And bit) <> 0UI         ' self / Pipboy-60: HIDE iff covered
+                End If
             ElseIf b >= 130 AndAlso b <= 161 Then
                 ' N+100 occupied-variant (engine resolver 0x14035E344): the "with-item" geometry is SHOWN only
                 ' when its base slot (b-100) is covered, HIDDEN otherwise. b-130 = (b-100)-30 = base slot bit.

@@ -276,6 +276,7 @@ Public Class NifRenderableShape
     Public Property TintColor As Color = Color.White Implements IRenderableShape.TintColor
     Public Property ApplyZaps As Boolean = False Implements IRenderableShape.ApplyZaps
     Public Property CoveredSlotsMask As UInteger = 0 Implements IRenderableShape.CoveredSlotsMask
+    Public Property OwnSlotsMask As UInteger = 0 Implements IRenderableShape.OwnSlotsMask
     Public Property MaskedVertices As New HashSet(Of Integer)() Implements IRenderableShape.MaskedVertices
     ''' <summary>Render-only extra material layers drawn as coplanar decals over this shape's deformed
     ''' geometry (LooksMenu overlays/tattoos). Nothing/empty = no overlay (the default; WM never sets

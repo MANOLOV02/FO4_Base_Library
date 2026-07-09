@@ -25,6 +25,11 @@ Public Module NpcSubrecordWriter
     ''' (subrecords only — caller wraps with the record header). Subrecord order follows xEdit
     ''' wbDefinitionsFO4.pas:10617-10819 declaration order verbatim.</summary>
     Public Function SerializeNpcBody(npc As NPC_Data, remap As FormIdRemapper) As Byte()
+        ' Game discriminator (set by ParseNPC from Config_App.Current.Game). The SSE and FO4 NPC_
+        ' subrecords sit at the SAME positions EXCEPT the face-data tail (post-QNAM), so the divergent
+        ' subrecords branch inline on isSse and the SSE tail is appended after the (FO4-only, empty on
+        ' SSE) face tail. Verified byte-exact against Skyrim.esm via NpcSseRoundtripProbe.
+        Dim isSse As Boolean = (npc.Game = Config_App.Game_Enum.Skyrim)
         Using ms As New MemoryStream()
             Using bw As New BinaryWriter(ms)
                 EmitEdid(bw, npc.EditorID)
@@ -32,8 +37,8 @@ Public Module NpcSubrecordWriter
                 EmitObnd(bw, npc.ObjectBoundsRaw)
                 If npc.HasPreviewTransform Then EmitFormId(bw, "PTRN", npc.PreviewTransformFormID, remap)
                 If npc.HasAnimationSound Then EmitFormId(bw, "STCP", npc.AnimationSoundFormID, remap)
-                EmitAcbs(bw, npc.Acbs)
-                EmitFactions(bw, npc.Factions, remap)
+                EmitAcbs(bw, npc.Acbs, isSse)
+                EmitFactions(bw, npc.Factions, remap, isSse)
                 If npc.HasDeathItem Then EmitFormId(bw, "INAM", npc.DeathItemFormID, remap)
                 If npc.HasVoice Then EmitFormId(bw, "VTCK", npc.VoiceFormID, remap)
                 If npc.HasTemplate Then EmitFormId(bw, "TPLT", npc.TemplateFormID, remap)
@@ -55,7 +60,7 @@ Public Module NpcSubrecordWriter
                 If npc.HasFollowerCommand Then EmitFormId(bw, "FCPL", npc.FollowerCommandFormID, remap)
                 If npc.HasFollowerElevator Then EmitFormId(bw, "RCLR", npc.FollowerElevatorFormID, remap)
                 EmitPrkz(bw, npc)
-                EmitPerks(bw, npc.Perks, remap)
+                EmitPerks(bw, npc.Perks, remap, isSse)
                 EmitProperties(bw, npc.Properties, remap)
                 If npc.HasForcedLocRefType Then EmitFormId(bw, "FTYP", npc.ForcedLocRefTypeFormID, remap)
                 If npc.HasNativeTerminal Then EmitFormId(bw, "NTRM", npc.NativeTerminalFormID, remap)
@@ -70,7 +75,7 @@ Public Module NpcSubrecordWriter
                 If npc.HasFull Then EmitLString(bw, "FULL", npc.FullName)
                 If npc.HasShortName Then EmitLString(bw, "SHRT", npc.ShortName)
                 If npc.HasDataMarker Then EmitEmptyMarker(bw, "DATA")
-                EmitDnam(bw, npc.CalculatedStats)
+                EmitDnam(bw, npc)
                 EmitHeadParts(bw, npc.HeadPartFormIDs, remap)
                 If npc.HasHairColor Then EmitFormId(bw, "HCLF", npc.HairColorFormID, remap)
                 If npc.HasFacialHairColor Then EmitFormId(bw, "BCLF", npc.FacialHairColorFormID, remap)
@@ -90,13 +95,17 @@ Public Module NpcSubrecordWriter
                 If npc.HasDefaultPackageList Then EmitFormId(bw, "DPLT", npc.DefaultPackageListFormID, remap)
                 If npc.HasCrimeFaction Then EmitFormId(bw, "CRIF", npc.CrimeFactionFormID, remap)
                 If npc.HasHeadTexture Then EmitFormId(bw, "FTST", npc.HeadTextureFormID, remap)
-                EmitQnam(bw, npc.TextureLightingFloats)
+                EmitQnam(bw, npc.TextureLightingFloats, isSse)
+                ' FO4 face-data tail (all empty for SSE data — these collections/flags are never
+                ' populated by the SSE parser path, so they no-op and preserve SSE ordering).
                 EmitMsdkMsdv(bw, npc)
                 EmitTintLayers(bw, npc)
                 EmitMrsv(bw, npc.BodyMorphRegionValues)
                 EmitFaceMorphs(bw, npc)
                 If npc.HasFmin Then EmitFloat(bw, "FMIN", npc.FacialMorphIntensity)
                 If npc.HasActivateTextOverride Then EmitLString(bw, "ATTX", npc.ActivateTextOverride)
+                ' SSE face-data tail (NAM9 + NAMA + tint). Empty for FO4 data (all Nothing/empty).
+                EmitSseFaceTail(bw, npc)
             End Using
             Return ms.ToArray()
         End Using
@@ -210,25 +219,43 @@ Public Module NpcSubrecordWriter
         WriteRawSubrecord(bw, sig, payload)
     End Sub
 
-    Private Sub EmitAcbs(bw As BinaryWriter, acbs As NPC_AcbsData)
+    ''' <summary>Emit ACBS. GAME-AWARE layout — FO4 20B (Flags·XP·Level·CalcMin·CalcMax·Disp·TmplFlags·
+    ''' Bleedout·Unknown[2]) vs SSE 24B (Flags·Magicka·Stamina·Level·CalcMin·CalcMax·Speed·Disp·TmplFlags·
+    ''' Health·Bleedout). The order mirrors RecordParsers.ParseNPC so a parsed ACBS round-trips byte-exact,
+    ''' AND an EDITED field (e.g. Template Flags) lands at the engine-correct offset for each game.
+    ''' See NPC_AcbsData.</summary>
+    Private Sub EmitAcbs(bw As BinaryWriter, acbs As NPC_AcbsData, isSse As Boolean)
         If acbs Is Nothing Then
-            ' ACBS is required. Emit a default 24-byte zero struct rather than crashing — this is
+            ' ACBS is required. Emit a default zero struct (game-correct length) rather than crashing —
             ' the same minimal-validity fallback xEdit uses for required missing structs.
-            WriteRawSubrecord(bw, "ACBS", New Byte(23) {})
+            WriteRawSubrecord(bw, "ACBS", New Byte(If(isSse, 23, 19)) {})
             Return
         End If
 
         Using ms As New MemoryStream()
             Using w As New BinaryWriter(ms)
                 w.Write(acbs.Flags)
-                w.Write(acbs.XpValueOffset)
-                w.Write(acbs.LevelOrLevelMult)
-                w.Write(acbs.CalcMinLevel)
-                w.Write(acbs.CalcMaxLevel)
-                w.Write(acbs.DispositionBase)
-                w.Write(acbs.TemplateFlags)
-                w.Write(acbs.BleedoutOverride)
-                w.Write(acbs.Unknown18)
+                If isSse Then
+                    w.Write(acbs.MagickaOffset)
+                    w.Write(acbs.StaminaOffset)
+                    w.Write(acbs.LevelOrLevelMult)
+                    w.Write(acbs.CalcMinLevel)
+                    w.Write(acbs.CalcMaxLevel)
+                    w.Write(acbs.SpeedMultiplier)
+                    w.Write(acbs.DispositionBase)
+                    w.Write(acbs.TemplateFlags)
+                    w.Write(acbs.HealthOffset)
+                    w.Write(acbs.BleedoutOverride)
+                Else
+                    w.Write(acbs.XpValueOffset)
+                    w.Write(acbs.LevelOrLevelMult)
+                    w.Write(acbs.CalcMinLevel)
+                    w.Write(acbs.CalcMaxLevel)
+                    w.Write(acbs.DispositionBase)
+                    w.Write(acbs.TemplateFlags)
+                    w.Write(acbs.BleedoutOverride)
+                    w.Write(acbs.Unknown18)
+                End If
                 If acbs.TrailingBytes IsNot Nothing AndAlso acbs.TrailingBytes.Length > 0 Then
                     w.Write(acbs.TrailingBytes)
                 End If
@@ -237,7 +264,7 @@ Public Module NpcSubrecordWriter
         End Using
     End Sub
 
-    Private Sub EmitFactions(bw As BinaryWriter, factions As List(Of NPC_FactionEntry), remap As FormIdRemapper)
+    Private Sub EmitFactions(bw As BinaryWriter, factions As List(Of NPC_FactionEntry), remap As FormIdRemapper, isSse As Boolean)
         For Each f In factions
             Using ms As New MemoryStream()
                 Using w As New BinaryWriter(ms)
@@ -246,6 +273,8 @@ Public Module NpcSubrecordWriter
                     ' FO4 SNAM Faction = 5 bytes (formid + s8 rank). NO trailing padding:
                     ' wbFaction's wbUnused(3) is on the IsFO4Plus(nil, ...) FALSE branch (pre-FO4 only),
                     ' FO4 selects nil. Emitting 3 bytes made xEdit report "Unused data in ... SNAM".
+                    ' SSE selects the wbUnused(3) branch → 8 bytes; reproduce the captured trailing.
+                    If isSse Then w.Write(If(f.SseUnused, New Byte(2) {}))
                 End Using
                 WriteRawSubrecord(bw, "SNAM", ms.ToArray())
             End Using
@@ -367,7 +396,7 @@ Public Module NpcSubrecordWriter
         WriteRawSubrecord(bw, "PRKZ", BitConverter.GetBytes(CUInt(npc.Perks.Count)))
     End Sub
 
-    Private Sub EmitPerks(bw As BinaryWriter, perks As List(Of NPC_PerkEntry), remap As FormIdRemapper)
+    Private Sub EmitPerks(bw As BinaryWriter, perks As List(Of NPC_PerkEntry), remap As FormIdRemapper, isSse As Boolean)
         For Each p In perks
             Using ms As New MemoryStream()
                 Using w As New BinaryWriter(ms)
@@ -376,6 +405,8 @@ Public Module NpcSubrecordWriter
                     ' FO4 PRKR Perk = 5 bytes (formid + u8 rank). NO trailing padding — the FO4
                     ' wbStruct (wbDefinitionsFO4.pas:10717-10719) has no wbUnused. Emitting 3 bytes
                     ' made xEdit report "Unused data in ... PRKR".
+                    ' SSE PRKR = 8 bytes; the 3 trailing bytes are often non-zero → reproduce verbatim.
+                    If isSse Then w.Write(If(p.SseUnused, New Byte(2) {}))
                 End Using
                 WriteRawSubrecord(bw, "PRKR", ms.ToArray())
             End Using
@@ -695,7 +726,13 @@ Public Module NpcSubrecordWriter
         EmitEmptyMarker(bw, "STOP")
     End Sub
 
-    Private Sub EmitDnam(bw As BinaryWriter, stats As NPC_CalculatedStats)
+    Private Sub EmitDnam(bw As BinaryWriter, npc As NPC_Data)
+        ' SSE DNAM = 52-byte Player Skills block, preserved verbatim (no FO4 8-byte struct).
+        If npc.Game = Config_App.Game_Enum.Skyrim Then
+            If npc.DnamRawSse IsNot Nothing Then WriteRawSubrecord(bw, "DNAM", npc.DnamRawSse)
+            Return
+        End If
+        Dim stats = npc.CalculatedStats
         If stats Is Nothing Then Return
         Using ms As New MemoryStream()
             Using w As New BinaryWriter(ms)
@@ -748,6 +785,18 @@ Public Module NpcSubrecordWriter
     End Sub
 
     Private Sub EmitActorSounds(bw As BinaryWriter, npc As NPC_Data, remap As FormIdRemapper)
+        ' SSE actor sounds = CSDT/CSDI/CSDC (wbCSDT TES5:4751), NOT the FO4 CS2* block. Re-emit the
+        ' captured raw sequence in source order; CSDI is a sound FormID (remapped), CSDT/CSDC verbatim.
+        If npc.Game = Config_App.Game_Enum.Skyrim Then
+            For Each s In npc.SseActorSounds
+                If s.IsFormId AndAlso s.Data IsNot Nothing AndAlso s.Data.Length >= 4 Then
+                    WriteRawSubrecord(bw, s.Sig, BitConverter.GetBytes(remap(BitConverter.ToUInt32(s.Data, 0))))
+                Else
+                    WriteRawSubrecord(bw, s.Sig, s.Data)
+                End If
+            Next
+            Return
+        End If
         ' Actor Sounds is a structured RArrayS (wbDefinitionsCommon.pas:7117): if the source
         ' record had no actor sounds at all, emit none of CS2H/CS2K/CS2D/CS2E/CS2F. The block
         ' is "all-or-nothing" — CS2F alone without CS2H is invalid. xEdit's RArrayS with no
@@ -756,7 +805,10 @@ Public Module NpcSubrecordWriter
         If Not npc.HasCs2hCounter AndAlso npc.ActorSounds.Count = 0 AndAlso Not npc.HasCs2eMarker Then Return
         WriteRawSubrecord(bw, "CS2H", BitConverter.GetBytes(CUInt(npc.ActorSounds.Count)))
         For Each s In npc.ActorSounds
-            WriteRawSubrecord(bw, "CS2K", BitConverter.GetBytes(remap(s.KeywordFormID)))
+            ' CS2K (Keyword) is optional — only re-emit it when the source had one. Vanilla
+            ' AudioTemplate/UnarmedWeapon NPCs carry a bare CS2D; emitting CS2K(0) for them added a
+            ' spurious subrecord (round-trip data corruption).
+            If s.HasKeyword Then WriteRawSubrecord(bw, "CS2K", BitConverter.GetBytes(remap(s.KeywordFormID)))
             WriteRawSubrecord(bw, "CS2D", BitConverter.GetBytes(remap(s.SoundFormID)))
         Next
         If npc.HasCs2eMarker Then EmitEmptyMarker(bw, "CS2E")
@@ -766,14 +818,15 @@ Public Module NpcSubrecordWriter
         WriteRawSubrecord(bw, "CS2F", New Byte() {npc.Cs2fByte})
     End Sub
 
-    Private Sub EmitQnam(bw As BinaryWriter, q As NPC_TextureLightingFloats)
+    Private Sub EmitQnam(bw As BinaryWriter, q As NPC_TextureLightingFloats, isSse As Boolean)
         If q Is Nothing Then Return
         Using ms As New MemoryStream()
             Using w As New BinaryWriter(ms)
                 w.Write(q.R)
                 w.Write(q.G)
                 w.Write(q.B)
-                w.Write(q.A)
+                ' FO4 QNAM = 4 floats RGBA (16 bytes); SSE QNAM = 3 floats RGB (12 bytes, no alpha).
+                If Not isSse Then w.Write(q.A)
             End Using
             WriteRawSubrecord(bw, "QNAM", ms.ToArray())
         End Using
@@ -882,6 +935,17 @@ Public Module NpcSubrecordWriter
                 End Using
                 WriteRawSubrecord(bw, "FMRS", ms.ToArray())
             End Using
+        Next
+    End Sub
+
+    ''' <summary>SSE face-data tail emitted after QNAM: NAM9 (19 face sliders) + NAMA (4 face-parts) +
+    ''' the tint RArrayS (TINI/TINC/TINV/TIAS, no FormIDs). All preserved verbatim from the parser's
+    ''' SSE captures. No-op for FO4 data (Nam9Raw/NamaRaw Nothing, tint list empty).</summary>
+    Private Sub EmitSseFaceTail(bw As BinaryWriter, npc As NPC_Data)
+        If npc.Nam9Raw IsNot Nothing Then WriteRawSubrecord(bw, "NAM9", npc.Nam9Raw)
+        If npc.NamaRaw IsNot Nothing Then WriteRawSubrecord(bw, "NAMA", npc.NamaRaw)
+        For Each t In npc.SseTintRaw
+            WriteRawSubrecord(bw, t.Sig, t.Data)
         Next
     End Sub
 

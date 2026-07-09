@@ -312,6 +312,15 @@ Public Class Nifcontent_Class_Manolo
         End If
     End Sub
 
+    ''' <summary>Serialize the NIF to a byte array (in-memory save) — used by headless bakes/compares that
+    ''' don't want a disk file. Mirrors Save_As_Manolo but to a MemoryStream via NifFile.Save(Stream).</summary>
+    Public Function Save_To_Bytes_Manolo() As Byte()
+        Using ms As New IO.MemoryStream()
+            If MyBase.Save(ms) <> 0 Then Throw New Exception("Error saving NIF to bytes")
+            Return ms.ToArray()
+        End Using
+    End Function
+
     Public ReadOnly Property NifShapes As IEnumerable(Of NiflySharp.INiShape)
         Get
             Return Me.GetShapes
@@ -729,6 +738,36 @@ Public Class Nifcontent_Class_Manolo
                 result.Add(CInt(bsdParts(partInd).BodyPart))
             Else
                 result.Add(-1)
+            End If
+        Next
+        Return result
+    End Function
+
+    ''' <summary>SSE per-partition skin occlusion — the engine-faithful analog of FO4's per-segment
+    ''' <see cref="BSTriShapeGeometry.ComputeHiddenTriangles"/>. Byte-level RE of SkyrimSE.exe
+    ''' (ApplyOcclusionToGeometry 0x1403C56B0 → SetPartitionVisible 0x14021A530, see
+    ''' reference_sse_engine_occlusion_re): Skyrim hides a skinned shape PER-PARTITION — the
+    ''' BSDismemberSkinInstance partition whose body-part biped slot is covered by a worn item is
+    ''' hidden, its siblings stay visible. Returns a per-triangle "hidden" array aligned with the
+    ''' shape's GetTriangles() order (same order geom.Indices / EnsureZapIndexBuffer consume), or
+    ''' Nothing when the shape has no dismember partitions (caller falls back to whole-node hide, which
+    ''' mirrors the engine's SetAppCulled fallback for non-dismember geometry).
+    '''
+    ''' Slot rule: body-part value v is a Skyrim SBP; dismemberment-state variants (130-161 / 230-261)
+    ''' fold to the canonical biped slot 30-61 via <c>30 + ((v-30) mod 100)</c> (engine folds the same
+    ''' three ranges). A triangle is hidden iff its slot bit (slot-30) is set in coveredSlotsMask.
+    ''' Non-biped body parts (FO3-style gore 0-9, or -1 unassigned) are never slot-occluded. NO N+100
+    ''' inverse-swap (that is an FO4-only Pipboy-forearm mechanism; Skyrim has none).</summary>
+    Public Function ComputeHiddenTrianglesDismember(shape As INiShape, coveredSlotsMask As UInteger) As Boolean()
+        Dim bodyParts = GetTriangleBodyParts(shape)
+        If bodyParts Is Nothing OrElse bodyParts.Count = 0 Then Return Nothing
+        Dim result(bodyParts.Count - 1) As Boolean
+        For ti = 0 To bodyParts.Count - 1
+            Dim v As Integer = bodyParts(ti)
+            If v < 30 Then Continue For   ' gore/unassigned — not a biped-slot partition
+            Dim slot As Integer = 30 + ((v - 30) Mod 100)
+            If slot >= 30 AndAlso slot <= 61 Then
+                result(ti) = (coveredSlotsMask And (1UI << (slot - 30))) <> 0UI
             End If
         Next
         Return result

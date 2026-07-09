@@ -381,7 +381,7 @@ Public Class FO4UnifiedMaterial_Class
     ' Smoothness. Friend para que GetDifferences/AreEqualWithTrace (reflexion solo Public) no lo
     ' dupliquen con Smoothness. Solo se usa en el path SSE; en FO4 el shader deriva de Smoothness.
     Private _NifGlossiness As Single = 1.0F
-    Friend ReadOnly Property NifGlossiness As Single
+    Public ReadOnly Property NifGlossiness As Single
         Get
             Return _NifGlossiness
         End Get
@@ -3779,9 +3779,17 @@ Public Class FO4UnifiedMaterial_Class
             ' not slot 6. Do not cross-assign. SSE dual-purpose handled below.
         End If
 
-        ' Slot 6: lightmask OR tintmask (SSE dual-purpose)
-        If isSSE AndAlso String.IsNullOrEmpty(mat.LightingTexture) Then
-            mat.LightingTexture = texset.Textures(textset_LightingTexture).Content
+        ' Slot 6 (SSE dual-purpose): lightmask OR TINTMASK. For a FaceTint head (Facegen), slot 6 is the
+        ' facegen TINT MASK (the baked facetint _d) — the engine's FaceTint technique samples it over the
+        ' diffuse. It must land on its OWN field (InnerLayerTexture), NOT LightingTexture, because slot 2's
+        ' subsurface (_sk) already occupies LightingTexture — otherwise the facetint is lost/clobbered (WM
+        ' dropped it, leaving the head without its tint). Game-gated (SSE) + facegen-gated. FO4: untouched.
+        If isSSE Then
+            If mat.Facegen Then
+                mat.InnerLayerTexture = texset.Textures(textset_LightingTexture).Content
+            ElseIf String.IsNullOrEmpty(mat.LightingTexture) Then
+                mat.LightingTexture = texset.Textures(textset_LightingTexture).Content
+            End If
         End If
     End Sub
 
@@ -3813,7 +3821,9 @@ Public Class FO4UnifiedMaterial_Class
         ' ignores the Soft_Lighting flag (engine does subsurface unconditionally for technique 4).
         If isSSE AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
             texset.Textures(textset_GlowTexture).Content = mat.LightingTexture
-            texset.Textures(textset_LightingTexture).Content = ""
+            ' Slot 6: a FaceTint head keeps its TINT MASK (facetint) from InnerLayerTexture; else clear (the
+            ' _sk subsurface lives on slot 2 via LightingTexture). Mirror of the read. Game+facegen gated.
+            texset.Textures(textset_LightingTexture).Content = If(mat.Facegen, mat.InnerLayerTexture, "")
         Else
             texset.Textures(textset_GlowTexture).Content = mat.GlowTexture
             ' Slot 6: SSE writes LightingTexture; FO4 has no sampler here, so we
@@ -3825,6 +3835,7 @@ Public Class FO4UnifiedMaterial_Class
                 texset.Textures(textset_LightingTexture).Content = ""
             End If
         End If
+
     End Sub
     Public Sub Deserialize(Memory As Byte(), type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
         If Memory.Length = 0 Then Exit Sub

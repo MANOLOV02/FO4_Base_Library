@@ -1392,6 +1392,9 @@ uniform bool bLightmask;
 uniform bool bShowWeight;
 uniform bool bWireframe;
 uniform bool bApplyZap;
+// SSE facegen: the facetint (engine t4, slot 6) multiplies the albedo -- this is where the baked
+// makeup/skin-tone shows. Bound to texGlowmap for facegen (faces have no glow).
+uniform bool bFacetintAlbedo;
 
 uniform bool bNormalMap;
 uniform bool bModelSpace;
@@ -1862,6 +1865,18 @@ void main(void)
 			{
 				vec3 dm = texture(texDetailMask, uv).rgb;
 				albedo = albedo * albedo + 2.0 * albedo * dm * (1.0 - albedo);
+			}
+
+			// FaceGen facetint: the baked facetint map (engine t4, texture-set slot 6) amplified and
+			// MULTIPLIED onto the albedo -- this is where the makeup/skin-tone appears (lips, eyes, tint).
+			// Verified sse_facegen_skin.asm lines 71-79:
+			//   r2 = (t4 + vec3(1/255,0,1/255)) * 3.984375 ; albedo = r2 * softlight(diffuse, detail).
+			// Bound to texGlowmap for facegen. The _sk map stays the subsurface colour (engine t12) on
+			// texLightmask, unchanged.
+			if (bFacetintAlbedo)
+			{
+				vec3 fgTint = (texture(texGlowmap, uv).rgb + vec3(0.003922, 0.0, 0.003922)) * 3.984375;
+				albedo *= fgTint;
 			}
 
 			// FaceTint overlay (TETI/TEND composed at runtime via FBO, premultiplied-over)
