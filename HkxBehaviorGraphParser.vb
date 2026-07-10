@@ -68,9 +68,12 @@ Public Partial Class HkxObjectGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbProjectStringData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim result As New HkbProjectStringDataGraph_Class With {.SourceObject = source}
         result.Strings.AddRange(ReadAllReferencedStrings(source).Distinct(StringComparer.OrdinalIgnoreCase))
+        ' DATA-DRIVEN: los character files salen del MIEMBRO real m_characterFilenames (hkArray<hkStringPtr>), no de
+        ' un match por nombre de carpeta. Layout hkbProjectStringData (hk_2014, estable FO4/SSE): base hkReferencedObject
+        ' (0x10) + m_animationFilenames@+0x10 + m_behaviorFilenames@+0x20 + m_characterFilenames@+0x30. Leer el array
+        ' directo evita el hardcodeo "Characters\" (que dejaba fuera la carpeta "Characters Female\" de la rama female SSE).
         result.CharacterFilenames.AddRange(
-            result.Strings.Where(Function(s) s.IndexOf("Characters\", StringComparison.OrdinalIgnoreCase) >= 0 AndAlso
-                                             s.EndsWith(".hkx", StringComparison.OrdinalIgnoreCase)))
+            ReadStringPtrArray(source.RelativeOffset + &H30).Where(Function(s) Not String.IsNullOrWhiteSpace(s)))
         Return result
     End Function
 
@@ -130,7 +133,7 @@ Public Partial Class HkxObjectGraph_Class
         Return New HkbClipGeneratorGraph_Class With {
             .SourceObject = source,
             .Name = ResolveLocalString(rel + &H38),
-            .AnimationName = ResolveLocalString(rel + &H90),
+            .AnimationName = ResolveClipAnimationName(source),
             .TriggersObject = ResolveGlobalObject(rel + &H98),
             .CropStartLocalTime = ReadSingle(rel + &HA0),
             .CropEndLocalTime = ReadSingle(rel + &HA4),
@@ -141,6 +144,36 @@ Public Partial Class HkxObjectGraph_Class
             .PlaybackMode = CInt(ReadByte(rel + &HBE)),
             .FlagsRaw = CInt(ReadByte(rel + &HBF))
         }
+    End Function
+
+    ''' <summary>Resuelve el "target string" secundario de un generador (hkbClipGenerator::m_animationName,
+    ''' hkbBehaviorReferenceGenerator::m_behaviorName, BGSGamebryoSequenceGenerator::m_pSequenceName) de forma
+    ''' INDEPENDIENTE de la versión de Havok. Fallout 4 (hk_2014 con miembros extra) y Skyrim SE (hk_2014 más
+    ''' compacto) ubican ese string en offsets DISTINTOS (clip: FO4 +0x90 / SSE +0x48; behRef: FO4 +0x88 / SSE
+    ''' +0x48) y el packfile NO los distingue (ambos son 2014.1.0). Estos nodos tienen EXACTAMENTE dos hkStringPtr:
+    ''' m_name (@+0x38, base hkbNode, estable en ambas versiones) y el target; el resto de miembros son refs
+    ''' (global-fixups), no strings locales. Por eso el target = el único string apuntado por un LOCAL fixup del
+    ''' objeto cuyo source-offset ≠ +0x38. Se prueba primero el offset FO4 validado (para no alterar en NADA la
+    ''' resolución de Fallout 4) y, si está vacío, se cae al escaneo de fixups (SSE u otras versiones).</summary>
+    Public Function ResolveGeneratorTargetString(source As HkxVirtualObjectGraph_Class, fo4Offset As Integer) As String
+        If IsNothing(source) Then Return ""
+        Dim rel = source.RelativeOffset
+        ' Camino FO4 validado: string en el offset fijo del layout FO4. Si hay algo ahí, ganó (FO4 intacto).
+        Dim fo4 = ResolveLocalString(rel + fo4Offset)
+        If Not String.IsNullOrEmpty(fo4) Then Return fo4
+        ' Otra versión de layout: el target es el string local-fixup que NO es m_name(+0x38).
+        Dim nameSrc = rel + &H38
+        For Each lf In GetLocalFixupsInRange(rel, source.Size)
+            If lf.SourceRelativeOffset = nameSrc Then Continue For
+            Dim s = ReadNullTerminatedString(lf.DestinationRelativeOffset)
+            If Not String.IsNullOrEmpty(s) AndAlso IsPrintableString(s) Then Return s
+        Next
+        Return ""
+    End Function
+
+    ''' <summary>hkbClipGenerator::m_animationName, version-robust (ver ResolveGeneratorTargetString).</summary>
+    Private Function ResolveClipAnimationName(source As HkxVirtualObjectGraph_Class) As String
+        Return ResolveGeneratorTargetString(source, &H90)
     End Function
 
     ''' <summary>hkbBlenderGenerator: nombre + children (cada uno con su weight y el generador que mezcla).</summary>
@@ -242,11 +275,11 @@ Public Partial Class HkxObjectGraph_Class
         If IsNothing(gen) OrElse depth > 8 OrElse Not visited.Add(gen.RelativeOffset) Then Return
         Dim cn = If(gen.ClassName, "")
         If cn.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then
-            leaves.Add("clip:" & ResolveLocalString(gen.RelativeOffset + &H90))
+            leaves.Add("clip:" & ResolveClipAnimationName(gen))
         ElseIf cn.Equals("hkbBehaviorReferenceGenerator", StringComparison.OrdinalIgnoreCase) Then
-            leaves.Add("behavior:" & ResolveLocalString(gen.RelativeOffset + &H88))
+            leaves.Add("behavior:" & ResolveGeneratorTargetString(gen, &H88))
         ElseIf cn.Equals("BGSGamebryoSequenceGenerator", StringComparison.OrdinalIgnoreCase) Then
-            leaves.Add("gamebryo:" & ResolveLocalString(gen.RelativeOffset + &H88))
+            leaves.Add("gamebryo:" & ResolveGeneratorTargetString(gen, &H88))
         ElseIf cn.Equals("hkbStateMachine", StringComparison.OrdinalIgnoreCase) Then
             leaves.Add("sm:" & ResolveLocalString(gen.RelativeOffset + &H38))   ' SM anidada: no expandir
         Else

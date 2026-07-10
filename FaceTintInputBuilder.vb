@@ -948,6 +948,10 @@ Public Module FaceTintInputBuilder
     ''' "Dark=R,G,B", ambos default negro -> cejas negras) en BGRA8 sin compresión ni mips, devuelta como
     ''' bytes DDS para el path UseHairPalette del override de cejas. Cachea por color en tintBytesCache.</summary>
     Private Function BuildSyntheticEyebrowLut(tintBytesCache As Dictionary(Of String, Byte())) As (Enabled As Boolean, Bytes As Byte(), Key As String)
+        ' FO4-only: la LUT de cejas es parte del compositor FaceTint de FO4 (SSE tiene su propio path).
+        ' Gate por juego cuando el config está cargado; si Current es Nothing (contexto raro) no se puede
+        ' saber el juego → se preserva el comportamiento previo (no gatear). Los CLIs FO4 setean Game=Fallout4.
+        If Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game <> Config_App.Game_Enum.Fallout4 Then Return (False, Nothing, Nothing)
         ' Persisted toggle (default True if no config loaded): debe estar prendido Y el archivo presente.
         If Not If(Config_App.Current?.Setting_ApplyEyebrowsFixedColor, True) Then Return (False, Nothing, Nothing)
         Dim iniPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SkipEyebrowsTone.ini")

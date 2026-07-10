@@ -158,6 +158,14 @@ Public Class Config_App
     ' Config_App.Current directamente (igual que Setting_FaceTintSort). Ver BuildSyntheticEyebrowLut.
     Public Property Setting_ApplyEyebrowsFixedColor As Boolean = True
 
+    ' Mouth vanilla fix for BaseFemaleHeadChargen.tri. Vanilla ships spurious mouth-region deltas baked
+    ' into DefaultFaceType0 + EyesLowLidUp + EyesLowSunken (measured: 22 shared verts below the nose tip,
+    ' up to 0.73u). When True, those 22 deltas are zeroed at TRI read time (render AND bake), ONLY for that
+    ' file. Consumed in the library by ChargenMouthFix (NpcMorphResolver.TryLoadTriHead + FaceGenBuildPipeline.
+    ' ParseHeadTri), which reads Config_App.Current directly — hence Config_App, not NPC_Config. Default False
+    ' (= pure vanilla). Cache is key-suffixed on this flag so toggling re-reads instead of serving a stale head.
+    Public Property Setting_ApplyMouthVanillaFix As Boolean = False
+
     ' === FaceTint convention (botón "CharGen Options" → tab "FaceTint Conventions") ===
     ' La convención de composición FaceTint por bucket (Diffuse / Normal+Specular / Swaps), valores
     ' CONCRETOS. Los defaults los pone el constructor de FaceTintConventionSettings = la ley derivada

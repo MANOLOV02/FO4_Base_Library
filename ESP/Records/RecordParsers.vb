@@ -1237,6 +1237,13 @@ Public Class RACE_Data
     ''' TurretTripodRace (0x000B1F08), la raza que su skin ARMA targetea. wbDefinitionsFO4.pas:11673.
     ''' Ver [[arch_armor_race_redirect]].</summary>
     Public ArmorRaceFormID As UInteger
+    ''' <summary>NAM8 - Morph Race (FormID→RACE), SKYRIM. La raza cuyo morph FACIAL de FaceGen usa esta raza
+    ''' en vez del propio. MEDIDO en Skyrim.esm (esm_race): 15 razas redirigen — TODAS las *Vampire → su raza
+    ''' base, DremoraRace→DarkElfRace, DA13AfflictedRace→BretonRace, NordRaceAstrid→NordRace. El morph base de
+    ''' la cabeza se aplica con el EditorID de ESTA raza (no la propia): p.ej. Dremora usa el morph "DarkElfRace"
+    ''' de maleheadraces.tri (su "DremoraRace" es ~0). 0/ausente = usar la raza misma. Ver
+    ''' [[project_sse_bake_morph_fix_and_unify]] / [[project_sse_nam9_morph_map]].</summary>
+    Public MorphRaceFormID As UInteger
     ''' <summary>Subgraph Data (RArray). Cada entry = un behaviour graph .hkx (SGNM) enchufado a un slot,
     ''' con su Role/Perspective (SRAF, terminator de cada entry) + keywords (SAKD actor/STKD target) +
     ''' animation paths (SAPT). wbDefinitionsFO4.pas:11676.</summary>
@@ -2996,6 +3003,21 @@ Public Module RecordParsers
         Return npc
     End Function
 
+    ''' <summary>Effective FaceGen MORPH-race EditorID for a race: the EditorID of RACE.NAM8 (Morph Race) when
+    ''' set, else the race's own EditorID. This is the name the head/hair base race-morph is looked up by in the
+    ''' race tri (Skyrim: all *Vampire→base race, DremoraRace→DarkElfRace, DA13AfflictedRace→BretonRace,
+    ''' NordRaceAstrid→NordRace — measured in Skyrim.esm). SSE-relevant; a race with no NAM8 returns its own EDID
+    ''' so FO4/most SSE races are unaffected. See RACE_Data.MorphRaceFormID.</summary>
+    Public Function ResolveMorphRaceEditorId(race As RACE_Data, pm As PluginManager) As String
+        If race Is Nothing Then Return ""
+        Dim own = If(race.EditorID, "")
+        If race.MorphRaceFormID = 0UI OrElse pm Is Nothing Then Return own
+        Dim rec = pm.GetRecord(race.MorphRaceFormID)
+        If rec Is Nothing OrElse rec.Header.Signature <> "RACE" Then Return own
+        Dim eid = If(rec.EditorID, "")
+        Return If(String.IsNullOrEmpty(eid), own, eid)
+    End Function
+
     Public Function ParseRACE(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As RACE_Data
         Dim race As New RACE_Data With {
             .FormID = rec.Header.FormID,
@@ -3116,6 +3138,10 @@ Public Module RecordParsers
                 Case "RNAM"
                     ' Armor Race redirect — see RACE_Data.ArmorRaceFormID / [[arch_armor_race_redirect]].
                     race.ArmorRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                Case "NAM8"
+                    ' Morph Race redirect (Skyrim) — see RACE_Data.MorphRaceFormID. En NPC_/CREA NAM8 = Sound
+                    ' Level, pero en RACE es la Morph Race (FaceGen). Este Select es SOLO del record RACE.
+                    race.MorphRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "SAKD"
                     ' Actor keyword del subgraph; precede al SGNM → bufferizar y asignar al crear el entry.
                     Dim kw = ResolveFormIDReference(rec, sr, pluginManager)

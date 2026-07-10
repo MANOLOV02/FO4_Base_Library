@@ -72,12 +72,19 @@ Public NotInheritable Class RaceBehaviorResolver
         Next
         ' Parse de TODOS los records IDLE UNA sola vez (la tabla IDLE es global, no por-raza). ResolveRaceIdles solo
         ' FILTRA esta lista por condición de raza — evita re-parsear ~3691 IDLE (CTDA) en cada render.
+        ' ⚠ GAME-AWARE: la cobertura IDLE es SOLO Fallout 4. En FO4 el IDLE.GNAM es un PATRÓN de archivo ($(Subgraph)+*)
+        ' que apunta a .hkx sueltos NO referenciados por ningún clip-generator → hay que leerlos del record. En Skyrim
+        ' (SSE) el IDLE es EVENT-DRIVEN: DNAM=behavior graph, ENAM=evento; el motor dispara el evento en el behavior y la
+        ' state-machine resuelve el clip → esas animaciones YA están en el WALK (medido: cover=0 en las 161 razas SSE).
+        ' Además el layout del record difiere (SSE no tiene GNAM) → NO intentar parsear GNAM en SSE.
         Dim idles As New List(Of IDLE_Data)
-        For Each rec In pm.GetRecordsOfType("IDLE")
-            Dim idle As IDLE_Data = Nothing
-            Try : idle = QuestRecordParsers.ParseIDLE(rec, pm) : Catch : Continue For : End Try
-            If idle IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(idle.AnimationFile) Then idles.Add(idle)
-        Next
+        If Config_App.Current.Game = Config_App.Game_Enum.Fallout4 Then
+            For Each rec In pm.GetRecordsOfType("IDLE")
+                Dim idle As IDLE_Data = Nothing
+                Try : idle = QuestRecordParsers.ParseIDLE(rec, pm) : Catch : Continue For : End Try
+                If idle IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(idle.AnimationFile) Then idles.Add(idle)
+            Next
+        End If
         _kwType = kt : _raceIdentityKw = ident : _parsedIdles = idles
         _rbCache = New Dictionary(Of UInteger, ResolvedRaceBehavior)   ' nuevo pm → invalida el cache de rb
         _kwMapsPm = pm

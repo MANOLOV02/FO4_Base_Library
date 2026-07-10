@@ -28,6 +28,12 @@ Public NotInheritable Class BehaviorClipEnumerator
         If IsNothing(rb) OrElse loadBehaviorHkx Is Nothing Then Return result
 
         Dim actorRoot = DirName(rb.Project)
+        ' Skeleton .hkx de la RAZA/GÉNERO del NPC = rigName del character del gender resuelto (project gender-aware →
+        ' character → hkbCharacterStringData.RigName). SSE tiene skeleton por género (♂ skeleton.hkx / ♀ skeleton_female.hkx);
+        ' FO4 comparte uno (mismo archivo ambos géneros). Es el skeleton con el que se interpretan los clips del PROPIO
+        ' actor del NPC (bind pose correcto por género) — sin esto, ♀ de SSE usaba el skeleton ♂ (bind distinto) y ESTIRABA
+        ' los huesos. Los clips REUSADOS de otro actor (cross-actor) conservan el skeleton de su actor de ORIGEN.
+        Dim raceSkel = ResolveHavokSkeleton(rb, loadBehaviorHkx)
         ' Índice de EXISTENCIA (.hkx/.hkt del load order, canon OrdinalIgnoreCase). La resolución clip→archivo es
         ' por existencia sobre las rutas SAPT (search-path del engine), NO por animationNames (incompleto).
         Dim animSet = BuildAnimExistenceSet()
@@ -37,17 +43,13 @@ Public NotInheritable Class BehaviorClipEnumerator
         Dim kwSet As New HashSet(Of UInteger)(rb.ActorKeywords)
         Dim byClip As New Dictionary(Of String, ResolvedAnimationClip)(StringComparer.OrdinalIgnoreCase)
         Dim graphCache As New Dictionary(Of String, HkxObjectGraph_Class)(StringComparer.OrdinalIgnoreCase)
-        ' Basenames de TODOS los clip-generators vistos en el walk (resuelvan o no). Las variantes mood/furniture y
-        ' los furniture-direccionales (FrontEnterFromWalk…, cuyo path autoreado no resuelve por anidamiento SAPT) se
-        ' recuperan expandiendo ESTOS nombres contra las carpetas SAPT — estructural, no folder-scan ciego.
-        Dim clipGenBases As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
         ' (1) ROOT behavior del actor (project→character→behaviorFilename): clips nativos (death/getup/swim/camera/
         '     pipboy) que NO están en ningún subgraph. SIN SAPT → resolución relativa al actor (incluye reuse
         '     explícito "..\Character\…", ej. SuperMutant reusa death humano). Eje "Core", neutro (no female-gated).
         Dim rootBeh = ResolveRootBehaviorFile(rb.Project, loadBehaviorHkx, actorRoot)
         If rootBeh <> "" Then
-            EnumBehaviorClips(rootBeh, Nothing, "Core", "Normal", False, -1, loadBehaviorHkx, animSet, clipGenBases, actorRoot,
+            EnumBehaviorClips(rootBeh, Nothing, "Core", "Normal", False, -1, loadBehaviorHkx, animSet, actorRoot, raceSkel,
                               byClip, result, graphCache, New HashSet(Of String)(StringComparer.OrdinalIgnoreCase), 0)
         End If
 
@@ -60,7 +62,7 @@ Public NotInheritable Class BehaviorClipEnumerator
             ' Sigue el behavior del subgraph Y sus referencias (hkbBehaviorReferenceGenerator) recursivamente, con
             ' el MISMO SAPT/Role/eje. visited per-subgraph (un Core re-usado por varios actores con SAPT distinto).
             EnumBehaviorClips(NormHkx(sg.BehaviourGraph), sg.AnimationPaths, RoleName(sg.Role), axis, reqFemale, sg.Perspective, loadBehaviorHkx,
-                              animSet, clipGenBases, actorRoot, byClip, result, graphCache, New HashSet(Of String)(StringComparer.OrdinalIgnoreCase), 0)
+                              animSet, actorRoot, raceSkel, byClip, result, graphCache, New HashSet(Of String)(StringComparer.OrdinalIgnoreCase), 0)
         Next
 
         ' ── PASADA DE COBERTURA (file-driven): mapea TODO .hkx bajo las rutas SAPT de los subgraphs APLICADOS que el
@@ -111,87 +113,27 @@ Public NotInheritable Class BehaviorClipEnumerator
                 Dim cf = CanonHkx(cand)
                 Dim star = cf.IndexOf("*"c)
                 If star < 0 Then
-                    If animSet.Contains(cf) AndAlso Not byClip.ContainsKey(cf) Then AddIdleClip(cf, ia.Category, byClip, result)
+                    If animSet.Contains(cf) AndAlso Not byClip.ContainsKey(cf) Then AddIdleClip(cf, ia.Category, byClip, result, actorRoot, raceSkel)
                 Else
                     Dim pre = cf.Substring(0, star), suf = cf.Substring(star + 1)
                     For Each f In animSet
-                        If f.StartsWith(pre, StringComparison.OrdinalIgnoreCase) AndAlso f.EndsWith(suf, StringComparison.OrdinalIgnoreCase) AndAlso Not byClip.ContainsKey(f) Then AddIdleClip(f, ia.Category, byClip, result)
+                        If f.StartsWith(pre, StringComparison.OrdinalIgnoreCase) AndAlso f.EndsWith(suf, StringComparison.OrdinalIgnoreCase) AndAlso Not byClip.ContainsKey(f) Then AddIdleClip(f, ia.Category, byClip, result, actorRoot, raceSkel)
                     Next
                 End If
             Next
         Next
 
-        ' ── PASADA POR-SUBGRAPH (estructural, NO folder-scan ciego): recupera las VARIANTES mood/furniture de cada
-        ' clip-generator. La resolución por-existencia colapsa cada clip-gen a UN archivo (primer match SAPT global);
-        ' acá agregamos los DEMÁS archivos cuyo nombre == un clip-generator REAL (behaviorClipBases) y que existen bajo
-        ' otra carpeta SAPT de la raza (mood/furniture variant). Mismo mecanismo SAPT que el engine; sin heurística de
-        ' carpeta — solo archivos nombrados por un clip-generator. Lo que NO matchea queda como huérfano REPORTABLE.
-        If coverageDirs.Count > 0 Then
-            ' Mapa carpeta→Roles de los clips YA enumerados (para propagar el Role a las variantes de la misma carpeta).
-            Dim folderRoles As New Dictionary(Of String, HashSet(Of String))(StringComparer.OrdinalIgnoreCase)
-            For Each c In result
-                Dim fr = FolderRelKey(c.AnimationFile)
-                Dim hs As HashSet(Of String) = Nothing
-                If Not folderRoles.TryGetValue(fr, hs) Then hs = New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) : folderRoles(fr) = hs
-                For Each r In c.Roles : hs.Add(r) : Next
-            Next
-            For Each key In animSet
-                If byClip.ContainsKey(key) Then Continue For
-                If Not IsUnderCoverageDir(key, coverageDirs) Then Continue For
-                ' Solo archivos nombrados por un clip-generator REAL del walk (clipGenBases, resuelvan o no): recupera las
-                ' variantes mood/furniture + los furniture-direccionales cuyo path autoreado no resolvió. NO folder-scan ciego.
-                If Not clipGenBases.Contains(System.IO.Path.GetFileNameWithoutExtension(key)) Then Continue For
-                Dim clip As New ResolvedAnimationClip With {
-                    .AnimationFile = key,
-                    .ClipName = "",
-                    .PlaybackSpeed = 1.0F,
-                    .SourceSkeletonPath = ActorRootOfAnim(key) & "\CharacterAssets\skeleton.hkx",
-                    .FromBehaviorGraph = False,
-                    .RequiresFemale = False,
-                    .Is1stPersonOnly = (key.IndexOf("\_1stPerson\", StringComparison.OrdinalIgnoreCase) >= 0)
-                }
-                ' Role propagado: carpeta exacta, si no el ancestro más cercano con Role conocido.
-                For Each r In RolesForFolder(FolderRelKey(key), folderRoles) : clip.Roles.Add(r) : Next
-                byClip(key) = clip
-                result.Add(clip)
-            Next
-
-            ' ── FALLBACK CONVENCIÓN DEL ENGINE (opción B, decisión usuario): SOLO para archivos que NINGUNA fuente
-            ' estructural anterior mapeó. Estos los arma el DynamicAnimationTaggingGenerator en RUNTIME (su nombre no
-            ' está en los datos); el prefijo to_/alt_ es la convención de filename de Bethesda, y el archivo está
-            ' anclado estructuralmente por vivir BAJO una carpeta SAPT (= un archetype/actividad de la raza):
-            '   alt_<X>  = toma alternativa de una animación X YA mapeada (mappedBases).
-            '   to_<Z>   = transición a un archetype/flavor Z, desde la carpeta-archetype SAPT donde vive el archivo.
-            Dim mappedBases As New HashSet(Of String)(result.Select(Function(c) System.IO.Path.GetFileNameWithoutExtension(c.AnimationFile)), StringComparer.OrdinalIgnoreCase)
-            For Each key In animSet
-                If byClip.ContainsKey(key) Then Continue For      ' "solo si no están mapeados de otro lado"
-                If Not IsUnderCoverageDir(key, coverageDirs) Then Continue For
-                Dim b = System.IO.Path.GetFileNameWithoutExtension(key)
-                Dim isAlt = b.StartsWith("alt_", StringComparison.OrdinalIgnoreCase) AndAlso mappedBases.Contains(b.Substring(4))
-                Dim isTo = b.StartsWith("to_", StringComparison.OrdinalIgnoreCase)   ' anclado por IsUnderCoverageDir (carpeta SAPT)
-                If Not (isAlt OrElse isTo) Then Continue For
-                Dim clip As New ResolvedAnimationClip With {
-                    .AnimationFile = key,
-                    .ClipName = "",
-                    .PlaybackSpeed = 1.0F,
-                    .SourceSkeletonPath = ActorRootOfAnim(key) & "\CharacterAssets\skeleton.hkx",
-                    .FromBehaviorGraph = False,
-                    .RequiresFemale = False,
-                    .Is1stPersonOnly = (key.IndexOf("\_1stPerson\", StringComparison.OrdinalIgnoreCase) >= 0)
-                }
-                For Each r In RolesForFolder(FolderRelKey(key), folderRoles) : clip.Roles.Add(r) : Next
-                byClip(key) = clip
-                result.Add(clip)
-            Next
-        End If
-
-        ' NOTA (canónico, sin descartar clips): NO se filtra el resultado a posteriori. El WALK es la resolución del
-        ' engine (clip-gen → archivo vía SAPT) y se conserva ÍNTEGRO — incluido lo que un subgraph genérico (SAKD=[],
-        ' ej. FurnitureBehavior con SAPT=carpeta de otro bot) resuelve, porque ESO es lo que el engine reproduce.
-        ' El único scoping es sobre la HEURÍSTICA de cobertura (variante/IDLE por NOMBRE): coverageDirs.ExceptWith(
-        ' foreignDirs) evita que la expansión por-nombre arrastre la carpeta ENTERA de otra raza (los 125 de Assaultron
-        ' en Protectron eran eso — locomoción/combate ajenos pescados por nombre compartido). Modular/propio (RoboBrain\
-        ' AssaultronArms\…) y reuse explícito (SuperMutant→..\Character\…) entran por el WALK y NO se tocan.
+        ' ── 100% DATA-DRIVEN (decisión usuario 2026-07-09): la lista = WALK (clip-generators del behavior graph) +
+        ' IDLE records (patrón GNAM, FO4). Se ELIMINARON las 2 pasadas heurísticas por-nombre que existían acá:
+        '   (1) "variant-by-name": agregaba todo .hkx con el MISMO nombre que un clip-generator bajo otra carpeta SAPT.
+        '       Medido = over-inclusion (archivos de OTROS actores: _1stPerson\, DynamicAnims\ [=DATG runtime],
+        '       Supermutant\, PowerArmor\Furniture\). No sale de ningún record ni del behavior graph.
+        '   (2) "opción-B alt_/to_": los arma el DynamicAnimationTaggingGenerator en RUNTIME → NO existen en los datos
+        '       (sin lista estática, ni el CK las enumera).
+        ' Ninguna de las dos es data-driven → fuera. El WALK es la resolución exacta del engine (clip-gen → archivo vía
+        ' SAPT) y se conserva ÍNTEGRO. La cobertura IDLE de arriba SÍ es data-driven (patrón del record IDLE.GNAM,
+        ' expansión $(Subgraph) = mecanismo del engine). SSE no llega acá con idles: sus IDLE son event-driven por el
+        ' behavior graph (DNAM=behavior, ENAM=evento) → ya están en el WALK (medido cover=0 en las 161 razas).
         Return result
     End Function
 
@@ -223,7 +165,7 @@ Public NotInheritable Class BehaviorClipEnumerator
     ''' SAPT/Role/eje. visited (per-subgraph) evita ciclos pero permite re-usar un Core con otro SAPT.</summary>
     Private Shared Sub EnumBehaviorClips(behFile As String, saptFolders As List(Of String), role As String, stateAxis As String, reqFemale As Boolean, perspective As Integer,
                                          loadBehaviorHkx As Func(Of String, Byte()),
-                                         animSet As HashSet(Of String), clipGenBases As HashSet(Of String), actorRoot As String,
+                                         animSet As HashSet(Of String), actorRoot As String, raceSkel As String,
                                          byClip As Dictionary(Of String, ResolvedAnimationClip),
                                          result As List(Of ResolvedAnimationClip),
                                          graphCache As Dictionary(Of String, HkxObjectGraph_Class),
@@ -249,7 +191,6 @@ Public NotInheritable Class BehaviorClipEnumerator
         For Each obj In graph.GetObjectsByClassName("hkbClipGenerator")
             Dim cg = graph.ParseClipGenerator(obj)
             If IsNothing(cg) OrElse String.IsNullOrWhiteSpace(cg.AnimationName) Then Continue For
-            clipGenBases.Add(System.IO.Path.GetFileNameWithoutExtension(cg.AnimationName))   ' nombre del clip-gen (resuelva o no)
             Dim animFile = ResolveClipByExistence(cg.AnimationName, saptFolders, actorRoot, animSet)
             If animFile = "" Then Continue For
             Dim clip As ResolvedAnimationClip = Nothing
@@ -258,7 +199,7 @@ Public NotInheritable Class BehaviorClipEnumerator
                     .AnimationFile = animFile,
                     .ClipName = If(cg.Name, ""),
                     .PlaybackSpeed = cg.PlaybackSpeed,
-                    .SourceSkeletonPath = ActorRootOfAnim(animFile) & "\CharacterAssets\skeleton.hkx"
+                    .SourceSkeletonPath = SourceSkelForAnim(animFile, actorRoot, raceSkel)
                 }
                 byClip(animFile) = clip
                 result.Add(clip)
@@ -273,10 +214,12 @@ Public NotInheritable Class BehaviorClipEnumerator
         ' Referencias a otros behaviors (relativas al actor del behavior referenciante), MISMO SAPT/Role/eje.
         Dim behRoot = ActorRootOfAnim(behFile)
         For Each refObj In graph.GetObjectsByClassName("hkbBehaviorReferenceGenerator")
-            Dim refName = graph.ResolveLocalString(refObj.RelativeOffset + &H88)
+            ' m_behaviorName version-robust (FO4 +0x88 / SSE +0x48) — sin esto el walk NO seguía las sub-behaviors
+            ' de SSE (Weap/Magic/Locomotion/…) y la lista de SSE salía corta. [[arch_race_behavior_resolution]]
+            Dim refName = graph.ResolveGeneratorTargetString(refObj, &H88)
             If String.IsNullOrWhiteSpace(refName) Then Continue For
             EnumBehaviorClips(NormHkx(CombineActor(behRoot, refName)), saptFolders, role, stateAxis, reqFemale, perspective, loadBehaviorHkx,
-                              animSet, clipGenBases, actorRoot, byClip, result, graphCache, visited, depth + 1)
+                              animSet, actorRoot, raceSkel, byClip, result, graphCache, visited, depth + 1)
         Next
     End Sub
 
@@ -407,43 +350,6 @@ Public NotInheritable Class BehaviorClipEnumerator
     End Function
 
 
-    ' Carpeta del clip relativa a "Animations\" (clave para propagar Role), canon lower. "" si cuelga directo o no hay marcador.
-    Private Shared Function FolderRelKey(animFile As String) As String
-        If String.IsNullOrWhiteSpace(animFile) Then Return ""
-        Dim p = animFile.Replace("/"c, "\"c)
-        Dim i = p.IndexOf("Animations\", StringComparison.OrdinalIgnoreCase)
-        If i < 0 Then Return ""
-        Dim rest = p.Substring(i + "Animations\".Length)
-        Dim j = rest.LastIndexOf("\"c)
-        Return If(j > 0, rest.Substring(0, j).ToLowerInvariant(), "")
-    End Function
-
-    ' ¿key bajo algún coverageDir (subárbol)? Camina los ancestros del dir de key buscando membresía (HashSet) — O(profundidad).
-    Private Shared Function IsUnderCoverageDir(key As String, coverageDirs As HashSet(Of String)) As Boolean
-        Dim d = key
-        Dim j = d.LastIndexOf("\"c)
-        d = If(j > 0, d.Substring(0, j), "")
-        While d <> ""
-            If coverageDirs.Contains(d) Then Return True
-            Dim k = d.LastIndexOf("\"c)
-            d = If(k > 0, d.Substring(0, k), "")
-        End While
-        Return False
-    End Function
-
-    ' Roles a propagar a una carpeta: la propia, si no el ancestro más cercano con Roles conocidos; vacío si ninguno.
-    Private Shared Function RolesForFolder(folderRel As String, folderRoles As Dictionary(Of String, HashSet(Of String))) As IEnumerable(Of String)
-        Dim f = folderRel
-        While True
-            Dim hs As HashSet(Of String) = Nothing
-            If folderRoles.TryGetValue(f, hs) AndAlso hs.Count > 0 Then Return hs
-            If f = "" Then Return Enumerable.Empty(Of String)()
-            Dim k = f.LastIndexOf("\"c)
-            f = If(k > 0, f.Substring(0, k), "")
-        End While
-        Return Enumerable.Empty(Of String)()
-    End Function
-
     ' Actor root de un path de animación = prefijo antes de la subcarpeta estándar. Maneja creatures DLC
     ' de 3 segmentos: "Actors\DLC03\Angler\Animations\X.hkx" → "Actors\DLC03\Angler".
     Private Shared Function ActorRootOfAnim(animPath As String) As String
@@ -453,6 +359,20 @@ Public NotInheritable Class BehaviorClipEnumerator
             If i > 0 Then Return animPath.Substring(0, i)
         Next
         Return DirName(animPath)
+    End Function
+
+    ''' <summary>Skeleton .hkx con el que se interpreta un clip. Si el clip es del PROPIO actor del NPC (su actor-root
+    ''' == <paramref name="actorRoot"/>) devuelve el skeleton de la RAZA/GÉNERO (<paramref name="raceSkel"/>, resuelto
+    ''' del rigName del character del gender — SSE ♀ = skeleton_female.hkx). Los clips REUSADOS de otro actor
+    ''' (cross-actor, ej. SuperMutant→death humano) usan el skeleton genérico de SU actor de origen. En FO4 esto es
+    ''' no-op (raceSkel resuelve al MISMO archivo que el genérico, un único skeleton por actor sin split de género).</summary>
+    Private Shared Function SourceSkelForAnim(animFile As String, actorRoot As String, raceSkel As String) As String
+        Dim src = ActorRootOfAnim(animFile)
+        If Not String.IsNullOrWhiteSpace(raceSkel) AndAlso
+           String.Equals(src.TrimEnd("\"c), If(actorRoot, "").TrimEnd("\"c), StringComparison.OrdinalIgnoreCase) Then
+            Return raceSkel
+        End If
+        Return src & "\CharacterAssets\skeleton.hkx"
     End Function
 
     ' dirname con separador backslash (los paths de FO4 usan "\").
@@ -513,12 +433,12 @@ Public NotInheritable Class BehaviorClipEnumerator
         Return p
     End Function
 
-    Private Shared Sub AddIdleClip(animFile As String, category As String, byClip As Dictionary(Of String, ResolvedAnimationClip), result As List(Of ResolvedAnimationClip))
+    Private Shared Sub AddIdleClip(animFile As String, category As String, byClip As Dictionary(Of String, ResolvedAnimationClip), result As List(Of ResolvedAnimationClip), actorRoot As String, raceSkel As String)
         Dim clip As New ResolvedAnimationClip With {
             .AnimationFile = animFile,
             .ClipName = "",
             .PlaybackSpeed = 1.0F,
-            .SourceSkeletonPath = ActorRootOfAnim(animFile) & "\CharacterAssets\skeleton.hkx",
+            .SourceSkeletonPath = SourceSkelForAnim(animFile, actorRoot, raceSkel),
             .FromBehaviorGraph = False,
             .RequiresFemale = False,
             .Is1stPersonOnly = (animFile.IndexOf("\_1stPerson\", StringComparison.OrdinalIgnoreCase) >= 0),
