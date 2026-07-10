@@ -230,6 +230,15 @@ Public Class NPC_SculptVert
     Public Dz As Single
 End Class
 
+''' <summary>One RaceMenu (.jslot) per-shape sculpt block. A preset sculpts head + brows + eyes + mouth as
+''' SEPARATE blocks, each tagged with <see cref="Host"/> — the shape's chargen morph .tri (HDPT NAM0=2, e.g.
+''' FemaleHeadBrowsCharGen.tri). The render/bake route a block to its shape by matching Host to that shape's
+''' chargen tri path (engine-faithful: this is the geometry identity skee serializes, not a vertex-count guess).</summary>
+Public Class NPC_SculptPart
+    Public Host As String = ""
+    Public Verts As List(Of NPC_SculptVert) = New List(Of NPC_SculptVert)
+End Class
+
 ''' <summary>RaceMenu (.jslot) NiOverride custom morph — a named chargen morph (CME_/EFM_) at a weight.</summary>
 Public Class NPC_CustomMorph
     Public Name As String = ""
@@ -925,6 +934,11 @@ Public Class NPC_Data
     ''' sculptDivisor) for the HEAD shape. Applied on top of the NAM9/NAMA chargen morphs in render + bake.
     ''' Nothing = no sculpt. NOT in the ESP — lives in the .jslot sidecar; carried on the overlay for preview/bake.</summary>
     Public Property SseSculptHead As List(Of NPC_SculptVert) = Nothing
+    ''' <summary>RaceMenu (.jslot) per-SHAPE sculpt blocks — head + brows + eyes + mouth, each routed to its
+    ''' rendered shape by <see cref="NPC_SculptPart.Host"/> == the shape's chargen tri (NAM0=2). Supersedes the
+    ''' head-only <see cref="SseSculptHead"/> for render/bake (which dropped brows/eyes/mouth sculpt). Nothing/
+    ''' empty = fall back to SseSculptHead. Not in the ESP — carried on the overlay from the .jslot sidecar.</summary>
+    Public Property SseSculptParts As List(Of NPC_SculptPart) = Nothing
     ''' <summary>RaceMenu NiOverride CUSTOM morphs (CME_/EFM_ names + value) from the .jslot. Applied by name
     ''' against the chargen TriHead (no-op for names the tri doesn't carry). Nothing = none.</summary>
     Public Property SseCustomMorphs As List(Of NPC_CustomMorph) = Nothing
@@ -3008,6 +3022,27 @@ Public Module RecordParsers
     ''' race tri (Skyrim: all *Vampire→base race, DremoraRace→DarkElfRace, DA13AfflictedRace→BretonRace,
     ''' NordRaceAstrid→NordRace — measured in Skyrim.esm). SSE-relevant; a race with no NAM8 returns its own EDID
     ''' so FO4/most SSE races are unaffected. See RACE_Data.MorphRaceFormID.</summary>
+    ''' <summary>RACE-AGNOSTIC face-morph driver: resolve the race's KWDA keyword EditorIDs. The SSE face plan
+    ''' applies a chargen morph named "&lt;keyword&gt;Morph" at full weight for EACH — so a race carrying the
+    ''' "Vampire" KYWD gets "VampireMorph", and any race+morph naming pairing works the same. It is NOT a
+    ''' vampire special case: the code never names vampire; it just follows the keyword→morph convention, and
+    ''' AddNam9Channel no-ops when no morph of that name exists (which is every vanilla race except vampires,
+    ''' whose chargen tris ship "VampireMorph"). This is what the CK bakes for pre-placed vampire NPCs, whose
+    ''' NAM9[18] (the per-actor vampire slider) is FLT_MAX — i.e. driven by the RACE keyword, not the slider.
+    ''' What a vampire race "does that the rest don't" is precisely: carry a keyword whose name has a morph.</summary>
+    Public Function GetRaceKeywordEditorIds(race As RACE_Data, pm As PluginManager) As List(Of String)
+        Dim result As New List(Of String)
+        If race Is Nothing OrElse race.Keywords Is Nothing OrElse pm Is Nothing Then Return result
+        For Each kwFid In race.Keywords
+            If kwFid = 0UI Then Continue For
+            Dim rec = pm.GetRecord(kwFid)
+            If rec IsNot Nothing AndAlso rec.Header.Signature = "KYWD" AndAlso Not String.IsNullOrEmpty(rec.EditorID) Then
+                result.Add(rec.EditorID)
+            End If
+        Next
+        Return result
+    End Function
+
     Public Function ResolveMorphRaceEditorId(race As RACE_Data, pm As PluginManager) As String
         If race Is Nothing Then Return ""
         Dim own = If(race.EditorID, "")

@@ -32,12 +32,17 @@ Public NotInheritable Class RaceMenuJslot
         Public Property Value As Double
     End Class
     ''' <summary>Per-vertex sculpt for one head part: parallel arrays index/dx/dy/dz (raw integers; divide by
-    ''' <see cref="RaceMenuJslot.SculptDivisor"/> for the world delta).</summary>
+    ''' <see cref="RaceMenuJslot.SculptDivisor"/> for the world delta). <see cref="Host"/> is the head-part
+    ''' chargen .tri the block targets (RaceMenu's per-shape "host" — e.g. FemaleHeadBrowsCharGen.tri) and
+    ''' <see cref="Vertices"/> its vertex count; together they route the block to the right rendered shape
+    ''' (each preset sculpts head + brows + eyes + mouth as SEPARATE blocks).</summary>
     Public Class JslotSculptPart
         Public Property Indices As New List(Of Integer)
         Public Property Dx As New List(Of Integer)
         Public Property Dy As New List(Of Integer)
         Public Property Dz As New List(Of Integer)
+        Public Property Host As String = ""
+        Public Property Vertices As Integer = 0
     End Class
     ''' <summary>One keyed contribution to a body morph slider (RaceMenu/BodySlide). A body morph
     ''' name accumulates one entry per BodySlide preset/source that touched it; the engine nets
@@ -254,6 +259,8 @@ Public NotInheritable Class RaceMenuJslot
             For Each sp In AsArray(morphs("sculpt"))
                 Dim o = TryCast(sp, JsonObject) : If o Is Nothing Then Continue For
                 Dim part As New JslotSculptPart
+                If o("host") IsNot Nothing Then part.Host = GetStr(o("host"))
+                If o("vertices") IsNot Nothing Then part.Vertices = GetInt(o("vertices"))
                 For Each row In AsArray(o("data"))
                     Dim arr = TryCast(row, JsonArray) : If arr Is Nothing OrElse arr.Count < 4 Then Continue For
                     part.Indices.Add(GetInt(arr(0))) : part.Dx.Add(GetInt(arr(1))) : part.Dy.Add(GetInt(arr(2))) : part.Dz.Add(GetInt(arr(3)))
@@ -438,7 +445,13 @@ Public NotInheritable Class RaceMenuJslot
             For i = 0 To part.Indices.Count - 1
                 dataArr.Add(New JsonArray From {part.Indices(i), part.Dx(i), part.Dy(i), part.Dz(i)})
             Next
-            scArr.Add(New JsonObject From {{"data", dataArr}})
+            ' Emit the per-shape "host" (chargen tri) + "vertices" so RaceMenu binds each block to the right
+            ' geometry (head/brows/eyes/mouth). Preserved verbatim from the loaded preset for a faithful round-trip.
+            Dim po As New JsonObject()
+            If Not String.IsNullOrEmpty(part.Host) Then po("host") = part.Host
+            If part.Vertices > 0 Then po("vertices") = part.Vertices
+            po("data") = dataArr
+            scArr.Add(po)
         Next
         morphs("sculpt") = scArr
         ' bodyMorphs — rebuilt explicitly (removed from the verbatim Case-Else above). Emitted when the
