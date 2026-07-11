@@ -1851,7 +1851,12 @@ Public Class PreviewModel
                     If MaterialBase.IsBGEM Then Return Array.Empty(Of String)()
                     Dim colors As New List(Of String)()
                     If Not MaterialBase.GrayscaleToPaletteColor Then colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.Diffuse_or_Base_Texture))
-                    colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.InnerLayerTexture))
+                    ' InnerLayer: en FACEGEN (SSE FaceTint) el InnerLayer es el facetint _d = DATA, no color. El engine
+                    ' lo samplea CRUDO para fgTint=(t4+off)·255/64 — la neutral (63,64,63)/255 da fgTint=1 SÓLO si es
+                    ' raw (sRGB daría 0.214 y oscurecería). El live render ya lo sube IsSRGB=False (NpcFaceTintResolver).
+                    ' Sólo es COLOR (sRGB) en el multilayer NO-facegen. Sin este gate, un NIF facegen cargado standalone
+                    ' samplea el facetint sRGB y renderiza oscuro (bug del _2c). FO4 no-facegen intacto.
+                    If Not MaterialBase.Facegen Then colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.InnerLayerTexture))
                     colors.Add(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.EnvmapTexture))
                     Return colors
                 End Get

@@ -160,6 +160,25 @@ Public Class FaceTintLayerInput
     ''' (HasColor) -- the layer keeps its shape (alpha) but the colour comes from HCLF. Ignored
     ''' for PaletteMask layers (they already use uColor by default) and on N/S channels.</summary>
     Public Property ForceUniformColor As Boolean = False
+    ''' <summary>skee overlay type-0: la src del TextureSet-diffuse = layerSample.rgb × uColor (tex × tint, tint
+    ''' uniforme, NO horneado en la textura). Mutuamente excluyente con ForceUniformColor/LUT. Default off (FO4 inerte).</summary>
+    Public Property MultiplyTextureByColor As Boolean = False
+
+    ''' <summary>SSE fold del facetint→albedo (engine `albedo *= fgTint`): la src del TextureSet-diffuse =
+    ''' (layerSample.rgb + <see cref="FgTintOff"/>) × <see cref="FgTintAmp"/>, y la cobertura se fuerza a 1
+    ''' (multiply de cara completa). Con BlendOp=Multiply + ley linear reproduce en GPU el pliegue CPU
+    ''' (FoldFacetintIntoDiffuse). Layer texture = el facetint _d; base = complexion. Default off (FO4 inerte).</summary>
+    Public Property FgTintFold As Boolean = False
+    ''' <summary>Offset por canal del fold fgTint (engine (1/255, 0, 1/255)). Solo si <see cref="FgTintFold"/>.</summary>
+    Public Property FgTintOffR As Single = 0F
+    Public Property FgTintOffG As Single = 0F
+    Public Property FgTintOffB As Single = 0F
+    ''' <summary>Amplitud del fold fgTint (engine 255/64 = 3.984375). Solo si <see cref="FgTintFold"/>.</summary>
+    Public Property FgTintAmp As Single = 1F
+
+    ''' <summary>Canal de la máscara PaletteMask: 0=R 1=G 2=B 3=A. Default 1 (VERDE) = convención FO4 (la máscara
+    ''' palette vive en el canal verde). SSE la usa en ROJO (0) — el builder SSE lo setea. Ignorado en TextureSet.</summary>
+    Public Property PaletteMaskChannel As Integer = 1
     ''' <summary>Hair palette LUT DDS bytes (the same 2D texture the hair shader samples). Rows =
     ''' hair-tone gradients (highlight→shadow). Loaded into a GL texture by the compositor's batch
     ''' loader, sampled at <c>(layerSample.g, HairPaletteRow)</c> when <see cref="UseHairPalette"/> is True.</summary>
@@ -243,6 +262,11 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uUseHairPaletteLoc As Integer = -1
     Friend _uForceOpaqueAlphaLoc As Integer = -1
     Friend _uForceUniformColorLoc As Integer = -1
+    Friend _uTexTimesColorLoc As Integer = -1
+    Friend _uFgTintFoldLoc As Integer = -1
+    Friend _uFgTintOffLoc As Integer = -1
+    Friend _uFgTintAmpLoc As Integer = -1
+    Friend _uPaletteMaskChannelLoc As Integer = -1
     Friend _uWorkingSpaceLoc As Integer = -1
     Friend _uSrcSpaceLoc As Integer = -1
     Friend _uOutputSpaceLoc As Integer = -1
@@ -442,6 +466,11 @@ uniform int uLayerKind;
 uniform int uChannel;     // 0=Diffuse 1=Normal 2=Specular
 uniform int uUseHairPalette;  // 1 = sample uHairLut per-pixel instead of authored colour (Diffuse only)
 uniform int uForceUniformColor;  // 1 = TextureSet diffuse uses uColor instead of layerSample.rgb (brow tint override path; ignored on PaletteMask)
+uniform int uTexTimesColor;      // 1 = TextureSet diffuse uses layerSample.rgb * uColor (skee overlay type-0: texxtint, tint uniforme). Ignorado en PaletteMask/ForceUniform.
+uniform int uFgTintFold;         // 1 = SSE fold facetint->albedo: src = (layerSample.rgb + uFgTintOff) * uFgTintAmp, cov forzada a 1 (multiply cara completa). Default 0 = FO4 inerte.
+uniform vec3 uFgTintOff;         // offset por canal del fold fgTint (engine (1/255,0,1/255)).
+uniform float uFgTintAmp;        // amplitud del fold fgTint (engine 255/64).
+uniform int uPaletteMaskChannel; // canal de la mascara PaletteMask: 0=R 1=G 2=B 3=A. Default 1 (verde, FO4); SSE=0 (rojo).
 uniform float uPaletteRow;    // V coordinate into uHairLut when uUseHairPalette=1 (= CLFM.RemappingIndex)
 uniform int uForceOpaqueAlpha; // 1 = write opaque alpha (1.0) on the FINAL drawn layer (last pass).
 uniform int uWorkingSpace;     // 0=linear 1=srgb 2=g22. Espacio donde corre el blend.
@@ -701,8 +730,12 @@ void main() {
             srcColor = texelFetch(uHairLut, ivec2(ltx1, lty1), 0).rgb;
         }
         else if (uForceUniformColor == 1) srcColor = uColor;
+        else if (uTexTimesColor == 1)     srcColor = layerSample.rgb * uColor;   // skee type-0: tex x tint (tint uniforme)
+        else if (uFgTintFold == 1)        srcColor = (layerSample.rgb + uFgTintOff) * uFgTintAmp;   // SSE fold: fgTint = (d+off)*amp
         else                              srcColor = layerSample.rgb;
-        if (uChannel == 0) {
+        if (uFgTintFold == 1) {
+            maskV = 1.0;   // fold = multiply de cara completa (cov=1), independiente del alpha del facetint
+        } else if (uChannel == 0) {
             maskV = layerSample.a;
         } else {
             maskV = (uHasDiffuseMask == 1) ? texture(uLayerDiffuseAlpha, vUV).a
@@ -717,7 +750,11 @@ void main() {
             srcColor = texelFetch(uHairLut, ivec2(ltx2, lty2), 0).rgb;
         }
         else                      srcColor = uColor;
-        maskV = layerSample.g;
+        // Canal de la mascara palette: verde por defecto (FO4), rojo en SSE (uPaletteMaskChannel).
+        maskV = (uPaletteMaskChannel == 0) ? layerSample.r
+              : (uPaletteMaskChannel == 2) ? layerSample.b
+              : (uPaletteMaskChannel == 3) ? layerSample.a
+              : layerSample.g;
     }
 
     // Pre-tono TakesSkinTone (guard uPreToneSkin): aplica el softlight del skintone al SOURCE de la capa
@@ -1126,13 +1163,31 @@ void main() {
                                                              AndAlso channel = FaceTintChannel.Diffuse _
                                                              AndAlso Not useHairPaletteEffective)
                 GL.Uniform1(state._uForceUniformColorLoc, If(forceUniformColorEffective, 1, 0))
+                ' skee overlay type-0: tex × tint. Solo TextureSet-diffuse, no combinado con Force/LUT.
+                Dim texTimesColorEffective As Boolean = (layer.MultiplyTextureByColor _
+                                                         AndAlso layer.Kind = FaceTintLayerKind.TextureSetDiffuse _
+                                                         AndAlso channel = FaceTintChannel.Diffuse _
+                                                         AndAlso Not useHairPaletteEffective AndAlso Not forceUniformColorEffective)
+                GL.Uniform1(state._uTexTimesColorLoc, If(texTimesColorEffective, 1, 0))
+                ' SSE fold facetint→albedo: solo TextureSet-diffuse, no combinado con tex×color/Force/LUT. src =
+                ' (layerSample.rgb + off)·amp, cov=1 (multiply de cara completa) ⇒ blend forzado a Multiply abajo.
+                Dim fgTintFoldEffective As Boolean = (layer.FgTintFold _
+                                                      AndAlso layer.Kind = FaceTintLayerKind.TextureSetDiffuse _
+                                                      AndAlso channel = FaceTintChannel.Diffuse _
+                                                      AndAlso Not useHairPaletteEffective AndAlso Not forceUniformColorEffective AndAlso Not texTimesColorEffective)
+                GL.Uniform1(state._uFgTintFoldLoc, If(fgTintFoldEffective, 1, 0))
+                GL.Uniform3(state._uFgTintOffLoc, layer.FgTintOffR, layer.FgTintOffG, layer.FgTintOffB)
+                GL.Uniform1(state._uFgTintAmpLoc, layer.FgTintAmp)
+                GL.Uniform1(state._uPaletteMaskChannelLoc, layer.PaletteMaskChannel)   ' PaletteMask: verde (FO4) / rojo (SSE)
 
                 GL.Uniform3(state._uColorLoc,
                             CSng(layer.R) / 255.0F,
                             CSng(layer.G) / 255.0F,
                             CSng(layer.B) / 255.0F)
                 GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, layer.Opacity)))
-                GL.Uniform1(state._uBlendOpLoc, CInt(conv.Blend))
+                ' Fold = multiply (albedo *= fgTint) INDEPENDIENTE de conv.Blend (la ley SSE es Replace); el resto =
+                ' conv.Blend. uBlendOp: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight (contrato del shader).
+                GL.Uniform1(state._uBlendOpLoc, If(fgTintFoldEffective, 1, CInt(conv.Blend)))
                 GL.Uniform1(state._uLayerKindLoc, CInt(layer.Kind))
                 GL.Uniform1(state._uChannelLoc, CInt(channel))
 
@@ -1787,6 +1842,11 @@ void main() {
         state._uUseHairPaletteLoc = GL.GetUniformLocation(state._program, "uUseHairPalette")
         state._uForceOpaqueAlphaLoc = GL.GetUniformLocation(state._program, "uForceOpaqueAlpha")
         state._uForceUniformColorLoc = GL.GetUniformLocation(state._program, "uForceUniformColor")
+        state._uTexTimesColorLoc = GL.GetUniformLocation(state._program, "uTexTimesColor")
+        state._uFgTintFoldLoc = GL.GetUniformLocation(state._program, "uFgTintFold")
+        state._uFgTintOffLoc = GL.GetUniformLocation(state._program, "uFgTintOff")
+        state._uFgTintAmpLoc = GL.GetUniformLocation(state._program, "uFgTintAmp")
+        state._uPaletteMaskChannelLoc = GL.GetUniformLocation(state._program, "uPaletteMaskChannel")
         state._uWorkingSpaceLoc = GL.GetUniformLocation(state._program, "uWorkingSpace")
         state._uSrcSpaceLoc = GL.GetUniformLocation(state._program, "uSrcSpace")
         state._uOutputSpaceLoc = GL.GetUniformLocation(state._program, "uOutputSpace")

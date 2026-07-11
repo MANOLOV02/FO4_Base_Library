@@ -37,6 +37,27 @@ Public Enum FaceTintSwapSortKey
     Npc_Lits_Order = 5           ' orden del morph dentro del NPC (MorphValues)
 End Enum
 
+''' <summary>Claves de orden para los TINTS de SSE (capas de tint del RACE). Estructura DISTINTA a FO4:
+''' una capa SSE es (TINI index, TINP type, TIND default CLFM, TINV coverage) y el orden RaceMenu = la
+''' posición en el RACE (array tintMasks; RaceMenu NO reordena, override por índice — PresetInterface.cpp).
+''' Default = [Race_Order asc] = identidad = orden RaceMenu (byte-idéntico a hoy). El valor es el id serializado.</summary>
+Public Enum FaceTintSseTintSortKey
+    Race_Order = 0    ' posición en el RACE (= array tintMasks / cb2 slot order) — DEFAULT, RaceMenu-fiel
+    Tint_Index = 1    ' TINI (índice de la capa)
+    Mask_Type = 2     ' TINP (tipo de máscara)
+    Authored = 3      ' el NPC autoró esta capa (TINI/TINC/TINV) vs default del RACE
+    Coverage = 4      ' TINV (cobertura 0-1) resuelta (authored o default)
+End Enum
+
+''' <summary>Claves de orden para los OVERLAYS de SSE (Face[Ovl], = análogo SSE de los SWAPS de FO4). El
+''' orden skee/RaceMenu = el índice del nodo Ovl{n} ascendente (OverlayInterface for i=0..N). Default =
+''' [Ovl_Index asc] = identidad = orden skee (byte-idéntico a hoy).</summary>
+Public Enum FaceTintSseOverlaySortKey
+    Ovl_Index = 0     ' índice del nodo Ovl{n} — DEFAULT, orden skee/RaceMenu
+    Alpha = 1         ' opacidad (key8 / .Alpha)
+    Has_Tint = 2      ' el overlay lleva tint (color) vs solo textura
+End Enum
+
 ''' <summary>Placement especial del SkinTone (slot 12) en el orden de composición de tints. Gana sobre
 ''' las reglas: FirstOfAll/LastOfAll sacan la capa slot-12 del orden y la fuerzan al frente/final del
 ''' compose-list. Positional la deja donde caiga por las reglas (default).</summary>
@@ -74,4 +95,19 @@ Public Class FaceTintSortSettings
         }
         SkinTonePlacement = CInt(FaceTintSkinTonePlacement.Positional)
     End Sub
+
+    ''' <summary>Default SSE (RaceMenu-fiel): tints = [Race_Order asc] (= orden del RACE / array tintMasks),
+    ''' overlays (SwapRules) = [Ovl_Index asc] (= orden skee Ovl{n}), skintone = Positional. Ambas listas son
+    ''' IDENTIDAD ⇒ el compose queda byte-idéntico al orden RaceMenu actual (la baseline vanilla no se mueve).
+    ''' Las CLAVES se interpretan como <see cref="FaceTintSseTintSortKey"/> / <see cref="FaceTintSseOverlaySortKey"/>
+    ''' (no como las FO4). Set SEPARADO (Setting_FaceTintSort_SSE) para no tocar el de FO4.</summary>
+    Public Shared Function DefaultsForSse() As FaceTintSortSettings
+        Return New FaceTintSortSettings With {
+            .TintRules = New List(Of FaceTintSortRule) From {
+                New FaceTintSortRule With {.Key = CInt(FaceTintSseTintSortKey.Race_Order), .Descending = False}},
+            .SwapRules = New List(Of FaceTintSortRule) From {
+                New FaceTintSortRule With {.Key = CInt(FaceTintSseOverlaySortKey.Ovl_Index), .Descending = False}},
+            .SkinTonePlacement = CInt(FaceTintSkinTonePlacement.Positional)
+        }
+    End Function
 End Class

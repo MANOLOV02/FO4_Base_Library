@@ -157,7 +157,21 @@ Public Class FilesDictionary_class
     Private Shared _dictionary As New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
     ''' <summary>Stack of overridden entries per key. When a loose overrides a BA2 (or a BA2 overrides another), the loser is pushed here.</summary>
     Private Shared ReadOnly _overriddenEntries As New ConcurrentDictionary(Of String, ConcurrentStack(Of File_Location))(StringComparer.OrdinalIgnoreCase)
-    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt", ".json", ".xml", ".ssf", ".sclp", ".hkx", ".hkt"}
+    ''' <summary>Extensions the dictionary indexes from loose files and archives.
+    ''' The last three cover the data files RaceMenu (skee64) and LooksMenu (f4ee) read — both open their
+    ''' configuration through the game's archive layer (BSResourceNiBinaryStream), so it can live inside a BSA/BA2
+    ''' and frequently does:
+    '''   • <c>.ini</c> — RaceMenu extended face morphs (<c>Meshes\actors\character\FaceGenMorphs\&lt;mod&gt;\races.ini</c>,
+    '''     <c>morphs.ini</c>, <c>sliders\*.ini</c> — shipped inside RaceMenu.bsa) and BodyGen
+    '''     (<c>...\BodyGenData\&lt;mod&gt;\templates.ini</c>, <c>morphs.ini</c>); LooksMenu bodygen/bodymorph.
+    '''   • <c>.jslot</c> / <c>.slot</c> — RaceMenu presets (JSON and binary), <c>Data\SKSE\Plugins\CharGen\</c>.
+    '''   • <c>.pex</c> / <c>.psc</c> — compiled/source Papyrus scripts. RaceMenu (skee64) builds its warpaint and
+    '''     body/hand/feet/face paint lists at runtime from every mod's <c>Add*Paint(name,path)</c> registrations,
+    '''     which live in the scripts (loose <c>Data\Scripts\</c> or inside a mod's BSA). Indexing them here makes
+    '''     them readable via <see cref="GetBytes"/>; only the SSE editors parse them (RaceMenuPaintCatalog).
+    ''' Omitting <c>.ini</c> made the extended-slider config invisible, so the catalog loaded nothing and every
+    ''' extended face slider silently resolved to no morph. Extensions verified against the plugin sources.</summary>
+    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt", ".json", ".xml", ".ssf", ".sclp", ".hkx", ".hkt", ".ini", ".jslot", ".slot", ".pex", ".psc"}
 
     ''' <summary>App-specific data store. Apps register their own data here (presets, high heels, etc.) keyed by type.</summary>
     Private Shared ReadOnly _appData As New ConcurrentDictionary(Of Type, Object)

@@ -1,3 +1,5 @@
+Imports System.Linq
+
 ''' <summary>
 ''' RaceMenu / NiOverride (skee64) face-overlay compositor — the engine-EXACT blend of overlay layers ON TOP
 ''' of the vanilla facetint, decoded from the RaceMenu HLSL SOURCE (.fx in RaceMenu.bsa, not inferred). See
@@ -124,6 +126,210 @@ Public Module SseOverlayCompositor
             Next
         Next
     End Sub
+
+    ''' <summary>Bake the NPC's FACE overlays (the <c>Face [Ovl{n}]</c> nodes of the .jslot <c>overrides</c>
+    ''' array — the SAME <see cref="RaceMenuJslot.JslotOverlayNode"/> list the editor edits and the render draws
+    ''' as coplanar decals) INTO a diffuse accumulator, in place. The engine renders these live and never bakes
+    ''' them; we bake so the per-NPC diffuse is WYSIWYG. Composite = skee's <c>normal.fx</c> straight-alpha-over
+    ''' (the .jslot overrides carry NO per-overlay blend mode → skee uses "normal"): per pixel the overlay colour
+    ''' is <c>tex.rgb × tint.rgb</c> (type 0, when <see cref="JslotOverlayNode.HasTint"/>) else <c>tex.rgb</c>,
+    ''' and coverage = <c>tex.a × opacity</c> (opacity = key8 <see cref="JslotOverlayNode.Alpha"/> when
+    ''' <see cref="JslotOverlayNode.HasAlpha"/>, else 1). Overlays with no diffuse texture are skipped.
+    '''
+    ''' <paramref name="acc"/> is linear RGBA [0,1] (length w*h*4) — the resolved head complexion diffuse.
+    ''' <paramref name="overlays"/> is the FULL overrides list; only nodes whose name starts with "Face" are
+    ''' composited (body/hands/feet are the body path). Returns True iff at least one overlay contributed.
+    ''' Decode is via <paramref name="decode"/> (path → linear RGBA at w×h) so the module stays FilesDictionary-
+    ''' agnostic; callers pass <see cref="SseFaceTintComposer.DecodeTextureRgba"/>. Order = por ÍNDICE DE NODO
+    ''' Ovl{n} ascendente (Ovl0 abajo → OvlN arriba), = skee (OverlayInterface for i=0..N), NO por posición de lista.</summary>
+    ''' <summary>Orden configurable de los overlays Face[Ovl] (= análogo SSE de los SWAPS de FO4:
+    ''' <c>Setting_FaceTintSort_SSE.SwapRules</c>, claves <see cref="FaceTintSseOverlaySortKey"/>). DEFAULT =
+    ''' <c>[Ovl_Index asc]</c> = orden skee (Ovl0 abajo→OvlN arriba, OverlayInterface for i=0..N) = IDENTIDAD ⇒
+    ''' byte-idéntico. Tiebreak final por posición original ⇒ claves iguales preservan el orden skee. Recibe la lista
+    ''' YA filtrada (los dos callers filtran por DiffusePath vs NormalPath). Reordenar DESVÍA de skee (elección del usuario).</summary>
+    Public Function SortFaceOverlays(list As List(Of RaceMenuJslot.JslotOverlayNode)) As List(Of RaceMenuJslot.JslotOverlayNode)
+        If list Is Nothing OrElse list.Count <= 1 Then Return list
+        Dim cfg = Config_App.Current?.Setting_FaceTintSort_SSE
+        Dim rules = If(cfg IsNot Nothing, cfg.SwapRules, Nothing)
+        If rules Is Nothing OrElse rules.Count = 0 Then Return list.OrderBy(Function(o) ParseOvlIndex(o.NodeName)).ToList()
+        Dim items As New List(Of (Ov As RaceMenuJslot.JslotOverlayNode, Pos As Integer))
+        For i = 0 To list.Count - 1 : items.Add((list(i), i)) : Next
+        items.Sort(Function(a, b)
+                       For Each r In rules
+                           Dim c = SseOverlayKey(a.Ov, r.Key).CompareTo(SseOverlayKey(b.Ov, r.Key))
+                           If r.Descending Then c = -c
+                           If c <> 0 Then Return c
+                       Next
+                       Return a.Pos.CompareTo(b.Pos)   ' tiebreak estable = orden de entrada (post-skee OrderBy del default)
+                   End Function)
+        Return items.Select(Function(x) x.Ov).ToList()
+    End Function
+
+    Private Function SseOverlayKey(ov As RaceMenuJslot.JslotOverlayNode, key As Integer) As Double
+        Select Case CType(key, FaceTintSseOverlaySortKey)
+            Case FaceTintSseOverlaySortKey.Alpha : Return If(ov.HasAlpha, ov.Alpha, 1.0)
+            Case FaceTintSseOverlaySortKey.Has_Tint : Return If(ov.HasTint, 1.0, 0.0)
+            Case Else : Return ParseOvlIndex(ov.NodeName)   ' Ovl_Index (default) = orden skee
+        End Select
+    End Function
+
+    Public Function ComposeFaceOverlaysIntoDiffuse(acc As Double(), overlays As IList(Of RaceMenuJslot.JslotOverlayNode),
+                                                   w As Integer, h As Integer,
+                                                   decode As Func(Of String, Integer, Integer, Double())) As Boolean
+        If acc Is Nothing OrElse overlays Is Nothing OrElse overlays.Count = 0 OrElse decode Is Nothing Then Return False
+        Dim npix = w * h
+        Dim any = False
+        ' ORDEN = skee: por ÍNDICE DE NODO Ovl{n} ASCENDENTE (Ovl0 abajo → OvlN arriba). skee instala
+        ' `for i=0..N` + AttachChild ⇒ Ovl0 se dibuja primero (abajo) y OvlN último (arriba); el topmost gana en
+        ' solapes. NO por posición en la lista (el jslot puede venir en cualquier orden). Ver OverlayInterface.cpp.
+        Dim faceOrdered = SortFaceOverlays(overlays.
+            Where(Function(o) o IsNot Nothing AndAlso Not String.IsNullOrEmpty(o.NodeName) AndAlso
+                              o.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) AndAlso
+                              Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' orden configurable, default skee
+        For Each ov In faceOrdered
+            Dim tex = decode(ov.DiffusePath, w, h)
+            If tex Is Nothing OrElse tex.Length < npix * 4 Then Continue For
+            Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
+            If opacity <= 0.0 Then Continue For
+            Dim tr As Double = If(ov.HasTint, ov.TintR, 1.0)
+            Dim tg As Double = If(ov.HasTint, ov.TintG, 1.0)
+            Dim tb As Double = If(ov.HasTint, ov.TintB, 1.0)
+            ' COBERTURA = ALPHA del diffuse (FIEL AL ENGINE). VERIFICADO (Shader_Class.vb:1851-1859, sse_facegen_skin
+            ' RE): en SSE el BSLightingShader —el shader del overlay decal (SkinTint/FaceGen)— NO tiene greyscale-to-
+            ' color/alpha (eso vive SOLO en el BSEffectShader). El diffuse se usa normal: RGB=color, alpha=cobertura
+            ' (color.a *= baseMap.a). type 0 de skee: color = tex.rgb × tint.
+            For i = 0 To npix - 1
+                Dim la = Clamp01(tex(i * 4 + 3) * opacity)
+                If la <= 0.0 Then Continue For
+                acc(i * 4) = (tex(i * 4) * tr) * la + acc(i * 4) * (1 - la)
+                acc(i * 4 + 1) = (tex(i * 4 + 1) * tg) * la + acc(i * 4 + 1) * (1 - la)
+                acc(i * 4 + 2) = (tex(i * 4 + 2) * tb) * la + acc(i * 4 + 2) * (1 - la)
+            Next
+            any = True
+        Next
+        Return any
+    End Function
+
+    ''' <summary>Compose the FACE overlays' NORMAL maps into the head normal accumulator (MODEL-SPACE / MSN, in
+    ''' place), in the SAME node-index order as the diffuse (Ovl0 bottom → OvlN top). Los normales NO se mezclan
+    ''' como colores: se DECODIFICAN a vector [-1,1], se lerpean por cobertura, se RENORMALIZAN y se re-encodean —
+    ''' así promediar dos normales no aplana la superficie. Espacio: el decal copia el flag MSN del head, así que
+    ''' el normal del overlay se interpreta en el MISMO espacio que el head (sin conversión TS→MS). Cobertura =
+    ''' alpha del DIFFUSE del overlay × opacidad (el decal blendea por el alpha del diffuse). Solo overlays con
+    ''' <see cref="JslotOverlayNode.NormalPath"/>; los que no traen normal no tocan el _msn. Returns True si alguno
+    ''' contribuyó. <paramref name="msnAcc"/> = head _msn decodificado RGBA [0,1] (length w*h*4).</summary>
+    Public Function ComposeFaceOverlayNormalsIntoMsn(msnAcc As Double(), overlays As IList(Of RaceMenuJslot.JslotOverlayNode),
+                                                     w As Integer, h As Integer,
+                                                     decode As Func(Of String, Integer, Integer, Double())) As Boolean
+        If msnAcc Is Nothing OrElse overlays Is Nothing OrElse overlays.Count = 0 OrElse decode Is Nothing Then Return False
+        Dim npix = w * h
+        Dim any = False
+        Dim faceOrdered = SortFaceOverlays(overlays.
+            Where(Function(o) o IsNot Nothing AndAlso Not String.IsNullOrEmpty(o.NodeName) AndAlso
+                              o.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) AndAlso
+                              Not String.IsNullOrEmpty(o.NormalPath)).ToList())   ' orden configurable, default skee
+        For Each ov In faceOrdered
+            Dim ovNorm = decode(ov.NormalPath, w, h)
+            If ovNorm Is Nothing OrElse ovNorm.Length < npix * 4 Then Continue For
+            ' Cobertura = alpha del DIFFUSE del overlay (la forma del tatuaje) × opacidad. Si no hay diffuse,
+            ' usa el alpha del propio normal (fallback).
+            Dim ovDiff = If(Not String.IsNullOrEmpty(ov.DiffusePath), decode(ov.DiffusePath, w, h), Nothing)
+            Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
+            If opacity <= 0.0 Then Continue For
+            For i = 0 To npix - 1
+                Dim cov As Double = If(ovDiff IsNot Nothing AndAlso ovDiff.Length >= npix * 4, ovDiff(i * 4 + 3), ovNorm(i * 4 + 3)) * opacity
+                If cov <= 0.0 Then Continue For
+                If cov > 1.0 Then cov = 1.0
+                ' decode ambos a [-1,1], lerp, renormalize, re-encode a [0,1].
+                Dim hx = 2.0 * msnAcc(i * 4) - 1.0, hy = 2.0 * msnAcc(i * 4 + 1) - 1.0, hz = 2.0 * msnAcc(i * 4 + 2) - 1.0
+                Dim ox = 2.0 * ovNorm(i * 4) - 1.0, oy = 2.0 * ovNorm(i * 4 + 1) - 1.0, oz = 2.0 * ovNorm(i * 4 + 2) - 1.0
+                Dim nx = hx + cov * (ox - hx), ny = hy + cov * (oy - hy), nz = hz + cov * (oz - hz)
+                Dim len = Math.Sqrt(nx * nx + ny * ny + nz * nz)
+                If len > 0.0000001 Then nx /= len : ny /= len : nz /= len
+                msnAcc(i * 4) = (nx + 1.0) * 0.5
+                msnAcc(i * 4 + 1) = (ny + 1.0) * 0.5
+                msnAcc(i * 4 + 2) = (nz + 1.0) * 0.5
+            Next
+            any = True
+        Next
+        Return any
+    End Function
+
+    ''' <summary>True iff any FACE overlay carries a normal map (cheap check, no decode).</summary>
+    Public Function HasFaceOverlayNormals(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
+        If overlays Is Nothing Then Return False
+        For Each ov In overlays
+            If ov IsNot Nothing AndAlso Not String.IsNullOrEmpty(ov.NodeName) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) _
+               AndAlso ov.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) Then Return True
+        Next
+        Return False
+    End Function
+
+    ''' <summary>True iff <paramref name="overlays"/> has at least one FACE overlay with a diffuse texture — i.e.
+    ''' whether <see cref="ComposeFaceOverlaysIntoDiffuse"/> would emit anything. Used by the bake to decide
+    ''' whether to emit a per-NPC diffuse at all (vanilla NPCs with no face overlays keep the shared complexion).</summary>
+    Public Function HasBakeableFaceOverlays(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
+        If overlays Is Nothing Then Return False
+        For Each ov In overlays
+            If ov IsNot Nothing AndAlso Not String.IsNullOrEmpty(ov.NodeName) AndAlso Not String.IsNullOrEmpty(ov.DiffusePath) _
+               AndAlso ov.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) Then Return True
+        Next
+        Return False
+    End Function
+
+    ''' <summary>skee's colour presets (TintMaskInterface.h): a MASKC / TintData colour stored as this raw
+    ''' SInt32 is NOT a literal colour but a live-NPC colour reference. −2 = the NPC skin colour, −1 = the NPC
+    ''' hair colour (hair channels ×2, clamped — CreateTintsFromData:59-61). As unsigned: 0xFFFFFFFE / 0xFFFFFFFF.</summary>
+    Public Const SkeePresetSkin As UInteger = &HFFFFFFFEUI
+    Public Const SkeePresetHair As UInteger = &HFFFFFFFFUI
+
+    ''' <summary>Build ONE skee GPU-compositor layer (TintMaskInterface / CDXNifTextureRenderer) as an
+    ''' <see cref="SseOverlay"/> ready for <see cref="ApplyOverlays"/>. This is the skee analogue of the vanilla
+    ''' facetint: MASKT (texture) + MASKC (colour, ARGB with A=opacity) + MASKA (alpha) per index, or a TintData
+    ''' XML mask. <paramref name="colorArgbOrPreset"/> is the raw MASKC/TintData colour — if it equals
+    ''' <see cref="SkeePresetSkin"/>/<see cref="SkeePresetHair"/> the live NPC skin/hair colour is substituted
+    ''' (<paramref name="skinRgb"/>/<paramref name="hairRgb"/>, hair ×2 clamped). <paramref name="opacity"/> is
+    ''' MASKA (skee folds it into the colour's A byte). <paramref name="layerType"/> 0=Normal/1=Mask/2=Color;
+    ''' <paramref name="blend"/> the technique (default normal). <paramref name="texRgba"/> = decoded mask texture
+    ''' (linear RGBA w*h*4) or Nothing for a type-2 solid layer.</summary>
+    Public Function BuildSkeeMaskLayer(colorArgbOrPreset As UInteger, opacity As Double, texRgba As Double(),
+                                       layerType As Integer, blend As SseBlendMode,
+                                       skinRgb As Double(), hairRgb As Double()) As SseOverlay
+        Dim r As Double, g As Double, b As Double
+        If colorArgbOrPreset = SkeePresetSkin AndAlso skinRgb IsNot Nothing AndAlso skinRgb.Length >= 3 Then
+            r = skinRgb(0) : g = skinRgb(1) : b = skinRgb(2)
+        ElseIf colorArgbOrPreset = SkeePresetHair AndAlso hairRgb IsNot Nothing AndAlso hairRgb.Length >= 3 Then
+            r = Clamp01(hairRgb(0) * 2.0) : g = Clamp01(hairRgb(1) * 2.0) : b = Clamp01(hairRgb(2) * 2.0)   ' skee ×2 clamp
+        Else
+            ' ARGB byte order (skee SetColorA: A<<24|R<<16|G<<8|B). RGB from bits 16/8/0.
+            r = CDbl((colorArgbOrPreset >> 16) And &HFF) / 255.0
+            g = CDbl((colorArgbOrPreset >> 8) And &HFF) / 255.0
+            b = CDbl(colorArgbOrPreset And &HFF) / 255.0
+        End If
+        Return New SseOverlay With {
+            .BlendMode = blend,
+            .LayerType = layerType,
+            .Color = New Double() {r, g, b, Clamp01(opacity)},
+            .Texture = texRgba}
+    End Function
+
+    ''' <summary>Índice del nodo <c>[Ovl{n}]</c> / <c>[SOvl{n}]</c> (n entero) o Integer.MaxValue si no matchea
+    ''' (los sin índice van al final). Es el orden de composición de skee (OverlayInterface for i=0..N).</summary>
+    Public Function ParseOvlIndex(nodeName As String) As Integer
+        If String.IsNullOrEmpty(nodeName) Then Return Integer.MaxValue
+        Dim open = nodeName.IndexOf("[Ovl", StringComparison.OrdinalIgnoreCase)
+        If open < 0 Then Return Integer.MaxValue
+        Dim close = nodeName.IndexOf("]"c, open)
+        If close < 0 Then Return Integer.MaxValue
+        ' Salta "[Ovl" o "[SOvl": avanza hasta el primer dígito.
+        Dim i = open + 4
+        While i < close AndAlso Not Char.IsDigit(nodeName(i))
+            i += 1
+        End While
+        Dim digits = nodeName.Substring(i, close - i)
+        Dim n As Integer
+        Return If(Integer.TryParse(digits, n), n, Integer.MaxValue)
+    End Function
 
     Private Function Clamp01(v As Double) As Double
         Return If(v < 0, 0, If(v > 1, 1, v))

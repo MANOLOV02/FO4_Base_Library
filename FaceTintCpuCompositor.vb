@@ -52,6 +52,20 @@ Public Module FaceTintCpuCompositor
         Return Math.Pow(Clamp01(c), 2.2)
     End Function
 
+    ''' <summary>Convierte los canales RGB (g22) de un BGRA byte-array a LINEAL, in place (deja A). El compose
+    ''' CPU del DIFFUSE saca g22 (para el DDS del bake); el RENDER GL deja el output en linear (G22→Linear final).
+    ''' Para que el render en modo CPU-skinning se vea IGUAL que en GPU, el diffuse compuesto por CPU se convierte
+    ''' a linear antes de subir a GL. N/S ya son lineales (no llamar esto sobre ellos).</summary>
+    Public Sub G22DiffuseBgraToLinearInPlace(bgra As Byte())
+        If bgra Is Nothing Then Return
+        Dim n = bgra.Length \ 4
+        For i = 0 To n - 1
+            bgra(i * 4) = CByte(Math.Round(G22ToLin1(bgra(i * 4) / 255.0) * 255.0))          ' B
+            bgra(i * 4 + 1) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 1) / 255.0) * 255.0))  ' G
+            bgra(i * 4 + 2) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 2) / 255.0) * 255.0))  ' R
+        Next
+    End Sub
+
     Private Function LinToG221(c As Double) As Double
         Return Math.Pow(Clamp01(c), 1.0 / 2.2)
     End Function
@@ -294,6 +308,36 @@ Public Module FaceTintCpuCompositor
         Return c00 * (1 - tx) * (1 - ty) + c10 * tx * (1 - ty) + c01 * (1 - tx) * ty + c11 * tx * ty
     End Function
 
+    ''' <summary>Resample un BGRA (byte, sw*sh*4) a (dw,dh) con EL MISMO filtro que el compositor FO4:
+    ''' GL_LINEAR + CLAMP_TO_EDGE, texel = uv*size-0.5, pixel-center u=(x+0.5)/dw (idéntico a <see cref="SampleBilinear"/>
+    ''' / <c>SampleChannelAt</c>). Para que el resize del bake SSE (diffuse/normal plegados a una resolución != Inherit)
+    ''' matchee el resample per-layer de FO4. sw==dw AndAlso sh==dh ⇒ devuelve el mismo array (no-op, byte-inerte).</summary>
+    Public Function ResampleBgra(bgra As Byte(), sw As Integer, sh As Integer, dw As Integer, dh As Integer) As Byte()
+        If bgra Is Nothing OrElse sw <= 0 OrElse sh <= 0 OrElse dw <= 0 OrElse dh <= 0 Then Return bgra
+        If sw = dw AndAlso sh = dh Then Return bgra
+        Dim outp(dw * dh * 4 - 1) As Byte
+        System.Threading.Tasks.Parallel.For(0, dh, Sub(y)
+                                                       Dim v = (y + 0.5) / dh
+                                                       Dim fy = Clamp01(v) * sh - 0.5
+                                                       Dim iy = CInt(Math.Floor(fy)) : Dim ty = fy - iy
+                                                       Dim y0 = Math.Max(0, Math.Min(sh - 1, iy)), y1 = Math.Max(0, Math.Min(sh - 1, iy + 1))
+                                                       For x = 0 To dw - 1
+                                                           Dim u = (x + 0.5) / dw
+                                                           Dim fx = Clamp01(u) * sw - 0.5
+                                                           Dim ix = CInt(Math.Floor(fx)) : Dim tx = fx - ix
+                                                           Dim x0 = Math.Max(0, Math.Min(sw - 1, ix)), x1 = Math.Max(0, Math.Min(sw - 1, ix + 1))
+                                                           Dim i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4, i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4
+                                                           Dim o = (y * dw + x) * 4
+                                                           For ch = 0 To 3
+                                                               Dim c = bgra(i00 + ch) * (1 - tx) * (1 - ty) + bgra(i10 + ch) * tx * (1 - ty) +
+                                                                       bgra(i01 + ch) * (1 - tx) * ty + bgra(i11 + ch) * tx * ty
+                                                               outp(o + ch) = CByte(Math.Max(0, Math.Min(255.0, Math.Round(c, MidpointRounding.ToEven))))
+                                                           Next
+                                                       Next
+                                                   End Sub)
+        Return outp
+    End Function
+
     ''' <summary>LUT lookup ENGINE-EXACT del brow grayscale->palette (BSFaceCustomizationShader PS, `ld` t4):
     ''' U = Cvt(green, <paramref name="srcSpace"/>, <paramref name="coordSpace"/>) — el verde (textura diffuse)
     ''' se decodea de srcSpace (=conv.SrcSpace=DiffuseTextureSrcSpace, Srgb) al espacio del coord (=conv.
@@ -522,6 +566,7 @@ Public Module FaceTintCpuCompositor
                     If lutTex Is Nothing Then useHairPalette = False
                 End If
                 Dim forceUniform = (layer.ForceUniformColor AndAlso layer.Kind = FaceTintLayerKind.TextureSetDiffuse AndAlso isD AndAlso Not useHairPalette)
+                Dim texTimesColor = (layer.MultiplyTextureByColor AndAlso layer.Kind = FaceTintLayerKind.TextureSetDiffuse AndAlso isD AndAlso Not useHairPalette AndAlso Not forceUniform)
 
                 ' Mask diffuse (uLayerDiffuseAlpha) para N/S de TextureSet (alpha del diffuse del layer).
                 Dim diffMaskTex As DecodedTex = Nothing
@@ -573,6 +618,8 @@ Public Module FaceTintCpuCompositor
                             srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
                         ElseIf forceUniform Then
                             srcR = uColR : srcG = uColG : srcB = uColB
+                        ElseIf texTimesColor Then
+                            srcR = lr * uColR : srcG = lg * uColG : srcB = lb * uColB   ' skee type-0: tex × tint
                         Else
                             srcR = lr : srcG = lg : srcB = lb
                         End If
@@ -629,6 +676,27 @@ Public Module FaceTintCpuCompositor
     ''' framework decide cómo blend(prev/base,src) entra en el acumulador (ver FaceTintFramework). DEFAULT
     ''' framework=0 (OverPrev) = el modelo previo BYTE-IDENTICO; base/framework opcionales para no tocar los
     ''' call sites que no usan los frameworks nuevos. base = textura original sin tintar (= uBase del shader).</summary>
+    ''' <summary>Compositor por-píxel COMPARTIDO, ley-driven: aplica UN color de capa sobre el acumulador con
+    ''' la cobertura <paramref name="cov"/> ya resuelta (mask×opacidad), usando la convención
+    ''' <paramref name="conv"/> (working/composite/src/output spaces, blend op, softlight, framework). Es el
+    ''' MISMO <see cref="ComposeOne"/> que usa el loop FO4 — expuesto para que otros compositores (SSE) compongan
+    ''' por la ley del config en vez de hardcodear el álgebra. GL == CPU == este por construcción.
+    ''' <paramref name="base"/> sólo lo usan los frameworks OverBase/AddBase; en OverPrev (default) es inerte.</summary>
+    Public Function ComposePixel(prev As Double, src As Double, cov As Double,
+                                 conv As FaceTintConvention.FaceTintConventionSet,
+                                 Optional base As Double = 0.0) As Double
+        Return ComposeOne(prev, src, cov,
+                          CInt(conv.WorkingSpace), CInt(conv.CompositeSpace), CInt(conv.SrcSpace),
+                          CInt(conv.OutputSpace), CInt(conv.Blend), CInt(conv.SoftLight),
+                          base, CInt(conv.Framework))
+    End Function
+
+    ''' <summary>mask conv expuesta (0=raw 1=srgbEnc 2=srgbDec 3=g22Enc 4=g22Dec…) para que los compositores
+    ''' que resuelven su propia cobertura (SSE) apliquen la MISMA transformación de máscara que el loop FO4.</summary>
+    Public Function ConvMaskShared(m As Double, maskConv As Integer) As Double
+        Return ConvMask1(m, maskConv)
+    End Function
+
     Private Function ComposeOne(prev As Double, src As Double, cov As Double,
                                 ws As Integer, cs As Integer, ss As Integer, os As Integer, bop As Integer,
                                 softLight As Integer,

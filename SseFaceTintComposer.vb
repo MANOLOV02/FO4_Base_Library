@@ -94,15 +94,29 @@ Public Module SseFaceTintComposer
             End Select
         Next
 
-        Dim layers = GetRaceLayersOrdered(pm, raceFormID, isFemale)
+        Dim layers = SortSseTintLayers(GetRaceLayersOrdered(pm, raceFormID, isFemale), npcMap)   ' orden configurable, default RaceMenu
 
-        ' base = 0.5 (shader constant). Optional baseImg overrides it (diagnostic: test base=complexion).
+        ' Ley SSE del config (FaceTintConvention.ActiveSettings, default DefaultsFor(Skyrim)): el compositor NO
+        ' hardcodea el álgebra — seed, canal de máscara y espacios/blend vienen de la convención. Con los defaults
+        ' SSE (seed constante 0.5, máscara canal R cruda, todo Linear, Blend=Replace) esto es BYTE-IDÉNTICO al
+        ' modelo previo (lerp(acc,color,maskR×tinv)); el usuario puede tunearlos desde CharGen Options (tab SSE).
+        Dim settings = FaceTintConvention.ActiveSettings()
+        Dim conv = FaceTintConvention.ResolveConvention(isTextureSet:=False, slot:=0US, blendOp:=0,
+                                                        channel:=FaceTintChannel.Diffuse, useHairPalette:=False)
+        Dim maskConvI As Integer = CInt(conv.MaskConv)
+        Dim maskCh As Integer = MaskChannelIndex(settings.Diffuse)   ' SSE default = R (0)
+
+        ' Seed del acumulador: Constant (SSE, engine-verificado 0.5) o la baseImg del caller (diagnóstico).
         Dim acc(npix * 4 - 1) As Double
+        Dim seedR As Double = 0.5, seedG As Double = 0.5, seedB As Double = 0.5
+        If settings.SeedMode = FaceTintConvention.FaceTintSeedMode.Constant AndAlso settings.SeedConstant IsNot Nothing AndAlso settings.SeedConstant.Length >= 3 Then
+            seedR = settings.SeedConstant(0) : seedG = settings.SeedConstant(1) : seedB = settings.SeedConstant(2)
+        End If
         If baseImg IsNot Nothing AndAlso baseImg.Length >= npix * 4 Then
             Array.Copy(baseImg, acc, npix * 4)
         Else
             For i = 0 To npix - 1
-                acc(i * 4) = 0.5 : acc(i * 4 + 1) = 0.5 : acc(i * 4 + 2) = 0.5 : acc(i * 4 + 3) = 1.0
+                acc(i * 4) = seedR : acc(i * 4 + 1) = seedG : acc(i * 4 + 2) = seedB : acc(i * 4 + 3) = 1.0
             Next
         End If
 
@@ -131,9 +145,92 @@ Public Module SseFaceTintComposer
             End If
             If iv <= 0.0 OrElse String.IsNullOrEmpty(maskPath) Then Continue For
             Dim mi = DecodeMask(maskPath, w, h)
-            If mi IsNot Nothing Then ComposeLayer(acc, mi, cr, cg, cbb, iv, npix)
+            If mi IsNot Nothing Then ComposeLayer(acc, mi, cr, cg, cbb, iv, npix, conv, maskConvI, maskCh)
         Next
         Return acc
+    End Function
+
+    ''' <summary>Contraparte GPU de <see cref="ComposeLinearRgba"/>: resuelve las capas de tint del NPC como
+    ''' <see cref="FaceTintLayerInput"/> (PaletteMask) para el compositor GL (<c>ApplyFaceTintPipeline</c>). La
+    ''' resolución es IDÉNTICA a ComposeLinearRgba (RACE order, color authored-vs-default, TINV, override de máscara),
+    ''' de modo que componer estas capas sobre un base PLANO = seed (0.5) por GL reproduce el compose CPU del <c>_2</c>
+    ''' → el par <c>_2</c> vs <c>_2b</c> mide la paridad CPU==GPU del facetint base. Los bytes de máscara salen del
+    ''' FilesDictionary (el pipeline GL los decodea/sube). Nothing si no resuelve race/npc. SSE-only (debug sandbox).</summary>
+    Public Function BuildLayerInputs(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
+                                     raceFormID As UInteger, isFemale As Boolean,
+                                     Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
+                                     Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As List(Of FaceTintLayerInput)
+        If pm Is Nothing OrElse npcRec Is Nothing OrElse race Is Nothing Then Return Nothing
+
+        ' NPC-authored tint map: index → {R,G,B (TINC/255), interp (TINV/100)}. MISMA lectura que ComposeLinearRgba.
+        Dim npcMap As New Dictionary(Of Integer, Double())
+        Dim tIdx As Integer = -1, tr As Double = 0, tg As Double = 0, tb As Double = 0, tvv As Double = 0
+        Dim tintPairs As IEnumerable(Of (Sig As String, Data As Byte()))
+        If npcTintOverride IsNot Nothing Then
+            tintPairs = npcTintOverride.Select(Function(s) (s.Sig, s.Data))
+        Else
+            tintPairs = npcRec.Subrecords.Select(Function(s) (s.Signature, s.Data))
+        End If
+        For Each sr In tintPairs
+            Select Case sr.Sig
+                Case "TINI" : tIdx = BitConverter.ToUInt16(sr.Data, 0)
+                Case "TINC" : If sr.Data.Length >= 3 Then tr = sr.Data(0) / 255.0 : tg = sr.Data(1) / 255.0 : tb = sr.Data(2) / 255.0
+                Case "TINV" : If sr.Data.Length >= 4 Then tvv = BitConverter.ToUInt32(sr.Data, 0) / 100.0
+                Case "TIAS" : If tIdx >= 0 Then npcMap(tIdx) = New Double() {tr, tg, tb, tvv} : tIdx = -1 : tr = 0 : tg = 0 : tb = 0 : tvv = 0
+            End Select
+        Next
+
+        Dim layers = SortSseTintLayers(GetRaceLayersOrdered(pm, raceFormID, isFemale), npcMap)   ' orden configurable, default RaceMenu
+        ' Canal de la máscara según la ley SSE (default R). El shader GL PaletteMask lo lee por uniform (FO4=verde).
+        Dim maskCh As Integer = MaskChannelIndex(FaceTintConvention.ActiveSettings().Diffuse)
+        Dim outp As New List(Of FaceTintLayerInput)
+        For Each layer In layers
+            Dim cr As Double, cg As Double, cbb As Double, iv As Double
+            Dim authored As Double() = Nothing
+            If npcMap.TryGetValue(layer.Index, authored) Then
+                cr = authored(0) : cg = authored(1) : cbb = authored(2) : iv = authored(3)
+            Else
+                Dim dc = ResolveClfmColor(pm, layer.DefaultClfm)
+                cr = dc(0) : cg = dc(1) : cbb = dc(2) : iv = layer.DefaultValue
+            End If
+            Dim maskPath = layer.Path
+            Dim custPath As String = Nothing
+            If tintTexOverride IsNot Nothing AndAlso tintTexOverride.TryGetValue(layer.Index, custPath) AndAlso Not String.IsNullOrEmpty(custPath) Then
+                maskPath = custPath
+            End If
+            If iv <= 0.0 OrElse String.IsNullOrEmpty(maskPath) Then Continue For
+            Dim key = maskPath.Replace("/"c, "\"c).ToLowerInvariant()
+            If Not key.StartsWith("textures\") Then key = "textures\" & key
+            Dim mb = FilesDictionary_class.GetBytes(key)
+            If mb Is Nothing Then Continue For
+            outp.Add(New FaceTintLayerInput With {
+                .Kind = FaceTintLayerKind.PaletteMask,
+                .LayerDdsBytes = mb, .LayerCacheKey = key,
+                .R = ClampByteLocal(cr * 255.0), .G = ClampByteLocal(cg * 255.0), .B = ClampByteLocal(cbb * 255.0),
+                .Opacity = CSng(iv), .BlendOp = 0, .Slot = 0US, .IsTextureSet = False,
+                .PaletteMaskChannel = maskCh,
+                .DebugName = $"sse-tint idx={layer.Index}"})
+        Next
+        Return outp
+    End Function
+
+    ''' <summary>Clamp a double a byte [0,255] con redondeo. Local (SseFaceTintComposer no comparte el de FaceGenBuilder).</summary>
+    Private Function ClampByteLocal(v As Double) As Byte
+        If v < 0.0 Then Return 0
+        If v > 255.0 Then Return 255
+        Return CByte(Math.Round(v))
+    End Function
+
+    ''' <summary>Índice de canal (0..3) de la máscara según la ley del bucket. ByKind en SSE = R (todas las
+    ''' capas facegen-tint usan el canal rojo, verificado en los .fx type==1). R/G/B/A = ese canal explícito.</summary>
+    Private Function MaskChannelIndex(bucket As FaceTintConvention.FaceTintBucketConvention) As Integer
+        If bucket Is Nothing Then Return 0
+        Select Case bucket.MaskChannel
+            Case FaceTintConvention.FaceTintMaskChannel.G : Return 1
+            Case FaceTintConvention.FaceTintMaskChannel.B : Return 2
+            Case FaceTintConvention.FaceTintMaskChannel.A : Return 3
+            Case Else : Return 0   ' R y ByKind → canal rojo (SSE)
+        End Select
     End Function
 
     ''' <summary>SSE analogue of FO4's <c>DeriveSkinToneQnam</c>: derive the effective QNAM (TextureLighting)
@@ -245,15 +342,19 @@ Public Module SseFaceTintComposer
         Return col
     End Function
 
-    ''' <summary>One tint layer onto the accumulator (linear). ENGINE-UNIFORM: coverage = maskR × TINV,
-    ''' acc = lerp(acc, colour, coverage). No per-type branch (verified: bsfacegenutils.cpp reads no type).</summary>
-    Private Sub ComposeLayer(acc As Double(), mask As Double(), cR As Double, cG As Double, cB As Double, tinv As Double, npix As Integer, Optional cov As Double() = Nothing)
+    ''' <summary>One tint layer onto the accumulator, vía el compositor COMPARTIDO (FaceTintCpuCompositor.
+    ''' ComposePixel) con la convención <paramref name="conv"/> de la ley SSE. coverage = convMask(mask[ch],
+    ''' maskConv) × TINV, y el composite lo hace la ley (default SSE = lerp uniforme en linear, byte-idéntico al
+    ''' modelo previo). El canal de máscara y la mask-conv salen de la ley — sin ramas por tipo hardcodeadas.</summary>
+    Private Sub ComposeLayer(acc As Double(), mask As Double(), cR As Double, cG As Double, cB As Double, tinv As Double, npix As Integer,
+                             conv As FaceTintConvention.FaceTintConventionSet, maskConv As Integer, maskCh As Integer,
+                             Optional cov As Double() = Nothing)
         For i = 0 To npix - 1
-            Dim a = mask(i * 4) * tinv          ' mask R (raw coverage) × interpolation value
+            Dim a = FaceTintCpuCompositor.ConvMaskShared(mask(i * 4 + maskCh), maskConv) * tinv   ' cobertura por la ley
             If a <= 0.0 Then Continue For
-            acc(i * 4) = acc(i * 4) * (1 - a) + cR * a
-            acc(i * 4 + 1) = acc(i * 4 + 1) * (1 - a) + cG * a
-            acc(i * 4 + 2) = acc(i * 4 + 2) * (1 - a) + cB * a
+            acc(i * 4) = FaceTintCpuCompositor.ComposePixel(acc(i * 4), cR, a, conv)
+            acc(i * 4 + 1) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 1), cG, a, conv)
+            acc(i * 4 + 2) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 2), cB, a, conv)
             If cov IsNot Nothing Then cov(i) = cov(i) + a * (1 - cov(i))   ' accumulate coverage
         Next
     End Sub
@@ -262,6 +363,42 @@ Public Module SseFaceTintComposer
     ''' MNAM/FNAM). Each Tint Layer: TINI index, TINT mask path, TINP mask type (optional), TIND default CLFM.
     ''' Returns the ordered list (= the cb2 slot order the engine composes). Cached per race+gender. TINP/TIND
     ''' are OPTIONAL (tattoo masks omit TINP) → flush on each new TINI so no-TINP masks still register.</summary>
+    ''' <summary>Aplica el orden configurable SSE (<c>Setting_FaceTintSort_SSE.TintRules</c>, claves
+    ''' <see cref="FaceTintSseTintSortKey"/>) sobre las capas del RACE que devuelve <see cref="GetRaceLayersOrdered"/>.
+    ''' DEFAULT = <c>[Race_Order asc]</c> = IDENTIDAD ⇒ orden RaceMenu (posición en el RACE) ⇒ compose byte-idéntico.
+    ''' El sort tiene tiebreak final por posición original (orden RACE), así claves iguales preservan RaceMenu. El
+    ''' lerp NO es conmutativo ⇒ cualquier regla != default DESVÍA de RaceMenu (elección explícita del usuario).</summary>
+    Public Function SortSseTintLayers(layers As List(Of SseTintMask), npcMap As Dictionary(Of Integer, Double())) As List(Of SseTintMask)
+        If layers Is Nothing OrElse layers.Count <= 1 Then Return layers
+        Dim cfg = Config_App.Current?.Setting_FaceTintSort_SSE
+        Dim rules = If(cfg IsNot Nothing, cfg.TintRules, Nothing)
+        If rules Is Nothing OrElse rules.Count = 0 Then Return layers
+        Dim items As New List(Of (Layer As SseTintMask, Pos As Integer))
+        For i = 0 To layers.Count - 1 : items.Add((layers(i), i)) : Next
+        items.Sort(Function(a, b)
+                       For Each r In rules
+                           Dim c = SseTintKey(a.Layer, a.Pos, npcMap, r.Key).CompareTo(SseTintKey(b.Layer, b.Pos, npcMap, r.Key))
+                           If r.Descending Then c = -c
+                           If c <> 0 Then Return c
+                       Next
+                       Return a.Pos.CompareTo(b.Pos)   ' tiebreak estable = orden RACE (RaceMenu)
+                   End Function)
+        Return items.Select(Function(x) x.Layer).ToList()
+    End Function
+
+    Private Function SseTintKey(layer As SseTintMask, pos As Integer, npcMap As Dictionary(Of Integer, Double()), key As Integer) As Double
+        Select Case CType(key, FaceTintSseTintSortKey)
+            Case FaceTintSseTintSortKey.Tint_Index : Return layer.Index
+            Case FaceTintSseTintSortKey.Mask_Type : Return layer.MaskType
+            Case FaceTintSseTintSortKey.Authored : Return If(npcMap IsNot Nothing AndAlso npcMap.ContainsKey(layer.Index), 1.0, 0.0)
+            Case FaceTintSseTintSortKey.Coverage
+                Dim authored As Double() = Nothing
+                If npcMap IsNot Nothing AndAlso npcMap.TryGetValue(layer.Index, authored) Then Return authored(3)
+                Return layer.DefaultValue
+            Case Else : Return pos   ' Race_Order (default) = posición en el RACE
+        End Select
+    End Function
+
     Public Function GetRaceLayersOrdered(pm As PluginManager, raceFid As UInteger, female As Boolean) As List(Of SseTintMask)
         Dim key = raceFid.ToString() & If(female, "F", "M")
         Dim cached As List(Of SseTintMask) = Nothing
@@ -306,6 +443,13 @@ Public Module SseFaceTintComposer
         End If
         _layersCache(key) = layers
         Return layers
+    End Function
+
+    ''' <summary>Decode a texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear). Public
+    ''' wrapper over <see cref="DecodeMask"/> so other SSE compositors (overlays into the per-NPC diffuse) reuse
+    ''' the SAME decode+resize+cache path. Nothing when the file is missing/undecodable.</summary>
+    Public Function DecodeTextureRgba(texPath As String, w As Integer, h As Integer) As Double()
+        Return DecodeMask(texPath, w, h)
     End Function
 
     ''' <summary>Decode a mask texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear).

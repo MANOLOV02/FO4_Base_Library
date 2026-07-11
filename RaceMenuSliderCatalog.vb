@@ -60,6 +60,61 @@ Public Class RaceMenuSliderCatalog
     Private ReadOnly _maleByRace As New Dictionary(Of String, Dictionary(Of String, SliderDef))(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly _femaleByRace As New Dictionary(Of String, Dictionary(Of String, SliderDef))(StringComparer.OrdinalIgnoreCase)
 
+    ''' <summary>skee64's MorphMap (<c>morphs.ini</c>): base head-part <c>.tri</c> → the EXTENDED <c>.tri</c> files
+    ''' that carry the extra morphs for it. A slider's LowerBound/UpperBound is a morph NAME; the geometry for
+    ''' that name lives in one of these files, NOT in the head's chargen tri. skee64 applies it in
+    ''' <c>MorphVisitor::Accept</c> (SKEEHooks.cpp:687-696): for each mapped file, load it and
+    ''' <c>triFile->Apply(geometry, morphName, relative)</c>. Keys are stored as skee64 writes them (the base tri
+    ''' model name); values are relative to <see cref="SliderMorphsDir"/>.</summary>
+    Private ReadOnly _morphMap As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>SLIDER_DIRECTORY (FaceMorphInterface.h:29) — root of the extended morph .tri files.</summary>
+    Public Const SliderMorphsDir As String = "actors\character\FaceGenMorphs\morphs"
+
+    ''' <summary>The extended morph <c>.tri</c> files registered for a base head-part tri, as MESHES-relative
+    ''' paths ready for FilesDictionary. Empty when the base tri has no extended morphs. Lookup is by file NAME
+    ''' as well as full path, because <c>morphs.ini</c> keys are bare names (e.g. <c>femalehead.tri</c>) while a
+    ''' shape's tri is a full path.</summary>
+    Public Function GetExtendedMorphTris(baseTriPath As String) As List(Of String)
+        Dim result As New List(Of String)
+        If String.IsNullOrEmpty(baseTriPath) OrElse _morphMap.Count = 0 Then Return result
+        Dim files As List(Of String) = Nothing
+        If Not _morphMap.TryGetValue(baseTriPath, files) Then
+            Dim bare = IO.Path.GetFileName(baseTriPath)
+            If String.IsNullOrEmpty(bare) OrElse Not _morphMap.TryGetValue(bare, files) Then Return result
+        End If
+        For Each f In files
+            result.Add($"meshes\{SliderMorphsDir}\{f}")
+        Next
+        Return result
+    End Function
+
+    ''' <summary>ReadMorphs (FaceMorphInterface.cpp:709-760). Lines: <c>extension = &lt;baseTri&gt;, &lt;file1&gt;, &lt;file2&gt;…</c>
+    ''' The left-hand side must literally be "extension"; the first parameter is the map KEY, the rest are the
+    ''' extended tri files added under it. '#' starts a comment.</summary>
+    Private Sub ReadMorphs(iniBytes As Byte())
+        For Each rawLine In ReadLines(iniBytes)
+            Dim line = rawLine.Trim()
+            If line.Length = 0 OrElse line.StartsWith("#") Then Continue For
+            Dim eq = line.IndexOf("="c)
+            If eq <= 0 Then Continue For
+            If Not line.Substring(0, eq).Trim().StartsWith("extension", StringComparison.OrdinalIgnoreCase) Then Continue For
+            Dim parts = line.Substring(eq + 1).Split(","c)
+            If parts.Length < 2 Then Continue For
+            Dim key = parts(0).Trim()
+            If key.Length = 0 Then Continue For
+            Dim list As List(Of String) = Nothing
+            If Not _morphMap.TryGetValue(key, list) Then
+                list = New List(Of String)()
+                _morphMap(key) = list
+            End If
+            For i = 1 To parts.Length - 1
+                Dim f = parts(i).Trim()
+                If f.Length > 0 AndAlso Not list.Contains(f, StringComparer.OrdinalIgnoreCase) Then list.Add(f)
+            Next
+        Next
+    End Sub
+
     ''' <summary>Build the catalog by scanning every mod folder for its races.ini (mirror of LoadMods→ForEachMod).
     ''' <paramref name="modFolderNames"/> = the loaded plugin filenames WITH extension (e.g. "RaceMenu.esp"), the
     ''' folder names skee64 uses (modInfo->name). Reads through FilesDictionary (loose &gt; BA2/BSA), so it sees
@@ -74,6 +129,10 @@ Public Class RaceMenuSliderCatalog
             Dim raceBytes = TryReadFile($"meshes\{racesIniPath}")
             If raceBytes Is Nothing Then Continue For
             ReadRaces(raceBytes, modName, fileCache)
+            ' morphs.ini — the base-tri → extended-tri map (LoadMods reads it from the same mod folder,
+            ' FaceMorphInterface.cpp:517-534). Without it a slider's morph name has no geometry to resolve against.
+            Dim morphBytes = TryReadFile($"meshes\{FaceGenMorphsDir}\{modName}\morphs.ini")
+            If morphBytes IsNot Nothing Then ReadMorphs(morphBytes)
         Next
     End Sub
 

@@ -616,9 +616,14 @@ Public Module PluginEncodingSettings
     Public Function ReadLanguageFromIni() As String
         Try
             Dim documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
-            Dim iniDir = Path.Combine(documents, "My Games", "Fallout4")
-            Dim gameIni = Path.Combine(iniDir, "Fallout4.ini")
-            Dim customIni = Path.Combine(iniDir, "Fallout4Custom.ini")
+            ' GAME-AWARE INI location (xEdit wbTheGameIniFileName / wbCustomIniFileName): FO4 reads
+            ' My Games\Fallout4\Fallout4[.Custom].ini; SSE reads My Games\Skyrim Special Edition\
+            ' Skyrim[.Custom].ini. Reading the FO4 path for a Skyrim session picked the wrong (or a
+            ' missing) sLanguage, so a non-English SSE user got the wrong plugin-string codepage.
+            Dim isSse = (Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
+            Dim iniDir = Path.Combine(documents, "My Games", If(isSse, "Skyrim Special Edition", "Fallout4"))
+            Dim gameIni = Path.Combine(iniDir, If(isSse, "Skyrim.ini", "Fallout4.ini"))
+            Dim customIni = Path.Combine(iniDir, If(isSse, "SkyrimCustom.ini", "Fallout4Custom.ini"))
 
             Dim result As String = ReadSLanguageFrom(gameIni)
             Dim customValue As String = ReadSLanguageFrom(customIni)

@@ -502,12 +502,13 @@ Friend NotInheritable Class LocalizedStringResolver
 
     Private Shared Function ReadLanguageFromIni() As String
         Dim documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
-        Dim iniDir = Path.Combine(documents, "My Games", "Fallout4")
-        Dim iniFiles = {
-            Path.Combine(iniDir, "Fallout4Custom.ini"),
-            Path.Combine(iniDir, "Fallout4.ini"),
-            Path.Combine(iniDir, "Fallout4Prefs.ini")
-        }
+        ' GAME-AWARE: FO4 = My Games\Fallout4\Fallout4[Custom/Prefs].ini; SSE = My Games\Skyrim Special
+        ' Edition\Skyrim[Custom/Prefs].ini. Hardcoding Fallout4 read the wrong game's language on SSE.
+        Dim isSse = (Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
+        Dim iniDir = Path.Combine(documents, "My Games", If(isSse, "Skyrim Special Edition", "Fallout4"))
+        Dim iniFiles = If(isSse,
+            {Path.Combine(iniDir, "SkyrimCustom.ini"), Path.Combine(iniDir, "Skyrim.ini"), Path.Combine(iniDir, "SkyrimPrefs.ini")},
+            {Path.Combine(iniDir, "Fallout4Custom.ini"), Path.Combine(iniDir, "Fallout4.ini"), Path.Combine(iniDir, "Fallout4Prefs.ini")})
 
         For Each iniPath In iniFiles
             If Not File.Exists(iniPath) Then Continue For

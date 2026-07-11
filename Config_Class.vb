@@ -142,11 +142,15 @@ Public Class Config_App
     Public Property Setting_FaceGenDiffuseResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
     Public Property Setting_FaceGenNormalResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
     Public Property Setting_FaceGenSpecularResolution As FaceTintConvention.FaceTintChannelResolution = FaceTintConvention.FaceTintChannelResolution.Inherit
+    ' Compresiones PER-GAME (sets separados, como convención/sort → no se filtra el valor al cambiar de juego). El bake
+    ' lee la del juego activo via OutputSettings. FO4 y SSE tienen DEFAULTS DISTINTOS del normal (ver abajo).
     Public Property Setting_FaceGenDiffuseCompression As FaceTintConvention.FaceTintDiffuseCompression = FaceTintConvention.FaceTintDiffuseCompression.Bc3
-    ' Compresión N/S: BC5 default / Uncompressed. En modo All siguen al Diffuse (Uncompressed si el Diffuse
-    ' lo es, sino BC5); en Per layer cada uno el suyo. GenerateTga = tilde del diálogo (TGA uncompressed al
-    ' lado de cada .dds). Defaults: BC3 / BC5 / no TGA.
+    Public Property Setting_FaceGenDiffuseCompression_SSE As FaceTintConvention.FaceTintDiffuseCompression = FaceTintConvention.FaceTintDiffuseCompression.Bc3
+    ' Normal FO4 = BC5 (DEFAULT): el _n vanilla de FaceCustomization es tangent-space 2-canales = BC5 (y el modo All lo
+    ' deriva del diffuse via NsCompressionFromDiffuse). Normal SSE = BC3 (DEFAULT): el _msn es model-space 3-canales
+    ' (BC5 2-ch NO sirve); el vanilla SSE es Uncompressed 32bpp (medido) pero BC7 es lentísimo en debug ⇒ BC3 = compromiso.
     Public Property Setting_FaceGenNormalCompression As FaceTintConvention.FaceTintNormalSpecularCompression = FaceTintConvention.FaceTintNormalSpecularCompression.Bc5
+    Public Property Setting_FaceGenNormalCompression_SSE As FaceTintConvention.FaceTintNormalSpecularCompression = FaceTintConvention.FaceTintNormalSpecularCompression.Bc3
     Public Property Setting_FaceGenSpecularCompression As FaceTintConvention.FaceTintNormalSpecularCompression = FaceTintConvention.FaceTintNormalSpecularCompression.Bc5
     Public Property Setting_FaceGenGenerateTga As Boolean = False
 
@@ -166,6 +170,12 @@ Public Class Config_App
     ' (= pure vanilla). Cache is key-suffixed on this flag so toggling re-reads instead of serving a stale head.
     Public Property Setting_ApplyMouthVanillaFix As Boolean = False
 
+    ' SSE (CharGen Options → tab Fixes, SSE-only): bakear los overlays de RaceMenu de la CARA (Face [Ovl]
+    ' face-paint) DENTRO de un diffuse por-NPC (slot 0 del FaceGeom). El engine los renderiza en vivo y NO los
+    ' hornea; con esto quedan en la textura (WYSIWYG). Default True. GATEADO: NPCs sin overlays de cara no emiten
+    ' diffuse (slot 0 sigue el complexion vanilla compartido). Lo lee FaceGenBuilder.WriteSseFaceDiffuseWithOverlays.
+    Public Property Setting_BakeSseRaceMenuOverlays As Boolean = True
+
     ' === FaceTint convention (botón "CharGen Options" → tab "FaceTint Conventions") ===
     ' La convención de composición FaceTint por bucket (Diffuse / Normal+Specular / Swaps), valores
     ' CONCRETOS. Los defaults los pone el constructor de FaceTintConventionSettings = la ley derivada
@@ -174,11 +184,23 @@ Public Class Config_App
     ' Un config.json viejo sin la key deserializa al default del constructor.
     Public Property Setting_FaceTintConvention As New FaceTintConvention.FaceTintConventionSettings()
 
+    ' La ley SSE (facegen-tint del CreationKit): seed constante 0.5, lerp uniforme por cobertura (sin blend-op
+    ' por tipo), todo LINEAR, máscara por canal ROJO. Set SEPARADO del de FO4 para no tocar sus valores byte-
+    ' exactos. Default = FaceTintConventionSettings.DefaultsFor(Skyrim). FaceTintConvention.ActiveSettings elige
+    ' este cuando Game=Skyrim. Un config.json viejo sin la key deserializa a la ley SSE por default (abajo).
+    Public Property Setting_FaceTintConvention_SSE As FaceTintConvention.FaceTintConventionSettings =
+        FaceTintConvention.FaceTintConventionSettings.DefaultsFor(Game_Enum.Skyrim)
+
     ' === FaceTint sort order (botón "CharGen Options" → tab "Tint Order") ===
     ' Orden de composición configurable (multi-clave asc/desc) de tints y swaps + placement del SkinTone.
     ' Default = comportamiento previo (tints PhysIndex desc, swaps forward, skintone Positional); editar
     ' acá o en la UI cambia el orden con que el builder compone las capas. Ver FaceTintSortSettings.
     Public Property Setting_FaceTintSort As New FaceTintSortSettings()
+    ' Orden SSE SEPARADO (estructura distinta: tints = capas del RACE, "swaps" = overlays Face[Ovl]). Default =
+    ' RaceMenu-fiel (tints [Race_Order asc], overlays [Ovl_Index asc], skintone Positional) = IDENTIDAD ⇒ el
+    ' compose SSE queda byte-idéntico. Claves interpretadas como FaceTintSseTintSortKey/FaceTintSseOverlaySortKey.
+    ' Set aparte para no tocar el de FO4 (Setting_FaceTintSort). ActiveSort() elige por Game.
+    Public Property Setting_FaceTintSort_SSE As FaceTintSortSettings = FaceTintSortSettings.DefaultsForSse()
     ' (El compositor GPU/CPU NO es una preferencia persistida: es una REGLA derivada — render = GPU si
     '  skinning=GPU, sino CPU ; chargen = siempre CPU (async, no toca GL). Ver FaceGenBuilder.)
 

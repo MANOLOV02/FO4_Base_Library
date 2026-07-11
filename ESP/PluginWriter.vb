@@ -14,8 +14,11 @@ Public Module PluginWriter
 
     ' TES4 record header version field (per xEdit / wbInterface.pas).
     ' These are spec constants of the binary format, not game data.
-    Friend Const TES4_RECORD_VERSION_FO4 As UShort = &H83US   ' 131
-    Friend Const TES4_RECORD_VERSION_SSE As UShort = &H2BUS   ' 43
+    Friend Const TES4_RECORD_VERSION_FO4 As UShort = &H83US   ' 131 (gmFO4, wbImplementation.pas:9937)
+    ' 44 = Skyrim SPECIAL EDITION (gmSSE), NOT 43 (that is Skyrim LE / gmTES5). xEdit stamps 44 on every
+    ' newly-created SSE record (wbImplementation.pas:9938: gmSSE/gmTES5VR/gmEnderalSE → 44). Was 0x2B (43),
+    ' which mislabeled app-authored SSE records + the TES4 header as Skyrim LE.
+    Friend Const TES4_RECORD_VERSION_SSE As UShort = &H2CUS   ' 44
 
     ' HEDR subrecord version (float).
     Friend Const HEDR_VERSION_FO4 As Single = 0.95F

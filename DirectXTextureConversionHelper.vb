@@ -143,6 +143,11 @@ Public Module DirectXTextureConversionHelper
         If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
 
+        ' TEX_COMPRESS_PARALLEL (0x10000000) SIEMPRE: multi-thread CPU. MEDIDO byte-IDÉNTICO al serial (probe
+        ' --fmttest: BC3/BC5/Uncompressed idénticos) y más rápido incluso en los baratos (BC3 90ms→4ms). El compress
+        ' BCn es por-bloque independiente ⇒ determinista. Se OR-ea a lo que pida el caller; inerte en Uncompressed.
+        compressFlags = compressFlags Or &H10000000
+
         Dim request As New DxTextureConversionRequest With {
             .Width = width,
             .Height = height,

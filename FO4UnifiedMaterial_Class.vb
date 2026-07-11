@@ -1700,6 +1700,13 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
+    ''' <summary>Runtime marker (not serialized): a RaceMenu skin override explicitly set <see cref="SkinTintColor"/>
+    ''' via its key-7 tint, so the per-actor QNAM skin-tone pass (NpcFaceTintResolver) must NOT overwrite it — in
+    ''' skee a skin override replays over the base skin tone, so the override wins. Set per render on the fresh
+    ''' material by NpcMaterialResolver.</summary>
+    <Browsable(False)>
+    Public Property SkinTintFromOverride As Boolean = False
+
     <Category("Coloring")>
     <BGSMOnly()>
     Public Property SkinTintColor As Color

@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 Imports OpenTK.Mathematics
 
@@ -83,36 +83,30 @@ Public Module TriFileParser
 
         Using ms As New MemoryStream(data, writable:=False)
             Using br As New BinaryReader(ms, Encoding.ASCII, leaveOpen:=False)
-                ValidateHeader(br)
+                If ValidateHeader(br) Then
+                    ' Position morph section
+                    ReadSection(br, ms, tri, TriMorphType.Position)
 
-                ' Position morph section
-                ReadSection(br, ms, tri, TriMorphType.Position)
-
-                ' UV morph section
-                ReadSection(br, ms, tri, TriMorphType.UV)
+                    ' UV morph section
+                    ReadSection(br, ms, tri, TriMorphType.UV)
+                Else
+                    tri = Nothing
+                End If
             End Using
         End Using
-
         Return tri
     End Function
 
-    ''' <summary>Parse a TRI file from disk. Throws if file not found or invalid.</summary>
-    Public Function ParseTriFromFile(path As String) As TriFile
-        If Not File.Exists(path) Then
-            Throw New IO.FileNotFoundException("TRI file not found.", path)
-        End If
-        Return ParseTriFromBytes(File.ReadAllBytes(path))
-    End Function
-
-    Private Sub ValidateHeader(br As BinaryReader)
+    Private Function ValidateHeader(br As BinaryReader) As Boolean
         Dim hdr = br.ReadBytes(4)
         If hdr Is Nothing OrElse hdr.Length <> 4 Then
             Throw New FormatException("Cannot read TRI header.")
         End If
         If Not (hdr(0) = &H50 AndAlso hdr(1) = &H49 AndAlso hdr(2) = &H52 AndAlso hdr(3) = &H54) Then
-            Throw New FormatException("Invalid TRI header. Expected 'PIRT'.")
+            Return False
         End If
-    End Sub
+        Return True
+    End Function
 
     Private Sub ReadSection(br As BinaryReader, ms As MemoryStream, tri As TriFile, sectionType As TriMorphType)
         If ms.Position > ms.Length - 2 Then Return

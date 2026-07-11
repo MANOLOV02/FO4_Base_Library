@@ -1628,6 +1628,10 @@ Public Class ARMO_Data
     Public Health As UInteger
     ''' <summary>FNAM 'Armor Rating' (itU16 @0, wbDefinitionsFO4.pas:6199).</summary>
     Public ArmorRating As UShort
+    ''' <summary>DNAM 'Armor Rating' — SKYRIM ONLY (wbDefinitionsTES5.pas:4405). Signed 32-bit, stored on
+    ''' the wire as rating×100 (xEdit shows value÷100). FO4 has no ARMO DNAM (armor rating lives in FNAM),
+    ''' so this stays 0 for FO4. Kept distinct from <see cref="ArmorRating"/> (FO4 u16) — do not overload.</summary>
+    Public SkyrimArmorRating As Integer
     ''' <summary>FNAM 'Stagger Rating' (itU8 @4, wbDefinitionsFO4.pas:6201, wbStaggerEnum).</summary>
     Public StaggerRating As Byte
     ''' <summary>APPR — Attach Parent Slots declarados por la ARMO. Lista de KYWD FormIDs que
@@ -2389,7 +2393,21 @@ Public Module RecordParsers
                 Case "DMDT"
                     If pendingDestStage IsNot Nothing Then pendingDestStage.ModelTextureData = sr.Data
                 Case "DMDS"
-                    If pendingDestStage IsNot Nothing Then pendingDestStage.MaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    ' FO4: a single Material Swap FormID [MSWP] (wbDefinitionsFO4.pas:4638). SKYRIM: an
+                    ' Alternate-Textures ARRAY ({u32 count, {LenString 3D-Name, TXST FormID, s32 3D-Index}…},
+                    ' wbDefinitionsTES5.pas:3339) — a layout the NPC destruction-stage model doesn't represent.
+                    ' Reading offset 0 as a FormID would misparse the array count and drop the real TXST payload.
+                    ' A Skyrim NPC with a destruction-stage model carrying alternate textures effectively never
+                    ' occurs (the 5118/5118 byte-exact roundtrip probe never hit it); fail loud rather than
+                    ' silently corrupt on save if it ever does. A 4-byte DMDS parses normally (FO4 FormID, or a
+                    ' Skyrim empty count-0 array → 0 → not re-emitted). Same class as the ARMA/ARMO MO2S fix.
+                    If pendingDestStage IsNot Nothing Then
+                        If npc.Game = Config_App.Game_Enum.Skyrim AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length <> 4 Then
+                            Throw New NotSupportedException(
+                                $"NPC_ '{npc.EditorID}' destruction DMDS is a Skyrim Alternate-Textures array (length {sr.Data.Length}), not a single Material Swap FormID; that layout is unsupported.")
+                        End If
+                        pendingDestStage.MaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    End If
                 Case "DMDC"
                     If pendingDestStage IsNot Nothing AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         pendingDestStage.ColorRemappingIndex = BitConverter.ToSingle(sr.Data, 0)
@@ -3746,8 +3764,19 @@ Public Module RecordParsers
                     End If
                 Case "DAMA"
                     ' Damage Type Array / Resistances (wbDefinitionsFO4.pas:6204). FO4 stride = 8 (DMGT + u32).
+                    ' The 12-byte stride (adds a Curve Table [CURV,NULL] FormID at wbFromVersion(152),
+                    ' wbDefinitionsCommon.pas:5683) exists ONLY in FO76/SF1 — never FO4/SSE (SSE ARMO has no DAMA
+                    ' at all) — so it is deliberately not modelled (see ARMO_DamageResist doc). Guard against
+                    ' silently misparsing a 12-only length (from an out-of-scope plugin) at stride 8, which would
+                    ' corrupt every entry after the first and drop the Curve Table FormID: fail loud instead,
+                    ' matching EmitDamageTypeArray's throw-on-ambiguity philosophy. A length that is a multiple of
+                    ' 8 (incl. 24 = 3×8, ambiguous with 2×12 but FO4 is always version <152) parses normally.
                     Dim dd = sr.Data
                     If dd IsNot Nothing AndAlso dd.Length >= 8 Then
+                        If dd.Length Mod 8 <> 0 Then
+                            Throw New NotSupportedException(
+                                $"ARMO '{armo.EditorID}' DAMA length {dd.Length} is not a multiple of the 8-byte FO4 Damage Type stride. The 12-byte Curve Table stride (record Version >= 152) is FO76/SF1-only and unsupported.")
+                        End If
                         Dim damaCount = dd.Length \ 8
                         For i = 0 To damaCount - 1
                             armo.DamageResistances.Add(New ARMO_DamageResist With {
@@ -3792,19 +3821,36 @@ Public Module RecordParsers
                         armo.StaggerRating = sr.Data(4)
                     End If
                 Case "DATA"
-                    ' wbDefinitionsFO4.pas:6193-6197: DATA struct = s32 Value @0 + float Weight @4 + u32 Health @8 (required).
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
+                    ' FO4 DATA (wbDefinitionsFO4.pas:6193-6197) = s32 Value @0 + float Weight @4 + u32 Health @8 (12 bytes).
+                    ' SKYRIM DATA (wbDefinitionsTES5.pas:4401-4404) = s32 Value @0 + float Weight @4 ONLY (8 bytes, no Health).
+                    ' Read Value/Weight from >=8 bytes so Skyrim's 8-byte DATA is parsed; Health only when the 12-byte FO4 form.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                         armo.Value = BitConverter.ToInt32(sr.Data, 0)
                         armo.Weight = BitConverter.ToSingle(sr.Data, 4)
+                    End If
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         armo.Health = BitConverter.ToUInt32(sr.Data, 8)
+                    End If
+                Case "DNAM"
+                    ' SKYRIM ARMO 'Armor Rating' (wbDefinitionsTES5.pas:4405, itS32, stored ×100). FO4 ARMO
+                    ' has no DNAM subrecord, so this case never fires for FO4 records.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        armo.SkyrimArmorRating = BitConverter.ToInt32(sr.Data, 0)
                     End If
                 Case "MO2S"
                     ' Male World Model material swap (wbMO2S = [MSWP], wbDefinitionsFO4.pas:6164). Top-level
                     ' in the stream so a flat Case works (the Male wbRStruct is flattened on emit).
-                    armo.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    ' FO4-ONLY as a single MSWP FormID: under Skyrim MO2S is an Alternate-Textures ARRAY
+                    ' ({u32 count, entries…}, wbDefinitionsTES5.pas:3325), so ResolveFormIDReference would read
+                    ' the count as a bogus FormID and pollute the master list. Skip under Skyrim — the SSE write
+                    ' path preserves the array verbatim (RemapAlternateTextures) and collects its TXST masters.
+                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                        armo.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO4S"
-                    ' Female World Model material swap (wbMO4S = [MSWP], wbDefinitionsFO4.pas:6172).
-                    armo.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    ' Female World Model material swap (wbMO4S = [MSWP], wbDefinitionsFO4.pas:6172). FO4-only as a
+                    ' single FormID; Skyrim MO4S is an Alternate-Textures array (see MO2S note).
+                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                        armo.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "OBTS"
                     Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
                     If combo IsNot Nothing Then
@@ -3911,16 +3957,25 @@ Public Module RecordParsers
                         Case "NAM3"
                             arma.FemaleSkinTextureSwapListFormID = ResolveFormIDReference(rec, sr, pluginManager)
                     End Select
+                ' MO2S/MO3S (biped) and MO4S/MO5S (1st-person) are single MSWP FormIDs ONLY in FO4. Under Skyrim
+                ' they are Alternate-Textures arrays ({u32 count, entries…}, wbDefinitionsTES5.pas:3325); reading
+                ' the count as a FormID yields garbage that would pollute the master list, so skip under Skyrim.
+                ' The SSE write path preserves the arrays verbatim (RemapAlternateTextures) and collects their
+                ' embedded TXST masters via CollectPreservedSourceFormIDs.
                 Case "MO2S"
-                    arma.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                        arma.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO3S"
-                    arma.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                        arma.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO4S"
                     ' 1st-person Male material swap (wbDefinitionsFO4.pas:6242 → [MSWP]).
-                    arma.MaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                        arma.MaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO5S"
                     ' 1st-person Female material swap (wbDefinitionsFO4.pas:6243 → [MSWP]).
-                    arma.FemaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
+                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                        arma.FemaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "ONAM"
                     ' Art Object (wbDefinitionsFO4.pas:6252 → [ARTO]).
                     arma.ArtObjectFormID = ResolveFormIDReference(rec, sr, pluginManager)

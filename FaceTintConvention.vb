@@ -99,6 +99,37 @@ Public Module FaceTintConvention
         Pegtop = 3       ' pegtop  (1-2s)d^2 + 2sd
     End Enum
 
+    ''' <summary>Canal de la textura de capa que aporta la COBERTURA espacial. FO4 lo deriva del layer-kind
+    ''' (PaletteMask→.g, TextureSet-D→.a) y por eso el default es <c>ByKind</c> (comportamiento previo, byte-
+    ''' idéntico). SSE usa el canal ROJO de la máscara para TODAS las capas (facegen tint + skee MASKT type 1),
+    ''' así que su default es <c>R</c>. Parametrizable por bucket; GL y CPU lo heredan del mismo resolver.</summary>
+    Public Enum FaceTintMaskChannel
+        ByKind = -1     ' FO4: PaletteMask=.g, TextureSet-D=.a (lo decide el compositor por kind)
+        R = 0
+        G = 1
+        B = 2
+        A = 3
+    End Enum
+
+    ''' <summary>De dónde sale el SEED del acumulador diffuse antes de componer capas. <c>BaseTexture</c> (FO4,
+    ''' default) = la textura de color base (head diffuse resuelto) llevada a OutputSpace — comportamiento previo.
+    ''' <c>Constant</c> (SSE) = un color plano (<see cref="FaceTintConventionSettings.SeedConstant"/>, engine-
+    ''' verificado 0.5) sin textura: el facegen tint del CK arranca de 0.5 constante. Config-driven por juego.</summary>
+    Public Enum FaceTintSeedMode
+        BaseTexture = 0
+        Constant = 1
+    End Enum
+
+    ''' <summary>Tipo de capa del compositor de skee (CDXTextureRenderer.TextureType) — decide cómo se arma el
+    ''' color/cobertura de la capa ANTES del blend. Verificado en los .fx (switch(type)): Normal = tex×color
+    ''' (RGBA), Mask = (color.rgb, tex.R×color.a), Color = color sólido. FO4 facegen no lo usa (queda en el
+    ''' default histórico vía el layer-kind); lo consume el loader MASKT/TintData de skee.</summary>
+    Public Enum FaceTintLayerType
+        Normal = 0      ' b = layerTex * color
+        Mask = 1        ' b = (color.rgb, layerTex.r * color.a)
+        Color = 2       ' b = color (sólido)
+    End Enum
+
     ''' <summary>Resolución target por canal del FaceGen. Inherit (-1, DEFAULT) = MIP 0 NATIVO del source
     ''' (la res que tenga, por canal, SIN downgrade ni hardcode). 1..5 = tamaño explícito 512/1024/2048/
     ''' 4096/8192. Regla del seed a un target (ver ResolveResolutionSize): usar el MIP STORED del source a
@@ -131,8 +162,10 @@ Public Module FaceTintConvention
 
     ''' <summary>Compresión de salida de Normal/Specular: BC5 (default) o Uncompressed (B8G8R8A8).</summary>
     Public Enum FaceTintNormalSpecularCompression
-        Bc5 = 0
-        Uncompressed = 1
+        Bc5 = 0          ' 2-canales (tangent-space _n, FO4)
+        Uncompressed = 1 ' B8G8R8A8 (= formato vanilla del _msn de SSE, medido 32bpp)
+        Bc7 = 2          ' 3-canales comprimido, alta calidad — pero encode CPU lentísimo con la wrapper en debug
+        Bc3 = 3          ' 4-canales comprimido (DXT5), encode rápido — DEFAULT del normal facegen
     End Enum
 
     Public Class FaceTintResolutionSettings
@@ -194,6 +227,9 @@ Public Module FaceTintConvention
         Public Property MaskConv As FaceTintMaskConv
         Public Property Framework As FaceTintFramework
         Public Property SoftLight As FaceTintSoftLight
+        ''' <summary>Canal de máscara que aporta la cobertura. Default ByKind (FO4: el compositor lo decide por
+        ''' layer-kind). SSE lo fija en R. Configs viejos sin el campo caen a ByKind (= comportamiento previo).</summary>
+        Public Property MaskChannel As FaceTintMaskChannel = FaceTintMaskChannel.ByKind
     End Class
 
     ''' <summary>WORKING SPACE del blend op POR CADA op del record (0..4) en el canal DIFFUSE. PARAMETRIZABLE
@@ -246,6 +282,14 @@ Public Module FaceTintConvention
         Public Property DiffuseTextureSrcSpace As FaceTintWorkingSpace
         Public Property SeedDiffuseG22 As Boolean
 
+        ''' <summary>De dónde sale el seed del acumulador diffuse. BaseTexture (FO4, default) = head diffuse
+        ''' resuelto → OutputSpace (comportamiento previo). Constant (SSE) = <see cref="SeedConstant"/> plano.
+        ''' Configs viejos sin el campo caen a BaseTexture.</summary>
+        Public Property SeedMode As FaceTintSeedMode = FaceTintSeedMode.BaseTexture
+        ''' <summary>Color del seed cuando SeedMode=Constant (RGB [0,1], long 3). SSE engine-verificado = 0.5
+        ''' plano. Inerte cuando SeedMode=BaseTexture. Serializado como array plano; null/short → 0.5.</summary>
+        Public Property SeedConstant As Double() = New Double() {0.5, 0.5, 0.5}
+
         Public Sub New()
             ' Defaults = ley derivada actual. Diffuse: blend tonal en G22. N·S: datos lineales (raw).
             ' Swap: convención del DIFFUSE swap (los swaps de N·S usan el bucket NormalSpecular, no éste).
@@ -289,14 +333,69 @@ Public Module FaceTintConvention
             ' sólido queda en Diffuse.SrcSpace (G22). Parametrizable; engine-faithful por default.
             DiffuseTextureSrcSpace = FaceTintWorkingSpace.Srgb
             SeedDiffuseG22 = True
+            ' FO4: seed = head diffuse (textura), canal de máscara por kind. Comportamiento previo intacto.
+            SeedMode = FaceTintSeedMode.BaseTexture
+            SeedConstant = New Double() {0.5, 0.5, 0.5}
         End Sub
+
+        ''' <summary>Ley por DEFAULT para un juego. FO4 = el constructor (ley derivada byte-exacta vs CK).
+        ''' SSE = el modelo facegen-tint del CreationKit (re_sseck, bsfacegenutils.cpp + ps DXBC): seed CONSTANTE
+        ''' 0.5, cada capa un lerp UNIFORME por cobertura (Blend=Replace ⇒ acc=lerp(acc,color,cov)), sin blend-op
+        ''' por tipo, TODO en LINEAR, máscara cruda por el canal ROJO. N/S y Swap no aplican en SSE (el _d es
+        ''' tint-only); se dejan como el diffuse para que la UI/serialización tengan valores concretos.</summary>
+        Public Shared Function DefaultsFor(game As Config_App.Game_Enum) As FaceTintConventionSettings
+            Dim s As New FaceTintConventionSettings()
+            If game <> Config_App.Game_Enum.Skyrim Then Return s   ' FO4 = defaults del constructor
+            ' --- SSE ---
+            Dim sseDiffuse = New FaceTintBucketConvention With {
+                .WorkingSpace = FaceTintWorkingSpace.Linear,
+                .CompositeSpace = FaceTintWorkingSpace.Linear,
+                .SrcSpace = FaceTintWorkingSpace.Linear,
+                .OutputSpace = FaceTintWorkingSpace.Linear,
+                .MaskConv = FaceTintMaskConv.Raw,
+                .Framework = FaceTintFramework.OverPrev,
+                .SoftLight = FaceTintSoftLight.Gimp,
+                .MaskChannel = FaceTintMaskChannel.R}
+            s.Diffuse = sseDiffuse
+            ' N/S y Swap: clones del diffuse SSE (no se usan en el _d tint-only, pero evitan nulos en UI/JSON).
+            s.NormalSpecular = New FaceTintBucketConvention With {
+                .WorkingSpace = FaceTintWorkingSpace.Linear, .CompositeSpace = FaceTintWorkingSpace.Linear,
+                .SrcSpace = FaceTintWorkingSpace.Linear, .OutputSpace = FaceTintWorkingSpace.Linear,
+                .MaskConv = FaceTintMaskConv.Raw, .Framework = FaceTintFramework.OverPrev,
+                .SoftLight = FaceTintSoftLight.Gimp, .MaskChannel = FaceTintMaskChannel.R}
+            s.Swap = New FaceTintBucketConvention With {
+                .WorkingSpace = FaceTintWorkingSpace.Linear, .CompositeSpace = FaceTintWorkingSpace.Linear,
+                .SrcSpace = FaceTintWorkingSpace.Linear, .OutputSpace = FaceTintWorkingSpace.Linear,
+                .MaskConv = FaceTintMaskConv.Raw, .Framework = FaceTintFramework.OverPrev,
+                .SoftLight = FaceTintSoftLight.Gimp, .MaskChannel = FaceTintMaskChannel.R}
+            ' Blend uniforme (Replace) ⇒ el working-space-por-op es inerte; se deja default. Seed constante 0.5.
+            s.DiffuseWorkingSpaceByBlend = New FaceTintBlendWorkingSpaces()
+            s.DiffuseTextureSrcSpace = FaceTintWorkingSpace.Linear
+            s.SeedDiffuseG22 = False
+            s.SeedMode = FaceTintSeedMode.Constant
+            s.SeedConstant = New Double() {0.5, 0.5, 0.5}
+            Return s
+        End Function
     End Class
+
+    ''' <summary>La ley del JUEGO ACTIVO (Config_App.Current.Game). FO4 → Setting_FaceTintConvention (persistido,
+    ''' back-compat byte-exacto). SSE → Setting_FaceTintConvention_SSE. Null-safe: si el config no está cargado o
+    ''' el set falta, cae al <see cref="FaceTintConventionSettings.DefaultsFor"/> del juego. ÚNICO punto de
+    ''' lectura: ResolveConvention y las props Seed* leen de acá, así el compositor es agnóstico de juego.</summary>
+    Public Function ActiveSettings() As FaceTintConventionSettings
+        Dim c = Config_App.Current
+        If c Is Nothing Then Return FaceTintConventionSettings.DefaultsFor(Config_App.Game_Enum.Skyrim)
+        If c.Game = Config_App.Game_Enum.Skyrim Then
+            Return If(c.Setting_FaceTintConvention_SSE, FaceTintConventionSettings.DefaultsFor(Config_App.Game_Enum.Skyrim))
+        End If
+        Return If(c.Setting_FaceTintConvention, FaceTintConventionSettings.DefaultsFor(Config_App.Game_Enum.Fallout4))
+    End Function
 
     ''' <summary>Seed del diffuse en G22 (lo leen ambos compositores: GL y CPU). Vive en el config; esto
     ''' sólo lo reenvía, null-safe. Los 2 lectores no cambian (lo usan como Boolean de sólo lectura).</summary>
     Public ReadOnly Property SeedConventionIs_G22 As Boolean
         Get
-            Dim s = Config_App.Current?.Setting_FaceTintConvention
+            Dim s = ActiveSettings()
             Return s IsNot Nothing AndAlso s.SeedDiffuseG22
         End Get
     End Property
@@ -306,7 +405,7 @@ Public Module FaceTintConvention
     ''' literal "1"). Lo leen ambos compositores.</summary>
     Public ReadOnly Property SeedDiffuseSrcSpaceValue As Integer
         Get
-            Dim s = Config_App.Current?.Setting_FaceTintConvention
+            Dim s = ActiveSettings()
             Return If(s Is Nothing, CInt(FaceTintWorkingSpace.Srgb), CInt(s.DiffuseTextureSrcSpace))
         End Get
     End Property
@@ -315,7 +414,7 @@ Public Module FaceTintConvention
     ''' base a ESE espacio. Config-driven (ya no literal "2"). Lo leen ambos compositores.</summary>
     Public ReadOnly Property SeedDiffuseOutputSpaceValue As Integer
         Get
-            Dim s = Config_App.Current?.Setting_FaceTintConvention
+            Dim s = ActiveSettings()
             Return If(s Is Nothing OrElse s.Diffuse Is Nothing, CInt(FaceTintWorkingSpace.G22), CInt(s.Diffuse.OutputSpace))
         End Get
     End Property
@@ -345,7 +444,7 @@ Public Module FaceTintConvention
         ' La ley vive en Config_App.Setting_FaceTintConvention (los defaults los pone el constructor =
         ' ley derivada; si el usuario los cambia ESOS pasan a ser la ley). Se elige el bucket por
         ' (forSwap / canal) y se copia tal cual. Null-safe: si el config no está cargado, usa los defaults.
-        Dim s = Config_App.Current?.Setting_FaceTintConvention
+        Dim s = ActiveSettings()
         If s Is Nothing Then s = New FaceTintConventionSettings()
         ' Swaps: sólo el DIFFUSE swap tiene bucket propio (s.Swap). Los swaps de Normal/Specular usan la
         ' MISMA convención que su tint (s.NormalSpecular). Sólo el diffuse cambia.
