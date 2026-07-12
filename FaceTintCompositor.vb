@@ -119,6 +119,15 @@ Public Class FaceTintLayerInput
     ''' path). Enables GL-texture reuse across compositor calls when a <see cref="FaceTintTextureCache"/>
     ''' is supplied to the compositor. Nothing disables caching for this layer.</summary>
     Public Property LayerCacheKey As String = Nothing
+    ''' <summary>⭐ Textura GL YA SUBIDA para esta capa (canal Diffuse), en vez de <see cref="LayerDdsBytes"/>. 0 = sin usar
+    ''' (el default: la capa se decodifica del DDS, como siempre).
+    ''' POR QUÉ EXISTE: un DDS sólo puede transportar 8 bits por canal, y hay capas cuya fuente NO es un archivo sino un
+    ''' buffer calculado (el facetint compuesto del pliegue SSE). Meterlo en un DDS lo CUANTIZA, y el fold lo amplifica
+    ''' ×255/64 ⇒ el error de redondeo se multiplica por 4. MEDIDO: el pliegue GPU con transporte de 8 bits daba RMS
+    ''' 2,4/255 y máx 18 contra el CPU (peor en las sombras, firma de cuantizar en LINEAL). Pasando la capa como textura
+    ''' Rgba32f ya subida, el transporte deja de limitar la paridad. El caller es dueño de la textura (la libera él).
+    ''' Tiene PRIORIDAD sobre LayerDdsBytes; el cache de texturas no se toca (no hay bytes que cachear).</summary>
+    Public Property LayerTextureId As Integer = 0
     ''' <summary>TextureSet only — pre-coloured RGBA normal map (TTET[1]). Optional, may be empty.</summary>
     Public Property NormalDdsBytes As Byte()
     Public Property NormalCacheKey As String = Nothing
@@ -175,6 +184,9 @@ Public Class FaceTintLayerInput
     Public Property FgTintOffB As Single = 0F
     ''' <summary>Amplitud del fold fgTint (engine 255/64 = 3.984375). Solo si <see cref="FgTintFold"/>.</summary>
     Public Property FgTintAmp As Single = 1F
+    ''' <summary>Textura GL del DETAIL (slot 3) del pliegue SSE. Solo si <see cref="FgTintFold"/>. 0 = sin detail ⇒ el
+    ''' shader usa b=0.5 (softlight identidad), igual que el fold CPU cuando <c>detailRgba Is Nothing</c>.</summary>
+    Public Property FoldDetailTextureId As Integer = 0
 
     ''' <summary>Canal de la máscara PaletteMask: 0=R 1=G 2=B 3=A. Default 1 (VERDE) = convención FO4 (la máscara
     ''' palette vive en el canal verde). SSE la usa en ROJO (0) — el builder SSE lo setea. Ignorado en TextureSet.</summary>
@@ -266,6 +278,8 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uFgTintFoldLoc As Integer = -1
     Friend _uFgTintOffLoc As Integer = -1
     Friend _uFgTintAmpLoc As Integer = -1
+    Friend _uFoldDetailLoc As Integer = -1
+    Friend _uHasFoldDetailLoc As Integer = -1
     Friend _uPaletteMaskChannelLoc As Integer = -1
     Friend _uWorkingSpaceLoc As Integer = -1
     Friend _uSrcSpaceLoc As Integer = -1
@@ -487,6 +501,8 @@ uniform int uFramework;        // composite: 0=OverPrev(default) 1=OverBase 2=Ad
 // resuelta del record por el caller; el GL usa esos (no los de la capa) -> GL == CPU por construccion.
 uniform int uPreToneSkin;      // 1 = pre-tonar el source con el skintone (solo flagged-after-skintone)
 uniform sampler2D uSkinMask;   // mask del skintone
+uniform sampler2D uFoldDetail; // SSE fold: detail mask (slot 3) del engine. Solo se lee con uFgTintFold==1.
+uniform int uHasFoldDetail;    // 0 = sin detail -> b=0.5 (softlight identidad), igual que el fold CPU.
 uniform vec3 uSkinColor;       // color del skintone
 uniform float uSkinOpacity;    // opacidad del skintone
 uniform int uSkinWs;           // working space del skintone
@@ -543,6 +559,44 @@ vec3 blendLinearLight(vec3 d, vec3 s){ return clamp(d + 2.0*s - vec3(1.0), 0.0, 
 vec3 blendVividLight(vec3 d, vec3 s){ return mix(blendColorBurn(d, 2.0*s), blendColorDodge(d, 2.0*(s-vec3(0.5))), step(vec3(0.5), s)); }
 vec3 blendPinLight(vec3 d, vec3 s){ return mix(min(d, 2.0*s), max(d, 2.0*s-vec3(1.0)), step(vec3(0.5), s)); }
 vec3 blendHardMix(vec3 d, vec3 s){ return step(vec3(1.0), d + s); }
+// --- Modos NO SEPARABLES de skee/RaceMenu (20,21). Usan los 3 canales del DESTINO juntos, por eso no pueden
+// pasar por el dispatch escalar per-canal (BlendDispatch1) como el resto. Transcripcion 1:1 del CPU
+// (SseOverlayCompositor.ApplyOverlays: ramas Grayscale y ColorMode + RgbToHsv/HsvToRgb).
+// NOTA sobre mod: en el CPU RgbToHsv el Mod 6 de la rama mx==r es un NO-OP (su argumento (g-b)/d cae en
+// [-1,1], siempre menor que 6), y en HsvToRgb el argumento es positivo, donde VB Mod y GLSL mod coinciden.
+// Por eso aca se usa mod() de GLSL sin desviarse de la formula del CPU.
+vec3 rgb2hsvC(vec3 c){
+    float mx = max(c.r, max(c.g, c.b));
+    float mn = min(c.r, min(c.g, c.b));
+    float dd = mx - mn;
+    float h = 0.0;
+    if (dd > 0.0000001) {
+        if (mx == c.r)      h = (c.g - c.b) / dd;          // Mod 6 = identidad en [-1,1]
+        else if (mx == c.g) h = (c.b - c.r) / dd + 2.0;
+        else                h = (c.r - c.g) / dd + 4.0;
+        h /= 6.0;
+        if (h < 0.0) h += 1.0;
+    }
+    float sat = (mx <= 0.0) ? 0.0 : (dd / mx);
+    return vec3(h, sat, mx);
+}
+vec3 hsv2rgbC(float h, float sat, float v){
+    float r = clamp(abs(mod(h*6.0 + 0.0, 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    float g = clamp(abs(mod(h*6.0 + 4.0, 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    float b = clamp(abs(mod(h*6.0 + 2.0, 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    return vec3(v*(1.0 + sat*(r-1.0)), v*(1.0 + sat*(g-1.0)), v*(1.0 + sat*(b-1.0)));
+}
+// Grayscale: luminancia del DESTINO (pesos 0.299/0.587/0.114) escalando el color de la capa.
+vec3 blendGrayscale(vec3 d, vec3 s){
+    float lum = 0.299*d.r + 0.587*d.g + 0.114*d.b;
+    return lum * s;
+}
+// ColorMode: H y S de la CAPA, V del DESTINO (V = max de los 3 canales del destino).
+vec3 blendColorMode(vec3 d, vec3 s){
+    vec3 hsvS = rgb2hsvC(s);
+    float vDst = max(d.r, max(d.g, d.b));
+    return hsv2rgbC(hsvS.x, hsvS.y, vDst);
+}
 // Identidad del blend (para ModSrc: mix(neutral,src,cov)). = CPU BlendNeutral1.
 float blendNeutral(int bop){
     if (bop==1 || bop==6 || bop==9 || bop==13 || bop==15) return 1.0;
@@ -602,8 +656,11 @@ float convMaskFull(float m){
     if (uMaskConvFull==6) return g24ToLin1(m);
     return m;
 }
-// derived-model blend dispatch (uBlendOp: 0=replace 1=mult 2=overlay 3=softlight 4=hardlight, 5..19 estandar)
+// derived-model blend dispatch (uBlendOp: 0=replace 1=mult 2=overlay 3=softlight 4=hardlight, 5..19 estandar,
+// 20=grayscale 21=colormode -> los dos NO SEPARABLES de skee, ver arriba)
 vec3 blendDispatch(vec3 d, vec3 s){
+    if (uBlendOp==20) return blendGrayscale(d,s);
+    if (uBlendOp==21) return blendColorMode(d,s);
     if (uBlendOp==1) return blendMultiply(d,s);
     if (uBlendOp==2) return blendOverlay(d,s);
     if (uBlendOp==3) return blendSoftLightModel(d,s);
@@ -710,6 +767,27 @@ void main() {
         return;
     }
 
+    // uFgTintFold==1: PLIEGUE SSE = LEY FIJA DEL ENGINE (BSFaceCustomizationShader PS, DXBC verificado byte a byte):
+    //     albedo = fgTint(facetint) * softlight(srgbToLin(complexion), detail)
+    //     fgTint = (facetint + uFgTintOff) * uFgTintAmp        [engine: off=(1/255,0,1/255), amp=255/64]
+    //     softlight(a,b) = a*a + 2*a*b*(1-a)                   [pegtop]
+    // ES UNA REPLICA EXACTA DEL CPU (SseFaceGenBaker.FoldFacetintIntoDiffuse), y por eso hace early-out SIN pasar por
+    // uWorkingSpace/uBlendOp/uFramework: esa convencion es la ley (configurable) del bake de FaceTint del CK, OTRA cosa.
+    // Si el fold la heredara, cambiar una opcion de la UI lo desviaria del engine y el bake dejaria de matchear el juego.
+    // prev = complexion en sRGB (el caller lo sube en Rgba32f: un DDS lo cuantizaria a 8 bits y el fgTint amplifica x4).
+    // Salida en sRGB = exactamente lo que escribe el fold CPU.
+    if (uFgTintFold == 1) {
+        vec3 cs = clamp(prev, 0.0, 1.0);
+        vec3 cl = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
+        vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.5);
+        vec3 sl = cl*cl + 2.0*cl*dt*(1.0 - cl);
+        vec3 fg = (layerSample.rgb + uFgTintOff) * uFgTintAmp;
+        vec3 lin = sl * fg;
+        vec3 outc = vec3(linearToSrgb1(lin.r), linearToSrgb1(lin.g), linearToSrgb1(lin.b));
+        fragColor = vec4(outc, prevRgba.a);
+        return;
+    }
+
     // uMode==0: tint / body uniform = additive-over-base.
     // uLayerKind: 0=PaletteMask (src=uColor, mask=layer.g) ; 1=TextureSet (src=layer.rgb, mask=alpha) ;
     //             2=UniformColor (body skin: src=uColor, mask=1, base=prev via uBase).
@@ -731,11 +809,9 @@ void main() {
         }
         else if (uForceUniformColor == 1) srcColor = uColor;
         else if (uTexTimesColor == 1)     srcColor = layerSample.rgb * uColor;   // skee type-0: tex x tint (tint uniforme)
-        else if (uFgTintFold == 1)        srcColor = (layerSample.rgb + uFgTintOff) * uFgTintAmp;   // SSE fold: fgTint = (d+off)*amp
         else                              srcColor = layerSample.rgb;
-        if (uFgTintFold == 1) {
-            maskV = 1.0;   // fold = multiply de cara completa (cov=1), independiente del alpha del facetint
-        } else if (uChannel == 0) {
+        // (uFgTintFold ya hizo early-out arriba: el pliegue SSE NO pasa por el composite de capas.)
+        if (uChannel == 0) {
             maskV = layerSample.a;
         } else {
             maskV = (uHasDiffuseMask == 1) ? texture(uLayerDiffuseAlpha, vUV).a
@@ -989,6 +1065,14 @@ void main() {
             For i As Integer = 0 To layers.Count - 1
                 Dim ll = layers(i)
                 If ll Is Nothing Then Continue For
+                ' ⛔ Este conteo DEBE aceptar exactamente las mismas capas que el loop de compose de abajo (si no,
+                ' isLast apunta al draw equivocado y la última capa no escribe en el resultFbo). Una capa con
+                ' LayerTextureId (textura GL ya subida, p.ej. el facetint float del pliegue SSE) NO aporta bytes al
+                ' batch ⇒ no está en batchLoaded ⇒ acá NO se contaba y drawableCount daba 0 ⇒ Return 0.
+                If ll.LayerTextureId <> 0 AndAlso channel = FaceTintChannel.Diffuse Then
+                    drawableCount += 1
+                    Continue For
+                End If
                 Dim k As String = Nothing
                 If Not layerChannelKey.TryGetValue(i, k) Then Continue For
                 Dim e As PreviewModel.Texture_Loaded_Class = Nothing
@@ -1064,19 +1148,25 @@ void main() {
                 ' own diffuse alpha and the authored blendOp. Skip removed; the standard
                 ' TextureSet-Diffuse path below handles it.
 
-                Dim chanKey As String = Nothing
-                If Not layerChannelKey.TryGetValue(i, chanKey) Then
-                    Continue For
-                End If
+                ' Fuente de la capa: una textura GL ya subida (LayerTextureId, p.ej. el facetint del pliegue SSE en
+                ' Rgba32f — ver la doc de la propiedad: un DDS la cuantizaría a 8 bits) o, por defecto, el DDS decodificado.
+                Dim layerTex As Integer = 0
+                If layer.LayerTextureId <> 0 AndAlso channel = FaceTintChannel.Diffuse Then
+                    layerTex = layer.LayerTextureId
+                Else
+                    Dim chanKey As String = Nothing
+                    If Not layerChannelKey.TryGetValue(i, chanKey) Then
+                        Continue For
+                    End If
 
-                Dim chanEntry As PreviewModel.Texture_Loaded_Class = Nothing
-                If batchLoaded Is Nothing _
-                   OrElse Not batchLoaded.TryGetValue(chanKey, chanEntry) _
-                   OrElse chanEntry Is Nothing OrElse chanEntry.Texture_ID = 0 Then
-                    Continue For
+                    Dim chanEntry As PreviewModel.Texture_Loaded_Class = Nothing
+                    If batchLoaded Is Nothing _
+                       OrElse Not batchLoaded.TryGetValue(chanKey, chanEntry) _
+                       OrElse chanEntry Is Nothing OrElse chanEntry.Texture_ID = 0 Then
+                        Continue For
+                    End If
+                    layerTex = chanEntry.Texture_ID
                 End If
-
-                Dim layerTex As Integer = chanEntry.Texture_ID
 
                 ' Diffuse mask lookup (present for TextureSet layers on N/S passes only).
                 Dim diffuseMaskTex As Integer = 0
@@ -1178,6 +1268,13 @@ void main() {
                 GL.Uniform1(state._uFgTintFoldLoc, If(fgTintFoldEffective, 1, 0))
                 GL.Uniform3(state._uFgTintOffLoc, layer.FgTintOffR, layer.FgTintOffG, layer.FgTintOffB)
                 GL.Uniform1(state._uFgTintAmpLoc, layer.FgTintAmp)
+                ' Detail (slot 3) del pliegue SSE en la unit 6. Sin detail ⇒ uHasFoldDetail=0 ⇒ el shader usa b=0.5
+                ' (softlight identidad), EXACTAMENTE como el fold CPU. Se bindea layerTex de relleno para que el
+                ' sampler nunca quede indefinido (no se lee salvo con uFgTintFold==1 y uHasFoldDetail==1).
+                GL.ActiveTexture(TextureUnit.Texture6)
+                GL.BindTexture(TextureTarget.Texture2D, If(layer.FoldDetailTextureId <> 0, layer.FoldDetailTextureId, layerTex))
+                GL.Uniform1(state._uFoldDetailLoc, 6)
+                GL.Uniform1(state._uHasFoldDetailLoc, If(fgTintFoldEffective AndAlso layer.FoldDetailTextureId <> 0, 1, 0))
                 GL.Uniform1(state._uPaletteMaskChannelLoc, layer.PaletteMaskChannel)   ' PaletteMask: verde (FO4) / rojo (SSE)
 
                 GL.Uniform3(state._uColorLoc,
@@ -1185,9 +1282,9 @@ void main() {
                             CSng(layer.G) / 255.0F,
                             CSng(layer.B) / 255.0F)
                 GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, layer.Opacity)))
-                ' Fold = multiply (albedo *= fgTint) INDEPENDIENTE de conv.Blend (la ley SSE es Replace); el resto =
-                ' conv.Blend. uBlendOp: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight (contrato del shader).
-                GL.Uniform1(state._uBlendOpLoc, If(fgTintFoldEffective, 1, CInt(conv.Blend)))
+                ' uBlendOp: 0=Default 1=Multiply 2=Overlay 3=SoftLight 4=HardLight (contrato del shader). El fold SSE ya
+                ' NO se expresa como blend-op: hace early-out en el shader con la ley del engine (ver uFgTintFold).
+                GL.Uniform1(state._uBlendOpLoc, CInt(conv.Blend))
                 GL.Uniform1(state._uLayerKindLoc, CInt(layer.Kind))
                 GL.Uniform1(state._uChannelLoc, CInt(channel))
 
@@ -1230,6 +1327,8 @@ void main() {
                 End If
 
                 ' Unbind sampler slots; textures themselves are freed in the Finally block.
+                GL.ActiveTexture(TextureUnit.Texture6)
+                GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture5)
                 GL.BindTexture(TextureTarget.Texture2D, 0)
                 GL.ActiveTexture(TextureUnit.Texture4)
@@ -1846,6 +1945,8 @@ void main() {
         state._uFgTintFoldLoc = GL.GetUniformLocation(state._program, "uFgTintFold")
         state._uFgTintOffLoc = GL.GetUniformLocation(state._program, "uFgTintOff")
         state._uFgTintAmpLoc = GL.GetUniformLocation(state._program, "uFgTintAmp")
+        state._uFoldDetailLoc = GL.GetUniformLocation(state._program, "uFoldDetail")
+        state._uHasFoldDetailLoc = GL.GetUniformLocation(state._program, "uHasFoldDetail")
         state._uPaletteMaskChannelLoc = GL.GetUniformLocation(state._program, "uPaletteMaskChannel")
         state._uWorkingSpaceLoc = GL.GetUniformLocation(state._program, "uWorkingSpace")
         state._uSrcSpaceLoc = GL.GetUniformLocation(state._program, "uSrcSpace")

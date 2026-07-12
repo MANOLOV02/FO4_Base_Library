@@ -487,6 +487,20 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
+    ''' Encode a string that lives INSIDE a VMAD payload (script names, property names, String/
+    ''' Array-of-String values). VMAD is the one place xEdit pins the encoding regardless of game or
+    ''' language: <c>wbEncodingVMAD := TEncoding.UTF8</c> (wbInterface.pas:24295-24310) — NOT the
+    ''' General/cp1252 encoding the rest of the inline strings use. Same for FO4 and Skyrim, so this
+    ''' deliberately does not branch on game.
+    ''' <para>Emits no BOM and no NUL terminator: VMAD strings are u16-length-prefixed, never
+    ''' zero-terminated (wbLenString(..., 2)).</para>
+    ''' </summary>
+    Public Function EncodeVmad(value As String) As Byte()
+        If String.IsNullOrEmpty(value) Then Return Array.Empty(Of Byte)()
+        Return _utf8.GetBytes(value)
+    End Function
+
+    ''' <summary>
     ''' Test whether the given string can be encoded in the current Translatable encoding without
     ''' loss of characters. Builds a strict-fallback variant of Translatable temporarily and
     ''' attempts encoding — if it throws, returns False (chars would be silently replaced with

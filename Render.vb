@@ -2058,9 +2058,7 @@ Public Class PreviewModel
                                                              Dim m = mats(i)
                                                              Dim wp = Vector3d.TransformPosition(lv(i), m)
                                                              posF(i) = New Vector3(CSng(wp.X), CSng(wp.Y), CSng(wp.Z))
-                                                             Dim nm3 As New Matrix3d(m)
-                                                             nm3.Invert()
-                                                             nm3.Transpose()
+                                                             Dim nm3 As Matrix3d = SkinningHelper.NormalMatrixOrIdentity(m)
                                                              If isMSN Then
                                                                  ' MSN: pack nm3.Row0/1/2 en los tres VBOs. El shader los lee y
                                                                  ' reconstruye via mat3(vertexNormal, vertexTangent, vertexBitangent).
@@ -2183,9 +2181,7 @@ Public Class PreviewModel
 
                     If cpuSkin Then
                         Dim m = sparseMats(i)
-                        Dim nm3 As New Matrix3d(m)
-                        nm3.Invert()
-                        nm3.Transpose()
+                        Dim nm3 As Matrix3d = SkinningHelper.NormalMatrixOrIdentity(m)
 
                         Dim wp = Vector3d.TransformPosition(MeshData.Meshgeometry.Vertices(i), m)
                         buf(0) = CSng(wp.X) : buf(1) = CSng(wp.Y) : buf(2) = CSng(wp.Z)

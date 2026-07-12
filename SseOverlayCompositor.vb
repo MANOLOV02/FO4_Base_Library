@@ -65,6 +65,33 @@ Public Module SseOverlayCompositor
 
     ''' <summary>Composite the overlays over <paramref name="acc"/> (linear RGBA, in place). No-op when the list
     ''' is empty (vanilla NPCs) — the code path always runs so modded NPCs bake WYSIWYG.</summary>
+    ''' <summary>Mapea un blend-mode de skee al par (blendOp, softLightModel) del dispatch COMPARTIDO CPU/GL.
+    ''' ⭐ FUENTE ÚNICA: la usan <see cref="ApplyOverlays"/> (CPU) y el path GPU (uniform uBlendOp del compositor),
+    ''' así los dos no pueden desincronizarse (antes el mapeo vivía inline en el CPU y el GPU no tenía ninguno).
+    ''' softLightModel = 3 (Pegtop) SIEMPRE: es el que usa RaceMenu.
+    ''' ⛔ Grayscale(20) y ColorMode(21) son NO SEPARABLES (necesitan los 3 canales del DESTINO juntos: luminancia y
+    ''' HSV). El shader los implementa en <c>blendDispatch</c> (blendGrayscale/blendColorMode); el CPU los resuelve en
+    ''' ramas propias dentro de ApplyOverlays con la MISMA fórmula. Por eso NO pueden pasar por BlendChannel, que es
+    ''' escalar (per-canal).</summary>
+    Public Function BlendOpFromSseMode(mode As SseBlendMode) As (BlendOp As Integer, SoftLight As Integer)
+        Const PEGTOP As Integer = 3
+        Select Case mode
+            Case SseBlendMode.Multiply : Return (1, PEGTOP)
+            Case SseBlendMode.Overlay, SseBlendMode.Tint : Return (2, PEGTOP)   ' RaceMenu "tint" == overlay (misma fórmula)
+            Case SseBlendMode.SoftLight : Return (3, PEGTOP)
+            Case SseBlendMode.LinearDodge : Return (12, PEGTOP)
+            Case SseBlendMode.LinearBurn : Return (13, PEGTOP)
+            Case SseBlendMode.LinearLight : Return (16, PEGTOP)
+            Case SseBlendMode.ColorDodge : Return (8, PEGTOP)
+            Case SseBlendMode.ColorBurn : Return (9, PEGTOP)
+            Case SseBlendMode.Darken : Return (6, PEGTOP)
+            Case SseBlendMode.Lighten : Return (7, PEGTOP)
+            Case SseBlendMode.Grayscale : Return (20, PEGTOP)    ' NO separable → shader blendGrayscale
+            Case SseBlendMode.ColorMode : Return (21, PEGTOP)    ' NO separable → shader blendColorMode
+            Case Else : Return (0, PEGTOP)                        ' Normal / Rnm / TextureMode
+        End Select
+    End Function
+
     Public Sub ApplyOverlays(acc As Double(), overlays As IList(Of SseOverlay), w As Integer, h As Integer)
         If overlays Is Nothing OrElse overlays.Count = 0 Then Return
         Dim npix = w * h
@@ -100,24 +127,13 @@ Public Module SseOverlayCompositor
                         Dim outc = HsvToRgb(hsvBlend(0), hsvBlend(1), vSrc)
                         rr = outc(0) : rg = outc(1) : rb = outc(2)
                     Else
-                        ' Reuse the SHARED FO4 blend dispatch (CPU/GL parity) — map RaceMenu mode → (blendOp, softLightModel).
-                        Dim bop = 0, slm = 3   ' softlight model 3 = Pegtop (what RaceMenu uses)
-                        Select Case ov.BlendMode
-                            Case SseBlendMode.Multiply : bop = 1
-                            Case SseBlendMode.Overlay, SseBlendMode.Tint : bop = 2   ' RaceMenu "tint" == overlay (same formula)
-                            Case SseBlendMode.SoftLight : bop = 3
-                            Case SseBlendMode.LinearDodge : bop = 12
-                            Case SseBlendMode.LinearBurn : bop = 13
-                            Case SseBlendMode.LinearLight : bop = 16
-                            Case SseBlendMode.ColorDodge : bop = 8
-                            Case SseBlendMode.ColorBurn : bop = 9
-                            Case SseBlendMode.Darken : bop = 6
-                            Case SseBlendMode.Lighten : bop = 7
-                            Case Else : bop = 0
-                        End Select
-                        rr = FaceTintCpuCompositor.BlendChannel(bop, slm, ar, br)
-                        rg = FaceTintCpuCompositor.BlendChannel(bop, slm, ag, bg)
-                        rb = FaceTintCpuCompositor.BlendChannel(bop, slm, ab, bbl)
+                        ' Reuse the SHARED FO4 blend dispatch (CPU/GL parity). El mapeo modo→(blendOp, softLight)
+                        ' sale de BlendOpFromSseMode = la MISMA fuente que usa el path GPU (uBlendOp del compositor),
+                        ' así CPU y GL no pueden desincronizarse.
+                        Dim m = BlendOpFromSseMode(ov.BlendMode)
+                        rr = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ar, br)
+                        rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ag, bg)
+                        rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ab, bbl)
                     End If
                     acc(i * 4) = (1 - la) * ar + rr * la
                     acc(i * 4 + 1) = (1 - la) * ag + rg * la
@@ -183,9 +199,7 @@ Public Module SseOverlayCompositor
         ' `for i=0..N` + AttachChild ⇒ Ovl0 se dibuja primero (abajo) y OvlN último (arriba); el topmost gana en
         ' solapes. NO por posición en la lista (el jslot puede venir en cualquier orden). Ver OverlayInterface.cpp.
         Dim faceOrdered = SortFaceOverlays(overlays.
-            Where(Function(o) o IsNot Nothing AndAlso Not String.IsNullOrEmpty(o.NodeName) AndAlso
-                              o.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) AndAlso
-                              Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' orden configurable, default skee
+            Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
         For Each ov In faceOrdered
             Dim tex = decode(ov.DiffusePath, w, h)
             If tex Is Nothing OrElse tex.Length < npix * 4 Then Continue For
@@ -225,9 +239,7 @@ Public Module SseOverlayCompositor
         Dim npix = w * h
         Dim any = False
         Dim faceOrdered = SortFaceOverlays(overlays.
-            Where(Function(o) o IsNot Nothing AndAlso Not String.IsNullOrEmpty(o.NodeName) AndAlso
-                              o.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) AndAlso
-                              Not String.IsNullOrEmpty(o.NormalPath)).ToList())   ' orden configurable, default skee
+            Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath)).ToList())   ' predicado unico + orden skee
         For Each ov In faceOrdered
             Dim ovNorm = decode(ov.NormalPath, w, h)
             If ovNorm Is Nothing OrElse ovNorm.Length < npix * 4 Then Continue For
@@ -259,22 +271,54 @@ Public Module SseOverlayCompositor
     Public Function HasFaceOverlayNormals(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
-            If ov IsNot Nothing AndAlso Not String.IsNullOrEmpty(ov.NodeName) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) _
-               AndAlso ov.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) Then Return True
+            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) Then Return True
         Next
         Return False
     End Function
 
+    ''' <summary>⭐ THE canonical "is this overlay on the head?" test. EVERY path — CPU bake, GPU bake, the folded
+    ''' and non-folded variants, the live render, and the Papyrus apply-script emitter — must agree on this one
+    ''' predicate, or an overlay ends up composited twice or not at all.
+    '''
+    ''' <para>It exists because they did NOT agree: <c>BuildFaceOverlayGpuLayers</c> filtered on "has a diffuse"
+    ''' and forgot the node check entirely, so the GPU bake path composited BODY tattoos into the FACE texture
+    ''' while the CPU path did not.</para></summary>
+    Public Function IsFaceOverlay(ov As RaceMenuJslot.JslotOverlayNode) As Boolean
+        Return ov IsNot Nothing AndAlso IsFaceOverlayNodeName(ov.NodeName)
+    End Function
+
+    ''' <summary>El MISMO test, por nombre de nodo — para los call sites que sólo tienen el string (el emisor del
+    ''' script Papyrus, el ruteo de shapes del render). Que exista una sola implementación es el punto entero.</summary>
+    Public Function IsFaceOverlayNodeName(nodeName As String) As Boolean
+        Return Not String.IsNullOrEmpty(nodeName) AndAlso
+               nodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    ''' <summary>The FACE overlays of <paramref name="overlays"/> — node filter only, no texture requirement.
+    ''' Callers pass THIS to the composers; each composer then keeps what it can actually consume (the diffuse
+    ''' composer wants <c>DiffusePath</c>, the normal composer wants <c>NormalPath</c>). Filtering on a texture
+    ''' at the CALLER is what dropped normal-only face overlays.</summary>
+    Public Function FaceOverlaysOnly(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As List(Of RaceMenuJslot.JslotOverlayNode)
+        If overlays Is Nothing Then Return New List(Of RaceMenuJslot.JslotOverlayNode)()
+        Return overlays.Where(AddressOf IsFaceOverlay).ToList()
+    End Function
+
     ''' <summary>True iff <paramref name="overlays"/> has at least one FACE overlay with a diffuse texture — i.e.
-    ''' whether <see cref="ComposeFaceOverlaysIntoDiffuse"/> would emit anything. Used by the bake to decide
-    ''' whether to emit a per-NPC diffuse at all (vanilla NPCs with no face overlays keep the shared complexion).</summary>
+    ''' whether <see cref="ComposeFaceOverlaysIntoDiffuse"/> would emit anything.</summary>
     Public Function HasBakeableFaceOverlays(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
-            If ov IsNot Nothing AndAlso Not String.IsNullOrEmpty(ov.NodeName) AndAlso Not String.IsNullOrEmpty(ov.DiffusePath) _
-               AndAlso ov.NodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase) Then Return True
+            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.DiffusePath) Then Return True
         Next
         Return False
+    End Function
+
+    ''' <summary>⭐ The gate EVERY bake path must use: is there ANY face overlay the bake can fold — diffuse OR
+    ''' normal? A normal-only face overlay is legal (<see cref="ComposeFaceOverlayNormalsIntoMsn"/> folds it using
+    ''' the normal's own alpha as coverage), and gating on diffuse alone made the bake return early and drop it —
+    ''' while the apply-script skips ALL face nodes on principle, so nobody applied it and it vanished.</summary>
+    Public Function HasAnyFoldableFaceOverlay(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
+        Return HasBakeableFaceOverlays(overlays) OrElse HasFaceOverlayNormals(overlays)
     End Function
 
     ''' <summary>skee's colour presets (TintMaskInterface.h): a MASKC / TintData colour stored as this raw

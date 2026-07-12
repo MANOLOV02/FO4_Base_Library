@@ -158,9 +158,29 @@ Public Module NpcSubrecordWriter
 
     ''' <summary>Emit a VMAD subrecord, patching each FormID at its scanned position through the remapper.
     ''' Widened to Friend (lib-internal) so the ARMO/ARMA override path can reuse this exact logic when
-    ''' preserving a source VMAD, instead of duplicating the position-patching loop.</summary>
+    ''' preserving a source VMAD, instead of duplicating the position-patching loop.
+    '''
+    ''' <para>Game-agnostic on purpose: the VMAD layout is identical in FO4 and Skyrim (xEdit declares the
+    ''' same wbVMAD for both, and every one of the 1333 vanilla NPC_ VMADs measured across Skyrim.esm /
+    ''' Dawnguard.esm / Fallout4.esm carries ObjectFormat = 2). No game branch needed here.</para>
+    '''
+    ''' <para>Refuses to emit a VMAD whose scan desynced (<see cref="NPC_VmadData.ScanComplete"/> = False).
+    ''' In that case the FormID position list is PARTIAL, so patching it would rewrite the FormIDs we found
+    ''' and leave the rest carrying the SOURCE plugin's master index — pointing them at whatever plugin
+    ''' happens to sit at that index in the override's MAST list. That is silent reference corruption of a
+    ''' record we do not even own (805 of 5118 Skyrim NPC_ and 382 of 3015 FO4 NPC_ ship vanilla scripts
+    ''' like workshopnpcscript / WIDeadBodyCleanupScript). Failing the save is strictly better.</para></summary>
     Friend Sub EmitVmad(bw As BinaryWriter, vmad As NPC_VmadData, remap As FormIdRemapper)
         If vmad Is Nothing OrElse vmad.RawBytes Is Nothing OrElse vmad.RawBytes.Length = 0 Then Return
+
+        If Not vmad.ScanComplete Then
+            Throw New InvalidDataException(
+                "VMAD could not be fully parsed, so its FormID list is incomplete and the record cannot be " &
+                "re-mastered without corrupting the script references it carries. " &
+                $"Reason: {If(vmad.ScanFailureReason, "unknown")}. " &
+                $"(payload {vmad.RawBytes.Length} bytes, ObjectFormat {vmad.ObjectFormat}, " &
+                $"{vmad.ScriptCount} script(s) declared, {vmad.FormIdPositions.Count} FormID(s) found before the failure)")
+        End If
 
         ' Apply FormID re-mapping by patching high bytes in a copy of the raw payload.
         Dim payload = New Byte(vmad.RawBytes.Length - 1) {}
@@ -727,9 +747,31 @@ Public Module NpcSubrecordWriter
     End Sub
 
     Private Sub EmitDnam(bw As BinaryWriter, npc As NPC_Data)
-        ' SSE DNAM = 52-byte Player Skills block, preserved verbatim (no FO4 8-byte struct).
+        ' SSE DNAM = 52-byte Player Skills block (wbDefinitionsTES5.pas:8707-8756) — a different subrecord
+        ' from FO4's 8-byte Calculated Stats. Emitted field-by-field from the parsed struct (its unused runs
+        ' and trailing bytes are verbatim captures, so an unedited record is byte-identical); the raw payload
+        ' is the fallback for a malformed block too short to model.
         If npc.Game = Config_App.Game_Enum.Skyrim Then
-            If npc.DnamRawSse IsNot Nothing Then WriteRawSubrecord(bw, "DNAM", npc.DnamRawSse)
+            Dim ps = npc.SsePlayerSkills
+            If ps Is Nothing Then
+                If npc.DnamRawSse IsNot Nothing Then WriteRawSubrecord(bw, "DNAM", npc.DnamRawSse)
+                Return
+            End If
+            Using ms As New MemoryStream()
+                Using w As New BinaryWriter(ms)
+                    w.Write(ps.SkillValues, 0, NPC_SsePlayerSkills.SkillCount)
+                    w.Write(ps.SkillOffsets, 0, NPC_SsePlayerSkills.SkillCount)
+                    w.Write(ps.Health)
+                    w.Write(ps.Magicka)
+                    w.Write(ps.Stamina)
+                    w.Write(ps.Unused42, 0, 2)
+                    w.Write(ps.FarAwayModelDistance)
+                    w.Write(ps.GearedUpWeapons)
+                    w.Write(ps.Unused49, 0, 3)
+                    If ps.TrailingBytes IsNot Nothing AndAlso ps.TrailingBytes.Length > 0 Then w.Write(ps.TrailingBytes)
+                End Using
+                WriteRawSubrecord(bw, "DNAM", ms.ToArray())
+            End Using
             Return
         End If
         Dim stats = npc.CalculatedStats

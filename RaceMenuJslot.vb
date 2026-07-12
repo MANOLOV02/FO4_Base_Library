@@ -243,6 +243,24 @@ Public NotInheritable Class RaceMenuJslot
         Return New Single() {m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33}
     End Function
 
+    ''' <summary>The rotation of <paramref name="nt"/> as the SAME 9 floats this class writes to the
+    ''' <c>.jslot</c> under key 32, value index 0..8 — i.e. <c>BSRotationToMatrix33(axis-angle)</c> flattened
+    ''' row-major. Returns Nothing when the transform carries no rotation.
+    '''
+    ''' <para>Exists so the Papyrus apply-script emitter can hand skee64 the exact float sequence skee64
+    ''' itself round-trips, instead of re-deriving one. <c>NiOverride.AddNodeTransformRotation</c> accepts
+    ''' EITHER 3 euler angles in degrees OR these 9 raw matrix floats, which it copies straight into
+    ''' <c>NiMatrix33::arr[i]</c> (PapyrusNiOverride.cpp:1190-1193) — the same <c>arr[i]</c> it later packs
+    ''' out under key 32 index i. Feeding the 9 floats therefore needs NO euler convention at all: whatever
+    ''' order skee means by "row-major" internally, we are giving back the values it produced. The 3-float
+    ''' euler path would instead depend on <c>NiMatrix33::SetEulerAngles</c>'s heading/attitude/bank order
+    ''' matching ours — an assumption we do not need to make, so we do not make it.</para></summary>
+    Public Shared Function RotationRowMajor(nt As JslotNodeTransform) As Single()
+        If nt Is Nothing OrElse Not nt.HasRotation Then Return Nothing
+        Return MatrixRowMajor(Transform_Class.BSRotationToMatrix33(
+            New System.Numerics.Vector3(nt.RotX, nt.RotY, nt.RotZ)))
+    End Function
+
     ''' <summary>Patch (or append) a transform value matching (<paramref name="key"/>, <paramref name="index"/>)
     ''' within the element's <c>keys</c> layers: update the data in place if the (key,index) already exists in any
     ''' layer, else append a fresh value to the first key layer (creating one if the element has none). Used by Save

@@ -299,6 +299,47 @@ Public Class NPC_CalculatedStats
     Public Unused7 As Byte
 End Class
 
+''' <summary>NPC_.DNAM (Player Skills) — SKYRIM ONLY. wbDefinitionsTES5.pas:8707-8756. 52 bytes:
+''' 18×u8 Skill Values + 18×u8 Skill Offsets + u16 Health + u16 Magicka + u16 Stamina + wbUnused(2)
+''' + f32 Far away model distance + u8 Geared up weapons + wbUnused(3).
+''' Fallout 4's DNAM is an unrelated 8-byte Calculated-Stats struct (<see cref="NPC_CalculatedStats"/>) —
+''' different size AND semantics, hence a separate model. Note the far-away-model distance is a FLOAT here
+''' and a u16 in FO4. The two wbUnused runs are captured verbatim (xEdit preserves whatever is in them)
+''' so an unedited record re-emits byte-exact.</summary>
+Public Class NPC_SsePlayerSkills
+    Public Const SkillCount As Integer = 18
+    Public Const StructSize As Integer = 52
+
+    ''' <summary>The 18 skill names in wbDefinitionsTES5 array order — this order IS the byte layout
+    ''' (index i = value at +i, offset at +18+i), so it is schema, not presentation. Editors label their
+    ''' rows from it.</summary>
+    Public Shared ReadOnly SkillNames As String() = {
+        "OneHanded", "TwoHanded", "Marksman", "Block", "Smithing", "HeavyArmor",
+        "LightArmor", "Pickpocket", "Lockpicking", "Sneak", "Alchemy", "Speechcraft",
+        "Alteration", "Conjuration", "Destruction", "Illusion", "Restoration", "Enchanting"}
+
+    ''' <summary>+0 — 18×u8 Skill Values.</summary>
+    Public SkillValues As Byte() = New Byte(SkillCount - 1) {}
+    ''' <summary>+18 — 18×u8 Skill Offsets.</summary>
+    Public SkillOffsets As Byte() = New Byte(SkillCount - 1) {}
+    ''' <summary>+36 u16.</summary>
+    Public Health As UShort
+    ''' <summary>+38 u16.</summary>
+    Public Magicka As UShort
+    ''' <summary>+40 u16.</summary>
+    Public Stamina As UShort
+    ''' <summary>+42 wbUnused(2) — preserved verbatim.</summary>
+    Public Unused42 As Byte() = New Byte() {0, 0}
+    ''' <summary>+44 f32 (FO4's counterpart is a u16).</summary>
+    Public FarAwayModelDistance As Single
+    ''' <summary>+48 u8.</summary>
+    Public GearedUpWeapons As Byte
+    ''' <summary>+49 wbUnused(3) — preserved verbatim.</summary>
+    Public Unused49 As Byte() = New Byte() {0, 0, 0}
+    ''' <summary>Bytes past the 52-byte struct, preserved verbatim for round-trip equivalence.</summary>
+    Public TrailingBytes As Byte() = Array.Empty(Of Byte)()
+End Class
+
 ''' <summary>NPC_.QNAM (Texture Lighting). wbDefinitionsFO4.pas:10776. 16 bytes = 4 floats RGBA.
 ''' Stored as raw floats (NOT as Color) to preserve precision — TextureLightingColor in NPC_Data
 ''' is the Color projection used by the renderer.</summary>
@@ -460,6 +501,32 @@ Public Class NPC_VmadData
     Public ScriptCount As UShort
     ''' <summary>Sorted list of FormID positions inside RawBytes.</summary>
     Public FormIdPositions As New List(Of NPC_VmadFormIdRef)
+    ''' <summary>True only when the scanner walked the WHOLE payload without desyncing, i.e.
+    ''' <see cref="FormIdPositions"/> is known to hold EVERY FormID in <see cref="RawBytes"/>.
+    ''' False means the position list is PARTIAL: emitting the raw bytes would leave the FormIDs
+    ''' past the failure point carrying the SOURCE plugin's master index, which silently points them
+    ''' at the wrong plugin once the override's MAST list differs. The writer refuses to emit in that
+    ''' case rather than produce a corrupt record — see NpcSubrecordWriter.EmitVmad.</summary>
+    Public ScanComplete As Boolean
+    ''' <summary>Why the walk aborted (Nothing when <see cref="ScanComplete"/>). Surfaced in the
+    ''' writer's exception so a malformed VMAD is diagnosable instead of mysterious.</summary>
+    Public ScanFailureReason As String
+    ''' <summary>One entry per script in the payload, in order, with its byte span. Lets the builder
+    ''' REPLACE or REMOVE a specific script (ours) while copying every other one verbatim — which is
+    ''' what keeps repeated saves idempotent and leaves vanilla / other-mod scripts untouched.
+    ''' Only populated when <see cref="ScanComplete"/>.</summary>
+    Public Scripts As New List(Of NPC_VmadScriptRef)
+End Class
+
+''' <summary>A script entry inside a VMAD payload, located by byte span so it can be spliced out.</summary>
+Public Class NPC_VmadScriptRef
+    ''' <summary>Papyrus script name as authored. The VM matches script names case-INSENSITIVELY, so
+    ''' comparisons against this must be OrdinalIgnoreCase.</summary>
+    Public Name As String = ""
+    ''' <summary>Byte offset of the START of this ScriptEntry inside NPC_VmadData.RawBytes.</summary>
+    Public Offset As Integer
+    ''' <summary>Byte length of the whole ScriptEntry (name + flags + property count + properties).</summary>
+    Public Length As Integer
 End Class
 
 ''' <summary>One FormID reference inside a VMAD payload.</summary>
@@ -902,11 +969,16 @@ Public Class NPC_Data
     ' ========================================================================
     ' SSE-specific captures (Game = Skyrim). All Nothing/empty for FO4 data, so they never touch the
     ' FO4 emit path. Consumed by NpcSubrecordWriter's SSE branches for a byte-exact round-trip.
-    ' Structs whose SSE semantics we don't need for editing yet are preserved verbatim (DNAM 52B
-    ' Player-Skills block, NAM9 19 sliders, NAMA 4 face-parts). See reference_sse_engine_facegen_re.
+    ' Structs whose SSE semantics we don't need for editing yet are preserved verbatim (NAM9 19 sliders,
+    ' NAMA 4 face-parts). See reference_sse_engine_facegen_re.
     ' ========================================================================
-    ''' <summary>DNAM Player Skills block (52 bytes, SSE) preserved verbatim. FO4 uses the 8-byte
-    ''' CalculatedStats struct instead; on SSE that struct is left Nothing and this raw drives writeback.</summary>
+    ''' <summary>DNAM Player Skills (SSE), parsed into fields so the NPC editor can edit them. FO4 uses the
+    ''' 8-byte CalculatedStats struct instead; on SSE that struct is left Nothing and this one drives writeback.
+    ''' Nothing when the DNAM payload is shorter than the 52-byte struct (malformed) — then
+    ''' <see cref="DnamRawSse"/> is re-emitted verbatim instead.</summary>
+    Public SsePlayerSkills As NPC_SsePlayerSkills = Nothing
+    ''' <summary>The raw DNAM payload (SSE). Kept as the verbatim fallback for a payload too short to model
+    ''' (<see cref="SsePlayerSkills"/> Nothing) so a malformed record still round-trips instead of losing DNAM.</summary>
     Public DnamRawSse As Byte() = Nothing
     ''' <summary>NAM9 (19×f32 face-morph sliders, 76 bytes) — SSE-only. Preserved verbatim.</summary>
     Public Nam9Raw As Byte() = Nothing
@@ -942,9 +1014,6 @@ Public Class NPC_Data
     ''' <summary>RaceMenu NiOverride CUSTOM morphs (CME_/EFM_ names + value) from the .jslot. Applied by name
     ''' against the chargen TriHead (no-op for names the tri doesn't carry). Nothing = none.</summary>
     Public Property SseCustomMorphs As List(Of NPC_CustomMorph) = Nothing
-    ''' <summary>RaceMenu skin/face overlay layers (from the .jslot tintInfo overlay entries) composited ON TOP
-    ''' of the facetint in render + bake (SseOverlayCompositor). Nothing = none. Sidecar-only.</summary>
-    Public Property SseOverlays As List(Of SseOverlayCompositor.SseOverlay) = Nothing
     ''' <summary>SSE actor sounds as a flat ordered list of CSDT/CSDI/CSDC subrecords. CSDI entries
     ''' are marked IsFormId (resolved to GLOBAL at parse) so the writer remaps them; CSDT/CSDC are
     ''' emitted verbatim. Replaces the FO4 CS2H/CS2K/CS2D/CS2E/CS2F block on SSE.</summary>
@@ -2706,12 +2775,30 @@ Public Module RecordParsers
                     npc.HasDataMarker = True
 
                 ' DNAM — FO4: 8-byte Calculated Stats (wbDefinitionsFO4.pas:10741-10747). SSE: 52-byte
-                ' Player Skills block (wbDefinitionsTES5.pas). Different sizes AND semantics; for SSE we
-                ' preserve the whole block verbatim (byte-exact round-trip; editing lands in F5).
+                ' Player Skills block (wbDefinitionsTES5.pas:8707-8756). Different sizes AND semantics, so
+                ' each game gets its own model. The SSE unused runs + any trailing bytes are captured
+                ' verbatim, so an unedited record re-emits byte-exact from the struct.
                 Case "DNAM"
                     Dim d = sr.Data
                     If npc.Game = Config_App.Game_Enum.Skyrim Then
                         npc.DnamRawSse = d
+                        If d IsNot Nothing AndAlso d.Length >= NPC_SsePlayerSkills.StructSize Then
+                            Dim ps As New NPC_SsePlayerSkills()
+                            Array.Copy(d, 0, ps.SkillValues, 0, NPC_SsePlayerSkills.SkillCount)
+                            Array.Copy(d, NPC_SsePlayerSkills.SkillCount, ps.SkillOffsets, 0, NPC_SsePlayerSkills.SkillCount)
+                            ps.Health = BitConverter.ToUInt16(d, 36)
+                            ps.Magicka = BitConverter.ToUInt16(d, 38)
+                            ps.Stamina = BitConverter.ToUInt16(d, 40)
+                            ps.Unused42 = New Byte() {d(42), d(43)}
+                            ps.FarAwayModelDistance = BitConverter.ToSingle(d, 44)
+                            ps.GearedUpWeapons = d(48)
+                            ps.Unused49 = New Byte() {d(49), d(50), d(51)}
+                            If d.Length > NPC_SsePlayerSkills.StructSize Then
+                                ps.TrailingBytes = New Byte(d.Length - NPC_SsePlayerSkills.StructSize - 1) {}
+                                Array.Copy(d, NPC_SsePlayerSkills.StructSize, ps.TrailingBytes, 0, ps.TrailingBytes.Length)
+                            End If
+                            npc.SsePlayerSkills = ps
+                        End If
                     ElseIf d IsNot Nothing AndAlso d.Length >= 8 Then
                         npc.CalculatedStats = New NPC_CalculatedStats With {
                             .CalculatedHealth = BitConverter.ToUInt16(d, 0),

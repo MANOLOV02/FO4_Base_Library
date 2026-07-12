@@ -518,9 +518,19 @@ Public Class SkinningHelper
         Return geo
     End Function
 
-    Private Shared Function Create_Normal_Matrix(Origen As Matrix4d) As Matrix4d
+    ''' <summary>Normal matrix (inverse-transpose de la parte lineal) tolerante a singularidad.
+    ''' Con un eje escalado a 0 — p.ej. Scale=0 en el editor de transforms — la 3×3 no tiene
+    ''' inversa: la geometría colapsa a un plano/punto y la normal queda matemáticamente
+    ''' indefinida. Devolvemos identidad en lugar de dejar que OpenTK tire
+    ''' InvalidOperationException ("Matrix is singular and cannot be inverted").</summary>
+    Public Shared Function NormalMatrixOrIdentity(Origen As Matrix4d) As Matrix3d
         Dim L As New Matrix3d(Origen)
-        Dim nm3 = L.Inverted().Transposed()
+        If Math.Abs(L.Determinant) < 1.0E-12 Then Return Matrix3d.Identity
+        Return L.Inverted().Transposed()
+    End Function
+
+    Private Shared Function Create_Normal_Matrix(Origen As Matrix4d) As Matrix4d
+        Dim nm3 = NormalMatrixOrIdentity(Origen)
 
         ' Reinyectar nm3 en una 4×4 sin traslación
         Dim nm4 As Matrix4d = Matrix4d.Identity

@@ -82,10 +82,19 @@ Public Module NpcVmadScanner
             For i = 0 To CInt(data.ScriptCount) - 1
                 ScanScriptEntry(br, data, pluginName, pluginManager)
             Next
+
+            ' Walked every script and every property without desyncing → FormIdPositions is COMPLETE.
+            ' Only now may the writer patch the raw bytes (see NPC_VmadData.ScanComplete).
+            data.ScanComplete = True
         Catch ex As EndOfStreamException
-            ' Malformed VMAD — return whatever we got. Raw bytes are preserved either way.
+            ' Desync: a length/type we read sent us past the end. Everything after the failure point is
+            ' unscanned, so the position list is PARTIAL. Raw bytes are still preserved for diagnosis,
+            ' but ScanComplete stays False and the writer will refuse to emit rather than write FormIDs
+            ' that are only half-remapped.
+            data.ScanFailureReason = "read past end of VMAD payload (structure desync)"
         Catch ex As IOException
-            ' Same: preserve raw bytes, partial position list.
+            ' Unknown property type (thrown by ScanValue) — same consequence: partial position list.
+            data.ScanFailureReason = ex.Message
         End Try
 
         Return data
@@ -93,12 +102,21 @@ Public Module NpcVmadScanner
 
     Private Sub ScanScriptEntry(br As BinaryReader, data As NPC_VmadData, pluginName As String, pluginManager As PluginManager)
         ' u16 nameLen + name + u8 flags + u16 propCount + propCount × ScriptProperty
-        SkipLenString(br)
+        Dim entryStart = br.BaseStream.Position
+        Dim name = ReadLenString(br)
         br.ReadByte() ' flags
         Dim propCount = br.ReadUInt16()
         For i = 0 To CInt(propCount) - 1
             ScanScriptProperty(br, data, pluginName, pluginManager)
         Next
+
+        ' Record the entry's byte span so NpcVmadBuilder can splice THIS script out (or replace it)
+        ' while copying the others verbatim — the basis of idempotent re-saves.
+        data.Scripts.Add(New NPC_VmadScriptRef With {
+            .Name = name,
+            .Offset = CInt(entryStart),
+            .Length = CInt(br.BaseStream.Position - entryStart)
+        })
     End Sub
 
     Private Sub ScanScriptProperty(br As BinaryReader, data As NPC_VmadData, pluginName As String, pluginManager As PluginManager)
@@ -109,6 +127,14 @@ Public Module NpcVmadScanner
         ScanValue(br, data, pluginName, pluginManager, ptype)
     End Sub
 
+    ''' <summary>⛔ EMPTY ARRAYS ARE LEGAL AND MUST NOT CRASH. The array cases below iterate as
+    ''' <c>For i As Long = 0 To CLng(count) - 1</c>, NOT <c>For i = 0UI To count - 1UI</c>: with
+    ''' <c>count = 0</c> the unsigned form underflows to 4294967295 and, because VB.NET has integer
+    ''' overflow checks ON by default, throws OverflowException on the subtraction itself.
+    ''' <para>This never fired on vanilla data — no vanilla NPC_ VMAD carries a zero-length array — but our
+    ''' own emitter does (an NPC with skin overrides but no overlays leaves the overlay arrays empty), and it
+    ''' blew up the moment we read our own output back. Widening to Long makes the loop simply not execute,
+    ''' which is the correct behaviour for a 0-element array.</para></summary>
     Private Sub ScanValue(br As BinaryReader, data As NPC_VmadData, pluginName As String, pluginManager As PluginManager, ptype As Byte)
         Select Case ptype
             Case 0, 6
@@ -126,12 +152,12 @@ Public Module NpcVmadScanner
                 ScanStruct(br, data, pluginName, pluginManager)
             Case 11
                 Dim count = br.ReadUInt32()
-                For i = 0UI To count - 1UI
+                For i As Long = 0 To CLng(count) - 1
                     ScanObject(br, data, pluginName, pluginManager)
                 Next
             Case 12
                 Dim count = br.ReadUInt32()
-                For i = 0UI To count - 1UI
+                For i As Long = 0 To CLng(count) - 1
                     SkipLenString(br)
                 Next
             Case 13, 14
@@ -145,14 +171,16 @@ Public Module NpcVmadScanner
                 br.ReadUInt32()
             Case 17
                 Dim count = br.ReadUInt32()
-                For i = 0UI To count - 1UI
+                For i As Long = 0 To CLng(count) - 1
                     ScanStruct(br, data, pluginName, pluginManager)
                 Next
             Case Else
-                ' Unknown type — abort property walk for this script. Caller catches EndOfStream
-                ' from subsequent reads; raw VMAD is still preserved. Log via Logger when caller
-                ' wires it (can't from a static helper without a reference).
-                Throw New IOException($"VMAD: unknown property type {ptype}")
+                ' Unknown type — we no longer know the value's byte length, so we cannot keep walking
+                ' without desyncing. Abort: Scan() catches this and leaves ScanComplete = False, which
+                ' makes the writer refuse the record instead of emitting a half-remapped VMAD.
+                ' Measured: 0 occurrences across all 1333 vanilla NPC_ VMADs (Skyrim.esm 805,
+                ' Dawnguard.esm 146, Fallout4.esm 382), so this only fires on malformed/exotic input.
+                Throw New IOException($"unknown VMAD property type {ptype}")
         End Select
     End Sub
 
@@ -195,7 +223,8 @@ Public Module NpcVmadScanner
         ' wbScriptPropertyStruct @ wbDefinitionsFO4.pas:4139-4166: array u32 count + count × Member.
         ' Each Member = u16 nameLen + name + u8 type + u8 flags + Value.
         Dim memberCount = br.ReadUInt32()
-        For i = 0UI To memberCount - 1UI
+        ' Long, not UInteger — a 0-member struct would underflow the loop bound (see ScanValue's note).
+        For i As Long = 0 To CLng(memberCount) - 1
             SkipLenString(br)
             Dim ptype = br.ReadByte()
             br.ReadByte() ' flags
@@ -208,5 +237,15 @@ Public Module NpcVmadScanner
         Dim len = br.ReadUInt16()
         If len > 0 Then br.ReadBytes(CInt(len))
     End Sub
+
+    ''' <summary>Same LenString, but decoded. VMAD strings are UTF-8 regardless of game or language
+    ''' (xEdit wbEncodingVMAD := TEncoding.UTF8) — see PluginEncodingSettings.EncodeVmad.</summary>
+    Private Function ReadLenString(br As BinaryReader) As String
+        Dim len = br.ReadUInt16()
+        If len = 0 Then Return ""
+        Dim bytes = br.ReadBytes(CInt(len))
+        If bytes.Length < len Then Throw New EndOfStreamException("VMAD: truncated string")
+        Return Text.Encoding.UTF8.GetString(bytes)
+    End Function
 
 End Module

@@ -22,32 +22,36 @@ Public Module SseFaceGenBaker
     ''' encode to 512² BC3 (DXT5) with mips — the exact format CK writes to
     ''' <c>FaceGenData\FaceTint\&lt;plugin&gt;\&lt;fid&gt;.dds</c>. Returns Nothing when the tint can't be
     ''' composed (race/QNAM unresolved). Pure — no file writes; the caller writes/uploads the bytes.</summary>
+    ''' <param name="dxgiFormat">Formato de salida. -1 = BC3 (el del facetint vanilla). ⛔ NO hardcodear en el caller:
+    ''' pasar el elegido por el usuario (CharGen Options → Diffuse) para que el facetint REAL siga la misma opción que
+    ''' el resto de los artefactos del bake (el neutral del fold ya la seguía; antes esto forzaba BC3 y quedaban con
+    ''' formatos distintos según el NPC estuviera plegado o no).</param>
     Public Function BakeFaceTintDds(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
                                     raceFormID As UInteger, isFemale As Boolean,
                                     Optional w As Integer = 512, Optional h As Integer = 512,
-                                    Optional overlays As IList(Of SseOverlayCompositor.SseOverlay) = Nothing,
                                     Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
-                                    Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Byte()
-        Dim acc = ComposeFacetintAcc(pm, npcRec, race, raceFormID, isFemale, w, h, overlays, npcTintOverride, tintTexOverride)
+                                    Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing,
+                                    Optional dxgiFormat As Integer = -1) As Byte()
+        Dim acc = ComposeFacetintAcc(pm, npcRec, race, raceFormID, isFemale, w, h, npcTintOverride, tintTexOverride)
         If acc Is Nothing Then Return Nothing
-        Return EncodeLinearRgbaToBc3(acc, w, h)
+        Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function
 
     ''' <summary>Compose the SSE facetint linear RGBA accumulator (tint + RaceMenu overlays), the buffer both the
     ''' DDS encode and the TGA dump derive from. Same inputs as <see cref="BakeFaceTintDds"/>. Nothing on fail.
     ''' Public so the bake can dump a lossless TGA (via <see cref="LinearRgbaToBgra"/>) without a second compose.</summary>
+    ''' <summary>⛔ El facetint es TINT-ONLY por construcción: NO lleva overlays ni skee-masks. Los overlays de
+    ''' RaceMenu y las máscaras skee (MASKT) se componen sobre el DIFFUSE (en el fold, ver
+    ''' <c>FaceGenBuilder.WriteSseFaceDiffuseWithOverlays</c>), no acá — porque el engine las aplica sobre el ALBEDO
+    ''' ya tintado, y el albedo sólo existe después de plegar. El parámetro <c>overlays</c> que esta función tenía
+    ''' (y que <see cref="BakeFaceTintDds"/> le pasaba) llegaba SIEMPRE Nothing: era código muerto que sugería lo
+    ''' contrario del modelo. Eliminado.</summary>
     Public Function ComposeFacetintAcc(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
                                        raceFormID As UInteger, isFemale As Boolean,
                                        Optional w As Integer = 512, Optional h As Integer = 512,
-                                       Optional overlays As IList(Of SseOverlayCompositor.SseOverlay) = Nothing,
                                        Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
                                        Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Double()
-        Dim acc = SseFaceTintComposer.ComposeLinearRgba(pm, npcRec, race, raceFormID, isFemale, w, h, Nothing, npcTintOverride, tintTexOverride)
-        If acc Is Nothing Then Return Nothing
-        ' RaceMenu / NiOverride overlays ON TOP (engine-exact blend; reference_racemenu_overlay_blend). No-op
-        ' for vanilla NPCs (no overlays) but always in the pipeline so modded NPCs bake WYSIWYG.
-        SseOverlayCompositor.ApplyOverlays(acc, overlays, w, h)
-        Return acc
+        Return SseFaceTintComposer.ComposeLinearRgba(pm, npcRec, race, raceFormID, isFemale, w, h, Nothing, npcTintOverride, tintTexOverride)
     End Function
 
     ''' <summary>Convert a linear RGBA accumulator ([0,1], length w*h*4) to BGRA bytes (opaque alpha) — the same
@@ -64,9 +68,13 @@ Public Module SseFaceGenBaker
         Return bgra
     End Function
 
-    ''' <summary>Encode a linear RGBA buffer ([0,1], length w*h*4) to BC3 (DXT5) DDS bytes with mips — the
-    ''' facetint _d format. BGRA byte order + BC3 match CK's output (round-trip validated ≈ DXT5 floor).</summary>
-    Public Function EncodeLinearRgbaToBc3(acc As Double(), w As Integer, h As Integer) As Byte()
+    ''' <summary>Encode a linear RGBA buffer ([0,1], length w*h*4) to DDS bytes with mips. Default format = BC3
+    ''' (DXT5), el formato del facetint: BGRA byte order + BC3 = lo que escribe el CK (round-trip validado ≈ piso
+    ''' del DXT5) y lo que trae el vanilla (medido: los 3.158 facetint del BSA son DXT5 512² 9 mips).
+    ''' <paramref name="dxgiFormat"/> permite seguir el formato elegido por el usuario (CharGen Options → Diffuse)
+    ''' en vez de hardcodear; -1 = BC3.</summary>
+    Public Function EncodeLinearRgbaToBc3(acc As Double(), w As Integer, h As Integer,
+                                          Optional dxgiFormat As Integer = -1) As Byte()
         Dim bgra(w * h * 4 - 1) As Byte
         For i = 0 To w * h - 1
             bgra(i * 4) = ClampByte(acc(i * 4 + 2))       ' B
@@ -74,7 +82,8 @@ Public Module SseFaceGenBaker
             bgra(i * 4 + 2) = ClampByte(acc(i * 4))       ' R
             bgra(i * 4 + 3) = 255                          ' A
         Next
-        Return DirectXTextureConversionHelper.Bgra32BytesToDdsBytes(w, h, bgra, DirectXTextureConversionHelper.DxgiFormatBc3Unorm, generateMipMaps:=True)
+        Dim fmt = If(dxgiFormat >= 0, dxgiFormat, DirectXTextureConversionHelper.DxgiFormatBc3Unorm)
+        Return DirectXTextureConversionHelper.Bgra32BytesToDdsBytes(w, h, bgra, fmt, generateMipMaps:=True)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
@@ -108,16 +117,36 @@ Public Module SseFaceGenBaker
         Return 64.0 / 255.0 - FgOff(ch)
     End Function
 
-    ''' <summary>Un facetint _d NEUTRAL (fgTint=1) codificado BC3 — para el slot 6 cuando el facetint se pliega
-    ''' en el diffuse. Todos los píxeles = (63,64,63)/255. El engine hace albedo *= fgTint(neutral) = albedo (no-op).</summary>
-    Public Function NeutralFacetintDds(w As Integer, h As Integer) As Byte()
+    ''' <summary>Un facetint _d NEUTRAL (fgTint=1) — para el slot 6 cuando el facetint se pliega en el diffuse.
+    ''' Todos los píxeles = (63,64,63)/255. El engine hace albedo *= fgTint(neutral) = albedo (no-op). Formato:
+    ''' el que pase el caller (CharGen Options → Diffuse); -1 = BC3 (default, = vanilla). Al ser un color CONSTANTE
+    ''' el formato no cambia el resultado (BC3 codifica un bloque uniforme sin error), pero el archivo sigue al
+    ''' setting igual que el resto del bake en vez de hardcodear.</summary>
+    Public Function NeutralFacetintDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
         Dim npix = w * h
         Dim acc(npix * 4 - 1) As Double
         Dim nR = FacetintNeutralChannel(0), nG = FacetintNeutralChannel(1), nB = FacetintNeutralChannel(2)
         For i = 0 To npix - 1
             acc(i * 4) = nR : acc(i * 4 + 1) = nG : acc(i * 4 + 2) = nB : acc(i * 4 + 3) = 1.0
         Next
-        Return EncodeLinearRgbaToBc3(acc, w, h)
+        Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
+    End Function
+
+    ''' <summary>Un detail map (slot 3 / DisplacementTexture) NEUTRAL para el softlight del engine:
+    ''' <c>softlight(diffuse, detail)</c> con detail = 0.5 es la IDENTIDAD (<c>a² + 2·a·0.5·(1−a) = a</c>). Se usa
+    ''' cuando el facetint se pliega en el diffuse (el softlight con el detail REAL ya está horneado en slot 0), para
+    ''' que el engine NO lo re-aplique. ⛔ NO se puede VACIAR el slot 3: el engine rellena un slot detail vacío con su
+    ''' default <c>BSShader_DefFacegenDetail</c> = una matriz de Bayer 8×8 con media ≈0.1235 (RE SkyrimSE.exe
+    ''' 0x140E57E30), NO gris 0.5 ⇒ oscurecería la cara. El detail se samplea CRUDO (raw), así que 0.5 = byte 128
+    ''' literal. Constante ⇒ compartible por plugin; el engine SÍ respeta el slot 3 del NIF (a diferencia del tint, que
+    ''' arma por path canónico). Formato = el que pase el caller; -1 = BC3 (constante ⇒ sin error de compresión).</summary>
+    Public Function NeutralDetailDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
+        Dim npix = w * h
+        Dim acc(npix * 4 - 1) As Double
+        For i = 0 To npix - 1
+            acc(i * 4) = 0.5 : acc(i * 4 + 1) = 0.5 : acc(i * 4 + 2) = 0.5 : acc(i * 4 + 3) = 1.0
+        Next
+        Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function
 
     ''' <summary>Pliega el facetint _d DENTRO del complexion (in place): reproduce la op del engine
