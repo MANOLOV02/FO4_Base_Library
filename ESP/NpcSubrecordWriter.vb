@@ -100,7 +100,11 @@ Public Module NpcSubrecordWriter
                 ' populated by the SSE parser path, so they no-op and preserve SSE ordering).
                 EmitMsdkMsdv(bw, npc)
                 EmitTintLayers(bw, npc)
-                EmitMrsv(bw, npc.BodyMorphRegionValues)
+                ' MRSV is FO4-ONLY (wbDefinitionsFO4.pas:10793 'Body Morph Region Values'); the TES5 NPC_
+                ' schema has no such subrecord, so emitting one makes xEdit report the record as erroneous.
+                ' The list must be empty for SSE data, but an in-memory writer (an editor overlay claiming
+                ' ownership of the channel) could still fill it — gate on the game, not on trust.
+                If Not isSse Then EmitMrsv(bw, npc.BodyMorphRegionValues)
                 EmitFaceMorphs(bw, npc)
                 If npc.HasFmin Then EmitFloat(bw, "FMIN", npc.FacialMorphIntensity)
                 If npc.HasActivateTextOverride Then EmitLString(bw, "ATTX", npc.ActivateTextOverride)
