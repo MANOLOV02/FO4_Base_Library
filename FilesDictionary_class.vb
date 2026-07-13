@@ -527,8 +527,10 @@ Public Class FilesDictionary_class
     End Property
 
     ''' <summary>
-    ''' Directory where per-archive index caches ({name}.cac) are stored.
-    ''' The app sets this before Fill_DictionaryAsync to enable caching. Empty = cache disabled.
+    ''' RAÍZ del cache de índices de archives. El caller la setea antes de Fill_DictionaryAsync; vacía =
+    ''' cache deshabilitado. Los <c>.cac</c> NO viven acá directamente: van en una SUBCARPETA POR JUEGO
+    ''' (ver <see cref="EffectiveCacheDirectory"/>). Los ~30 call sites siguen seteando la raíz y no saben
+    ''' nada del juego — la game-awareness vive acá adentro, en un solo lugar, para que no puedan divergir.
     ''' </summary>
     Public Shared Property CacheDirectory As String
         Get
@@ -538,6 +540,30 @@ Public Class FilesDictionary_class
             _cacheDirectory = If(value, "")
         End Set
     End Property
+
+    ''' <summary>Subcarpeta del cache para el juego ACTIVO. Se lee en cada operación de cache (no se
+    ''' memoiza) porque el juego se puede cambiar en caliente desde el selector de la app.</summary>
+    Private Shared Function GameCacheFolderName() As String
+        ' Config_App.Current se inicializa siempre (= New Config_App()), pero es una propiedad seteable:
+        ' si alguien la pone en Nothing, un nombre neutro es mejor que mezclar los dos juegos en la raíz.
+        If Config_App.Current Is Nothing Then Return "Unknown"
+        Return If(Config_App.Current.Game = Config_App.Game_Enum.Skyrim, "Skyrim", "Fallout4")
+    End Function
+
+    ''' <summary>⛔ Dónde viven REALMENTE los <c>.cac</c>: <c>{CacheDirectory}\{Juego}\</c>.
+    '''
+    ''' <para>Sin esto los dos juegos compartían carpeta, y eso NO era sólo desprolijo:
+    ''' <see cref="CleanupOrphanCacheFiles"/> borra todo <c>.cac</c> que no esté en la lista de archives
+    ''' del juego ACTIVO — así que cada vez que se cambiaba de juego se DESTRUÍA el cache del otro, y el
+    ''' siguiente arranque re-indexaba todos los archives desde cero. Con la subcarpeta, el barrido de un
+    ''' juego no puede ni ver los <c>.cac</c> del otro (EnumerateFiles no recursa), y los dos sobreviven.</para>
+    '''
+    ''' <para>Devuelve "" cuando el cache está deshabilitado, para que los callers puedan seguir usando el
+    ''' mismo guard de siempre.</para></summary>
+    Private Shared Function EffectiveCacheDirectory() As String
+        If Not IsCacheEnabled() Then Return ""
+        Return Path.Combine(_cacheDirectory, GameCacheFolderName())
+    End Function
 
     ' ================== Archive index cache ==================
     ' Binary format "FD4I" v1 per-archive file at {CacheDirectory}\{name}.cac
@@ -567,7 +593,9 @@ Public Class FilesDictionary_class
 
     Private Shared Function GetCacheFilePath(archiveFileName As String) As String
         If Not IsCacheEnabled() Then Return ""
-        Return Path.Combine(_cacheDirectory, archiveFileName & CacheFileSuffix)
+        ' Subcarpeta por juego. WriteCacheFile crea el directorio a partir de este path, así que no hace
+        ' falta crearlo antes en ningún lado.
+        Return Path.Combine(EffectiveCacheDirectory(), archiveFileName & CacheFileSuffix)
     End Function
 
     Private Shared Function BuildCanonicalExtensionsSnapshot() As List(Of String)
@@ -702,9 +730,20 @@ Public Class FilesDictionary_class
         End Try
     End Sub
 
+    ''' <summary>Borra los <c>.cac</c> del juego ACTIVO que ya no corresponden a ningún archive escaneado.
+    '''
+    ''' <para>⛔ Opera SÓLO dentro de <see cref="EffectiveCacheDirectory"/> (la subcarpeta del juego) y
+    ''' <c>EnumerateFiles</c> NO recursa ⇒ el cache del otro juego es literalmente invisible para este
+    ''' barrido. Antes los dos juegos compartían carpeta y este mismo código, al no encontrar los archives
+    ''' del otro juego en <c>scannedArchives</c>, los declaraba huérfanos y los BORRABA: cambiar de juego
+    ''' costaba un re-index completo.</para></summary>
     Private Shared Sub CleanupOrphanCacheFiles(scannedArchives As IEnumerable(Of String))
         If Not IsCacheEnabled() Then Return
-        If Not Directory.Exists(_cacheDirectory) Then Return
+
+        PurgeLegacyRootCaches()
+
+        Dim dir = EffectiveCacheDirectory()
+        If Not Directory.Exists(dir) Then Return
 
         Try
             Dim validNames As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
@@ -712,7 +751,7 @@ Public Class FilesDictionary_class
                 validNames.Add(Path.GetFileName(ba2) & CacheFileSuffix)
             Next
 
-            For Each cacheFile In Directory.EnumerateFiles(_cacheDirectory, "*" & CacheFileSuffix)
+            For Each cacheFile In Directory.EnumerateFiles(dir, "*" & CacheFileSuffix)
                 Dim name = Path.GetFileName(cacheFile)
                 If Not validNames.Contains(name) Then
                     Try
@@ -723,7 +762,7 @@ Public Class FilesDictionary_class
             Next
 
             ' Clean leftover temp files from aborted writes.
-            For Each tmpFile In Directory.EnumerateFiles(_cacheDirectory, "*" & CacheTempSuffix)
+            For Each tmpFile In Directory.EnumerateFiles(dir, "*" & CacheTempSuffix)
                 Try
                     File.Delete(tmpFile)
                 Catch
@@ -731,6 +770,33 @@ Public Class FilesDictionary_class
             Next
         Catch ex As Exception
             _scanErrors.Enqueue("Cache cleanup failed: " & ex.Message)
+        End Try
+    End Sub
+
+    ''' <summary>Migración de una sola vez: barre los <c>.cac</c> que quedaron en la RAÍZ del cache, de
+    ''' cuando los dos juegos compartían carpeta.
+    '''
+    ''' <para>Son inalcanzables desde el momento en que los <c>.cac</c> pasaron a vivir en la subcarpeta
+    ''' del juego: nadie los lee, y el barrido por-juego no los ve. Sin esto quedarían de basura para
+    ''' siempre.</para>
+    '''
+    ''' <para>Borrar es seguro: un <c>.cac</c> es cache PURO derivado del archive (índice de entradas), y
+    ''' se regenera solo. El peor caso es un re-index una única vez por juego. Además NO se puede saber a
+    ''' qué juego pertenece cada uno (justamente el bug que arreglamos), así que conservarlos tampoco
+    ''' serviría de nada. <c>EnumerateFiles</c> no recursa ⇒ las subcarpetas por juego quedan intactas.</para></summary>
+    Private Shared Sub PurgeLegacyRootCaches()
+        Try
+            If Not Directory.Exists(_cacheDirectory) Then Return
+            For Each pat In {"*" & CacheFileSuffix, "*" & CacheTempSuffix}
+                For Each f In Directory.EnumerateFiles(_cacheDirectory, pat)   ' sólo la raíz, no recursa
+                    Try
+                        File.Delete(f)
+                    Catch
+                    End Try
+                Next
+            Next
+        Catch
+            ' Best-effort: si no se puede limpiar, son bytes muertos y nada más. No romper el scan por esto.
         End Try
     End Sub
     ' =========================================================
@@ -1094,7 +1160,7 @@ Public Class FilesDictionary_class
             Next
             totalCount = indexableArchiveCount + looseFiles.Count
             completed = 0
-            progress.Report(("Escaneando archivos...", completed, totalCount))
+            progress.Report(("Scanning files…", completed, totalCount))
 
             Dim workQueue As New ConcurrentQueue(Of DictionaryScanWorkItem)
 
@@ -1448,7 +1514,7 @@ Public Class FilesDictionary_class
             Logger.LogLazy(Function() "[FilesDictionary] ProcessBa2File error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
-            progress.Report(($"Procesado: {Path.GetFileName(ba2)}", current, totalCount))
+            progress.Report(($"Indexed: {Path.GetFileName(ba2)}", current, totalCount))
 
             ' Byte-weighted Detail bar (archives only). _archiveByteProgress is a Progress(Of T)
             ' created on the UI thread, so Report marshals back safely from this worker.
@@ -1505,7 +1571,7 @@ Public Class FilesDictionary_class
             Logger.LogLazy(Function() "[FilesDictionary] ProcessLooseFile error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
-            progress.Report(($"Procesado: {Path.GetFileName(file)}", current, totalCount))
+            progress.Report(($"Indexed: {Path.GetFileName(file)}", current, totalCount))
         End Try
     End Sub
 
