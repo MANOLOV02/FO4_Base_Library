@@ -298,9 +298,36 @@ Public Class FilesDictionary_class
         _bytesCache.Clear()
     End Sub
 
-    Private Shared ReadOnly _KeysByExtension As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
+    ' There used to be a third index here, _KeysByExtension (every key bucketed by extension alone).
+    ' It was written on every insert and cleared on every rebuild, but NO query ever read it —
+    ' GetFilesInDirectory reads _KeysByDirectory / _KeysByDirectoryExtension, GetFilteredKeys reads
+    ' only _KeysByDirectoryExtension. On a modded install that is a full extra copy of every key
+    ' (millions) built and held for nothing. Removed.
     Private Shared ReadOnly _KeysByDirectory As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
     Private Shared ReadOnly _KeysByDirectoryExtension As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>De-duplicates the strings we store LONG-TERM (dictionary keys and
+    ''' <see cref="File_Location.FullPath"/>), which is what <c>String.Intern</c> used to do here.
+    '''
+    ''' <para>⛔ Why not String.Intern: it takes a lock on the runtime's GLOBAL intern table, and the scan
+    ''' pushes every entry of every archive through it — millions of paths on a heavily modded install,
+    ''' from several workers at once. Worse, interned strings are never released, so every load-order
+    ''' reload leaked the previous scan's paths for the life of the process. This pool is cleared at the
+    ''' start of each scan.</para>
+    '''
+    ''' <para>⛔ Ordinal, NOT OrdinalIgnoreCase: an ignore-case pool would collapse <c>Textures\A.dds</c>
+    ''' and <c>textures\a.dds</c> onto a single instance and silently rewrite the casing — and these
+    ''' strings are surfaced verbatim in the pickers and written into records.</para>
+    '''
+    ''' <para>⛔ Insert sites only (<see cref="ProcessBa2File"/> / <see cref="ProcessLooseFile"/>), never
+    ''' the lookup path: pooling arbitrary caller-supplied lookup strings would recreate exactly the leak
+    ''' described above.</para></summary>
+    Private Shared _pathPool As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+
+    Private Shared Function PoolPath(s As String) As String
+        If String.IsNullOrEmpty(s) Then Return s
+        Return _pathPool.GetOrAdd(s, s)
+    End Function
 
     Public Shared Function GetBytes(File As String) As Byte()
         Dim located_File As File_Location = Nothing
@@ -378,16 +405,27 @@ Public Class FilesDictionary_class
         .IgnoreInaccessible = True
     }
 
-    ' Two wins vs. the previous "*" + LINQ filter:
-    '   1. OS-level pattern matching per extension — the Win32 enumerator rejects
-    '      non-matching files (e.g. Sound/*.wav) before any managed allocation.
-    '   2. DirectoryInfo.EnumerateFiles returns FileInfo instances with metadata
-    '      pre-populated from the WIN32_FIND_DATA; reading fi.LastWriteTime does
-    '      NOT issue a second GetFileAttributes syscall.
-    Private Shared Function EnumerateSupportedLooseFiles(root As String) As IEnumerable(Of (FullPath As String, LastWrite As Date))
+    ''' <summary>ONE recursive walk of Data\, filtering by extension in managed code.
+    '''
+    ''' <para>⛔ This used to glob once per supported extension ("*.dds", then "*.nif", then "*.tri"…),
+    ''' which walked the WHOLE Data tree ~17 times — once per entry in <see cref="SupportedExtensions"/>.
+    ''' The OS-side pattern match it bought (rejecting Sound\*.wav before any managed allocation) is worth
+    ''' far less than the ~17x traversal it cost, and on a heavily modded install the multiplier lands on
+    ''' the most expensive thing in the scan: under MO2 every FindNextFile goes through the USVFS hook.
+    ''' One walk + a HashSet lookup per file gets the same set of files.</para>
+    '''
+    ''' <para>Still DirectoryInfo/FileInfo, not the string overload: FileInfo comes back with its metadata
+    ''' pre-populated from WIN32_FIND_DATA, so reading fi.LastWriteTime issues NO second syscall — and that
+    ''' mtime is not decoration, it lands in <see cref="File_Location.FileDate"/>, which WM's clone planner
+    ''' reads to decide whether an already-cloned file needs rewriting.</para>
+    '''
+    ''' <param name="extensions">Snapshot of the supported extensions (OrdinalIgnoreCase). Taken by the
+    ''' caller before the walk so a concurrent RegisterExtensions can't mutate the set mid-enumeration.</param>
+    ''' </summary>
+    Private Shared Function EnumerateSupportedLooseFiles(root As String, extensions As HashSet(Of String)) As IEnumerable(Of (FullPath As String, LastWrite As Date))
         Dim rootInfo As New DirectoryInfo(root)
-        Return SupportedExtensions.
-            SelectMany(Function(ext) rootInfo.EnumerateFiles("*" & ext, _looseEnumOptions)).
+        Return rootInfo.EnumerateFiles("*", _looseEnumOptions).
+            Where(Function(fi) extensions.Contains(fi.Extension)).
             Select(Function(fi) (fi.FullName, fi.LastWriteTime))
     End Function
     Public Shared Function GetMultipleFilesBytes(files As String()) As Byte()()
@@ -457,6 +495,25 @@ Public Class FilesDictionary_class
     Private Shared totalCount As Integer
     Private Shared completed As Integer
 
+    ''' <summary>⛔ Loose files report their count progress every Nth item (this mask + 1), not every item.
+    '''
+    ''' <para>The count channel is reported once per WORK ITEM, and on a heavily modded rig the loose files
+    ''' alone are hundreds of thousands of them. Every Report is a SynchronizationContext.Post that the UI
+    ''' thread has to drain, each one setting ProgressBar.Value and Label.Text (invalidate + repaint). The
+    ''' workers never block on it — Post is fire-and-forget — so the message queue grew without bound and
+    ''' the form kept churning through it long after the scan itself had finished. That is the shape of the
+    ''' "stuck on Mounting archives for ten minutes" reports.</para>
+    '''
+    ''' <para>Archives are NOT throttled: there are only tens-to-hundreds of them, and each one carries the
+    ''' informative label. Neither is the BYTE channel (<see cref="_archiveByteProgress"/>), which already
+    ''' fires once per archive and is the only thing driving Preflight_Form's Detail bar — throttling that
+    ''' by item count would freeze the bar at 0 for the whole archive phase.</para>
+    '''
+    ''' <para>The final item always reports regardless of the mask: MainForm.UpdateAssetLoadProgress and
+    ''' Wardrobe_Manager_Form set Value straight from the report and never clamp to Max afterwards, so
+    ''' without a forced last tick their bars would stop visibly short.</para></summary>
+    Private Const LooseProgressReportMask As Integer = &H1FF   ' report every 512th loose file
+
     ' Byte-weighted progress for the archive (BA2/BSA) phase only. Mirrors the completed/totalCount
     ' pattern above (module-level Shared, read/incremented by ProcessBa2File). Loose files are NOT
     ' counted here (stat'ing thousands of loose files would be expensive); this bar reaches 100% when
@@ -464,6 +521,10 @@ Public Class FilesDictionary_class
     Private Shared _archiveBytesDone As Long
     Private Shared _archiveBytesTotal As Long
     Private Shared _archiveByteProgress As IProgress(Of (Done As Long, Total As Long))
+
+    ' Diagnostics for the per-phase log (see Fill_DictionaryAsync). Reset at the start of each scan.
+    Private Shared _archivesFromCache As Integer
+    Private Shared _archivesReindexed As Integer
 
     ''' <summary>
     ''' Errores acumulados por workers durante Fill_DictionaryAsync. Se drenan en el
@@ -822,11 +883,48 @@ Public Class FilesDictionary_class
         stack.Push(loser)
     End Sub
 
+    ''' <summary>Normalizes a path into a dictionary key. This is the HOT LOOKUP path (GetBytes,
+    ''' GetOverriddenEntries, RemoveDictionaryEntry…), so it must stay allocation-free for the common
+    ''' case — String.Replace returns the same instance when there is nothing to replace. It used to
+    ''' String.Intern the result, which permanently retained every string anyone ever looked up; see
+    ''' <see cref="PoolPath"/> for why that went away and where de-duplication happens now.</summary>
     Private Shared Function NormalizeDictionaryKey(fullPath As String) As String
         If IsNothing(fullPath) Then Return ""
-        ' O5.4: Intern dictionary keys to reduce GC pressure and enable reference equality
-        Return String.Intern(fullPath.Correct_Path_Separator)
+        Return fullPath.Correct_Path_Separator
     End Function
+
+    ''' <summary>Inserts <paramref name="entry"/> under <paramref name="key"/> during a scan, resolving a
+    ''' collision with any entry already there via <see cref="Resolve_Conflict"/> and pushing the LOSER
+    ''' onto the override stack.
+    '''
+    ''' <para>⛔ Why this exists instead of ConcurrentDictionary.AddOrUpdate: AddOrUpdate's
+    ''' updateValueFactory is documented to run MORE THAN ONCE when its CAS loses a race, and the previous
+    ''' code called PushOverriddenEntry from INSIDE that factory — so a losing attempt pushed a loser onto
+    ''' the override stack and then pushed it again on the retry, leaving duplicate/phantom entries. That
+    ''' was rare with 4 workers and becomes routine as the worker count goes up. Here the push happens only
+    ''' after the compare-and-swap that actually won.</para></summary>
+    Private Shared Sub AddEntryResolvingConflict(key As String, entry As File_Location)
+        Do
+            Dim existing As File_Location = Nothing
+            If Not _dictionary.TryGetValue(key, existing) Then
+                If _dictionary.TryAdd(key, entry) Then Return
+                Continue Do   ' another worker inserted between the read and the add — re-resolve against it
+            End If
+
+            If Resolve_Conflict(existing, entry) Then
+                ' New entry wins. Swap it in, then retire the loser. TryUpdate fails only if someone
+                ' changed the slot meanwhile, in which case we re-resolve against the new occupant.
+                If _dictionary.TryUpdate(key, entry, existing) Then
+                    PushOverriddenEntry(key, existing)
+                    Return
+                End If
+            Else
+                ' Existing wins: OUR entry is the loser. The slot is untouched, so there is nothing to CAS.
+                PushOverriddenEntry(key, entry)
+                Return
+            End If
+        Loop
+    End Sub
 
     Private Shared Function NormalizeDirectoryKey(directoryPath As String) As String
         If IsNothing(directoryPath) Then Return ""
@@ -871,23 +969,29 @@ Public Class FilesDictionary_class
         AddKeyToSearchIndex(_KeysByDirectory, directoryKey, fullKey)
 
         If extensionKey <> "" Then
-            AddKeyToSearchIndex(_KeysByExtension, extensionKey, fullKey)
             AddKeyToSearchIndex(_KeysByDirectoryExtension, BuildDirectoryExtensionBucketKey(directoryKey, extensionKey), fullKey)
         End If
     End Sub
 
     Private Shared Sub ClearSearchIndexes()
-        _KeysByExtension.Clear()
         _KeysByDirectory.Clear()
         _KeysByDirectoryExtension.Clear()
     End Sub
 
+    ''' <summary>Rebuilds both search indexes from the dictionary. Runs in PARALLEL: this is a pass over
+    ''' every key (millions on a modded install), and each key costs a GetDirectoryName + GetExtension +
+    ''' ToLowerInvariant plus two ConcurrentDictionary inserts hashed OrdinalIgnoreCase over a long path.
+    ''' Serially that was tens of seconds at the tail of the scan, with the progress bar already full.
+    ''' Safe to parallelize: both indexes and their buckets are ConcurrentDictionary, and the inserts are
+    ''' order-independent (a set of keys per bucket — no last-writer-wins semantics to preserve).
+    ''' AddKeyToSearchIndex's GetOrAdd factory may run twice under contention; the loser is a discarded
+    ''' empty bucket.</summary>
     Private Shared Sub RebuildSearchIndexesFromDictionary()
         ClearSearchIndexes()
 
-        For Each key In _dictionary.Keys
-            IndexDictionaryKey(key)
-        Next
+        ' .Keys on a ConcurrentDictionary takes all locks and returns a snapshot copy, so the
+        ' enumeration can't race a concurrent insert.
+        Parallel.ForEach(_dictionary.Keys, Sub(key) IndexDictionaryKey(key))
     End Sub
 
     Public Shared Function TryAddDictionaryEntry(fullPath As String, location As File_Location) As Boolean
@@ -902,16 +1006,38 @@ Public Class FilesDictionary_class
         Return False
     End Function
 
-    ''' <summary>Adds a new entry or updates an existing one (e.g. a BA2 entry replaced by a loose file). Only BA2 entries are pushed to the override stack (loose-over-loose is the same file overwritten).</summary>
+    ''' <summary>Adds a new entry or updates an existing one (e.g. a BA2 entry replaced by a loose file
+    ''' that WM or the material cloner just wrote). Only BA2 entries are pushed to the override stack
+    ''' (loose-over-loose is the same file overwritten, so there is nothing to restore).
+    '''
+    ''' <para>⛔ Explicit CAS, not ConcurrentDictionary.AddOrUpdate — same reason as
+    ''' <see cref="AddEntryResolvingConflict"/>: AddOrUpdate's updateValueFactory may run MORE THAN ONCE
+    ''' when its CAS loses a race, and this factory has a SIDE EFFECT (PushOverriddenEntry), so a losing
+    ''' attempt would push the same loser twice. The exposure here is far smaller than in the scan (callers
+    ''' write one distinct key per file they produced, and the factory only retries on same-key contention),
+    ''' but the trap is identical, so it does not get to stay.</para>
+    '''
+    ''' <para>NOTE the semantics differ from the scan path: this does NOT consult Resolve_Conflict. The
+    ''' caller's entry always wins — it just wrote the file — so there is no winner to compute.</para></summary>
     Public Shared Sub AddOrUpdateDictionaryEntry(fullPath As String, location As File_Location)
         Dim normalized = NormalizeDictionaryKey(fullPath)
-        _dictionary.AddOrUpdate(
-            normalized,
-            location,
-            Function(key, existing)
+
+        Do
+            Dim existing As File_Location = Nothing
+            If Not _dictionary.TryGetValue(normalized, existing) Then
+                If _dictionary.TryAdd(normalized, location) Then Exit Do
+                Continue Do   ' someone inserted between the read and the add — re-read and replace it
+            End If
+
+            ' Replace, then retire the loser — but only once the swap actually landed. TryUpdate fails
+            ' only if another thread changed the slot meanwhile, in which case we retry against the new
+            ' occupant (and push THAT one, not the stale one we had read).
+            If _dictionary.TryUpdate(normalized, location, existing) Then
                 If Not existing.IsLosseFile Then PushOverriddenEntry(normalized, existing)
-                Return location
-            End Function)
+                Exit Do
+            End If
+        Loop
+
         IndexDictionaryKey(normalized)
         Dim dummy As WeakReference(Of Byte()) = Nothing
         _bytesCache.TryRemove(normalized, dummy)
@@ -937,7 +1063,6 @@ Public Class FilesDictionary_class
                 Dim bucket As ConcurrentDictionary(Of String, Byte) = Nothing
                 If _KeysByDirectory.TryGetValue(directoryKey, bucket) Then bucket.TryRemove(normalized, 0)
                 If extensionKey <> "" Then
-                    If _KeysByExtension.TryGetValue(extensionKey, bucket) Then bucket.TryRemove(normalized, 0)
                     If _KeysByDirectoryExtension.TryGetValue(BuildDirectoryExtensionBucketKey(directoryKey, extensionKey), bucket) Then bucket.TryRemove(normalized, 0)
                 End If
             End If
@@ -1124,10 +1249,22 @@ Public Class FilesDictionary_class
                                                       Optional includeInactiveArchives As Boolean = False,
                                                       Optional archiveByteProgress As IProgress(Of (Done As Long, Total As Long)) = Nothing) As Task
         Try
+            ' Sub-phase timings + counts. The preflight slowdown reports come from users' rigs, not from
+            ' a repro we have, so the log has to say WHICH phase ate the time (enumerate / scan / index)
+            ' and on what volume (archives, cache hits, loose, entries).
+            Dim swTotal = System.Diagnostics.Stopwatch.StartNew()
+            Dim swPhase = System.Diagnostics.Stopwatch.StartNew()
+            _archivesFromCache = 0
+            _archivesReindexed = 0
+
             FO4Path = Fo4DataPath
             Dictionary.Clear()
             _overriddenEntries.Clear()
             ClearSearchIndexes()
+
+            ' Drop the previous scan's pooled paths — they're only referenced by the dictionary we
+            ' just cleared. (String.Intern, which this replaced, could never release them.)
+            _pathPool = New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
 
             ' O1.1: Clear byte cache when dictionary is rebuilt
             ClearBytesCache()
@@ -1136,21 +1273,33 @@ Public Class FilesDictionary_class
             DisposeIdleReaders()
             InitPoolCleanupTimer()
 
+            ' Snapshot SupportedExtensions once per scan, BEFORE the loose walk that filters against it.
+            ' Workers read these read-only, so extensions registered AFTER the scan starts won't affect
+            ' this run (and can't mutate the set mid-enumeration).
+            _canonicalExtensionsSnapshot = BuildCanonicalExtensionsSnapshot()
+            Dim extensionsSnapshot As New HashSet(Of String)(SupportedExtensions, StringComparer.OrdinalIgnoreCase)
+
             Dim ba2Files = EnumerateFilesWithSymlinkSupport(Fo4DataPath, "*.ba2;*.bsa", False).
             OrderBy(Function(p) p, StringComparer.OrdinalIgnoreCase).
             ToList()
 
             ' Loose enumeration yields (fullPath, mtime) tuples — mtime comes from the
             ' native find-data, so we avoid a per-file GetFileAttributes syscall later.
-            Dim looseFiles = EnumerateSupportedLooseFiles(Fo4DataPath).
-            OrderBy(Function(p) p.FullPath, StringComparer.OrdinalIgnoreCase).
-            ToList()
+            '
+            ' NOT sorted. Sorting hundreds of thousands of paths with an OrdinalIgnoreCase comparer is not
+            ' free, and it bought nothing: two distinct loose files under one root cannot produce the same
+            ' relative path, so loose-vs-loose never reaches a conflict, and every other pairing is decided
+            ' order-independently by Resolve_Conflict (loose beats archive outright, then SourceOrder, then
+            ' archive name). Override-STACK order is already nondeterministic by design — the workers race
+            ' and it's a ConcurrentStack — which is exactly why GetArchiveOriginalBytes picks by minimum
+            ' SourceOrder instead of trusting stack order. Still materialized (.ToList) because totalCount
+            ' below needs the count up front to publish a correct Max on the first progress tick.
+            Dim looseFiles = EnumerateSupportedLooseFiles(Fo4DataPath, extensionsSnapshot).ToList()
+
+            Logger.LogLazy(Function() $"[FilesDictionary] enumerate: {ba2Files.Count} archives, {looseFiles.Count} loose in {swPhase.ElapsedMilliseconds} ms")
+            swPhase.Restart()
 
             Dim archivePriority = BuildArchivePriority(ba2Files, includeInactiveArchives, Fo4DataPath)
-
-            ' Snapshot SupportedExtensions once per scan. Workers read this read-only,
-            ' so extensions registered AFTER the scan starts won't affect this run.
-            _canonicalExtensionsSnapshot = BuildCanonicalExtensionsSnapshot()
 
             ' totalCount counts only archives we will actually index (those present in the priority
             ' map), so the progress bar matches reality when orphan/inactive archives are skipped.
@@ -1210,7 +1359,14 @@ Public Class FilesDictionary_class
             })
             Next
 
-            Dim workerCount As Integer = Math.Min(4, Math.Max(1, workQueue.Count))
+            ' Was a hard cap of 4. Archives are enqueued ahead of loose, so the first wave of workers is
+            ' the archive wave: on a cache MISS each one opens a FileStream over a (possibly multi-GB)
+            ' archive, which is why this stays capped at 8 rather than going to ProcessorCount — 16-32
+            ' concurrent big-archive reads on a spinning disk regress wall-clock instead of improving it.
+            ' On a cache HIT no archive is opened at all (the .cac index is read instead), and the loose
+            ' branch is pure CPU; both parallelize freely.
+            Dim workerCount As Integer = Math.Min(Math.Min(8, Math.Max(1, Environment.ProcessorCount)),
+                                                  Math.Max(1, workQueue.Count))
 
             Dim workers = Enumerable.Range(0, workerCount).
             Select(Function(funza)
@@ -1231,12 +1387,22 @@ Public Class FilesDictionary_class
 
             Await Task.WhenAll(workers).ConfigureAwait(False)
 
+            ' Read the counters, not _scanReport: that's a queue the apps DRAIN, so it may still hold
+            ' (or have already lost) items from an earlier scan.
+            Dim hits = _archivesFromCache, missed = _archivesReindexed
+            Logger.LogLazy(Function() $"[FilesDictionary] scan: {workerCount} workers, {hits} cache-hit / {missed} re-indexed archives, {_dictionary.Count} entries in {swPhase.ElapsedMilliseconds} ms")
+            swPhase.Restart()
+
             ' O1.3: Build all secondary indexes in a single batch pass after the parallel scan completes.
             ' This avoids lock contention on ConcurrentDictionary secondary indexes during parallel insert.
             RebuildSearchIndexesFromDictionary()
 
+            Logger.LogLazy(Function() $"[FilesDictionary] index rebuild: {swPhase.ElapsedMilliseconds} ms")
+
             ' Remove cache files for archives that no longer exist in the data root.
             CleanupOrphanCacheFiles(ba2Files)
+
+            Logger.LogLazy(Function() $"[FilesDictionary] Fill_DictionaryAsync total: {swTotal.ElapsedMilliseconds} ms")
 
         Catch ex As Exception
             ' No MsgBox desde acá: después del ConfigureAwait(False) estamos en el
@@ -1430,7 +1596,7 @@ Public Class FilesDictionary_class
             If extsCanonical IsNot Nothing AndAlso
                TryLoadArchiveIndex(cachePath, ba2Size, ba2DateUtc, extsCanonical, cachedEntries) Then
                 For Each ce In cachedEntries
-                    Dim standardized = String.Intern(ce.FullPath)
+                    Dim standardized = PoolPath(ce.FullPath)
                     Dim entry As New File_Location With {
                         .BA2File = ba2FileName,
                         .Index = ce.Index,
@@ -1438,21 +1604,11 @@ Public Class FilesDictionary_class
                         .SourceOrder = sourceOrder,
                         .FileDate = ba2DateLocal
                     }
-                    Dictionary.AddOrUpdate(
-                        standardized,
-                        entry,
-                        Function(key, existing)
-                            If Resolve_Conflict(existing, entry) Then
-                                PushOverriddenEntry(standardized, existing)
-                                Return entry
-                            Else
-                                PushOverriddenEntry(standardized, entry)
-                                Return existing
-                            End If
-                        End Function)
+                    AddEntryResolvingConflict(standardized, entry)
                     addedKeys?.Add(standardized)
                 Next
                 _scanReport.Enqueue((ba2FileName, True))
+                Interlocked.Increment(_archivesFromCache)
                 Return
             End If
 
@@ -1470,8 +1626,8 @@ Public Class FilesDictionary_class
                         Dim extKey = NormalizeExtensionKey(IO.Path.GetExtension(rawPath))
                         If extKey = "" OrElse Not SupportedExtensions.Contains(extKey) Then Continue For
 
-                        ' O5.4: Intern the standardized path — stored long-term as dictionary key and File_Location.FullPath
-                        Dim standardized = String.Intern(rawPath)
+                        ' O5.4: De-dupe the standardized path — stored long-term as dictionary key and File_Location.FullPath
+                        Dim standardized = PoolPath(rawPath)
                         Dim entry As New File_Location With {
                             .BA2File = ba2FileName,
                             .Index = fil.Index,
@@ -1481,18 +1637,7 @@ Public Class FilesDictionary_class
                         }
 
                         ' O1.3: During scan, only populate _dictionary; indexes are built in batch after scan
-                        Dictionary.AddOrUpdate(
-                            standardized,
-                            entry,
-                            Function(key, existing)
-                                If Resolve_Conflict(existing, entry) Then
-                                    PushOverriddenEntry(standardized, existing)
-                                    Return entry
-                                Else
-                                    PushOverriddenEntry(standardized, entry)
-                                    Return existing
-                                End If
-                            End Function)
+                        AddEntryResolvingConflict(standardized, entry)
                         addedKeys?.Add(standardized)
 
                         collected?.Add(New CachedEntry With {.Index = fil.Index, .FullPath = standardized})
@@ -1500,6 +1645,7 @@ Public Class FilesDictionary_class
                 End Using
             End Using
             _scanReport.Enqueue((ba2FileName, False))
+            Interlocked.Increment(_archivesReindexed)
 
             If collected IsNot Nothing Then
                 Try
@@ -1541,8 +1687,8 @@ Public Class FilesDictionary_class
 
     Private Shared Sub ProcessLooseFile(file As String, basePath As String, lastWrite As Date, progress As IProgress(Of (String, Integer, Integer)))
         Try
-            ' O5.4: Intern the standardized path — stored long-term as dictionary key and File_Location.FullPath
-            Dim standardized = String.Intern(Path.GetRelativePath(basePath, file).Correct_Path_Separator)
+            ' O5.4: De-dupe the standardized path — stored long-term as dictionary key and File_Location.FullPath
+            Dim standardized = PoolPath(Path.GetRelativePath(basePath, file).Correct_Path_Separator)
 
             Dim entry As New File_Location With {
             .BA2File = String.Empty,
@@ -1553,25 +1699,18 @@ Public Class FilesDictionary_class
         }
 
             ' O1.3: During scan, only populate _dictionary; indexes are built in batch after scan
-            Dictionary.AddOrUpdate(
-            standardized,
-            entry,
-            Function(key, existing)
-                If Resolve_Conflict(existing, entry) Then
-                    PushOverriddenEntry(standardized, existing)
-                    Return entry
-                Else
-                    PushOverriddenEntry(standardized, entry)
-                    Return existing
-                End If
-            End Function)
+            AddEntryResolvingConflict(standardized, entry)
 
         Catch ex As Exception
             _scanErrors.Enqueue("Error processing loose file " & file & ": " & ex.Message)
             Logger.LogLazy(Function() "[FilesDictionary] ProcessLooseFile error: " & ex.ToString())
         Finally
+            ' Throttled — see LooseProgressReportMask. The last item always reports, so consumers that
+            ' don't clamp the bar to Max still finish full.
             Dim current = Interlocked.Increment(completed)
-            progress.Report(($"Indexed: {Path.GetFileName(file)}", current, totalCount))
+            If (current And LooseProgressReportMask) = 0 OrElse current >= totalCount Then
+                progress.Report(($"Indexed: {Path.GetFileName(file)}", current, totalCount))
+            End If
         End Try
     End Sub
 

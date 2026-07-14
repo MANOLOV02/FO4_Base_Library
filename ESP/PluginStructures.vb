@@ -47,8 +47,15 @@ Public Module PluginConstants
          "ENCH", "TRNS", "EQUP", "SNDR", "MATT", "INNR", "ARTO", "FSTS", "DMGT",
          "FACT", "VTYP", "CLAS", "CSTY",
          "WEAP", "ALCH", "AMMO", "MISC", "BOOK", "KEYM", "NOTE", "INGR",
-         "PERK", "SPEL", "AVIF"},
+         "PERK", "SPEL", "AVIF",
+         "QUST"},
         StringComparer.Ordinal)
+    ' QUST: NOT for quests as such — it is where a Papyrus script's PROPERTIES live (VMAD). Some behaviour a mod
+    ' relies on exists only as a script that mutates game state at runtime, and its only static trace is the script
+    ' attachment plus its bound properties. RaceCompatibility is the case that forced this: a custom-race mod hangs
+    ' GenericRaceController off one of its quests, and that script inserts the new races into the vanilla head-part
+    ' FormLists on first load. Without the QUST record there is nothing to reconstruct it from, and every
+    ' custom-race NPC would be offered zero vanilla head parts. See RaceCompatibilityCatalog.
 
     ' Default filter kept for backward compatibility
     Public ReadOnly SIGS_OF_INTEREST As HashSet(Of String) = SIGS_NPC_RENDERING

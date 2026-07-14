@@ -481,6 +481,31 @@ Public Class PluginManager
         End Try
     End Function
 
+    ''' <summary>Drop every record of a type from memory, after whatever needed it has consumed it.
+    '''
+    ''' For record types we only READ ONCE at load and never resolve again. QUST is the case this exists for: it is
+    ''' loaded solely so <see cref="RaceCompatibilityCatalog"/> can read the VMAD of the quests that carry
+    ''' RaceCompatibility's GenericRaceController (8 quests in a COtR load order, out of thousands). Quests are
+    ''' heavy records (aliases, conditions, dialogue) and nothing else in the app touches them, so keeping them
+    ''' resident is pure waste. ⚠ If a future feature needs QUST at runtime (scripts, aliases, stages), remove the
+    ''' DropRecordsOfType("QUST") call in MainForm instead of re-adding a second load pass.</summary>
+    Public Sub DropRecordsOfType(sig As String)
+        If String.IsNullOrEmpty(sig) Then Return
+        _rwLock.EnterWriteLock()
+        Try
+            Dim recs As List(Of PluginRecord) = Nothing
+            If Not RecordsByType.TryGetValue(sig, recs) OrElse recs Is Nothing Then Return
+            For Each r In recs
+                AllRecords.Remove(r.Header.FormID)
+            Next
+            Dim n = recs.Count
+            RecordsByType.Remove(sig)
+            Logger.LogLazy(Function() $"[PLUGINS] dropped {n} {sig} records from memory (consumed at load, not needed at runtime).")
+        Finally
+            _rwLock.ExitWriteLock()
+        End Try
+    End Sub
+
     ''' <summary>True if the plugin named <paramref name="pluginName"/> was authored by this app's NPC Manager
     ''' save flow — identified by its TES4.CNAM author = <see cref="PluginWriter.NPC_MANAGER_AUTHOR_CNAM"/>. Lets
     ''' the editors list "my records" (new AND override) by their source plugin, robustly across sessions.</summary>

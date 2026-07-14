@@ -25,7 +25,7 @@ Imports System.Text
 '         source NPC's, with master index re-mapped to point at the source via
 '         our new MAST list.
 '   5. Wrap all NPC_ records in a single GRUP NPC_ top-level group.
-'   6. Emit TES4 header with HEDR (numRecords = NPC count + 1 for TES4 itself),
+'   6. Emit TES4 header with HEDR (numRecords = content records + top-level GRUPs),
 '      CNAM (author), MAST/DATA pairs for each MAST in the new list, then GRUP.
 '   7. Atomic write: write to .tmp, fsync, rename to final path.
 '
@@ -777,8 +777,7 @@ Public Module SaveNpcEspWriter
 
         ' ====================================================================
         ' Step 6: Build TES4 header + emit final stream.
-        ' numRecords counts every content record (NPC_ + OTFT + LVLI). Matches xEdit's
-        ' Pred(GetCountedRecordCount) at wbImplementation.pas:5219 — TES4 itself excluded.
+        ' numRecords: see the derivation right above the grupCount computation below.
         ' nextObjectId follows TwbFile.NewFormID semantics (wbImplementation.pas:5083-5122):
         '   - The draft counter (nextSelfObjIndex) was seeded from max(0x800, disk HEDR) and
         '     advanced once per NEW draft (OTFT + LVLI). Its final value is the first free slot
@@ -792,8 +791,20 @@ Public Module SaveNpcEspWriter
         Dim objectIdMask As UInteger = If(lightMaster, &HFFFUI, &HFFFFFFUI)
         Dim nextObjectId As UInteger = nextSelfObjIndex
         If nextObjectId > objectIdMask Then nextObjectId = objectIdMask
+        ' HEDR.numRecords = Pred(file.GetCountedRecordCount) (wbImplementation.pas:5215-5219). The file's
+        ' counted count walks EVERY element: TES4 itself (TwbMainRecord → 1), plus each top-level GRUP,
+        ' which returns Succ(sum of its children) (TwbGroupRecord.GetCountedRecordCount, :17762-17765) —
+        ' i.e. the GRUP counts as one form ON TOP OF its records. Subtracting TES4 leaves:
+        '     numRecords = (content records) + (top-level GRUPs emitted)
+        ' Verified against CK-authored plugins (KSHairdos.esp: HEDR 304 = 303 records + 1 GRUP).
+        ' Counting only the records made the CK pop "Form counts don't match / correct the file header?".
+        ' The NPC_ GRUP is always emitted (Step 7), the rest only when non-empty.
+        Dim grupCount As Integer = 1 +
+                                   If(mswpBuffers.Count > 0, 1, 0) + If(armaBuffers.Count > 0, 1, 0) +
+                                   If(armoBuffers.Count > 0, 1, 0) + If(otftBuffers.Count > 0, 1, 0) +
+                                   If(lvlnBuffers.Count > 0, 1, 0) + If(lvliBuffers.Count > 0, 1, 0)
         Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count + lvliBuffers.Count + lvlnBuffers.Count +
-                                      mswpBuffers.Count + armaBuffers.Count + armoBuffers.Count
+                                      mswpBuffers.Count + armaBuffers.Count + armoBuffers.Count + grupCount
         Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
@@ -2985,9 +2996,8 @@ Public Module SaveNpcEspWriter
                 ' HEDR (12 bytes)
                 WriteSubrecordHeader(bw, "HEDR", 12)
                 bw.Write(hedrVersion)
-                ' numRecords reported by xEdit = total records in plugin INCLUDING TES4 itself.
-                ' Bethesda actually counts only non-TES4 records here; xEdit/CK both compute it
-                ' from the GRUP content. We count every content record (NPC_ + OTFT).
+                ' numRecords = content records + top-level GRUPs (TES4 itself excluded). The caller
+                ' computes it; see the derivation from xEdit's GetCountedRecordCount at the call site.
                 bw.Write(CUInt(numContentRecords))
                 ' Next free self object index — must exceed any self-index FormID we assigned to new
                 ' records (OTFT outfits start at NEXT_OBJECT_ID_DEFAULT) so the CK won't re-issue one.

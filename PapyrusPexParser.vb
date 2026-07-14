@@ -85,6 +85,14 @@ Public NotInheritable Class PapyrusPexParser
 
     Private Const OP_CALLMETHOD As Integer = &H17
     Private Const OP_CALLSTATIC As Integer = &H19
+    ''' <summary>assign: operands [dest, src].</summary>
+    Private Const OP_ASSIGN As Integer = &HD
+    ''' <summary>cast: operands [dest, src].</summary>
+    Private Const OP_CAST As Integer = &HE
+    ''' <summary>propget: operands [propertyName, objectRef, dest].</summary>
+    Private Const OP_PROPGET As Integer = &H1C
+    ''' <summary>propset: operands [propertyName, objectRef, value].</summary>
+    Private Const OP_PROPSET As Integer = &H1D
 
     ' A decoded operand. For our purpose we only need the resolved string (string literal OR identifier — the two
     ' are distinguished by <see cref="IsIdentifier"/> so a call arg that is a script VARIABLE can be resolved to
@@ -120,7 +128,8 @@ Public NotInheritable Class PapyrusPexParser
 
     ''' <summary>Read one function body and append any <c>callmethod</c> calls (method name + variadic string
     ''' args) to <paramref name="sink"/>.</summary>
-    Private Shared Sub ReadFunction(c As Cursor, strings As String(), sink As List(Of (Method As String, Args As List(Of Operand))))
+    Private Shared Sub ReadFunction(c As Cursor, strings As String(), sink As List(Of (Method As String, Args As List(Of Operand))),
+                                    Optional instrSink As List(Of (Op As Integer, Ops As List(Of Operand))) = Nothing)
         c.U16() ' return type
         c.U16() ' docstring
         c.U32() ' user flags
@@ -152,6 +161,7 @@ Public NotInheritable Class PapyrusPexParser
             ElseIf op = OP_CALLSTATIC AndAlso fixedOperands.Count >= 2 AndAlso fixedOperands(1).IsString Then
                 sink.Add((fixedOperands(1).Str, varArgs))
             End If
+            If instrSink IsNot Nothing Then instrSink.Add((op, fixedOperands))
         Next
     End Sub
 
@@ -173,10 +183,10 @@ Public NotInheritable Class PapyrusPexParser
     ''' a map of script string-variable name → its initial string value (so a call arg that is a variable reference
     ''' can be resolved to the literal it holds — RaceMenu binds node names via <c>NINODE_*</c> string constants).
     ''' Returns (Nothing, Nothing) on a non-Papyrus / malformed script (never throws).</summary>
-    Private Shared Function ParseScript(bytes As Byte()) As (Calls As List(Of (Method As String, Args As List(Of Operand))), StringVars As Dictionary(Of String, String), Strings As String())
-        If bytes Is Nothing OrElse bytes.Length < 16 Then Return (Nothing, Nothing, Nothing)
+    Private Shared Function ParseScript(bytes As Byte()) As (Calls As List(Of (Method As String, Args As List(Of Operand))), StringVars As Dictionary(Of String, String), Strings As String(), Instrs As List(Of (Op As Integer, Ops As List(Of Operand))))
+        If bytes Is Nothing OrElse bytes.Length < 16 Then Return (Nothing, Nothing, Nothing, Nothing)
         ' Skyrim .pex magic 0xFA57C0DE, big-endian. (FO4 .pex is little-endian and irrelevant here.)
-        If Not (bytes(0) = &HFA AndAlso bytes(1) = &H57 AndAlso bytes(2) = &HC0 AndAlso bytes(3) = &HDE) Then Return (Nothing, Nothing, Nothing)
+        If Not (bytes(0) = &HFA AndAlso bytes(1) = &H57 AndAlso bytes(2) = &HC0 AndAlso bytes(3) = &HDE) Then Return (Nothing, Nothing, Nothing, Nothing)
         Try
             Dim c As New Cursor(bytes)
             c.U32()          ' magic
@@ -210,6 +220,7 @@ Public NotInheritable Class PapyrusPexParser
             Next
             ' objects
             Dim calls As New List(Of (Method As String, Args As List(Of Operand)))
+            Dim instrs As New List(Of (Op As Integer, Ops As List(Of Operand)))
             Dim stringVars As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
             Dim ocount = c.U16()
             For i = 1 To ocount
@@ -238,15 +249,79 @@ Public NotInheritable Class PapyrusPexParser
                     Dim fcount2 = c.U16()
                     For f = 1 To fcount2
                         c.U16()  ' function name index
-                        ReadFunction(c, strings, calls)
+                        ReadFunction(c, strings, calls, instrs)
                     Next
                 Next
             Next
-            Return (calls, stringVars, strings)
+            Return (calls, stringVars, strings, instrs)
         Catch
             ' A single malformed script must not break the whole catalog scan.
-            Return (Nothing, Nothing, Nothing)
+            Return (Nothing, Nothing, Nothing, Nothing)
         End Try
+    End Function
+
+    ''' <summary>Every <c>&lt;otherObject&gt;.TargetProp = SourceProp</c> assignment the script performs, as
+    ''' (TargetProp → SourceProp).
+    '''
+    ''' This is what recovers the RaceCompatibility wiring: a race mod's controller does, in <c>OnInit</c>,
+    ''' <c>raceController.NewNord = HeadPartsNord_DZ</c> — "my FormList &lt;HeadPartsNord_DZ&gt; occupies the vanilla
+    ''' NORD slot". No record can express that; only the compiled script. What that source property HOLDS is in the
+    ''' QUST's VMAD (<see cref="VmadPropertyReader"/>); the two together give the full binding.
+    '''
+    ''' Bytecode shape (verified against COtR's shipped .pex): an AUTO property is backed by a variable named
+    ''' <c>::&lt;Name&gt;_var</c> and the compiler reads it DIRECTLY — there is no <c>propget</c> for it. The real
+    ''' emission is
+    '''     <c>assign ::temp0, ::HeadPartsNord_DZ_var</c> ; <c>propset NewNord, ::raceController_var, ::temp0</c>
+    ''' and, for <c>= None</c>, <c>cast ::temp1, None</c> ; <c>assign ::temp0, ::temp1</c> ; <c>propset …</c>.
+    ''' So we track temp → source-property through <c>assign</c>/<c>cast</c> (and <c>propget</c>, for non-auto
+    ''' properties), resolving a backing variable to its property name. A temp assigned from something we cannot
+    ''' resolve CLEARS its mapping — temps are reused across statements, and a stale entry would fabricate a
+    ''' binding for a slot the script actually set to None. Returns an empty map on a malformed / non-Papyrus
+    ''' script (never throws).</summary>
+    Public Shared Function ExtractPropertyBindings(bytes As Byte()) As Dictionary(Of String, String)
+        Dim result As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+        Dim parsed = ParseScript(bytes)
+        If parsed.Instrs Is Nothing Then Return result
+
+        ' temp/local variable name -> the property whose value it currently holds
+        Dim tempSource As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+
+        ' "::HeadPartsNord_DZ_var" -> "HeadPartsNord_DZ" (auto-property backing variable), or an already-tracked
+        ' temp, else Nothing (unresolvable: a literal, None, a call result…).
+        Dim resolve =
+            Function(name As String) As String
+                If String.IsNullOrEmpty(name) Then Return Nothing
+                Dim viaTemp As String = Nothing
+                If tempSource.TryGetValue(name, viaTemp) Then Return viaTemp
+                If name.StartsWith("::", StringComparison.Ordinal) AndAlso name.EndsWith("_var", StringComparison.OrdinalIgnoreCase) Then
+                    Return name.Substring(2, name.Length - 2 - 4)
+                End If
+                Return Nothing
+            End Function
+
+        For Each ins In parsed.Instrs
+            Select Case ins.Op
+                Case OP_ASSIGN, OP_CAST
+                    If ins.Ops.Count >= 2 AndAlso ins.Ops(0).IsIdentifier Then
+                        Dim src = If(ins.Ops(1).IsIdentifier, resolve(ins.Ops(1).Str), Nothing)
+                        If src Is Nothing Then
+                            tempSource.Remove(ins.Ops(0).Str)      ' temps are reused: never leave a stale mapping
+                        Else
+                            tempSource(ins.Ops(0).Str) = src
+                        End If
+                    End If
+                Case OP_PROPGET
+                    If ins.Ops.Count >= 3 AndAlso ins.Ops(0).IsString AndAlso ins.Ops(2).IsIdentifier Then
+                        tempSource(ins.Ops(2).Str) = ins.Ops(0).Str
+                    End If
+                Case OP_PROPSET
+                    If ins.Ops.Count >= 3 AndAlso ins.Ops(0).IsString AndAlso ins.Ops(2).IsIdentifier Then
+                        Dim src = resolve(ins.Ops(2).Str)
+                        If src IsNot Nothing Then result(ins.Ops(0).Str) = src
+                    End If
+            End Select
+        Next
+        Return result
     End Function
 
     ''' <summary>Extract every paint registration from a compiled <c>.pex</c>. Returns an empty list (never
