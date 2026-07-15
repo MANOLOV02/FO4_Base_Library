@@ -652,14 +652,19 @@ Public Class PluginManager
     ''' vs CK sin contaminación de mods. Lo prende el CLI con --vanillaonly. Default False (comportamiento app).</summary>
     Public Shared OfficialPluginsOnly As Boolean = False
 
-    ''' <summary>Plugin oficial de Bethesda (vanilla + DLC FO4/SSE + Creation Club cc*). Lo demás = mod del usuario.</summary>
+    ''' <summary>Plugin oficial de Bethesda (vanilla + DLC FO4/SSE + master VR + Creation Club cc*). Lo demás
+    ''' = mod del usuario. Los .esm de VR son oficiales por definición: xEdit los mete en wbOfficialDLC
+    ''' (wbDefinitionsTES5.pas:11239 / wbDefinitionsFO4.pas:13722), la misma lista que los DLC. Sin ellos acá,
+    ''' <see cref="FilterOfficialIfRequested"/> (CLI --vanillaonly) borraría el implícito de VR del load order.</summary>
     Public Shared Function IsOfficialPlugin(name As String) As Boolean
         If String.IsNullOrEmpty(name) Then Return False
         Dim n = name.ToLowerInvariant()
         Select Case n
             Case "fallout4.esm", "dlcrobot.esm", "dlcworkshop01.esm", "dlccoast.esm",
                  "dlcworkshop02.esm", "dlcworkshop03.esm", "dlcnukaworld.esm", "dlcultrahighresolution.esm",
-                 "skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm"
+                 "fallout4_vr.esm",
+                 "skyrim.esm", "update.esm", "dawnguard.esm", "hearthfires.esm", "dragonborn.esm",
+                 "skyrimvr.esm"
                 Return True
         End Select
         Return n.StartsWith("cc")   ' Creation Club (FO4 + SSE)
@@ -681,20 +686,73 @@ Public Class PluginManager
         Return list.Where(AddressOf IsOfficialPlugin).ToList()
     End Function
 
+    ''' <summary>True when the configured game executable is the VR build (Fallout4VR.exe / SkyrimVR.exe).
+    ''' This is the SAME discriminator xEdit uses: the VR game modes (gmFO4VR / gmTES5VR) are picked from
+    ''' wbGameExeName ('Fallout4VR' / 'SkyrimVR', xeInit.pas:886,918) and everything else (AppData folder,
+    ''' ini folder) follows from the mode — NOT from which folder happens to exist on disk. So the exe the
+    ''' user pointed at decides which game's files we read; folder existence is only a last-resort fallback.
+    ''' SSE's exe is SkyrimSE.exe and FO4's is Fallout4.exe, so neither matches the VR suffix.</summary>
+    Public Shared Function IsVrBuild() As Boolean
+        Dim exePath = If(Config_App.Current?.FO4ExePath, "")
+        If exePath = "" Then Return False
+        Dim exeName = Path.GetFileNameWithoutExtension(exePath)
+        Return exeName.EndsWith("VR", StringComparison.OrdinalIgnoreCase)
+    End Function
+
     ''' <summary>Resolves the LocalAppData game directory that holds Plugins.txt / loadorder.txt.
-    ''' Base folder is "Fallout4" (FO4) or "Skyrim Special Edition" (SSE). If the base folder does NOT
-    ''' exist but the VR variant does ("Fallout4VR" / "Skyrim VR"), the VR folder is returned instead —
-    ''' the VR builds ship their load order under a separate LocalAppData subdir. Folder names confirmed
-    ''' against xEdit (wbGameName2 = 'Fallout4VR' / 'Skyrim VR', see xeInit.pas where Plugins.txt is built
-    ''' as LocalAppData + wbGameName2 + '\Plugins.txt'). Always returns the base path when neither exists,
-    ''' so callers can still build a (non-existent) file path without crashing.</summary>
+    ''' The folder is xEdit's wbGameName2 (xeInit.pas:579 builds Plugins.txt as LocalAppData + wbGameName2 +
+    ''' '\Plugins.txt'): flat "Fallout4" / "Skyrim Special Edition", VR "Fallout4VR" / "Skyrim VR".
+    ''' PREFERENCE FOLLOWS THE EXE (<see cref="IsVrBuild"/>): a VR exe reads the VR folder first and only
+    ''' falls back to the flat one if the VR folder is absent; a flat exe does the reverse. Previously the
+    ''' flat folder always won when it existed, so a VR user with both games installed got the FLAT game's
+    ''' load order. Always returns the preferred path when neither exists, so callers can still build a
+    ''' (non-existent) file path without crashing.</summary>
     Public Shared Function ResolveGameAppDataDir() As String
         Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
         Dim appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-        Dim basePath = Path.Combine(appData, If(isFO4, "Fallout4", "Skyrim Special Edition"))
+        Dim flatPath = Path.Combine(appData, If(isFO4, "Fallout4", "Skyrim Special Edition"))
         Dim vrPath = Path.Combine(appData, If(isFO4, "Fallout4VR", "Skyrim VR"))
-        If Not Directory.Exists(basePath) AndAlso Directory.Exists(vrPath) Then Return vrPath
-        Return basePath
+
+        Dim preferred = If(IsVrBuild(), vrPath, flatPath)
+        Dim fallback = If(IsVrBuild(), flatPath, vrPath)
+        If Not Directory.Exists(preferred) AndAlso Directory.Exists(fallback) Then Return fallback
+        Return preferred
+    End Function
+
+    ''' <summary>Resolves the Documents\My Games directory that holds the game .ini files
+    ''' (xEdit wbMyGamesTheGamePath = 'My Games\' + wbGameName2, xeInit.pas:500). Same VR-first-by-exe rule
+    ''' as <see cref="ResolveGameAppDataDir"/>. NOTE: only the FOLDER carries the VR suffix — the ini FILE
+    ''' names come from wbGameName (xeInit.pas:513,526), i.e. FO4VR still reads Fallout4[Custom].ini and
+    ''' SkyrimVR still reads Skyrim[Custom].ini. Use <see cref="ResolveGameIniPath"/> to build a full path.</summary>
+    Public Shared Function ResolveGameIniDir() As String
+        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
+        Dim documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+        Dim myGames = Path.Combine(documents, "My Games")
+        Dim flatPath = Path.Combine(myGames, If(isFO4, "Fallout4", "Skyrim Special Edition"))
+        Dim vrPath = Path.Combine(myGames, If(isFO4, "Fallout4VR", "Skyrim VR"))
+
+        Dim preferred = If(IsVrBuild(), vrPath, flatPath)
+        Dim fallback = If(IsVrBuild(), flatPath, vrPath)
+        If Not Directory.Exists(preferred) AndAlso Directory.Exists(fallback) Then Return fallback
+        Return preferred
+    End Function
+
+    ''' <summary>Full path of an ini file (<paramref name="iniFileName"/> = "Fallout4.ini",
+    ''' "SkyrimCustom.ini", …) inside <see cref="ResolveGameIniDir"/>. Extra VR rule, verbatim from xEdit
+    ''' (xeInit.pas:515-517, comment "VR games don't create ini file in My Games by default, use the one in
+    ''' the game folder"): for a VR build, if the ini is NOT in My Games, fall back to the game root — the
+    ''' folder that contains Data, i.e. the exe's own folder. Returns the My Games path when nothing exists.</summary>
+    Public Shared Function ResolveGameIniPath(iniFileName As String) As String
+        Dim myGamesPath = Path.Combine(ResolveGameIniDir(), iniFileName)
+        If File.Exists(myGamesPath) OrElse Not IsVrBuild() Then Return myGamesPath
+
+        Dim exePath = If(Config_App.Current?.FO4ExePath, "")
+        If exePath = "" Then Return myGamesPath
+        Dim gameRoot = Path.GetDirectoryName(exePath)
+        If String.IsNullOrEmpty(gameRoot) Then Return myGamesPath
+        Dim gameRootPath = Path.Combine(gameRoot, iniFileName)
+        If File.Exists(gameRootPath) Then Return gameRootPath
+        Return myGamesPath
     End Function
 
     Public Shared Function ReadActiveLoadOrder() As List(Of String)
@@ -726,6 +784,14 @@ Public Class PluginManager
                 "Dragonborn.esm"
             }
         End If
+
+        ' VR builds ship one extra force-loaded master, AFTER the DLCs (xEdit appends it to the tail of
+        ' wbOfficialDLC: 'SkyrimVR.esm' wbDefinitionsTES5.pas:11236-11239, 'Fallout4_VR.esm'
+        ' wbDefinitionsFO4.pas:13720-13722; wbLoadOrder.pas:487-493 then force-marks every wbOfficialDLC
+        ' entry mfActive with an official index, i.e. loaded regardless of Plugins.txt = implicit).
+        ' Without it, every user mod in a VR session sits one index off the engine's, and VR mods that
+        ' master this .esm can't resolve their FormIDs.
+        If IsVrBuild() Then implicits.Add(If(isFO4, "Fallout4_VR.esm", "SkyrimVR.esm"))
 
         ' Creation Club content: Fallout4.ccc lives next to Fallout4.exe (xEdit
         ' xeMainForm.pas:5067-5080 derives it as ExtractFilePath(ExcludeTrailingPathDelimiter(wbDataPath))).

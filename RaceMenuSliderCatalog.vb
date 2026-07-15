@@ -128,6 +128,7 @@ Public Class RaceMenuSliderCatalog
             Dim racesIniPath = $"{FaceGenMorphsDir}\{modName}\races.ini"
             Dim raceBytes = TryReadFile($"meshes\{racesIniPath}")
             If raceBytes Is Nothing Then Continue For
+            _configMods.Add(modName)
             ReadRaces(raceBytes, modName, fileCache)
             ' morphs.ini — the base-tri → extended-tri map (LoadMods reads it from the same mod folder,
             ' FaceMorphInterface.cpp:517-534). Without it a slider's morph name has no geometry to resolve against.
@@ -246,6 +247,23 @@ Public Class RaceMenuSliderCatalog
     Public Function HasAny() As Boolean
         Return _maleByRace.Count > 0 OrElse _femaleByRace.Count > 0
     End Function
+
+    ''' <summary>Distinct race EditorIDs the catalog answers for (either gender). Diagnostic: <see cref="HasAny"/>
+    ''' can be True off a single mod's races.ini while the vanilla races have nothing.</summary>
+    Public Function RaceCount() As Integer
+        Dim races As New HashSet(Of String)(_maleByRace.Keys, StringComparer.OrdinalIgnoreCase)
+        races.UnionWith(_femaleByRace.Keys)
+        Return races.Count
+    End Function
+
+    ''' <summary>The mod folders whose races.ini was actually FOUND and read (in scan order). The single most
+    ''' useful thing to log: "RaceMenu.esp" missing here means the slider config never loaded — usually because
+    ''' the plugin is not in the load order the scan was built from.</summary>
+    Public Function LoadedConfigMods() As List(Of String)
+        Return New List(Of String)(_configMods)
+    End Function
+
+    Private ReadOnly _configMods As New List(Of String)
 
     Public Shared Function CategoryName(cat As Integer) As String
         Select Case cat

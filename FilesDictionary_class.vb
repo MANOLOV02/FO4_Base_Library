@@ -83,6 +83,10 @@ Public Class FilesDictionary_class
         ' Loose-file mtime captured at enumeration time (from WIN32_FIND_DATA) so the
         ' worker doesn't need to issue a second syscall per file.
         Public Property LooseLastWrite As Date = Date.MinValue
+        ' Loose-file path RELATIVE to the data root, computed by the walk (which already knows the
+        ' root) instead of by Path.GetRelativePath in the worker — that call re-normalizes BOTH
+        ' paths on every invocation, and it ran once per loose file.
+        Public Property RelativePath As String = ""
     End Class
     Public Class File_Location
 
@@ -303,7 +307,22 @@ Public Class FilesDictionary_class
     ' GetFilesInDirectory reads _KeysByDirectory / _KeysByDirectoryExtension, GetFilteredKeys reads
     ' only _KeysByDirectoryExtension. On a modded install that is a full extra copy of every key
     ' (millions) built and held for nothing. Removed.
+    ''' <summary>⛔ LAZY — built on first use, NOT during the scan. Its ONLY reader is the
+    ''' <c>extensionSet.Count = 0</c> branch of <see cref="GetFilesInDirectory"/> (i.e. "give me every file
+    ''' in this directory, any extension"), and no caller in either app passes an empty extension set today:
+    ''' WM's two call sites pass <c>{".bgsm",".bgem"}</c> and <c>{ext}</c>, and GetFilteredKeys reads only
+    ''' <see cref="_KeysByDirectoryExtension"/>. Populating it during the scan therefore built a SECOND full
+    ''' copy of every dictionary key — millions of them on a modded install, hashed OrdinalIgnoreCase over
+    ''' long paths — for a query nobody makes. That is the same "write-only index" trap that _KeysByExtension
+    ''' was deleted for; this one survives because the empty-extension query is part of the public contract,
+    ''' so it must still WORK — it just doesn't get to cost anything until someone actually asks.
+    '''
+    ''' <para>Kept coherent afterwards: once built, <see cref="IndexDictionaryKey"/> maintains it like before,
+    ''' and <see cref="ClearSearchIndexes"/> drops it back to the unbuilt state.</para></summary>
     Private Shared ReadOnly _KeysByDirectory As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
+    Private Shared _keysByDirectoryBuilt As Boolean = False
+    Private Shared ReadOnly _keysByDirectoryLock As New Object
+
     Private Shared ReadOnly _KeysByDirectoryExtension As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
 
     ''' <summary>De-duplicates the strings we store LONG-TERM (dictionary keys and
@@ -400,33 +419,134 @@ Public Class FilesDictionary_class
             Return Nothing
         End Try
     End Function
-    Private Shared ReadOnly _looseEnumOptions As New EnumerationOptions() With {
-        .RecurseSubdirectories = True,
+    ''' <summary>⛔ TOP-LEVEL only (RecurseSubdirectories = False) — the recursion is done by
+    ''' <see cref="WalkLooseFilesParallel"/>, one directory per work item, so it can be spread across
+    ''' threads. The other two settings are load-bearing and must match what the old single recursive
+    ''' <c>EnumerateFiles</c> call used, or the walk would return a DIFFERENT set of files:
+    '''   • IgnoreInaccessible = True — a directory we can't open is skipped, not thrown on.
+    '''   • AttributesToSkip is left at its DEFAULT (Hidden | System), which is what an
+    '''     <c>EnumerationOptions</c> constructed with no explicit value gives you. It applies to
+    '''     directories as well as files, so hidden/system subtrees stay excluded exactly as before.</summary>
+    Private Shared ReadOnly _looseEnumOptionsTopLevel As New EnumerationOptions() With {
+        .RecurseSubdirectories = False,
         .IgnoreInaccessible = True
     }
 
-    ''' <summary>ONE recursive walk of Data\, filtering by extension in managed code.
+    ''' <summary>PARALLEL recursive walk of Data\, filtering by extension in managed code, streaming each
+    ''' matching file to <paramref name="onFile"/> as it is found. Returns the number of files emitted.
     '''
-    ''' <para>⛔ This used to glob once per supported extension ("*.dds", then "*.nif", then "*.tri"…),
-    ''' which walked the WHOLE Data tree ~17 times — once per entry in <see cref="SupportedExtensions"/>.
-    ''' The OS-side pattern match it bought (rejecting Sound\*.wav before any managed allocation) is worth
-    ''' far less than the ~17x traversal it cost, and on a heavily modded install the multiplier lands on
-    ''' the most expensive thing in the scan: under MO2 every FindNextFile goes through the USVFS hook.
-    ''' One walk + a HashSet lookup per file gets the same set of files.</para>
+    ''' <para>⛔ History, because both mistakes are easy to make again. It FIRST globbed once per supported
+    ''' extension ("*.dds", then "*.nif", then "*.tri"…) — ~17 full traversals of the Data tree. That became
+    ''' ONE recursive traversal + a HashSet lookup per file. This is the next step: that single traversal was
+    ''' still SEQUENTIAL, and it is the one cost in the whole scan that scales with the thing users actually
+    ''' complain about (hundreds of thousands of loose files). Under MO2 every FindNextFile goes through the
+    ''' USVFS hook, so the traversal — not the archives — is what "freezes on Mounting archives".</para>
+    '''
+    ''' <para>⛔ Why a work QUEUE of directories and not a fixed depth split (e.g. one task per subdir of
+    ''' Data\): the tree is wildly unbalanced. Textures\ and Meshes\ hold the overwhelming majority of a
+    ''' modded install, so a depth-1 split degenerates into one thread doing ~all the work while the rest
+    ''' idle. Here EVERY directory found at ANY depth goes back into the shared queue, so the threads
+    ''' rebalance continuously and depth doesn't matter — a deep Textures\actors\character\… subtree is
+    ''' spread across all of them.</para>
+    '''
+    ''' <para>Completion: <paramref name="pending"/> counts directories enqueued-but-not-yet-finished. A
+    ''' worker that finds the queue momentarily empty while others still have directories in flight spins
+    ''' (SpinWait yields/sleeps, it does not burn a core); when the last directory is done the count hits 0
+    ''' and every worker exits. No worker can exit while a directory that might still produce subdirectories
+    ''' is being processed, which is the bug a naive "queue empty ⇒ done" check would have.</para>
     '''
     ''' <para>Still DirectoryInfo/FileInfo, not the string overload: FileInfo comes back with its metadata
     ''' pre-populated from WIN32_FIND_DATA, so reading fi.LastWriteTime issues NO second syscall — and that
     ''' mtime is not decoration, it lands in <see cref="File_Location.FileDate"/>, which WM's clone planner
-    ''' reads to decide whether an already-cloned file needs rewriting.</para>
+    ''' reads to decide whether an already-cloned file needs rewriting. EnumerateFileSystemInfos (not
+    ''' EnumerateFiles + EnumerateDirectories) so each directory is enumerated ONCE for both.</para>
+    '''
+    ''' <para>Order is NOT preserved, and never was: the old walk wasn't sorted either. Two distinct loose
+    ''' files under one root cannot produce the same relative path, so loose-vs-loose never reaches a
+    ''' conflict and the insertion order of the results cannot change the resulting dictionary.</para>
     '''
     ''' <param name="extensions">Snapshot of the supported extensions (OrdinalIgnoreCase). Taken by the
     ''' caller before the walk so a concurrent RegisterExtensions can't mutate the set mid-enumeration.</param>
+    ''' <param name="onFile">Called once per matching file, FROM MULTIPLE THREADS — must be thread-safe.
+    ''' Receives the full path, the path relative to <paramref name="root"/>, and the mtime.</param>
     ''' </summary>
-    Private Shared Function EnumerateSupportedLooseFiles(root As String, extensions As HashSet(Of String)) As IEnumerable(Of (FullPath As String, LastWrite As Date))
-        Dim rootInfo As New DirectoryInfo(root)
-        Return rootInfo.EnumerateFiles("*", _looseEnumOptions).
-            Where(Function(fi) extensions.Contains(fi.Extension)).
-            Select(Function(fi) (fi.FullName, fi.LastWriteTime))
+    Private Shared Function WalkLooseFilesParallel(root As String,
+                                                   extensions As HashSet(Of String),
+                                                   dop As Integer,
+                                                   onFile As Action(Of String, String, Date)) As Integer
+        ' Relative paths are cut with a Substring against this length instead of Path.GetRelativePath
+        ' (which re-normalizes both operands on every call). Trimming any trailing separator off the root
+        ' first makes the cut correct whether the caller passed "…\Data" or "…\Data\".
+        Dim rootTrimmed = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+        Dim cutAt As Integer = rootTrimmed.Length + 1
+
+        Dim dirs As New ConcurrentQueue(Of String)
+        dirs.Enqueue(rootTrimmed)
+
+        ' Directories enqueued but not yet finished. Starts at 1 for the root.
+        Dim pending As Integer = 1
+        Dim emitted As Integer = 0
+
+        Dim workers = Enumerable.Range(0, Math.Max(1, dop)).
+            Select(Function(unused)
+                       Return Task.Run(
+                           Sub()
+                               Dim dir As String = Nothing
+
+                               ' ⛔ Declared OUTSIDE the loop on purpose. SpinWait escalates: the first few
+                               ' SpinOnce calls busy-spin, then it starts yielding the thread and finally
+                               ' sleeping — but only because it COUNTS its own calls. Constructing a fresh
+                               ' one inside the loop resets that counter every iteration, so it would never
+                               ' get past the cheapest tight spin and an idle worker would burn a core at
+                               ' 100% while another chews a big directory — stealing CPU from the scan
+                               ' workers, which now run CONCURRENTLY with this walk. Reset it only when we
+                               ' actually get work, so the back-off restarts from cheap each time.
+                               Dim spin As New SpinWait()
+
+                               Do
+                                   If Not dirs.TryDequeue(dir) Then
+                                       ' Nothing to take right now. If no directory is in flight anywhere,
+                                       ' the walk is over; otherwise another worker is about to enqueue
+                                       ' children, so back off and retry.
+                                       If Volatile.Read(pending) = 0 Then Exit Do
+                                       spin.SpinOnce()
+                                       Continue Do
+                                   End If
+                                   spin.Reset()
+
+                                   Try
+                                       Dim di As New DirectoryInfo(dir)
+                                       For Each info In di.EnumerateFileSystemInfos("*", _looseEnumOptionsTopLevel)
+                                           Dim sub_ = TryCast(info, DirectoryInfo)
+                                           If sub_ IsNot Nothing Then
+                                               ' Count it BEFORE publishing it, or a worker could dequeue and
+                                               ' finish this child before we incremented, driving pending to 0
+                                               ' while the walk is still going and letting everyone exit early.
+                                               Interlocked.Increment(pending)
+                                               dirs.Enqueue(sub_.FullName)
+                                           Else
+                                               Dim fi = TryCast(info, FileInfo)
+                                               If fi IsNot Nothing AndAlso extensions.Contains(fi.Extension) Then
+                                                   Interlocked.Increment(emitted)
+                                                   onFile(fi.FullName, fi.FullName.Substring(cutAt), fi.LastWriteTime)
+                                               End If
+                                           End If
+                                       Next
+                                   Catch ex As Exception
+                                       ' A directory that vanished or that we can't read is skipped, exactly as
+                                       ' IgnoreInaccessible did for the old recursive walk. One unreadable folder
+                                       ' must not abort the scan of the other 400.000 files.
+                                       _scanErrors.Enqueue("Error walking directory " & dir & ": " & ex.Message)
+                                   Finally
+                                       Interlocked.Decrement(pending)
+                                   End Try
+                               Loop
+                           End Sub)
+                   End Function).
+            ToArray()
+
+        Task.WaitAll(workers)
+        Return Volatile.Read(emitted)
     End Function
     Public Shared Function GetMultipleFilesBytes(files As String()) As Byte()()
         If IsNothing(files) OrElse files.Length = 0 Then Return Array.Empty(Of Byte())()
@@ -513,6 +633,39 @@ Public Class FilesDictionary_class
     ''' Wardrobe_Manager_Form set Value straight from the report and never clamp to Max afterwards, so
     ''' without a forced last tick their bars would stop visibly short.</para></summary>
     Private Const LooseProgressReportMask As Integer = &H1FF   ' report every 512th loose file
+
+    ''' <summary>Heartbeat cadence for the loose WALK (every 4096th file discovered). Same reasoning as
+    ''' <see cref="LooseProgressReportMask"/> — every Report is a Post the UI thread has to drain — but a
+    ''' coarser mask, because this one fires from the walk threads while the scan workers are ALSO
+    ''' reporting, and its only job is to prove the app is alive during what used to be a dark window.</summary>
+    Private Const WalkHeartbeatMask As Integer = &HFFF
+
+    ''' <summary>True once the loose walk has stopped producing (<c>CompleteAdding</c> called).
+    '''
+    ''' <para>⛔ Load-bearing for the progress throttle. <see cref="ProcessLooseFile"/> force-reports the
+    ''' item where <c>completed &gt;= totalCount</c> so consumers that never clamp their bar to Max still
+    ''' finish full. That was safe when totalCount was known up front. Now the walk STREAMS and totalCount
+    ''' GROWS behind it, so during the scan the workers are routinely caught up with the producer and
+    ''' <c>completed = totalCount</c> holds for a large fraction of the files — which would fire the
+    ''' "final" report on nearly EVERY loose file and rebuild the exact Post storm the throttle exists to
+    ''' prevent. Gating the force on "production is finished" restores it to what it means: the last
+    ''' item.</para></summary>
+    Private Shared _scanProductionComplete As Boolean = False
+
+    ''' <summary>Null-safe progress report. Fill_DictionaryAsync's <c>progress</c> parameter is not
+    ''' optional, but callers do pass Nothing (the CLI used to, and hit an NRE that its own Try swallowed —
+    ''' leaving an EMPTY dictionary and no error). A no-op is the right answer for a caller that doesn't
+    ''' want progress.</summary>
+    Private Shared Sub ReportScan(progress As IProgress(Of (Stepn As String, Value As Integer, Max As Integer)),
+                                  stepName As String, value As Integer, max As Integer)
+        progress?.Report((stepName, value, max))
+    End Sub
+
+    ''' <summary>One-line summary of the LAST <see cref="Fill_DictionaryAsync"/>: volumes (archives, cache
+    ''' hits, loose, entries) and per-phase timings. Held in memory only — building it is three stopwatches
+    ''' and one string, and NOTHING is written anywhere unless a caller decides to (NPC_Manager only does so
+    ''' under its <c>--diagnoseLoad</c> switch). Empty until the first scan completes.</summary>
+    Public Shared Property LastScanDiagnostics As String = ""
 
     ' Byte-weighted progress for the archive (BA2/BSA) phase only. Mirrors the completed/totalCount
     ' pattern above (module-level Shared, read/incremented by ProcessBa2File). Loose files are NOT
@@ -611,19 +764,44 @@ Public Class FilesDictionary_class
         Return If(Config_App.Current.Game = Config_App.Game_Enum.Skyrim, "Skyrim", "Fallout4")
     End Function
 
-    ''' <summary>⛔ Dónde viven REALMENTE los <c>.cac</c>: <c>{CacheDirectory}\{Juego}\</c>.
+    ''' <summary>Etiqueta estable (8 hex) del SET DE EXTENSIONES con el que se indexó. FNV-1a sobre la lista
+    ''' canónica (minúsculas, ordenada) — ⛔ NO <c>String.GetHashCode</c>: está randomizado por proceso, así
+    ''' que daría una carpeta distinta en cada arranque y el cache no serviría nunca.</summary>
+    Private Shared Function ExtensionSetTag() As String
+        Dim exts = _canonicalExtensionsSnapshot
+        If exts Is Nothing Then exts = BuildCanonicalExtensionsSnapshot()
+
+        Dim h As ULong = 2166136261UL
+        For Each ext In exts
+            For Each ch In ext
+                h = ((h Xor CULng(AscW(ch))) * 16777619UL) And &HFFFFFFFFUL
+            Next
+            h = ((h Xor 124UL) * 16777619UL) And &HFFFFFFFFUL   ' "|" separator
+        Next
+        Return h.ToString("x8")
+    End Function
+
+    ''' <summary>⛔ Dónde viven REALMENTE los <c>.cac</c>: <c>{CacheDirectory}\{Juego}\{ExtSetTag}\</c>.
     '''
-    ''' <para>Sin esto los dos juegos compartían carpeta, y eso NO era sólo desprolijo:
+    ''' <para>Sin la subcarpeta POR JUEGO los dos juegos compartían carpeta, y eso NO era sólo desprolijo:
     ''' <see cref="CleanupOrphanCacheFiles"/> borra todo <c>.cac</c> que no esté en la lista de archives
     ''' del juego ACTIVO — así que cada vez que se cambiaba de juego se DESTRUÍA el cache del otro, y el
     ''' siguiente arranque re-indexaba todos los archives desde cero. Con la subcarpeta, el barrido de un
     ''' juego no puede ni ver los <c>.cac</c> del otro (EnumerateFiles no recursa), y los dos sobreviven.</para>
     '''
+    ''' <para>⛔ La subcarpeta POR SET DE EXTENSIONES arregla exactamente el MISMO bug una capa más abajo. Un
+    ''' <c>.cac</c> sólo es válido para el set de extensiones con el que se generó (<see cref="TryLoadArchiveIndex"/>
+    ''' compara la lista y rechaza si difiere), y las apps NO comparten set: el CLI hace
+    ''' <c>RegisterExtensions(".ssf",".sclp",".hkx",".hkt")</c> y NPC_Manager no registra nada. Con una sola
+    ''' carpeta, cada app rechazaba los <c>.cac</c> de la otra, los REESCRIBÍA con su set, y la próxima
+    ''' corrida de la otra volvía a re-indexar TODOS los archives desde cero — un scan frío eterno, cada vez,
+    ''' para cualquiera que use las dos. Separados por tag, coexisten en vez de pisarse.</para>
+    '''
     ''' <para>Devuelve "" cuando el cache está deshabilitado, para que los callers puedan seguir usando el
     ''' mismo guard de siempre.</para></summary>
     Private Shared Function EffectiveCacheDirectory() As String
         If Not IsCacheEnabled() Then Return ""
-        Return Path.Combine(_cacheDirectory, GameCacheFolderName())
+        Return Path.Combine(_cacheDirectory, GameCacheFolderName(), ExtensionSetTag())
     End Function
 
     ' ================== Archive index cache ==================
@@ -846,19 +1024,31 @@ Public Class FilesDictionary_class
     ''' qué juego pertenece cada uno (justamente el bug que arreglamos), así que conservarlos tampoco
     ''' serviría de nada. <c>EnumerateFiles</c> no recursa ⇒ las subcarpetas por juego quedan intactas.</para></summary>
     Private Shared Sub PurgeLegacyRootCaches()
-        Try
-            If Not Directory.Exists(_cacheDirectory) Then Return
-            For Each pat In {"*" & CacheFileSuffix, "*" & CacheTempSuffix}
-                For Each f In Directory.EnumerateFiles(_cacheDirectory, pat)   ' sólo la raíz, no recursa
-                    Try
-                        File.Delete(f)
-                    Catch
-                    End Try
+        If Not IsCacheEnabled() Then Return
+
+        ' Las DOS ubicaciones que quedaron obsoletas, en orden histórico:
+        '   1. la RAÍZ del cache        — de cuando los dos juegos compartían carpeta;
+        '   2. {raíz}\{Juego}\          — de cuando un juego tenía UNA sola carpeta para todos los sets de
+        '                                 extensiones (ver EffectiveCacheDirectory).
+        ' Ninguna de las dos es alcanzable ya: nadie las lee y el barrido por-set no las ve. EnumerateFiles
+        ' NO recursa, así que borrar en {raíz}\{Juego}\ deja intactas las subcarpetas por-set que cuelgan de
+        ' ella. Borrar es seguro en cualquier caso: un .cac es cache PURO derivado del archive y se regenera
+        ' solo; el peor caso es un re-index una única vez.
+        For Each legacyDir In {_cacheDirectory, Path.Combine(_cacheDirectory, GameCacheFolderName())}
+            Try
+                If Not Directory.Exists(legacyDir) Then Continue For
+                For Each pat In {"*" & CacheFileSuffix, "*" & CacheTempSuffix}
+                    For Each f In Directory.EnumerateFiles(legacyDir, pat)   ' sólo ese nivel, no recursa
+                        Try
+                            File.Delete(f)
+                        Catch
+                        End Try
+                    Next
                 Next
-            Next
-        Catch
-            ' Best-effort: si no se puede limpiar, son bytes muertos y nada más. No romper el scan por esto.
-        End Try
+            Catch
+                ' Best-effort: si no se puede limpiar, son bytes muertos y nada más. No romper el scan por esto.
+            End Try
+        Next
     End Sub
     ' =========================================================
 
@@ -960,38 +1150,78 @@ Public Class FilesDictionary_class
     End Sub
 
     Private Shared Sub IndexDictionaryKey(fullKey As String)
-        fullKey = NormalizeDictionaryKey(fullKey)
+        IndexNormalizedKey(NormalizeDictionaryKey(fullKey))
+    End Sub
+
+    ''' <summary>Index a key that is ALREADY normalized (dictionary keys always are — every insert path
+    ''' goes through <see cref="NormalizeDictionaryKey"/> or stores a <see cref="PoolPath"/>'d
+    ''' Correct_Path_Separator'd path). Splitting this out of <see cref="IndexDictionaryKey"/> is what lets
+    ''' the rebuild skip re-normalizing millions of keys that are normalized by construction.
+    '''
+    ''' <para>The directory and extension keys are each computed ONCE. The old code derived them, then
+    ''' handed them to BuildDirectoryExtensionBucketKey, which normalized BOTH AGAIN (a second
+    ''' Correct_Path_Separator + Trim + trailing-slash strip, and a second ToLowerInvariant allocation) —
+    ''' four normalization passes per key where one does. Same normalizers, same resulting bucket strings;
+    ''' only the redundant work is gone, so the lookup side (which still calls the normalizers on the
+    ''' caller's argument) keeps matching exactly.</para></summary>
+    Private Shared Sub IndexNormalizedKey(fullKey As String)
         If String.IsNullOrEmpty(fullKey) Then Exit Sub
 
         Dim directoryKey = NormalizeDirectoryKey(IO.Path.GetDirectoryName(fullKey))
         Dim extensionKey = NormalizeExtensionKey(IO.Path.GetExtension(fullKey))
 
-        AddKeyToSearchIndex(_KeysByDirectory, directoryKey, fullKey)
+        ' Only maintained once someone has actually asked for it — see _KeysByDirectory.
+        If Volatile.Read(_keysByDirectoryBuilt) Then
+            AddKeyToSearchIndex(_KeysByDirectory, directoryKey, fullKey)
+        End If
 
         If extensionKey <> "" Then
-            AddKeyToSearchIndex(_KeysByDirectoryExtension, BuildDirectoryExtensionBucketKey(directoryKey, extensionKey), fullKey)
+            AddKeyToSearchIndex(_KeysByDirectoryExtension, directoryKey & "|" & extensionKey, fullKey)
         End If
     End Sub
 
+    ''' <summary>Build <see cref="_KeysByDirectory"/> on demand, from the dictionary as it stands. Idempotent
+    ''' and thread-safe; the flag is published INSIDE the lock and only after the index is fully populated, so
+    ''' a concurrent <see cref="IndexNormalizedKey"/> either sees "not built" (and skips, because this pass
+    ''' will pick its key up from the dictionary anyway) or sees "built" (and maintains it from then on).</summary>
+    Private Shared Sub EnsureKeysByDirectoryBuilt()
+        If Volatile.Read(_keysByDirectoryBuilt) Then Exit Sub
+        SyncLock _keysByDirectoryLock
+            If _keysByDirectoryBuilt Then Exit Sub
+            _KeysByDirectory.Clear()
+            For Each kvp In _dictionary
+                Dim key = kvp.Key
+                If String.IsNullOrEmpty(key) Then Continue For
+                AddKeyToSearchIndex(_KeysByDirectory, NormalizeDirectoryKey(IO.Path.GetDirectoryName(key)), key)
+            Next
+            Volatile.Write(_keysByDirectoryBuilt, True)
+        End SyncLock
+    End Sub
+
     Private Shared Sub ClearSearchIndexes()
-        _KeysByDirectory.Clear()
+        SyncLock _keysByDirectoryLock
+            _KeysByDirectory.Clear()
+            Volatile.Write(_keysByDirectoryBuilt, False)
+        End SyncLock
         _KeysByDirectoryExtension.Clear()
     End Sub
 
-    ''' <summary>Rebuilds both search indexes from the dictionary. Runs in PARALLEL: this is a pass over
-    ''' every key (millions on a modded install), and each key costs a GetDirectoryName + GetExtension +
-    ''' ToLowerInvariant plus two ConcurrentDictionary inserts hashed OrdinalIgnoreCase over a long path.
+    ''' <summary>Rebuilds the search index from the dictionary. Runs in PARALLEL: this is a pass over every
+    ''' key (millions on a modded install), and each key costs a GetDirectoryName + GetExtension +
+    ''' ToLowerInvariant plus a ConcurrentDictionary insert hashed OrdinalIgnoreCase over a long path.
     ''' Serially that was tens of seconds at the tail of the scan, with the progress bar already full.
-    ''' Safe to parallelize: both indexes and their buckets are ConcurrentDictionary, and the inserts are
+    ''' Safe to parallelize: the index and its buckets are ConcurrentDictionary, and the inserts are
     ''' order-independent (a set of keys per bucket — no last-writer-wins semantics to preserve).
     ''' AddKeyToSearchIndex's GetOrAdd factory may run twice under contention; the loser is a discarded
-    ''' empty bucket.</summary>
+    ''' empty bucket.
+    '''
+    ''' <para>Iterates the dictionary directly rather than <c>.Keys</c>: that property takes every internal
+    ''' lock and materializes a snapshot ARRAY of all keys — tens of MB of pure garbage at the exact moment
+    ''' the process is already at its peak. The ConcurrentDictionary enumerator is lock-free and safe to use
+    ''' concurrently with writers by design, and here there are none anyway (the scan workers have joined).</para></summary>
     Private Shared Sub RebuildSearchIndexesFromDictionary()
         ClearSearchIndexes()
-
-        ' .Keys on a ConcurrentDictionary takes all locks and returns a snapshot copy, so the
-        ' enumeration can't race a concurrent insert.
-        Parallel.ForEach(_dictionary.Keys, Sub(key) IndexDictionaryKey(key))
+        Parallel.ForEach(_dictionary, Sub(kvp) IndexNormalizedKey(kvp.Key))
     End Sub
 
     Public Shared Function TryAddDictionaryEntry(fullPath As String, location As File_Location) As Boolean
@@ -1171,6 +1401,9 @@ Public Class FilesDictionary_class
         End If
 
         If extensionSet.Count = 0 Then
+            ' "Every file in this directory, any extension" — the only query that reads _KeysByDirectory.
+            ' The index is not populated during the scan (see _KeysByDirectory); build it on first ask.
+            EnsureKeysByDirectoryBuilt()
             Dim directoryBucket As ConcurrentDictionary(Of String, Byte) = Nothing
             If _KeysByDirectory.TryGetValue(directoryKey, directoryBucket) Then
                 For Each key In directoryBucket.Keys
@@ -1239,15 +1472,23 @@ Public Class FilesDictionary_class
     End Function
 
     ''' <param name="includeInactiveArchives">When True, archives belonging to plugins that are
-    ''' NOT in the active load order (Plugins.txt + .ccc + implicit DLCs) are still indexed in the
-    ''' Dictionary, but ordered with the LOWEST SourceOrder so any active plugin's archive (and
-    ''' loose files) wins on conflict. WM uses this so the user can inspect/clone material from
-    ''' inactive mods. NPC_Manager uses False (default): only archives of active plugins are
-    ''' indexed. False matches the engine; True is a WM-specific extension.</param>
+    ''' NOT loaded are still indexed in the Dictionary, but ordered with the LOWEST SourceOrder so any
+    ''' loaded plugin's archive (and loose files) wins on conflict. WM uses this so the user can
+    ''' inspect/clone material from inactive mods. NPC_Manager uses False (default): only archives of
+    ''' loaded plugins are indexed. False matches the engine; True is a WM-specific extension.</param>
+    ''' <param name="loadedPlugins">The plugin set this session considers LOADED, in load order — the
+    ''' single answer to "what is loaded", shared by records and assets. NPC_Manager passes the
+    ''' Preflight selection (default-checked = the active load order, then the user's edits), so
+    ''' unticking a plugin drops its records AND its archives together. Nothing (default) = read the
+    ''' active load order from Plugins.txt, which is what the engine loads; WM and the CLI use that.
+    ''' Before this existed, records came from the ticks while archives always came from Plugins.txt:
+    ''' two different notions of "loaded", which let an unticked plugin's assets still be indexed while
+    ''' its config (e.g. RaceMenu's races.ini) was skipped.</param>
     Public Shared Async Function Fill_DictionaryAsync(Fo4DataPath As String,
                                                       progress As IProgress(Of (Stepn As String, Value As Integer, Max As Integer)),
                                                       Optional includeInactiveArchives As Boolean = False,
-                                                      Optional archiveByteProgress As IProgress(Of (Done As Long, Total As Long)) = Nothing) As Task
+                                                      Optional archiveByteProgress As IProgress(Of (Done As Long, Total As Long)) = Nothing,
+                                                      Optional loadedPlugins As IEnumerable(Of String) = Nothing) As Task
         Try
             ' Sub-phase timings + counts. The preflight slowdown reports come from users' rigs, not from
             ' a repro we have, so the log has to say WHICH phase ate the time (enumerate / scan / index)
@@ -1283,41 +1524,26 @@ Public Class FilesDictionary_class
             OrderBy(Function(p) p, StringComparer.OrdinalIgnoreCase).
             ToList()
 
-            ' Loose enumeration yields (fullPath, mtime) tuples — mtime comes from the
-            ' native find-data, so we avoid a per-file GetFileAttributes syscall later.
-            '
-            ' NOT sorted. Sorting hundreds of thousands of paths with an OrdinalIgnoreCase comparer is not
-            ' free, and it bought nothing: two distinct loose files under one root cannot produce the same
-            ' relative path, so loose-vs-loose never reaches a conflict, and every other pairing is decided
-            ' order-independently by Resolve_Conflict (loose beats archive outright, then SourceOrder, then
-            ' archive name). Override-STACK order is already nondeterministic by design — the workers race
-            ' and it's a ConcurrentStack — which is exactly why GetArchiveOriginalBytes picks by minimum
-            ' SourceOrder instead of trusting stack order. Still materialized (.ToList) because totalCount
-            ' below needs the count up front to publish a correct Max on the first progress tick.
-            Dim looseFiles = EnumerateSupportedLooseFiles(Fo4DataPath, extensionsSnapshot).ToList()
-
-            Logger.LogLazy(Function() $"[FilesDictionary] enumerate: {ba2Files.Count} archives, {looseFiles.Count} loose in {swPhase.ElapsedMilliseconds} ms")
+            Dim archivePriority = BuildArchivePriority(ba2Files, includeInactiveArchives, Fo4DataPath, loadedPlugins)
+            Dim msArchiveEnum = swPhase.ElapsedMilliseconds
+            Logger.LogLazy(Function() $"[FilesDictionary] archive enumerate + priority: {ba2Files.Count} archives in {msArchiveEnum} ms")
             swPhase.Restart()
 
-            Dim archivePriority = BuildArchivePriority(ba2Files, includeInactiveArchives, Fo4DataPath)
-
-            ' totalCount counts only archives we will actually index (those present in the priority
-            ' map), so the progress bar matches reality when orphan/inactive archives are skipped.
-            Dim indexableArchiveCount As Integer = 0
-            For Each ba2 In ba2Files
-                If archivePriority.ContainsKey(Path.GetFileName(ba2)) Then indexableArchiveCount += 1
-            Next
-            totalCount = indexableArchiveCount + looseFiles.Count
-            completed = 0
-            progress.Report(("Scanning files…", completed, totalCount))
-
-            Dim workQueue As New ConcurrentQueue(Of DictionaryScanWorkItem)
+            ' The queue is a BlockingCollection, not a plain ConcurrentQueue, because the loose WALK is now
+            ' a PRODUCER that streams into it while the workers below are already draining it. Previously
+            ' the walk had to finish and be fully materialized into a List before a single worker started,
+            ' which meant the longest phase of the scan (a recursive traversal of a huge Data tree, through
+            ' the USVFS hook under MO2) ran with every core idle and NOT ONE progress report emitted — the
+            ' bar sat at 0% under the label "Mounting archives...", which is exactly the freeze users see.
+            ' Now the walk overlaps the archive mounting and the loose insertion entirely.
+            Dim workQueue As New BlockingCollection(Of DictionaryScanWorkItem)(New ConcurrentQueue(Of DictionaryScanWorkItem)())
 
             ' Sum the byte size of ONLY the archives we will actually index (those that passed the
             ' archivePriority filter and get enqueued below as IsArchive=True). This drives the
             ' byte-weighted Detail bar. A FileInfo.Length is a cheap stat; there are only tens-to-
             ' hundreds of archives. Wrap each in Try so a vanished file just contributes 0, no throw.
             Dim archiveBytesTotal As Long = 0
+            Dim indexableArchiveCount As Integer = 0
 
             For Each ba2 In ba2Files
                 Dim ba2Name = Path.GetFileName(ba2)
@@ -1336,7 +1562,8 @@ Public Class FilesDictionary_class
                     ' File vanished between enumeration and stat — counts as 0, don't abort the scan.
                 End Try
 
-                workQueue.Enqueue(New DictionaryScanWorkItem With {
+                indexableArchiveCount += 1
+                workQueue.Add(New DictionaryScanWorkItem With {
                 .IsArchive = True,
                 .FilePath = ba2,
                 .SourceOrder = sourceOrder
@@ -1350,59 +1577,116 @@ Public Class FilesDictionary_class
             _archiveBytesTotal = archiveBytesTotal
             archiveByteProgress?.Report((0L, _archiveBytesTotal))
 
-            For Each pair In looseFiles
-                workQueue.Enqueue(New DictionaryScanWorkItem With {
-                .IsArchive = False,
-                .FilePath = pair.FullPath,
-                .SourceOrder = Integer.MaxValue,
-                .LooseLastWrite = pair.LastWrite
-            })
-            Next
+            ' ⛔ totalCount is now a MOVING target: it starts at the archives (the only thing we can count
+            ' up front) and GROWS as the walk discovers loose files. Every consumer re-reads Max from each
+            ' report and re-sets its bar's Maximum, so a growing Max is fine — the bar rubber-bands a little
+            ' while the walk runs, which is a fair picture of "still discovering how much there is". What is
+            ' NOT fine is reporting Max=0 to say "unknown": Wardrobe_Manager assigns Max to ProgressBar1
+            ' .Maximum unconditionally, so a 0 there would blank its bar on every heartbeat.
+            totalCount = indexableArchiveCount
+            completed = 0
+            Volatile.Write(_scanProductionComplete, False)
+            ReportScan(progress, "Mounting archives…", 0, totalCount)
 
-            ' Was a hard cap of 4. Archives are enqueued ahead of loose, so the first wave of workers is
-            ' the archive wave: on a cache MISS each one opens a FileStream over a (possibly multi-GB)
-            ' archive, which is why this stays capped at 8 rather than going to ProcessorCount — 16-32
-            ' concurrent big-archive reads on a spinning disk regress wall-clock instead of improving it.
-            ' On a cache HIT no archive is opened at all (the .cac index is read instead), and the loose
-            ' branch is pure CPU; both parallelize freely.
-            Dim workerCount As Integer = Math.Min(Math.Min(8, Math.Max(1, Environment.ProcessorCount)),
-                                                  Math.Max(1, workQueue.Count))
+            ' Capped at 8 rather than ProcessorCount: on a cache MISS each archive worker opens a FileStream
+            ' over a (possibly multi-GB) archive, and 16-32 concurrent big-archive reads on a spinning disk
+            ' regress wall-clock instead of improving it. On a cache HIT no archive is opened at all (the
+            ' .cac index is read instead) and the loose branch is pure CPU; both parallelize freely.
+            Dim workerCount As Integer = Math.Min(8, Math.Max(1, Environment.ProcessorCount))
 
             Dim workers = Enumerable.Range(0, workerCount).
             Select(Function(funza)
                        Return Task.Run(
                            Sub()
-                               Dim item As DictionaryScanWorkItem = Nothing
-
-                               While workQueue.TryDequeue(item)
+                               ' Blocks while the queue is empty and the walk is still producing; ends
+                               ' cleanly once CompleteAdding has been called AND the queue has drained.
+                               For Each item In workQueue.GetConsumingEnumerable()
                                    If item.IsArchive Then
                                        ProcessBa2File(item.FilePath, item.SourceOrder, progress)
                                    Else
-                                       ProcessLooseFile(item.FilePath, Fo4DataPath, item.LooseLastWrite, progress)
+                                       ProcessLooseFile(item.FilePath, item.RelativePath, item.LooseLastWrite, progress)
                                    End If
-                               End While
+                               Next
                            End Sub)
                    End Function).
             ToArray()
 
+            ' --- Producer: the parallel loose walk, running CONCURRENTLY with the workers above. ---
+            Dim looseCount As Integer = 0
+            Try
+                Dim walkDop As Integer = Math.Min(8, Math.Max(1, Environment.ProcessorCount))
+                looseCount = Await Task.Run(
+                    Function()
+                        Return WalkLooseFilesParallel(Fo4DataPath, extensionsSnapshot, walkDop,
+                            Sub(fullPath, relativePath, lastWrite)
+                                Dim discovered = Interlocked.Increment(totalCount)
+                                workQueue.Add(New DictionaryScanWorkItem With {
+                                    .IsArchive = False,
+                                    .FilePath = fullPath,
+                                    .RelativePath = relativePath,
+                                    .SourceOrder = Integer.MaxValue,
+                                    .LooseLastWrite = lastWrite
+                                })
+
+                                ' Heartbeat so the walk is no longer a dark window. Throttled hard (every
+                                ' 4096th file) for the same reason ProcessLooseFile's own reporting is:
+                                ' each Report is a SynchronizationContext.Post the UI thread must drain.
+                                If (discovered And WalkHeartbeatMask) = 0 Then
+                                    Dim found = discovered - indexableArchiveCount
+                                    ReportScan(progress,
+                                               $"Scanning Data folder — {found:N0} loose files found…",
+                                               Volatile.Read(completed), discovered)
+                                End If
+                            End Sub)
+                    End Function).ConfigureAwait(False)
+            Catch ex As Exception
+                ' Swallow-and-record rather than rethrow: falling out of here without reaching the Finally
+                ' would leave CompleteAdding uncalled and every worker blocked in GetConsumingEnumerable
+                ' forever — a hang instead of a scan that came up short.
+                _scanErrors.Enqueue("Loose file walk failed: " & ex.Message)
+                Logger.LogLazy(Function() "[FilesDictionary] WalkLooseFilesParallel error: " & ex.ToString())
+            Finally
+                Volatile.Write(_scanProductionComplete, True)
+                workQueue.CompleteAdding()
+            End Try
+
+            Dim msWalkAndScan = swPhase.ElapsedMilliseconds
             Await Task.WhenAll(workers).ConfigureAwait(False)
 
             ' Read the counters, not _scanReport: that's a queue the apps DRAIN, so it may still hold
             ' (or have already lost) items from an earlier scan.
             Dim hits = _archivesFromCache, missed = _archivesReindexed
-            Logger.LogLazy(Function() $"[FilesDictionary] scan: {workerCount} workers, {hits} cache-hit / {missed} re-indexed archives, {_dictionary.Count} entries in {swPhase.ElapsedMilliseconds} ms")
+            Dim msScan = swPhase.ElapsedMilliseconds
+            Dim entryCount = _dictionary.Count
+            Logger.LogLazy(Function() $"[FilesDictionary] walk+scan: {workerCount} workers, {looseCount} loose, {hits} cache-hit / {missed} re-indexed archives, {entryCount} entries in {msScan} ms (walk done at {msWalkAndScan} ms)")
             swPhase.Restart()
 
-            ' O1.3: Build all secondary indexes in a single batch pass after the parallel scan completes.
-            ' This avoids lock contention on ConcurrentDictionary secondary indexes during parallel insert.
+            ' Phase 2 of the "it looks frozen" problem: this pass runs with the bar already at 100% and the
+            ' label still naming the last archive, so on a big install it reads as a hang at the very end.
+            ' Say what it is doing.
+            ReportScan(progress, "Building search index…", totalCount, totalCount)
+
+            ' O1.3: Build the secondary index in a single batch pass after the parallel scan completes.
+            ' This avoids lock contention on the ConcurrentDictionary index during parallel insert.
             RebuildSearchIndexesFromDictionary()
 
-            Logger.LogLazy(Function() $"[FilesDictionary] index rebuild: {swPhase.ElapsedMilliseconds} ms")
+            Dim msIndex = swPhase.ElapsedMilliseconds
+            Logger.LogLazy(Function() $"[FilesDictionary] index rebuild: {msIndex} ms")
 
             ' Remove cache files for archives that no longer exist in the data root.
             CleanupOrphanCacheFiles(ba2Files)
 
-            Logger.LogLazy(Function() $"[FilesDictionary] Fill_DictionaryAsync total: {swTotal.ElapsedMilliseconds} ms")
+            Dim msTotal = swTotal.ElapsedMilliseconds
+            Logger.LogLazy(Function() $"[FilesDictionary] Fill_DictionaryAsync total: {msTotal} ms")
+
+            ' In-memory only (three stopwatches and a string — no I/O, no log). A caller that wants to profile
+            ' a rig can read it; NPC_Manager only persists it under --diagnoseLoad. ⛔ Deliberately NOT wired
+            ' to Logger.Enabled: that flag also drives FaceGenBuilder.DebugMode, so using it as a profiling
+            ' switch would silently change how FaceGen bakes.
+            LastScanDiagnostics =
+                $"archives={ba2Files.Count} (indexed={indexableArchiveCount}, cache-hit={hits}, re-indexed={missed}), " &
+                $"loose={looseCount}, entries={entryCount}, workers={workerCount} | " &
+                $"archive-enum={msArchiveEnum}ms walk+scan={msScan}ms (walk={msWalkAndScan}ms) index={msIndex}ms TOTAL={msTotal}ms"
 
         Catch ex As Exception
             ' No MsgBox desde acá: después del ConfigureAwait(False) estamos en el
@@ -1419,19 +1703,97 @@ Public Class FilesDictionary_class
         Return False
     End Function
 
+    ''' <summary>Inverts <see cref="ArchiveBelongsToPlugin"/> into a lookup: plugin base name → the archives
+    ''' that belong to it, pre-sorted OrdinalIgnoreCase (the order the priority groups assign in).
+    '''
+    ''' <para>⛔ Why: the priority groups used to ask, for EVERY plugin in the load order, "which of the
+    ''' still-unassigned archives belong to you?" — a LINQ scan of the whole pending set per plugin, with
+    ''' ArchiveBelongsToPlugin allocating two substrings per comparison. A heavily modded load order is
+    ''' thousands of plugins against hundreds of archives, so that is millions of comparisons and millions
+    ''' of throwaway strings, and it runs BEFORE the first progress report — inside the window where the
+    ''' user is already staring at a motionless bar.</para>
+    '''
+    ''' <para>The predicate is: archiveBase == pluginBase, OR archiveBase starts with pluginBase + " - ".
+    ''' So the set of plugin bases that can claim a given archive is exactly {the full archive base} ∪ {every
+    ''' prefix of it that ends right before a " - "}. There are one to three of those, so we enumerate them
+    ''' once per ARCHIVE and index by them. Same matches, same order, no per-plugin scan.</para></summary>
+    Private Shared Function BuildPluginBaseToArchives(archiveNames As IEnumerable(Of String)) As Dictionary(Of String, List(Of String))
+        Const Sep As String = " - "
+        Dim map As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
+
+        Dim add = Sub(pluginBase As String, archiveName As String)
+                      Dim bucket As List(Of String) = Nothing
+                      If Not map.TryGetValue(pluginBase, bucket) Then
+                          bucket = New List(Of String)
+                          map(pluginBase) = bucket
+                      End If
+                      bucket.Add(archiveName)
+                  End Sub
+
+        For Each name In archiveNames
+            Dim archiveBase = Path.GetFileNameWithoutExtension(name)
+            add(archiveBase, name)
+
+            ' Every prefix that ends immediately before a " - " is a plugin base this archive would match
+            ' via the StartsWith arm. E.g. "Foo - Main.ba2" → also claimable by plugin "Foo"; a pathological
+            ' "A - B - C.ba2" → also by "A" and by "A - B", exactly as the predicate says.
+            Dim at As Integer = archiveBase.IndexOf(Sep, StringComparison.Ordinal)
+            While at > 0
+                add(archiveBase.Substring(0, at), name)
+                at = archiveBase.IndexOf(Sep, at + 1, StringComparison.Ordinal)
+            End While
+        Next
+
+        For Each bucket In map.Values
+            bucket.Sort(StringComparer.OrdinalIgnoreCase)
+        Next
+        Return map
+    End Function
+
+    ''' <summary>Assign the next SourceOrder values to the still-pending archives claimed by
+    ''' <paramref name="pluginFileName"/>, in OrdinalIgnoreCase name order. Mirrors what the old
+    ''' <c>pending.Where(ArchiveBelongsToPlugin).OrderBy(name)</c> loop did, off the prebuilt lookup.</summary>
+    Private Shared Sub AssignArchivesOfPlugin(pluginFileName As String,
+                                              byPluginBase As Dictionary(Of String, List(Of String)),
+                                              pending As HashSet(Of String),
+                                              result As Dictionary(Of String, Integer),
+                                              ByRef nextOrder As Integer)
+        Dim candidates As List(Of String) = Nothing
+        If Not byPluginBase.TryGetValue(Path.GetFileNameWithoutExtension(pluginFileName), candidates) Then Exit Sub
+
+        For Each match In candidates          ' already sorted OrdinalIgnoreCase
+            If Not pending.Remove(match) Then Continue For   ' claimed by an earlier group/plugin
+            result(match) = nextOrder
+            nextOrder += 1
+        Next
+    End Sub
+
     ''' <summary>Build the SourceOrder priority map for archives. Higher value = wins on conflict
-    ''' (see Resolve_Conflict at line 1304). Order of assignment (lowest → highest):
-    '''   1. Inactive plugin archives (only when <paramref name="includeInactive"/> is True; WM
-    '''      uses this so loose/inspect can see inactive mod content but actives never lose).
+    ''' (see Resolve_Conflict at line 1304). Priority, LOWEST → HIGHEST:
+    '''   0. Orphan archives (BA2/BSA no plugin claims) — negative orders, below everything. The engine
+    '''      would not load them at all (nothing mounts them short of an sResourceArchiveList entry), so
+    '''      they must never shadow a real mod. They used to be assigned LAST, i.e. ABOVE every active
+    '''      plugin: one stray leftover .ba2 in Data\ silently outranked vanilla and every active mod.
+    '''      Kept in the map (when <paramref name="includeInactive"/>) so WM can still browse them; ordered
+    '''      among themselves by mtime.
+    '''   1. Inactive plugin archives (only when <paramref name="includeInactive"/> is True; WM uses this so
+    '''      inspect can see inactive mod content but actives never lose).
     '''   2. Implicit base + DLC archives.
-    '''   3. Active plugin archives (Plugins.txt + .ccc), in load order.
-    '''   4. Orphan archives (BA2/BSA whose plugin doesn't exist anywhere) — last, sorted by mtime.
-    ''' Archives whose plugin is inactive AND <paramref name="includeInactive"/> is False are
-    ''' excluded from the result entirely; the caller skips indexing them.</summary>
+    '''   3. Loaded plugin archives, in load order (see loadedPlugins) — these win.
+    ''' Archives whose plugin is not loaded AND <paramref name="includeInactive"/> is False are excluded
+    ''' from the result entirely; the caller skips indexing them.</summary>
     Private Shared Function BuildArchivePriority(ba2Files As List(Of String),
                                                  includeInactive As Boolean,
-                                                 dataPath As String) As Dictionary(Of String, Integer)
+                                                 dataPath As String,
+                                                 Optional loadedPlugins As IEnumerable(Of String) = Nothing) As Dictionary(Of String, Integer)
         Dim result As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
+        ' "Loaded" = the caller's set if it gave one (NPC_Manager: the Preflight selection), else the engine's
+        ' active load order. Both groups below — the loaded archives AND the inactive ones — must be derived from
+        ' the SAME set, or an unticked plugin would land in neither and its archive would vanish silently.
+        Dim loadedOrder As List(Of String) = If(loadedPlugins Is Nothing,
+                                                PluginManager.ReadActiveLoadOrder(),
+                                                loadedPlugins.Where(Function(p) Not String.IsNullOrEmpty(p)).ToList())
 
         Dim archiveNames = ba2Files.
         Select(Function(p) Path.GetFileName(p)).
@@ -1445,23 +1807,17 @@ Public Class FilesDictionary_class
         Dim pending As New HashSet(Of String)(archiveNames, StringComparer.OrdinalIgnoreCase)
         Dim nextOrder As Integer = 0
 
+        ' Built ONCE and shared by the two plugin-driven groups below (see BuildPluginBaseToArchives).
+        Dim byPluginBase = BuildPluginBaseToArchives(archiveNames)
+
         ' Group 1: archives of inactive plugins. Only included in the map if the caller asked for
         ' it (WM mode). Order within this group: loadorder.txt if present (skipping anything that
         ' is in the active set), alphabetical fallback for anything on disk that loadorder.txt
         ' didn't list. Inactives are processed FIRST so they get the lowest SourceOrder — every
         ' active plugin's archive (and loose files) wins on conflict.
         If includeInactive Then
-            Dim inactivePlugins = EnumerateInactivePlugins(dataPath)
-            For Each plugin In inactivePlugins
-                Dim matches = pending.
-                Where(Function(name) ArchiveBelongsToPlugin(name, plugin)).
-                OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
-                ToList()
-                For Each match In matches
-                    result(match) = nextOrder
-                    nextOrder += 1
-                    pending.Remove(match)
-                Next
+            For Each plugin In EnumerateInactivePlugins(dataPath, loadedOrder)
+                AssignArchivesOfPlugin(plugin, byPluginBase, pending, result, nextOrder)
             Next
         End If
 
@@ -1491,38 +1847,31 @@ Public Class FilesDictionary_class
             Next
         Next
 
-        ' Group 3: active plugin archives. Use the canonical active-load-order from PluginManager
-        ' (single source of truth: includes implicit DLCs, Creation Club entries from
-        ' Fallout4.ccc/Skyrim.ccc, and Plugins.txt actives). Pre-2026-05-01 this read loadorder.txt
-        ' directly via a duplicated parser that missed CC content entirely, leaving cc*.ba2 at
+        ' Group 3: archives of the LOADED plugins, in load order (loadedOrder above). When the caller passes
+        ' nothing this is PluginManager's canonical active load order (single source of truth: implicit DLCs,
+        ' Creation Club entries from Fallout4.ccc/Skyrim.ccc, and Plugins.txt actives). Pre-2026-05-01 this read
+        ' loadorder.txt directly via a duplicated parser that missed CC content entirely, leaving cc*.ba2 at
         ' fallback (mtime) priority — wrong against the engine.
-        Dim pluginsLoadOrder = PluginManager.ReadActiveLoadOrder()
-
-        For Each plugin In pluginsLoadOrder
-            Dim matches = pending.
-            Where(Function(name) ArchiveBelongsToPlugin(name, plugin)).
-            OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
-            ToList()
-
-            For Each match In matches
-                result(match) = nextOrder
-                nextOrder += 1
-                pending.Remove(match)
-            Next
+        For Each plugin In loadedOrder
+            AssignArchivesOfPlugin(plugin, byPluginBase, pending, result, nextOrder)
         Next
 
-        ' Group 4: orphans. Archives in Data\ that don't belong to any plugin we know about.
-        ' Only included when the caller wants to see inactive content (WM): in NPC mode (engine
-        ' parity) an orphan archive simply isn't indexed — same as the engine ignoring it.
+        ' Orphans. Archives in Data\ that no plugin claims. Only indexed when the caller wants to see
+        ' inactive content (WM); in NPC mode (engine parity) an orphan archive isn't indexed at all — same
+        ' as the engine ignoring it.
+        ' They are identified LAST (whatever no plugin claimed) but must rank LOWEST: nothing mounts them
+        ' in-game, so a leftover .ba2 must not shadow vanilla or an active mod. Every plugin-claimed archive
+        ' above got an order >= 0, so orphans take NEGATIVE orders — still ordered among themselves by mtime.
         If includeInactive Then
             Dim fallbackMatches = pending.
             OrderBy(Function(name) File.GetLastWriteTimeUtc(fullPathsByName(name))).
             ThenBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
             ToList()
 
+            Dim orphanOrder As Integer = -fallbackMatches.Count
             For Each match In fallbackMatches
-                result(match) = nextOrder
-                nextOrder += 1
+                result(match) = orphanOrder
+                orphanOrder += 1
                 pending.Remove(match)
             Next
         End If
@@ -1530,14 +1879,15 @@ Public Class FilesDictionary_class
         Return result
     End Function
 
-    ''' <summary>Enumerate plugins on disk in <paramref name="dataPath"/> that are NOT in the
-    ''' active load order. Order: loadorder.txt order for entries it lists (filtered to inactives
-    ''' present on disk), then alphabetical for anything on disk that loadorder.txt didn't list.</summary>
-    Private Shared Function EnumerateInactivePlugins(dataPath As String) As List(Of String)
+    ''' <summary>Enumerate plugins on disk in <paramref name="dataPath"/> that are NOT loaded this session
+    ''' (<paramref name="loadedOrder"/> — the caller's loaded set, i.e. the active load order unless the app
+    ''' passed its own selection). Order: loadorder.txt order for entries it lists (filtered to the not-loaded
+    ''' ones present on disk), then alphabetical for anything on disk that loadorder.txt didn't list.</summary>
+    Private Shared Function EnumerateInactivePlugins(dataPath As String, loadedOrder As List(Of String)) As List(Of String)
         Dim result As New List(Of String)
         If String.IsNullOrEmpty(dataPath) OrElse Not Directory.Exists(dataPath) Then Return result
 
-        Dim active = New HashSet(Of String)(PluginManager.ReadActiveLoadOrder(), StringComparer.OrdinalIgnoreCase)
+        Dim active = New HashSet(Of String)(loadedOrder, StringComparer.OrdinalIgnoreCase)
 
         Dim diskPlugins As New List(Of String)
         For Each ext In {"*.esp", "*.esm", "*.esl"}
@@ -1660,7 +2010,7 @@ Public Class FilesDictionary_class
             Logger.LogLazy(Function() "[FilesDictionary] ProcessBa2File error: " & ex.ToString())
         Finally
             Dim current = Interlocked.Increment(completed)
-            progress.Report(($"Indexed: {Path.GetFileName(ba2)}", current, totalCount))
+            ReportScan(progress, $"Indexed: {Path.GetFileName(ba2)}", current, totalCount)
 
             ' Byte-weighted Detail bar (archives only). _archiveByteProgress is a Progress(Of T)
             ' created on the UI thread, so Report marshals back safely from this worker.
@@ -1685,10 +2035,13 @@ Public Class FilesDictionary_class
         Return result
     End Function
 
-    Private Shared Sub ProcessLooseFile(file As String, basePath As String, lastWrite As Date, progress As IProgress(Of (String, Integer, Integer)))
+    ''' <param name="relativePath">Path relative to the data root, computed by the walk. It used to be
+    ''' derived here with <c>Path.GetRelativePath(basePath, file)</c>, which re-normalizes both operands on
+    ''' every call — once per loose file. The walk already knows the root, so it just cuts the prefix.</param>
+    Private Shared Sub ProcessLooseFile(file As String, relativePath As String, lastWrite As Date, progress As IProgress(Of (String, Integer, Integer)))
         Try
             ' O5.4: De-dupe the standardized path — stored long-term as dictionary key and File_Location.FullPath
-            Dim standardized = PoolPath(Path.GetRelativePath(basePath, file).Correct_Path_Separator)
+            Dim standardized = PoolPath(relativePath.Correct_Path_Separator)
 
             Dim entry As New File_Location With {
             .BA2File = String.Empty,
@@ -1705,11 +2058,13 @@ Public Class FilesDictionary_class
             _scanErrors.Enqueue("Error processing loose file " & file & ": " & ex.Message)
             Logger.LogLazy(Function() "[FilesDictionary] ProcessLooseFile error: " & ex.ToString())
         Finally
-            ' Throttled — see LooseProgressReportMask. The last item always reports, so consumers that
-            ' don't clamp the bar to Max still finish full.
+            ' Throttled — see LooseProgressReportMask. The genuinely-last item always reports, so consumers
+            ' that don't clamp the bar to Max still finish full; the _scanProductionComplete gate is what
+            ' keeps "last item" from meaning "workers momentarily caught up with the walk" (see that field).
             Dim current = Interlocked.Increment(completed)
-            If (current And LooseProgressReportMask) = 0 OrElse current >= totalCount Then
-                progress.Report(($"Indexed: {Path.GetFileName(file)}", current, totalCount))
+            If (current And LooseProgressReportMask) = 0 OrElse
+               (Volatile.Read(_scanProductionComplete) AndAlso current >= totalCount) Then
+                ReportScan(progress, $"Indexed: {Path.GetFileName(file)}", current, totalCount)
             End If
         End Try
     End Sub
