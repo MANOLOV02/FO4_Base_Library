@@ -636,7 +636,7 @@ Public Class Transform_Class
             Dim inv As New Transform_Class With {
                 .Rotation = Transpose(Me.Rotation)
             }
-            If Me.Scale = 0 Then Throw New InvalidOperationException("Escala cero no inversible")
+            If Me.Scale = 0 Then Throw New InvalidOperationException("Zero scale is not invertible")
             inv.Scale = 1.0F / Me.Scale
             inv.ScaleVector = New Numerics.Vector3(1, 1, 1)
             Dim rotatedT As Numerics.Vector3 = MultiplyMatrixVector(inv.Rotation, Me.Translation)
@@ -650,7 +650,7 @@ Public Class Transform_Class
                 Dim inv4d = Matrix4d.Invert(m4d)
                 Return New Transform_Class(inv4d)
             Catch ex As InvalidOperationException
-                Throw New InvalidOperationException("Transform no invertible (matriz singular)", ex)
+                Throw New InvalidOperationException("Transform not invertible (singular matrix)", ex)
             End Try
         End If
     End Function

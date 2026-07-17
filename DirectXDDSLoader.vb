@@ -456,7 +456,7 @@ Public Module DirectXDDSLoader
 
             Dim basePtr = GL.MapBuffer(BufferTarget.PixelUnpackBuffer, BufferAccess.WriteOnly)
             If basePtr = IntPtr.Zero Then
-                Throw New InvalidOperationException("GL.MapBuffer devolvio IntPtr.Zero para PixelUnpackBuffer.")
+                Throw New InvalidOperationException("GL.MapBuffer returned IntPtr.Zero for PixelUnpackBuffer.")
             End If
 
             For i As Integer = 0 To expectedImages - 1
@@ -465,7 +465,7 @@ Public Module DirectXDDSLoader
             Next
 
             If GL.UnmapBuffer(BufferTarget.PixelUnpackBuffer) = False Then
-                Throw New InvalidOperationException("GL.UnmapBuffer devolvio False para PixelUnpackBuffer.")
+                Throw New InvalidOperationException("GL.UnmapBuffer returned False for PixelUnpackBuffer.")
             End If
 
             Dim faceTargets() As TextureTarget = {
@@ -568,7 +568,7 @@ Public Module DirectXDDSLoader
             result = Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL, srgb)
         End If
 
-        If result.Count <> fullpaths.Length Then Debugger.Break() : Throw New Exception("el loader no esta devolviendo la misma cantidad que las enviadas")
+        If result.Count <> fullpaths.Length Then Debugger.Break() : Throw New Exception("the loader is not returning the same count as the number sent")
         Return result
     End Function
 

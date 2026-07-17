@@ -539,6 +539,12 @@ Public Module FaceTintInputBuilder
                 ' op por Alpha=0.5 el residual byte saltó de 0.39 a 8.46 → el engine NO multiplica
                 ' TEND.Value por tplCol.Alpha. OpacityScale del resolver se preserva como info
                 ' contextual del match pero no afecta el cómputo.
+                ' ⛔ NO gatear tampoco cuando la template matcheada es la 'None' (CLFM 0x001ABFD5, Alpha=0):
+                ' hipótesis "template None ⇒ capa apagada" PROBADA Y REFUTADA (2026-07-16, NPC 00007CFD +
+                ' correlación de máscaras vs CK): CK SÍ compone las capas autoradas con tpl→'None' (el
+                ' maquillaje de su _d cae 96,5% dentro de FacePaint4, más EyeLiner05/EyeShadowLower1/Dirt1,
+                ' todas tpl 'None' Alpha=0, TEND value 79-100). Gatearlas alejó el bake de CK (mean 1,32→5,03).
+                ' El residual real vs CK es de BORDE/intensidad del paint (~1.1k px >36 en ese NPC), otra cosa.
                 layerInput.Opacity = opacity
                 Dim resolveMode As String = If(resolved.Matched, "MATCH (Step1 idx or Step2 color)", "FALLBACK (Step3 mode)")
                 If opt IsNot Nothing AndAlso opt.TemplateColors IsNot Nothing AndAlso opt.TemplateColors.Count > 0 Then

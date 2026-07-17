@@ -39,6 +39,12 @@ Public Module SseFaceTintComposer
     Private ReadOnly _layersCache As New Dictionary(Of String, List(Of SseTintMask))
     ' Decoded+resized mask cache at 512² (race-shared masks decode once across a batch). Keyed by dict path.
     Private ReadOnly _texCache As New Dictionary(Of String, Double())(StringComparer.OrdinalIgnoreCase)
+    ' FUENTE decodificada por (path, target) — para targets != 512² (el fold SSE compone a la resolución NATIVA
+    ' del complexion, p.ej. 4096² con COtR) cada fold re-leía (GetBytes) y re-decodeaba (DirectXTex) TODAS las
+    ' máscaras del RACE. Acá se cachea el DECODE de la fuente (al mip que DecodeDds elige para ese target — por
+    ' eso el target integra la key); el RESAMPLE al target NO se cachea (4096² ≈ 537 MB de Double por máscara,
+    ' inviable retenerlo) pero corre paralelo en DecodeMask. Nothing cacheado = archivo ausente/indecodificable.
+    Private ReadOnly _texSrcCache As New Dictionary(Of String, FaceTintCpuCompositor.DecodedTex)(StringComparer.OrdinalIgnoreCase)
     ' Resolved CLFM formID -> linear RGB [0,1] (race-default colours), cached.
     Private ReadOnly _clfmCache As New Dictionary(Of UInteger, Double())
 
@@ -46,6 +52,7 @@ Public Module SseFaceTintComposer
     Public Sub ClearCaches()
         _layersCache.Clear()
         _texCache.Clear()
+        _texSrcCache.Clear()
         _clfmCache.Clear()
     End Sub
 
@@ -115,9 +122,14 @@ Public Module SseFaceTintComposer
         If baseImg IsNot Nothing AndAlso baseImg.Length >= npix * 4 Then
             Array.Copy(baseImg, acc, npix * 4)
         Else
-            For i = 0 To npix - 1
-                acc(i * 4) = seedR : acc(i * 4 + 1) = seedG : acc(i * 4 + 2) = seedB : acc(i * 4 + 3) = 1.0
-            Next
+            ' Paralelo por rangos (escrituras disjuntas por píxel ⇒ bit-idéntico); a 4K son 67M de writes.
+            System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, npix),
+                Sub(range)
+                    For i = range.Item1 To range.Item2 - 1
+                        acc(i * 4) = seedR : acc(i * 4 + 1) = seedG : acc(i * 4 + 2) = seedB : acc(i * 4 + 3) = 1.0
+                    Next
+                End Sub)
         End If
 
         ' Compose the RACE's tint layers IN RACE ORDER (= cb2 slot order; lerp is not commutative). The SKIN
@@ -349,14 +361,21 @@ Public Module SseFaceTintComposer
     Private Sub ComposeLayer(acc As Double(), mask As Double(), cR As Double, cG As Double, cB As Double, tinv As Double, npix As Integer,
                              conv As FaceTintConvention.FaceTintConventionSet, maskConv As Integer, maskCh As Integer,
                              Optional cov As Double() = Nothing)
-        For i = 0 To npix - 1
-            Dim a = FaceTintCpuCompositor.ConvMaskShared(mask(i * 4 + maskCh), maskConv) * tinv   ' cobertura por la ley
-            If a <= 0.0 Then Continue For
-            acc(i * 4) = FaceTintCpuCompositor.ComposePixel(acc(i * 4), cR, a, conv)
-            acc(i * 4 + 1) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 1), cG, a, conv)
-            acc(i * 4 + 2) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 2), cB, a, conv)
-            If cov IsNot Nothing Then cov(i) = cov(i) + a * (1 - cov(i))   ' accumulate coverage
-        Next
+        ' PARALELO por rangos: cada píxel toca sólo sus índices (acc/cov por i) ⇒ bit-idéntico al serial. El fold
+        ' SSE compone a la resolución NATIVA del complexion (4096² con COtR), donde el serial era parte de los
+        ' segundos por fold. El orden ENTRE capas (no conmutativo) lo preserva el caller (loop de capas serial).
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, npix),
+            Sub(range)
+                For i = range.Item1 To range.Item2 - 1
+                    Dim a = FaceTintCpuCompositor.ConvMaskShared(mask(i * 4 + maskCh), maskConv) * tinv   ' cobertura por la ley
+                    If a <= 0.0 Then Continue For
+                    acc(i * 4) = FaceTintCpuCompositor.ComposePixel(acc(i * 4), cR, a, conv)
+                    acc(i * 4 + 1) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 1), cG, a, conv)
+                    acc(i * 4 + 2) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 2), cB, a, conv)
+                    If cov IsNot Nothing Then cov(i) = cov(i) + a * (1 - cov(i))   ' accumulate coverage
+                Next
+            End Sub)
     End Sub
 
     ''' <summary>Parse the RACE's per-gender tint layers IN ORDER (Male/Female Head Data, tracked by
@@ -459,27 +478,37 @@ Public Module SseFaceTintComposer
         If Not key.StartsWith("textures\") Then key = "textures\" & key
         Dim cached As Double() = Nothing
         If w = 512 AndAlso h = 512 AndAlso _texCache.TryGetValue(key, cached) Then Return cached
-        Dim b = FilesDictionary_class.GetBytes(key)
-        If b Is Nothing Then
+        ' Fuente decodificada, cacheada por (path, target) — ver _texSrcCache. La elección de mip de DecodeDds
+        ' depende del target ⇒ el target integra la key. El miss (Nothing) también se cachea (archivo ausente).
+        ' Fuentes grandes (> 1024² tras elegir mip) no se retienen: 32 MB de Double por entrada es el techo.
+        Dim srcKey = $"{key}|{w}x{h}"
+        Dim t As FaceTintCpuCompositor.DecodedTex = Nothing
+        If Not _texSrcCache.TryGetValue(srcKey, t) Then
+            Dim b = FilesDictionary_class.GetBytes(key)
+            t = If(b Is Nothing, Nothing, FaceTintCpuCompositor.DecodeDds(b, w, h))
+            If t IsNot Nothing AndAlso t.Rgba Is Nothing Then t = Nothing
+            If t Is Nothing OrElse t.Rgba.Length <= 1024 * 1024 * 4 Then _texSrcCache(srcKey) = t
+        End If
+        If t Is Nothing Then
             If w = 512 AndAlso h = 512 Then _texCache(key) = Nothing
             Return Nothing
         End If
-        Dim t = FaceTintCpuCompositor.DecodeDds(b, w, h)
-        If t Is Nothing OrElse t.Rgba Is Nothing Then Return Nothing
         Dim outp(w * h * 4 - 1) As Double
-        For y = 0 To h - 1
-            Dim fy = (y + 0.5) * t.Height / h - 0.5
-            Dim y0 = Math.Max(0, Math.Min(t.Height - 1, CInt(Math.Floor(fy)))) : Dim y1 = Math.Min(t.Height - 1, y0 + 1) : Dim ty = fy - Math.Floor(fy)
-            For x = 0 To w - 1
-                Dim fx = (x + 0.5) * t.Width / w - 0.5
-                Dim x0 = Math.Max(0, Math.Min(t.Width - 1, CInt(Math.Floor(fx)))) : Dim x1 = Math.Min(t.Width - 1, x0 + 1) : Dim tx = fx - Math.Floor(fx)
-                For c = 0 To 3
-                    Dim p00 = t.Rgba((y0 * t.Width + x0) * 4 + c), p10 = t.Rgba((y0 * t.Width + x1) * 4 + c)
-                    Dim p01 = t.Rgba((y1 * t.Width + x0) * 4 + c), p11 = t.Rgba((y1 * t.Width + x1) * 4 + c)
-                    outp((y * w + x) * 4 + c) = (p00 * (1 - tx) + p10 * tx) * (1 - ty) + (p01 * (1 - tx) + p11 * tx) * ty
-                Next
-            Next
-        Next
+        ' Resample bilineal PARALELO por filas (misma fórmula, cada fila escribe sólo sus índices ⇒ bit-idéntico).
+        ' A 4096² de target el serial era parte de los segundos por fold.
+        System.Threading.Tasks.Parallel.For(0, h, Sub(y)
+                                                      Dim fy = (y + 0.5) * t.Height / h - 0.5
+                                                      Dim y0 = Math.Max(0, Math.Min(t.Height - 1, CInt(Math.Floor(fy)))) : Dim y1 = Math.Min(t.Height - 1, y0 + 1) : Dim ty = fy - Math.Floor(fy)
+                                                      For x = 0 To w - 1
+                                                          Dim fx = (x + 0.5) * t.Width / w - 0.5
+                                                          Dim x0 = Math.Max(0, Math.Min(t.Width - 1, CInt(Math.Floor(fx)))) : Dim x1 = Math.Min(t.Width - 1, x0 + 1) : Dim tx = fx - Math.Floor(fx)
+                                                          For c = 0 To 3
+                                                              Dim p00 = t.Rgba((y0 * t.Width + x0) * 4 + c), p10 = t.Rgba((y0 * t.Width + x1) * 4 + c)
+                                                              Dim p01 = t.Rgba((y1 * t.Width + x0) * 4 + c), p11 = t.Rgba((y1 * t.Width + x1) * 4 + c)
+                                                              outp((y * w + x) * 4 + c) = (p00 * (1 - tx) + p10 * tx) * (1 - ty) + (p01 * (1 - tx) + p11 * tx) * ty
+                                                          Next
+                                                      Next
+                                                  End Sub)
         If w = 512 AndAlso h = 512 Then _texCache(key) = outp
         Return outp
     End Function

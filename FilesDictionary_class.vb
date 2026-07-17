@@ -357,6 +357,7 @@ Public Class FilesDictionary_class
         End If
     End Function
 
+
     ''' <summary>
     ''' Reads the ARCHIVED (BA2/BSA) original bytes for <paramref name="path"/>, IGNORING any loose
     ''' override AND the path-keyed <see cref="_bytesCache"/>. The cache is keyed by File_Location.FullPath,

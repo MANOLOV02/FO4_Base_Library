@@ -95,51 +95,61 @@ Public Module SseOverlayCompositor
     Public Sub ApplyOverlays(acc As Double(), overlays As IList(Of SseOverlay), w As Integer, h As Integer)
         If overlays Is Nothing OrElse overlays.Count = 0 Then Return
         Dim npix = w * h
-        For Each ov In overlays
-            For i = 0 To npix - 1
-                ' (1) TYPE: combine the overlay texture with the layer colour → premultiplied layer {rgb, a}
-                Dim lr As Double, lg As Double, lb As Double, la As Double
-                Dim tr = 1.0, tg = 1.0, tb = 1.0, ta = 1.0
-                If ov.Texture IsNot Nothing Then tr = ov.Texture(i * 4) : tg = ov.Texture(i * 4 + 1) : tb = ov.Texture(i * 4 + 2) : ta = ov.Texture(i * 4 + 3)
-                Select Case ov.LayerType
-                    Case 1 : lr = ov.Color(0) : lg = ov.Color(1) : lb = ov.Color(2) : la = tr * ov.Color(3)          ' colour.rgb, alpha = mask.r × colour.a
-                    Case 2 : lr = ov.Color(0) : lg = ov.Color(1) : lb = ov.Color(2) : la = ov.Color(3)               ' solid colour
-                    Case Else : lr = tr * ov.Color(0) : lg = tg * ov.Color(1) : lb = tb * ov.Color(2) : la = ta * ov.Color(3) ' texture × colour
-                End Select
-                If la <= 0.0 Then Continue For
+        ' El loop de CAPAS queda SERIAL (el composite no es conmutativo: cada capa lee el acumulado de la
+        ' anterior). El loop de PÍXELES dentro de cada capa es paralelo por rangos: cada píxel lee/escribe sólo
+        ' sus propios índices ⇒ bit-idéntico al serial. El fold SSE corre a la resolución nativa del complexion
+        ' (4096² con COtR), donde esto era parte de los segundos por fold.
+        For Each ovIter In overlays
+            Dim ov = ovIter   ' copia local para el lambda (el iterador muta)
+            ' El mapeo modo→(blendOp, softLight) es constante por capa: se resuelve UNA vez, no por píxel.
+            Dim m = BlendOpFromSseMode(ov.BlendMode)
+            System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, npix),
+                Sub(range)
+                    For i = range.Item1 To range.Item2 - 1
+                        ' (1) TYPE: combine the overlay texture with the layer colour → premultiplied layer {rgb, a}
+                        Dim lr As Double, lg As Double, lb As Double, la As Double
+                        Dim tr = 1.0, tg = 1.0, tb = 1.0, ta = 1.0
+                        If ov.Texture IsNot Nothing Then tr = ov.Texture(i * 4) : tg = ov.Texture(i * 4 + 1) : tb = ov.Texture(i * 4 + 2) : ta = ov.Texture(i * 4 + 3)
+                        Select Case ov.LayerType
+                            Case 1 : lr = ov.Color(0) : lg = ov.Color(1) : lb = ov.Color(2) : la = tr * ov.Color(3)          ' colour.rgb, alpha = mask.r × colour.a
+                            Case 2 : lr = ov.Color(0) : lg = ov.Color(1) : lb = ov.Color(2) : la = ov.Color(3)               ' solid colour
+                            Case Else : lr = tr * ov.Color(0) : lg = tg * ov.Color(1) : lb = tb * ov.Color(2) : la = ta * ov.Color(3) ' texture × colour
+                        End Select
+                        If la <= 0.0 Then Continue For
 
-                Dim ar = acc(i * 4), ag = acc(i * 4 + 1), ab = acc(i * 4 + 2)
-                If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
-                    ' normal.fx: over with PREMULTIPLIED layer.rgb (no un-premultiply)
-                    acc(i * 4) = lr * la + ar * (1 - la)
-                    acc(i * 4 + 1) = lg * la + ag * (1 - la)
-                    acc(i * 4 + 2) = lb * la + ab * (1 - la)
-                Else
-                    ' all other modes un-premultiply the layer colour, blend, then alpha-over
-                    Dim br = Clamp01(lr / la), bg = Clamp01(lg / la), bbl = Clamp01(lb / la)
-                    Dim rr As Double, rg As Double, rb As Double
-                    If ov.BlendMode = SseBlendMode.Grayscale Then
-                        Dim lum = 0.299 * ar + 0.587 * ag + 0.114 * ab
-                        rr = lum * br : rg = lum * bg : rb = lum * bbl
-                    ElseIf ov.BlendMode = SseBlendMode.ColorMode Then
-                        Dim hsvBlend = RgbToHsv(br, bg, bbl)
-                        Dim vSrc = Math.Max(ar, Math.Max(ag, ab))
-                        Dim outc = HsvToRgb(hsvBlend(0), hsvBlend(1), vSrc)
-                        rr = outc(0) : rg = outc(1) : rb = outc(2)
-                    Else
-                        ' Reuse the SHARED FO4 blend dispatch (CPU/GL parity). El mapeo modo→(blendOp, softLight)
-                        ' sale de BlendOpFromSseMode = la MISMA fuente que usa el path GPU (uBlendOp del compositor),
-                        ' así CPU y GL no pueden desincronizarse.
-                        Dim m = BlendOpFromSseMode(ov.BlendMode)
-                        rr = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ar, br)
-                        rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ag, bg)
-                        rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ab, bbl)
-                    End If
-                    acc(i * 4) = (1 - la) * ar + rr * la
-                    acc(i * 4 + 1) = (1 - la) * ag + rg * la
-                    acc(i * 4 + 2) = (1 - la) * ab + rb * la
-                End If
-            Next
+                        Dim ar = acc(i * 4), ag = acc(i * 4 + 1), ab = acc(i * 4 + 2)
+                        If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
+                            ' normal.fx: over with PREMULTIPLIED layer.rgb (no un-premultiply)
+                            acc(i * 4) = lr * la + ar * (1 - la)
+                            acc(i * 4 + 1) = lg * la + ag * (1 - la)
+                            acc(i * 4 + 2) = lb * la + ab * (1 - la)
+                        Else
+                            ' all other modes un-premultiply the layer colour, blend, then alpha-over
+                            Dim br = Clamp01(lr / la), bg = Clamp01(lg / la), bbl = Clamp01(lb / la)
+                            Dim rr As Double, rg As Double, rb As Double
+                            If ov.BlendMode = SseBlendMode.Grayscale Then
+                                Dim lum = 0.299 * ar + 0.587 * ag + 0.114 * ab
+                                rr = lum * br : rg = lum * bg : rb = lum * bbl
+                            ElseIf ov.BlendMode = SseBlendMode.ColorMode Then
+                                Dim hsvBlend = RgbToHsv(br, bg, bbl)
+                                Dim vSrc = Math.Max(ar, Math.Max(ag, ab))
+                                Dim outc = HsvToRgb(hsvBlend(0), hsvBlend(1), vSrc)
+                                rr = outc(0) : rg = outc(1) : rb = outc(2)
+                            Else
+                                ' Reuse the SHARED FO4 blend dispatch (CPU/GL parity). El mapeo modo→(blendOp, softLight)
+                                ' sale de BlendOpFromSseMode = la MISMA fuente que usa el path GPU (uBlendOp del compositor),
+                                ' así CPU y GL no pueden desincronizarse.
+                                rr = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ar, br)
+                                rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ag, bg)
+                                rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ab, bbl)
+                            End If
+                            acc(i * 4) = (1 - la) * ar + rr * la
+                            acc(i * 4 + 1) = (1 - la) * ag + rg * la
+                            acc(i * 4 + 2) = (1 - la) * ab + rb * la
+                        End If
+                    Next
+                End Sub)
         Next
     End Sub
 
@@ -212,13 +222,19 @@ Public Module SseOverlayCompositor
             ' RE): en SSE el BSLightingShader —el shader del overlay decal (SkinTint/FaceGen)— NO tiene greyscale-to-
             ' color/alpha (eso vive SOLO en el BSEffectShader). El diffuse se usa normal: RGB=color, alpha=cobertura
             ' (color.a *= baseMap.a). type 0 de skee: color = tex.rgb × tint.
-            For i = 0 To npix - 1
-                Dim la = Clamp01(tex(i * 4 + 3) * opacity)
-                If la <= 0.0 Then Continue For
-                acc(i * 4) = (tex(i * 4) * tr) * la + acc(i * 4) * (1 - la)
-                acc(i * 4 + 1) = (tex(i * 4 + 1) * tg) * la + acc(i * 4 + 1) * (1 - la)
-                acc(i * 4 + 2) = (tex(i * 4 + 2) * tb) * la + acc(i * 4 + 2) * (1 - la)
-            Next
+            ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); el orden ENTRE overlays lo da el
+            ' For Each de afuera, que sigue serial (alpha-over no conmutativo).
+            System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, npix),
+                Sub(range)
+                    For i = range.Item1 To range.Item2 - 1
+                        Dim la = Clamp01(tex(i * 4 + 3) * opacity)
+                        If la <= 0.0 Then Continue For
+                        acc(i * 4) = (tex(i * 4) * tr) * la + acc(i * 4) * (1 - la)
+                        acc(i * 4 + 1) = (tex(i * 4 + 1) * tg) * la + acc(i * 4 + 1) * (1 - la)
+                        acc(i * 4 + 2) = (tex(i * 4 + 2) * tb) * la + acc(i * 4 + 2) * (1 - la)
+                    Next
+                End Sub)
             any = True
         Next
         Return any
@@ -248,20 +264,25 @@ Public Module SseOverlayCompositor
             Dim ovDiff = If(Not String.IsNullOrEmpty(ov.DiffusePath), decode(ov.DiffusePath, w, h), Nothing)
             Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
             If opacity <= 0.0 Then Continue For
-            For i = 0 To npix - 1
-                Dim cov As Double = If(ovDiff IsNot Nothing AndAlso ovDiff.Length >= npix * 4, ovDiff(i * 4 + 3), ovNorm(i * 4 + 3)) * opacity
-                If cov <= 0.0 Then Continue For
-                If cov > 1.0 Then cov = 1.0
-                ' decode ambos a [-1,1], lerp, renormalize, re-encode a [0,1].
-                Dim hx = 2.0 * msnAcc(i * 4) - 1.0, hy = 2.0 * msnAcc(i * 4 + 1) - 1.0, hz = 2.0 * msnAcc(i * 4 + 2) - 1.0
-                Dim ox = 2.0 * ovNorm(i * 4) - 1.0, oy = 2.0 * ovNorm(i * 4 + 1) - 1.0, oz = 2.0 * ovNorm(i * 4 + 2) - 1.0
-                Dim nx = hx + cov * (ox - hx), ny = hy + cov * (oy - hy), nz = hz + cov * (oz - hz)
-                Dim len = Math.Sqrt(nx * nx + ny * ny + nz * nz)
-                If len > 0.0000001 Then nx /= len : ny /= len : nz /= len
-                msnAcc(i * 4) = (nx + 1.0) * 0.5
-                msnAcc(i * 4 + 1) = (ny + 1.0) * 0.5
-                msnAcc(i * 4 + 2) = (nz + 1.0) * 0.5
-            Next
+            ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); orden entre overlays = For Each serial.
+            System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, npix),
+                Sub(range)
+                    For i = range.Item1 To range.Item2 - 1
+                        Dim cov As Double = If(ovDiff IsNot Nothing AndAlso ovDiff.Length >= npix * 4, ovDiff(i * 4 + 3), ovNorm(i * 4 + 3)) * opacity
+                        If cov <= 0.0 Then Continue For
+                        If cov > 1.0 Then cov = 1.0
+                        ' decode ambos a [-1,1], lerp, renormalize, re-encode a [0,1].
+                        Dim hx = 2.0 * msnAcc(i * 4) - 1.0, hy = 2.0 * msnAcc(i * 4 + 1) - 1.0, hz = 2.0 * msnAcc(i * 4 + 2) - 1.0
+                        Dim ox = 2.0 * ovNorm(i * 4) - 1.0, oy = 2.0 * ovNorm(i * 4 + 1) - 1.0, oz = 2.0 * ovNorm(i * 4 + 2) - 1.0
+                        Dim nx = hx + cov * (ox - hx), ny = hy + cov * (oy - hy), nz = hz + cov * (oz - hz)
+                        Dim len = Math.Sqrt(nx * nx + ny * ny + nz * nz)
+                        If len > 0.0000001 Then nx /= len : ny /= len : nz /= len
+                        msnAcc(i * 4) = (nx + 1.0) * 0.5
+                        msnAcc(i * 4 + 1) = (ny + 1.0) * 0.5
+                        msnAcc(i * 4 + 2) = (nz + 1.0) * 0.5
+                    Next
+                End Sub)
             any = True
         Next
         Return any

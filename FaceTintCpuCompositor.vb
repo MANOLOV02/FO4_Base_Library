@@ -262,23 +262,29 @@ Public Module FaceTintCpuCompositor
             If w <= 0 OrElse h <= 0 OrElse px Is Nothing OrElse bpp = 0 OrElse px.Length < w * h * bpp Then Return Nothing
             Dim isBgra8 = (fmt = 87 OrElse fmt = 88 OrElse fmt = 91 OrElse fmt = 93)
             Dim outArr(w * h * 4 - 1) As Double
-            For i As Integer = 0 To w * h - 1
-                Dim o As Integer = i * 4, s As Integer = i * bpp
-                Dim r As Double, g As Double, b As Double, a As Double
-                Select Case bpp
-                    Case 4
-                        If isBgra8 Then
-                            b = px(s) : g = px(s + 1) : r = px(s + 2) : a = px(s + 3)
-                        Else
-                            r = px(s) : g = px(s + 1) : b = px(s + 2) : a = px(s + 3)
-                        End If
-                    Case 2
-                        r = px(s) : g = px(s + 1) : b = 0 : a = 255
-                    Case Else ' 1
-                        r = px(s) : g = px(s) : b = px(s) : a = 255
-                End Select
-                outArr(o) = r / 255.0 : outArr(o + 1) = g / 255.0 : outArr(o + 2) = b / 255.0 : outArr(o + 3) = a / 255.0
-            Next
+            ' Paralelo por rangos: conversión byte→double puramente por-píxel (escrituras disjuntas ⇒ bit-idéntico).
+            ' El fold SSE decodea el complexion a resolución NATIVA (4096² con COtR = 16,7M px) en cada fold.
+            System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, w * h),
+                Sub(range)
+                    For i As Integer = range.Item1 To range.Item2 - 1
+                        Dim o As Integer = i * 4, s As Integer = i * bpp
+                        Dim r As Double, g As Double, b As Double, a As Double
+                        Select Case bpp
+                            Case 4
+                                If isBgra8 Then
+                                    b = px(s) : g = px(s + 1) : r = px(s + 2) : a = px(s + 3)
+                                Else
+                                    r = px(s) : g = px(s + 1) : b = px(s + 2) : a = px(s + 3)
+                                End If
+                            Case 2
+                                r = px(s) : g = px(s + 1) : b = 0 : a = 255
+                            Case Else ' 1
+                                r = px(s) : g = px(s) : b = px(s) : a = 255
+                        End Select
+                        outArr(o) = r / 255.0 : outArr(o + 1) = g / 255.0 : outArr(o + 2) = b / 255.0 : outArr(o + 3) = a / 255.0
+                    Next
+                End Sub)
             Return New DecodedTex With {.Width = w, .Height = h, .Rgba = outArr}
         Catch
             Return Nothing

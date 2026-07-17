@@ -136,9 +136,11 @@ Public Module SseFaceGenBaker
     ''' <c>softlight(diffuse, detail)</c> con detail = 0.5 es la IDENTIDAD (<c>a² + 2·a·0.5·(1−a) = a</c>). Se usa
     ''' cuando el facetint se pliega en el diffuse (el softlight con el detail REAL ya está horneado en slot 0), para
     ''' que el engine NO lo re-aplique. ⛔ NO se puede VACIAR el slot 3: el engine rellena un slot detail vacío con su
-    ''' default <c>BSShader_DefFacegenDetail</c> = una matriz de Bayer 8×8 con media ≈0.1235 (RE SkyrimSE.exe
-    ''' 0x140E57E30), NO gris 0.5 ⇒ oscurecería la cara. El detail se samplea CRUDO (raw), así que 0.5 = byte 128
-    ''' literal. Constante ⇒ compartible por plugin; el engine SÍ respeta el slot 3 del NIF (a diferencia del tint, que
+    ''' default <c>BSShader_DefFacegenDetail</c> = una textura UNIFORME <c>0x40 = 64/255 = 0.251</c> (RE byte-level
+    ''' SkyrimSE.exe: la init @0x140E57E30 la rellena con <c>0x40404040</c>; = vanilla blankdetailmap.dds. ⚠️ NO es
+    ''' la Bayer 8×8 media 0.1235 — esa es <c>BSShader_DitheringNoise</c>, otra textura). 0.251 &lt; 0.5 ⇒ oscurece
+    ''' la cara. El detail se samplea CRUDO (raw), así que 0.5 = byte 128 literal. Constante ⇒ compartible por plugin;
+    ''' el engine SÍ respeta el slot 3 del NIF (a diferencia del tint, que
     ''' arma por path canónico). Formato = el que pase el caller; -1 = BC3 (constante ⇒ sin error de compresión).</summary>
     Public Function NeutralDetailDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
         Dim npix = w * h
@@ -160,16 +162,28 @@ Public Module SseFaceGenBaker
         If complexionRgba Is Nothing OrElse facetintRgba Is Nothing Then Return
         ' Engine EXACTO (Shader_Class 1864→1878): albedo = fgTint × softlight(sRGBtoLin(complexion), detail). El
         ' softlight con el detail (slot 3) va ANTES del fgTint. detailRgba = detail CRUDO (no está en color textures →
-        ' se samplea raw). Nothing ⇒ b=0.5 ⇒ softlight identidad (= sin detail). El caller DEBE neutralizar el slot 3
-        ' del NIF (si no, el engine re-aplica el softlight encima del _2c).
-        For i = 0 To npix - 1
-            For ch = 0 To 2
-                Dim clin = Srgb2Lin(complexionRgba(i * 4 + ch))
-                Dim b = If(detailRgba IsNot Nothing, detailRgba(i * 4 + ch), 0.5)
-                Dim sl = clin * clin + 2.0 * clin * b * (1.0 - clin)          ' softlight(complexion_lin, detail)
-                complexionRgba(i * 4 + ch) = Lin2Srgb(sl * FgTintChannel(facetintRgba(i * 4 + ch), ch))
-            Next
-        Next
+        ' se samplea raw). ⛔ Nothing (slot 3 vacío) NO es identidad: el motor bindea su default interno
+        ' BSShader_DefFacegenDetail = 0.251 (RE byte-level SkyrimSE.exe 0x140E57E30 = uniforme 0x40 = vanilla
+        ' blankdetailmap; NO la Bayer 0.1235 de BSShader_DitheringNoise, NO 0.5). Se pliega ese 0.251 para
+        ' matchear al motor (mods que borran el TX04 del TXST, ej. Enhanced Khajiit). El caller DEBE neutralizar
+        ' el slot 3 del NIF a 0.5 (si no, el engine re-aplica el softlight encima del _2c).
+        Const emptyDetailDefault As Double = 64.0 / 255.0   ' BSShader_DefFacegenDetail (0.251)
+        ' PARALELO por rangos de píxeles: cada píxel lee/escribe SOLO sus propios índices (sin estado compartido,
+        ' sin acumulación cruzada) ⇒ resultado BIT-IDÉNTICO al loop serial (el mismo double-math por píxel; sólo
+        ' cambia qué thread lo ejecuta). Por qué: la op lleva 2 Math.Pow por canal (Srgb2Lin+Lin2Srgb) y el fold
+        ' corre a la resolución NATIVA del complexion — a 4096² (caras COtR) el serial costaba segundos por fold.
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, npix),
+            Sub(range)
+                For i = range.Item1 To range.Item2 - 1
+                    For ch = 0 To 2
+                        Dim clin = Srgb2Lin(complexionRgba(i * 4 + ch))
+                        Dim b = If(detailRgba IsNot Nothing, detailRgba(i * 4 + ch), emptyDetailDefault)
+                        Dim sl = clin * clin + 2.0 * clin * b * (1.0 - clin)          ' softlight(complexion_lin, detail)
+                        complexionRgba(i * 4 + ch) = Lin2Srgb(sl * FgTintChannel(facetintRgba(i * 4 + ch), ch))
+                    Next
+                Next
+            End Sub)
     End Sub
 
     ''' <summary>sRGB→linear por canal (curva estándar IEC 61966-2-1). Para plegar el albedo en linear como el engine.</summary>

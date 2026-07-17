@@ -302,6 +302,18 @@ Public Class PreviewControl
     Public defaultWhiteTex As Integer
     Public defaultNormalTex As Integer
     Public defaultCubeMap As Integer
+    ''' <summary>Emulación de <c>BSShader_DefFacegenDetail</c>: el default que el motor bindea al slot detail
+    ''' (t3) de una cabeza FaceGen cuyo texture-set slot 3 está VACÍO. RE byte-level de SkyrimSE.exe
+    ''' (0x140E57E30 rellena la textura con 0x40404040 = 64/255 = 0.251; = vanilla blankdetailmap.dds). El
+    ''' motor SIEMPRE softlightea un detail sobre la cara facegen; sin textura usa este 0.251 (oscurece), NO
+    ''' identidad. Se emula acá para que render == lo que el NIF horneado (slot 3 vacío) rinde in-game.</summary>
+    Public defaultFacegenDetailTex As Integer
+    ''' <summary>Default del SUBSURFACE (_sk, texture-set slot 2) de una cabeza FaceGen cuando falta: NEGRO.
+    ''' RE byte-level: BSLightingShaderMaterialFacegen slot#10 (0x1414BA8B0) rellena subsurface(+0xB0) con
+    ''' DefHeightMap (fill 0xFF000000 = negro); mapeo miembro↔slot verificado en slot#8 (0x1414BA6E0):
+    ''' +0xB0↔índice 2 (_sk), +0xA8↔3 (detail), +0xA0↔6 (tint). Negro ⇒ SSS = 0 (sin subsurface glow) —
+    ''' distinto del fallback no-facegen del shader (softMask=albedo), que queda intacto.</summary>
+    Public defaultFacegenSubsurfaceTex As Integer
     Public Property BrushRadiusPx As Integer = 5
     Public Property InvertMasking As Boolean = False
 
@@ -310,7 +322,13 @@ Public Class PreviewControl
     ''' Crea una textura 2D de w×h píxeles con el color indicado.
     ''' </summary>
     ''' 
-    Private Shared Function CreateColorTexture(w As Integer, h As Integer, r As Byte, g As Byte, b As Byte, a As Byte) As Integer
+    ''' <summary>Textura 2D uniforme de w×h con el color dado. <paramref name="mipped"/>=False (default):
+    ''' Nearest + ClampToEdge, sin mips (comportamiento histórico de defaultWhiteTex/defaultNormalTex).
+    ''' <paramref name="mipped"/>=True: mipmaps generados + LINEAR_MIPMAP_LINEAR + REPEAT — igual que una
+    ''' textura cargada del pipeline, para defaults que el shader debe samplear idéntico a una real (los
+    ''' defaults facegen: detail 0.251 / subsurface negro).</summary>
+    Private Shared Function CreateColorTexture(w As Integer, h As Integer, r As Byte, g As Byte, b As Byte, a As Byte,
+                                               Optional mipped As Boolean = False) As Integer
         If w <= 0 OrElse h <= 0 Then Throw New ArgumentOutOfRangeException("w/h deben ser > 0")
 
         ' Evita overflow en el tamaño del array
@@ -342,10 +360,18 @@ Public Class PreviewControl
                   pixels:=pixelData)
 
         ' Filtros y wrap
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        If mipped Then
+            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D)
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.LinearMipmapLinear))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.Repeat))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.Repeat))
+        Else
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Nearest))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+        End If
 
         GL.BindTexture(TextureTarget.Texture2D, 0)
         Return texID
@@ -361,6 +387,16 @@ Public Class PreviewControl
 
         ' 4×4 normal map por defecto: (0.5,0.5,1) ? (128,128,255)
         defaultNormalTex = CreateColorTexture(4, 4, 128, 128, 128, 128)
+
+        ' default FaceGen detail = BSShader_DefFacegenDetail del motor (byte-exact, ver campo).
+        ' Uniforme 64 = 0.251 (NO 0.5/identidad, NO la Bayer 0.1235 de BSShader_DitheringNoise).
+        ' ⚠️ Se crea con MIPMAPS + LINEAR + REPEAT (como una textura real cargada, el blankdetailmap real es
+        ' 256² con mips) para que el shader la samplee IDÉNTICO a la real y no haya diferencia por estado de
+        ' sampler / minificación (un 4×4 Nearest sin mips sampleaba distinto → cabeza más clara de lo debido).
+        defaultFacegenDetailTex = CreateColorTexture(64, 64, 64, 64, 64, 255, mipped:=True)
+
+        ' 64×64 default FaceGen SUBSURFACE (_sk faltante) = NEGRO (engine: DefHeightMap → SSS=0; ver campo).
+        defaultFacegenSubsurfaceTex = CreateColorTexture(64, 64, 0, 0, 0, 255, mipped:=True)
 
         ' Cubemap 4×4 blanco en todas las caras
         defaultCubeMap = GL.GenTexture()
@@ -1515,6 +1551,8 @@ Public Class PreviewControl
         End If
         If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
+        If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex)
+        If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex)
         If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap)
 #If DEBUG Then
         GL.DebugMessageCallback(Nothing, IntPtr.Zero)
@@ -3204,6 +3242,12 @@ Public Class PreviewModel
             If isSSE Then
                 If lightingTextureId <> 0 Then
                     shader.BindTexture("texLightmask", lightingTextureId, TextureUnit.Texture7)
+                ElseIf materialBase.Facegen Then
+                    ' ENGINE-FAITHFUL: BSLightingShaderMaterialFacegen defaultea el subsurface faltante a NEGRO
+                    ' (fill slot#10 0x1414BA8B0: +0xB0←DefHeightMap; miembro↔slot verificado en 0x1414BA6E0:
+                    ' +0xB0↔índice 2 = _sk) ⇒ SSS=0. El fallback softMask=albedo del shader es para NO-facegen;
+                    ' acá se bindea el negro y bLightmask=True (abajo) para que el shader lo samplee.
+                    shader.BindTexture("texLightmask", Me.ParentModel.ParentControl.defaultFacegenSubsurfaceTex, TextureUnit.Texture7)
                 Else
                     shader.BindTexture("texLightmask", Me.ParentModel.ParentControl.defaultWhiteTex, TextureUnit.Texture7)
                 End If
@@ -3260,7 +3304,9 @@ Public Class PreviewModel
             shader.SetBool("bHair", materialBase.Hair)
             shader.SetBool("bHasGlowTex", glowTextureId <> 0)
             ' bLightmask: the _sk subsurface map drives the SSS/rim mask, incl. facegen (engine t12, above).
-            If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0)
+            ' FACEGEN sin _sk: True igual — arriba quedó bindeado el default NEGRO del engine (SSS=0);
+            ' con False el shader caería al fallback softMask=albedo (eso es solo para NO-facegen).
+            If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0 OrElse materialBase.Facegen)
             ' bFacetintAlbedo: facegen multiplies the albedo by the facetint (engine t4, slot 6 on texGlowmap).
             If isSSE Then shader.SetBool("bFacetintAlbedo", materialBase.Facegen AndAlso material.InnerLayerTexture_ID <> 0)
             shader.SetFloat("shininess", materialBase.Smoothness)
@@ -3329,9 +3375,17 @@ Public Class PreviewModel
             If isSSE Then
                 Dim detailMaskId = material.DetailMaskTexture_ID
                 Dim isFaceTint As Boolean = materialBase.Facegen
-                shader.SetBool("bHasDetailMask", isFaceTint AndAlso detailMaskId <> 0)
-                If isFaceTint AndAlso detailMaskId <> 0 Then
-                    shader.BindTexture("texDetailMask", detailMaskId, TextureUnit.Texture8)
+                ' ENGINE-FAITHFUL (RE SkyrimSE.exe): una cabeza FaceGen SIEMPRE softlightea un detail sobre el
+                ' diffuse. Si el texture-set slot 3 está VACÍO, el motor NO lo saltea: bindea su default interno
+                ' BSShader_DefFacegenDetail (uniforme 0.251 = vanilla blankdetailmap) y softlightea ESO -> oscurece
+                ' la cara al tono del cuerpo. Por eso acá se habilita el softlight para TODA cabeza facegen; si el
+                ' slot resuelve vacío se bindea el default 0.251. Así el preview matchea lo que el NIF horneado
+                ' (slot 3 vacío) rinde in-game (render == bake). Mods que borran el TX04 del TXST (Enhanced
+                ' Khajiit) caen acá; antes el preview dejaba la cara sin oscurecer (más clara que el cuerpo).
+                shader.SetBool("bHasDetailMask", isFaceTint)
+                If isFaceTint Then
+                    Dim detailTex = If(detailMaskId <> 0, detailMaskId, Me.ParentModel.ParentControl.defaultFacegenDetailTex)
+                    shader.BindTexture("texDetailMask", detailTex, TextureUnit.Texture8)
                 End If
             End If
 

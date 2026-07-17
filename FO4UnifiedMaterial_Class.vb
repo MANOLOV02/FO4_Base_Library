@@ -3863,7 +3863,7 @@ Public Class FO4UnifiedMaterial_Class
                 Case GetType(BGEM)
                     Underlying_Material = NewBgemNormalized()
                 Case Else
-                    Throw New Exception("Tipo no soportado en Deserialize.")
+                    Throw New Exception("Unsupported type in Deserialize.")
             End Select
             Return
         End If
@@ -3882,7 +3882,7 @@ Public Class FO4UnifiedMaterial_Class
                     Case GetType(BGEM)
                         Underlying_Material = New BGEM
                     Case Else
-                        Throw New Exception("Tipo no soportado en Deserialize.")
+                        Throw New Exception("Unsupported type in Deserialize.")
                 End Select
                 Underlying_Material.Deserialize(reader)
                 reader.Close()

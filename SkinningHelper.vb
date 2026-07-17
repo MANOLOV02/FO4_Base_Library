@@ -220,7 +220,7 @@ Public Class SkinningHelper
                 (Not shapeGeom.HasVertexColors OrElse vertexColorsList.Count = vertexCount) AndAlso
                 (Not shapeGeom.HasUVs OrElse uvsList.Count = vertexCount)) Then
             Debugger.Break()
-            Throw New Exception("¡Los atributos de los vértices no tienen la misma longitud!")
+            Throw New Exception("The vertex attributes do not all have the same length!")
         End If
 
 

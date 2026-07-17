@@ -779,7 +779,11 @@ void main() {
     if (uFgTintFold == 1) {
         vec3 cs = clamp(prev, 0.0, 1.0);
         vec3 cl = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
-        vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.5);
+        // Slot 3 vacio: el engine NO usa 0.5 (identidad) sino su default interno BSFaceGenDefaultDetail
+        // = 64/255 = 0.251 (RE byte-level SkyrimSE.exe, = vanilla blankdetailmap; oscurece). DEBE ser el
+        // MISMO default que el CPU (SseFaceGenBaker.FoldFacetintIntoDiffuse emptyDetailDefault) o el fold
+        // GPU sale mas claro que el bake para NPCs sin detail (caso Enhanced Khajiit, TX04 borrado).
+        vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.2509803922);
         vec3 sl = cl*cl + 2.0*cl*dt*(1.0 - cl);
         vec3 fg = (layerSample.rgb + uFgTintOff) * uFgTintAmp;
         vec3 lin = sl * fg;

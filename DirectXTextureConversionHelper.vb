@@ -48,7 +48,7 @@ Public Module DirectXTextureConversionHelper
         If sourceBitmap.Height <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(sourceBitmap), "Height debe ser > 0.")
         If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
-        If generateMipMaps AndAlso mipmaps IsNot Nothing Then Throw New ArgumentException("No combines mipmaps explicitos con generateMipMaps=True.", NameOf(mipmaps))
+        If generateMipMaps AndAlso mipmaps IsNot Nothing Then Throw New ArgumentException("Do not combine explicit mipmaps with generateMipMaps=True.", NameOf(mipmaps))
 
         Dim mipChain As New List(Of Bitmap) From {sourceBitmap}
         If mipmaps IsNot Nothing Then
@@ -83,11 +83,11 @@ Public Module DirectXTextureConversionHelper
             Dim expectedHeight = CalculateMipExtent(sourceBitmap.Height, mipLevel)
 
             If mipBitmap.Width <> expectedWidth Then
-                Throw New ArgumentException($"El mip {mipLevel} debe medir {expectedWidth} px de ancho y llego con {mipBitmap.Width}.", NameOf(mipmaps))
+                Throw New ArgumentException($"Mip {mipLevel} must be {expectedWidth} px wide but got {mipBitmap.Width}.", NameOf(mipmaps))
             End If
 
             If mipBitmap.Height <> expectedHeight Then
-                Throw New ArgumentException($"El mip {mipLevel} debe medir {expectedHeight} px de alto y llego con {mipBitmap.Height}.", NameOf(mipmaps))
+                Throw New ArgumentException($"Mip {mipLevel} must be {expectedHeight} px tall but got {mipBitmap.Height}.", NameOf(mipmaps))
             End If
 
             request.Subresources.Add(CreateBitmapSubresource(mipBitmap, mipLevel))
@@ -139,7 +139,7 @@ Public Module DirectXTextureConversionHelper
         ArgumentNullException.ThrowIfNull(bgraPixels)
         Dim expectedLength = Math.BigMul(width, height) * 4L
         If expectedLength > Integer.MaxValue Then Throw New ArgumentOutOfRangeException(NameOf(bgraPixels), "El buffer BGRA excede el maximo soportado.")
-        If bgraPixels.Length <> CInt(expectedLength) Then Throw New ArgumentException($"El buffer BGRA debe tener {expectedLength} bytes y llego con {bgraPixels.Length}.", NameOf(bgraPixels))
+        If bgraPixels.Length <> CInt(expectedLength) Then Throw New ArgumentException($"The BGRA buffer must be {expectedLength} bytes but got {bgraPixels.Length}.", NameOf(bgraPixels))
         If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
 
@@ -213,7 +213,7 @@ Public Module DirectXTextureConversionHelper
 
         Dim loadedTextures = Loader.LoadTextures({sourceDdsBytes}, useCompress:=True, forceOpenGL:=False)
         If loadedTextures Is Nothing OrElse loadedTextures.Count = 0 OrElse loadedTextures(0) Is Nothing Then
-            Throw New InvalidOperationException("No se pudo cargar el DDS de entrada para convertirlo.")
+            Throw New InvalidOperationException("Could not load the input DDS to convert it.")
         End If
 
         Return ConvertLoadedTextureToDdsBytes(loadedTextures(0), outputDxgiFormat, generateMipMaps, generatedMipLevels, filterFlags, compressFlags, alphaThreshold)
@@ -252,7 +252,7 @@ Public Module DirectXTextureConversionHelper
         Optional alphaThreshold As Single = 0.5F)
 
         If String.IsNullOrWhiteSpace(inputFilePath) Then Throw New ArgumentException("La ruta DDS de entrada es obligatoria.", NameOf(inputFilePath))
-        If Not File.Exists(inputFilePath) Then Throw New FileNotFoundException("No se encontro el DDS de entrada.", inputFilePath)
+        If Not File.Exists(inputFilePath) Then Throw New FileNotFoundException("The input DDS was not found.", inputFilePath)
 
         SaveDdsBytesAsDds(File.ReadAllBytes(inputFilePath), outputFilePath, outputDxgiFormat, generateMipMaps, generatedMipLevels, filterFlags, compressFlags, alphaThreshold)
     End Sub
@@ -279,12 +279,12 @@ Public Module DirectXTextureConversionHelper
 
         ArgumentNullException.ThrowIfNull(loadedTexture)
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
-        If Not loadedTexture.Loaded Then Throw New ArgumentException("La textura cargada no esta marcada como Loaded.", NameOf(loadedTexture))
+        If Not loadedTexture.Loaded Then Throw New ArgumentException("The loaded texture is not marked as Loaded.", NameOf(loadedTexture))
         If loadedTexture.Levels Is Nothing OrElse loadedTexture.Levels.Count = 0 Then
-            Throw New ArgumentException("La textura cargada no trae subrecursos en Levels.", NameOf(loadedTexture))
+            Throw New ArgumentException("The loaded texture has no subresources in Levels.", NameOf(loadedTexture))
         End If
         If loadedTexture.DxgiCodeFinal <= 0 Then
-            Throw New ArgumentException("DxgiCodeFinal no es valido para conversion.", NameOf(loadedTexture))
+            Throw New ArgumentException("DxgiCodeFinal is not valid for conversion.", NameOf(loadedTexture))
         End If
         If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
 
@@ -292,12 +292,12 @@ Public Module DirectXTextureConversionHelper
         Dim arraySize = Math.Max(1, loadedTexture.Faces)
         If generateMipMaps Then
             If loadedTexture.Levels.Count < arraySize Then
-                Throw New ArgumentException($"La textura cargada necesita al menos {arraySize} subrecursos base para regenerar mipmaps.", NameOf(loadedTexture))
+                Throw New ArgumentException($"The loaded texture needs at least {arraySize} base subresources to regenerate mipmaps.", NameOf(loadedTexture))
             End If
         Else
             Dim expectedSubresources = mipLevels * arraySize
             If loadedTexture.Levels.Count <> expectedSubresources Then
-                Throw New ArgumentException($"La textura cargada trae {loadedTexture.Levels.Count} subrecursos pero se esperaban {expectedSubresources}.", NameOf(loadedTexture))
+                Throw New ArgumentException($"The loaded texture has {loadedTexture.Levels.Count} subresources but {expectedSubresources} were expected.", NameOf(loadedTexture))
             End If
         End If
 
@@ -383,12 +383,12 @@ Public Module DirectXTextureConversionHelper
                 bitmapData = normalizedBitmap.LockBits(rect, ImageLockMode.ReadOnly, Imaging.PixelFormat.Format32bppArgb)
 
                 If bitmapData.Stride <= 0 Then
-                    Throw New InvalidDataException("El stride del Bitmap no es valido para exportar DDS.")
+                    Throw New InvalidDataException("The Bitmap stride is not valid for exporting DDS.")
                 End If
 
                 Dim rowPitch = bitmapData.Stride
                 If normalizedBitmap.Height > Integer.MaxValue / rowPitch Then
-                    Throw New InvalidDataException("El bitmap excede el tamano maximo de subrecurso soportado.")
+                    Throw New InvalidDataException("The bitmap exceeds the maximum supported subresource size.")
                 End If
 
                 Dim slicePitch = rowPitch * normalizedBitmap.Height
@@ -512,7 +512,7 @@ Public Module DirectXTextureConversionHelper
 
         For Each subresourceBytes In subresourceData
             If index >= expectedCount Then
-                Throw New ArgumentException("Se recibieron mÃ¡s subrecursos de los esperados.", NameOf(subresourceData))
+                Throw New ArgumentException("Received more subresources than expected.", NameOf(subresourceData))
             End If
 
             Dim mipLevel = index \ arraySize
@@ -621,7 +621,7 @@ Public Module DirectXTextureConversionHelper
 
         For Each subresource In subresources
             If subresource Is Nothing Then
-                Throw New InvalidDataException("Hay un subrecurso Nothing en la colección.")
+                Throw New InvalidDataException("There is a Nothing subresource in the collection.")
             End If
 
             Dim data = If(subresource.Data, Array.Empty(Of Byte)())
@@ -676,7 +676,7 @@ Public Module DirectXTextureConversionHelper
 
         For Each nativeSubresource In nativeSubresources
             If nativeSubresource Is Nothing Then
-                Throw New InvalidOperationException("El wrapper devolvio un subrecurso nulo.")
+                Throw New InvalidOperationException("The wrapper returned a null subresource.")
             End If
 
             result.Subresources.Add(New DxTextureSubresourceBuffer(
@@ -781,7 +781,7 @@ Public Module DirectXTextureConversionHelper
     Private Function GetRequiredByteArrayProperty(instance As Object, propertyName As String) As Byte()
         Dim value = TryCast(GetRequiredMemberValue(instance, propertyName), Byte())
         If value Is Nothing Then
-            Throw New InvalidCastException($"El miembro {propertyName} no devolvio un Byte().")
+            Throw New InvalidCastException($"Member {propertyName} did not return a Byte().")
         End If
 
         Return value
@@ -800,12 +800,12 @@ Public Module DirectXTextureConversionHelper
         End If
 
         If request.IsCubemap AndAlso (request.ArraySize Mod 6 <> 0) Then
-            Throw New ArgumentException("ArraySize debe ser múltiplo de 6 para cubemap.", NameOf(request))
+            Throw New ArgumentException("ArraySize must be a multiple of 6 for a cubemap.", NameOf(request))
         End If
 
         Dim expectedCount = If(request.AutoGenerateMipMaps, request.ArraySize, GetExpectedSubresourceCount(request.MipLevels, request.ArraySize))
         If request.Subresources.Count <> expectedCount Then
-            Throw New ArgumentException($"La cantidad de subrecursos no coincide. Esperados={expectedCount}, recibidos={request.Subresources.Count}.", NameOf(request))
+            Throw New ArgumentException($"The subresource count does not match. Expected={expectedCount}, received={request.Subresources.Count}.", NameOf(request))
         End If
 
         For i As Integer = 0 To request.Subresources.Count - 1
@@ -830,10 +830,10 @@ Public Module DirectXTextureConversionHelper
             End If
 
             If subresource.MipLevel >= 0 AndAlso subresource.MipLevel <> expectedMip Then
-                Throw New ArgumentException($"Subresources({i}).MipLevel={subresource.MipLevel} no coincide con su posición esperada ({expectedMip}).", NameOf(request))
+                Throw New ArgumentException($"Subresources({i}).MipLevel={subresource.MipLevel} does not match its expected position ({expectedMip}).", NameOf(request))
             End If
             If subresource.ArrayIndex >= 0 AndAlso subresource.ArrayIndex <> expectedArrayIndex Then
-                Throw New ArgumentException($"Subresources({i}).ArrayIndex={subresource.ArrayIndex} no coincide con su posición esperada ({expectedArrayIndex}).", NameOf(request))
+                Throw New ArgumentException($"Subresources({i}).ArrayIndex={subresource.ArrayIndex} does not match its expected position ({expectedArrayIndex}).", NameOf(request))
             End If
         Next
     End Sub

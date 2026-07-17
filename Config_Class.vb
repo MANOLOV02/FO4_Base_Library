@@ -182,6 +182,18 @@ Public Class Config_App
     ' diffuse (slot 0 sigue el complexion vanilla compartido). Lo lee FaceGenBuilder.WriteSseFaceDiffuseWithOverlays.
     Public Property Setting_BakeSseRaceMenuOverlays As Boolean = True
 
+    ' SSE (CharGen Options → tab Fixes, SSE-only): redirect de los .tri de morph de CABEZA a High Poly Head
+    ' (KouLeifoh) cuando el record apunta a un .tri que NO resuelve o cuya topología NO coincide con la malla de
+    ' la cabeza, y la cabeza es EXACTAMENTE una cabeza HPH (Female=3832 / Male=3598 verts). Caso típico: followers/
+    ' replacers construidos sobre HPH cuyo HDPT dejó los slots RaceMorph (NAM0=0) y ChargenMorph (NAM0=2) apuntando
+    ' a la ruta vanilla `Actors\Character\Character Assets\FemaleHeadRaces/CharGen.tri` (996 verts) en vez de a
+    ' `meshes\KL\High Poly Head\` (3832). El motor no lo nota (usa el bake); un rebuild fiel-al-record aplicaría
+    ' deltas de 996 a una cabeza de 3832 → cara destrozada en el editor. Con esto, si HPH está instalado, el resolver
+    ' toma el .tri correcto de HPH (mismo basename). GUARD EXACTO por vertex-count ⇒ nunca toca una cabeza no-HPH, y
+    ' solo redirige cuando el .tri del record falta o su topología no matchea (un .tri presente y compatible se
+    ' respeta). Default False (opt-in). Lo lee NpcMorphResolver.LoadTriForShape (camino de render/preview).
+    Public Property Setting_SseResolveHighPolyHeadTri As Boolean = False
+
     ' === FaceTint convention (botón "CharGen Options" → tab "FaceTint Conventions") ===
     ' La convención de composición FaceTint por bucket (Diffuse / Normal+Specular / Swaps), valores
     ' CONCRETOS. Los defaults los pone el constructor de FaceTintConventionSettings = la ley derivada
