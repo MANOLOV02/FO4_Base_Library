@@ -797,8 +797,80 @@ Public NotInheritable Class RaceMenuJslot
             Next
             root("skinOverrides") = soArr
         End If
+        ' Header nodes RaceMenu REQUIRES to load the file at all — must be emitted last, after the verbatim
+        ' _raw copy, so a fresh (built-from-NPC) preset is never missing them.
+        EnsurePresetHeaders(root)
         Dim opt As New JsonSerializerOptions With {.WriteIndented = True, .TypeInfoResolver = New System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()}
         Return System.Text.Encoding.UTF8.GetBytes(root.ToJsonString(opt))
+    End Function
+
+    ' skee64 preset header constants (PresetInterface.cpp:300-301). signature = MACRO_SWAP32('SKSE') =
+    ' 0x45534B53; verified against every real RaceMenu-authored .jslot (version.signature == 1163086675).
+    Private Const PresetSignature As Long = 1163086675L
+    Private Const PresetFormatVersion As Integer = 3
+
+    ''' <summary>Guarantee the three header nodes skee64's <c>LoadJsonPreset</c> validates before it will load a
+    ''' preset (PresetInterface.cpp:925-954): a non-empty <c>version</c> whose <c>signature</c> == kSignature and
+    ''' <c>formatVersion</c> &gt; 0, and at least one non-empty <c>mods</c>/<c>modNames</c>. A .jslot round-tripped
+    ''' from disk keeps its own (copied verbatim from <see cref="_raw"/> before this runs); a preset built fresh from
+    ''' an NPC has no <c>_raw</c>, so WITHOUT this the nodes are never emitted and RaceMenu rejects the file with
+    ''' "No version header" / "No mods header" — the "Failed to load preset" the user sees. Only the MISSING nodes are
+    ''' synthesised; anything the source file carried is left untouched.</summary>
+    Private Sub EnsurePresetHeaders(root As JsonObject)
+        ' version — required, signature+formatVersion validated (:925-946). skseVersion/runtimeVersion are read into
+        ' the preset but never gated, so 0 is safe.
+        Dim ver = TryCast(root("version"), JsonObject)
+        If ver Is Nothing OrElse ver("signature") Is Nothing OrElse ver("formatVersion") Is Nothing Then
+            root("version") = New JsonObject From {
+                {"signature", PresetSignature}, {"formatVersion", PresetFormatVersion},
+                {"skseVersion", 0}, {"runtimeVersion", 0}}
+        End If
+        ' mods/modNames — skee rejects only when BOTH are empty (:950). Our head parts carry a "formIdentifier", which
+        ' RaceMenu resolves via GetFormFromIdentifier INDEPENDENT of this list (:979-987), so the list just has to be
+        ' present + non-empty. Build it faithfully from the plugins our head parts / head texture reference (parity
+        ' with SaveJsonPreset, :404-408); a body-only preset with no head-part deps falls back to Skyrim.esm (always
+        ' in a Skyrim load order) so it still loads.
+        Dim modsArr = TryCast(root("mods"), JsonArray)
+        Dim modNamesArr = TryCast(root("modNames"), JsonArray)
+        Dim haveMods = (modsArr IsNot Nothing AndAlso modsArr.Count > 0) OrElse (modNamesArr IsNot Nothing AndAlso modNamesArr.Count > 0)
+        If Not haveMods Then
+            Dim names = CollectDependencyPlugins()
+            If names.Count = 0 Then names.Add("Skyrim.esm")
+            Dim mn As New JsonArray()
+            Dim md As New JsonArray()
+            Dim idx As Integer = 0
+            For Each n In names
+                mn.Add(n)
+                md.Add(New JsonObject From {{"index", idx}, {"name", n}})
+                idx += 1
+            Next
+            root("modNames") = mn
+            root("mods") = md
+        End If
+    End Sub
+
+    ''' <summary>Distinct plugin filenames referenced by the modeled head parts + head texture (the "Plugin" part of
+    ''' each "Plugin|FormID" formIdentifier), in first-seen order. Feeds the synthesised <c>mods</c>/<c>modNames</c>
+    ''' header — the set of plugin dependencies RaceMenu itself lists for a preset (PresetInterface.cpp:368-378).</summary>
+    Private Function CollectDependencyPlugins() As List(Of String)
+        Dim seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim outp As New List(Of String)
+        For Each hp In HeadParts
+            If hp Is Nothing Then Continue For
+            Dim plug = PluginFromIdentifier(hp.FormIdentifier)
+            If plug.Length > 0 AndAlso seen.Add(plug) Then outp.Add(plug)
+        Next
+        Dim htPlug = PluginFromIdentifier(HeadTexture)
+        If htPlug.Length > 0 AndAlso seen.Add(htPlug) Then outp.Add(htPlug)
+        Return outp
+    End Function
+
+    ''' <summary>The plugin filename portion of a "Plugin|FormID" formIdentifier (empty when malformed/blank).</summary>
+    Private Shared Function PluginFromIdentifier(ident As String) As String
+        If String.IsNullOrEmpty(ident) Then Return ""
+        Dim bar = ident.IndexOf("|"c)
+        If bar <= 0 Then Return ""
+        Return ident.Substring(0, bar).Trim()
     End Function
 
     ''' <summary>Flatten <see cref="BodyMorphs"/> to the render slider dict: one entry per morph name

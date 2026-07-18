@@ -63,13 +63,16 @@ Public Class Nifcontent_Class_Manolo
             End If
         Next
     End Sub
-    Public Function Optimize(Game As Config_App.Game_Enum) As NifFileOptimizeResult
+    ''' <summary><paramref name="headPartsOnly"/>=True hace que OptimizeFor convierta los shapes a
+    ''' BSDynamicTriShape en vez de BSTriShape (ver NifFile.cs:1990) — es lo que el CK hace con los head
+    ''' parts de FaceGeom. Solo aplica en la conversión LE→SSE (OptimizeFor no-op si ya es SSE).</summary>
+    Public Function Optimize(Game As Config_App.Game_Enum, Optional headPartsOnly As Boolean = False) As NifFileOptimizeResult
         Dim opt As NifFileOptimizeOptions
         Select Case Game
             Case Config_App.Game_Enum.Fallout4
                 opt = New NifFileOptimizeOptions With {.TargetVersion = NiVersion.GetFO4}
             Case Config_App.Game_Enum.Skyrim
-                opt = New NifFileOptimizeOptions With {.TargetVersion = NiVersion.GetSSE}
+                opt = New NifFileOptimizeOptions With {.TargetVersion = NiVersion.GetSSE, .HeadPartsOnly = headPartsOnly}
             Case Else
                 Debugger.Break()
                 Throw New Exception
@@ -407,6 +410,105 @@ Public Class Nifcontent_Class_Manolo
                 destRoot.ExtraData = New NiBlockRef(Of NiExtraData) With {.Index = blockId}
             End If
         Next
+    End Sub
+
+    Public Const SmpPhysicsExtraDataName As String = "HDT Skinned Mesh Physics Object"
+
+    ''' <summary>True si el NiStringExtraData es el vínculo de física HDT-SMP de Skyrim (por nombre exacto).</summary>
+    Private Shared Function IsSmpPhysicsExtraData(ed As NiStringExtraData) As Boolean
+        Return ed IsNot Nothing AndAlso ed.Name IsNot Nothing AndAlso
+               String.Equals(ed.Name.String, SmpPhysicsExtraDataName, StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    ''' <summary>Copia el NiStringExtraData "HDT Skinned Mesh Physics Object" (el vínculo HDT-SMP de
+    ''' Skyrim: su StringData es la ruta Data-relative al XML de física) del ROOT de <paramref name="srcNif"/>
+    ''' al root de Me. Paralelo SSE de <see cref="TransferRootClothExtraDataFrom"/> (que preserva el cloth de
+    ''' FO4): el bake reconstruye el root desde cero y CloneShape_Original solo preserva el extradata de la
+    ''' SHAPE, así que sin esto el vínculo SMP —que cuelga del ROOT— se pierde y el motor nunca carga el XML,
+    ''' dejando el pelo sin física. IDEMPOTENTE: si el root del destino ya tiene el vínculo, no duplica (varias
+    ''' partes fuente —pelo + hairline— suelen apuntar al mismo XML). Filtrado POR NOMBRE: no toca BODYTRI ni
+    ''' otros NiStringExtraData. El XML NO se copia: la ruta es fija y ya está instalada con el mod. Reconstruye
+    ''' el bloque (Name/StringData) en vez de Clone() para ser cross-file safe con la string table.</summary>
+    Public Sub TransferRootSmpExtraDataFrom(srcNif As Nifcontent_Class_Manolo)
+        If srcNif Is Nothing Then Exit Sub
+        Dim destRoot = Me.GetRootNode()
+        Dim srcRoot = srcNif.GetRootNode()
+        If IsNothing(destRoot) OrElse IsNothing(srcRoot) Then Exit Sub
+
+        ' Solo el NiStringExtraData de física SMP colgado del ROOT del source (no BODYTRI ni otros strings).
+        Dim srcSmp = GetRootExtraData(srcRoot, srcNif).OfType(Of NiStringExtraData).FirstOrDefault(AddressOf IsSmpPhysicsExtraData)
+        If IsNothing(srcSmp) Then Exit Sub
+
+        ' Idempotente: si el root del destino ya tiene el vínculo SMP, no duplicar.
+        If GetRootExtraData(destRoot, Me).OfType(Of NiStringExtraData).Any(AddressOf IsSmpPhysicsExtraData) Then Exit Sub
+
+        Dim cloned As New NiStringExtraData With {
+            .Name = New NiStringRef(SmpPhysicsExtraDataName),
+            .StringData = New NiStringRef(If(srcSmp.StringData?.String, ""))
+        }
+        If IsNothing(destRoot.ExtraDataList) Then destRoot.ExtraDataList = New NiBlockRefArray(Of NiExtraData)
+        Dim blockId = Me.AddBlock(cloned)
+        destRoot.ExtraDataList.AddBlockRef(blockId)
+        If IsNothing(destRoot.ExtraData) Then
+            destRoot.ExtraData = New NiBlockRef(Of NiExtraData) With {.Index = blockId}
+        End If
+    End Sub
+
+    ''' <summary>Devuelve el path (tal cual lo guarda el mod, Data-relative, p.ej.
+    ''' "Data\meshes\KS Hairdo's\HDT\XML\Amor.xml") del XML de física HDT-SMP declarado por el
+    ''' NiStringExtraData "HDT Skinned Mesh Physics Object" del ROOT, o Nothing si el NIF no trae ese
+    ''' vínculo. Es la FUENTE AUTORITATIVA del link SMP: el sidecar same-basename es solo una convención
+    ''' que no todos los mods siguen (KS Hairdos apunta a una subcarpeta). El caller resuelve el path.</summary>
+    Public Function TryGetSmpPhysicsXmlPath() As String
+        Dim root = Me.GetRootNode()
+        If IsNothing(root) Then Return Nothing
+        Dim smp = GetRootExtraData(root, Me).OfType(Of NiStringExtraData).FirstOrDefault(AddressOf IsSmpPhysicsExtraData)
+        If IsNothing(smp) OrElse IsNothing(smp.StringData) Then Return Nothing
+        Dim p = smp.StringData.String
+        Return If(String.IsNullOrWhiteSpace(p), Nothing, p.Trim())
+    End Function
+
+    ''' <summary>Crea o actualiza el NiStringExtraData "HDT Skinned Mesh Physics Object" del ROOT para que
+    ''' apunte a <paramref name="dataRelativeXmlPath"/> (el path que el motor leerá; convención KS =
+    ''' "Data\meshes\...\x.xml"). Si ya existe, solo reescribe su StringData; si no, lo crea en el root.
+    ''' Contraparte de <see cref="TryGetSmpPhysicsXmlPath"/>: WM lo usa al grabar/buildear para mantener el
+    ''' link in-NIF sincronizado con dónde escribe el sidecar ("paths ajustados"). Sin esto, el motor lee el
+    ''' path viejo del extra-data y el sidecar reubicado se ignora.</summary>
+    Public Sub SetSmpPhysicsXmlPath(dataRelativeXmlPath As String)
+        If String.IsNullOrWhiteSpace(dataRelativeXmlPath) Then Exit Sub
+        Dim root = Me.GetRootNode()
+        If IsNothing(root) Then Exit Sub
+
+        Dim existing = GetRootExtraData(root, Me).OfType(Of NiStringExtraData).FirstOrDefault(AddressOf IsSmpPhysicsExtraData)
+        If existing IsNot Nothing Then
+            existing.StringData = New NiStringRef(dataRelativeXmlPath)
+            Return
+        End If
+
+        Dim ed As New NiStringExtraData With {
+            .Name = New NiStringRef(SmpPhysicsExtraDataName),
+            .StringData = New NiStringRef(dataRelativeXmlPath)
+        }
+        If IsNothing(root.ExtraDataList) Then root.ExtraDataList = New NiBlockRefArray(Of NiExtraData)
+        Dim blockId = Me.AddBlock(ed)
+        root.ExtraDataList.AddBlockRef(blockId)
+        If IsNothing(root.ExtraData) Then root.ExtraData = New NiBlockRef(Of NiExtraData) With {.Index = blockId}
+    End Sub
+
+    ''' <summary>Quita el/los NiStringExtraData "HDT Skinned Mesh Physics Object" del ROOT (si existen).
+    ''' WM lo usa cuando el proyecto queda sin física (PhysicsXmlContent vacío) para no dejar un link
+    ''' colgando a un XML inexistente.</summary>
+    Public Sub RemoveSmpPhysicsExtraData()
+        Dim root = Me.GetRootNode()
+        If IsNothing(root) OrElse IsNothing(root.ExtraDataList) Then Exit Sub
+        For Each ed In GetRootExtraData(root, Me).OfType(Of NiStringExtraData).Where(AddressOf IsSmpPhysicsExtraData).ToList()
+            Dim idx As Integer
+            If GetBlockIndex(ed, idx) Then
+                root.ExtraDataList.RemoveBlockRef(idx)
+                RemoveBlock(ed)
+            End If
+        Next
+        RemoveUnreferencedBlocks()
     End Sub
 
     ''' <summary>Copia el/los BSClothExtraData de <paramref name="srcNif"/> al ExtraDataList de la

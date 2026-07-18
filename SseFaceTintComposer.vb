@@ -26,12 +26,26 @@ Public Module SseFaceTintComposer
 
     ''' <summary>One RACE tint mask: the greyscale mask texture path + its TINP mask type (-1 when the layer
     ''' omits TINP, e.g. tattoos). Type is retained for tooling/diagnostics only — the blend is uniform.</summary>
+    ''' <summary>One RACE tint-layer preset: a named colour swatch the CK's tinting dropdown offers for this layer.
+    ''' The NPC record selects one by its <see cref="Tirs"/> value stored in the layer's TIAS field (TIAS = TIRS →
+    ''' the preset's CLFM colour; TIAS = -1 → the layer uses a custom RGB, not a preset). Verified against vanilla
+    ''' Skyrim.esm: for every NPC skin-tone layer with TIAS≥0, its TINC == the CLFM colour of the preset whose
+    ''' TIRS == TIAS (1673/1673, zero exceptions).</summary>
+    Public Structure SseTintPreset
+        Public Tirs As Integer       ' TIRS — the preset's index; the NPC's TIAS references this value
+        Public Clfm As UInteger      ' TINC (RACE preset) — the CLFM formID whose CNAM colour this preset applies
+        Public Value As Double       ' TINV (RACE preset) — the preset's default coverage (FLOAT 0-1)
+    End Structure
+
+    ''' <summary>One RACE tint mask: the greyscale mask texture path + its TINP mask type (-1 when the layer
+    ''' omits TINP, e.g. tattoos). Type is retained for tooling/diagnostics only — the blend is uniform.</summary>
     Public Structure SseTintMask
         Public Index As Integer      ' TINI — the layer's index (NPC tints reference the RACE layer by this)
         Public Path As String        ' TINT — greyscale mask texture path
         Public MaskType As Integer   ' TINP — mask type (-1 when omitted). Diagnostic only; blend is uniform.
         Public DefaultClfm As UInteger ' TIND — CLFM formID of the default preset (colour for unauthored layers)
         Public DefaultValue As Double  ' the default preset's TINV (coverage for unauthored layers)
+        Public Presets As List(Of SseTintPreset) ' the CK dropdown's swatches for this layer (TIRS→CLFM/value); may be empty
     End Structure
 
     ' Per-race+gender ORDERED tint-layer list cache (identical across NPCs of the same race). The engine
@@ -134,11 +148,11 @@ Public Module SseFaceTintComposer
 
         ' Compose the RACE's tint layers IN RACE ORDER (= cb2 slot order; lerp is not commutative). The SKIN
         ' layer (type 6) is NOT special — it is a normal layer. Its colour = TINC (or the RACE default CLFM),
-        ' composed at its TINV over base 0.5. VERIFIED: QNAM = lerp(0.5, skinTINC, skinTINV) exactly (e.g. Afflicted
-        ' TINC=(0.263,0.016,0.004)@0.52 → (0.377,0.248,0.242) = QNAM (96,63,61)). So QNAM is the RESULT of this
-        ' composite (stored for the body to match), NOT the input — feeding QNAM back in would double-composite.
-        ' This matches the disassembled bake builder (@0x18C9F40) literally: authored → npcTint colour = TINC;
-        ' unauthored → RACE default CLFM (entry+0x30). No QNAM read, no per-type branch.
+        ' composed at its TINV over base 0.5. VERIFIED (2026-07-17, vanilla shipped facetints vs resolved QNAM,
+        ' 12/12 NPC discriminantes con hue-match; p.ej. 0010D4B9 QNAM (183,156,145) ≈ facetint (181,158,147)):
+        ' el facetint SÍ hornea el skintone = lerp(0.5, skinTINC, skinTINV) = QNAM. So QNAM is the RESULT of this
+        ' composite (stored for the body to match). This matches the disassembled bake builder (@0x18C9F40)
+        ' literally: authored → npcTint colour = TINC; unauthored → RACE default CLFM (entry+0x30). No per-type branch.
         For Each layer In layers
             Dim cr As Double, cg As Double, cbb As Double, iv As Double
             Dim authored As Double() = Nothing
@@ -442,7 +456,13 @@ Public Module SseFaceTintComposer
                                 For Each pr In presets
                                     If pr.Clfm = cd Then dval = pr.Val : Exit For
                                 Next
-                                layers.Add(New SseTintMask With {.Index = ci, .Path = cp, .MaskType = ct, .DefaultClfm = cd, .DefaultValue = dval})
+                                ' Snapshot the layer's preset swatches (TIRS→CLFM/value) for the editor's dropdown. Same
+                                ' list the default-value lookup above reads; copied so the shared 'presets' can be reused.
+                                Dim presetSnap As New List(Of SseTintPreset)(presets.Count)
+                                For Each pr In presets
+                                    presetSnap.Add(New SseTintPreset With {.Tirs = pr.Tirs, .Clfm = pr.Clfm, .Value = pr.Val})
+                                Next
+                                layers.Add(New SseTintMask With {.Index = ci, .Path = cp, .MaskType = ct, .DefaultClfm = cd, .DefaultValue = dval, .Presets = presetSnap})
                             End If
                         End Sub
             For Each sr In rr.Subrecords
