@@ -298,6 +298,13 @@ Public Class FO4UnifiedMaterial_Class
         copy._blendFunctionDest = _blendFunctionDest
         copy._skinTintAlpha = _skinTintAlpha
         copy._NifGlossiness = _NifGlossiness
+        ' Multiplicador runtime del tint (convención ×2 del pelo SSE): vive en el wrapper, no en el
+        ' BGSM, así que el loop de reflexión de arriba no lo alcanza. Sin esto un clon perdería el ×2.
+        copy.TintColorScale = TintColorScale
+        ' Portador del alpha-test del MNAM de un FTST explícito del NPC: vive en el wrapper (NO en el
+        ' BGSM), así que el loop de reflexión de arriba no lo alcanza. Sin esto un clon perdería el
+        ' bit F4SPF2 Alpha_Test. Ver AlphaTestFromNpcFtst y su uso en Save_To_Shader.
+        copy.AlphaTestFromNpcFtst = AlphaTestFromNpcFtst
         Return copy
     End Function
 
@@ -943,6 +950,18 @@ Public Class FO4UnifiedMaterial_Class
             Underlying_Material.AlphaTest = value
         End Set
     End Property
+
+    ''' <summary>
+    ''' Portador SEPARADO del alpha-test que llegó por el MNAM de un FTST declarado A NIVEL NPC
+    ''' sobre un head part de CARA (NpcMaterialResolver.ApplyTextureSetOverride, "REGLA B").
+    ''' NO es lo mismo que <see cref="AlphaTest"/>: ese campo tiene DOS productores y el otro
+    ''' (ApplyAlphaPropertyFromNif, el NiAlphaProperty del mesh FUENTE) dispara en todo el
+    ''' pelo/pestañas/cejas/ojos vanilla. Este portador aísla el productor del MNAM, que es el
+    ''' único que gobierna el bit Fallout4ShaderPropertyFlags2.Alpha_Test (1&lt;&lt;25).
+    ''' Ver el uso y la evidencia medida en Save_To_Shader (bloque F4SPF2 Alpha_Test).
+    ''' </summary>
+    <Browsable(False)>
+    Public Property AlphaTestFromNpcFtst As Boolean
 
     <Category("Opacity")>
     <DefaultValue(CType(128, Byte))>
@@ -1699,6 +1718,22 @@ Public Class FO4UnifiedMaterial_Class
             End Select
         End Set
     End Property
+
+    ''' <summary>Runtime multiplier (NOT serialized) aplicado al tint del material al convertirlo a color
+    ''' FLOAT — tanto al escribir el shader del NIF (bake) como al subir el uniform del render. Default 1.0
+    ''' = sin efecto, así que ningún camino preexistente cambia.
+    ''' <para>Motivo: el storage del material es de 3 BYTES (0x00RRGGBB, techo duro 255 ⇒ 1.0), pero el
+    ''' dominio del shader NO está acotado a 1.0 (Shader_Class: <c>color.rgb *= vec3(1.0) + vColor.y *
+    ''' (tintColor - vec3(1.0))</c>). La convención SSE de pelo dobla el color del CLFM, y el CK hace ese ×2
+    ''' EN FLOAT: CLFM=(130,130,130) → CK HairTintColor=(1,020,1,020,1,020) = 2,0 × (130/255). Doblar en
+    ''' espacio byte daba min(255,260)=255 ⇒ 1,000 (MEDIDO: 9 NPCs / 25 shapes, p.ej. BrowsMaleSnowElf,
+    ''' Δ=0,0196). Este factor sube el ×2 al dominio float y elimina el clamp estructural.</para>
+    ''' <para>⚠️ HairTintColor y SkinTintColor comparten el MISMO storage BGSM, así que este factor aplica
+    ''' a los dos por igual — que es exactamente lo que hacía el ×2 en bytes (Save_To_Shader copia el mismo
+    ''' valor a shad.SkinTintColor cuando SkinTint=True). Quien lo setea debe hacerlo explícitamente (también
+    ''' a 1.0F) para no arrastrar estado si el material se reutiliza.</para></summary>
+    <Browsable(False)>
+    Public Property TintColorScale As Single = 1.0F
 
     ''' <summary>Runtime marker (not serialized): a RaceMenu skin override explicitly set <see cref="SkinTintColor"/>
     ''' via its key-7 tint, so the per-actor QNAM skin-tone pass (NpcFaceTintResolver) must NOT overwrite it — in
@@ -3147,13 +3182,35 @@ Public Class FO4UnifiedMaterial_Class
     Friend Sub WriteAlphaPropertyToShape(shap As INiShape, Nif As Nifcontent_Class_Manolo)
         Dim needAlphaProperty = _alphaBlendEnabled OrElse Underlying_Material.AlphaTest
         If needAlphaProperty Then
+            Dim createdNew = False
             If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
                 shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
+                createdNew = True
             End If
             Dim alp = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
-            alp.Flags.AlphaTest = Underlying_Material.AlphaTest
-            alp.Threshold = Underlying_Material.AlphaTestRef
-            WriteBlendFlagsToAlphaProperty(alp)
+            ' REGLA (FO4, bake CK): cuando el shape FUENTE no traía NiAlphaProperty, el CK NO deriva el
+            ' bloque del material — CONSTRUYE uno con SU default y le espeja ÚNICAMENTE el booleano
+            ' AlphaTest del material. Su base es 0x00EC (AlphaBlend=0, src=SRC_ALPHA(6),
+            ' dst=INV_SRC_ALPHA(7), TestFunc=ALWAYS(0)) + 0x200 si AlphaTest ⇒ 0x02EC, threshold=0.
+            ' Ignora tanto `alphaBlend` como `alphaTestRef` del BGSM.
+            ' EVIDENCIA MEDIDA: NPC Fallout4.esm 0x00002F24 (Valentine), shape SynthGen2Head1 /
+            ' SynthHeadGen2. MNAM = actors\synths\gen2skinheadvalentine.bgsm con
+            ' alphaBlend=1 src=6 dst=7 alphaTest=1 alphaTestRef=128.
+            '   CK       : flags=0x02EC threshold=0   (AlphaBlend=0, TestFunc=ALWAYS, thr ignorado)
+            '   nosotros : flags=0x12ED threshold=128 (default NiflySharp 0x12EC = TestFunc=GREATER,
+            '              + bit AlphaBlend del BGSM, + AlphaTestRef del BGSM)
+            ' El camino de round-trip (el shape fuente YA tenía NiAlphaProperty) queda intacto: ahí el
+            ' bloque clonado se reescribe desde el material, que salió de ese mismo bloque ⇒ idéntico.
+            ' Game-aware: SÓLO FO4; el camino Skyrim no se toca.
+            If createdNew AndAlso Not Nif.Header.Version.IsSSE Then
+                alp.Flags.Value = &HECUS
+                alp.Flags.AlphaTest = Underlying_Material.AlphaTest
+                alp.Threshold = 0
+            Else
+                alp.Flags.AlphaTest = Underlying_Material.AlphaTest
+                alp.Threshold = Underlying_Material.AlphaTestRef
+                WriteBlendFlagsToAlphaProperty(alp)
+            End If
         Else
             If shap.AlphaPropertyRef IsNot Nothing AndAlso shap.AlphaPropertyRef.Index <> -1 Then
                 Nif.RemoveBlock(shap.AlphaPropertyRef.Index)
@@ -3626,7 +3683,8 @@ Public Class FO4UnifiedMaterial_Class
                     shad.ShaderFlags_SSPF1 = shad.ShaderFlags_SSPF1 Or NiflySharp.Enums.SkyrimShaderPropertyFlags1.Eye_Environment_Mapping
             End Select
         End If
-        Dim hairTintNifColor = MaterialRgbToNifColor3(Mat.HairTintColor)
+        ' TintColorScale sube el ×2 del pelo SSE al dominio FLOAT (el storage BGSM es de bytes, techo 1.0).
+        Dim hairTintNifColor = MaterialRgbToNifColor3(Mat.HairTintColor, Me.TintColorScale)
         shad.HairTintColor = hairTintNifColor
         If Mat.SkinTint Then
             shad.SkinTintColor = hairTintNifColor
@@ -3686,6 +3744,43 @@ Public Class FO4UnifiedMaterial_Class
                 shad.ShaderFlags_F4SPF1 = shad.ShaderFlags_F4SPF1 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate
             Else
                 shad.ShaderFlags_F4SPF1 = shad.ShaderFlags_F4SPF1 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate
+            End If
+            ' F4SPF2 Alpha_Test (1<<25) — REGLA MEDIDA 2026-07-18.
+            '
+            ' ⛔ NO espejar aquí Mat.AlphaTest. Ese campo tiene DOS productores y sólo UNO gobierna
+            '    este bit:
+            '      (1) ApplyAlphaPropertyFromNif — el NiAlphaProperty del mesh FUENTE. Dispara en
+            '          todo el pelo/pestañas/cejas/ojos vanilla. NO pone el bit.
+            '      (2) NpcMaterialResolver "REGLA B" — el MNAM de un FTST declarado A NIVEL NPC
+            '          sobre un head part de CARA. ESTE, y sólo éste, pone el bit.
+            '    Por eso se lee el portador separado Me.AlphaTestFromNpcFtst (vive en el WRAPPER, no
+            '    en el BGSM) y no Mat.AlphaTest.
+            '
+            ' ⛔ REGRESIÓN PREVIA (revertida): espejar Mat.AlphaTest incondicionalmente puso el bit
+            '    en 1443 NPCs / 3465 shapes donde el CK NO lo pone, porque conflacionaba (1) con (2).
+            '
+            ' EVIDENCIA MEDIDA (referencia = NIFs horneados por el CK, extraídos de los BA2 vanilla
+            ' Fallout4 - Meshes + los 6 DLC; NO de nuestro propio bake):
+            '   · 1489 NIFs / 16.883 shapes: el bit está puesto en EXACTAMENTE 1 shape en todo el
+            '     juego + DLCs → Fallout4.esm 0x00002F24 (Valentine), shape 'SynthHeadGen2'
+            '     (F4SPF2 = 0x02000081).
+            '   · 10.995 shapes SÍ tienen NiAlphaProperty y NO tienen el bit ⇒ el bit NO es función
+            '     de la presencia de alpha ni del `bAlphaTest` del material. Refuta el fix anterior.
+            '   · Población del productor (2): 677 NPCs (de 1488 con facegeom del CK) declaran FTST
+            '     propio, resolviendo a 15 TXST distintos. Sólo 5 de esos 15 traen MNAM, y de esos 5
+            '     sólo gen2skinheadvalentine.bgsm tiene bAlphaTest=1 (gen2skinhead, ghoulmalehead,
+            '     supermutantfgheadstrong1 y supermutant1suicidehead lo tienen en 0). Ese TXST
+            '     (0x0010C3CD SkinHeadValentine) lo referencia UN solo NPC como FTST explícito.
+            '     ⇒ el productor (2) con AlphaTest=True cae en exactamente 1 shape = el mismo que
+            '     el CK marca. Correspondencia 1:1, 0 falsos positivos y 0 falsos negativos.
+            '   · Control negativo: DiMA (DLCCoast.esm 0x00004639) tiene la MISMA shape
+            '     'SynthHeadGen2' y cae al FTST por DEFECTO de la RACE (el mismo TXST 0x0010C3CD);
+            '     el CK le deja F4SPF2 = 0x00000081 (bit CLARO, sin NiAlphaProperty). El gate
+            '     isNpcExplicitFaceTextureSet lo excluye correctamente.
+            If Me.AlphaTestFromNpcFtst Then
+                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
+            Else
+                shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
             End If
             If Mat.SkewSpecularAlpha Then
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha
@@ -4059,12 +4154,15 @@ Public Class FO4UnifiedMaterial_Class
         Return CType((CUInt(c.R) << 16) Or (CUInt(c.G) << 8) Or CUInt(c.B), UInteger)
     End Function
 
-    Private Shared Function MaterialRgbToNifColor3(rgb As UInteger) As NiflySharp.Structs.Color3
+    Private Shared Function MaterialRgbToNifColor3(rgb As UInteger, Optional scale As Single = 1.0F) As NiflySharp.Structs.Color3
         rgb = rgb And &HFFFFFFUI
         Dim r = ((rgb >> 16) And &HFF)
         Dim g = ((rgb >> 8) And &HFF)
         Dim b = (rgb And &HFF)
-        Return New Color3(r / 255, g / 255, b / 255)
+        ' scale se aplica EN FLOAT (post /255) a propósito: el dominio del NIF Color3 no está acotado a
+        ' 1.0, mientras que el storage del material es de 3 BYTES (0..255) — escalar antes de dividir
+        ' clamparía a 1.0 y perdería el exceso. Ver TintColorScale.
+        Return New Color3(CSng(r / 255) * scale, CSng(g / 255) * scale, CSng(b / 255) * scale)
     End Function
 
     Private Shared Function MaterialRgbToNifColor4(rgb As UInteger, alpha As Single) As NiflySharp.Structs.Color4

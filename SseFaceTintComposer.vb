@@ -94,26 +94,8 @@ Public Module SseFaceTintComposer
         ' present, else the RACE default (TIND→CLFM colour). interp = value_byte × 0.01 (both confirmed in the
         ' binary). The RACE order (not NPC subrecord order) is what fills cb2[0..15]; lerp is not commutative.
 
-        ' Map the NPC's authored tint layers: index → {R, G, B (TINC/255), interp (TINV/100)}. Subrecords per
-        ' layer: TINI, TINC, TINV, TIAS (TIAS terminates the layer → commit).
-        Dim npcMap As New Dictionary(Of Integer, Double())
-        Dim tIdx As Integer = -1, tr As Double = 0, tg As Double = 0, tb As Double = 0, tvv As Double = 0
-        ' Source of the NPC-authored tints: the editor's edited layers (overlay) if provided, else the raw
-        ' record. Normalised to (sig, data) so both the PluginRecord and the NPC_RawSubrecord list parse identically.
-        Dim tintPairs As IEnumerable(Of (Sig As String, Data As Byte()))
-        If npcTintOverride IsNot Nothing Then
-            tintPairs = npcTintOverride.Select(Function(s) (s.Sig, s.Data))
-        Else
-            tintPairs = npcRec.Subrecords.Select(Function(s) (s.Signature, s.Data))
-        End If
-        For Each sr In tintPairs
-            Select Case sr.Sig
-                Case "TINI" : tIdx = BitConverter.ToUInt16(sr.Data, 0)
-                Case "TINC" : If sr.Data.Length >= 3 Then tr = sr.Data(0) / 255.0 : tg = sr.Data(1) / 255.0 : tb = sr.Data(2) / 255.0
-                Case "TINV" : If sr.Data.Length >= 4 Then tvv = BitConverter.ToUInt32(sr.Data, 0) / 100.0
-                Case "TIAS" : If tIdx >= 0 Then npcMap(tIdx) = New Double() {tr, tg, tb, tvv} : tIdx = -1 : tr = 0 : tg = 0 : tb = 0 : tvv = 0
-            End Select
-        Next
+        ' Tints AUTORADOS del NPC — FUENTE ÚNICA compartida con la réplica GPU (BuildLayerInputs).
+        Dim npcMap = BuildNpcAuthoredTintMap(npcRec, npcTintOverride)
 
         Dim layers = SortSseTintLayers(GetRaceLayersOrdered(pm, raceFormID, isFemale), npcMap)   ' orden configurable, default RaceMenu
 
@@ -176,6 +158,57 @@ Public Module SseFaceTintComposer
         Return acc
     End Function
 
+    ''' <summary>Mapa de tints AUTORADOS del NPC: índice de capa → {R, G, B (TINC/255), interp (TINV/100)}.
+    ''' Subrecords por capa: TINI, TINC, TINV, TIAS (TIAS cierra la capa → commit).
+    ''' ⭐⭐ FUENTE ÚNICA de las DOS réplicas: la CPU (<see cref="ComposeLinearRgba"/>) y la GPU
+    ''' (<see cref="BuildLayerInputs"/>) llaman ACÁ. ⛔ Estaba DUPLICADO literalmente en ambas: editar una sola
+    ''' habría hecho divergir CPU y GPU en el VALOR (no en los últimos bits), en silencio, sin que nadie se
+    ''' equivocara en la matemática — el modo de fallo más barato de introducir y el más caro de diagnosticar.
+    ''' ⛔ NO volver a inlinearlo en ninguna de las dos.
+    ''' <paramref name="npcTintOverride"/> = capas editadas en el editor; Nothing ⇒ el record crudo. Se normaliza
+    ''' a (sig, data) para que el PluginRecord y la lista de NPC_RawSubrecord se parseen idénticamente.
+    ''' ⚠️ TINV NO se acota A PROPÓSITO. En spec vale 0-100 ⇒ tvv ∈ [0,1] y las dos réplicas coinciden. Fuera de
+    ''' spec divergen: el GPU acota la cobertura (uOpacity, Math.Max/Min en FaceTintCompositor) y el CPU no. NO se
+    ''' unifica: no está RE-ado qué hace el motor con TINV > 100 (la RE sólo confirma `interp = value × 0.01`, sin
+    ''' clamp), y este valor alimenta el BAKE (ComposeFacetintAcc → BakeFaceTintDds), validado byte-exacto contra
+    ''' el CK ⇒ un clamp inventado sería regresión, no fix. El RESULTADO sí queda acotado aguas abajo en ambos
+    ''' caminos. Se loguea para tener un NPC concreto contra el que hacer RE si alguna vez aparece.</summary>
+    Private Function BuildNpcAuthoredTintMap(npcRec As PluginRecord,
+                                             npcTintOverride As IList(Of NPC_RawSubrecord)) As Dictionary(Of Integer, Double())
+        Dim npcMap As New Dictionary(Of Integer, Double())
+        Dim tIdx As Integer = -1, tr As Double = 0, tg As Double = 0, tb As Double = 0, tvv As Double = 0
+        ' Sin override Y sin record ⇒ no hay tints autorados: mapa vacío (lo usa ResolveSkinToneQnam, que sólo
+        ' tiene la lista cruda `npc.SseTintRaw` y puede venir Nothing). Antes ese caller guardaba por su cuenta.
+        If npcTintOverride Is Nothing AndAlso npcRec Is Nothing Then Return npcMap
+        Dim tintPairs As IEnumerable(Of (Sig As String, Data As Byte()))
+        If npcTintOverride IsNot Nothing Then
+            tintPairs = npcTintOverride.Select(Function(s) (s.Sig, s.Data))
+        Else
+            tintPairs = npcRec.Subrecords.Select(Function(s) (s.Signature, s.Data))
+        End If
+        ' Guardas de nulidad/longitud = las MÁS ESTRICTAS de las tres copias que esto reemplaza (venían de
+        ' ResolveSkinToneQnam). Sólo evitan excepciones con datos malformados; con datos bien formados el
+        ' resultado es idéntico ⇒ no tocan el bake.
+        For Each sr In tintPairs
+            Select Case sr.Sig
+                Case "TINI" : If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then tIdx = BitConverter.ToUInt16(sr.Data, 0)
+                Case "TINC" : If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 3 Then tr = sr.Data(0) / 255.0 : tg = sr.Data(1) / 255.0 : tb = sr.Data(2) / 255.0
+                Case "TINV"
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        tvv = BitConverter.ToUInt32(sr.Data, 0) / 100.0
+                        If tvv > 1.0 Then
+                            Dim tvvLog = tvv, idxLog = tIdx
+                            Logger.LogLazy(Function() $"[SSE-TINT] TINV FUERA DE SPEC: idx={idxLog} valor={tvvLog:F4} (>1.0). " &
+                                                      "CPU y GPU divergen acá (el GPU acota la cobertura, el CPU no). " &
+                                                      "Hace falta RE del motor antes de unificar.")
+                        End If
+                    End If
+                Case "TIAS" : If tIdx >= 0 Then npcMap(tIdx) = New Double() {tr, tg, tb, tvv} : tIdx = -1 : tr = 0 : tg = 0 : tb = 0 : tvv = 0
+            End Select
+        Next
+        Return npcMap
+    End Function
+
     ''' <summary>Contraparte GPU de <see cref="ComposeLinearRgba"/>: resuelve las capas de tint del NPC como
     ''' <see cref="FaceTintLayerInput"/> (PaletteMask) para el compositor GL (<c>ApplyFaceTintPipeline</c>). La
     ''' resolución es IDÉNTICA a ComposeLinearRgba (RACE order, color authored-vs-default, TINV, override de máscara),
@@ -188,23 +221,9 @@ Public Module SseFaceTintComposer
                                      Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As List(Of FaceTintLayerInput)
         If pm Is Nothing OrElse npcRec Is Nothing OrElse race Is Nothing Then Return Nothing
 
-        ' NPC-authored tint map: index → {R,G,B (TINC/255), interp (TINV/100)}. MISMA lectura que ComposeLinearRgba.
-        Dim npcMap As New Dictionary(Of Integer, Double())
-        Dim tIdx As Integer = -1, tr As Double = 0, tg As Double = 0, tb As Double = 0, tvv As Double = 0
-        Dim tintPairs As IEnumerable(Of (Sig As String, Data As Byte()))
-        If npcTintOverride IsNot Nothing Then
-            tintPairs = npcTintOverride.Select(Function(s) (s.Sig, s.Data))
-        Else
-            tintPairs = npcRec.Subrecords.Select(Function(s) (s.Signature, s.Data))
-        End If
-        For Each sr In tintPairs
-            Select Case sr.Sig
-                Case "TINI" : tIdx = BitConverter.ToUInt16(sr.Data, 0)
-                Case "TINC" : If sr.Data.Length >= 3 Then tr = sr.Data(0) / 255.0 : tg = sr.Data(1) / 255.0 : tb = sr.Data(2) / 255.0
-                Case "TINV" : If sr.Data.Length >= 4 Then tvv = BitConverter.ToUInt32(sr.Data, 0) / 100.0
-                Case "TIAS" : If tIdx >= 0 Then npcMap(tIdx) = New Double() {tr, tg, tb, tvv} : tIdx = -1 : tr = 0 : tg = 0 : tb = 0 : tvv = 0
-            End Select
-        Next
+        ' Tints AUTORADOS del NPC — MISMA FUENTE que la réplica CPU (ComposeLinearRgba). ⛔ No re-inlinear:
+        ' estaban duplicados y una edición en un solo sitio hacía divergir CPU y GPU en silencio.
+        Dim npcMap = BuildNpcAuthoredTintMap(npcRec, npcTintOverride)
 
         Dim layers = SortSseTintLayers(GetRaceLayersOrdered(pm, raceFormID, isFemale), npcMap)   ' orden configurable, default RaceMenu
         ' Canal de la máscara según la ley SSE (default R). El shader GL PaletteMask lo lee por uniform (FO4=verde).
@@ -287,21 +306,13 @@ Public Module SseFaceTintComposer
             Return Nothing
         End If
 
-        ' Build the NPC-authored tint map EXACTLY as ComposeLinearRgba does (index → {R,G,B (TINC/255), TINV/100}).
-        ' Source = npc.SseTintRaw (TINI/TINC/TINV/TIAS), the same list the composer reads via npcTintOverride, so
-        ' the body skin tone traces to the identical authored-vs-default resolution the face compositor uses.
-        Dim npcMap As New Dictionary(Of Integer, Double())
-        Dim tIdx As Integer = -1, tr As Double = 0, tg As Double = 0, tb As Double = 0, tvv As Double = 0
-        If npc.SseTintRaw IsNot Nothing Then
-            For Each sr In npc.SseTintRaw
-                Select Case sr.Sig
-                    Case "TINI" : If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then tIdx = BitConverter.ToUInt16(sr.Data, 0)
-                    Case "TINC" : If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 3 Then tr = sr.Data(0) / 255.0 : tg = sr.Data(1) / 255.0 : tb = sr.Data(2) / 255.0
-                    Case "TINV" : If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then tvv = BitConverter.ToUInt32(sr.Data, 0) / 100.0
-                    Case "TIAS" : If tIdx >= 0 Then npcMap(tIdx) = New Double() {tr, tg, tb, tvv} : tIdx = -1 : tr = 0 : tg = 0 : tb = 0 : tvv = 0
-                End Select
-            Next
-        End If
+        ' Tints AUTORADOS del NPC — MISMA FUENTE que las réplicas CPU/GPU de la cara (BuildNpcAuthoredTintMap).
+        ' Era la TERCERA copia literal del mismo parseo; su comentario ya declaraba "EXACTLY as ComposeLinearRgba
+        ' does", que es justo lo que una copia no puede garantizar. Sus guardas de nulidad (las más estrictas de
+        ' las tres) se adoptaron en la función compartida. ⛔ No re-inlinear: el tono del CUERPO y el de la CARA
+        ' tienen que salir del MISMO parseo o divergen en silencio.
+        ' Sólo hay lista cruda (npc.SseTintRaw), sin PluginRecord ⇒ se pasa como override; Nothing ⇒ mapa vacío.
+        Dim npcMap = BuildNpcAuthoredTintMap(Nothing, npc.SseTintRaw)
 
         ' Resolve the skin layer's colour + interp: authored (npcMap) wins, else RACE default CLFM + DefaultValue.
         ' This is the SAME branch ComposeLinearRgba runs per layer (see the For Each layer loop there).
@@ -507,7 +518,15 @@ Public Module SseFaceTintComposer
             Dim b = FilesDictionary_class.GetBytes(key)
             t = If(b Is Nothing, Nothing, FaceTintCpuCompositor.DecodeDds(b, w, h))
             If t IsNot Nothing AndAlso t.Rgba Is Nothing Then t = Nothing
-            If t Is Nothing OrElse t.Rgba.Length <= 1024 * 1024 * 4 Then _texSrcCache(srcKey) = t
+            ' A 512² la entrada de _texSrcCache es INALCANZABLE como hit, por construcción: toda llamada 512²
+            ' o pega en _texCache y retorna arriba (sin llegar acá), o falla — y como ambas cachés se pueblan
+            ' SIEMPRE juntas en este camino (:524 y :543 cubren miss y éxito), un miss de _texCache implica un
+            ' miss de _texSrcCache. Retenerla sólo duplicaba lo que ya guarda _texCache (medido: 0 hits/156
+            ' misses, 108/108 entradas byte-idénticas ⇒ 864 MB de duplicación exacta). Para targets != 512²
+            ' (fold a resolución nativa del complexion, p.ej. 4096²) _texCache no participa y ésta es la ÚNICA
+            ' caché: ahí sí se retiene, que es el caso para el que se creó.
+            Dim isRedundantAt512 = (w = 512 AndAlso h = 512)
+            If Not isRedundantAt512 AndAlso (t Is Nothing OrElse t.Rgba.Length <= 1024 * 1024 * 4) Then _texSrcCache(srcKey) = t
         End If
         If t Is Nothing Then
             If w = 512 AndAlso h = 512 Then _texCache(key) = Nothing

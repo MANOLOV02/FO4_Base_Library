@@ -1670,6 +1670,14 @@ Public Class PreviewModel
         ''' del base para no doble-decodear el seed).</summary>
         Public Property IsSRGB As Boolean = False
 
+        ''' <summary>True cuando el Texture_ID actual lo instalo un compositor (FaceTint / fold SSE) y NO el
+        ''' loader de DDS. Sirve para saber si se puede LIBERAR al reemplazarlo: la textura del loader puede
+        ''' seguir referenciada en otro lado (borrarla deja el sampler en BLANCO), pero una que instalamos
+        ''' nosotros no la referencia nadie mas una vez que se pisa el Texture_ID, y sin borrarla queda
+        ''' huerfana para siempre (el fold se re-ejecuta en cada refresh de edicion en vivo: a 4096x4096 son
+        ''' 268 MB de VRAM por tick). Se setea al instalar; el loader deja el default False.</summary>
+        Public Property OwnedByComposer As Boolean = False
+
     End Class
     Public Class RenderableMesh
         Public Class MeshData_Class
@@ -3354,11 +3362,11 @@ Public Class PreviewModel
                     ' tintColor del material CRUDO (×1/255, SIN gamma) — verificado en SkyrimSE.exe
                     ' 0x3B8D80 (resolver, mulss 1/255) + 0x4365E0 (copy verbatim al material type-5).
                     ' FO4: el engine gamma-corrige (pow 2.2) el skin tone en SetupMaterial → mantener Linear.
-                    tintVec = If(isSSE, Shader_Base_Class.Color_to_Vector(tint),
-                                        Shader_Base_Class.Color_to_Vector_Linear(tint))
+                    tintVec = If(isSSE, ScaledTintSrgb(tint, materialBase.TintColorScale),
+                                        Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale)))
                 Else
                     tint = materialBase.HairTintColor
-                    tintVec = Shader_Base_Class.Color_to_Vector_Linear(tint)
+                    tintVec = Shader_Base_Class.Vector_to_Linear(ScaledTintSrgb(tint, materialBase.TintColorScale))
                 End If
                 shader.SetVector3("tintColor", tintVec)
             End If
@@ -3477,6 +3485,21 @@ Public Class PreviewModel
             ' Se resuelve en la etapa de draw según el face mode efectivo del shape.
 
         End Sub
+
+        ''' <summary>Tint del material en espacio sRGB 0..1 con el <see cref="FO4UnifiedMaterial_Class.TintColorScale"/>
+        ''' aplicado. RENDER == BAKE: es la misma cuenta que <c>Save_To_Shader</c> hace para el Color3 del NIF
+        ''' (byte/255 × scale). El scale existe porque el storage del material es de BYTES (techo duro 1.0) y la
+        ''' convención SSE de pelo dobla el color del CLFM EN FLOAT — CK: 2,0 × (130/255) = 1,020, mientras que
+        ''' doblar en bytes daba min(255,260)/255 = 1,000 (MEDIDO: 9 NPCs / 25 shapes, p.ej. BrowsMaleSnowElf).
+        ''' El resultado puede exceder 1.0 a propósito; el shader lo tolera
+        ''' (<c>color.rgb *= vec3(1.0) + vColor.y * (tintColor - vec3(1.0))</c>). Se escala ANTES de linearizar
+        ''' porque pow(2c,2.2) ≠ 2·pow(c,2.2). Con scale=1.0F (default) es idéntico al comportamiento previo.</summary>
+        Private Shared Function ScaledTintSrgb(tint As Color, scale As Single) As Vector3
+            Dim v = Shader_Base_Class.Color_to_Vector(tint)
+            If scale <> 1.0F Then v *= scale
+            Return v
+        End Function
+
         Public Sub ExportMeshToOBJ(rutaArchivo As String)
             Using sw As New StreamWriter(rutaArchivo, False, Encoding.UTF8)
 

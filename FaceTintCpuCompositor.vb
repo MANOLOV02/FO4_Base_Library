@@ -382,6 +382,16 @@ Public Module FaceTintCpuCompositor
     ''' paraleliza el loop de clones, cambiar a ConcurrentDictionary.</summary>
     Public Property BatchDecodeCache As Dictionary(Of String, DecodedTex)
 
+    ''' <summary>Saltea el trabajo de PIXELES del compose (seed + region swaps + tint layers) devolviendo el
+    ''' canal con sus dimensiones reales y un buffer sin componer. SOLO para barridos que validan el NIF
+    ''' (--ssecomparebatch), donde el contenido de los DDS no se mira: en FO4 el bake compone 3 canales a
+    ''' resolucion nativa (1024x1024 o mas) por NPC y eso domina el costo del barrido.
+    ''' ⛔ NO cambia NINGUNA decision del bake sobre el NIF: el gate se aplica DESPUES del decode del source
+    ''' y DESPUES de resolver w/h, que es lo unico que determina si el canal sale Nothing (= slot que el bake
+    ''' no escribe) y con que tamaño. Por construccion el NIF sale identico con y sin este flag; lo unico que
+    ''' cambia son los pixeles de los .dds, que en ese modo no se usan.</summary>
+    Public Property SkipPixelCompose As Boolean = False
+
     ''' <summary>Arranca el cache de decode batch (llamar ANTES del loop de clones).</summary>
     Public Sub BeginBatchDecodeCache()
         BatchDecodeCache = New Dictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)
@@ -463,6 +473,10 @@ Public Module FaceTintCpuCompositor
             If mipSrc IsNot Nothing Then src = mipSrc
         End If
         Dim n = w * h
+        ' ⛔ GATE de pixel-work (ver SkipPixelCompose). Va ACA a proposito: despues del decode del source y de
+        ' resolver w/h — lo unico que decide si el canal sale Nothing (slot que el bake NO escribe) y con que
+        ' tamaño. Saltea seed + region swaps + tint layers. El resto del flujo es identico ⇒ el NIF sale igual.
+        If SkipPixelCompose Then Return New CpuChannelResult With {.Width = w, .Height = h, .Bgra = New Byte(n * 4 - 1) {}}
         ' Acumulador RGB en OutputSpace del canal (build_3): D=sRGB (= src directo, SIN g22) ; N/S=raw lineal.
         ' El storage del engine FaceCustomization es sRGB (= formato de CK en disco); no se acumula en g22.
         ' Seed via SampleChannelAt (índice directo si tamaños iguales; bilineal si difieren = resize).

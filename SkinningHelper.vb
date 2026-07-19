@@ -91,6 +91,18 @@ Public Class SkinningHelper
         Dim result As Matrix4d = Matrix4d.Zero
         Dim sumW As Double = 0
         Dim cnt = Math.Min(boneWeights.Length, boneIndices.Length) - 1
+        ' Normalizacion de pesos del MOTOR (EngineSkinWeightNormalization): w3 = 1−Σ, descarta el slot con peso ≤0,
+        ' Gate apagado (default) ⇒ early-return y el camino de abajo queda bit-idéntico al de siempre.
+        Dim ckW(EngineSkinWeightNormalization.Slots - 1) As Single
+        If EngineSkinWeightNormalization.TryComputeWeights(boneWeights, 0, boneWeights.Length, ckW) Then
+            For j = 0 To EngineSkinWeightNormalization.Slots - 1
+                If ckW(j) > 0.0F Then
+                    Dim idxc = boneIndices(j)
+                    If idxc >= 0 AndAlso idxc < precomputed.Length Then result += precomputed(idxc) * CDbl(ckW(j))
+                End If
+            Next
+            Return result
+        End If
         ' Single pass: accumulate weighted matrices and sum of weights simultaneously
         For j = 0 To cnt
             Dim w = CType(boneWeights(j), Double)
@@ -119,6 +131,17 @@ Public Class SkinningHelper
         Dim result As Matrix4d = Matrix4d.Zero
         Dim sumW As Double = 0
         Dim available As Integer = Math.Min(wpv, Math.Min(boneWeights.Length - baseIdx, boneIndices.Length - baseIdx))
+        ' Normalizacion de pesos del MOTOR — ver el overload de arriba. Gate apagado ⇒ bit-idéntico al historico.
+        Dim ckW(EngineSkinWeightNormalization.Slots - 1) As Single
+        If available >= EngineSkinWeightNormalization.Slots AndAlso EngineSkinWeightNormalization.TryComputeWeights(boneWeights, baseIdx, wpv, ckW) Then
+            For j = 0 To EngineSkinWeightNormalization.Slots - 1
+                If ckW(j) > 0.0F Then
+                    Dim idxc = boneIndices(baseIdx + j)
+                    If idxc >= 0 AndAlso idxc < precomputed.Length Then result += precomputed(idxc) * CDbl(ckW(j))
+                End If
+            Next
+            Return result
+        End If
         For j = 0 To available - 1
             Dim w = CType(boneWeights(baseIdx + j), Double)
             sumW += w
@@ -317,6 +340,17 @@ Public Class SkinningHelper
                                                                  Mtot = BlendBoneMatrices(skinFlatWgt, skinFlatIdx, baseSkin, skinWpv, precomputedBoneMatrices)
 
                                                                  ' GPU arrays: copy up to 4 slots, normalize weights to sum=1.
+                                                                 ' Normalizacion de pesos del MOTOR: el shader ya suma Σ w·bone SIN dividir, así que
+                                                                 ' alcanza con subir acá los pesos de la ley (w3 = 1−Σ, y 0 en vez de descartar, que es
+                                                                 ' lo mismo porque el shader saltea los ≤0) para que el GPU quede igual que el CPU.
+                                                                 ' Gate apagado (default) ⇒ se toma la rama normalizada de siempre, bit-idéntica.
+                                                                 Dim ckWg(EngineSkinWeightNormalization.Slots - 1) As Single
+                                                                 If EngineSkinWeightNormalization.TryComputeWeights(skinFlatWgt, baseSkin, skinWpv, ckWg) Then
+                                                                     For j = 0 To 3
+                                                                         gpuBoneIdx(baseIdx + j) = skinFlatIdx(baseSkin + j)
+                                                                         gpuBoneWgt(baseIdx + j) = If(ckWg(j) > 0.0F, ckWg(j), 0.0F)
+                                                                     Next
+                                                                 Else
                                                                  Dim copySlots = Math.Min(4, skinWpv)
                                                                  Dim localSumW As Double = 0
                                                                  For j = 0 To copySlots - 1
@@ -331,6 +365,7 @@ Public Class SkinningHelper
                                                                          gpuBoneWgt(baseIdx + j) = 0.0F
                                                                      End If
                                                                  Next
+                                                                 End If
                                                              Else
                                                                  ' No per-vertex skin data — bind to bone 0 with full weight (same fallback as before).
                                                                  Mtot = If(precomputedBoneMatrices.Length > 0, precomputedBoneMatrices(0), Matrix4d.Identity)
@@ -602,6 +637,21 @@ Public Class SkinningHelper
                                                    If hasSkin Then
                                                        Dim baseIdx = i * skinWpv
                                                        Dim cnt = Math.Min(skinWpv, Math.Min(skinFlatWgt.Length - baseIdx, skinFlatIdx.Length - baseIdx)) - 1
+                                                       ' Normalizacion de pesos del MOTOR — se aplica a las DOS mezclas (pose y bind),
+                                                       ' que es lo que hace el CK: los dos SkinBlend de ApplyCustomizationRemap corren la
+                                                       ' misma ley. Gate apagado (default) ⇒ rama normalizada de siempre, bit-idéntica.
+                                                       Dim ckWv(EngineSkinWeightNormalization.Slots - 1) As Single
+                                                       If EngineSkinWeightNormalization.TryComputeWeights(skinFlatWgt, baseIdx, skinWpv, ckWv) Then
+                                                           For j = 0 To EngineSkinWeightNormalization.Slots - 1
+                                                               If ckWv(j) > 0.0F Then
+                                                                   Dim idxc = skinFlatIdx(baseIdx + j)
+                                                                   If idxc >= 0 AndAlso idxc < matsBind.Length Then
+                                                                       MposeBlend += matsPose(idxc) * CDbl(ckWv(j))
+                                                                       MbindBlend += matsBind(idxc) * CDbl(ckWv(j))
+                                                                   End If
+                                                               End If
+                                                           Next
+                                                       Else
                                                        For j = 0 To cnt
                                                            sumW += CType(skinFlatWgt(baseIdx + j), Double)
                                                        Next
@@ -619,6 +669,7 @@ Public Class SkinningHelper
                                                                    MbindBlend += matsBind(idx) * w
                                                                End If
                                                            Next
+                                                       End If
                                                        End If
                                                    Else
                                                        MposeBlend = matsPose(0)

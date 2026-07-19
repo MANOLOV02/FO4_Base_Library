@@ -10,11 +10,36 @@ Public Class MorphChannel
     Public Property Deltas As List(Of MorphData)
     Public Property IsZap As Boolean = False
 
-    Sub New(name As String, weight As Single, deltas As List(Of MorphData), Optional isZap As Boolean = False)
+    ''' <summary>⭐ True cuando este canal lo aplica LA RUTINA DE MORPH DEL MOTOR (el applier nativo de
+    ''' BSFaceGenMorphData), que VALIDA el peso contra [-1,1] y, fuera de rango, <b>ABORTA EL CANAL ENTERO
+    ''' — no clampea</b>. Fijado al CONSTRUIR el canal, por ORIGEN: no es por juego ni global.
+    ''' <para>VERIFICADO POR DESENSAMBLADO en los tres binarios:</para>
+    ''' <list type="bullet">
+    ''' <item>SSE — el check vive DENTRO del applier único <c>SkyrimSE.exe 0x140430190</c>
+    ''' (<c>0x1404301DF comiss/jb</c> vs -1.0 @RVA 0x1769578, <c>0x1404301EC comiss/ja</c> vs +1.0
+    ''' @RVA 0x1ad2870; ambos saltan a la salida 0x1404305CF). El applier se alcanza por UN solo thunk
+    ''' (0x14042FCA7) ⇒ en Skyrim NO existe camino sin validar: NAM9, NAMA, race base, VampireMorph y
+    ''' SkinnyMorph pasan todos por ahí.</item>
+    ''' <item>FO4 / CK — el check está en el loop per-canal (<c>Fallout4.exe 0x1406E54E6</c> /
+    ''' <c>CreationKit.exe 0x140EC8670</c>): <c>0x1406E551F comiss/jb</c> (-1.0 @0x14291FF90) y
+    ''' <c>0x1406E5524 comiss/ja</c> (+1.0 @0x14291FC98) antes de llamar al applier 0x1406E5590.</item>
+    ''' </list>
+    ''' <para><b>Inclusive en ±1</b>: <c>jb</c>/<c>ja</c> saltan sólo ESTRICTAMENTE fuera. NaN aborta también
+    ''' (comiss deja CF=1 en unordered ⇒ el <c>jb</c> se toma).</para>
+    ''' <para>⛔ False SÓLO para los canales de RaceMenu (skee64), que NO usan el applier del motor sino su
+    ''' propio <c>TRIFile::Apply</c> (SKSE64Plugins-master\skee64\FaceMorphInterface.cpp:216-246, :1115-1119;
+    ''' SKEEHooks.cpp:736-741), SIN validación de rango — y que además tienen una descomposición DELIBERADA
+    ''' para |v|&gt;1 (FaceMorphInterface.cpp:1156-1163 parte 2.5 en 1.0+1.0+0.5 preservando la magnitud).
+    ''' Descartarlos revertiría ese mecanismo a propósito diseñado para saltarse el límite.</para></summary>
+    Public Property EngineApplied As Boolean = True
+
+    Sub New(name As String, weight As Single, deltas As List(Of MorphData), Optional isZap As Boolean = False,
+            Optional engineApplied As Boolean = True)
         Me.Name = name
         Me.Weight = weight
         Me.Deltas = deltas
         Me.IsZap = isZap
+        Me.EngineApplied = engineApplied
     End Sub
 End Class
 
@@ -96,18 +121,62 @@ Public Class MorphEngine
         If count = 0 Then Return verts
         If plan Is Nothing OrElse Not plan.HasMorphs Then Return verts
 
+        ' ⭐⭐ LEY DE SELECCIÓN DEL CK — el gate NO es por vértice, es por BLOQUE DE 4 ÍNDICES CONSECUTIVOS.
+        ' Para cada bloque b que cubre los vértices 4b..4b+3:
+        '     · bloque de COLA (4b+4 > nV): se aplica SIEMPRE, sin mirar magnitud.
+        '     · resto: blockmax = max(|PosDiff.X|,|PosDiff.Y|,|PosDiff.Z|) sobre los 4 vértices del bloque.
+        '              blockmax >= 0,01 ⇒ se aplica el bloque ENTERO; si no, se saltea ENTERO.
+        ' ⛔ El gate usa el delta CRUDO del .tri (int16 × multiplier), NO escalado por el peso del canal.
+        '    Probado: diff(w50,w100) y diff(w0,w100) dan conjuntos IDÉNTICOS en las 4 shapes medidas.
+        ' Umbral 0,01 acotado empíricamente a (0,00998540 – 0,01009503] — 0,01 es el único valor redondo dentro.
+        ' VALIDACIÓN: 6.027 decisiones / 0 errores (experimento BAKETEST de inputs controlados) · 1.455 / 0
+        ' (superposición multicanal) · 4.617 instancias sobre ~3.159 NPCs vanilla del CK y 213 mallas distintas
+        ' / 0 errores (corpus independiente: los .tri de hair/hairline tienen UN solo morph, así que
+        ' CK − malla fuente es el canal gateado puro).
+        ' ⛔ El bloque de cola es LOAD-BEARING, no cosmético: 821 bloques parciales se aplican pese a estar bajo
+        '    umbral, y 3.407 de 4.617 shapes tienen nV mod 4 <> 0.
+        ' Esto REEMPLAZA el viejo skip por-vértice `|delta·peso|² < 0.000001F` (= |delta| < 0,001), que era un
+        ' proxy tosco de esta regla: por eso quitarlo EMPEORABA el corpus (694→716 NPCs) — sin él aplicábamos
+        ' todavía más deltas que el CK nunca aplica.
+        ' Explica todas las paradojas que bloqueaban el caso: v91 (delta 2,5e-05) se aplica porque comparte el
+        ' bloque 88-91 con v88 (2,1e-02); v111, 350× más grande, se saltea porque su bloque entero queda bajo
+        ' umbral; los gemelos especulares caen en bloques distintos. Y BrowsMaleHumanoid04 aplica 0 de 88 porque
+        ' su SkinnyMorph tiene multiplier degenerado 2,04e-09 ⇒ ningún bloque alcanza el umbral.
+        ' ⚠️ Sin probar: el gate resultó no-escalado por el peso, demostrado sobre el canal de PESO (w50). Para
+        '    sliders de chargen sólo se midió |v|=1,0. Si aparece residual en NPCs con sliders fraccionarios,
+        '    ése es el primer lugar donde mirar.
+        Const BlockGateThreshold As Single = 0.01F
         For Each channel In plan.Channels
             If channel.IsZap Then Continue For
             If channel.Deltas Is Nothing Then Continue For
             Dim t = channel.Weight
             If Single.IsNaN(t) Then t = 0
+
+            ' 1) blockmax por bloque de 4, con el delta CRUDO (sin peso).
+            Dim blockMax As New Dictionary(Of Integer, Single)()
             For Each morph In channel.Deltas
                 Dim i = CInt(morph.index)
-                If i >= 0 AndAlso i < count Then
-                    Dim delta = morph.PosDiff * t
-                    If delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z < 0.000001F Then Continue For
-                    verts(i) = verts(i) + New Vector3d(delta.X, delta.Y, delta.Z)
+                If i < 0 OrElse i >= count Then Continue For
+                Dim pd = morph.PosDiff
+                Dim m = Math.Max(Math.Abs(pd.X), Math.Max(Math.Abs(pd.Y), Math.Abs(pd.Z)))
+                Dim b = i \ 4
+                Dim cur As Single
+                If Not blockMax.TryGetValue(b, cur) OrElse m > cur Then blockMax(b) = m
+            Next
+
+            ' 2) aplicar sólo los bloques que pasan el gate (o los de cola, que pasan siempre).
+            For Each morph In channel.Deltas
+                Dim i = CInt(morph.index)
+                If i < 0 OrElse i >= count Then Continue For
+                Dim b = i \ 4
+                Dim isTailBlock = (b * 4 + 4 > count)
+                If Not isTailBlock Then
+                    Dim m As Single
+                    If Not blockMax.TryGetValue(b, m) Then Continue For
+                    If m < BlockGateThreshold Then Continue For
                 End If
+                Dim delta = morph.PosDiff * t
+                verts(i) = verts(i) + New Vector3d(delta.X, delta.Y, delta.Z)
             Next
         Next
         Return verts
