@@ -1455,6 +1455,25 @@ Public Class RACE_Data
     Public OcclusionHairBiped As Integer = -1       ' B — hair biped object       (DATA[0x34], v109+, occludes 30+B AND 30+B+1)
     Public OcclusionFacialHairBiped As Integer = -1 ' C — facial-hair (beard) biped object (DATA[0x40], v124+)
 
+    ''' <summary>'Pipboy Biped Object' — WHICH biped slot this race reserves for the Pipboy device. s32, same
+    ''' encoding as the occlusion biped objects above (v -> slot 30+v when 0 ≤ v ≤ 31; -1 / v &gt; 31 = None).
+    ''' SOURCE: wbDefinitionsFO4.pas:11538 <c>wbInteger('Pipboy Biped Object', itS32, wbBipedObjectEnum)</c>,
+    ''' declared INSIDE the RACE DATA struct ⇒ the Pipboy's slot is PER-RACE DATA, not the constant slot 60.
+    ''' FILE offset derived by summing the xEdit DATA field layout (wbDefinitionsFO4.pas:11439-11538) from the
+    ''' start of the payload: 0x00 Male/0x04 Female Height, 0x08+0x14 the two 3-float Default Weight structs,
+    ''' 0x20 Flags, 0x24 Accel, 0x28 Decel, 0x2C Size, 0x30/0x34 Unknown Bytes1/2, 0x38 Injured Health Pct,
+    ''' 0x3C Shield Biped Object, 0x40 Beard Biped Object (v124+ ONLY), 0x44 Body Biped Object, 0x48 Aim Angle
+    ''' Tolerance, 0x4C Flight Radius, 0x50 Angular Accel, 0x54 Angular Tolerance, 0x58 Flags 2, 0x5C/0x60
+    ''' Unknown Float1/2, 0x64..0x78 Unknown Bytes3-7, 0x78 Unknown Float3, 0x7C Unknown Bytes8, 0x80 Pipboy.
+    ''' Below v124 the Beard field is absent ⇒ everything after it shifts down 4 ⇒ 0x7C.
+    ''' CROSS-CHECK (this is what makes the arithmetic trustworthy, not just counted): the SAME summation puts
+    ''' 'Beard Biped Object' at 0x40, which is EXACTLY the offset <see cref="OcclusionFacialHairBiped"/> was
+    ''' independently derived at from Fallout4.exe + Fallout4.esm. Two independent methods agreeing on a field
+    ''' in the middle of the struct validates the field ordering for the whole struct.
+    ''' NOT VERIFIED against live Fallout4.esm bytes for the Pipboy field itself — the offset is arithmetic +
+    ''' the cross-check above. FO4 only (the field does not exist in the Skyrim RACE DATA layout).</summary>
+    Public PipboyBiped As Integer = -1
+
     ''' <summary>APPR — Attach Parent Slots declarados a nivel race. Lista de KYWD FormIDs
     ''' (KeywordType=Attach Point). Para HandyRace = [ap_Bot_BotCore, ap_Bot_BotLegs] que
     ''' autorizan el set de OMODs raíz del NPC.OBTE — los chunks anidados se autorizan después
@@ -1546,6 +1565,18 @@ Public Class RaceUtil
     ''' it resolves to {30,31,32,48}.</summary>
     Public Shared Function RaceHeadOcclusionMask(race As RACE_Data) As UInteger
         Return RaceFaceCullMask(race) Or RaceHairMask(race) Or RaceFacialHairMask(race)
+    End Function
+
+    ''' <summary>The biped slot this race reserves for the Pipboy device, as a slot-30-relative bit mask.
+    ''' SOURCE: RACE.DATA 'Pipboy Biped Object' (wbDefinitionsFO4.pas:11538) — the slot is PER-RACE data, so
+    ''' code that needs "the Pipboy slot" must ask the race instead of assuming the constant slot 60
+    ''' (BipedSlots.SLOT_PIPBOY). 0 when the race declares None. FO4 only: the Skyrim RACE DATA layout has no
+    ''' such field, and there slot 60 is a generic modular slot, so this returns 0 and callers keep the raw
+    ''' mask (see NpcRenderHost.ApplyRenderToggleVisibility).</summary>
+    Public Shared Function RacePipboyMask(race As RACE_Data) As UInteger
+        If race Is Nothing Then Return 0UI
+        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then Return 0UI
+        Return BipedValueToBit(race.PipboyBiped)
     End Function
 End Class
 
@@ -3642,6 +3673,13 @@ Public Module RecordParsers
                             End If
                             If rec.Header.Version >= 124US AndAlso sr.Data.Length >= &H44 Then
                                 race.OcclusionFacialHairBiped = BitConverter.ToInt32(sr.Data, &H40)
+                            End If
+                            ' 'Pipboy Biped Object' (wbDefinitionsFO4.pas:11538) — WHICH slot this race gives the
+                            ' Pipboy. Offset shifts by the presence of the v124+ Beard field; see RACE_Data.PipboyBiped
+                            ' for the full field-by-field derivation and the Beard@0x40 cross-check.
+                            Dim pipOff As Integer = If(rec.Header.Version >= 124US, &H80, &H7C)
+                            If sr.Data.Length >= pipOff + 4 Then
+                                race.PipboyBiped = BitConverter.ToInt32(sr.Data, pipOff)
                             End If
                         End If
                     End If

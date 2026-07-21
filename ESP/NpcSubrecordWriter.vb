@@ -94,6 +94,22 @@ Public Module NpcSubrecordWriter
                 If npc.HasSleepOutfit Then EmitFormId(bw, "SOFT", npc.SleepOutfitFormID, remap)
                 If npc.HasDefaultPackageList Then EmitFormId(bw, "DPLT", npc.DefaultPackageListFormID, remap)
                 If npc.HasCrimeFaction Then EmitFormId(bw, "CRIF", npc.CrimeFactionFormID, remap)
+                ' ⚠️ CHECK AUTOMÁTICO — invariante del par (HasHeadTexture, HeadTextureFormID).
+                ' Este gate emite FTST mirando SÓLO la bandera (a diferencia del sink de FormIDs en
+                ' SaveNpcEspWriter.vb:951, que además exige <> 0), así que un par incoherente
+                ' Has=True + valor=0 escribe literalmente FTST=0 en el plugin y encima no registra el
+                ' FormID en el sink. Ese par sólo puede nacer de que alguien resuelva la bandera por
+                ' un lado y el valor por otro — el bug que teníamos en NpcRecordOverlay, donde el TXST
+                ' de la plantilla LM se asignaba y después una SEGUNDA escritura al mismo campo lo
+                ' revertía a raw, dejando la bandera en True. Hoy el overlay deriva la bandera DEL
+                ' MISMO valor, así que esto no debería dispararse nunca; si se dispara, volvió a haber
+                ' dos escrituras al mismo campo. NO se cambia el byte emitido: un FTST=0 heredado de un
+                ' record de origen (referencia sin resolver) debe seguir haciendo round-trip verbatim.
+                If npc.HasHeadTexture AndAlso npc.HeadTextureFormID = 0UI Then
+                    Dim edidLog = npc.EditorID
+                    Dim fidLog = npc.FormID
+                    Logger.LogLazy(Function() $"[FTST-INVARIANT] NPC {fidLog:X8} '{edidLog}': HasHeadTexture=True pero HeadTextureFormID=0 — se emite FTST=0. Par incoherente: la bandera y el valor se resolvieron por caminos distintos.")
+                End If
                 If npc.HasHeadTexture Then EmitFormId(bw, "FTST", npc.HeadTextureFormID, remap)
                 EmitQnam(bw, npc.TextureLightingFloats, isSse)
                 ' FO4 face-data tail (all empty for SSE data — these collections/flags are never

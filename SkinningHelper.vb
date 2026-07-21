@@ -1715,9 +1715,19 @@ Public Class RecalcTBN
         ' Heurística de epsilon relativo (elegí uno de los dos L)
         Dim L As Double = If(diag > 0.0, diag, maxSpan)
         ' Parámetros de control (ajustables)
-        Dim k As Double = weldPosEpsOrig     ' fracción de la escala de la malla
+        ' ⚠ PENDIENTE 1 — CONTRATO DE UNIDADES INCONSISTENTE (NO tocado acá a propósito).
+        ' `weldPosEpsOrig` se DECLARA en unidades de modelo por los llamadores, pero acá se consume como
+        ' FRACCIÓN de la escala de la malla (k * L). Las dos lecturas no pueden ser ambas correctas: el
+        ' epsilon efectivo escala con el tamaño del mesh cuando el llamador creía estar pidiendo una
+        ' distancia absoluta. Arreglarlo cambia el epsilon de TODAS las mallas a la vez ⇒ fuera del
+        ' alcance "mínimo riesgo" de este cambio. Queda anotado, sin medir el impacto por malla.
+        Dim k As Double = weldPosEpsOrig     ' fracción de la escala de la malla (ver PENDIENTE 1)
         Dim floorEps As Double = 0.000000000001
-        Dim ceilEps As Double = 0.001   ' evita sobre-soldar en mallas gigantes
+        ' Techo del epsilon de weld. FUENTE: CreationKit.exe 0x142677EF0 usa el MISMO predicado que
+        ' ClosePos (comparación POR COMPONENTE, L∞) con tolerancia 1e-5 — constante @0x2FC4848 =
+        ' 0x3727C5AC (float 1.0e-5). El 0,001 anterior era 100x más permisivo que el CK y sobre-soldaba.
+        ' Mitigante: EnableWelding está en False por defecto, así que este camino hoy casi no corre.
+        Dim ceilEps As Double = 0.00001   ' 1e-5 = tolerancia del CK (0x142677EF0), no 0.001
 
         Dim weldPosEps As Double
         If L <= 0.0 Then
@@ -1734,7 +1744,14 @@ Public Class RecalcTBN
             Return vertices_adicionales
         End If
 
-        ' Hash buckets por celda cuantizada
+        ' Hash buckets por celda cuantizada.
+        ' ⚠ PENDIENTE 2 — EL BUCKET NO MIRA CELDAS VECINAS (NO tocado acá a propósito).
+        ' La clave cuantiza la posición a una celda y el chequeo fino sólo recorre los candidatos de ESA
+        ' celda. Dos vértices a distancia < epsilon pero a ambos lados de un borde de celda caen en celdas
+        ' distintas y NUNCA se comparan ⇒ no se sueldan aunque deberían. MEDIDO: el 64 % de los pares que
+        ' pasarían el predicado de distancia nunca llegan a compararse. El arreglo es barrer las 26 celdas
+        ' vecinas (3x3x3) además de la propia; es un cambio de comportamiento y de costo ⇒ fuera del
+        ' alcance "mínimo riesgo" de este cambio.
         Dim buckets As New Dictionary(Of WeldKey, List(Of Integer))(n)
 
         For i As Integer = 0 To n - 1

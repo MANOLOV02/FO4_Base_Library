@@ -65,10 +65,18 @@ Public NotInheritable Class SseNam9MorphMap
     Public Const NamaFamilyCount As Integer = 4
     Public Const NamaUnset As UInteger = &HFFFFFFFFUI
 
-    ''' <summary>The chargen-morph name a slider value selects (Pos if >=0, Neg if &lt;0), or "" if ~zero.</summary>
+    ''' <summary>The chargen-morph name a slider value selects (Pos if >=0, Neg if &lt;0), or "" if EXACTLY zero.
+    ''' ZERO TEST, NOT A DEADZONE. SOURCE: RaceMenu tests <c>value != 0</c> (FaceMorphInterface.cpp:1140 and
+    ''' :1512) and the engine only compares the slot against FLT_MAX (the "never set" sentinel) before applying
+    ''' the value unconditionally — NEITHER has a magnitude threshold, so inventing one is a divergence.
+    ''' The old <c>Math.Abs(value) &lt; 0.001F</c> deadzone silently dropped 25 vanilla values; all 25 are
+    ''' DENORMALS (~1e-38), i.e. numeric noise that a plain <c>&lt;&gt; 0</c> also has to route somewhere, while
+    ''' the smallest genuinely AUTHORED value in the corpus is 0.02 — two orders of magnitude above the old
+    ''' threshold, so no authored value was ever in the deadzone and none changes behavior here.
+    ''' The NaN/Inf guard is KEPT: those are not values the engine's sentinel check would let through.</summary>
     Public Shared Function MorphForSlider(sliderIndex As Integer, value As Single) As String
         If sliderIndex < 0 OrElse sliderIndex >= Sliders.Length Then Return ""
-        If Single.IsNaN(value) OrElse Single.IsInfinity(value) OrElse Math.Abs(value) < 0.001F Then Return ""
+        If Single.IsNaN(value) OrElse Single.IsInfinity(value) OrElse value = 0.0F Then Return ""
         Return If(value >= 0, Sliders(sliderIndex).Pos, Sliders(sliderIndex).Neg)
     End Function
 

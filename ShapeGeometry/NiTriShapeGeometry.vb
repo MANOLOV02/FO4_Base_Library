@@ -621,7 +621,11 @@ Public Class NiTriShapeGeometry
     '''
     ''' Bone palette overflow: shape-level indices are stored as Byte (max 255), matching
     ''' BSTriShape's on-disk encoding.  FO4/SSE skeletons fit comfortably; if a port has more
-    ''' than 256 bones the high indices are truncated and a Debug.Assert fires.
+    ''' than 256 bones we THROW.  This used to be a Debug.Assert plus a `CByte(idx And &amp;HFF)`
+    ''' truncation — but Debug.Assert compiles out in Release, so the documented "an assert
+    ''' fires" guarantee did not exist in shipped builds: the index was silently masked and the
+    ''' vertex bound to a different, wrong bone.  &gt;255 is not representable in a Byte palette,
+    ''' so there is no correct fallback and refusing is the only non-degrading option.
     ''' </summary>
     Private Sub FillFromPartition(skinPart As NiSkinPartition, outIdx As Byte(), outWgt As SysHalf(), vertCount As Integer, wpv As Integer)
         For Each part In skinPart.Partitions
@@ -658,8 +662,17 @@ Public Class NiTriShapeGeometry
                     If partBones IsNot Nothing AndAlso partBoneIdx < partBones.Count Then
                         shapeBoneIdx = CInt(partBones(partBoneIdx))
                     End If
-                    Debug.Assert(shapeBoneIdx <= 255, "Bone palette overflow: NiTriShape with >256 bones cannot be encoded as Byte")
-                    outIdx(outBase + j) = CByte(shapeBoneIdx And &HFF)
+                    ' Was Debug.Assert + CByte(... And &HFF): in RELEASE the assert is a no-op and
+                    ' the mask silently truncated the index to a DIFFERENT, wrong bone — data the
+                    ' caller then writes back out.  >255 is simply not representable in the Byte
+                    ' palette, so there is no correct fallback: refuse.
+                    If shapeBoneIdx < 0 OrElse shapeBoneIdx > 255 Then
+                        Throw New InvalidOperationException(
+                            $"Bone palette overflow: NiSkinPartition bone index {shapeBoneIdx} cannot be " &
+                            "encoded as Byte (NiTriShape with >256 bones).  Truncating would silently " &
+                            "bind the vertex to the wrong bone.")
+                    End If
+                    outIdx(outBase + j) = CByte(shapeBoneIdx)
                     outWgt(outBase + j) = CType(weight * renorm, SysHalf)
                 Next
             Next
@@ -708,8 +721,14 @@ Public Class NiTriShapeGeometry
             Dim renorm As Single = If(sumW > 0.0F AndAlso copy < list.Count, 1.0F / sumW, 1.0F)
             For j = 0 To copy - 1
                 Dim shapeBoneIdx As Integer = list(j).boneIdx
-                Debug.Assert(shapeBoneIdx <= 255, "Bone palette overflow: NiSkinData has >256 bones")
-                outIdx(outBase + j) = CByte(shapeBoneIdx And &HFF)
+                ' See FillFromPartition: Debug.Assert is a no-op in Release and the &HFF mask
+                ' silently rebound the vertex to the wrong bone.  Refuse instead.
+                If shapeBoneIdx < 0 OrElse shapeBoneIdx > 255 Then
+                    Throw New InvalidOperationException(
+                        $"Bone palette overflow: NiSkinData bone index {shapeBoneIdx} cannot be encoded " &
+                        "as Byte (>256 bones).  Truncating would silently bind the vertex to the wrong bone.")
+                End If
+                outIdx(outBase + j) = CByte(shapeBoneIdx)
                 outWgt(outBase + j) = CType(list(j).weight * renorm, SysHalf)
             Next
         Next

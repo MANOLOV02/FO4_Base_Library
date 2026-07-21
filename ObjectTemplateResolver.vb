@@ -18,9 +18,17 @@ Public Module ObjectTemplateResolver
         Public IncludedOmodHostInstanceOrdinal As New List(Of Integer)
     End Class
 
+    ''' <param name="rngSeed">
+    ''' Controls the DontUseAll include choice — see SelectDontUseAllIndex.  Leave Nothing (the
+    ''' default) for a fully deterministic, reproducible resolution: identical inputs always yield
+    ''' an identical result, which is what bake/export/hash-comparison paths require.  Pass a value
+    ''' only when you deliberately want variation (an interactive re-roll); the same seed then
+    ''' always reproduces the same variation.
+    ''' </param>
     Public Function ResolveArmoCombinations(armo As ARMO_Data,
                                             ctxKeywords As List(Of UInteger),
-                                            pm As PluginManager) As CombinationResolution
+                                            pm As PluginManager,
+                                            Optional rngSeed As Integer? = Nothing) As CombinationResolution
         Dim result As New CombinationResolution()
         If armo Is Nothing OrElse armo.Combinations Is Nothing OrElse armo.Combinations.Count = 0 Then
             Return result
@@ -33,13 +41,15 @@ Public Module ObjectTemplateResolver
             Next
         End If
 
-        ResolveCombinationList(armo.Combinations, ctxKeywords, pm, result, initialPool)
+        ResolveCombinationList(armo.Combinations, ctxKeywords, pm, result, initialPool, rngSeed)
         Return result
     End Function
 
+    ''' <param name="rngSeed">See ResolveArmoCombinations. Nothing (default) = deterministic.</param>
     Public Function ResolveNpcCombinations(npc As NPC_Data,
                                            ctxKeywords As List(Of UInteger),
-                                           pm As PluginManager) As CombinationResolution
+                                           pm As PluginManager,
+                                           Optional rngSeed As Integer? = Nothing) As CombinationResolution
         Dim result As New CombinationResolution()
         If npc Is Nothing OrElse Not npc.HasObjectTemplate OrElse npc.ObjectTemplateCombinations Is Nothing Then
             Return result
@@ -69,7 +79,7 @@ Public Module ObjectTemplateResolver
             End If
         End If
 
-        ResolveCombinationList(flat, ctxKeywords, pm, result, initialPool)
+        ResolveCombinationList(flat, ctxKeywords, pm, result, initialPool, rngSeed)
         Return result
     End Function
 
@@ -90,7 +100,8 @@ Public Module ObjectTemplateResolver
                                        ctxKeywords As List(Of UInteger),
                                        pm As PluginManager,
                                        result As CombinationResolution,
-                                       initialApPool As HashSet(Of UInteger))
+                                       initialApPool As HashSet(Of UInteger),
+                                       rngSeed As Integer?)
         Dim logEnabled = Logger.Enabled
         Dim ctxKeywordSet As HashSet(Of UInteger) = Nothing
         If ctxKeywords IsNot Nothing AndAlso ctxKeywords.Count > 0 Then
@@ -174,7 +185,7 @@ Public Module ObjectTemplateResolver
                     Dim incLocal = inc
                     Logger.LogLazy(Function() $"[OBTE-INC] modFid=0x{incLocal.ModFormID:X8} apIdx={incLocal.AttachPointIndex} dontUseAll={incLocal.DontUseAll}")
                 End If
-                CollectOmodCandidate(inc.ModFormID, inc.AttachPointIndex, inc.DontUseAll, pm, pathStack, candidates, unslottedOmods, instanceOrdinalCounter)
+                CollectOmodCandidate(inc.ModFormID, inc.AttachPointIndex, inc.DontUseAll, pm, pathStack, candidates, unslottedOmods, instanceOrdinalCounter, rngSeed)
             Next
         Next
 
@@ -336,7 +347,8 @@ Public Module ObjectTemplateResolver
                                      pathStack As HashSet(Of (UInteger, Byte)),
                                      candidates As List(Of (Omod As OMOD_Data, ApIdx As Byte, InstanceOrdinal As Integer)),
                                      unslotted As List(Of (Omod As OMOD_Data, ApIdx As Byte, InstanceOrdinal As Integer)),
-                                     ByRef instanceOrdinalCounter As Integer)
+                                     ByRef instanceOrdinalCounter As Integer,
+                                     rngSeed As Integer?)
         If omodFid = 0UI Then Return
 
         Dim logEnabled = Logger.Enabled
@@ -368,37 +380,57 @@ Public Module ObjectTemplateResolver
                     Logger.LogLazy(Function() $"[OBTE-CAND] omod={omod.EditorID}(0x{omodFid:X8}) ord={ord} ftype={omod.FormTypeSignature} ap=0x{omod.AttachPointFormID:X8}({KywdEditorIdSafe(omod.AttachPointFormID, pm)}) apIdx={apIdx} model='{omod.ModelPath}' parentSlots=[{parentSlotsStr}]")
                 End If
                 If omod.Includes IsNot Nothing AndAlso omod.Includes.Count > 0 Then
-                    RecurseContainerIncludes(omod, dontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter)
+                    RecurseContainerIncludes(omod, apIdx, dontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter, rngSeed)
                 End If
                 Return
             End If
 
-            If omod.Properties IsNot Nothing AndAlso omod.Properties.Count > 0 AndAlso (omod.Includes Is Nothing OrElse omod.Includes.Count = 0) Then
+            ' AttachPoint == 0 → this OMOD is a CONTAINER.  Its own Properties and its Includes
+            ' are INDEPENDENT payloads: it may carry either, both, or neither.
+            '
+            ' This used to be an if/else-if chain gated on "has Properties AND has NO Includes",
+            ' so a container carrying BOTH fell through to the recursion branch and its own
+            ' Properties were never added to the unslotted bucket → material/model swaps silently
+            ' discarded with no diagnostic.  Both payloads are now processed unconditionally.
+            '
+            ' MEASURED (vanilla FO4 + all DLC, 3987 unique OMODs): ZERO containers carry both —
+            ' containers are strictly bimodal, 43 properties-only and 68 includes-only.  So this
+            ' was a LATENT defect, not a live one: no vanilla NPC changes as a result of this fix.
+            ' Nothing in the OBTE format forbids the combination, so mod-authored records can hit
+            ' it; that is why it is fixed rather than asserted away.
+            Dim hasProps As Boolean = omod.Properties IsNot Nothing AndAlso omod.Properties.Count > 0
+            Dim hasIncludes As Boolean = omod.Includes IsNot Nothing AndAlso omod.Includes.Count > 0
+
+            If hasProps Then
                 instanceOrdinalCounter += 1
                 Dim ordU = instanceOrdinalCounter
                 unslotted.Add((omod, apIdx, ordU))
                 If logEnabled Then
-                    Logger.LogLazy(Function() $"[OBTE-CAND] omod={omod.EditorID}(0x{omodFid:X8}) ord={ordU} ap=0 (container, properties-only) -> unslotted bucket")
+                    Dim kindL = If(hasIncludes, "properties+includes", "properties-only")
+                    Logger.LogLazy(Function() $"[OBTE-CAND] omod={omod.EditorID}(0x{omodFid:X8}) ord={ordU} ap=0 (container, {kindL}) -> unslotted bucket")
                 End If
-                Return
             End If
 
-            If logEnabled Then
-                Logger.LogLazy(Function() $"[OBTE-CAND] omod={omod.EditorID}(0x{omodFid:X8}) ap=0 (container, recurse children, dontUseAll={dontUseAll})")
+            If hasIncludes Then
+                If logEnabled Then
+                    Logger.LogLazy(Function() $"[OBTE-CAND] omod={omod.EditorID}(0x{omodFid:X8}) ap=0 (container, recurse children, dontUseAll={dontUseAll})")
+                End If
+                RecurseContainerIncludes(omod, apIdx, dontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter, rngSeed)
             End If
-            RecurseContainerIncludes(omod, dontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter)
         Finally
             pathStack.Remove(pathKey)
         End Try
     End Sub
 
     Private Sub RecurseContainerIncludes(omod As OMOD_Data,
+                                         apIdx As Byte,
                                          dontUseAll As Boolean,
                                          pm As PluginManager,
                                          pathStack As HashSet(Of (UInteger, Byte)),
                                          candidates As List(Of (Omod As OMOD_Data, ApIdx As Byte, InstanceOrdinal As Integer)),
                                          unslotted As List(Of (Omod As OMOD_Data, ApIdx As Byte, InstanceOrdinal As Integer)),
-                                         ByRef instanceOrdinalCounter As Integer)
+                                         ByRef instanceOrdinalCounter As Integer,
+                                         rngSeed As Integer?)
         If omod.Includes Is Nothing OrElse omod.Includes.Count = 0 Then Return
 
         Dim validIncludes As New List(Of OMOD_Include)
@@ -410,20 +442,106 @@ Public Module ObjectTemplateResolver
 
         Dim logEnabled = Logger.Enabled
         If dontUseAll Then
-            ' Random.Shared is thread-safe (.NET 8). No host NPC/ARMO FormID is threaded
-            ' through this private recursion, so we cannot seed deterministically here.
-            Dim pick = validIncludes(Random.Shared.Next(validIncludes.Count))
+            Dim pickIdx As Integer = SelectDontUseAllIndex(omod, apIdx, validIncludes.Count, rngSeed)
+            Dim pick = validIncludes(pickIdx)
             If logEnabled Then
                 Dim pickL = pick
-                Logger.LogLazy(Function() $"[OBTE-RANDOM-PICK] parent={omod.EditorID} picks include modFid=0x{pickL.ModFormID:X8} (of {validIncludes.Count})")
+                Dim idxL = pickIdx
+                Dim modeL = If(rngSeed.HasValue, $"seeded({rngSeed.Value})", "first-wins")
+                Logger.LogLazy(Function() $"[OBTE-DONTUSEALL-PICK] parent={omod.EditorID}(0x{omod.FormID:X8}) mode={modeL} picks idx={idxL} modFid=0x{pickL.ModFormID:X8} (of {validIncludes.Count})")
             End If
-            CollectOmodCandidate(pick.ModFormID, 0, pick.DontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter)
+            CollectOmodCandidate(pick.ModFormID, 0, pick.DontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter, rngSeed)
             Return
         End If
 
         For Each inc In validIncludes
-            CollectOmodCandidate(inc.ModFormID, 0, inc.DontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter)
+            CollectOmodCandidate(inc.ModFormID, 0, inc.DontUseAll, pm, pathStack, candidates, unslotted, instanceOrdinalCounter, rngSeed)
         Next
     End Sub
+
+    ''' <summary>
+    ''' Chooses WHICH include a DontUseAll container contributes.  This decides which OMOD — and
+    ''' therefore which model and which material — is written to the NIF, so it must never depend
+    ''' on ambient process state.
+    '''
+    ''' ENGINE LAW (VERIFIED FROM BINARY — Fallout4.exe, image base 0x140000000; include evaluator
+    ''' at 0x140251AAE, DontUseAll gate at 0x140251D19, picker at 0x140251740):
+    '''   - The engine applies EXACTLY ONE include, never a subset (single call to the apply path
+    '''     0x140251A70 at 0x1402521B0, versus the use-all loop at 0x140251D50..0x140251D9C).
+    '''     Picking one, as we do, is structurally correct.
+    '''   - Its choice is RANDOM, drawn from a PROCESS-GLOBAL RNG stream (randRange 0x14165B140
+    '''     over global state 0x142F3F6A0 — the same stream Papyrus Utility.RandomInt uses).  It is
+    '''     seeded from NOTHING stable: not the base form, not the RefID, not the instance.
+    '''
+    ''' Therefore the engine's selection is NON-REPRODUCIBLE BY DESIGN.  There is no seed we could
+    ''' derive that would make a bake match a specific in-game actor — being engine-faithful and
+    ''' being deterministic are mutually exclusive here.  A bake must be reproducible, so it takes
+    ''' the deterministic side, and that choice is a documented BAKE CONVENTION, NOT an engine law:
+    '''
+    '''   rngSeed = Nothing (default)  → first-wins.  Index 0 of the record-order include list.
+    '''                                  Fully deterministic, derives from nothing but the record,
+    '''                                  and is the most conservative choice available: it invents
+    '''                                  no distribution and no per-instance mimicry.
+    '''   rngSeed = supplied           → deterministic FUNCTION of (seed, container FormID, apIdx).
+    '''                                  Lets a caller that WANTS variation (an interactive re-roll)
+    '''                                  get it while keeping every run reproducible from its seed.
+    '''
+    ''' What this replaces: Random.Shared.Next, which made the SAME NPC produce DIFFERENT NIFs on
+    ''' two runs.  That silently invalidated every byte-identical-hash comparison downstream — a
+    ''' diff could be noise and a match could be luck.
+    '''
+    ''' MEASURED blast radius (vanilla FO4 + all DLC, 3987 unique OMODs): 493 OMODs hold two or
+    ''' more valid DontUseAll includes and were therefore genuinely nondeterministic (candidate
+    ''' pools of 2..30; the weapon/armor/robot modcol_* part-and-material collections).  This was a
+    ''' LIVE defect, not a latent one.
+    '''
+    ''' ⚠ KNOWN DIVERGENCES from the engine, surfaced by the RE above and deliberately NOT fixed
+    ''' here (they are separate defects, each needing context this resolver is not given — recorded
+    ''' so they are not mistaken for settled behaviour):
+    '''   1. MINIMUM LEVEL is not filtered.  The engine drops includes whose Minimum Level exceeds
+    '''      the item/actor level, on BOTH the use-all and the pick-one path (0x140251D50).  We
+    '''      consider every include regardless of level; no level is threaded into this resolver.
+    '''   2. LEVEL-TIER PREFERENCE is not applied.  The engine does not choose uniformly over the
+    '''      valid includes: it keeps only the highest-level-tier survivors and randomizes within
+    '''      that window (picker 0x140251740).  A uniform/first-wins choice over the whole list
+    '''      therefore over-selects LOW-tier mods relative to the engine.
+    '''   3. The OMOD FORM's own "don't use all" bit is ignored.  A second, independent gate at
+    '''      0x140251D24 reads it from the OMOD record itself (one of xEdit's OMOD DATA "Unknown
+    '''      Bool" fields, wbDefinitionsFO4.pas:12861-12862); either source triggers the same path.
+    '''      We honour only the include-side flag, so some containers that the engine treats as
+    '''      pick-one are still expanded as use-all here.
+    '''
+    ''' The mixer below is written out explicitly rather than using GetHashCode so the mapping is
+    ''' stable across processes, runtimes and platforms — GetHashCode guarantees none of that.
+    '''
+    ''' It is XOR/shift ONLY (xorshift64), deliberately with no multiply step: this project does not
+    ''' set RemoveIntegerChecks, so VB's integer overflow checking is ON and the wrap-around
+    ''' multiply that a classic FNV/SplitMix mixer depends on would raise OverflowException at
+    ''' runtime.  Shift and XOR never overflow-check, so this stays exception-free.
+    ''' </summary>
+    Private Function SelectDontUseAllIndex(omod As OMOD_Data,
+                                           apIdx As Byte,
+                                           count As Integer,
+                                           rngSeed As Integer?) As Integer
+        If count <= 1 Then Return 0
+        If Not rngSeed.HasValue Then Return 0
+
+        ' Pack the case identity into one 64-bit word, on disjoint bit ranges so no two distinct
+        ' (seed, FormID, apIdx) triples collide before mixing.  The constant guarantees a non-zero
+        ' state (xorshift is a fixed point at zero).
+        Dim h As ULong = CULng(CUInt(rngSeed.Value)) Xor
+                         (CULng(omod.FormID) << 32) Xor
+                         (CULng(apIdx) << 24) Xor
+                         &H9E3779B97F4A7C15UL
+
+        ' xorshift64 (Marsaglia 13/7/17) — avalanche without any multiply.
+        h = h Xor (h << 13)
+        h = h Xor (h >> 7)
+        h = h Xor (h << 17)
+
+        ' Fold the high half down so the low bits that Mod consumes carry the whole word's entropy.
+        h = h Xor (h >> 32)
+        Return CInt(h Mod CULng(count))
+    End Function
 
 End Module

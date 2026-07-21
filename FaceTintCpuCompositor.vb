@@ -418,11 +418,12 @@ Public Module FaceTintCpuCompositor
                                        Optional resolution As FaceTintResolutionSettings = Nothing,
                                        Optional diffuseKey As String = Nothing,
                                        Optional normalKey As String = Nothing,
-                                       Optional specKey As String = Nothing) As CpuPipelineResult
+                                       Optional specKey As String = Nothing,
+                                       Optional headDiffuseAlphaTest As Boolean = False) As CpuPipelineResult
         Dim res As New CpuPipelineResult()
         ' BatchDecodeCache (si activo) reusa decodes entre clones; si no, dict per-call (1 cara).
         Dim cache = If(BatchDecodeCache, New Dictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase))
-        res.Diffuse = ComposeChannelCpu(diffuseBytes, FaceTintChannel.Diffuse, layers, swaps, cache, resolution, diffuseKey)
+        res.Diffuse = ComposeChannelCpu(diffuseBytes, FaceTintChannel.Diffuse, layers, swaps, cache, resolution, diffuseKey, headDiffuseAlphaTest)
         res.Normal = ComposeChannelCpu(normalBytes, FaceTintChannel.Normal, layers, swaps, cache, resolution, normalKey)
         res.Specular = ComposeChannelCpu(specBytes, FaceTintChannel.Specular, layers, swaps, cache, resolution, specKey)
         Return res
@@ -449,7 +450,8 @@ Public Module FaceTintCpuCompositor
                                        swaps As IList(Of FaceRegionSwapInput),
                                        cache As Dictionary(Of String, DecodedTex),
                                        resolution As FaceTintResolutionSettings,
-                                       Optional srcKey As String = Nothing) As CpuChannelResult
+                                       Optional srcKey As String = Nothing,
+                                       Optional headDiffuseAlphaTest As Boolean = False) As CpuChannelResult
         ' Source cacheado por key (face set) si se paso srcKey + hay cache batch; si no, decode directo.
         Dim src = If(String.IsNullOrEmpty(srcKey), DecodeDds(srcBytes), CachedDecode(cache, srcKey, srcBytes))
         If src Is Nothing Then Return Nothing
@@ -481,6 +483,13 @@ Public Module FaceTintCpuCompositor
         ' El storage del engine FaceCustomization es sRGB (= formato de CK en disco); no se acumula en g22.
         ' Seed via SampleChannelAt (índice directo si tamaños iguales; bilineal si difieren = resize).
         Dim accR(n - 1) As Double, accG(n - 1) As Double, accB(n - 1) As Double
+        ' Acumulador ALPHA: PASSTHROUGH del base, nunca compuesto. Las blend-ops son RGB-only por
+        ' definicion (mismo contrato que documenta el shader GL), asi que el alpha del base viaja
+        ' intacto hasta el pack. MEDIDO sobre el corpus: el _d que hornea el CK lleva EXACTAMENTE el
+        ' alpha del head diffuse de origen (Valentine 0x00002F24 vs gen2skinheadvalentine_d.dds:
+        ' RMS 0,229/255, 99,59% byte-exact, maxD 18 en 0,02% de px = ruido de bloque BC3). Antes esta
+        ' funcion escribia alpha=255 fija y el canal se perdia. Inerte para N/S (BC5 no tiene alpha).
+        Dim accA(n - 1) As Double
         ' Seed del base diffuse: la base ES una textura de color ⇒ src→output config-driven (no literal 1,2):
         ' SeedDiffuseSrcSpaceValue (=DiffuseTextureSrcSpace, Srgb) → SeedDiffuseOutputSpaceValue (=Diffuse.OutputSpace, G22).
         Dim seedSrc = SeedDiffuseSrcSpaceValue, seedOut = SeedDiffuseOutputSpaceValue
@@ -488,6 +497,8 @@ Public Module FaceTintCpuCompositor
                                                       Dim r0 = SampleChannelAt(src, i, w, h, 0)
                                                       Dim g0 = SampleChannelAt(src, i, w, h, 1)
                                                       Dim b0 = SampleChannelAt(src, i, w, h, 2)
+                                                      ' Alpha RAW: no es color ⇒ NO pasa por Cvt1 (ninguna conversion de espacio).
+                                                      accA(i) = SampleChannelAt(src, i, w, h, 3)
                                                       If SeedConventionIs_G22 AndAlso isD Then
                                                           accR(i) = Cvt1(r0, seedSrc, seedOut) : accG(i) = Cvt1(g0, seedSrc, seedOut) : accB(i) = Cvt1(b0, seedSrc, seedOut)
                                                       Else
@@ -683,11 +694,18 @@ Public Module FaceTintCpuCompositor
             Next
         End If
 
-        ' --- Pack a BGRA byte (clamp+round). D ya está en g22, N/S lineal. Alpha = 255. ---
+        ' --- Pack a BGRA byte (clamp+round). D ya está en g22, N/S lineal. ---
+        ' ALPHA del _d (corregido 2026-07-20): passthrough del alpha del base SÓLO si la cabeza usa Diffuse Alpha
+        ' Test (flag ACBS 0x01000000); si no, OPACO (255). El CK aplana el alpha del _d salvo cuando el head
+        ' material lo testea. Valentine (flag SET) → passthrough (transparencia); DiMA (CLEAR, RACE.DFTM apunta a
+        ' SkinHeadValentine con alpha en la textura, pero su material NO la testea) → opaco, como el CK.
+        ' Antes: passthrough incondicional inventaba el alpha de DiMA (medición: DLC03DiMA _d ALPHA varía=True vs
+        ' CK=False). Inerte para N/S (BC5 sin alpha). Ver reference_acbs_diffuse_alpha_test_flag.
         Dim outB(n * 4 - 1) As Byte
+        Dim keepBaseAlpha As Boolean = headDiffuseAlphaTest AndAlso isD
         For i As Integer = 0 To n - 1
             Dim o = i * 4
-            outB(o) = ToByte(accB(i)) : outB(o + 1) = ToByte(accG(i)) : outB(o + 2) = ToByte(accR(i)) : outB(o + 3) = 255
+            outB(o) = ToByte(accB(i)) : outB(o + 1) = ToByte(accG(i)) : outB(o + 2) = ToByte(accR(i)) : outB(o + 3) = If(keepBaseAlpha, ToByte(accA(i)), CByte(255))
         Next
         Return New CpuChannelResult With {.Width = w, .Height = h, .Bgra = outB}
     End Function

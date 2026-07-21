@@ -1279,9 +1279,14 @@ Public Class BSTriShapeGeometry
     Public Sub SetSkinning(skinning As ShapeSkinningData) Implements IShapeGeometry.SetSkinning
         If skinning.BoneIndices Is Nothing OrElse skinning.BoneWeights Is Nothing Then Return
         Dim n As Integer = _tri.VertexCount
+        ' Write-path failures must be detectable in RELEASE.  This used to be a Debug.Assert
+        ' followed by a silent Return: in a Release build the assert is a no-op, so the caller
+        ' believed the skin had been written while the NIF kept its OLD weights.  Refuse loudly
+        ' instead — same policy as NiTriShapeGeometry.SetSkinning's validation block.
         If skinning.VertexCount <> n Then
-            Debug.Assert(False, $"SetSkinning vertex count mismatch: shape has {n}, skinning has {skinning.VertexCount}")
-            Return
+            Throw New InvalidOperationException(
+                $"SetSkinning: vertex count mismatch — shape has {n}, skinning has {skinning.VertexCount}.  " &
+                "Refusing to write; the shape would silently retain its previous bone weights.")
         End If
         Const wpv As Integer = 4
         Dim inputWpv As Integer = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, wpv)
@@ -1292,7 +1297,13 @@ Public Class BSTriShapeGeometry
         Dim copy As Integer = Math.Min(wpv, inputWpv)
         If Version.IsSSE Then
             Dim vd = _tri.VertexDataSSE
-            If vd Is Nothing OrElse vd.Count <> n Then Return
+            ' Same reasoning as the VertexCount guard above: a silent Return here leaves the
+            ' caller believing the skin was written.  Detectable in Release.
+            If vd Is Nothing OrElse vd.Count <> n Then
+                Throw New InvalidOperationException(
+                    $"SetSkinning: BSVertexDataSSE unusable — expected {n} entries, got " &
+                    $"{If(vd Is Nothing, "null", vd.Count.ToString())}.  Refusing to write.")
+            End If
             For i = 0 To n - 1
                 Dim v = vd(i)   ' struct copy (BSVertexDataSSE is a struct)
                 ' Extract bone fields to direct locals before CopyFrom: VB.NET cannot guarantee
@@ -1310,7 +1321,12 @@ Public Class BSTriShapeGeometry
             Next
         Else
             Dim vd = _tri.VertexData
-            If vd Is Nothing OrElse vd.Count <> n Then Return
+            ' See the SSE branch above — same silent-Return-on-a-write-path hazard.
+            If vd Is Nothing OrElse vd.Count <> n Then
+                Throw New InvalidOperationException(
+                    $"SetSkinning: BSVertexData unusable — expected {n} entries, got " &
+                    $"{If(vd Is Nothing, "null", vd.Count.ToString())}.  Refusing to write.")
+            End If
             For i = 0 To n - 1
                 Dim v = vd(i)
                 ' See comment in the SSE branch above — same nested-ByRef caveat.
@@ -1427,7 +1443,23 @@ Public Class BSTriShapeGeometry
                 Dim w As Single = CType(skinning.BoneWeights(flatIdx), Single)
                 If w <= 0.0F Then Continue For
                 Dim bIdx As Integer = CInt(skinning.BoneIndices(flatIdx))
-                If bIdx < 0 OrElse bIdx >= numBones Then Continue For
+                ' Palette bounds.  UNREACHABLE BY CONSTRUCTION today, and deliberately kept as a
+                ' throw rather than a `Continue For` so it stays that way:
+                '   - bIdx < 0 is impossible: ShapeSkinningData.BoneIndices is Byte() (0..255).
+                '   - bIdx >= numBones is impossible: the scan at the top of this method walks the
+                '     SAME flat index space with the SAME guards (length clamp, weight > 0) and
+                '     grows BoneList past maxBoneIdx, so numBones > every bIdx reached here.
+                ' It previously did `Continue For`, which — if either invariant above is ever
+                ' broken by an edit upstream — would silently drop the weight and render the vertex
+                ' at its bind-pose offset.  That is exactly the degradation NiTriShapeGeometry's
+                ' SetSkinning refuses to perform; both encoders now share one policy: refuse, never
+                ' silently degrade.  Being unreachable, this changes no current behaviour.
+                If bIdx < 0 OrElse bIdx >= numBones Then
+                    Throw New InvalidOperationException(
+                        $"RebuildNiSkinData: vertex {i} slot {j} references bone palette index {bIdx} " &
+                        $"outside the shape's BoneList (size {numBones}).  This would silently drop " &
+                        "the weight and render the vertex at its bind-pose offset.")
+                End If
                 skinData.BoneList(bIdx).VertexWeights.Add(New BoneVertData() With {
                     .Index = CUShort(i),
                     .Weight = w

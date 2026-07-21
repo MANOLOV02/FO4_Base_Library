@@ -927,7 +927,7 @@ void main() {
     ''' Pass Nothing (default) to skip skin-tone handling entirely and rely on the legacy render
     ''' uniform. No-op on Normal/Specular channels regardless of the value.
     ''' </summary>
-    Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional cache As FaceTintTextureCache = Nothing) As Integer
+    Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional cache As FaceTintTextureCache = Nothing, Optional headDiffuseAlphaTest As Boolean = False) As Integer
         ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If layers Is Nothing OrElse layers.Count = 0 Then Return 0
@@ -1247,8 +1247,13 @@ void main() {
                 GL.Uniform1(state._uMaskConvFullLoc, CInt(conv.MaskConv))
                 GL.Uniform1(state._uSoftLightLoc, CInt(conv.SoftLight))   ' modelo de softlight (agnostico) para bop3
                 GL.Uniform1(state._uFrameworkLoc, CInt(conv.Framework))   ' framework de composite (OverPrev default)
-                ' Alpha del resultado: no hay footprint; el ultimo layer escribe alpha opaca.
-                GL.Uniform1(state._uForceOpaqueAlphaLoc, If(isLast, 1, 0))
+                ' Alpha del _d (corregido 2026-07-20): PASSTHROUGH del alpha del base SÓLO si la cabeza usa
+                ' Diffuse Alpha Test (flag ACBS 0x01000000, canal Diffuse); si no, OPACO en el último layer
+                ' (comportamiento original). El CK aplana el alpha del _d salvo cuando el head material lo testea.
+                ' Valentine (flag SET) → passthrough (transparencia); DiMA (CLEAR) → opaco, como el CK. Antes:
+                ' passthrough incondicional inventaba el alpha de DiMA (medición: DLC03DiMA _d ALPHA varía). Espejo
+                ' del CPU compositor (keepBaseAlpha = flag AndAlso isD). Ver reference_acbs_diffuse_alpha_test_flag.
+                GL.Uniform1(state._uForceOpaqueAlphaLoc, If(headDiffuseAlphaTest AndAlso channel = FaceTintChannel.Diffuse, 0, If(isLast, 1, 0)))
                 GL.Uniform1(state._uPaletteRowLoc, Math.Max(0.0F, Math.Min(1.0F, layer.HairPaletteRow)))
                 ' Flat HCLF-RGB tint for TextureSet brow layers. Mutually exclusive with the LUT
                 ' path above (palette branch wins when both are set, mirroring the CPU rule).
@@ -2116,7 +2121,8 @@ void main() {
                                           layers As IList(Of FaceTintLayerInput),
                                           swaps As IList(Of FaceRegionSwapInput),
                                           Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing,
-                                          Optional baseDiffuseIsLinearOnGpu As Boolean = False) As FaceTintPipelineResult
+                                          Optional baseDiffuseIsLinearOnGpu As Boolean = False,
+                                          Optional headDiffuseAlphaTest As Boolean = False) As FaceTintPipelineResult
         ArgumentNullException.ThrowIfNull(state)
 
         ' Target de resolución POR CANAL (Inherit -> nativo = width/height del source). El acumulador GL
@@ -2160,14 +2166,14 @@ void main() {
 
         ' --- Region-swap pre-pass (no-op if swaps empty / no contribution to a channel) ---
         If swaps IsNot Nothing AndAlso swaps.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, Nothing, swaps)
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, Nothing, swaps, headDiffuseAlphaTest)
             ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, Nothing, swaps)
             ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, Nothing, swaps)
         End If
 
         ' --- Tint compose ---
         If layers IsNot Nothing AndAlso layers.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing)
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing, headDiffuseAlphaTest)
             ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, layers, Nothing)
             ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing)
         End If
@@ -2224,7 +2230,8 @@ void main() {
                                cache As FaceTintTextureCache,
                                width As Integer, height As Integer,
                                layers As IList(Of FaceTintLayerInput),
-                               swaps As IList(Of FaceRegionSwapInput))
+                               swaps As IList(Of FaceRegionSwapInput),
+                               Optional headDiffuseAlphaTest As Boolean = False)
         If ch.TextureId = 0 Then
             Return
         End If
@@ -2232,7 +2239,7 @@ void main() {
         If swaps IsNot Nothing Then
             newId = ApplyRegionSwapsOntoFaceTexture(state, ch.TextureId, width, height, swaps, channel, cache)
         Else
-            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, cache)
+            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, cache, headDiffuseAlphaTest)
         End If
         If newId = 0 OrElse newId = ch.TextureId Then Return
         Dim oldId = ch.TextureId

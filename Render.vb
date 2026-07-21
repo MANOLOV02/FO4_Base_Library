@@ -2385,15 +2385,20 @@ Public Class PreviewModel
             ' GPUBoneMatrices to a larger array can be traced. Cause is upstream — fix is in the
             ' code path that grew the array, NOT here (silently reallocating would mask the bug).
             If sizeBytes > ssbo_BoneMatricesCapacityBytes Then
-                Try
-                    Dim shapeName As String = "<unknown>"
-                    If MeshData IsNot Nothing AndAlso MeshData.Meshgeometry.Geometry IsNot Nothing AndAlso MeshData.Meshgeometry.Geometry.BackingShape IsNot Nothing Then
-                        Dim nm = MeshData.Meshgeometry.Geometry.BackingShape.Name
-                        If nm IsNot Nothing AndAlso nm.String IsNot Nothing Then shapeName = nm.String
-                    End If
-                    Logger.LogLazy(Function() $"[GL-SSBO-DIAG] UpdateBoneMatricesSSBO size mismatch: shape='{shapeName}' newSize={sizeBytes} capacity={ssbo_BoneMatricesCapacityBytes} newCount={MeshData.Meshgeometry.GPUBoneMatrices.Length} capCount={ssbo_BoneMatricesCapacityBytes \ 64}")
-                Catch
-                End Try
+                ' Gate: Logger.LogLazy YA chequea Logger.Enabled adentro, así que el gate NO es por la
+                ' escritura — es por el deref en cadena de abajo (Meshgeometry→Geometry→BackingShape→Name),
+                ' que se hace FUERA del lambda y por lo tanto corre con el log apagado, en camino GL caliente.
+                If Logger.Enabled Then
+                    Try
+                        Dim shapeName As String = "<unknown>"
+                        If MeshData IsNot Nothing AndAlso MeshData.Meshgeometry.Geometry IsNot Nothing AndAlso MeshData.Meshgeometry.Geometry.BackingShape IsNot Nothing Then
+                            Dim nm = MeshData.Meshgeometry.Geometry.BackingShape.Name
+                            If nm IsNot Nothing AndAlso nm.String IsNot Nothing Then shapeName = nm.String
+                        End If
+                        Logger.LogLazy(Function() $"[GL-SSBO-DIAG] UpdateBoneMatricesSSBO size mismatch: shape='{shapeName}' newSize={sizeBytes} capacity={ssbo_BoneMatricesCapacityBytes} newCount={MeshData.Meshgeometry.GPUBoneMatrices.Length} capCount={ssbo_BoneMatricesCapacityBytes \ 64}")
+                    Catch
+                    End Try
+                End If
                 ' Skip the BufferSubData call — it would fire GL_INVALID_VALUE. Returning silently
                 ' means this frame renders with stale bone matrices, but that's preferable to a
                 ' driver-level error log spam. Caller should reallocate the SSBO via re-creation.
