@@ -54,10 +54,14 @@
 ''' que ejecuta el motor (ver arriba) y la medicion lo respalda: sobre el corpus FO4 completo (1507 NPCs /
 ''' 17.121 shapes vs la referencia del CK del BA2) la categoria <c>positions</c> baja de 330 NPCs / 367 shapes
 ''' a 301 / 334, los shapes byte-exactos suben de 1.473 a 1.482, y <b>ninguna categoria sube</b>.
-''' La rama OFF (<c>Enabled = False</c>) se mantiene a proposito: es el <b>control de regresion</b> — con
-''' False el camino es <b>bit-identico</b> al historico (verificado: la corrida OFF reprodujo exactamente
-''' 1.473/17.121 byte-exactos y 330/367, los mismos numeros medidos antes de que esta ley existiera) — y es
-''' la via de escape si aparece un caso donde convenga. <b>No eliminarla.</b></para>
+''' La rama OFF (<c>Enabled = False</c>) se mantiene a proposito: es el <b>control de regresion</b> y la via
+''' de escape si aparece un caso donde convenga. <b>No eliminarla.</b></para>
+'''
+''' <para>⛔ <b>La rama OFF ya NO es bit-identica al historico</b> (lo fue hasta 2026-07-21: reproducia
+''' 1.473/17.121 byte-exactos y 330/367). <see cref="ReanchorAffine"/> se aplica en TODAS las ramas, asi que
+''' tambien limpia el residuo de coma flotante que dejaba el <c>Mtot × (1/sumW)</c> de la rama normalizada
+''' (M44 = 0,999999999421803 en vez de 1). Es el mismo defecto, seis ordenes mas chico; el historico tambien
+''' estaba mal. Cambia del orden de 0,01 % de las coordenadas.</para>
 '''
 ''' <para><b>Ojo con la metrica.</b> "Shape byte-exacto" NO es el criterio de exito de esta ley: es un AND
 ''' sobre todos los vertices del shape, satura, y la simulacion IDEAL tampoco produce shapes byte-exactos
@@ -72,11 +76,23 @@
 ''' propio. El único punto que enciende <see cref="Enabled"/> debe gatear por
 ''' <c>Config_App.Game_Enum.Fallout4</c>.</para>
 '''
-''' <para><b>Contrato de sincronía.</b> Esta ley se aplica en los mismos puntos que el blend normal:
+''' <para><b>Contrato de sincronía.</b> Esta ley está cableada en los mismos puntos que el blend normal:
 ''' render CPU (<c>SkinningHelper.BlendBoneMatrices</c> + el loop de <c>ExtractSkinnedGeometry</c>),
 ''' render GPU (los pesos que se suben en <c>GPUBoneWeights</c> — el shader ya suma sin dividir, así que
 ''' basta con escribir ahí los pesos de la ley), y bake (<c>SkinBakeMath</c> + el loop inverso de
 ''' <c>FaceGenBuildPipeline</c>). RENDER == BAKE.</para>
+'''
+''' <para>⚠️ <b>Pero en el render CPU la ley es matemáticamente INERTE</b> (medido 2026-07-21, no leído):
+''' <c>SkinningHelper</c> arma <c>MposeBlend · inv(MbindBlend)</c>, un <b>cociente</b> de dos mezclas con
+''' los MISMOS pesos ⇒ el <c>Σw</c> aparece arriba y abajo y se cancela (M44 del producto =
+''' 1,000000000000; diferencia con/sin la ley = 1,4e-14, ruido de double). El texto anterior decía que la
+''' ley "se aplica" ahí, y eso es cierto sólo en el sentido de que el código corre: <b>no puede cambiar el
+''' resultado</b>. Donde SÍ tiene efecto es en el bake, porque el forward y el inverso usan pesos
+''' DISTINTOS (los del <c>_faceBones</c> vs los del destino) ⇒ <c>ε = s_src/s_dst − 1</c> no se cancela.</para>
+'''
+''' <para>⚠️ <b>ABIERTO, no medido:</b> el motor en GPU skinnea <c>Σ wₖ·Mₖ·v</c> directo, sin cociente
+''' pose/bind — ahí el <c>Σw</c> NO se cancelaría. Si es así, nuestro render CPU y el motor divergen. No
+''' está verificado; no afirmarlo en ninguna dirección hasta medirlo.</para>
 ''' </summary>
 Public Module EngineSkinWeightNormalization
 
@@ -140,6 +156,50 @@ Public Module EngineSkinWeightNormalization
         Threading.Interlocked.Increment(Applied)
         If w(ComputedSlot) <= 0.0F Then Threading.Interlocked.Increment(DiscardedW3)
         Return True
+    End Function
+
+    ''' <summary>
+    ''' Restituye el <b>ancla homogénea</b> (<c>M44 = 1</c>) de una matriz que salió de una mezcla
+    ''' ponderada. <b>Llamar SIEMPRE antes de invertir un <c>Mtot</c> de skinning.</b>
+    '''
+    ''' <para><b>Por qué hace falta.</b> El idioma <c>Mtot += mat * peso</c> usa
+    ''' <c>Matrix4d</c>×escalar, que multiplica los <b>16</b> elementos. Pero sólo <b>12</b> describen
+    ''' la transformación (la 3×3 y la traslación): <c>M44</c> es el ancla que mantiene <c>w = 1</c> en
+    ''' el punto, no geometría. Tras la mezcla queda <c>M44 = Σ pesos</c>.</para>
+    '''
+    ''' <para><b>Por qué sólo rompe al invertir.</b> Las dos operaciones que consumen la matriz no
+    ''' tratan <c>M44</c> igual: <c>Vector3d.TransformPosition</c> devuelve <c>xyz</c> crudo y
+    ''' <b>nunca</b> divide por <c>w</c> ⇒ la contaminación le es invisible y el <b>forward sale
+    ''' correcto</b>. <c>Matrix4d.Invert</c> en cambio hace álgebra homogénea completa ⇒ mete un
+    ''' <c>1/Σw</c> que <b>cancela exactamente</b> el <c>Σw</c> que el forward había aplicado — y ese
+    ''' <c>Σw</c> ES el <c>ε</c> que esta ley existe para producir. Verificado contra el binario de
+    ''' OpenTK 4.0.2: el operador escala <c>M44</c>, <c>Invert</c> lo honra, <c>TransformPosition</c>
+    ''' no, y la diferencia resultante es exactamente <c>t·(1 − 1/Σw)·A⁻¹</c>.</para>
+    '''
+    ''' <para><b>FUENTE (RE).</b> El CK mezcla un <b>3×4</b>, no un 4×4: en <c>SkinBlend</c>
+    ''' (<c>CreationKit.exe 0x142B73230</c>) los <c>mulps/addps</c> de
+    ''' <c>0x142B73327 / 0x142B7332E / 0x142B73339</c> recorren las filas 0-2 de los 64 B por hueso;
+    ''' <b>la fila 3 nunca entra al bucle</b> y queda <c>[0,0,0,1]</c>. El motor no puede contaminar
+    ''' <c>M44</c> ni queriendo.</para>
+    '''
+    ''' <para><b>Se aplica en TODAS las ramas, no sólo con la ley encendida.</b> Con la ley
+    ''' (<c>Enabled = True</c>) el daño es <c>Σw − 1 ≈ 3e-4</c> ⇒ ~0,036 en Z = 1 ULP de half. Con la
+    ''' rama normalizada el <c>Mtot × (1/sumW)</c> final casi lo tapa pero deja un residuo de coma
+    ''' flotante (medido: <c>M44 = 0,999999999421803</c>, desvío 5,8e-10 ⇒ ~7e-8 en Z). Es el
+    ''' <b>mismo defecto</b>, seis órdenes más chico. ⛔ Esto <b>rompe la bit-identidad histórica de la
+    ''' rama OFF</b> en el orden de 0,01 % de las coordenadas — a propósito: el histórico también
+    ''' estaba mal.</para>
+    '''
+    ''' <para><b>Dónde NO hace falta.</b> <c>SkinningHelper.BlendBoneMatrices</c> arma
+    ''' <c>MposeBlend · inv(MbindBlend)</c> — un <b>cociente</b> de dos mezclas con los MISMOS pesos ⇒
+    ''' el <c>Σw</c> aparece arriba y abajo y se cancela solo. Verificado numéricamente: <c>M44</c> del
+    ''' producto = 1,000000000000 y la diferencia con/sin re-anclaje es 1,4e-14 (ruido de double).
+    ''' <b>No lo "arregles" ahí</b>: no hay nada que arreglar y tocarlo es riesgo sin beneficio.
+    ''' Corolario: en esa formulación de cociente esta ley es <b>matemáticamente inerte</b>.</para>
+    ''' </summary>
+    Public Function ReanchorAffine(m As OpenTK.Mathematics.Matrix4d) As OpenTK.Mathematics.Matrix4d
+        m.M44 = 1.0
+        Return m
     End Function
 
 End Module

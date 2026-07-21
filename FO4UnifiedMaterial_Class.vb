@@ -301,10 +301,10 @@ Public Class FO4UnifiedMaterial_Class
         ' Multiplicador runtime del tint (convención ×2 del pelo SSE): vive en el wrapper, no en el
         ' BGSM, así que el loop de reflexión de arriba no lo alcanza. Sin esto un clon perdería el ×2.
         copy.TintColorScale = TintColorScale
-        ' Portador del alpha-test del MNAM de un FTST explícito del NPC: vive en el wrapper (NO en el
-        ' BGSM), así que el loop de reflexión de arriba no lo alcanza. Sin esto un clon perdería el
-        ' bit F4SPF2 Alpha_Test. Ver AlphaTestFromNpcFtst y su uso en Save_To_Shader.
-        copy.AlphaTestFromNpcFtst = AlphaTestFromNpcFtst
+        ' Decisión de escritura del alpha-test: vive en el wrapper (NO en el BGSM), así que el loop de
+        ' reflexión de arriba no lo alcanza. Sin esto un clon perdería el bit F4SPF2 Alpha_Test y el veto
+        ' de fabricación. Ver AlphaTestWriteDecision.
+        copy.AlphaTestWriteDecision = AlphaTestWriteDecision
         Return copy
     End Function
 
@@ -952,16 +952,36 @@ Public Class FO4UnifiedMaterial_Class
     End Property
 
     ''' <summary>
-    ''' Portador SEPARADO del alpha-test que llegó por el MNAM de un FTST declarado A NIVEL NPC
-    ''' sobre un head part de CARA (NpcMaterialResolver.ApplyTextureSetOverride, "REGLA B").
-    ''' NO es lo mismo que <see cref="AlphaTest"/>: ese campo tiene DOS productores y el otro
-    ''' (ApplyAlphaPropertyFromNif, el NiAlphaProperty del mesh FUENTE) dispara en todo el
-    ''' pelo/pestañas/cejas/ojos vanilla. Este portador aísla el productor del MNAM, que es el
-    ''' único que gobierna el bit Fallout4ShaderPropertyFlags2.Alpha_Test (1&lt;&lt;25).
-    ''' Ver el uso y la evidencia medida en Save_To_Shader (bloque F4SPF2 Alpha_Test).
+    ''' <b>Decisión del CONSUMIDOR sobre el alpha-test de la geometría que se ESCRIBE.</b> La librería es
+    ''' agnóstica: no sabe qué es un NPC, un head part ni un texture set — sólo recibe una decisión.
+    '''
+    ''' Existe porque está MEDIDO que la decisión NO es función del material. Sobre los 1489 NIFs horneados
+    ''' por el CK (BA2 vanilla Fallout4 - Meshes + los 6 DLC, 16.883 shapes): el bit
+    ''' <c>Fallout4ShaderPropertyFlags2.Alpha_Test</c> (1&lt;&lt;25) está puesto en EXACTAMENTE 1 shape,
+    ''' mientras que 10.995 shapes SÍ tienen <c>NiAlphaProperty</c> y NO tienen el bit. Un material con
+    ''' <see cref="AlphaTest"/>=True no implica el bit, así que la lib no puede derivarlo: sólo el
+    ''' consumidor conoce la regla de su dominio.
+    '''
+    ''' Semántica (las dos ramas están medidas; no hay una tercera inventada):
+    '''   <c>Nothing</c> = sin decisión externa ⇒ la lib se comporta como siempre (deriva del material).
+    '''                    Es el default: ningún consumidor existente cambia de comportamiento.
+    '''   <c>False</c>   = VETO: si el shape fuente NO traía <c>NiAlphaProperty</c>, no se le ESTRENA uno.
+    '''                    El round-trip (el shape ya traía uno) NO se toca. Y el bit SF2 queda limpio.
+    '''   <c>True</c>    = el bit SF2 <c>Alpha_Test</c> se escribe, y la fabricación queda permitida.
+    '''
+    ''' ⚠️ NO implementado a propósito: "forzar la fabricación cuando el material NO tiene alpha". El CK sí
+    ''' lo haría (arma flags 0x02EC literal), pero NO existe ni un caso: el único consumidor que pone True
+    ''' es el bake de FaceGen FO4, y su único NPC con el flag tiene material CON alpha. Implementarlo sería
+    ''' construir para un caso que no existe.
+    '''
+    ''' Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.
+    ''' Reemplaza a <c>AlphaTestFromNpcFtst</c>, cuyo nombre metía dominio de NPC (FTST) dentro de la lib
+    ''' y además describía una regla REFUTADA (el árbitro real del bake FO4 es el flag de record
+    ''' <c>ACBS\Diffuse Alpha Test</c>, RE CreationKit 0x140ED41F6; el FTST era un proxy que coincidía por
+    ''' casualidad). Quién decide es asunto del consumidor; acá sólo se transporta la decisión.
     ''' </summary>
     <Browsable(False)>
-    Public Property AlphaTestFromNpcFtst As Boolean
+    Public Property AlphaTestWriteDecision As Boolean?
 
     <Category("Opacity")>
     <DefaultValue(CType(128, Byte))>
@@ -3184,6 +3204,15 @@ Public Class FO4UnifiedMaterial_Class
         If needAlphaProperty Then
             Dim createdNew = False
             If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
+                ' ⛔ VETO DE FABRICACIÓN (ver AlphaTestWriteDecision). ESTRENAR un NiAlphaProperty que el
+                ' shape fuente NO traía es una decisión que el material NO puede tomar: un material con
+                ' AlphaTest=True es condición NECESARIA pero no suficiente (10.995 shapes horneados por el
+                ' CK tienen NiAlphaProperty sin que su material lo dicte, y a la inversa el CK NO fabrica
+                ' salvo bajo su propia regla de dominio). Si el consumidor dijo explícitamente que NO,
+                ' se respeta y se sale: no hay nada que quitar (el shape no tenía bloque) y el round-trip
+                ' de los que SÍ lo traían queda intacto, porque ese camino no pasa por acá.
+                ' `Nothing` (sin decisión) mantiene el comportamiento histórico: fabrica.
+                If Me.AlphaTestWriteDecision.HasValue AndAlso Not Me.AlphaTestWriteDecision.Value Then Return
                 shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
                 createdNew = True
             End If
@@ -3747,14 +3776,11 @@ Public Class FO4UnifiedMaterial_Class
             End If
             ' F4SPF2 Alpha_Test (1<<25) — REGLA MEDIDA 2026-07-18.
             '
-            ' ⛔ NO espejar aquí Mat.AlphaTest. Ese campo tiene DOS productores y sólo UNO gobierna
-            '    este bit:
-            '      (1) ApplyAlphaPropertyFromNif — el NiAlphaProperty del mesh FUENTE. Dispara en
-            '          todo el pelo/pestañas/cejas/ojos vanilla. NO pone el bit.
-            '      (2) NpcMaterialResolver "REGLA B" — el MNAM de un FTST declarado A NIVEL NPC
-            '          sobre un head part de CARA. ESTE, y sólo éste, pone el bit.
-            '    Por eso se lee el portador separado Me.AlphaTestFromNpcFtst (vive en el WRAPPER, no
-            '    en el BGSM) y no Mat.AlphaTest.
+            ' ⛔ NO espejar aquí Mat.AlphaTest: está MEDIDO que este bit NO es función del material
+            '    (ver el desglose abajo: 10.995 shapes con NiAlphaProperty y SIN el bit). La lib no
+            '    puede derivarlo ⇒ lo recibe del consumidor por Me.AlphaTestWriteDecision, que vive en
+            '    el WRAPPER (no en el BGSM). `Nothing` (ningún consumidor decidió) = bit LIMPIO, que es
+            '    exactamente el comportamiento histórico para todo consumidor que no sea el bake FO4.
             '
             ' ⛔ REGRESIÓN PREVIA (revertida): espejar Mat.AlphaTest incondicionalmente puso el bit
             '    en 1443 NPCs / 3465 shapes donde el CK NO lo pone, porque conflacionaba (1) con (2).
@@ -3774,10 +3800,22 @@ Public Class FO4UnifiedMaterial_Class
             '     ⇒ el productor (2) con AlphaTest=True cae en exactamente 1 shape = el mismo que
             '     el CK marca. Correspondencia 1:1, 0 falsos positivos y 0 falsos negativos.
             '   · Control negativo: DiMA (DLCCoast.esm 0x00004639) tiene la MISMA shape
-            '     'SynthHeadGen2' y cae al FTST por DEFECTO de la RACE (el mismo TXST 0x0010C3CD);
-            '     el CK le deja F4SPF2 = 0x00000081 (bit CLARO, sin NiAlphaProperty). El gate
-            '     isNpcExplicitFaceTextureSet lo excluye correctamente.
-            If Me.AlphaTestFromNpcFtst Then
+            '     'SynthHeadGen2' y cae al MISMO TXST 0x0010C3CD por el DFT de su RACE
+            '     (0x03042EBB DLC03_SynthGen2RaceDiMa → SkinHeadValentine, verificado con
+            '     --alphagatescan 2026-07-21); el CK le deja F4SPF2 = 0x00000081 (bit CLARO, sin
+            '     NiAlphaProperty).
+            '
+            ' ⛔ CORRECCIÓN 2026-07-21 — CUÁL es el árbitro. La correlación de arriba es REAL pero el
+            '    mecanismo que se le atribuía (el proxy "FTST declarado a nivel NPC") era FALSO:
+            '    Valentine y DiMA resuelven AL MISMO TXST CON ALPHA, así que el material no los separa.
+            '    El árbitro medido es el flag de record ACBS\Diffuse Alpha Test (0x01000000):
+            '    RE CreationKit 0x140ED41F6 (gate `test byte [rdi+0x9b],1`) + schema xEdit
+            '    wbDefinitionsFO4.pas:10655. Medido sobre el corpus vanilla+DLC (--alphagatescan):
+            '    lo tiene 1 NPC de 4471 = 0x00002F24 Valentine, y es el mismo y único shape donde el CK
+            '    pone este bit ⇒ los dos hechos son el MISMO hecho, y por eso alcanza UNA decisión.
+            '    (SSE: 0 de 6462 — el bit 24 es 'Unknown 24' allá, control positivo del scan.)
+            '    Quién es el árbitro NO se decide acá: la lib sólo transporta la decisión.
+            If Me.AlphaTestWriteDecision.GetValueOrDefault(False) Then
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
             Else
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test

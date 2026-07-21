@@ -361,19 +361,43 @@ Public Module SseFaceTintComposer
 
     ''' <summary>Resolve a CLFM (Color Form) formID to linear RGB [0,1] from its CNAM (byte RGBA). Cached.
     ''' Returns white when the formID is 0 or unresolved.</summary>
+    ''' <summary>Color de una CLFM (CNAM). ⛔ EL FALLO NO PUEDE SER SILENCIOSO.
+    ''' Un CLFM que no resuelve devolvia BLANCO sin decir nada, y BLANCO es un color perfectamente valido:
+    ''' un fallo de RESOLUCION se disfrazaba de resultado. Asi es como el bug de remapeo de TIND
+    ''' (ver GetRaceLayersOrdered) sobrevivio hasta hoy — con la capa SkinTone a cobertura 1,0, la cara
+    ''' entera salia blanca y no habia ni una linea de log que lo dijera.
+    ''' ⚠️ El VALOR del fallback NO se cambia: no esta RE-ado que hace el motor con una CLFM irresoluble, y
+    ''' inventar otro color seria cambiar el bake sin fuente. Lo que cambia es que ahora se LOGUEA con el
+    ''' FormID y la causa, una sola vez por FormID (la cache evita el spam), para que el caso aparezca en vez
+    ''' de esconderse. `clfmFid = 0` NO se loguea: es "esta capa no declara color por defecto", condicion
+    ''' normal del corpus (las capas de warpaint) y ademas siempre viene con cobertura 0 ⇒ inerte.</summary>
     Private Function ResolveClfmColor(pm As PluginManager, clfmFid As UInteger) As Double()
         If clfmFid = 0 Then Return New Double() {1.0, 1.0, 1.0}
         Dim cached As Double() = Nothing
         If _clfmCache.TryGetValue(clfmFid, cached) Then Return cached
         Dim col = New Double() {1.0, 1.0, 1.0}
         Dim rec = pm.GetRecord(clfmFid)
-        If rec IsNot Nothing AndAlso rec.Header.Signature = "CLFM" Then
+        Dim why As String = Nothing
+        If rec Is Nothing Then
+            why = "el record NO EXISTE (¿FormID sin remapear a los masters del plugin?)"
+        ElseIf rec.Header.Signature <> "CLFM" Then
+            why = $"el record es '{rec.Header.Signature}', no CLFM"
+        Else
+            Dim found = False
             For Each sr In rec.Subrecords
                 If sr.Signature = "CNAM" AndAlso sr.Data.Length >= 3 Then
                     col = New Double() {sr.Data(0) / 255.0, sr.Data(1) / 255.0, sr.Data(2) / 255.0}
+                    found = True
                     Exit For
                 End If
             Next
+            If Not found Then why = "la CLFM no trae CNAM"
+        End If
+        If why IsNot Nothing Then
+            Dim fidLog = clfmFid, whyLog = why
+            Logger.LogLazy(Function() $"[SSE-TINT] CLFM 0x{fidLog:X8} NO RESUELVE: {whyLog}. Se usa BLANCO (1,1,1) " &
+                                      "como fallback SIN FUENTE — si esta capa tiene cobertura > 0 el resultado " &
+                                      "esta MAL. Ver ResolveClfmColor.")
         End If
         _clfmCache(clfmFid) = col
         Return col
@@ -483,8 +507,20 @@ Public Module SseFaceTintComposer
                     Case "TINI" : flush() : ci = BitConverter.ToUInt16(sr.Data, 0) : cp = "" : ct = -1 : cd = 0 : presets.Clear()
                     Case "TINT" : cp = sr.AsStringGeneral
                     Case "TINP" : ct = BitConverter.ToUInt16(sr.Data, 0)
-                    Case "TIND" : If sr.Data.Length >= 4 Then cd = BitConverter.ToUInt32(sr.Data, 0)
-                    Case "TINC" : If sr.Data.Length >= 4 Then lastClfm = BitConverter.ToUInt32(sr.Data, 0)  ' RACE preset: CLFM formID
+                    ' ⛔ REMAPEO DE MASTERS OBLIGATORIO. TIND y el TINC de la RACE son FormIDs, y el FormID
+                    ' guardado en el archivo usa el indice LOCAL de masters del plugin que lo escribio. Leerlo
+                    ' con BitConverter a secas devuelve un FormID de OTRO plugin.
+                    ' MEDIDO (2026-07-21): RACE 0x06000817 (Mazken, ccBGSSSE025-AdvDSGS.esm) capa idx=24
+                    ' (SkinTone, cobertura 1,000) tiene TIND local 0x050010DD = AUTO-REFERENCIA (indice local
+                    ' == cantidad de masters ⇒ el plugin se apunta a si mismo). Sin remapear buscabamos
+                    ' 0x050010DD (otro plugin) ⇒ no existe ⇒ ResolveClfmColor degradaba a BLANCO ⇒ la unica
+                    ' capa con cobertura completa pintaba la cara entera de blanco. El correcto es 0x060010DD
+                    ' = CLFM con CNAM=(75,55,64), y el CK hornea (74,57,66). 5 NPCs vanilla afectados
+                    ' (Aureales/Mazken), con 99,3% de los pixeles en 255 contra el tono oscuro del CK.
+                    ' ⛔ Ojo con la ambiguedad de TINC: a nivel RACE es un FormID de CLFM (esto), a nivel NPC
+                    ' son 3 bytes RGB (BuildNpcAuthoredTintMap). Los del NPC NO se remapean: no son FormIDs.
+                    Case "TIND" : If sr.Data.Length >= 4 Then cd = pm.ResolveReferencedFormID(rr.SourcePluginName, BitConverter.ToUInt32(sr.Data, 0))
+                    Case "TINC" : If sr.Data.Length >= 4 Then lastClfm = pm.ResolveReferencedFormID(rr.SourcePluginName, BitConverter.ToUInt32(sr.Data, 0))  ' RACE preset: CLFM formID
                     Case "TINV" : If sr.Data.Length >= 4 Then lastVal = BitConverter.ToSingle(sr.Data, 0)   ' RACE TINV = FLOAT 0-1
                     Case "TIRS" : If sr.Data.Length >= 2 Then presets.Add((lastClfm, lastVal, BitConverter.ToUInt16(sr.Data, 0)))
                 End Select
