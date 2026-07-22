@@ -549,6 +549,7 @@ Public Class PreviewControl
         i.RecalculateNormals = True
         i.SkeletonResolver = Nothing
         i.MorphResolver = Nothing
+        i.BaseGeometryProvider = Nothing
         i.GeometryModifiers = Nothing
         i.TexturePrefetchAction = Nothing
         i.MarkDirty(RenderDirtyFlags.Shapes Or RenderDirtyFlags.Camera)
@@ -567,6 +568,7 @@ Public Class PreviewControl
         i.RecalculateNormals = request.RecalculateNormals
         i.SkeletonResolver = request.SkeletonResolver
         i.MorphResolver = request.MorphResolver
+        i.BaseGeometryProvider = request.BaseGeometryProvider
         i.GeometryModifiers = request.GeometryModifiers
         i.TexturePrefetchAction = Nothing
         i.PreserveTextureCache = request.PreserveTextureCache
@@ -894,6 +896,28 @@ Public Class PreviewControl
         If dirtyMeshes Is Nothing Then
             dirtyMeshes = Model.meshes.Where(Function(m) intent.IsShapeDirty(m.MeshData.Shape)).ToList()
         End If
+
+        ' Geometría BASE pre-skin (opcional; Nothing = base del NIF, comportamiento de siempre).
+        ' EN SERIE y ANTES del Parallel.ForEach a propósito: el provider puede necesitar estado
+        ' compartido por actor (cachés de .tri, esqueletos) y así no hay que blindarlo para
+        ' concurrencia. Es el ÚNICO chokepoint: los tres caminos del pipeline (full reload,
+        ' pose+morphs, morph-only) pasan por acá, así que no hay camino que lo saltee.
+        ' Ver IBaseGeometryProvider para el contrato (in-place, absoluto, nunca lee geom.Vertices).
+        If intent.BaseGeometryProvider IsNot Nothing Then
+            For Each mesh In dirtyMeshes
+                Try
+                    intent.BaseGeometryProvider.TryProvideBaseGeometry(mesh.MeshData.Shape, mesh.MeshData.Meshgeometry)
+                Catch ex As Exception
+                    ' Un provider que falla degrada a la base del NIF; nunca tumba el render. Pero se
+                    ' LOGUEA: el sintoma es visual y silencioso (malla sin hornear) y sin esto no queda
+                    ' rastro para diagnosticarlo.
+                    Dim shpLog = mesh?.MeshData?.Shape?.ShapeName
+                    Dim exLog = ex
+                    Logger.LogLazy(Function() $"[BASEGEOM] provider fallo en '{shpLog}': {exLog.GetType().Name}: {exLog.Message}")
+                End Try
+            Next
+        End If
+
         Parallel.ForEach(dirtyMeshes,
             Sub(mesh)
                 Dim plan As MorphPlan = Nothing

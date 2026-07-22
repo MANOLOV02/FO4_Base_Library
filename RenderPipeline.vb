@@ -26,6 +26,8 @@ Public Class RenderRequest
     Public Property Shapes As IEnumerable(Of IRenderableShape)
     Public Property SkeletonResolver As ISkeletonResolver = Nothing
     Public Property MorphResolver As IMorphResolver = Nothing
+    ''' <summary>Ver <see cref="RenderIntent.BaseGeometryProvider"/>. Nothing = base del NIF.</summary>
+    Public Property BaseGeometryProvider As IBaseGeometryProvider = Nothing
     Public Property GeometryModifiers As List(Of IGeometryModifier) = Nothing
     Public Property RecalculateNormals As Boolean = True
     Public Property ResetCamera As Boolean = True
@@ -181,6 +183,10 @@ Public Class RenderIntent
 
     ' ── Pluggable resolvers (Nothing = skip that step) ──
     Public Property SkeletonResolver As ISkeletonResolver
+    ''' <summary>Provee la geometría BASE pre-skin de un shape antes de aplicar los morphs.
+    ''' <c>Nothing</c> (default) = la base es la del NIF, comportamiento de siempre.
+    ''' Ver <see cref="IBaseGeometryProvider"/> para el contrato completo.</summary>
+    Public Property BaseGeometryProvider As IBaseGeometryProvider
     Public Property MorphResolver As IMorphResolver
     Public Property GeometryModifiers As List(Of IGeometryModifier)
 

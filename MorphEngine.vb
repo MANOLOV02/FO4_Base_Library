@@ -81,6 +81,42 @@ Public Interface IMorphResolver
 End Interface
 
 ''' <summary>
+''' Proveedor de la <b>geometría BASE pre-skin</b> de un shape — el array del que
+''' <see cref="MorphEngine.ApplyMorphPlan"/> parte para aplicar los canales de morph.
+'''
+''' <para><b>Para qué existe.</b> Normalmente la base es lo que trae el NIF, y la establece
+''' <c>SkinningHelper.ExtractSkinnedGeometry</c> al cargar. Pero hay casos donde la base correcta
+''' NO es la del archivo: en Fallout 4 el motor y el CK no dibujan la malla `_faceBones` de una
+''' head part — la usan como INSUMO para calcular las posiciones de la malla PLANA (el FaceGeom), y
+''' dibujan ésa. Para replicar eso, la app necesita entregar la geometría horneada como base del
+''' shape plano. Esto NO es parchear un buffer aguas abajo: es proveer el valor correcto en el punto
+''' donde el pipeline define "la base pre-skin de esta malla".</para>
+'''
+''' <para><b>Por qué NO se hace con un <see cref="IMorphResolver"/>.</b> Un canal de morph pasa por
+''' el gate de bloques del CK de <see cref="MorphEngine.ApplyChannelsToVertexArray"/>, que descarta
+''' bloques de 4 con delta crudo &lt; 0,01. Ese gate existe para <b>decodificar un `.tri` comprimido</b>
+''' (mapa RLE precomputado); geometría calculada no es data de `.tri` y someterla a esa regla es
+''' aplicarla fuera de su dominio — además de dejar la malla a medio hornear.</para>
+'''
+''' <para><b>Contrato.</b> Invocado <b>en serie</b> al principio de <c>PipelineStep_Morphs</c>, ANTES
+''' del <c>Parallel.ForEach</c> de los resolvers, y sólo para los shapes marcados dirty. La
+''' implementación debe:</para>
+''' <list type="bullet">
+''' <item><description>escribir <b>IN PLACE</b> en <c>geom.NifLocalVertices</c> (p.ej. <c>Array.Copy</c>).
+''' <see cref="SkinnedGeometry"/> es una <c>Structure</c>; el array es referencia, así que mutar sus
+''' elementos propaga, pero reasignar el array sólo funciona por la cadena de campos del caller.</description></item>
+''' <item><description><b>NUNCA</b> leer <c>geom.Vertices</c> (lo reescribe <c>ApplyMorphPlan</c> en
+''' cada pasada ⇒ se realimenta) ni <c>geom.PerVertexSkinMatrix</c> (queda stale dentro de este paso).</description></item>
+''' <item><description>ser <b>absoluta, no incremental</b>: partir siempre de una copia pristina propia,
+''' nunca del valor actual de <c>NifLocalVertices</c>.</description></item>
+''' </list>
+''' <para>Devuelve True si reescribió la base de ese shape (sólo informativo / diagnóstico).</para>
+''' </summary>
+Public Interface IBaseGeometryProvider
+    Function TryProvideBaseGeometry(shape As IRenderableShape, ByRef geom As SkinnedGeometry) As Boolean
+End Interface
+
+''' <summary>
 ''' A geometry modifier that transforms geometry after morphs are applied.
 ''' Examples: vertex masking, topology compaction (zap removal), etc.
 ''' </summary>
