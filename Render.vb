@@ -308,6 +308,11 @@ Public Class PreviewControl
     ''' motor SIEMPRE softlightea un detail sobre la cara facegen; sin textura usa este 0.251 (oscurece), NO
     ''' identidad. Se emula acá para que render == lo que el NIF horneado (slot 3 vacío) rinde in-game.</summary>
     Public defaultFacegenDetailTex As Integer
+    ''' <summary>Detail NEUTRAL (0.5) = softlight IDENTIDAD. Se bindea en lugar de <see cref="defaultFacegenDetailTex"/>
+    ''' (0.251) SÓLO cuando el diffuse de la malla ya viene PLEGADO y el slot 3 está vacío (MaterialData.SseFoldDetailNeutralized).
+    ''' Sin esto el fold sin detail re-oscurecería con 0.251 (folded más oscuro que unfolded/bake). Mismo formato que el
+    ''' 0.251 (64², mips) para que el sampler no introduzca diferencia por minificación.</summary>
+    Public defaultFacegenFoldNeutralDetailTex As Integer
     ''' <summary>Default del SUBSURFACE (_sk, texture-set slot 2) de una cabeza FaceGen cuando falta: NEGRO.
     ''' RE byte-level: BSLightingShaderMaterialFacegen slot#10 (0x1414BA8B0) rellena subsurface(+0xB0) con
     ''' DefHeightMap (fill 0xFF000000 = negro); mapeo miembro↔slot verificado en slot#8 (0x1414BA6E0):
@@ -394,6 +399,9 @@ Public Class PreviewControl
         ' 256² con mips) para que el shader la samplee IDÉNTICO a la real y no haya diferencia por estado de
         ' sampler / minificación (un 4×4 Nearest sin mips sampleaba distinto → cabeza más clara de lo debido).
         defaultFacegenDetailTex = CreateColorTexture(64, 64, 64, 64, 64, 255, mipped:=True)
+
+        ' Detail NEUTRAL 0.5 (softlight identidad) para heads PLEGADOS sin slot 3 (ver campo). Mismo 64²+mips que el 0.251.
+        defaultFacegenFoldNeutralDetailTex = CreateColorTexture(64, 64, 128, 128, 128, 255, mipped:=True)
 
         ' 64×64 default FaceGen SUBSURFACE (_sk faltante) = NEGRO (engine: DefHeightMap → SSS=0; ver campo).
         defaultFacegenSubsurfaceTex = CreateColorTexture(64, 64, 0, 0, 0, 255, mipped:=True)
@@ -1576,6 +1584,7 @@ Public Class PreviewControl
         If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
         If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex)
+        If defaultFacegenFoldNeutralDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenFoldNeutralDetailTex)
         If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex)
         If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap)
 #If DEBUG Then
@@ -1829,6 +1838,16 @@ Public Class PreviewModel
             ''' <see cref="SkinToneColor"/> (engine model, NOT a double). Per-mesh on MaterialData so it
             ''' survives material cloning, same as <see cref="SkinToneColor"/> / <see cref="FaceTintOverlay_ID"/>.</summary>
             Public Property SkinToneBaked As Boolean = False
+
+            ''' <summary>"Ya está" flag para el DETAIL (slot 3) — el softlight(diffuse, detail) YA se plegó en el
+            ''' diffuse de esta malla (fold SSE), así que el softlight del engine debe ser IDENTIDAD. Con un slot 3
+            ''' PRESENTE el fold lo neutraliza reemplazando la textura por 0.5 bajo su key ⇒ detailMaskId resuelve a
+            ''' 0.5 y no hace falta este flag. Pero con el slot 3 AUSENTE (mods que borran el TX04, ej. Enhanced
+            ''' Khajiit) detailMaskId=0 y el shader bindea defaultFacegenDetailTex (0.251) = RE-OSCURECE (bHasDetailMask
+            ''' es SIEMPRE True en facegen). Este flag hace que, plegado + sin detail, se use el neutral 0.5 en vez del
+            ''' 0.251 ⇒ folded == unfolded == bake. Per-mesh en MaterialData (sobrevive el clone), igual que
+            ''' <see cref="SkinToneBaked"/> / <see cref="FaceTintOverlay_ID"/>. False = camino no plegado (default).</summary>
+            Public Property SseFoldDetailNeutralized As Boolean = False
 
             ' OS-faithful blend decision. Two independent triggers, either suffices:
             '   1. NIF NiAlphaProperty.Flags.AlphaBlend (bit 0) — carried in the wrapper's
@@ -3332,9 +3351,13 @@ Public Class PreviewModel
             If isSSE Then shader.SetBool("bHasSpecMap", hasSpecMap)
             shader.SetBool("bModelSpace", materialBase.ModelSpaceNormals)
             shader.SetBool("bEmissive", materialBase.EmitEnabled)
-            ' FaceTint (technique 4) does subsurface unconditionally in the engine PS (no Soft_Lighting gate,
-            ' verified sse_facegen_skin.asm); force it on for facegen since the head's flag may not be set.
-            shader.SetBool("bSoftlight", materialBase.SubsurfaceLighting OrElse (isSSE AndAlso materialBase.Facegen))
+            ' Subsurface (soft lighting) is a per-material property: bind it from the material's own
+            ' Soft_Lighting flag, both engines. (The previous SSE-only `OrElse (isSSE AndAlso Facegen)`
+            ' FORCE was removed 2026-07-23: RE of the SSE lighting-technique composition showed facegen
+            ' subsurface is selected by the material flag via the descriptor SOFT_LIGHTING bit — it is not
+            ' unconditionally forced — and vanilla/mod facegen heads ship the flag OFF, so forcing it added
+            ' subsurface the engine does not apply. Face/body parity is handled by MatchBodySkinSubsurfaceToFace.)
+            shader.SetBool("bSoftlight", materialBase.SubsurfaceLighting)
             shader.SetBool("bGlowmap", materialBase.Glowmap AndAlso glowTextureId <> 0)
             ' Hair (FO4 carries Hair=true AND Glowmap=true): the glow slot holds the _f strand FLOW map,
             ' not a glow. bHair drives the Kajiya-Kay anisotropic specular + hair tint, robust vs the type.
@@ -3376,6 +3399,10 @@ Public Class PreviewModel
             ' otherwise the tone is applied twice. Hair tint is independent of skin-tone baking, never suppressed.
             If material.SkinToneBaked AndAlso Not materialBase.Hair Then hasTint = False
             shader.SetBool("bHasTintColor", hasTint)
+            If Logger.Enabled AndAlso isSSE AndAlso materialBase.SkinTint AndAlso Not materialBase.Facegen Then
+                Dim shpNb = MeshData.Shape?.ShapeName
+                Logger.LogLazy(Function() $"[SKIN-DBG] BODY shape='{shpNb}' hasTintColor={hasTint} skinToneBaked={material.SkinToneBaked} tint=({materialBase.SkinTintColor.R},{materialBase.SkinTintColor.G},{materialBase.SkinTintColor.B}) specStr={materialBase.SpecularMult:F2} specColor=({materialBase.SpecularColor.R},{materialBase.SpecularColor.G},{materialBase.SpecularColor.B}) gloss={materialBase.NifGlossiness:F3} | LIGHT-ADD soft={materialBase.SubsurfaceLighting}/roll={materialBase.SubsurfaceLightingRolloff:F3} back={materialBase.BackLighting}/pow={materialBase.BackLightPower:F3} rim={materialBase.RimLighting}/pow={materialBase.RimPower:F3} emit={materialBase.EmitEnabled}/col=({materialBase.EmittanceColor.R},{materialBase.EmittanceColor.G},{materialBase.EmittanceColor.B})x{materialBase.EmittanceMult:F2}")
+            End If
             ' SSE Hair: engine applies HairTintColor to the LIT color masked by vertex-green
             ' (mix(1, tint, vColor.g)), not as a flat albedo multiply. Route via bHairTint.
             shader.SetBool("bHairTint", isSSE AndAlso materialBase.Hair)
@@ -3421,7 +3448,21 @@ Public Class PreviewModel
                 ' Khajiit) caen acá; antes el preview dejaba la cara sin oscurecer (más clara que el cuerpo).
                 shader.SetBool("bHasDetailMask", isFaceTint)
                 If isFaceTint Then
-                    Dim detailTex = If(detailMaskId <> 0, detailMaskId, Me.ParentModel.ParentControl.defaultFacegenDetailTex)
+                    ' Slot 3 vacío: normalmente el default del engine 0.251 (oscurece). PERO si el diffuse ya viene
+                    ' PLEGADO (SseFoldDetailNeutralized), el softlight ya está horneado ⇒ acá debe ser IDENTIDAD (0.5),
+                    ' o el head plegado sin detail sale más oscuro que el unfolded/bake (Enhanced Khajiit). Con slot 3
+                    ' PRESENTE el fold ya reemplazó su textura por 0.5 ⇒ detailMaskId<>0 y esta rama no aplica.
+                    Dim detailDefault = If(material.SseFoldDetailNeutralized,
+                                           Me.ParentModel.ParentControl.defaultFacegenFoldNeutralDetailTex,
+                                           Me.ParentModel.ParentControl.defaultFacegenDetailTex)
+                    Dim detailTex = If(detailMaskId <> 0, detailMaskId, detailDefault)
+                    If Logger.Enabled Then
+                        Dim shpN = MeshData.Shape?.ShapeName
+                        Dim foldN = material.SseFoldDetailNeutralized
+                        Dim hasSlot = (detailMaskId <> 0)
+                        Dim defVal = If(foldN, "0.5-identity", "0.251-darken")
+                        Logger.LogLazy(Function() $"[DETAIL-DBG] FACE shape='{shpN}' detailSlotBound={hasSlot} foldNeutralized={foldN} → default={defVal} | facetintAlbedo={materialBase.Facegen} skinTintColor=({materialBase.SkinTintColor.R},{materialBase.SkinTintColor.G},{materialBase.SkinTintColor.B}) specStr={materialBase.SpecularMult:F2} specColor=({materialBase.SpecularColor.R},{materialBase.SpecularColor.G},{materialBase.SpecularColor.B}) gloss={materialBase.NifGlossiness:F3} | LIGHT-ADD soft={materialBase.SubsurfaceLighting}/roll={materialBase.SubsurfaceLightingRolloff:F3} back={materialBase.BackLighting}/pow={materialBase.BackLightPower:F3} rim={materialBase.RimLighting}/pow={materialBase.RimPower:F3} emit={materialBase.EmitEnabled}/col=({materialBase.EmittanceColor.R},{materialBase.EmittanceColor.G},{materialBase.EmittanceColor.B})x{materialBase.EmittanceMult:F2} glowFlag={materialBase.Glowmap}/glowTexId={glowTextureId}")
+                    End If
                     shader.BindTexture("texDetailMask", detailTex, TextureUnit.Texture8)
                 End If
             End If

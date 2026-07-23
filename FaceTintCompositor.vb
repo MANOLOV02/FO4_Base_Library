@@ -502,7 +502,7 @@ uniform int uFramework;        // composite: 0=OverPrev(default) 1=OverBase 2=Ad
 uniform int uPreToneSkin;      // 1 = pre-tonar el source con el skintone (solo flagged-after-skintone)
 uniform sampler2D uSkinMask;   // mask del skintone
 uniform sampler2D uFoldDetail; // SSE fold: detail mask (slot 3) del engine. Solo se lee con uFgTintFold==1.
-uniform int uHasFoldDetail;    // 0 = sin detail -> b=0.5 (softlight identidad), igual que el fold CPU.
+uniform int uHasFoldDetail;    // 0 = sin detail -> b=0.2509803922 (0.251 = default engine), igual que el fold CPU.
 uniform vec3 uSkinColor;       // color del skintone
 uniform float uSkinOpacity;    // opacidad del skintone
 uniform int uSkinWs;           // working space del skintone
@@ -1277,8 +1277,9 @@ void main() {
                 GL.Uniform1(state._uFgTintFoldLoc, If(fgTintFoldEffective, 1, 0))
                 GL.Uniform3(state._uFgTintOffLoc, layer.FgTintOffR, layer.FgTintOffG, layer.FgTintOffB)
                 GL.Uniform1(state._uFgTintAmpLoc, layer.FgTintAmp)
-                ' Detail (slot 3) del pliegue SSE en la unit 6. Sin detail ⇒ uHasFoldDetail=0 ⇒ el shader usa b=0.5
-                ' (softlight identidad), EXACTAMENTE como el fold CPU. Se bindea layerTex de relleno para que el
+                ' Detail (slot 3) del pliegue SSE en la unit 6. Sin detail ⇒ uHasFoldDetail=0 ⇒ el shader usa
+                ' b=0.2509803922 (0.251 = default engine BSShader_DefFacegenDetail, oscurece), EXACTAMENTE como el fold
+                ' CPU (SseFaceGenBaker emptyDetailDefault). Se bindea layerTex de relleno para que el
                 ' sampler nunca quede indefinido (no se lee salvo con uFgTintFold==1 y uHasFoldDetail==1).
                 GL.ActiveTexture(TextureUnit.Texture6)
                 GL.BindTexture(TextureTarget.Texture2D, If(layer.FoldDetailTextureId <> 0, layer.FoldDetailTextureId, layerTex))
