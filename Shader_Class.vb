@@ -1863,8 +1863,13 @@ void main(void)
 			// not hard-overlay: result = a*a + 2*a*b*(1-a)  (neutral at b=0.5). For SSE facegen data.
 			if (bHasDetailMask)
 			{
+				// ENGINE-FAITHFUL vColor ORDER (facegen PS idx 8120): the detail soft-light runs on the
+				// RAW diffuse (t0), NOT on vColor*diffuse. vColor (COLOR0) is a FINAL multiply, re-applied
+				// after the facetint below (engine L183). Rebuild albedo from the raw diffuse here; for a
+				// white vColor this is bit-identical to the previous fold.
 				vec3 dm = texture(texDetailMask, uv).rgb;
-				albedo = albedo * albedo + 2.0 * albedo * dm * (1.0 - albedo);
+				vec3 fd = baseMap.rgb;
+				albedo = fd * fd + 2.0 * fd * dm * (1.0 - fd);
 			}
 
 			// FaceGen facetint: the baked facetint map (engine t4, texture-set slot 6) amplified and
@@ -1877,6 +1882,16 @@ void main(void)
 			{
 				vec3 fgTint = (texture(texGlowmap, uv).rgb + vec3(0.003922, 0.0, 0.003922)) * 3.984375;
 				albedo *= fgTint;
+			}
+
+			// Re-apply the mesh vertex color (COLOR0) as the FINAL multiply of the facegen albedo chain,
+			// matching the engine order (facegen PS idx 8120 L183: color *= v12). The detail block above
+			// rebuilt albedo from the raw diffuse, dropping the fold, so vColor is restored here exactly
+			// once. Gated on bHasDetailMask (= facegen); no-op for a white vColor. Before the overlay so
+			// the TETI/TEND premultiplied-over sees the same albedo it did previously.
+			if (bHasDetailMask)
+			{
+				albedo *= vColor.rgb;
 			}
 
 			// FaceTint overlay (TETI/TEND composed at runtime via FBO, premultiplied-over)
@@ -1953,8 +1968,14 @@ void main(void)
 			// HairTint (type 6) is engine-applied AFTER lighting, masked by vertex-green (below).
 			if (bHasTintColor && !bHairTint && !bIsEffectShader)
 			{
-				albedo = albedo * albedo + 2.0 * albedo * tintColor * (1.0 - albedo);
-				albedo *= vec3(1.011719, 0.996094, 1.011719);
+				// ENGINE-FAITHFUL vColor ORDER (skin PS idx 8577 L105): the SkinTint soft-light runs on the
+				// RAW diffuse (t0), then vColor (COLOR0) multiplies the result. The old code soft-lit
+				// vColor*diffuse (vColor folded into the non-linear base), which diverges for a non-white
+				// vColor; for white it is bit-identical. vColor commutes with the lighting multiply below.
+				vec3 sd = baseMap.rgb;
+				sd = sd * sd + 2.0 * sd * tintColor * (1.0 - sd);
+				sd *= vec3(1.011719, 0.996094, 1.011719);
+				albedo = sd * vColor.rgb;
 			}
 
 			// Engine (idx 4032 / 7473): color = albedo * (diffuse + ambient + emissive) + specular.

@@ -37,8 +37,8 @@ Public Module SseOverlayCompositor
     Public Structure SseOverlay
         Public BlendMode As SseBlendMode
         Public LayerType As Integer
-        Public Color As Double()     ' length 4, RGBA
-        Public Texture As Double()   ' length w*h*4 RGBA, or Nothing
+        Public Color As Double()     ' length 4, RGBA (color/valor: se queda en Double, no es buffer de píxeles)
+        Public Texture As Single()   ' length w*h*4 RGBA, or Nothing (buffer de píxeles → Single storage)
     End Structure
 
     ''' <summary>Map a NiOverride blend-mode technique string (lowercase .fx name) to the enum. Unknown → Normal.</summary>
@@ -92,7 +92,7 @@ Public Module SseOverlayCompositor
         End Select
     End Function
 
-    Public Sub ApplyOverlays(acc As Double(), overlays As IList(Of SseOverlay), w As Integer, h As Integer)
+    Public Sub ApplyOverlays(acc As Single(), overlays As IList(Of SseOverlay), w As Integer, h As Integer)
         If overlays Is Nothing OrElse overlays.Count = 0 Then Return
         Dim npix = w * h
         ' El loop de CAPAS queda SERIAL (el composite no es conmutativo: cada capa lee el acumulado de la
@@ -121,9 +121,9 @@ Public Module SseOverlayCompositor
                         Dim ar = acc(i * 4), ag = acc(i * 4 + 1), ab = acc(i * 4 + 2)
                         If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
                             ' normal.fx: over with PREMULTIPLIED layer.rgb (no un-premultiply)
-                            acc(i * 4) = lr * la + ar * (1 - la)
-                            acc(i * 4 + 1) = lg * la + ag * (1 - la)
-                            acc(i * 4 + 2) = lb * la + ab * (1 - la)
+                            acc(i * 4) = CSng(lr * la + ar * (1 - la))
+                            acc(i * 4 + 1) = CSng(lg * la + ag * (1 - la))
+                            acc(i * 4 + 2) = CSng(lb * la + ab * (1 - la))
                         Else
                             ' all other modes un-premultiply the layer colour, blend, then alpha-over
                             Dim br = Clamp01(lr / la), bg = Clamp01(lg / la), bbl = Clamp01(lb / la)
@@ -144,9 +144,9 @@ Public Module SseOverlayCompositor
                                 rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ag, bg)
                                 rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ab, bbl)
                             End If
-                            acc(i * 4) = (1 - la) * ar + rr * la
-                            acc(i * 4 + 1) = (1 - la) * ag + rg * la
-                            acc(i * 4 + 2) = (1 - la) * ab + rb * la
+                            acc(i * 4) = CSng((1 - la) * ar + rr * la)
+                            acc(i * 4 + 1) = CSng((1 - la) * ag + rg * la)
+                            acc(i * 4 + 2) = CSng((1 - la) * ab + rb * la)
                         End If
                     Next
                 End Sub)
@@ -199,9 +199,9 @@ Public Module SseOverlayCompositor
         End Select
     End Function
 
-    Public Function ComposeFaceOverlaysIntoDiffuse(acc As Double(), overlays As IList(Of RaceMenuJslot.JslotOverlayNode),
+    Public Function ComposeFaceOverlaysIntoDiffuse(acc As Single(), overlays As IList(Of RaceMenuJslot.JslotOverlayNode),
                                                    w As Integer, h As Integer,
-                                                   decode As Func(Of String, Integer, Integer, Double())) As Boolean
+                                                   decode As Func(Of String, Integer, Integer, Single())) As Boolean
         If acc Is Nothing OrElse overlays Is Nothing OrElse overlays.Count = 0 OrElse decode Is Nothing Then Return False
         Dim npix = w * h
         Dim any = False
@@ -230,9 +230,9 @@ Public Module SseOverlayCompositor
                     For i = range.Item1 To range.Item2 - 1
                         Dim la = Clamp01(tex(i * 4 + 3) * opacity)
                         If la <= 0.0 Then Continue For
-                        acc(i * 4) = (tex(i * 4) * tr) * la + acc(i * 4) * (1 - la)
-                        acc(i * 4 + 1) = (tex(i * 4 + 1) * tg) * la + acc(i * 4 + 1) * (1 - la)
-                        acc(i * 4 + 2) = (tex(i * 4 + 2) * tb) * la + acc(i * 4 + 2) * (1 - la)
+                        acc(i * 4) = CSng((tex(i * 4) * tr) * la + acc(i * 4) * (1 - la))
+                        acc(i * 4 + 1) = CSng((tex(i * 4 + 1) * tg) * la + acc(i * 4 + 1) * (1 - la))
+                        acc(i * 4 + 2) = CSng((tex(i * 4 + 2) * tb) * la + acc(i * 4 + 2) * (1 - la))
                     Next
                 End Sub)
             any = True
@@ -248,9 +248,9 @@ Public Module SseOverlayCompositor
     ''' alpha del DIFFUSE del overlay × opacidad (el decal blendea por el alpha del diffuse). Solo overlays con
     ''' <see cref="JslotOverlayNode.NormalPath"/>; los que no traen normal no tocan el _msn. Returns True si alguno
     ''' contribuyó. <paramref name="msnAcc"/> = head _msn decodificado RGBA [0,1] (length w*h*4).</summary>
-    Public Function ComposeFaceOverlayNormalsIntoMsn(msnAcc As Double(), overlays As IList(Of RaceMenuJslot.JslotOverlayNode),
+    Public Function ComposeFaceOverlayNormalsIntoMsn(msnAcc As Single(), overlays As IList(Of RaceMenuJslot.JslotOverlayNode),
                                                      w As Integer, h As Integer,
-                                                     decode As Func(Of String, Integer, Integer, Double())) As Boolean
+                                                     decode As Func(Of String, Integer, Integer, Single())) As Boolean
         If msnAcc Is Nothing OrElse overlays Is Nothing OrElse overlays.Count = 0 OrElse decode Is Nothing Then Return False
         Dim npix = w * h
         Dim any = False
@@ -278,9 +278,9 @@ Public Module SseOverlayCompositor
                         Dim nx = hx + cov * (ox - hx), ny = hy + cov * (oy - hy), nz = hz + cov * (oz - hz)
                         Dim len = Math.Sqrt(nx * nx + ny * ny + nz * nz)
                         If len > 0.0000001 Then nx /= len : ny /= len : nz /= len
-                        msnAcc(i * 4) = (nx + 1.0) * 0.5
-                        msnAcc(i * 4 + 1) = (ny + 1.0) * 0.5
-                        msnAcc(i * 4 + 2) = (nz + 1.0) * 0.5
+                        msnAcc(i * 4) = CSng((nx + 1.0) * 0.5)
+                        msnAcc(i * 4 + 1) = CSng((ny + 1.0) * 0.5)
+                        msnAcc(i * 4 + 2) = CSng((nz + 1.0) * 0.5)
                     Next
                 End Sub)
             any = True
@@ -357,7 +357,7 @@ Public Module SseOverlayCompositor
     ''' MASKA (skee folds it into the colour's A byte). <paramref name="layerType"/> 0=Normal/1=Mask/2=Color;
     ''' <paramref name="blend"/> the technique (default normal). <paramref name="texRgba"/> = decoded mask texture
     ''' (linear RGBA w*h*4) or Nothing for a type-2 solid layer.</summary>
-    Public Function BuildSkeeMaskLayer(colorArgbOrPreset As UInteger, opacity As Double, texRgba As Double(),
+    Public Function BuildSkeeMaskLayer(colorArgbOrPreset As UInteger, opacity As Double, texRgba As Single(),
                                        layerType As Integer, blend As SseBlendMode,
                                        skinRgb As Double(), hairRgb As Double()) As SseOverlay
         Dim r As Double, g As Double, b As Double

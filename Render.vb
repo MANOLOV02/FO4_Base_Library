@@ -3194,6 +3194,28 @@ Public Class PreviewModel
             Dim isTreeAnim As Boolean = materialBase.Tree OrElse materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
             shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVertexColorData)
             shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso Not isTreeAnim)
+            ' [VCOLOR-DBG] Sonda diagnostica: reporta la distribucion real del vertex color del mesh para
+            ' decidir si la divergencia app-vs-motor del orden del vColor (motor: post-softlight; app: en la
+            ' base del softlight) es visible o inerte (vColor blanco => inerte). min/mean/max en 0..1 crudo.
+            If Logger.Enabled AndAlso hasVertexColorData Then
+                Dim vcs = MeshData.Meshgeometry.VertexColors
+                If vcs IsNot Nothing AndAlso vcs.Length > 0 Then
+                    Dim n = vcs.Length
+                    Dim mnR = Single.MaxValue, mnG = Single.MaxValue, mnB = Single.MaxValue
+                    Dim mxR = Single.MinValue, mxG = Single.MinValue, mxB = Single.MinValue
+                    Dim sR As Double = 0, sG As Double = 0, sB As Double = 0
+                    Dim whiteN = 0
+                    For Each c In vcs
+                        sR += c.X : sG += c.Y : sB += c.Z
+                        mnR = Math.Min(mnR, c.X) : mnG = Math.Min(mnG, c.Y) : mnB = Math.Min(mnB, c.Z)
+                        mxR = Math.Max(mxR, c.X) : mxG = Math.Max(mxG, c.Y) : mxB = Math.Max(mxB, c.Z)
+                        If c.X >= 0.996F AndAlso c.Y >= 0.996F AndAlso c.Z >= 0.996F Then whiteN += 1
+                    Next
+                    Dim shpVc = MeshData.Shape?.ShapeName
+                    Logger.LogLazy(Function() $"[VCOLOR-DBG] shape='{shpVc}' isSSE={isSSE} type={materialBase.NifShaderType} facegen={materialBase.Facegen} skinTint={materialBase.SkinTint} hair={materialBase.Hair} nVerts={n} " &
+                                              $"mean=({sR / n:F3},{sG / n:F3},{sB / n:F3}) min=({mnR:F3},{mnG:F3},{mnB:F3}) max=({mxR:F3},{mxG:F3},{mxB:F3}) whiteFrac={whiteN / CSng(n):F3}")
+                End If
+            End If
             shader.SetBool("bApplyZap", shape.ApplyZaps)
             shader.SetBool("bWireframe", shape.Wireframe)
             shader.SetBool("bHide", shape.RenderHide)

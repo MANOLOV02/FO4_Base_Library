@@ -3290,7 +3290,7 @@ Public Class FO4UnifiedMaterial_Class
                 .Smoothness = If(Nif.Header.Version.IsSSE,
                                   CSng(Math.Max(0.0, (Math.Log(Math.Max(CDbl(shad.Glossiness), 2.0), 2.0) - 1.0) / 10.0)),
                                   shad.Smoothness),
-                .SubsurfaceLightingRolloff = shad.SubsurfaceRolloff,
+                .SubsurfaceLightingRolloff = If(Nif.Header.Version.IsSSE, shad.Softlight, shad.SubsurfaceRolloff),
                 .ExternalEmittance = shad.HasExternalEmittance,
                 .EnvironmentMappingEye = shad.HasEyeEnvironmentMapping,
                 .RootMaterialPath = If(shad.RootMaterialName, ""),
@@ -3688,7 +3688,16 @@ Public Class FO4UnifiedMaterial_Class
         Else
             shad.Smoothness = Mat.Smoothness
         End If
-        shad.SubsurfaceRolloff = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
+        ' Rolloff del soft-lighting al campo correcto por juego (simetrico con la lectura en ExtractFromNif):
+        ' SSE lo guarda en Lighting Effect 1 (shad.Softlight); FO4 en shad.SubsurfaceRolloff. Escribir siempre
+        ' a SubsurfaceRolloff dejaba el valor en un campo que el motor SSE ignora (round-trip roto: se perdia
+        ' el rolloff, incluido el flujo WM NIF->BGSM->NIF).
+        Dim softRolloffVal As Single = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
+        If Nif.Header.Version.IsSSE Then
+            shad.Softlight = softRolloffVal
+        Else
+            shad.SubsurfaceRolloff = softRolloffVal
+        End If
         shad.ModelSpace = Mat.ModelSpaceNormals
         shad.ShaderType_SK_FO4 = effectiveShaderType
         ' Convenciones tipo→flag de Skyrim (sweep SSE 2026-06-11, ~99-100% en 73.128 shapes

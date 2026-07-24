@@ -52,7 +52,7 @@ Public Module SseFaceTintComposer
     ' composes cb2[0..15] in this RACE order (builder @0x18C9F40). Keyed "<raceFid><F|M>".
     Private ReadOnly _layersCache As New Dictionary(Of String, List(Of SseTintMask))
     ' Decoded+resized mask cache at 512² (race-shared masks decode once across a batch). Keyed by dict path.
-    Private ReadOnly _texCache As New Dictionary(Of String, Double())(StringComparer.OrdinalIgnoreCase)
+    Private ReadOnly _texCache As New Dictionary(Of String, Single())(StringComparer.OrdinalIgnoreCase)
     ' FUENTE decodificada por (path, target) — para targets != 512² (el fold SSE compone a la resolución NATIVA
     ' del complexion, p.ej. 4096² con COtR) cada fold re-leía (GetBytes) y re-decodeaba (DirectXTex) TODAS las
     ' máscaras del RACE. Acá se cachea el DECODE de la fuente (al mip que DecodeDds elige para ese target — por
@@ -81,9 +81,9 @@ Public Module SseFaceTintComposer
     Public Function ComposeLinearRgba(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
                                       raceFormID As UInteger, isFemale As Boolean,
                                       Optional w As Integer = 512, Optional h As Integer = 512,
-                                      Optional baseImg As Double() = Nothing,
+                                      Optional baseImg As Single() = Nothing,
                                       Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
-                                      Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Double()
+                                      Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Single()
         If pm Is Nothing OrElse npcRec Is Nothing OrElse race Is Nothing Then Return Nothing
         Dim npix = w * h
 
@@ -110,7 +110,7 @@ Public Module SseFaceTintComposer
         Dim maskCh As Integer = MaskChannelIndex(settings.Diffuse)   ' SSE default = R (0)
 
         ' Seed del acumulador: Constant (SSE, engine-verificado 0.5) o la baseImg del caller (diagnóstico).
-        Dim acc(npix * 4 - 1) As Double
+        Dim acc(npix * 4 - 1) As Single
         Dim seedR As Double = 0.5, seedG As Double = 0.5, seedB As Double = 0.5
         If settings.SeedMode = FaceTintConvention.FaceTintSeedMode.Constant AndAlso settings.SeedConstant IsNot Nothing AndAlso settings.SeedConstant.Length >= 3 Then
             seedR = settings.SeedConstant(0) : seedG = settings.SeedConstant(1) : seedB = settings.SeedConstant(2)
@@ -123,7 +123,7 @@ Public Module SseFaceTintComposer
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
                 Sub(range)
                     For i = range.Item1 To range.Item2 - 1
-                        acc(i * 4) = seedR : acc(i * 4 + 1) = seedG : acc(i * 4 + 2) = seedB : acc(i * 4 + 3) = 1.0
+                        acc(i * 4) = CSng(seedR) : acc(i * 4 + 1) = CSng(seedG) : acc(i * 4 + 2) = CSng(seedB) : acc(i * 4 + 3) = 1.0F
                     Next
                 End Sub)
         End If
@@ -407,9 +407,9 @@ Public Module SseFaceTintComposer
     ''' ComposePixel) con la convención <paramref name="conv"/> de la ley SSE. coverage = convMask(mask[ch],
     ''' maskConv) × TINV, y el composite lo hace la ley (default SSE = lerp uniforme en linear, byte-idéntico al
     ''' modelo previo). El canal de máscara y la mask-conv salen de la ley — sin ramas por tipo hardcodeadas.</summary>
-    Private Sub ComposeLayer(acc As Double(), mask As Double(), cR As Double, cG As Double, cB As Double, tinv As Double, npix As Integer,
+    Private Sub ComposeLayer(acc As Single(), mask As Single(), cR As Double, cG As Double, cB As Double, tinv As Double, npix As Integer,
                              conv As FaceTintConvention.FaceTintConventionSet, maskConv As Integer, maskCh As Integer,
-                             Optional cov As Double() = Nothing)
+                             Optional cov As Single() = Nothing)
         ' PARALELO por rangos: cada píxel toca sólo sus índices (acc/cov por i) ⇒ bit-idéntico al serial. El fold
         ' SSE compone a la resolución NATIVA del complexion (4096² con COtR), donde el serial era parte de los
         ' segundos por fold. El orden ENTRE capas (no conmutativo) lo preserva el caller (loop de capas serial).
@@ -419,10 +419,10 @@ Public Module SseFaceTintComposer
                 For i = range.Item1 To range.Item2 - 1
                     Dim a = FaceTintCpuCompositor.ConvMaskShared(mask(i * 4 + maskCh), maskConv) * tinv   ' cobertura por la ley
                     If a <= 0.0 Then Continue For
-                    acc(i * 4) = FaceTintCpuCompositor.ComposePixel(acc(i * 4), cR, a, conv)
-                    acc(i * 4 + 1) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 1), cG, a, conv)
-                    acc(i * 4 + 2) = FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 2), cB, a, conv)
-                    If cov IsNot Nothing Then cov(i) = cov(i) + a * (1 - cov(i))   ' accumulate coverage
+                    acc(i * 4) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4), cR, a, conv))
+                    acc(i * 4 + 1) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 1), cG, a, conv))
+                    acc(i * 4 + 2) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 2), cB, a, conv))
+                    If cov IsNot Nothing Then cov(i) = CSng(cov(i) + a * (1 - cov(i)))   ' accumulate coverage
                 Next
             End Sub)
     End Sub
@@ -534,16 +534,16 @@ Public Module SseFaceTintComposer
     ''' <summary>Decode a texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear). Public
     ''' wrapper over <see cref="DecodeMask"/> so other SSE compositors (overlays into the per-NPC diffuse) reuse
     ''' the SAME decode+resize+cache path. Nothing when the file is missing/undecodable.</summary>
-    Public Function DecodeTextureRgba(texPath As String, w As Integer, h As Integer) As Double()
+    Public Function DecodeTextureRgba(texPath As String, w As Integer, h As Integer) As Single()
         Return DecodeMask(texPath, w, h)
     End Function
 
     ''' <summary>Decode a mask texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear).
     ''' Cached at 512². Nothing when the file is missing/undecodable.</summary>
-    Private Function DecodeMask(texPath As String, w As Integer, h As Integer) As Double()
+    Private Function DecodeMask(texPath As String, w As Integer, h As Integer) As Single()
         Dim key = texPath.Replace("/"c, "\"c).ToLowerInvariant()
         If Not key.StartsWith("textures\") Then key = "textures\" & key
-        Dim cached As Double() = Nothing
+        Dim cached As Single() = Nothing
         If w = 512 AndAlso h = 512 AndAlso _texCache.TryGetValue(key, cached) Then Return cached
         ' Fuente decodificada, cacheada por (path, target) — ver _texSrcCache. La elección de mip de DecodeDds
         ' depende del target ⇒ el target integra la key. El miss (Nothing) también se cachea (archivo ausente).
@@ -568,7 +568,7 @@ Public Module SseFaceTintComposer
             If w = 512 AndAlso h = 512 Then _texCache(key) = Nothing
             Return Nothing
         End If
-        Dim outp(w * h * 4 - 1) As Double
+        Dim outp(w * h * 4 - 1) As Single
         ' Resample bilineal PARALELO por filas (misma fórmula, cada fila escribe sólo sus índices ⇒ bit-idéntico).
         ' A 4096² de target el serial era parte de los segundos por fold.
         System.Threading.Tasks.Parallel.For(0, h, Sub(y)
@@ -580,7 +580,7 @@ Public Module SseFaceTintComposer
                                                           For c = 0 To 3
                                                               Dim p00 = t.Rgba((y0 * t.Width + x0) * 4 + c), p10 = t.Rgba((y0 * t.Width + x1) * 4 + c)
                                                               Dim p01 = t.Rgba((y1 * t.Width + x0) * 4 + c), p11 = t.Rgba((y1 * t.Width + x1) * 4 + c)
-                                                              outp((y * w + x) * 4 + c) = (p00 * (1 - tx) + p10 * tx) * (1 - ty) + (p01 * (1 - tx) + p11 * tx) * ty
+                                                              outp((y * w + x) * 4 + c) = CSng((p00 * (1 - tx) + p10 * tx) * (1 - ty) + (p01 * (1 - tx) + p11 * tx) * ty)
                                                           Next
                                                       Next
                                                   End Sub)

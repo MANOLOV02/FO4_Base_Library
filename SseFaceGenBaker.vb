@@ -50,13 +50,13 @@ Public Module SseFaceGenBaker
                                        raceFormID As UInteger, isFemale As Boolean,
                                        Optional w As Integer = 512, Optional h As Integer = 512,
                                        Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
-                                       Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Double()
+                                       Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Single()
         Return SseFaceTintComposer.ComposeLinearRgba(pm, npcRec, race, raceFormID, isFemale, w, h, Nothing, npcTintOverride, tintTexOverride)
     End Function
 
     ''' <summary>Convert a linear RGBA accumulator ([0,1], length w*h*4) to BGRA bytes (opaque alpha) — the same
     ''' byte order <see cref="EncodeLinearRgbaToBc3"/> feeds the encoder, for a lossless TGA dump.</summary>
-    Public Function LinearRgbaToBgra(acc As Double(), w As Integer, h As Integer) As Byte()
+    Public Function LinearRgbaToBgra(acc As Single(), w As Integer, h As Integer) As Byte()
         If acc Is Nothing OrElse acc.Length < w * h * 4 Then Return Nothing
         Dim bgra(w * h * 4 - 1) As Byte
         For i = 0 To w * h - 1
@@ -73,7 +73,7 @@ Public Module SseFaceGenBaker
     ''' del DXT5) y lo que trae el vanilla (medido: los 3.158 facetint del BSA son DXT5 512² 9 mips).
     ''' <paramref name="dxgiFormat"/> permite seguir el formato elegido por el usuario (CharGen Options → Diffuse)
     ''' en vez de hardcodear; -1 = BC3.</summary>
-    Public Function EncodeLinearRgbaToBc3(acc As Double(), w As Integer, h As Integer,
+    Public Function EncodeLinearRgbaToBc3(acc As Single(), w As Integer, h As Integer,
                                           Optional dxgiFormat As Integer = -1) As Byte()
         Dim bgra(w * h * 4 - 1) As Byte
         For i = 0 To w * h - 1
@@ -124,10 +124,10 @@ Public Module SseFaceGenBaker
     ''' setting igual que el resto del bake en vez de hardcodear.</summary>
     Public Function NeutralFacetintDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
         Dim npix = w * h
-        Dim acc(npix * 4 - 1) As Double
+        Dim acc(npix * 4 - 1) As Single
         Dim nR = FacetintNeutralChannel(0), nG = FacetintNeutralChannel(1), nB = FacetintNeutralChannel(2)
         For i = 0 To npix - 1
-            acc(i * 4) = nR : acc(i * 4 + 1) = nG : acc(i * 4 + 2) = nB : acc(i * 4 + 3) = 1.0
+            acc(i * 4) = CSng(nR) : acc(i * 4 + 1) = CSng(nG) : acc(i * 4 + 2) = CSng(nB) : acc(i * 4 + 3) = 1.0F
         Next
         Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function
@@ -144,9 +144,9 @@ Public Module SseFaceGenBaker
     ''' arma por path canónico). Formato = el que pase el caller; -1 = BC3 (constante ⇒ sin error de compresión).</summary>
     Public Function NeutralDetailDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
         Dim npix = w * h
-        Dim acc(npix * 4 - 1) As Double
+        Dim acc(npix * 4 - 1) As Single
         For i = 0 To npix - 1
-            acc(i * 4) = 0.5 : acc(i * 4 + 1) = 0.5 : acc(i * 4 + 2) = 0.5 : acc(i * 4 + 3) = 1.0
+            acc(i * 4) = 0.5F : acc(i * 4 + 1) = 0.5F : acc(i * 4 + 2) = 0.5F : acc(i * 4 + 3) = 1.0F
         Next
         Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function
@@ -157,8 +157,8 @@ Public Module SseFaceGenBaker
     ''' llega CRUDO (sRGB, de DecodeDds), acá se hace sRGB→linear, ×fgTint, y linear→sRGB para volver a almacenarlo
     ''' como diffuse (el engine lo re-samplea sRGB→linear). MEDIDO: plegar en sRGB crudo salía ~0.33 MÁS CLARO (bug).
     ''' fgTint usa el _d CRUDO (slot 6 se samplea sin sRGB). RGB; alpha intacto. Ambos buffers [0,1] w*h*4, mismo tamaño.</summary>
-    Public Sub FoldFacetintIntoDiffuse(complexionRgba As Double(), facetintRgba As Double(), npix As Integer,
-                                       Optional detailRgba As Double() = Nothing)
+    Public Sub FoldFacetintIntoDiffuse(complexionRgba As Single(), facetintRgba As Single(), npix As Integer,
+                                       Optional detailRgba As Single() = Nothing)
         If complexionRgba Is Nothing OrElse facetintRgba Is Nothing Then Return
         ' Engine EXACTO (Shader_Class 1864→1878): albedo = fgTint × softlight(sRGBtoLin(complexion), detail). El
         ' softlight con el detail (slot 3) va ANTES del fgTint. detailRgba = detail CRUDO (no está en color textures →
@@ -180,7 +180,7 @@ Public Module SseFaceGenBaker
                         Dim clin = Srgb2Lin(complexionRgba(i * 4 + ch))
                         Dim b = If(detailRgba IsNot Nothing, detailRgba(i * 4 + ch), emptyDetailDefault)
                         Dim sl = clin * clin + 2.0 * clin * b * (1.0 - clin)          ' softlight(complexion_lin, detail)
-                        complexionRgba(i * 4 + ch) = Lin2Srgb(sl * FgTintChannel(facetintRgba(i * 4 + ch), ch))
+                        complexionRgba(i * 4 + ch) = CSng(Lin2Srgb(sl * FgTintChannel(facetintRgba(i * 4 + ch), ch)))
                     Next
                 Next
             End Sub)

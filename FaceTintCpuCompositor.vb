@@ -208,7 +208,11 @@ Public Module FaceTintCpuCompositor
     Public Class DecodedTex
         Public Width As Integer
         Public Height As Integer
-        Public Rgba As Double()   ' length W*H*4, orden R,G,B,A en [0,1]
+        ' STORAGE en Single (float32) para cortar la memoria a la mitad (el término dominante: cada source
+        ' decodificado, 536 MB→268 MB @4K). El source es 8-bit ⇒ Single lo representa con error ~1e-8, muy por
+        ' debajo de la cuantización a 8-bit. La MATEMÁTICA sigue en Double (los escalares widen al leer). = la
+        ' misma clase de precisión que el GPU (Rgba32f). Delta byte vs baseline: validar con el compare batch.
+        Public Rgba As Single()   ' length W*H*4, orden R,G,B,A en [0,1]
     End Class
 
     ''' <summary>Decodifica un DDS (BCn -> uncompressed) por CPU/DirectXTex (useCompress:=False) a RGBA
@@ -261,7 +265,7 @@ Public Module FaceTintCpuCompositor
             End Select
             If w <= 0 OrElse h <= 0 OrElse px Is Nothing OrElse bpp = 0 OrElse px.Length < w * h * bpp Then Return Nothing
             Dim isBgra8 = (fmt = 87 OrElse fmt = 88 OrElse fmt = 91 OrElse fmt = 93)
-            Dim outArr(w * h * 4 - 1) As Double
+            Dim outArr(w * h * 4 - 1) As Single
             ' Paralelo por rangos: conversión byte→double puramente por-píxel (escrituras disjuntas ⇒ bit-idéntico).
             ' El fold SSE decodea el complexion a resolución NATIVA (4096² con COtR = 16,7M px) en cada fold.
             System.Threading.Tasks.Parallel.ForEach(
@@ -282,7 +286,7 @@ Public Module FaceTintCpuCompositor
                             Case Else ' 1
                                 r = px(s) : g = px(s) : b = px(s) : a = 255
                         End Select
-                        outArr(o) = r / 255.0 : outArr(o + 1) = g / 255.0 : outArr(o + 2) = b / 255.0 : outArr(o + 3) = a / 255.0
+                        outArr(o) = CSng(r / 255.0) : outArr(o + 1) = CSng(g / 255.0) : outArr(o + 2) = CSng(b / 255.0) : outArr(o + 3) = CSng(a / 255.0)
                     Next
                 End Sub)
             Return New DecodedTex With {.Width = w, .Height = h, .Rgba = outArr}
@@ -482,14 +486,15 @@ Public Module FaceTintCpuCompositor
         ' Acumulador RGB en OutputSpace del canal (build_3): D=sRGB (= src directo, SIN g22) ; N/S=raw lineal.
         ' El storage del engine FaceCustomization es sRGB (= formato de CK en disco); no se acumula en g22.
         ' Seed via SampleChannelAt (índice directo si tamaños iguales; bilineal si difieren = resize).
-        Dim accR(n - 1) As Double, accG(n - 1) As Double, accB(n - 1) As Double
+        ' Acumuladores en Single (storage): el math por-píxel abajo corre en Double y se guarda con CSng.
+        Dim accR(n - 1) As Single, accG(n - 1) As Single, accB(n - 1) As Single
         ' Acumulador ALPHA: PASSTHROUGH del base, nunca compuesto. Las blend-ops son RGB-only por
         ' definicion (mismo contrato que documenta el shader GL), asi que el alpha del base viaja
         ' intacto hasta el pack. MEDIDO sobre el corpus: el _d que hornea el CK lleva EXACTAMENTE el
         ' alpha del head diffuse de origen (Valentine 0x00002F24 vs gen2skinheadvalentine_d.dds:
         ' RMS 0,229/255, 99,59% byte-exact, maxD 18 en 0,02% de px = ruido de bloque BC3). Antes esta
         ' funcion escribia alpha=255 fija y el canal se perdia. Inerte para N/S (BC5 no tiene alpha).
-        Dim accA(n - 1) As Double
+        Dim accA(n - 1) As Single
         ' Seed del base diffuse: la base ES una textura de color ⇒ src→output config-driven (no literal 1,2):
         ' SeedDiffuseSrcSpaceValue (=DiffuseTextureSrcSpace, Srgb) → SeedDiffuseOutputSpaceValue (=Diffuse.OutputSpace, G22).
         Dim seedSrc = SeedDiffuseSrcSpaceValue, seedOut = SeedDiffuseOutputSpaceValue
@@ -498,11 +503,11 @@ Public Module FaceTintCpuCompositor
                                                       Dim g0 = SampleChannelAt(src, i, w, h, 1)
                                                       Dim b0 = SampleChannelAt(src, i, w, h, 2)
                                                       ' Alpha RAW: no es color ⇒ NO pasa por Cvt1 (ninguna conversion de espacio).
-                                                      accA(i) = SampleChannelAt(src, i, w, h, 3)
+                                                      accA(i) = CSng(SampleChannelAt(src, i, w, h, 3))
                                                       If SeedConventionIs_G22 AndAlso isD Then
-                                                          accR(i) = Cvt1(r0, seedSrc, seedOut) : accG(i) = Cvt1(g0, seedSrc, seedOut) : accB(i) = Cvt1(b0, seedSrc, seedOut)
+                                                          accR(i) = CSng(Cvt1(r0, seedSrc, seedOut)) : accG(i) = CSng(Cvt1(g0, seedSrc, seedOut)) : accB(i) = CSng(Cvt1(b0, seedSrc, seedOut))
                                                       Else
-                                                          accR(i) = r0 : accG(i) = g0 : accB(i) = b0
+                                                          accR(i) = CSng(r0) : accG(i) = CSng(g0) : accB(i) = CSng(b0)
                                                       End If
                                                   End Sub)
 
@@ -531,9 +536,9 @@ Public Module FaceTintCpuCompositor
                                                               Dim sb = SampleChannelAt(swTex, i, w, h, 2)
                                                               Dim mask = SampleChannelAt(mkTex, i, w, h, 0)
                                                               Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)
-                                                              accR(i) = ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl)
-                                                              accG(i) = ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl)
-                                                              accB(i) = ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl)
+                                                              accR(i) = CSng(ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl))
+                                                              accG(i) = CSng(ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl))
+                                                              accB(i) = CSng(ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl))
                                                           End Sub)
             Next
         End If
@@ -543,7 +548,7 @@ Public Module FaceTintCpuCompositor
         ' su uBase = ese input -> uBase del GL es post-swap. Se captura acá (después de los region swaps) para
         ' que los frameworks base-relativos (OverBase/AddBase) compongan sobre el baseline young-morpheado, NO
         ' sobre el seed Hero pre-swap. OverPrev (default) NO usa base -> byte-idéntico al modelo previo.
-        Dim baseR(n - 1) As Double, baseG(n - 1) As Double, baseB(n - 1) As Double
+        Dim baseR(n - 1) As Single, baseG(n - 1) As Single, baseB(n - 1) As Single
         Array.Copy(accR, baseR, n) : Array.Copy(accG, baseG, n) : Array.Copy(accB, baseB, n)
 
         ' --- Tint layers (over-running). La ley sale del resolver (compositor AGNOSTICO). ---
@@ -677,9 +682,9 @@ Public Module FaceTintCpuCompositor
                     Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
 
                     ' composite agnostico (= shader): blend en ws, lerp en cs, storage en os.
-                    accR(i) = ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, baseR(i), fw)
-                    accG(i) = ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, baseG(i), fw)
-                    accB(i) = ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, baseB(i), fw)
+                    accR(i) = CSng(ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, baseR(i), fw))
+                    accG(i) = CSng(ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, baseG(i), fw))
+                    accB(i) = CSng(ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, baseB(i), fw))
                 End Sub)
 
                 ' Capturar el skintone (slot 12) tras componerlo: color/op/mask/conv para pre-tonar las
