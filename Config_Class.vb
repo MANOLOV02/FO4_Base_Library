@@ -272,15 +272,15 @@ Public Class Config_App
         Dim white As New Vector3(1, 1, 1)
         ' Ambient = intensidad global (slider). AmbientGroundLevel = hemisferio (brillo del suelo vs cielo,
         ' 0.5 = mitad). AmbientSky/Ground = solo TINTE (blanco = neutro). Tres perillas independientes.
-        Dim Lrig = New LightsRig_struct With {.Ambient = 0.4,
+        Dim Lrig = New LightsRig_struct With {.Ambient = 1,
             .AmbientSky = white,
             .AmbientGround = white,
             .AmbientGroundLevel = 0.5F,
             .AmbientConfigured = True,
-            .DirectL = New LightData_struct With {.Strength = 0.7F, .Tint = white, .Left = 0, .Right = 0, .Back = 0, .Down = 0, .Forward = 1, .Up = 0},
-            .FillLight_1 = New LightData_struct With {.Strength = 0.6F, .Tint = white, .Left = 0, .Right = 0.7, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
-            .FillLight_2 = New LightData_struct With {.Strength = 0.6, .Tint = white, .Left = 0.7, .Right = 0, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
-            .BackLight = New LightData_struct With {.Strength = 0.6F, .Tint = white, .Left = 0.0, .Right = 0, .Back = 1, .Down = 0, .Forward = 0, .Up = 0.0}}
+            .DirectL = New LightData_struct With {.Strength = 0.6F, .Tint = white, .Left = 0, .Right = 0, .Back = 0, .Down = 0, .Forward = 1, .Up = 0},
+            .FillLight_1 = New LightData_struct With {.Strength = 0.4F, .Tint = white, .Left = 0, .Right = 0.7, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
+            .FillLight_2 = New LightData_struct With {.Strength = 0.4, .Tint = white, .Left = 0.7, .Right = 0, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
+            .BackLight = New LightData_struct With {.Strength = 0.2F, .Tint = white, .Left = 0.0, .Right = 0, .Back = 1, .Down = 0, .Forward = 0, .Up = 0.0}}
         Return Lrig
     End Function
 

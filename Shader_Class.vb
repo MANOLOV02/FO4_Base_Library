@@ -637,6 +637,20 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, in bool isKey
 	// light dir (NOT N.-L). App convention matches the engine: viewDir = surface->eye (= engine V,
 	// rec1498 L155 half = V+L), lightDir = surface->light (= engine cb2[0], N.L = NdotL), both in
 	// view space -> dot(viewDir,-lightDir) reproduces the engine's sat(V.-L) sign-for-sign.
+	//
+	// SIN GATE, a proposito. Se probo un `if (isKeyLight)` aca y SE SACO: no estaba justificado.
+	// El sintoma que motivo el intento (rebordes blancos en el cartilago de la oreja, dentro de la nariz
+	// y entre los labios al subir la BackLight del rig) resulto NO ser este termino. Con el gate puesto
+	// y el binario ya actualizado el sintoma SEGUIA, y la pista que lo cerro fue del usuario: inclinando
+	// un poco hacia arriba la luz trasera, desaparece. Eso es `max(N.L,0)` puro -- el DIFUSO comun.
+	// Ademas ese material tiene Smoothness = 1 => roughness = 0 => C2 = 0 en el Oren-Nayar, o sea el
+	// difuso degenera EXACTAMENTE a Lambert. El interior de la nariz mira geometricamente hacia la luz
+	// trasera y la recibe; en el juego la nariz le hace SOMBRA y queda oscuro, pero el preview no tiene
+	// sombras (el motor multiplica todo el acumulador por r2.x, el lookup del shadow map de rec1498
+	// L77-107, forzado a 0.0/1.0 y aplicado en L142/L154). No hay termino roto: falta oclusion.
+	// Como el motor SI aplica este rim en todas sus luces, incluido el loop de puntuales (rec1498
+	// L234-239, medido), gatearlo era una desviacion sin nada que la comprara. Queda fiel.
+	// (Este bloque es FO4-only: Fragment_SSE no tiene el termino; alli el backlight sale de una textura.)
 	{
 		float blSatNdotV = clamp(dot(normal, viewDir), 0.0, 1.0);
 		float blRim = pow(max(1.0 - blSatNdotV, 0.0), 0.01);
