@@ -103,7 +103,7 @@ out vec3 lightDirectional0;
 out vec3 lightDirectional1;
 out vec3 lightDirectional2;
 
-out vec3 viewDir;
+out vec3 viewDirRaw;
 out mat3 mv_tbn;
 out mat3 v_msnMatrix;   // MSN: object->view normal matrix (skinning+view), used by the Fragment MSN branch
 
@@ -245,7 +245,7 @@ void main(void)
               mv_bitangent.x, mv_bitangent.y, mv_bitangent.z,
               mv_normal.x,    mv_normal.y,    mv_normal.z);
 
-	viewDir = normalize(-vPos);
+	viewDirRaw = normalize(-vPos);
 	lightFrontal = normalize(mat3(matView) * frontal.direction);
 	lightDirectional0 = normalize(mat3(matView) * directional0.direction);
 	lightDirectional1 = normalize(mat3(matView) * directional1.direction);
@@ -378,7 +378,7 @@ in vec3 lightDirectional0;
 in vec3 lightDirectional1;
 in vec3 lightDirectional2;
 
-in vec3 viewDir;
+in vec3 viewDirRaw;
 in mat3 mv_tbn;
 in mat3 v_msnMatrix;   // MSN: object->view normal matrix from the vertex shader
 
@@ -390,6 +390,14 @@ in vec4 vColor;
 in vec2 vUV;
 
 out vec4 fragColor;
+
+// El engine RENORMALIZA el vector de vista POR PIXEL. Los 18 PS de BSLighting de FO4 (la poblacion
+// COMPLETA del bloque b06 en Shaders011.fxp) abren con
+//     dp3 r0.x, v6.xyzx, v6.xyzx ; rsq r0.x, r0.x ; mul r0.yzw, r0.xxxx, v6.xxyz
+// y de ahi salen el half-vector (`mad r7.yzw, v6.xxyz, r0.xxxx, cb2[0].xxyz`), N.V y la reflexion
+// del cubemap. El VS de la app ya emitia normalize(-vPos), pero la INTERPOLACION lo desnormaliza a
+// lo ancho del triangulo. viewDirRaw = varying crudo; viewDir = unitario, fijado al entrar a main().
+vec3 viewDir = vec3(0.0);
 
 vec3 normal = vec3(0.0);
 float specGloss = 1.0;
@@ -597,6 +605,7 @@ vec3 hemiAmbient(in vec3 nrm)
 
 void main(void)
 {
+	viewDir = normalize(viewDirRaw);   // engine: rsq(dot(v6,v6)) por pixel, ver la nota del varying
     uv = vUV * uvScale + uvOffset;
 	vec4 color = vColor;
 	// vColor RGB -> LINEAR (pow 2.2) before the lit-albedo multiply. The FO4 engine ALWAYS gamma-decodes
@@ -636,13 +645,27 @@ void main(void)
 			// Diffuse texture without lighting
 			color.rgb = albedo;
 
+			// El sampleo del normal map se SACO de adentro de `if (bLightEnabled)`. Motivo: el bloque
+			// del cubemap del EFFECT shader (BGEM, mas abajo) NO esta anidado bajo bLightEnabled y sin
+			// embargo lee normalMap.a y `normal`. Hoy eso no explota por un solo motivo: el uniform esta
+			// CABLEADO a True en el unico call-site que existe (Render.vb:3343 `SetBool(bLightEnabled,
+			// True)`; no hay otro seteo en todo el arbol). Era una trampa latente, no un bug vivo.
+			// Sacar el sampleo de aca es IDENTICO en comportamiento mientras el uniform sea True, y
+			// elimina la mitad de la trampa sin reestructurar nada.
+			// LO QUE QUEDA: `normal` se sigue calculando solo dentro de bLightEnabled (init vec3(0.0)).
+			// O sea `bLightEnabled = False` NO es un estado soportado para el camino BGEM: su falloff y
+			// su cubemap dependen de valores derivados de la iluminacion. Si alguna vez se agrega un
+			// call-site que lo ponga en False, hay que subir tambien el calculo de `normal`.
+			// (En Fragment_SSE esto NO pasa: alli el bloque del cubemap SI esta anidado bajo
+			// bLightEnabled, asi que las condiciones para llegar al multiply son exactamente las del
+			// sampleo. Verificado contando profundidad de llaves, no por indentacion.)
+			if (bNormalMap)
+			{
+				normalMap = texture(texNormal, uv);
+			}
+
 			if (bLightEnabled)
 			{
-				if (bNormalMap)
-				{
-					normalMap = texture(texNormal, uv);
-				}
-
 				if (bSpecular)
 				{
 					// FO4 dedicated specular map is independent from the normal map.
@@ -752,10 +775,27 @@ void main(void)
 			// rec3582 composites the FaceTint layers AND the skin tone into the head texture), which the
 			// renderer samples directly. Applying any tone here double-processes it. This matches Render.vb's
 			// own Ya-esta suppression (L3026-3029): SkinToneBaked -> bHasTintColor=false (runtime soft-light
-			// forced off). The old `albedo = 2*a - a*a` was the forward-g6 skin curve a^2+2a*tint*(1-a)
-			// degenerate at tint=1 -- a spurious brightening placeholder that broke face/body parity (verified
-			// in-app: removing it makes the face match the body after skin tint). So type 3 is intentionally a
-			// no-op (no `else if` branch needed -- the baked albedo passes through untouched).
+			// forced off). El `albedo = 2*a - a*a` que estaba aca se saco porque rompia la paridad
+			// cara/cuerpo (verificado in-app: sacandolo la cara matchea al cuerpo despues del skin tint).
+			// CORRECCION de como estaba descrito antes: NO es `a spurious brightening placeholder`.
+			// Esa curva EXISTE en el motor y es exactamente la tecnica **Facegen** del forward de FO4.
+			// Medido en b06 rec1499 (techID 0x401), diff contra rec1498 (0x001) = +3 instrucciones y nada mas:
+			//     add r4.xyz, r1.xyzx, r1.xyzx             ; 2a
+			//     mad r4.xyz, -r4.xyzx, r1.xyzx, r4.xyzx   ; 2a*(1-a)
+			//     mad r1.xyz, r1.xyzx, r1.xyzx, r4.xyzx    ; a*a + 2a*(1-a) = 2a - a*a
+			// con r1 = el sample de t0. O sea softlight con tint = 1.
+			// Los bits 8-11 del techID de FO4 son el **enum de TECNICA** (el mismo de Skyrim), no defines:
+			// 0x401 = 4 Facegen (curva con tint=1), 0x501 = 5 FacegenRGBTint (la misma curva pero con
+			// tint = cb1[1]), 0x6xx = 6 Hair (no lleva la curva: lleva lerp(1,HairTint,vColor.g)),
+			// 0xC01 = C TreeAnim (no la lleva). O sea aparece en 1 de los 18 PS, no en 7.
+            // Prueba cruzada en SSE: tecnica 4 (idx 8121) es la MISMA curva pero con el tint saliendo de
+            // la textura t3, y tecnica 5 (idx 8577) agrega el rgbFix l(1.011719,0.996094,1.011719) que la
+            // app ya implementa mas abajo. FO4-Facegen es la degeneracion a tint=1 de esa familia.
+			// Lo enciende el SHADER TYPE del BSLightingShaderProperty del NIF, no un flag del BGSM.
+			// Se sigue omitiendo aca a proposito, pero por OTRA razon: la app le entrega al shader un
+			// diffuse que ya compuso su propio FaceTint aguas arriba, mientras que el motor recibe el t0
+			// horneado por la pasada b12 FaceCustom. Si alguna vez se quiere cerrar si corresponde
+			// re-agregarla, hace falta un A/B in-app contra un render del juego: no se decide leyendo shaders.
 
 			directionalLight(frontal, lightFrontal, outDiffuse, outSpecular);
 			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
@@ -899,7 +939,7 @@ void main(void)
 			float effFalloff = 1.0;
 			if (bEffectFalloff || bEffectFalloffColor)
 			{
-				float NdotV_falloff = abs(dot(normal, normalize(viewDir)));
+				float NdotV_falloff = abs(dot(normal, viewDir));   // viewDir ya es unitario (main lo normaliza)
 				float ft = clamp((NdotV_falloff - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
 				ft = ft * ft * (3.0 - 2.0 * ft);
 				effFalloff = mix(effectFalloffParams.z, effectFalloffParams.w, ft);
@@ -1107,8 +1147,15 @@ if (bHide)
 		// here is vColor.a*baseMap.a (color.a, pre material-alpha) -> matches the engine LHS. For BGEM,
 		// fragColor.a is effAlpha which already carries BaseColor.a*PropertyColor.w -- the factors the
 		// engine's BGEM alpha test uses (rec1103 L48) -- so it is tested as-is.
+		// COMPARADOR: el engine descarta con `<` estricto, o sea CONSERVA la igualdad (GEQUAL).
+		// FO4 rec1498 L284-286:  mad r0.x, r1.w, v7.w, -cb2[3].x ; lt r0.x, r0.x, l(0) ; discard_nz r0.x
+		//   -> descarta si (alpha - ref) < 0, es decir si alpha < ref.
+		// Identico en SSE (define DO_ALPHA_TEST, +6 instr, con cb11[0].x de ref).
+		// El `<=` de la app descartaba tambien alpha == ref. Con alpha de 8 bits y refs tipicas
+		// (128/255) la igualdad EXACTA es frecuente en un cutout dibujado a mano, asi que comia una
+		// franja de pixeles que el motor conserva. Pasa a `<`.
 		if (bAlphaTest)
-			if (fragColor.a <= alphaThreshold) // GL_GREATER
+			if (fragColor.a < alphaThreshold) // GL_GEQUAL (engine: discard si alpha < ref)
 				discard;
 
 		// Material Alpha = the OUTPUT/blend alpha (BGSM). BGEM baked it into effAlpha already.
@@ -1195,7 +1242,7 @@ out vec3 lightDirectional0;
 out vec3 lightDirectional1;
 out vec3 lightDirectional2;
 
-out vec3 viewDir;
+out vec3 viewDirRaw;
 out mat3 mv_tbn;
 out mat3 v_msnMatrix;
 
@@ -1340,7 +1387,7 @@ void main(void)
               mv_bitangent.x, mv_bitangent.y, mv_bitangent.z,
               mv_normal.x,    mv_normal.y,    mv_normal.z);
 
-	viewDir = normalize(-vPos);
+	viewDirRaw = normalize(-vPos);
 	lightFrontal = normalize(mat3(matView) * frontal.direction);
 	lightDirectional0 = normalize(mat3(matView) * directional0.direction);
 	lightDirectional1 = normalize(mat3(matView) * directional1.direction);
@@ -1392,9 +1439,9 @@ uniform bool bLightmask;
 uniform bool bShowWeight;
 uniform bool bWireframe;
 uniform bool bApplyZap;
-// SSE facegen: the facetint (engine t4, slot 6) multiplies the albedo -- this is where the baked
-// makeup/skin-tone shows. Bound to texGlowmap for facegen (faces have no glow).
-uniform bool bFacetintAlbedo;
+// SSE facegen: bHasDetailMask gatea TODA la cadena de albedo facegen (softlight con el facetint del
+// slot 6 en texGlowmap + amplify del detail del slot 3 en texDetailMask). El engine no gatea por
+// textura presente: rellena los slots vacios con sus defaults, y Render.vb hace lo mismo.
 
 uniform bool bNormalMap;
 uniform bool bModelSpace;
@@ -1475,7 +1522,7 @@ in vec3 lightDirectional0;
 in vec3 lightDirectional1;
 in vec3 lightDirectional2;
 
-in vec3 viewDir;
+in vec3 viewDirRaw;
 in mat3 mv_tbn;
 in mat3 v_msnMatrix;  // MSN: per-vertex local->view (skinning+view combined in vertex shader)
 
@@ -1487,6 +1534,14 @@ in vec4 vColor;
 in vec2 vUV;
 
 out vec4 fragColor;
+
+// El engine RENORMALIZA el vector de vista POR PIXEL, no confia en el interpolado: todos los PS de
+// BSLightingShader abren con `dp3 r0.x, v6.xyzx, v6.xyzx ; rsq r0.x, r0.x` y recien ahi construyen
+// el half-vector (`mad r5.xyz, v6.xyzx, r0.xxxx, cb2[0].xyzx`). El VS de la app ya emitia
+// normalize(-vPos), pero la INTERPOLACION lo desnormaliza a lo ancho del triangulo, y de ahi salian
+// H, N.V, el rim y la reflexion del cubemap con largo != 1. viewDirRaw = el varying crudo;
+// viewDir = su version unitaria, asignada al entrar a main() antes de cualquier uso.
+vec3 viewDir = vec3(0.0);
 
 vec3 normal = vec3(0.0);
 float specGloss = 1.0;
@@ -1671,7 +1726,15 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 			// SSE: Blinn-Phong with the RAW glossiness exponent passed from the app
 			// (uniform glossiness = shad.Glossiness): no exp2 reconstruction, no specGloss
 			// modulation. Matches NifSkope sk_default and OutfitStudio default.frag.
-			outSpec += clamp(specularColor * specMask * pow(NdotH, glossiness), 0.0, 1.0) * light.diffuse;
+			// SIN clamp: el engine NO satura el specular en ningun punto. Cadena medida en el DXBC
+			// (Default+SPECULAR 0x00000201, y la misma forma en las 13 tecnicas que llevan el define):
+			//   por luz : dp3_sat(H,N) -> log / mul cb1[4].w / exp -> mul lightColor   (se ACUMULA)
+			//   al final: mul MASK ; mul cb2[3].y (SpecularStrength) ; mad *cb1[4].xyz (SpecularColor)
+			//             y recien ahi se suma sobre el color ya iluminado.
+			// O sea mask, fuerza y color entran UNA sola vez al final, y no hay saturate en ningun
+			// paso. El clamp per-luz que habia aca recortaba el highlight apenas
+			// specularColor*specMask pasaba de 1 (SpecularMult > 1 es corriente), achatando el brillo.
+			outSpec += specularColor * specMask * pow(NdotH, glossiness) * light.diffuse;
 		}
 	}
 
@@ -1731,6 +1794,7 @@ vec3 hemiAmbient(in vec3 nrm)
 
 void main(void)
 {
+	viewDir = normalize(viewDirRaw);   // engine: rsq(dot(v6,v6)) por pixel, ver la nota del varying
     uv = vUV * uvScale + uvOffset;
 	vec4 color = vColor;
 	albedo = vColor.rgb;
@@ -1758,34 +1822,37 @@ void main(void)
 
 				if (bSpecular)
 				{
-					if (bBacklight)
+					// OJO: ELIMINADA la rama `if (bBacklight)` que forzaba specFactor = normalMap.a.
+					// Partia de que con backlight el slot 7 lleva el backlight y NO el specular, o sea que
+					// eran EXCLUYENTES. El motor los lee A LA VEZ desde la MISMA textura: TXST slot 7 ->
+					// material+0x68 (OnLoadTextureSet 0x1414B7920) y SetupMaterial lo bindea DOS veces --
+					// t2 bajo MODELSPACENORMALS (0x14DCB65) y t9 bajo BACK_LIGHTING (0x14DCD22, `bts eax,9`).
+					// Son gates independientes: una malla MSN con backlight alimenta specular Y backlight
+					// desde el slot 7. Por eso la fuente del mask especular la decide SOLO MODELSPACENORMALS,
+					// sin importar el backlight, y el backlight sigue leyendo texSpecular mas arriba.
+					if (bHasSpecMap)
 					{
-						// SSE: when backlight is active, slot 7 (texSpecular) contains the
-						// backlight texture, not specular. Specular comes from normalMap.a.
-						if (bNormalMap)
-						{
-							specGloss = 1.0;
-							specFactor = normalMap.a;
-						}
-						else
-						{
-							// No valid specular source in this path: keep the backlight texture
-							// bound for translucency, but suppress reflective highlights.
-							specGloss = 0.0;
-							specFactor = 0.0;
-						}
-					}
-					else if (bHasSpecMap)
-					{
-						// Dedicated specular map: R=factor, G=glossiness
+						// SSE: el mask especular es de UN SOLO CANAL. Verificado en el DXBC:
+						//   forward:  color += pow(N.H, cb1[4].w) * lightColor * MASK * cb2[3].y * cb1[4].rgb
+						//   G-buffer: o2.w  = smoothstep(cb2[7].x, cb2[7].y, MASK) * cb2[7].w
+						// El EXPONENTE es cb1[4].w = un ESCALAR del material (uniform glossiness), NO un canal
+						// de la textura: Skyrim no tiene glossiness por pixel. Por eso specGloss se deja en 1.0
+						// y NO se lee .g (eso es la convencion de FO4, ver Fragment_FO4).
+						// OJO: el highlight ya usaba el uniform `glossiness` crudo, asi que specGloss no lo
+						// tocaba; su unico otro consumidor era el LOD del cubemap, que resulto ser una
+						// invencion de la app y ya se elimino (ver el bloque del cubemap). specGloss queda
+						// hoy sin efecto real, se conserva por simetria con Fragment_FO4.
+						// Cual textura es el MASK lo decide MODELSPACENORMALS, no la presencia del slot 7:
+						// Render.vb hace ese gate y bindea aca el slot 7 (t2 del engine).
 						specMap = texture(texSpecular, uv);
-						specGloss = specMap.g;
+						specGloss = 1.0;
 						specFactor = specMap.r;
 					}
 					else if (bNormalMap)
 					{
-						// SSE fallback: specular intensity from normal map alpha,
-						// glossiness entirely from the material property (shininess uniform)
+						// SSE, malla NO model-space: el mask especular es el ALPHA del normal map (t1.w).
+						// Medido sobre la poblacion COMPLETA de BSLightingShader sin terreno/LOD (6864 PS):
+						// no-MSN NUNCA samplea t2 (0/6096) y toma el mask de t1.w.
 						specGloss = 1.0;
 						specFactor = normalMap.a;
 					}
@@ -1859,29 +1926,37 @@ void main(void)
 				// The material flag is preserved for round-trip; only the lit render ignores it.
 			}
 
-			// FaceTint detail map: engine facegen (idx 8126) uses a SOFT-LIGHT blend onto the diffuse,
-			// not hard-overlay: result = a*a + 2*a*b*(1-a)  (neutral at b=0.5). For SSE facegen data.
+			// SSE FACEGEN albedo -- LEY DEL ENGINE (DXBC + SkyrimSE.exe 1.6.1170 unpacked, byte a byte):
+			//   albedo = softlight(diffuse, TINT) * ((DETAIL + vec3(1/255,0,1/255)) * 255/64)
+			//   softlight(a,b) = a*a + 2*a*b*(1-a)   [pegtop]
+			// TINT   = texture-set slot 6 (el facetint horneado) -> PS t3  (entra por SOFT-LIGHT)
+			// DETAIL = texture-set slot 3                        -> PS t4  (entra por el AMPLIFY)
+			// Cadena DXBC del PS facegen (identica en las 456 variantes que llevan la constante):
+			//   sample r2,t4 ; add r2,l(0.003922,0,0.003922) ; mul r2,l(3.984375)
+			//   sample r3,t3 ; mul r3,r0,r3 ; add r3,r3,r3 ; mad r3,-r3,r0,r3 ; mad r0,r0,r0,r3
+			//   mul r0,r2,r0            <- SIN _sat en ningun paso (no hay clamp, ni aca ni en el engine)
+			// Quien es quien (RE):
+			//   BSLightingShader::SetupMaterial 0x1414DC310, jump table 0x14DCFD4, rama Facegen 0x1414DC542:
+			//     SetPSTexture(3, mat+0xA0)   SetPSTexture(4, mat+0xA8)   SetPSTexture(12, mat+0xB0)
+			//   OnLoadTextureSet 0x1414BA6E0: GetTexture(6)->+0xA0, GetTexture(3)->+0xA8, GetTexture(2)->+0xB0
+			//   El facetint canonico se escribe en mat+0xA0 (0x1403BC573, tras GetFeature()==4 = 0x1414BAA00).
+			// => el x255/64 = 255/64 es la NORMALIZACION DEL DETAIL (neutro 64 -> 1.0), NO del facetint.
+			// El facetint entra por soft-light igual que el skin tint del CUERPO (tecnica FacegenRGBTint:
+			// softlight(diffuse, cb1[1]) * l(1.011719,0.996094,1.011719)); por eso cuello y pecho matchean
+			// in-game: mismo termino softlight, y las constantes difieren solo 0.39% en los 3 canales.
+			// Defaults del engine con el slot VACIO (init 0x140E57E30, manager singleton 0x328CC20):
+			//   slot 6 vacio -> DefaultGreyMap            = 0x80 = 0.5   => softlight IDENTIDAD
+			//   slot 3 vacio -> BSShader_DefFacegenDetail = 0x40 = 0.251 => amplify (1.015625, 1.0, 1.015625)
+			// Los bindea Render.vb, por eso aca NO hay gate por textura-presente: el engine tampoco lo tiene.
 			if (bHasDetailMask)
 			{
-				// ENGINE-FAITHFUL vColor ORDER (facegen PS idx 8120): the detail soft-light runs on the
-				// RAW diffuse (t0), NOT on vColor*diffuse. vColor (COLOR0) is a FINAL multiply, re-applied
-				// after the facetint below (engine L183). Rebuild albedo from the raw diffuse here; for a
-				// white vColor this is bit-identical to the previous fold.
-				vec3 dm = texture(texDetailMask, uv).rgb;
+				// ENGINE-FAITHFUL vColor ORDER (facegen PS): la cadena corre sobre el diffuse CRUDO (t0),
+				// NO sobre vColor*diffuse. vColor (COLOR0) es un multiply FINAL, re-aplicado abajo.
 				vec3 fd = baseMap.rgb;
-				albedo = fd * fd + 2.0 * fd * dm * (1.0 - fd);
-			}
-
-			// FaceGen facetint: the baked facetint map (engine t4, texture-set slot 6) amplified and
-			// MULTIPLIED onto the albedo -- this is where the makeup/skin-tone appears (lips, eyes, tint).
-			// Verified sse_facegen_skin.asm lines 71-79:
-			//   r2 = (t4 + vec3(1/255,0,1/255)) * 3.984375 ; albedo = r2 * softlight(diffuse, detail).
-			// Bound to texGlowmap for facegen. The _sk map stays the subsurface colour (engine t12) on
-			// texLightmask, unchanged.
-			if (bFacetintAlbedo)
-			{
-				vec3 fgTint = (texture(texGlowmap, uv).rgb + vec3(0.003922, 0.0, 0.003922)) * 3.984375;
-				albedo *= fgTint;
+				vec3 tint = texture(texGlowmap, uv).rgb;                    // t3 = facetint (slot 6)
+				albedo = fd * fd + 2.0 * fd * tint * (1.0 - fd);            // softlight(diffuse, tint)
+				vec3 detailAmp = (texture(texDetailMask, uv).rgb + vec3(0.003922, 0.0, 0.003922)) * 3.984375;
+				albedo *= detailAmp;                                        // t4 = detail normalizado (slot 3)
 			}
 
 			// Re-apply the mesh vertex color (COLOR0) as the FINAL multiply of the facegen albedo chain,
@@ -1918,7 +1993,13 @@ void main(void)
 			// Environment cubemap (BGSM only; BGEM has its own cubemap path)
 			if (bCubemap && bEnvMap && bShowTexture && !bIsEffectShader)
 			{
-				float cubeSmooth = (bSpecular && bShowTexture) ? specGloss * shininess : 1.0;
+				// ELIMINADO el LOD por glossiness: era una INVENCION de la app, sin respaldo del motor.
+				// MEDIDO sobre los 6924 PS de BSLightingShader: `sample_l` y `sample_b` aparecen 0 veces y
+				// los 1968 sampleos de cubemap (Envmap 1152 + MLP 624 + Eye 192) usan `sample` PLANO, o sea
+				// seleccion de mip por hardware desde las derivadas. SSE no desenfoca la reflexion por
+				// glossiness. El `8.0 - x*8.0` salia de leer mal el
+				// `mad r0.z, r0.z, l(-8.0), l(8.0); sqrt; max; div; add 0.5`, que es el ENCODE SPHEREMAP de la
+				// normal al G-buffer (o2.xy) y aparece igual en shaders que ni siquiera tocan un cubemap.
 
 				// EYE technique (16): the engine reflects the cubemap about the eyeball's RADIAL
 				// normal (sse_eye L108-111 reflects about v7), NOT the bump normal that lighting uses
@@ -1929,18 +2010,64 @@ void main(void)
 				// (mv_tbn[2]); reflecting about it is faithful to the engine (and strictly closer than the
 				// bump-normal reflection). Non-eye envmap keeps the bump-normal reflection (sse_envmap L12-14).
 				vec3 reflNormal = bEye ? normalize(mv_tbn[2]) : normal;
-				vec3 reflected = reflect(viewDir, reflNormal);
+
+				// DIRECCION DE REFLEXION -- el signo estaba INVERTIDO en SSE.
+				// Engine (Envmap tech 1 y Eye tech 16, identico en los 1968 sampleos de cubemap):
+				//     dp3 r3.x, N, Vn ; add r3.x, r3.x, r3.x ; mad r0.xyz, r3.xxxx, N, -Vn
+				//   => R = 2*(N.V)*N - V          con V = superficie->ojo (el mismo V del half-vector)
+				// GLSL reflect(I,N) = I - 2*dot(N,I)*N, o sea reflect(viewDir,N) = V - 2(N.V)N = -R.
+				// La app venia sampleando el cubemap con la direccion OPUESTA (el texel antipodal).
+				// reflect(-viewDir, N) da exactamente 2(N.V)N - V.
+				// EL SIGNO DEL VARYING TAMBIEN ESTA MEDIDO, no supuesto (medir solo el ALU del PS NO
+				// alcanza: si el varying fuera ojo->superficie, la misma formula daria el espejo opuesto).
+				//   VS de BSLighting SSE: `add o6.xyz, -r2.xyzx, cb2[6].xyzx` = eye - pos = superficie->ojo,
+				//   y lo hacen 78/78 de los VS del bloque que emiten TEXCOORD5.
+				// Corroboracion INTERNA al PS, independiente del VS: el half-vector es
+				// `mad r5.xyz, v6.xyzx, r0.xxxx, cb2[0].xyzx` = normalize(V) + L, y un half-vector correcto
+				// exige V = superficie->ojo. (cb2[0] es L=superficie->luz, probado por el wrap del difuso
+				// `div_sat (N.cb2[0] + w)/(1+w)`.)
+				// OJO: FO4 hace lo CONTRARIO y por eso NO se toca Fragment_FO4: alli el shader agrega un
+				// `mov r0.yzw, -r0.yzw` despues del mad (b06 rec1507 t=0x101), o sea samplea con
+				// V - 2(N.V)N = reflect(viewDir,N), que es justo lo que Fragment_FO4 ya hace -- con el
+				// MISMO varying superficie->ojo (`add o6.xyz, -r1.xyzx, cb2[7].xyzx`, 18/18 de sus VS).
+				// FO4 es antipodal en sus DOS familias (BGSM + BGEM): 205/205 sampleos de cubo llevan ese
+				// `mov` final. El raro es FO4, no Skyrim.
+				vec3 reflected = reflect(-viewDir, reflNormal);
 				vec3 reflectedWS = vec3(matModel * (matModelViewInverse * vec4(reflected, 0.0)));
 
-				vec4 cube = textureLod(texCubemap, reflectedWS, 8.0 - cubeSmooth * 8.0);
-				cube.rgb *= envReflection * specularStrength;
+				vec4 cube = texture(texCubemap, reflectedWS);
+				// Escala del cubemap = cb1[2].x * cb2[3].x (Envmap tech: `mul r3.x, cb1[2].x, cb2[3].x`).
+				//   cb1[2].x = EnvmapData.x = el envmap scale del MATERIAL -> uniform envReflection.
+				//   cb2[3].x <- BSLightingShaderProperty + 0x104, escrito SOLO en el case Envmap de la
+				//               jump-table por tecnica de BSLightingShader::SetupGeometry (0x1414DD21C:
+				//               `mov eax,[r14+0x104] ; mov [rcx+rdx*4], eax`, constante #0x47 offset +0).
+				// specularStrength NO es ese factor: es cb2[3].**y** <- property+0x100, escrito solo bajo
+				// SPECULAR (0x1414DDB80, `bt eax,9`) y usado UNICAMENTE para escalar el specular
+				// (`mul r4.xyz, r4.xyzx, cb2[3].yyyy`). Multiplicar el cubemap por el SpecularMult del
+				// material era una divergencia lisa y llana; se quita. cb2[3].x queda SIN ligar (la app no
+				// tiene ese campo del property) y se asume 1.0, que es el neutro -- no se inventa un valor.
+				// FO4 es OTRO caso y por eso Fragment_FO4 SI lleva specularStrength aca: alli el engine
+				// multiplica por cb2[11].y = SpecMult (b06 rec1507 L290). Gate por shader, no por uniform.
+				cube.rgb *= envReflection;
 				if (bEnvMask && !bGlowmap)
 				{
 					cube.rgb *= envMask.r;
 				}
 				else
 				{
-					cube.rgb *= specFactor;
+					// Sin env mask, la base del lerp es el ALPHA DEL NORMAL
+					// (lerp(normal.a, envMaskTex, EnvmapData.y)). Se lee normalMap.a EXPLICITO y NO
+					// specFactor: specFactor es el mask ESPECULAR (sampler t2 del engine), que en SSE
+					// cambia de fuente segun MODELSPACENORMALS y puede valer 0 (default negro del
+					// slot 7 en piel MSN sin _s). Acoplarlos apagaba la reflexion de mallas MSN.
+					// El 1.0 del fallback NO es arbitrario: el motor rellena su slot de normal de forma
+					// INCONDICIONAL (default-fill 0x14B7B00, +0x58) con BSShader_DefNormalMap, cuyo fill
+					// 0xffff8080 son los bytes RGBA (128,128,255,255) => ALPHA = 255 = 1.0.
+					// (Yo habia puesto 0.501961 confundiendo el canal R (0x80) con el alpha (0xff).)
+					// El lerp del motor es `lerp(normal.a, t5, cb1[2].y)` con cb1[2].y en {0,1} -- es un
+					// selector de si-hay-mascara-bindeada, no un peso libre (SetupMaterial 0x14DC4AB/0x14DCA5D:
+					// cmp [rbx+0xA8],0 -> xmm0 = 0 o xmm6=1.0). Por eso esta forma de dos ramas es fiel.
+					cube.rgb *= bNormalMap ? normalMap.a : 1.0;
 				}
 
 				outSpecular += cube.rgb * (hemiAmbient(normal) + outDiffuse);
@@ -2007,7 +2134,7 @@ void main(void)
 			float effFalloff = 1.0;
 			if (bEffectFalloff || bEffectFalloffColor)
 			{
-				float NdotV_falloff = abs(dot(normal, normalize(viewDir)));
+				float NdotV_falloff = abs(dot(normal, viewDir));   // viewDir ya es unitario (main lo normaliza)
 				effFalloff = smoothstep(effectFalloffParams.x, effectFalloffParams.y, NdotV_falloff);
 				effFalloff = mix(max(effectFalloffParams.z, 0.0), min(effectFalloffParams.w, 1.0), effFalloff);
 
@@ -2053,7 +2180,24 @@ void main(void)
 					cubeIntensity = texture(texEnvMask, uv).g;
 				}
 
-				vec3 reflected = reflect(viewDir, normal);
+				// MISMO SIGNO QUE EL BLOQUE BGSM DE ARRIBA. El BSEffectShader de Skyrim NO TIENE
+				// CONTRAPARTE MEDIBLE ACA: de sus 3217 PS (bloque idx 78..3901), **0** declaran un
+				// texturecube -- el Effect de SSE no refleja cubos (solo t0..t4 2D: greyscale-to-palette,
+				// soft-particle depth, y MRT de motion vectors + normal spheremap).
+				// OJO CON ESTA TRAMPA (me costo dos vueltas): los 540 PS con texturecube que estan FUERA
+				// del rango de BSLighting NO son Effect, son el paquete de **AGUA** (VS 11457..13628 /
+				// PS 13629..15800, emparejados 1:1 por offset). Identificarlos por `estar fuera del rango
+				// de BSLighting` es exactamente el error que hay que no repetir: hay que medir la familia
+				// (el agua se reconoce por 3 normal maps scrolleados t4/t5/t6 y la refraccion t10/t11).
+				// Y aun en el agua la reflexion tambien es ESPEJO, porque ahi el varying es ojo->superficie:
+				//     VS agua: mov o2.xyz, r1.xyzx con r1 = cb2[0..2]*pos y sqrt o2.w, dot(r1,r1)
+				//     PS agua: mad r3.xyz, r3.xyzx, -r1.wwww, r4.xyzx  => reflect(ojo->sup, N) = 2(N.V)N - V
+				// Sin referencia propia, se usa la unica referencia de SSE que existe (BSLighting,
+				// 1968/1968 sampleos con 2(N.V)N - V) y el espejo fisico. Los dos bloques van igual.
+				// El ANTIPODAL es FALLOUT 4, en sus DOS familias (205/205 sampleos de cubo con el
+				// `mov ..., -...` final): por eso Fragment_FO4 conserva reflect(viewDir,N) en sus dos
+				// bloques. Es el motor de FO4 el raro, no el de Skyrim.
+				vec3 reflected = reflect(-viewDir, normal);
 				vec3 reflectedWS = vec3(matModel * (matModelViewInverse * vec4(reflected, 0.0)));
 				vec4 cube = texture(texCubemap, reflectedWS);
 
@@ -2226,8 +2370,17 @@ if (bHide)
 		if (!bIsEffectShader)
 			fragColor.a *= alpha;
 
+		// COMPARADOR: el engine descarta con `<` estricto -- CONSERVA la igualdad (GEQUAL).
+		// SSE, define DO_ALPHA_TEST (delta de +6 instr, identico en las 11 tecnicas que lo llevan):
+		//   mul r0.w, r0.w, cb2[3].z          ; alpha del material
+		//   mad r0.x, r0.w, v11.w, -cb11[0].x ; (texAlpha * matAlpha * vColor.a) - AlphaTestRef
+		//   lt r0.x, r0.x, l(0.000000) ; discard_nz r0.x
+		// -> descarta si alpha < ref. El `<=` de la app tambien descartaba alpha == ref, que con
+		// alpha de 8 bits y refs tipicas (128/255) es una franja real de pixeles. Mismo fix en FO4.
+		// El ORDEN si coincidia: SSE multiplica el alpha del material ANTES del test (cb2[3].z), que
+		// es lo que hace la linea de arriba -- y ahi SSE difiere de FO4, que testea sin el.
 		if (bAlphaTest)
-			if (fragColor.a <= alphaThreshold) // GL_GREATER
+			if (fragColor.a < alphaThreshold) // GL_GEQUAL (engine: discard si alpha < ref)
 				discard;
 
 	}

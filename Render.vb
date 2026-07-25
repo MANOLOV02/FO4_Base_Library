@@ -302,17 +302,41 @@ Public Class PreviewControl
     Public defaultWhiteTex As Integer
     Public defaultNormalTex As Integer
     Public defaultCubeMap As Integer
-    ''' <summary>Emulación de <c>BSShader_DefFacegenDetail</c>: el default que el motor bindea al slot detail
-    ''' (t3) de una cabeza FaceGen cuyo texture-set slot 3 está VACÍO. RE byte-level de SkyrimSE.exe
-    ''' (0x140E57E30 rellena la textura con 0x40404040 = 64/255 = 0.251; = vanilla blankdetailmap.dds). El
-    ''' motor SIEMPRE softlightea un detail sobre la cara facegen; sin textura usa este 0.251 (oscurece), NO
-    ''' identidad. Se emula acá para que render == lo que el NIF horneado (slot 3 vacío) rinde in-game.</summary>
+    ''' <summary>Emulación de <c>BSShader_DefFacegenDetail</c>: el default que el motor bindea al slot DETAIL
+    ''' (texture-set slot 3 → material+0xA8 → PS <b>t4</b>) de una cabeza FaceGen cuyo slot 3 está VACÍO. RE
+    ''' byte-level de SkyrimSE.exe: la init de defaults 0x140E57E30 crea <c>BSShader_DefFacegenDetail</c> con
+    ''' fill <c>0x40404040</c> = 64/255 = 0.251 y la guarda en manager+0x88 (singleton 0x328CC20 ⇒ 0x328CCA8,
+    ''' que es justo el default que <c>BSLightingShaderMaterialFacegen</c> slot#10 (0x1414BA8B0) mete en +0xA8).
+    ''' ⭐ El detail NO es el término del soft-light: es el multiplicador AMPLIFICADO
+    ''' <c>(detail + (1/255,0,1/255)) × 255/64</c>. Por eso el neutro del engine es 64 (→ ×1.0 exacto en G) y
+    ''' por eso 0.251 NO oscurece: da (1.015625, 1.0, 1.015625). Se emula acá para que render == lo que el NIF
+    ''' horneado (slot 3 vacío) rinde in-game.</summary>
     Public defaultFacegenDetailTex As Integer
-    ''' <summary>Detail NEUTRAL (0.5) = softlight IDENTIDAD. Se bindea en lugar de <see cref="defaultFacegenDetailTex"/>
-    ''' (0.251) SÓLO cuando el diffuse de la malla ya viene PLEGADO y el slot 3 está vacío (MaterialData.SseFoldDetailNeutralized).
-    ''' Sin esto el fold sin detail re-oscurecería con 0.251 (folded más oscuro que unfolded/bake). Mismo formato que el
+    ''' <summary>Detail neutro del AMPLIFY = (63,64,63)/255 ⇒ <c>(v + off)·255/64 = 1</c> EXACTO en los 3 canales.
+    ''' Se bindea en lugar de <see cref="defaultFacegenDetailTex"/> (0.251) SÓLO cuando el diffuse de la malla ya
+    ''' viene PLEGADO y el slot 3 está vacío (MaterialData.SseFoldDetailNeutralized): el amplify del detail ya
+    ''' está horneado en el slot 0, así que el shader debe multiplicar por 1 y no por (1.015625, 1.0, 1.015625).
+    ''' ⚠️ NO es 0.5: 0.5 es la identidad del SOFT-LIGHT (slot 6 / tint), no la del amplify. Mismo formato que el
     ''' 0.251 (64², mips) para que el sampler no introduzca diferencia por minificación.</summary>
     Public defaultFacegenFoldNeutralDetailTex As Integer
+    ''' <summary>Emulación de <c>DefaultGreyMap</c>: el default que el motor bindea al slot TINT (texture-set
+    ''' slot 6 → material+0xA0 → PS <b>t3</b>) cuando no hay facetint. RE byte-level: init 0x140E57E30 crea
+    ''' <c>DefaultGreyMap</c> con fill <c>0x80808080</c> = 0.5 y la guarda en manager+0x70 (= 0x328CC90, el
+    ''' default que slot#10 0x1414BA8B0 mete en +0xA0). 0.5 es la IDENTIDAD del soft-light
+    ''' (<c>a² + 2·a·0.5·(1−a) = a</c>) ⇒ sin facetint la cara queda con su diffuse crudo, que es exactamente lo
+    ''' que hace el motor. Sirve para los DOS casos: slot 6 ausente (unfolded) y slot 6 neutralizado (folded).</summary>
+    Public defaultFacegenTintTex As Integer
+    ''' <summary>SSE: default del slot 7 (specular mask) cuando la malla es MODELSPACENORMALS y el slot esta
+    ''' VACIO = <b>NEGRO</b> (specular 0). El motor nunca cae al alpha del normal en MSN; rellena material+0x68
+    ''' con <c>BSShader_DefHeightMap</c> (fill 0xff000000) por la rama <c>skinned &amp;&amp; MSN</c> del
+    ''' default-fill 0x1414B7B00. Ver la cadena de evidencia en el bind de texSpecular. FO4 no lo usa (alli el
+    ''' `_s` es universal y el gate es su presencia).</summary>
+    Public defaultSseMsnSpecTex As Integer
+    ''' <summary>SSE: default del slot 7 cuando hay BACK_LIGHTING y el slot esta VACIO = el default GENERICO del
+    ''' motor, <c>BSShader_DefNormalMap</c> (init 0x140E57E30, fill <c>0xffff8080</c> = RGBA 128,128,255,255).
+    ''' Es la PRIMERA rama del default-fill 0x1414B7B00 y por eso gana sobre la negra. Antes este caso caia en
+    ''' blanco (1,1,1) y sumaba translucidez blanca a full por luz. FO4 no lo usa.</summary>
+    Public defaultSseEngineGenericTex As Integer
     ''' <summary>Default del SUBSURFACE (_sk, texture-set slot 2) de una cabeza FaceGen cuando falta: NEGRO.
     ''' RE byte-level: BSLightingShaderMaterialFacegen slot#10 (0x1414BA8B0) rellena subsurface(+0xB0) con
     ''' DefHeightMap (fill 0xFF000000 = negro); mapeo miembro↔slot verificado en slot#8 (0x1414BA6E0):
@@ -400,8 +424,19 @@ Public Class PreviewControl
         ' sampler / minificación (un 4×4 Nearest sin mips sampleaba distinto → cabeza más clara de lo debido).
         defaultFacegenDetailTex = CreateColorTexture(64, 64, 64, 64, 64, 255, mipped:=True)
 
-        ' Detail NEUTRAL 0.5 (softlight identidad) para heads PLEGADOS sin slot 3 (ver campo). Mismo 64²+mips que el 0.251.
-        defaultFacegenFoldNeutralDetailTex = CreateColorTexture(64, 64, 128, 128, 128, 255, mipped:=True)
+        ' Detail neutro del AMPLIFY (63,64,63) ⇒ (v+off)·255/64 = 1 exacto, para heads PLEGADOS sin slot 3
+        ' (ver campo). NO es 0.5 (esa es la identidad del soft-light = slot 6). Mismo 64²+mips que el 0.251.
+        defaultFacegenFoldNeutralDetailTex = CreateColorTexture(64, 64, 63, 64, 63, 255, mipped:=True)
+
+        ' default FaceGen TINT = DefaultGreyMap del motor (0x80 = 0.5 = soft-light identidad; ver campo).
+        ' Mismo 64²+mips que los otros dos para que el sampler no meta diferencia por minificación.
+        defaultFacegenTintTex = CreateColorTexture(64, 64, 128, 128, 128, 255, mipped:=True)
+
+        ' SSE: default del slot 7 en mallas MSN sin `_s` = NEGRO (specular 0), ver campo.
+        defaultSseMsnSpecTex = CreateColorTexture(64, 64, 0, 0, 0, 255, mipped:=True)
+
+        ' SSE: default GENERICO del slot 7 (rama backlight) = BSShader_DefNormalMap del motor, ver campo.
+        defaultSseEngineGenericTex = CreateColorTexture(64, 64, 128, 128, 255, 255, mipped:=True)
 
         ' 64×64 default FaceGen SUBSURFACE (_sk faltante) = NEGRO (engine: DefHeightMap → SSS=0; ver campo).
         defaultFacegenSubsurfaceTex = CreateColorTexture(64, 64, 0, 0, 0, 255, mipped:=True)
@@ -1585,6 +1620,9 @@ Public Class PreviewControl
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
         If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex)
         If defaultFacegenFoldNeutralDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenFoldNeutralDetailTex)
+        If defaultFacegenTintTex <> 0 Then GL.DeleteTexture(defaultFacegenTintTex)
+        If defaultSseMsnSpecTex <> 0 Then GL.DeleteTexture(defaultSseMsnSpecTex)
+        If defaultSseEngineGenericTex <> 0 Then GL.DeleteTexture(defaultSseEngineGenericTex)
         If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex)
         If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap)
 #If DEBUG Then
@@ -1839,13 +1877,16 @@ Public Class PreviewModel
             ''' survives material cloning, same as <see cref="SkinToneColor"/> / <see cref="FaceTintOverlay_ID"/>.</summary>
             Public Property SkinToneBaked As Boolean = False
 
-            ''' <summary>"Ya está" flag para el DETAIL (slot 3) — el softlight(diffuse, detail) YA se plegó en el
-            ''' diffuse de esta malla (fold SSE), así que el softlight del engine debe ser IDENTIDAD. Con un slot 3
-            ''' PRESENTE el fold lo neutraliza reemplazando la textura por 0.5 bajo su key ⇒ detailMaskId resuelve a
-            ''' 0.5 y no hace falta este flag. Pero con el slot 3 AUSENTE (mods que borran el TX04, ej. Enhanced
-            ''' Khajiit) detailMaskId=0 y el shader bindea defaultFacegenDetailTex (0.251) = RE-OSCURECE (bHasDetailMask
-            ''' es SIEMPRE True en facegen). Este flag hace que, plegado + sin detail, se use el neutral 0.5 en vez del
-            ''' 0.251 ⇒ folded == unfolded == bake. Per-mesh en MaterialData (sobrevive el clone), igual que
+            ''' <summary>"Ya está" flag para el DETAIL (slot 3 → PS t4) — el multiplicador amplificado
+            ''' <c>(detail + off)·255/64</c> YA se plegó en el diffuse de esta malla (fold SSE), así que el amplify del
+            ''' engine debe ser IDENTIDAD. Con un slot 3 PRESENTE el fold lo neutraliza reemplazando la textura por
+            ''' (63,64,63) bajo su key ⇒ detailMaskId resuelve a ese neutro y no hace falta este flag. Pero con el
+            ''' slot 3 AUSENTE (mods que borran el TX04, ej. Enhanced Khajiit) detailMaskId=0 y el shader bindea
+            ''' defaultFacegenDetailTex (0.251 ⇒ ×(1.015625, 1.0, 1.015625)) = RE-APLICA (bHasDetailMask es SIEMPRE
+            ''' True en facegen). Este flag hace que, plegado + sin detail, se use el neutro (63,64,63) en vez del
+            ''' 0.251 ⇒ folded == unfolded == bake. ⚠️ El slot 6 (tint) NO necesita flag análogo: su default de engine
+            ''' (gris 0.5) YA es la identidad del soft-light, así que sirve para plegado y no plegado por igual.
+            ''' Per-mesh en MaterialData (sobrevive el clone), igual que
             ''' <see cref="SkinToneBaked"/> / <see cref="FaceTintOverlay_ID"/>. False = camino no plegado (default).</summary>
             Public Property SseFoldDetailNeutralized As Boolean = False
 
@@ -2036,7 +2077,15 @@ Public Class PreviewModel
             End Property
             Public ReadOnly Property FlowTexture_ID As UInteger
                 Get
-                    Return GetTextureID(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.FlowTexture))
+                    ' Guard de CUBEMAP, igual que EnvmapMaskTexture_ID: en SSE este slot alimenta texEnvMask
+                    ' (sampler2D). Si el slot 5 apunta a un DDS cubemap, bindearlo como Texture2D da
+                    ' GL_INVALID_OPERATION. Se devuelve 0 y el caller cae al default.
+                    Dim key As String = FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.FlowTexture)
+                    If key = "" Then Return 0
+                    Dim tex As Texture_Loaded_Class = Nothing
+                    If Not TryGetTexture(key, tex) Then Return 0
+                    If tex.Cubemap = True Then Return 0
+                    Return tex.Texture_ID
                 End Get
             End Property
             Public ReadOnly Property DetailMaskTexture_ID As UInteger
@@ -3142,22 +3191,85 @@ Public Class PreviewModel
             ' The shader instance is the single source of truth for which game we are rendering.
             Dim isSSE As Boolean = TypeOf shader Is Shader_Class_SSE
 
+            ' ⭐ SSE: la MASCARA DE ENVIRONMENT es el texture-set slot 5, y en SSE ese slot se guarda en
+            ' FlowTexture (ReadBgsmTexturesFromTextureSet), NO en EnvmapMaskTexture: `_EnvmapMaskPath` solo se
+            ' puebla en la rama FO4 ⇒ en SSE EnvmapMaskTexture_ID daba 0 SIEMPRE y bEnvMask quedaba False, o sea
+            ' la reflexion salia SIN enmascarar (metal/armadura sobre-reflectiva).
+            ' Motor (RE, medido). ⚠️ El offset +0xA8 significa COSAS DISTINTAS segun la SUBCLASE de material
+            ' (cada una tiene su propio OnLoadTextureSet): en Envmap/Eye/MultiLayerParallax es el slot 5
+            ' (env mask -> t5); en Facegen es el slot 3 (detail -> t4, ver el bloque del detail mas abajo).
+            ' Aca hablamos de las reflectivas: slot5 -> material+0xA8 -> PS t5, y t5 multiplica la reflexion:
+            '   r0.w = sample(t5) ; r0.w = lerp(base, r0.w, cb1[2].y) * (cb1[2].x*cb2[3].x)
+            '   r0.xyz = sampleCube(t4, reflect) ; r0.xyz = r0.w * r0.xyz
+            ' Identico en las TRES tecnicas reflectivas: Envmap (0x14DC4DD/0x14DC4F0), Eye (0x14DC42B/0x14DC43E)
+            ' y MultilayerParallax (0x14DCA45/0x14DCA58). Se consume aca FlowTexture_ID (que estaba declarado y
+            ' sin usar); no se toca la ingesta ni el write-back, asi que el round-trip del NIF queda intacto.
+            ' FO4 sigue por EnvmapMaskTexture_ID (su `_EnvmapMaskPath` si se puebla). Va ANTES de la heuristica
+            ' de ojos de abajo para que esa vea el valor ya corregido y solo actue como fallback real.
+            ' ⛔ ESTRICTAMENTE ADITIVO (gate por VALOR, no por tipo): solo pisa si el slot 5 resolvio a algo.
+            ' Hay DOS caminos que si dejan un EnvmapMaskTexture valido y que un override incondicional borraba:
+            '   · BGEM (effect shader): tiene el campo nativo, Create_From_Shader lo llena desde
+            '     `shad.EnvMaskTexture` sin gate de juego (FO4UnifiedMaterial_Class:3391) y su FlowTexture
+            '     devuelve "" siempre (:706).
+            '   · BGSM desde disco: ResolveSidecarJson puebla `_EnvmapMaskPath` desde la clave
+            '     `envmapMaskTexture` del `.bgsm.json` (:4112) — un gate por `Not IsBGEM` NO cubria esto.
+            ' Con el gate por valor la regla queda: "si el slot 5 trae mascara, usala; si no, no toques nada".
+            ' El "SIEMPRE 0" de arriba vale para el BGSM que sale de un NIF, no para esos dos casos.
+            If isSSE Then
+                Dim sseEnvMaskId = material.FlowTexture_ID
+                If sseEnvMaskId <> 0 Then envmapMaskTextureId = sseEnvMaskId
+            End If
+
             Dim hasBacklightTexture As Boolean = materialBase.BackLighting
 
-            If materialBase.EyeEnvironmentMapping AndAlso smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
+            ' FO4: heuristica de OJOS, CONSERVADA. Si EyeEnvironmentMapping y no hay envmask, usa el `_s` como
+            ' mascara de reflexion y anula el specular. ⚠️ ESTABA SIN GATE DE JUEGO y la borre por error: como
+            ' `EyeEnvironmentMapping` sale de `BGSM.EnvironmentMappingEye` sin gate (FO4UnifiedMaterial:1214) y
+            ' se puebla desde `shad.HasEyeEnvironmentMapping` para AMBOS juegos (:3295), borrarla le agregaba a
+            ' los ojos de FO4 un highlight especular que antes no tenian. Queda SOLO para FO4; en SSE la
+            ' envmask real llega por el slot 5 (arriba) y robar el slot 7 romperia specular/backlight.
+            If Not isSSE AndAlso materialBase.EyeEnvironmentMapping AndAlso smoothSpecTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
                 envmapMaskTextureId = smoothSpecTextureId
                 smoothSpecTextureId = 0
             End If
-            ' T13: Wrinkles is a FaceGen WrinkleSampler, NOT a reflection mask. FO4 never routes it to
-            ' env-mask; only the Skyrim path does this.
-            If isSSE AndAlso materialBase.Facegen AndAlso WrinklesTextureId <> 0 AndAlso envmapMaskTextureId = 0 Then
-                envmapMaskTextureId = WrinklesTextureId
-                WrinklesTextureId = 0
-            End If
 
-            Dim hasSpecMap As Boolean = (smoothSpecTextureId <> 0)
-            ' SSE: specular can come from normalMap.a even without a dedicated spec map
-            Dim hasSpecularSource As Boolean = hasSpecMap OrElse (isSSE AndAlso normalTextureId <> 0)
+            ' ⛔ ELIMINADAS DOS HEURISTICAS que existian SOLO para tapar la mascara de environment faltante en
+            ' SSE (el slot 5 nunca llegaba al shader). Con el slot 5 ya ruteado arriba, las dos son daninas:
+            '  1) "eye": si EyeEnvironmentMapping y no habia envmask, movia el SLOT 7 a la envmask y ADEMAS lo
+            '     ponia en 0. El slot 7 es el mask ESPECULAR (t2, mallas MSN) o el BACKLIGHT (t9) -- medido en
+            '     OnLoadTextureSet 0x1414B7920 (TXST slot 7 -> mat+0x68) y en SetupMaterial (0x14DCB65 bajo
+            '     MODELSPACENORMALS, 0x14DCD22 bajo BACK_LIGHTING). Robarlo rompia esos dos. Y para la tecnica
+            '     Eye la envmask del motor es el slot 5 (0x14DC43E), que ya se rutea bien.
+            '  2) "wrinkles": mandaba el wrinkle map de facegen a la mascara de reflexion -- el propio comentario
+            '     admitia que NO es una mascara de reflexion. Ademas BSLightingShader de SSE no tiene sampler de
+            '     wrinkles: sus OnLoadTextureSet solo leen los slots 0,1,2,7 (base) y 2,3,6 (facegen).
+            ' `EyeEnvironmentMapping` es ademas un campo BGSM v<7, o sea FO4 (gate bgsmMaxExcl:=7).
+            ' WrinklesTextureId queda sin consumidor (ya no lo tenia fuera de esta heuristica).
+
+            ' ⭐ QUE TEXTURA APORTA EL MASK ESPECULAR — la eligen leyes DISTINTAS en cada juego (RE byte-level):
+            '  · FO4: el normal es BC5 (SIN alpha) y el `_s` (SmoothSpecTexture) es UNIVERSAL. Medido en los 18
+            '    b06_BSLighting_PS dumpeados: t1 se samplea `.xyz` y t2 (`_s`) se samplea `.xy` en 18/18, SIN
+            '    depender de MODELSPACENORMALS. ⇒ el gate correcto es "hay _s" (lo de siempre).
+            '  · SSE: el gate es MODELSPACENORMALS, NO la presencia del slot 7. Medido sobre la poblacion
+            '    COMPLETA de BSLightingShader — 6924 PS, idx 4029..10952, contigua y monotona por tecnica —
+            '    excluyendo terreno/LOD (donde t2 es una capa de blend del landscape) quedan 6864:
+            '    MSN → samplea t2 (=slot 7) en 768/768 ; no-MSN → NUNCA lo samplea (0/6096) y toma el mask del
+            '    ALPHA del normal (t1.w). Las variantes MSN viven en Default (408), Facegen (192) y
+            '    FacegenRGBTint (168) ⇒ afecta cabeza, cuerpo Y objetos genericos con _msn.
+            '    Ver SetupMaterial 0x1414DC310 (gate
+            '    `test byte ptr [rbp+0x94], 4` = bit2 = MODELSPACENORMALS ⇒ SetPSTexture(2, mat+0x68=slot7)).
+            Dim hasSpecMap As Boolean
+            If isSSE Then
+                hasSpecMap = materialBase.ModelSpaceNormals
+            Else
+                hasSpecMap = (smoothSpecTextureId <> 0)
+            End If
+            ' SSE: SIEMPRE hay fuente de mask especular — el motor la toma del alpha del normal (no-MSN) o del
+            ' slot 7 (MSN), y en ambos casos rellena un default si la textura falta, asi que nunca se queda sin
+            ' ninguna. Antes esto era `hasSpecMap OrElse normalTextureId <> 0`; al pasar hasSpecMap a depender de
+            ' MSN, una malla SSE no-MSN con slot 7 pero SIN normal texture perdia bSpecular por completo
+            ' (regresion: el motor si tendria specular, contra su normal por defecto). FO4 conserva su regla.
+            Dim hasSpecularSource As Boolean = If(isSSE, True, hasSpecMap)
 
             Dim hasCubemap = material.HasCubemap
             Dim hasAlphaBlend = material.HasAlphaBlend
@@ -3292,8 +3404,34 @@ Public Class PreviewModel
                 shader.BindTexture("texEnvMask", Me.ParentModel.ParentControl.defaultWhiteTex, TextureUnit.Texture3)
             End If
 
+            ' texSpecular = TXST slot 7. El motor lo lee DOS veces desde material+0x68: t2 (mask especular, bajo
+            ' MODELSPACENORMALS) y t9 (backlight, bajo BACK_LIGHTING). Si el slot esta VACIO no lo saltea:
+            ' el default-fill del material (0x1414B7B00) lo rellena, y el ORDEN de sus ramas manda:
+            '     1) +0x68 <- default GENERICO (BSShader_DefNormalMap, fill 0xffff8080 = RGBA 128,128,255,255)
+            '        si backLighting          <-- corre PRIMERO, con UNA sola condicion
+            '     2) +0x68 <- BSShader_DefHeightMap (NEGRO, fill 0xff000000) si (skinned && MSN)
+            '        <-- solo rellena si la 1a no lo hizo
+            ' Semantica de los 5 booleanos, MEDIDA (no supuesta): la 1a rama del mismo default-fill hace
+            ' `+0x60 <- default si (a3||a4)`, y +0x60 es el slot 2, cuyos DOS unicos consumidores en
+            ' SetupMaterial son SOFT_LIGHTING (0x14DCC28, `bt eax,0xa` = bit10) y RIM_LIGHTING (0x14DCCA2,
+            ' `test 0x800` = bit11) => {a3,a4} = {rim, soft} por medicion. Eso fija las posiciones 3-4, que es
+            ' donde ReceiveValuesFromRootMaterial(skinned, rim, soft, backLighting, MSN) las pone
+            ' => a2=skinned, a5=backLighting, a6=MSN.
             If smoothSpecTextureId <> 0 Then
                 shader.BindTexture("texSpecular", smoothSpecTextureId, TextureUnit.Texture4)
+            ElseIf isSSE AndAlso materialBase.BackLighting Then
+                ' Rama 1: backlight con slot 7 vacio -> default GENERICO. Antes caia en blanco (1,1,1), que
+                ' sumaba translucidez blanca a full por cada luz.
+                shader.BindTexture("texSpecular", Me.ParentModel.ParentControl.defaultSseEngineGenericTex, TextureUnit.Texture4)
+            ElseIf isSSE AndAlso hasSpecMap AndAlso materialBase.SpecularEnabled Then
+                ' Rama 2: SPECULAR && MSN sin `_s` -> NEGRO => specular 0. El motor NUNCA cae al alpha del
+                ' normal en MSN (medido 0/6096 sobre la poblacion completa sin terreno/LOD).
+                ' ⛔ La condicion es SPECULAR, NO `skinned`: el call-site del default-fill (0x14AD4DF, vfunc
+                ' slot 10) toma sus 5 booleanos de los flags de la shader property en [rsi+0x38], y el 1o es
+                ' `bit0 || bit41` = el predicado del define SPECULAR (mapeo flag->define decodificado del
+                ' constructor de descriptores 0x14ADFB0). El flag SKINNED (bit 1) NI SE LEE ahi.
+                ' ⛔ NO dejar caer al `Else`: ese bindea defaultWhiteTex = 1.0 = specular MAXIMO, lo contrario.
+                shader.BindTexture("texSpecular", Me.ParentModel.ParentControl.defaultSseMsnSpecTex, TextureUnit.Texture4)
             Else
                 shader.BindTexture("texSpecular", Me.ParentModel.ParentControl.defaultWhiteTex, TextureUnit.Texture4)
             End If
@@ -3312,11 +3450,12 @@ Public Class PreviewModel
 
 
             ' texLightmask is SSE-only (rim/soft-light masking); FO4 does not use it. For FaceTint
-            ' (technique 4) the LightingTexture (texture-set slot 6, the _sk map) is the SUBSURFACE
-            ' map -- VERIFIED in SkyrimSE.exe BSLightingShader::SetupGeometry @0x1414DC310: the facegen
-            ' branch binds texture-set slots {3,5,6} -> PS registers t3(detail)/t4(skintone)/t12(subsurface),
-            ' and the facegen-skin PS modulates SSS by t12. So bind it for facegen too (it is the
-            ' subsurface, NOT a tint-mask overlay). The same slot is reused at other registers per technique.
+            ' (technique 4) the LightingTexture (texture-set slot 2, the _sk map) is the SUBSURFACE map.
+            ' VERIFIED in SkyrimSE.exe BSLightingShader::SetupMaterial @0x1414DC310 (jump table 0x14DCFD4,
+            ' facegen branch 0x1414DC542): SetPSTexture(3, mat+0xA0) / (4, mat+0xA8) / (12, mat+0xB0), y
+            ' OnLoadTextureSet 0x1414BA6E0 llena +0xA0<-slot6, +0xA8<-slot3, +0xB0<-slot2. Es decir el mapeo
+            ' real es slots {6,3,2} -> PS t3(TINT) / t4(DETAIL) / t12(subsurface). El slot 5 NO participa.
+            ' (Corrige la nota previa "{3,5,6} -> t3/t4/t12", que tenia el tint y el detail intercambiados.)
             If isSSE Then
                 If lightingTextureId <> 0 Then
                     shader.BindTexture("texLightmask", lightingTextureId, TextureUnit.Texture7)
@@ -3326,19 +3465,27 @@ Public Class PreviewModel
                     ' +0xB0↔índice 2 = _sk) ⇒ SSS=0. El fallback softMask=albedo del shader es para NO-facegen;
                     ' acá se bindea el negro y bLightmask=True (abajo) para que el shader lo samplee.
                     shader.BindTexture("texLightmask", Me.ParentModel.ParentControl.defaultFacegenSubsurfaceTex, TextureUnit.Texture7)
+                ElseIf materialBase.SubsurfaceLighting OrElse materialBase.RimLighting Then
+                    ' NO-facegen con SOFT_LIGHTING o RIM_LIGHTING y slot 2 VACIO. El motor samplea t12 SIEMPRE
+                    ' (el sample lo agrega el propio define, medido en el diff base-vs-SOFT_LIGHTING), y el
+                    ' default-fill del material base rellena +0x60 con el GENERICO `BSShader_DefNormalMap`
+                    ' — fill 0xffff8080 = RGBA (128,128,255,255) — bajo la condicion (rimLighting||softLighting).
+                    ' O sea el mask vale (0.502, 0.502, 1.0), NO blanco y NO el albedo.
+                    shader.BindTexture("texLightmask", Me.ParentModel.ParentControl.defaultSseEngineGenericTex, TextureUnit.Texture7)
                 Else
                     shader.BindTexture("texLightmask", Me.ParentModel.ParentControl.defaultWhiteTex, TextureUnit.Texture7)
                 End If
             End If
 
-            ' SSE FaceGen albedo tint: the FACETINT (texture-set slot 6 -> engine PS t4) MULTIPLIES the albedo
-            ' (amplified) -- that is where the baked makeup/skin-tone shows (lips/eyes/tint). VERIFIED
-            ' sse_facegen_skin.asm: r1 = t4_amp * softlight(diffuse, detail). Bind it to texGlowmap (faces have
-            ' no glow); the _sk stays the subsurface on texLightmask above (engine t12). SSE + facegen gated,
-            ' so FO4 and non-face SSE are untouched.
+            ' SSE FaceGen albedo tint: el FACETINT (texture-set slot 6 -> material+0xA0 -> engine PS t3) entra por
+            ' SOFT-LIGHT sobre el diffuse, igual que el skin tint del CUERPO (tecnica FacegenRGBTint). NO es el
+            ' multiplicador amplificado: ese es el DETAIL (slot 3 -> t4). Ver el bloque de la ley en Shader_Class.
+            ' Se bindea a texGlowmap (las caras no tienen glow); el _sk queda en texLightmask (t12) arriba.
+            ' Default con slot 6 vacio = DefaultGreyMap 0.5 del motor = soft-light IDENTIDAD (NO blanco: blanco
+            ' daria softlight(d,1) = 2d - d^2, que aclara la cara). SSE + facegen gated; FO4 intacto.
             If isSSE AndAlso materialBase.Facegen Then
                 Dim facetintId As UInteger = material.InnerLayerTexture_ID
-                shader.BindTexture("texGlowmap", If(facetintId <> 0, facetintId, Me.ParentModel.ParentControl.defaultWhiteTex), TextureUnit.Texture6)
+                shader.BindTexture("texGlowmap", If(facetintId <> 0, facetintId, Me.ParentModel.ParentControl.defaultFacegenTintTex), TextureUnit.Texture6)
             End If
 
             '===============================
@@ -3388,9 +3535,14 @@ Public Class PreviewModel
             ' bLightmask: the _sk subsurface map drives the SSS/rim mask, incl. facegen (engine t12, above).
             ' FACEGEN sin _sk: True igual — arriba quedó bindeado el default NEGRO del engine (SSS=0);
             ' con False el shader caería al fallback softMask=albedo (eso es solo para NO-facegen).
-            If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0 OrElse materialBase.Facegen)
-            ' bFacetintAlbedo: facegen multiplies the albedo by the facetint (engine t4, slot 6 on texGlowmap).
-            If isSSE Then shader.SetBool("bFacetintAlbedo", materialBase.Facegen AndAlso material.InnerLayerTexture_ID <> 0)
+            ' Con SOFT_LIGHTING o RIM_LIGHTING el motor samplea t12 SIEMPRE (rellena el slot vacio con su
+            ' default generico), asi que el shader tambien debe samplearlo: sin esto caia a `albedo` (soft) o
+            ' a 1.0 (rim), que no es lo que hace el motor. Ver el bind de texLightmask arriba.
+            If isSSE Then shader.SetBool("bLightmask", lightingTextureId <> 0 OrElse materialBase.Facegen _
+                                                      OrElse materialBase.SubsurfaceLighting OrElse materialBase.RimLighting)
+            ' (bFacetintAlbedo ELIMINADO: la cadena facegen completa la gatea bHasDetailMask, abajo. El engine no
+            ' gatea por "hay facetint": rellena el slot vacio con DefaultGreyMap 0.5 = soft-light identidad, y el
+            ' bind de texGlowmap de arriba hace exactamente eso. Un gate aparte solo podia desincronizarse.)
             shader.SetFloat("shininess", materialBase.Smoothness)
             ' SSE: exponente de glossiness CRUDO (shad.Glossiness), no reconstruido por el shader.
             If isSSE Then shader.SetFloat("glossiness", materialBase.NifGlossiness)
@@ -3453,27 +3605,30 @@ Public Class PreviewModel
             ' SkinTintAlpha carries it (default 1.0 = full). Consumed by Fragment_FO4 uEffectiveType==4.
             shader.SetFloat("skinTintStrength", materialBase.SkinTintAlpha)
 
-            ' FaceGen detail map (SSE only): texture-set slot 3 (DisplacementTexture) -> engine t3, soft-lighted
-            ' onto the diffuse BEFORE the facetint albedo tint. Full engine-faithful facegen albedo chain
-            ' (sse_facegen_skin.asm): albedo = facetint(t4, slot 6) * softlight(diffuse(t0), detail(t3)); the
-            ' _sk map (slot 2) is the SUBSURFACE colour -> engine t12 (texLightmask + SSS, above). CORRECTED:
-            ' the earlier note had slot 6/2 swapped -- slot 6 is the FACETINT (albedo tint), NOT the _sk.
+            ' FaceGen detail map (SSE only): texture-set slot 3 (DisplacementTexture) -> material+0xA8 -> engine
+            ' PS t4, el MULTIPLICADOR AMPLIFICADO de la cadena. Ley completa (Shader_Class, DXBC + RE):
+            '   albedo = softlight(diffuse(t0), facetint(t3, slot 6)) * ((detail(t4, slot 3) + off) * 255/64)
+            ' El _sk (slot 2) es el SUBSURFACE -> t12 (texLightmask + SSS, arriba).
+            ' ⛔ CORRIGE la nota previa "facetint(t4) * softlight(diffuse, detail(t3))": tint y detail estaban
+            ' INTERCAMBIADOS. El x255/64 normaliza el DETAIL (neutro 64 -> 1.0), no el facetint; con el tint
+            ' pasando por el amplify un skin tone saturado aplastaba R/B (cuello mucho mas saturado que el pecho).
+            ' bHasDetailMask gatea la cadena ENTERA (softlight + amplify), no solo el detail.
             If isSSE Then
                 Dim detailMaskId = material.DetailMaskTexture_ID
                 Dim isFaceTint As Boolean = materialBase.Facegen
-                ' ENGINE-FAITHFUL (RE SkyrimSE.exe): una cabeza FaceGen SIEMPRE softlightea un detail sobre el
-                ' diffuse. Si el texture-set slot 3 está VACÍO, el motor NO lo saltea: bindea su default interno
-                ' BSShader_DefFacegenDetail (uniforme 0.251 = vanilla blankdetailmap) y softlightea ESO -> oscurece
-                ' la cara al tono del cuerpo. Por eso acá se habilita el softlight para TODA cabeza facegen; si el
-                ' slot resuelve vacío se bindea el default 0.251. Así el preview matchea lo que el NIF horneado
-                ' (slot 3 vacío) rinde in-game (render == bake). Mods que borran el TX04 del TXST (Enhanced
-                ' Khajiit) caen acá; antes el preview dejaba la cara sin oscurecer (más clara que el cuerpo).
+                ' ENGINE-FAITHFUL (RE SkyrimSE.exe): una cabeza FaceGen SIEMPRE corre la cadena entera. Si el
+                ' texture-set slot 3 está VACÍO, el motor NO lo saltea: bindea su default interno
+                ' BSShader_DefFacegenDetail (uniforme 0.251 = vanilla blankdetailmap), que AMPLIFICADO da
+                ' (1.015625, 1.0, 1.015625) — es decir un no-op, no un oscurecimiento. Mods que borran el TX04
+                ' del TXST (Enhanced Khajiit) caen acá. Así el preview matchea lo que el NIF horneado rinde
+                ' in-game (render == bake).
                 shader.SetBool("bHasDetailMask", isFaceTint)
                 If isFaceTint Then
-                    ' Slot 3 vacío: normalmente el default del engine 0.251 (oscurece). PERO si el diffuse ya viene
-                    ' PLEGADO (SseFoldDetailNeutralized), el softlight ya está horneado ⇒ acá debe ser IDENTIDAD (0.5),
-                    ' o el head plegado sin detail sale más oscuro que el unfolded/bake (Enhanced Khajiit). Con slot 3
-                    ' PRESENTE el fold ya reemplazó su textura por 0.5 ⇒ detailMaskId<>0 y esta rama no aplica.
+                    ' Slot 3 vacío: normalmente el default del engine 0.251. PERO si el diffuse ya viene PLEGADO
+                    ' (SseFoldDetailNeutralized) el amplify del detail ya está horneado ⇒ acá debe ser IDENTIDAD
+                    ' EXACTA (63,64,63) ⇒ (v+off)·255/64 = 1, o el head plegado sin detail sale 1.5% más claro en
+                    ' R/B que el unfolded/bake. Con slot 3 PRESENTE el fold ya reemplazó su textura por ese mismo
+                    ' (63,64,63) ⇒ detailMaskId<>0 y esta rama no aplica.
                     Dim detailDefault = If(material.SseFoldDetailNeutralized,
                                            Me.ParentModel.ParentControl.defaultFacegenFoldNeutralDetailTex,
                                            Me.ParentModel.ParentControl.defaultFacegenDetailTex)
@@ -3482,8 +3637,8 @@ Public Class PreviewModel
                         Dim shpN = MeshData.Shape?.ShapeName
                         Dim foldN = material.SseFoldDetailNeutralized
                         Dim hasSlot = (detailMaskId <> 0)
-                        Dim defVal = If(foldN, "0.5-identity", "0.251-darken")
-                        Logger.LogLazy(Function() $"[DETAIL-DBG] FACE shape='{shpN}' detailSlotBound={hasSlot} foldNeutralized={foldN} → default={defVal} | facetintAlbedo={materialBase.Facegen} skinTintColor=({materialBase.SkinTintColor.R},{materialBase.SkinTintColor.G},{materialBase.SkinTintColor.B}) specStr={materialBase.SpecularMult:F2} specColor=({materialBase.SpecularColor.R},{materialBase.SpecularColor.G},{materialBase.SpecularColor.B}) gloss={materialBase.NifGlossiness:F3} | LIGHT-ADD soft={materialBase.SubsurfaceLighting}/roll={materialBase.SubsurfaceLightingRolloff:F3} back={materialBase.BackLighting}/pow={materialBase.BackLightPower:F3} rim={materialBase.RimLighting}/pow={materialBase.RimPower:F3} emit={materialBase.EmitEnabled}/col=({materialBase.EmittanceColor.R},{materialBase.EmittanceColor.G},{materialBase.EmittanceColor.B})x{materialBase.EmittanceMult:F2} glowFlag={materialBase.Glowmap}/glowTexId={glowTextureId}")
+                        Dim defVal = If(foldN, "(63,64,63)-amp-identity", "0.251-engine-default")
+                        Logger.LogLazy(Function() $"[DETAIL-DBG] FACE shape='{shpN}' detailSlotBound={hasSlot} foldNeutralized={foldN} → default={defVal} | facegenChain={materialBase.Facegen} skinTintColor=({materialBase.SkinTintColor.R},{materialBase.SkinTintColor.G},{materialBase.SkinTintColor.B}) specStr={materialBase.SpecularMult:F2} specColor=({materialBase.SpecularColor.R},{materialBase.SpecularColor.G},{materialBase.SpecularColor.B}) gloss={materialBase.NifGlossiness:F3} | LIGHT-ADD soft={materialBase.SubsurfaceLighting}/roll={materialBase.SubsurfaceLightingRolloff:F3} back={materialBase.BackLighting}/pow={materialBase.BackLightPower:F3} rim={materialBase.RimLighting}/pow={materialBase.RimPower:F3} emit={materialBase.EmitEnabled}/col=({materialBase.EmittanceColor.R},{materialBase.EmittanceColor.G},{materialBase.EmittanceColor.B})x{materialBase.EmittanceMult:F2} glowFlag={materialBase.Glowmap}/glowTexId={glowTextureId}")
                     End If
                     shader.BindTexture("texDetailMask", detailTex, TextureUnit.Texture8)
                 End If

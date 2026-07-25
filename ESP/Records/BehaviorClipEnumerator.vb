@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Collections.Generic
@@ -216,7 +216,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         For Each refObj In graph.GetObjectsByClassName("hkbBehaviorReferenceGenerator")
             ' m_behaviorName version-robust (FO4 +0x88 / SSE +0x48) — sin esto el walk NO seguía las sub-behaviors
             ' de SSE (Weap/Magic/Locomotion/…) y la lista de SSE salía corta. [[arch_race_behavior_resolution]]
-            Dim refName = graph.ResolveGeneratorTargetString(refObj, &H88)
+            Dim refName = graph.ResolveGeneratorTargetString(refObj, graph.HkbLayout.BehaviorRefName)
             If String.IsNullOrWhiteSpace(refName) Then Continue For
             EnumBehaviorClips(NormHkx(CombineActor(behRoot, refName)), saptFolders, role, stateAxis, reqFemale, perspective, loadBehaviorHkx,
                               animSet, actorRoot, raceSkel, byClip, result, graphCache, visited, depth + 1)

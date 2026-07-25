@@ -173,19 +173,24 @@ Public Class FaceTintLayerInput
     ''' uniforme, NO horneado en la textura). Mutuamente excluyente con ForceUniformColor/LUT. Default off (FO4 inerte).</summary>
     Public Property MultiplyTextureByColor As Boolean = False
 
-    ''' <summary>SSE fold del facetint→albedo (engine `albedo *= fgTint`): la src del TextureSet-diffuse =
-    ''' (layerSample.rgb + <see cref="FgTintOff"/>) × <see cref="FgTintAmp"/>, y la cobertura se fuerza a 1
-    ''' (multiply de cara completa). Con BlendOp=Multiply + ley linear reproduce en GPU el pliegue CPU
-    ''' (FoldFacetintIntoDiffuse). Layer texture = el facetint _d; base = complexion. Default off (FO4 inerte).</summary>
+    ''' <summary>SSE fold de la cadena de albedo facegen. Ley del engine (rama <c>uFgTintFold</c> del shader):
+    ''' <c>albedo = softlight(srgbToLin(complexion), TINT) × ((DETAIL + off) × amp)</c>, con la cobertura forzada a 1
+    ''' (cara completa) y early-out fuera del composite de capas. Réplica exacta del pliegue CPU
+    ''' (<c>SseFaceGenBaker.FoldFacetintIntoDiffuse</c>). Layer texture = el facetint _d (slot 6, el término del
+    ''' SOFT-LIGHT); <see cref="FoldDetailTextureId"/> = el detail (slot 3, el término AMPLIFICADO); base =
+    ''' complexion. ⚠️ Los nombres FgTint* quedaron por compatibilidad: el offset/amp se aplican al DETAIL, no al
+    ''' tint. Default off (FO4 inerte).</summary>
     Public Property FgTintFold As Boolean = False
-    ''' <summary>Offset por canal del fold fgTint (engine (1/255, 0, 1/255)). Solo si <see cref="FgTintFold"/>.</summary>
+    ''' <summary>Offset por canal del amplify del DETAIL (engine (1/255, 0, 1/255)). Solo si <see cref="FgTintFold"/>.</summary>
     Public Property FgTintOffR As Single = 0F
     Public Property FgTintOffG As Single = 0F
     Public Property FgTintOffB As Single = 0F
-    ''' <summary>Amplitud del fold fgTint (engine 255/64 = 3.984375). Solo si <see cref="FgTintFold"/>.</summary>
+    ''' <summary>Amplitud del amplify del DETAIL (engine 255/64 = 3.984375). Solo si <see cref="FgTintFold"/>.</summary>
     Public Property FgTintAmp As Single = 1F
-    ''' <summary>Textura GL del DETAIL (slot 3) del pliegue SSE. Solo si <see cref="FgTintFold"/>. 0 = sin detail ⇒ el
-    ''' shader usa b=0.5 (softlight identidad), igual que el fold CPU cuando <c>detailRgba Is Nothing</c>.</summary>
+    ''' <summary>Textura GL del DETAIL (slot 3, el término AMPLIFICADO) del pliegue SSE. Solo si
+    ''' <see cref="FgTintFold"/>. 0 = sin detail ⇒ el shader usa 0.251 (<c>BSShader_DefFacegenDetail</c>, el default
+    ''' del engine ⇒ multiplicador (1.015625, 1.0, 1.015625)), igual que el fold CPU cuando
+    ''' <c>detailRgba Is Nothing</c>.</summary>
     Public Property FoldDetailTextureId As Integer = 0
 
     ''' <summary>Canal de la máscara PaletteMask: 0=R 1=G 2=B 3=A. Default 1 (VERDE) = convención FO4 (la máscara
@@ -481,9 +486,9 @@ uniform int uChannel;     // 0=Diffuse 1=Normal 2=Specular
 uniform int uUseHairPalette;  // 1 = sample uHairLut per-pixel instead of authored colour (Diffuse only)
 uniform int uForceUniformColor;  // 1 = TextureSet diffuse uses uColor instead of layerSample.rgb (brow tint override path; ignored on PaletteMask)
 uniform int uTexTimesColor;      // 1 = TextureSet diffuse uses layerSample.rgb * uColor (skee overlay type-0: texxtint, tint uniforme). Ignorado en PaletteMask/ForceUniform.
-uniform int uFgTintFold;         // 1 = SSE fold facetint->albedo: src = (layerSample.rgb + uFgTintOff) * uFgTintAmp, cov forzada a 1 (multiply cara completa). Default 0 = FO4 inerte.
-uniform vec3 uFgTintOff;         // offset por canal del fold fgTint (engine (1/255,0,1/255)).
-uniform float uFgTintAmp;        // amplitud del fold fgTint (engine 255/64).
+uniform int uFgTintFold;         // 1 = SSE fold de la cadena facegen: softlight(complexion, layerSample=TINT) * ((uFoldDetail + uFgTintOff) * uFgTintAmp). Default 0 = FO4 inerte.
+uniform vec3 uFgTintOff;         // offset por canal del amplify del DETAIL (engine (1/255,0,1/255)). NO se aplica al tint.
+uniform float uFgTintAmp;        // amplitud del amplify del DETAIL (engine 255/64).
 uniform int uPaletteMaskChannel; // canal de la mascara PaletteMask: 0=R 1=G 2=B 3=A. Default 1 (verde, FO4); SSE=0 (rojo).
 uniform float uPaletteRow;    // V coordinate into uHairLut when uUseHairPalette=1 (= CLFM.RemappingIndex)
 uniform int uForceOpaqueAlpha; // 1 = write opaque alpha (1.0) on the FINAL drawn layer (last pass).
@@ -501,8 +506,8 @@ uniform int uFramework;        // composite: 0=OverPrev(default) 1=OverBase 2=Ad
 // resuelta del record por el caller; el GL usa esos (no los de la capa) -> GL == CPU por construccion.
 uniform int uPreToneSkin;      // 1 = pre-tonar el source con el skintone (solo flagged-after-skintone)
 uniform sampler2D uSkinMask;   // mask del skintone
-uniform sampler2D uFoldDetail; // SSE fold: detail mask (slot 3) del engine. Solo se lee con uFgTintFold==1.
-uniform int uHasFoldDetail;    // 0 = sin detail -> b=0.2509803922 (0.251 = default engine), igual que el fold CPU.
+uniform sampler2D uFoldDetail; // SSE fold: detail (slot 3 -> t4), el termino AMPLIFICADO. Solo se lee con uFgTintFold==1.
+uniform int uHasFoldDetail;    // 0 = sin detail -> 0.2509803922 (0.251 = BSShader_DefFacegenDetail), igual que el fold CPU.
 uniform vec3 uSkinColor;       // color del skintone
 uniform float uSkinOpacity;    // opacidad del skintone
 uniform int uSkinWs;           // working space del skintone
@@ -767,10 +772,16 @@ void main() {
         return;
     }
 
-    // uFgTintFold==1: PLIEGUE SSE = LEY FIJA DEL ENGINE (BSFaceCustomizationShader PS, DXBC verificado byte a byte):
-    //     albedo = fgTint(facetint) * softlight(srgbToLin(complexion), detail)
-    //     fgTint = (facetint + uFgTintOff) * uFgTintAmp        [engine: off=(1/255,0,1/255), amp=255/64]
+    // uFgTintFold==1: PLIEGUE SSE = LEY FIJA DEL ENGINE (PS facegen de BSLightingShader, DXBC verificado byte a byte):
+    //     albedo = softlight(srgbToLin(complexion), TINT) * ((DETAIL + uFgTintOff) * uFgTintAmp)
     //     softlight(a,b) = a*a + 2*a*b*(1-a)                   [pegtop]
+    //     TINT   = el facetint  = texture-set slot 6 -> material+0xA0 -> PS t3  (llega en uLayer/layerSample)
+    //     DETAIL = texture-set slot 3 -> material+0xA8 -> PS t4                 (llega en uFoldDetail)
+    //     [engine: off=(1/255,0,1/255), amp=255/64]
+    // CORREGIDO: antes esto estaba INVERTIDO (amplify sobre el facetint, softlight con el detail). El x255/64
+    // normaliza el DETAIL (neutro 64 -> 1.0), NO el facetint; el facetint entra por soft-light igual que el skin
+    // tint del cuerpo. Con el orden viejo un skin tone saturado aplastaba R/B (cuello mucho mas saturado).
+    // RE: SetupMaterial 0x1414DC310 rama facegen 0x1414DC542; OnLoadTextureSet 0x1414BA6E0.
     // ES UNA REPLICA EXACTA DEL CPU (SseFaceGenBaker.FoldFacetintIntoDiffuse), y por eso hace early-out SIN pasar por
     // uWorkingSpace/uBlendOp/uFramework: esa convencion es la ley (configurable) del bake de FaceTint del CK, OTRA cosa.
     // Si el fold la heredara, cambiar una opcion de la UI lo desviaria del engine y el bake dejaria de matchear el juego.
@@ -779,13 +790,14 @@ void main() {
     if (uFgTintFold == 1) {
         vec3 cs = clamp(prev, 0.0, 1.0);
         vec3 cl = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
-        // Slot 3 vacio: el engine NO usa 0.5 (identidad) sino su default interno BSFaceGenDefaultDetail
-        // = 64/255 = 0.251 (RE byte-level SkyrimSE.exe, = vanilla blankdetailmap; oscurece). DEBE ser el
-        // MISMO default que el CPU (SseFaceGenBaker.FoldFacetintIntoDiffuse emptyDetailDefault) o el fold
-        // GPU sale mas claro que el bake para NPCs sin detail (caso Enhanced Khajiit, TX04 borrado).
+        // Slot 3 vacio: el engine NO deja el amplify en identidad, usa su default BSShader_DefFacegenDetail
+        // = 64/255 = 0.251 (RE byte-level SkyrimSE.exe init 0x140E57E30, fill 0x40404040 = vanilla
+        // blankdetailmap) => multiplicador (1.015625, 1.0, 1.015625). DEBE ser el MISMO default que el CPU
+        // (SseFaceGenBaker.EngineDefaultDetail) o el fold GPU se desvia del bake para NPCs sin detail
+        // (caso Enhanced Khajiit, TX04 borrado).
         vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.2509803922);
-        vec3 sl = cl*cl + 2.0*cl*dt*(1.0 - cl);
-        vec3 fg = (layerSample.rgb + uFgTintOff) * uFgTintAmp;
+        vec3 sl = cl*cl + 2.0*cl*layerSample.rgb*(1.0 - cl);   // softlight(complexion_lin, TINT = facetint)
+        vec3 fg = (dt + uFgTintOff) * uFgTintAmp;              // amplify del DETAIL
         vec3 lin = sl * fg;
         vec3 outc = vec3(linearToSrgb1(lin.r), linearToSrgb1(lin.g), linearToSrgb1(lin.b));
         fragColor = vec4(outc, prevRgba.a);

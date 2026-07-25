@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 ' =============================================================================
@@ -112,11 +112,134 @@ Public Partial Class HkxObjectGraph_Class
         Return (lc.EndsWith(".hkt") OrElse lc.EndsWith(".hkx")) AndAlso lc.Contains("animation")
     End Function
 
+    ' =====================================================================================
+    ' LAYOUT hkb* POR VERSIÓN DE HAVOK  (medido 2026-07-25 — ver HkbLayout_Class)
+    ' -------------------------------------------------------------------------------------
+    ' Los offsets originales de este archivo se derivaron SOLO de Fallout 4 y se aplicaban a
+    ' todos los juegos. MEDIDO: Skyrim SE y Fallout 4 NO comparten el layout de 3 clases, y el
+    ' packfile SÍ los distingue (censo sobre los .hkx no-clip de los archivos vanilla:
+    ' SSE 1763/1763 = fileVersion 8 / hk_2010.2.0-r1 → PackfileFormat.Skyrim64;
+    ' FO4 1330/1330 = fileVersion 11 / hk_2014.1.0-r1 → PackfileFormat.Fallout64).
+    ' ⇒ el comentario viejo de ResolveGeneratorTargetString ("ambos son 2014.1.0, el packfile
+    '    NO los distingue") era FALSO; se puede gatear por formato con confianza.
+    '
+    ' IDÉNTICOS en ambos (verificado campo a campo con dumps de fixups): hkbStateMachineStateInfo
+    ' (144B; m_transitions@+0x50, m_generator@+0x58, m_name@+0x60, m_stateId@+0x68, enter/exit
+    ' NotifyEvents@+0x40/+0x48), hkbStateMachineEventPropertyArray (@+0x10, stride 0x10),
+    ' hkbCharacterStringData (@+0xA0/A8/B0/B8), hkbBehaviorGraphStringData (@+0x10/+0x30/+0x40),
+    ' hkbProjectStringData (m_characterFilenames@+0x30), hkbBlenderGeneratorChild
+    ' (m_weight@+0x40, m_worldFromModelWeight@+0x44), hkbClipTriggerArray/hkbVariableValueSet/
+    ' hkbVariableBindingSet/hkbExpressionDataArray/hkbStringEventPayload (@+0x10) y hkbNode::m_name@+0x38.
+    '
+    ' DIFIEREN (lo que gatea HkbLayout_Class): hkbClipGenerator (bloque completo tras m_name),
+    ' hkbStateMachine::m_states y hkbBehaviorReferenceGenerator::m_behaviorName.
+    ' NO difiere pero estaba mal en los dos: el stride de hkbStateMachineTransitionInfoArray era una
+    ' constante 0x40; el real es 0x48 en ambos (ver ParseTransitions).
+    ' =====================================================================================
+
+    ''' <summary>Offsets de los miembros hkb* que NO son iguales entre hk_2014 (Fallout 4) y
+    ''' hk_2010 (Skyrim SE). Se resuelven del <c>PackfileFormat</c> del propio archivo.</summary>
+    Friend Class HkbLayout_Class
+        ' hkbClipGenerator
+        Public ClipAnimationName As Integer
+        Public ClipTriggers As Integer
+        Public ClipCropStart As Integer
+        Public ClipCropEnd As Integer
+        Public ClipStartTime As Integer
+        Public ClipPlaybackSpeed As Integer
+        Public ClipEnforcedDuration As Integer
+        Public ClipBindingIndex As Integer
+        Public ClipMode As Integer
+        Public ClipFlags As Integer
+        ' hkbBehaviorReferenceGenerator / BGSGamebryoSequenceGenerator (string secundario del nodo)
+        Public BehaviorRefName As Integer
+        ' hkbStateMachine
+        Public StateMachineStates As Integer
+        ' hkbStateMachineTransitionInfoArray
+        Public TransitionStride As Integer
+        ''' <summary>False = formato sin layout medido (Skyrim LE 32-bit): los campos numéricos se
+        ''' devuelven neutros en vez de basura leída con offsets de otro juego.</summary>
+        Public Known As Boolean = True
+    End Class
+
+    Private _hkbLayout As HkbLayout_Class
+
+    ''' <summary>Layout hkb* de ESTE packfile. Medido:
+    ''' <list type="bullet">
+    ''' <item>FO4 (hk_2014): clip m_animationName@+0x90, m_triggers@+0x98, playbackSpeed@+0xB0 (=1.0),
+    ''' bindingIndex@+0xBC (=-1), mode@+0xBE, flags@+0xBF; SM m_states@+0xD0; behaviorRef@+0x88.</item>
+    ''' <item>SSE (hk_2010): clip m_animationName@+0x48, m_triggers@+0x50, playbackSpeed@+0x64,
+    ''' bindingIndex@+0x70, mode@+0x72, flags@+0x73; SM m_states@+0x90; behaviorRef@+0x48.</item>
+    ''' </list>
+    ''' playbackSpeed SSE verificado POR VALOR, no por posición: MT_TurnRight60Fast=2, MT_TurnRight60=1,
+    ''' MT_TurnRight360Fast=1.5, MT_TurnRight360_Slow=0.5 (mt_behavior.hkx vanilla). El stride 0x48 de SSE
+    ''' se midió por el espaciado de los global-fixups al hkbBlendingTransitionEffect de cada transición
+    ''' (0x40, 0x88, 0xD0, 0x118, … = +0x48).
+    ''' crop/cropEnd/startTime CONFIRMADOS por valor sobre el corpus completo (FO4 3740 clips / SSE 9973):
+    ''' contando cuántos clips tienen valor ≠ 0 en cada offset, los roles se alinean 1 a 1 entre juegos —
+    ''' cropStart SSE +0x58 (81) ↔ FO4 +0xA4 (184) · cropEnd +0x5C (17) ↔ +0xA8 (54) · startTime +0x60 (143)
+    ''' ↔ +0xAC (7) · playbackSpeed +0x64 ↔ +0xB0 · enforcedDuration +0x68 (21) ↔ +0xB4 (40) ·
+    ''' userControlledTimeFraction +0x6C ↔ +0xB8 (ambos acotados a ≤1, que es lo que sella la alineación).
+    ''' ⚠ FO4 +0xA0 vale 0 en LOS 3740 clips = m_userPartitionMask (int, sólo en hk_2014). El código viejo lo
+    ''' leía como cropStart y por eso TODO el trío quedaba corrido un campo en Fallout 4 (y el startTime real
+    ''' no se leía nunca). CORREGIDO.</summary>
+    Friend ReadOnly Property HkbLayout As HkbLayout_Class
+        Get
+            If _hkbLayout IsNot Nothing Then Return _hkbLayout
+            Select Case Packfile.Header.PackfileFormat
+                Case HkxPackfileFormat_Enum.Fallout64
+                    _hkbLayout = New HkbLayout_Class With {
+                        .ClipAnimationName = &H90, .ClipTriggers = &H98,
+                        .ClipCropStart = &HA4, .ClipCropEnd = &HA8, .ClipStartTime = &HAC,
+                        .ClipPlaybackSpeed = &HB0, .ClipEnforcedDuration = &HB4,
+                        .ClipBindingIndex = &HBC, .ClipMode = &HBE, .ClipFlags = &HBF,
+                        .BehaviorRefName = &H88,
+                        .StateMachineStates = &HD0, .TransitionStride = &H48}
+                Case HkxPackfileFormat_Enum.Skyrim64
+                    _hkbLayout = New HkbLayout_Class With {
+                        .ClipAnimationName = &H48, .ClipTriggers = &H50,
+                        .ClipCropStart = &H58, .ClipCropEnd = &H5C, .ClipStartTime = &H60,
+                        .ClipPlaybackSpeed = &H64, .ClipEnforcedDuration = &H68,
+                        .ClipBindingIndex = &H70, .ClipMode = &H72, .ClipFlags = &H73,
+                        .BehaviorRefName = &H48,
+                        .StateMachineStates = &H90, .TransitionStride = &H48}
+                Case Else
+                    ' Skyrim LE 32-bit: sin archivos para medir. Antes se leía con offsets de FO4 =
+                    ' basura silenciosa; ahora se devuelve neutro y se avisa UNA vez.
+                    _hkbLayout = New HkbLayout_Class With {.Known = False,
+                        .ClipAnimationName = &H90, .ClipTriggers = -1,
+                        .ClipCropStart = -1, .ClipCropEnd = -1, .ClipStartTime = -1,
+                        .ClipPlaybackSpeed = -1, .ClipEnforcedDuration = -1,
+                        .ClipBindingIndex = -1, .ClipMode = -1, .ClipFlags = -1,
+                        .BehaviorRefName = &H88,
+                        .StateMachineStates = -1, .TransitionStride = -1}
+                    Dim fmt = Packfile.Header.PackfileFormat
+                    Logger.LogLazy(Function() $"[HKB-LAYOUT] Formato '{fmt}' sin layout hkb* medido: los campos numéricos de hkbClipGenerator, los states de hkbStateMachine y las transiciones se devuelven vacíos (antes se leían con offsets de Fallout 4 = basura).")
+            End Select
+            Return _hkbLayout
+        End Get
+    End Property
+
+    ' Lecturas que respetan un offset "no medido" (-1) devolviendo neutro en vez de leer basura.
+    Private Function ReadSingleAt(rel As Integer, fieldOffset As Integer) As Single
+        If fieldOffset < 0 Then Return 0.0F
+        Return ReadSingle(rel + fieldOffset)
+    End Function
+
+    Private Function ReadInt16At(rel As Integer, fieldOffset As Integer, fallback As Integer) As Integer
+        If fieldOffset < 0 Then Return fallback
+        Return CInt(ReadInt16(rel + fieldOffset))
+    End Function
+
+    Private Function ReadByteAt(rel As Integer, fieldOffset As Integer) As Integer
+        If fieldOffset < 0 Then Return 0
+        Return CInt(ReadByte(rel + fieldOffset))
+    End Function
+
     ' --------------------- FASE 2: topología state-machine → clips ---------------------
-    ' Offsets confirmados con --dump (Alien/varios): los nodos hkb (generadores) llevan m_name@+0x38;
-    ' hkbStateMachine m_states@+0xD0 (hkArray<ptr>); hkbClipGenerator m_animationName@+0x90;
-    ' hkbStateMachineStateInfo m_name@+0x60. El m_generator/m_transitions del state-info se resuelven
-    ' por CLASE del objeto referenciado (robusto, sin fijar offsets de ref frágiles).
+    ' Los nodos hkb (generadores) llevan m_name@+0x38 en AMBOS formatos.
+    ' El m_generator/m_transitions del state-info se resuelven por offset (verificado idéntico
+    ' en los dos juegos).
 
     ''' <summary>Nombre del nodo (m_name@+0x38) de cualquier hkb generator/modifier.</summary>
     Public Function ReadNodeName(obj As HkxVirtualObjectGraph_Class) As String
@@ -130,19 +253,20 @@ Public Partial Class HkxObjectGraph_Class
     Public Function ParseClipGenerator(source As HkxVirtualObjectGraph_Class) As HkbClipGeneratorGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
         Return New HkbClipGeneratorGraph_Class With {
             .SourceObject = source,
             .Name = ResolveLocalString(rel + &H38),
             .AnimationName = ResolveClipAnimationName(source),
-            .TriggersObject = ResolveGlobalObject(rel + &H98),
-            .CropStartLocalTime = ReadSingle(rel + &HA0),
-            .CropEndLocalTime = ReadSingle(rel + &HA4),
-            .StartTime = ReadSingle(rel + &HA8),
-            .PlaybackSpeed = ReadSingle(rel + &HB0),
-            .EnforcedDuration = ReadSingle(rel + &HB4),
-            .AnimationBindingIndex = CInt(ReadInt16(rel + &HBC)),
-            .PlaybackMode = CInt(ReadByte(rel + &HBE)),
-            .FlagsRaw = CInt(ReadByte(rel + &HBF))
+            .TriggersObject = If(L.ClipTriggers < 0, Nothing, ResolveGlobalObject(rel + L.ClipTriggers)),
+            .CropStartLocalTime = ReadSingleAt(rel, L.ClipCropStart),
+            .CropEndLocalTime = ReadSingleAt(rel, L.ClipCropEnd),
+            .StartTime = ReadSingleAt(rel, L.ClipStartTime),
+            .PlaybackSpeed = ReadSingleAt(rel, L.ClipPlaybackSpeed),
+            .EnforcedDuration = ReadSingleAt(rel, L.ClipEnforcedDuration),
+            .AnimationBindingIndex = ReadInt16At(rel, L.ClipBindingIndex, -1),
+            .PlaybackMode = ReadByteAt(rel, L.ClipMode),
+            .FlagsRaw = ReadByteAt(rel, L.ClipFlags)
         }
     End Function
 
@@ -171,9 +295,11 @@ Public Partial Class HkxObjectGraph_Class
         Return ""
     End Function
 
-    ''' <summary>hkbClipGenerator::m_animationName, version-robust (ver ResolveGeneratorTargetString).</summary>
+    ''' <summary>hkbClipGenerator::m_animationName. Ahora el offset sale del layout MEDIDO por formato
+    ''' (FO4 +0x90 / SSE +0x48); ResolveGeneratorTargetString conserva su barrido de fixups como red de
+    ''' seguridad para formatos sin medir o archivos de mods re-exportados.</summary>
     Private Function ResolveClipAnimationName(source As HkxVirtualObjectGraph_Class) As String
-        Return ResolveGeneratorTargetString(source, &H90)
+        Return ResolveGeneratorTargetString(source, HkbLayout.ClipAnimationName)
     End Function
 
     ''' <summary>hkbBlenderGenerator: nombre + children (cada uno con su weight y el generador que mezcla).</summary>
@@ -216,7 +342,8 @@ Public Partial Class HkxObjectGraph_Class
             .SourceObject = source,
             .Name = ResolveLocalString(source.RelativeOffset + &H38)
         }
-        For Each stateObj In ReadObjectReferenceArray(source.RelativeOffset + &HD0)
+        If HkbLayout.StateMachineStates < 0 Then Return result
+        For Each stateObj In ReadObjectReferenceArray(source.RelativeOffset + HkbLayout.StateMachineStates)
             Dim st = ParseStateInfo(stateObj)
             If st IsNot Nothing Then result.States.Add(st)
         Next
@@ -277,9 +404,9 @@ Public Partial Class HkxObjectGraph_Class
         If cn.Equals("hkbClipGenerator", StringComparison.OrdinalIgnoreCase) Then
             leaves.Add("clip:" & ResolveClipAnimationName(gen))
         ElseIf cn.Equals("hkbBehaviorReferenceGenerator", StringComparison.OrdinalIgnoreCase) Then
-            leaves.Add("behavior:" & ResolveGeneratorTargetString(gen, &H88))
+            leaves.Add("behavior:" & ResolveGeneratorTargetString(gen, HkbLayout.BehaviorRefName))
         ElseIf cn.Equals("BGSGamebryoSequenceGenerator", StringComparison.OrdinalIgnoreCase) Then
-            leaves.Add("gamebryo:" & ResolveGeneratorTargetString(gen, &H88))
+            leaves.Add("gamebryo:" & ResolveGeneratorTargetString(gen, HkbLayout.BehaviorRefName))
         ElseIf cn.Equals("hkbStateMachine", StringComparison.OrdinalIgnoreCase) Then
             leaves.Add("sm:" & ResolveLocalString(gen.RelativeOffset + &H38))   ' SM anidada: no expandir
         Else
@@ -301,7 +428,13 @@ Public Partial Class HkxObjectGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbStateMachineTransitionInfoArray", StringComparison.OrdinalIgnoreCase) Then Return result
         Dim header = ReadArrayHeader(source.RelativeOffset + &H10)
         If header.Count <= 0 OrElse header.DataRelativeOffset < 0 Then Return result
-        Const stride As Integer = &H40
+        ' stride del hkbStateMachineTransitionInfo = 0x48 en LOS DOS formatos (medido por el espaciado de
+        ' los global-fixups al hkbBlendingTransitionEffect de cada transición: FO4 0x50→0x98, SSE
+        ' 0x40→0x88→0xD0→…). eventId/toStateId en +0x30/+0x34 del elemento en ambos.
+        ' ⚠ El valor anterior era una CONSTANTE 0x40 aplicada a los dos juegos: correcta sólo para el
+        ' elemento 0, así que los arrays con ≥2 transiciones devolvían basura TAMBIÉN en Fallout 4.
+        Dim stride As Integer = HkbLayout.TransitionStride
+        If stride <= 0 Then Return result
         For i = 0 To header.Count - 1
             Dim e = header.DataRelativeOffset + (i * stride)
             result.Add(New HkbTransitionGraph_Class With {

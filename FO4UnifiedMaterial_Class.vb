@@ -3269,15 +3269,15 @@ Public Class FO4UnifiedMaterial_Class
                 .Facegen = If(Nif.Header.Version.IsSSE, shad.IsTypeFaceTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Face) <> 0),
                 .Hair = If(Nif.Header.Version.IsSSE, shad.IsTypeHairTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair) <> 0),
                 .SkinTint = If(Nif.Header.Version.IsSSE, shad.IsTypeSkinTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Skin_Tint) <> 0),
-                .BackLighting = shad.HasBacklight,
+                .BackLighting = If(Nif.Header.Version.IsSSE, shad.HasBacklight, shad.BacklightPower > 0.0F),
                 .BackLightPower = shad.BacklightPower,
                 .SpecularEnabled = shad.HasSpecular,
                 .SpecularColor = NifColor3ToMaterialRgb(shad.SpecularColor),
                 .SpecularMult = shad.SpecularStrength,
                 .Glowmap = shad.HasGlowmap,
                 .Tree = shad.HasTreeAnim,
-                .SubsurfaceLighting = shad.HasSoftlight,
-                .RimLighting = shad.HasRimlight,
+                .SubsurfaceLighting = If(Nif.Header.Version.IsSSE, shad.HasSoftlight, shad.SubsurfaceRolloff > 0.0F),
+                .RimLighting = If(Nif.Header.Version.IsSSE, shad.HasRimlight, shad.RimlightPower < Single.MaxValue),
                 .RimPower = shad.RimlightPower,
                 .GrayscaleToPaletteColor = shad.HasGreyscaleToPaletteColor,
                 .GrayscaleToPaletteScale = shad.GrayscaleToPaletteScale,
@@ -3729,7 +3729,10 @@ Public Class FO4UnifiedMaterial_Class
             shad.SkinTintAlpha = Me.SkinTintAlpha
         End If
         shad.HasBacklight = Mat.BackLighting
-        shad.BacklightPower = Mat.BackLightPower
+        ' Back es value-driven en el NIF FO4 (bool+value en el BGSM -> solo value en el NIF, como subsurface).
+        ' El CK gatea el power por el flag al hornear; simetrico con el rolloff en 3695. No-op sobre facegen
+        ' vanilla (back siempre flag-ON); solo cubre materiales de mod/editados con flag OFF y power>0.
+        shad.BacklightPower = If(Mat.BackLighting, Mat.BackLightPower, 0.0F)
         shad.HasSpecular = Mat.SpecularEnabled AndAlso Mat.SpecularMult <> 0.0F
         shad.SpecularColor = MaterialRgbToNifColor3(Mat.SpecularColor)
         shad.SpecularStrength = Mat.SpecularMult

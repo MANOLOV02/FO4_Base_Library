@@ -91,83 +91,115 @@ Public Module SseFaceGenBaker
         Return CByte(Math.Max(0.0, Math.Min(255.0, Math.Round(v * 255.0))))
     End Function
 
-    ' === Op engine facetint→albedo (Shader_Class.vb:1876-1880, de sse_facegen_skin.asm 71-79, VERIFICADO) ===
-    ' El engine NO multiplica el facetint _d crudo: lo AMPLIFICA. fgTint = (_d + (1/255,0,1/255)) * 255/64, y
-    ' albedo *= fgTint. ÚNICA fuente de la op para render Y bake (WYSIWYG): ambos pliegan igual por construcción.
+    ' === LEY DEL ENGINE para el albedo facegen SSE (Shader_Class.vb, DXBC + RE SkyrimSE.exe, VERIFICADO) ===
+    '     albedo = softlight(diffuse, TINT) * ((DETAIL + (1/255,0,1/255)) * 255/64)
+    ' TINT   = texture-set slot 6 (facetint) -> material+0xA0 -> PS t3   (entra por SOFT-LIGHT)
+    ' DETAIL = texture-set slot 3            -> material+0xA8 -> PS t4   (entra por el AMPLIFY de abajo)
+    ' ⛔ CORRIGE la premisa previa "el engine AMPLIFICA el facetint y lo multiplica": el x255/64 normaliza el
+    ' DETAIL (neutro 64 -> 1.0 exacto), NO el facetint. Con el tint pasando por el amplify, un skin tone
+    ' saturado aplastaba R/B y el cuello salía mucho más saturado que el pecho (in-game matchean).
+    ' Ver SetupMaterial 0x1414DC310 / rama facegen 0x1414DC542 / OnLoadTextureSet 0x1414BA6E0.
+    ' ÚNICA fuente de la op para render Y bake (WYSIWYG): ambos pliegan igual por construcción.
     Public Const FgTintAmp As Double = 255.0 / 64.0            ' = 3.984375
     Public Const FgTintOffR As Double = 1.0 / 255.0
     Public Const FgTintOffG As Double = 0.0
     Public Const FgTintOffB As Double = 1.0 / 255.0
+
+    ''' <summary>Default del engine para el slot 3 (DETAIL) cuando está VACÍO: <c>BSShader_DefFacegenDetail</c>,
+    ''' textura UNIFORME <c>0x40</c> = 64/255 = 0.251. RE byte-level SkyrimSE.exe: la init de defaults
+    ''' @0x140E57E30 la crea con fill <c>0x40404040</c> y la guarda en manager+0x88 (singleton 0x328CC20 ⇒
+    ''' 0x328CCA8 = el default que el material facegen mete en +0xA8 @0x1414BA8B0). = vanilla blankdetailmap.dds.
+    ''' ⚠️ NO es la Bayer 8×8 media 0.1235: esa es <c>BSShader_DitheringNoise</c>, creada en la MISMA función
+    ''' unas instrucciones antes (por eso la nota vieja citaba 0x140E57E30 para el 0x40 y era ambigua).</summary>
+    Public Const EngineDefaultDetail As Double = 64.0 / 255.0
+
+    ''' <summary>Default del engine para el slot 6 (TINT) cuando no hay facetint: <c>DefaultGreyMap</c>, uniforme
+    ''' <c>0x80</c> = 128/255 = 0.50196. RE: misma init @0x140E57E30 (fill <c>0x80808080</c>), manager+0x70 =
+    ''' 0x328CC90 = el default que el material facegen mete en +0xA0. Es (casi) la IDENTIDAD del soft-light:
+    ''' con b = 0.5 EXACTO <c>a² + 2·a·0.5·(1−a) = a</c>, pero a 8 bits el valor representable es 128/255, y el
+    ''' residuo queda acotado por <c>|softlight(a,128/255) − a| = 2·a·(1−a)·(1/510) ≤ 0.00098</c> (&lt; 1/4 de byte).
+    ''' ⭐ Se usa el valor BYTE-EXACTO, no 0.5: es lo que hace el motor, y es también lo único que sobrevive a un
+    ''' DDS de 8 bits — así el neutro que escribe el bake, el que instala el preview y el default del engine son
+    ''' EL MISMO número en los cuatro caminos.</summary>
+    Public Const EngineDefaultTint As Double = 128.0 / 255.0
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function FgOff(ch As Integer) As Double
         Return If(ch = 1, FgTintOffG, If(ch = 2, FgTintOffB, FgTintOffR))
     End Function
 
-    ''' <summary>fgTint de UN canal (0=R,1=G,2=B) del facetint _d lineal [0,1] → el multiplicador que el engine
-    ''' aplica al albedo. Verificado: (v+off)·(255/64). El _d NEUTRAL (fgTint=1) es (63,64,63)/255.</summary>
+    ''' <summary>El multiplicador amplificado de UN canal (0=R,1=G,2=B) a partir del DETAIL crudo [0,1]:
+    ''' <c>(v+off)·(255/64)</c>. ⚠️ Se aplica al DETAIL (slot 3 → t4), NO al facetint. El detail NEUTRAL
+    ''' (multiplicador = 1) es (63,64,63)/255; el default del engine 0.251 da (1.015625, 1.0, 1.015625).</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Public Function FgTintChannel(dChannel As Double, ch As Integer) As Double
         Return (dChannel + FgOff(ch)) * FgTintAmp
     End Function
 
-    ''' <summary>Valor lineal del _d que NEUTRALIZA el facetint (fgTint=1) por canal — para un slot 6 no-op cuando
-    ''' el facetint se pliega en el diffuse. (v+off)·(255/64)=1 ⇒ v = 64/255 − off. R,B=63/255; G=64/255.</summary>
-    Public Function FacetintNeutralChannel(ch As Integer) As Double
+    ''' <summary>Valor crudo del DETAIL que hace el amplify IDENTIDAD (multiplicador = 1) por canal — para dejar el
+    ''' slot 3 no-op cuando la cadena ya se plegó en el diffuse. (v+off)·(255/64)=1 ⇒ v = 64/255 − off.
+    ''' R,B=63/255; G=64/255.</summary>
+    Public Function DetailNeutralChannel(ch As Integer) As Double
         Return 64.0 / 255.0 - FgOff(ch)
     End Function
 
-    ''' <summary>Un facetint _d NEUTRAL (fgTint=1) — para el slot 6 cuando el facetint se pliega en el diffuse.
-    ''' Todos los píxeles = (63,64,63)/255. El engine hace albedo *= fgTint(neutral) = albedo (no-op). Formato:
-    ''' el que pase el caller (CharGen Options → Diffuse); -1 = BC3 (default, = vanilla). Al ser un color CONSTANTE
-    ''' el formato no cambia el resultado (BC3 codifica un bloque uniforme sin error), pero el archivo sigue al
-    ''' setting igual que el resto del bake en vez de hardcodear.</summary>
+    ''' <summary>Un facetint _d NEUTRAL para el slot 6 cuando la cadena se pliega en el diffuse: gris <b>128</b>
+    ''' uniforme = IDENTIDAD del SOFT-LIGHT a 8 bits (ver <see cref="EngineDefaultTint"/>: residuo ≤ 0.00098, el
+    ''' mismo que tiene el motor con su DefaultGreyMap). ⚠️ NO es (63,64,63): ese es el neutro
+    ''' del AMPLIFY y le corresponde al slot 3 (<see cref="NeutralDetailDds"/>). Coincide además con el default de
+    ''' engine del propio slot (<c>DefaultGreyMap</c>), así que sirve igual si el slot queda vacío. El tint se
+    ''' samplea CRUDO (raw), así que 0.5 = byte 128 literal. Formato: el que pase el caller (CharGen Options →
+    ''' Diffuse); -1 = BC3 (default, = vanilla). Al ser un color CONSTANTE el formato no cambia el resultado (BC3
+    ''' codifica un bloque uniforme sin error), pero el archivo sigue al setting en vez de hardcodear.</summary>
     Public Function NeutralFacetintDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
         Dim npix = w * h
         Dim acc(npix * 4 - 1) As Single
-        Dim nR = FacetintNeutralChannel(0), nG = FacetintNeutralChannel(1), nB = FacetintNeutralChannel(2)
+        For i = 0 To npix - 1
+            acc(i * 4) = CSng(EngineDefaultTint) : acc(i * 4 + 1) = CSng(EngineDefaultTint)
+            acc(i * 4 + 2) = CSng(EngineDefaultTint) : acc(i * 4 + 3) = 1.0F
+        Next
+        Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
+    End Function
+
+    ''' <summary>Un detail map (slot 3 / DisplacementTexture) NEUTRAL para el AMPLIFY del engine:
+    ''' <c>(v+off)·255/64 = 1</c> ⇒ v = (63,64,63)/255. Se usa cuando la cadena se pliega en el diffuse (el amplify
+    ''' con el detail REAL ya está horneado en slot 0), para que el engine NO lo re-aplique. ⚠️ NO es 0.5: 0.5 es la
+    ''' identidad del SOFT-LIGHT y le corresponde al slot 6 (<see cref="NeutralFacetintDds"/>).
+    ''' ⛔ NO se puede VACIAR el slot 3: el engine lo rellena con <see cref="EngineDefaultDetail"/> (0.251), que
+    ''' amplificado da (1.015625, 1.0, 1.015625) ≠ 1 ⇒ la cara saldría 1.5% más clara en R/B. El detail se samplea
+    ''' CRUDO (raw). Constante ⇒ compartible por plugin; el engine SÍ respeta el slot 3 del NIF (a diferencia del
+    ''' tint, que arma por path canónico). Formato = el que pase el caller; -1 = BC3 (constante ⇒ sin error).</summary>
+    Public Function NeutralDetailDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
+        Dim npix = w * h
+        Dim acc(npix * 4 - 1) As Single
+        Dim nR = DetailNeutralChannel(0), nG = DetailNeutralChannel(1), nB = DetailNeutralChannel(2)
         For i = 0 To npix - 1
             acc(i * 4) = CSng(nR) : acc(i * 4 + 1) = CSng(nG) : acc(i * 4 + 2) = CSng(nB) : acc(i * 4 + 3) = 1.0F
         Next
         Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function
 
-    ''' <summary>Un detail map (slot 3 / DisplacementTexture) NEUTRAL para el softlight del engine:
-    ''' <c>softlight(diffuse, detail)</c> con detail = 0.5 es la IDENTIDAD (<c>a² + 2·a·0.5·(1−a) = a</c>). Se usa
-    ''' cuando el facetint se pliega en el diffuse (el softlight con el detail REAL ya está horneado en slot 0), para
-    ''' que el engine NO lo re-aplique. ⛔ NO se puede VACIAR el slot 3: el engine rellena un slot detail vacío con su
-    ''' default <c>BSShader_DefFacegenDetail</c> = una textura UNIFORME <c>0x40 = 64/255 = 0.251</c> (RE byte-level
-    ''' SkyrimSE.exe: la init @0x140E57E30 la rellena con <c>0x40404040</c>; = vanilla blankdetailmap.dds. ⚠️ NO es
-    ''' la Bayer 8×8 media 0.1235 — esa es <c>BSShader_DitheringNoise</c>, otra textura). 0.251 &lt; 0.5 ⇒ oscurece
-    ''' la cara. El detail se samplea CRUDO (raw), así que 0.5 = byte 128 literal. Constante ⇒ compartible por plugin;
-    ''' el engine SÍ respeta el slot 3 del NIF (a diferencia del tint, que
-    ''' arma por path canónico). Formato = el que pase el caller; -1 = BC3 (constante ⇒ sin error de compresión).</summary>
-    Public Function NeutralDetailDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
-        Dim npix = w * h
-        Dim acc(npix * 4 - 1) As Single
-        For i = 0 To npix - 1
-            acc(i * 4) = 0.5F : acc(i * 4 + 1) = 0.5F : acc(i * 4 + 2) = 0.5F : acc(i * 4 + 3) = 1.0F
-        Next
-        Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
-    End Function
-
-    ''' <summary>Pliega el facetint _d DENTRO del complexion (in place): reproduce la op del engine
-    ''' <c>albedo_linear *= fgTint</c>. ⚠️ El engine multiplica en LINEAR: el complexion (slot 0) es un diffuse sRGB
-    ''' que el shader decodifica sRGB→linear ANTES de multiplicar por fgTint. Como el <paramref name="complexionRgba"/>
-    ''' llega CRUDO (sRGB, de DecodeDds), acá se hace sRGB→linear, ×fgTint, y linear→sRGB para volver a almacenarlo
-    ''' como diffuse (el engine lo re-samplea sRGB→linear). MEDIDO: plegar en sRGB crudo salía ~0.33 MÁS CLARO (bug).
-    ''' fgTint usa el _d CRUDO (slot 6 se samplea sin sRGB). RGB; alpha intacto. Ambos buffers [0,1] w*h*4, mismo tamaño.</summary>
+    ''' <summary>Pliega la cadena de albedo facegen DENTRO del complexion (in place): reproduce la op del engine
+    ''' <c>albedo_lin = softlight(complexion_lin, TINT) × ((DETAIL + off)·255/64)</c>.
+    ''' ⚠️ El engine opera en LINEAR: el complexion (slot 0) es un diffuse sRGB que el shader decodifica sRGB→linear
+    ''' ANTES de la cadena. Como el <paramref name="complexionRgba"/> llega CRUDO (sRGB, de DecodeDds), acá se hace
+    ''' sRGB→linear, la cadena, y linear→sRGB para volver a almacenarlo como diffuse (el engine lo re-samplea
+    ''' sRGB→linear). MEDIDO: plegar en sRGB crudo salía ~0.33 MÁS CLARO (bug).
+    ''' <paramref name="facetintRgba"/> (slot 6) y <paramref name="detailRgba"/> (slot 3) se samplean CRUDOS (raw).
+    ''' RGB; alpha intacto. Buffers [0,1] w*h*4, mismo tamaño.
+    ''' ⭐ RÉPLICA EXACTA de la rama <c>uFgTintFold</c> del shader del compositor (fold GPU) — si tocás una, tocá la
+    ''' otra: el sandbox _2c-vs-_2d mide esa paridad.</summary>
     Public Sub FoldFacetintIntoDiffuse(complexionRgba As Single(), facetintRgba As Single(), npix As Integer,
                                        Optional detailRgba As Single() = Nothing)
         If complexionRgba Is Nothing OrElse facetintRgba Is Nothing Then Return
-        ' Engine EXACTO (Shader_Class 1864→1878): albedo = fgTint × softlight(sRGBtoLin(complexion), detail). El
-        ' softlight con el detail (slot 3) va ANTES del fgTint. detailRgba = detail CRUDO (no está en color textures →
-        ' se samplea raw). ⛔ Nothing (slot 3 vacío) NO es identidad: el motor bindea su default interno
-        ' BSShader_DefFacegenDetail = 0.251 (RE byte-level SkyrimSE.exe 0x140E57E30 = uniforme 0x40 = vanilla
-        ' blankdetailmap; NO la Bayer 0.1235 de BSShader_DitheringNoise, NO 0.5). Se pliega ese 0.251 para
-        ' matchear al motor (mods que borran el TX04 del TXST, ej. Enhanced Khajiit). El caller DEBE neutralizar
-        ' el slot 3 del NIF a 0.5 (si no, el engine re-aplica el softlight encima del _2c).
-        Const emptyDetailDefault As Double = 64.0 / 255.0   ' BSShader_DefFacegenDetail (0.251)
+        ' Engine EXACTO: albedo = softlight(sRGBtoLin(complexion), facetint) × amplify(detail).
+        ' ⛔ CORREGIDO: antes esto estaba INVERTIDO (softlight con el detail y amplify sobre el facetint). El
+        ' x255/64 normaliza el DETAIL, no el tint. Ver el bloque de la ley arriba.
+        ' Slot vacío ⇒ default del engine, NO identidad arbitraria:
+        '   detail  vacío -> EngineDefaultDetail 0.251 -> amplify (1.015625, 1.0, 1.015625)
+        '   facetint vacío -> EngineDefaultTint  0.5    -> softlight identidad
+        ' (mods que borran el TX04 del TXST, ej. Enhanced Khajiit, caen en el primero). El caller DEBE neutralizar
+        ' los slots del NIF: slot 3 -> (63,64,63), slot 6 -> 0.5 (si no, el engine re-aplica encima del plegado).
         ' PARALELO por rangos de píxeles: cada píxel lee/escribe SOLO sus propios índices (sin estado compartido,
         ' sin acumulación cruzada) ⇒ resultado BIT-IDÉNTICO al loop serial (el mismo double-math por píxel; sólo
         ' cambia qué thread lo ejecuta). Por qué: la op lleva 2 Math.Pow por canal (Srgb2Lin+Lin2Srgb) y el fold
@@ -178,9 +210,10 @@ Public Module SseFaceGenBaker
                 For i = range.Item1 To range.Item2 - 1
                     For ch = 0 To 2
                         Dim clin = Srgb2Lin(complexionRgba(i * 4 + ch))
-                        Dim b = If(detailRgba IsNot Nothing, detailRgba(i * 4 + ch), emptyDetailDefault)
-                        Dim sl = clin * clin + 2.0 * clin * b * (1.0 - clin)          ' softlight(complexion_lin, detail)
-                        complexionRgba(i * 4 + ch) = CSng(Lin2Srgb(sl * FgTintChannel(facetintRgba(i * 4 + ch), ch)))
+                        Dim tint = facetintRgba(i * 4 + ch)                                              ' slot 6 -> t3
+                        Dim det = If(detailRgba IsNot Nothing, detailRgba(i * 4 + ch), EngineDefaultDetail)  ' slot 3 -> t4
+                        Dim sl = clin * clin + 2.0 * clin * tint * (1.0 - clin)      ' softlight(complexion_lin, tint)
+                        complexionRgba(i * 4 + ch) = CSng(Lin2Srgb(sl * FgTintChannel(det, ch)))
                     Next
                 Next
             End Sub)
