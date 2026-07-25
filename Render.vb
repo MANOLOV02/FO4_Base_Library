@@ -3555,7 +3555,25 @@ Public Class PreviewModel
             shader.SetFloat("paletteScale", materialBase.GrayscaleToPaletteScale)
             shader.SetFloat("envReflection", materialBase.EnvironmentMappingMaskScale)
             shader.SetBool("bBacklight", materialBase.BackLighting)
-            shader.SetFloat("backlightPower", materialBase.BackLightPower)
+            ' GATE SOLO EN SKYRIM. Historia corta: el gate estuvo puesto, lo saque midiendo sobre los 191
+            ' BGSM SUELTOS de Data\Materials, me lo revirtieron con razon porque ese corpus esta SESGADO
+            ' (son todos overrides de mod), y quedo con la nota "lo que el motor hace con el bool NO quedo
+            ' verificado en el binario". YA ESTA VERIFICADO, y el bool NO gatea nada:
+            ' en la transferencia BGSM -> material hay EXACTAMENTE DOS compuertas booleanas, iguales en
+            ' Fallout4.exe (0x142163BE0) y en CreationKit.exe (0x142BB7E40):
+            '     cmp byte [rbx+0xa8], 0   -> gatea fSubsurfaceLightingRolloff (+0xac)
+            '     cmp byte [rbx+0x54], 1   -> bWetnessControl_ScreenSpaceReflections
+            ' fBackLightPower (+0xb4) se copia con un `mov` pelado. Offsets sacados POR NOMBRE del
+            ' deserializador del .bgsm (juego 0x14216794E / CK 0x142BBAE10, mismo layout).
+            ' Corpus vanilla (BA2, 6616 con offset final == EOF exacto): 41 con el flag en True, 171 con
+            ' flag False y power > 0 -- a esos 171 el motor les aplica la transmision igual. 21 son de
+            ' personaje (cuerpos/manos SkinTint power 0.05 y TODO el pelo vanilla power 2.0); ninguno es
+            ' Facegen, asi que la cabeza no cambia.
+            ' RENDER == BAKE se mantiene: la ruta de escritura lleva el MISMO gate por juego
+            ' (FO4UnifiedMaterial_Class, shad.BacklightPower). En Skyrim el gate se conserva porque alli
+            ' HasBacklight es un flag REAL del NIF; en FO4 se sintetiza con `power > 0` al leer.
+            shader.SetFloat("backlightPower",
+                            If(isSSE AndAlso Not materialBase.BackLighting, 0.0F, materialBase.BackLightPower))
             shader.SetBool("bRimlight", materialBase.RimLighting)
             shader.SetFloat("rimlightPower", materialBase.RimPower)
             shader.SetBool("bDoubleSided", materialBase.TwoSided)

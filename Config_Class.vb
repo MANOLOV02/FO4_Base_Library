@@ -280,7 +280,7 @@ Public Class Config_App
             .DirectL = New LightData_struct With {.Strength = 0.7F, .Tint = white, .Left = 0, .Right = 0, .Back = 0, .Down = 0, .Forward = 1, .Up = 0},
             .FillLight_1 = New LightData_struct With {.Strength = 0.6F, .Tint = white, .Left = 0, .Right = 0.7, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
             .FillLight_2 = New LightData_struct With {.Strength = 0.6, .Tint = white, .Left = 0.7, .Right = 0, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
-            .BackLight = New LightData_struct With {.Strength = 0.6F, .Tint = white, .Left = 0.0, .Right = 0, .Back = 1, .Down = 0, .Forward = 0, .Up = 0.5}}
+            .BackLight = New LightData_struct With {.Strength = 0.6F, .Tint = white, .Left = 0.0, .Right = 0, .Back = 1, .Down = 0, .Forward = 0, .Up = 0.0}}
         Return Lrig
     End Function
 

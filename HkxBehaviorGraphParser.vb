@@ -153,6 +153,49 @@ Public Partial Class HkxObjectGraph_Class
         Public ClipFlags As Integer
         ' hkbBehaviorReferenceGenerator / BGSGamebryoSequenceGenerator (string secundario del nodo)
         Public BehaviorRefName As Integer
+        ' hkbBlendingTransitionEffect::m_duration (el resto del bloque es relativo a este)
+        Public TransitionDuration As Integer
+        ' wrappers medidos (ola 5)
+        Public ModGenModifier As Integer
+        Public ModGenGenerator As Integer
+        Public ModifierListArray As Integer
+        Public ManualSelectorArray As Integer
+        Public EvalExprData As Integer
+        Public EventDrivenModifier As Integer
+        Public StateTagGenerator As Integer
+        Public SyncClipGenerator As Integer
+        ' ola 6
+        Public ModEnable As Integer
+        Public IsActiveFlags As Integer
+        Public CyclicBlender As Integer
+        Public CyclicEvents As Integer
+        Public CyclicEventCount As Integer
+        Public CyclicBlendParam As Integer
+        Public BoneSwitchDefault As Integer
+        Public BoneSwitchChildren As Integer
+        Public DynTagGenerator As Integer
+        Public LayerGenerator As Integer
+        Public LayerWeight As Integer
+        ' ola 8
+        Public TwistAxis As Integer
+        Public TwistAngle As Integer
+        Public DeactEventId As Integer
+        Public DeactPayload As Integer
+        Public AssignFloatPairs As Integer
+        Public AssignIntPairs As Integer
+        ' BSLookAtModifier: el struct de bone difiere ENTERO entre juegos, no solo el offset
+        Public LookAtBones As Integer
+        Public LookAtBoneStride As Integer
+        Public LookAtIndex As Integer
+        Public LookAtUpAxis As Integer
+        Public LookAtLimitAngle As Integer
+        Public LookAtOnGain As Integer
+        Public LookAtOffGain As Integer
+        ' hkbBehaviorGraph / hkbBehaviorGraphData (medidos; el orden de miembros difiere entre juegos)
+        Public GraphRoot As Integer
+        Public GraphData As Integer
+        Public GraphDataInitial As Integer
+        Public GraphDataStrings As Integer
         ' hkbStateMachine
         Public StateMachineStates As Integer
         ' hkbStateMachineTransitionInfoArray
@@ -193,7 +236,19 @@ Public Partial Class HkxObjectGraph_Class
                         .ClipCropStart = &HA4, .ClipCropEnd = &HA8, .ClipStartTime = &HAC,
                         .ClipPlaybackSpeed = &HB0, .ClipEnforcedDuration = &HB4,
                         .ClipBindingIndex = &HBC, .ClipMode = &HBE, .ClipFlags = &HBF,
-                        .BehaviorRefName = &H88,
+                        .BehaviorRefName = &H88, .TransitionDuration = &HA8,
+                        .ModGenModifier = &H88, .ModGenGenerator = &H90, .ModifierListArray = &H58,
+                        .ManualSelectorArray = &H88, .EvalExprData = &H58, .EventDrivenModifier = &H58,
+                        .StateTagGenerator = &H90, .SyncClipGenerator = -1,
+                        .ModEnable = &H50, .IsActiveFlags = &H58,
+                        .CyclicBlender = &H90, .CyclicEvents = &H98, .CyclicEventCount = 4, .CyclicBlendParam = &HDC,
+                        .BoneSwitchDefault = &H90, .BoneSwitchChildren = &H98,
+                        .DynTagGenerator = &H90, .LayerGenerator = &H30, .LayerWeight = &H48,
+                        .TwistAxis = &H60, .TwistAngle = &H70, .DeactEventId = &H58, .DeactPayload = &H60,
+                        .AssignFloatPairs = &H58, .AssignIntPairs = &HF8,
+                        .LookAtBones = &H270, .LookAtBoneStride = &H210, .LookAtIndex = -1,
+                        .LookAtUpAxis = &H20, .LookAtLimitAngle = &H34, .LookAtOnGain = &H48, .LookAtOffGain = &H4C,
+                        .GraphRoot = &HC0, .GraphData = &HC8, .GraphDataInitial = &H60, .GraphDataStrings = &H68,
                         .StateMachineStates = &HD0, .TransitionStride = &H48}
                 Case HkxPackfileFormat_Enum.Skyrim64
                     _hkbLayout = New HkbLayout_Class With {
@@ -201,7 +256,19 @@ Public Partial Class HkxObjectGraph_Class
                         .ClipCropStart = &H58, .ClipCropEnd = &H5C, .ClipStartTime = &H60,
                         .ClipPlaybackSpeed = &H64, .ClipEnforcedDuration = &H68,
                         .ClipBindingIndex = &H70, .ClipMode = &H72, .ClipFlags = &H73,
-                        .BehaviorRefName = &H48,
+                        .BehaviorRefName = &H48, .TransitionDuration = &H50,
+                        .ModGenModifier = &H48, .ModGenGenerator = &H50, .ModifierListArray = &H50,
+                        .ManualSelectorArray = &H48, .EvalExprData = &H50, .EventDrivenModifier = &H50,
+                        .StateTagGenerator = &H50, .SyncClipGenerator = &H50,
+                        .ModEnable = &H48, .IsActiveFlags = &H50,
+                        .CyclicBlender = &H50, .CyclicEvents = &H58, .CyclicEventCount = 2, .CyclicBlendParam = &H7C,
+                        .BoneSwitchDefault = &H50, .BoneSwitchChildren = &H58,
+                        .DynTagGenerator = -1, .LayerGenerator = &H30, .LayerWeight = &H48,
+                        .TwistAxis = &H50, .TwistAngle = &H60, .DeactEventId = &H50, .DeactPayload = &H58,
+                        .AssignFloatPairs = -1, .AssignIntPairs = -1,
+                        .LookAtBones = &H58, .LookAtBoneStride = &H40, .LookAtIndex = 0,
+                        .LookAtUpAxis = -1, .LookAtLimitAngle = &H20, .LookAtOnGain = &H24, .LookAtOffGain = &H28,
+                        .GraphRoot = &H80, .GraphData = &H88, .GraphDataInitial = &H70, .GraphDataStrings = &H78,
                         .StateMachineStates = &H90, .TransitionStride = &H48}
                 Case Else
                     ' Skyrim LE 32-bit: sin archivos para medir. Antes se leía con offsets de FO4 =
@@ -211,7 +278,19 @@ Public Partial Class HkxObjectGraph_Class
                         .ClipCropStart = -1, .ClipCropEnd = -1, .ClipStartTime = -1,
                         .ClipPlaybackSpeed = -1, .ClipEnforcedDuration = -1,
                         .ClipBindingIndex = -1, .ClipMode = -1, .ClipFlags = -1,
-                        .BehaviorRefName = &H88,
+                        .BehaviorRefName = &H88, .TransitionDuration = -1,
+                        .ModGenModifier = -1, .ModGenGenerator = -1, .ModifierListArray = -1,
+                        .ManualSelectorArray = -1, .EvalExprData = -1, .EventDrivenModifier = -1,
+                        .StateTagGenerator = -1, .SyncClipGenerator = -1,
+                        .ModEnable = -1, .IsActiveFlags = -1,
+                        .CyclicBlender = -1, .CyclicEvents = -1, .CyclicEventCount = 0, .CyclicBlendParam = -1,
+                        .BoneSwitchDefault = -1, .BoneSwitchChildren = -1,
+                        .DynTagGenerator = -1, .LayerGenerator = -1, .LayerWeight = -1,
+                        .TwistAxis = -1, .TwistAngle = -1, .DeactEventId = -1, .DeactPayload = -1,
+                        .AssignFloatPairs = -1, .AssignIntPairs = -1,
+                        .LookAtBones = -1, .LookAtBoneStride = -1, .LookAtIndex = -1,
+                        .LookAtUpAxis = -1, .LookAtLimitAngle = -1, .LookAtOnGain = -1, .LookAtOffGain = -1,
+                        .GraphRoot = -1, .GraphData = -1, .GraphDataInitial = -1, .GraphDataStrings = -1,
                         .StateMachineStates = -1, .TransitionStride = -1}
                     Dim fmt = Packfile.Header.PackfileFormat
                     Logger.LogLazy(Function() $"[HKB-LAYOUT] Formato '{fmt}' sin layout hkb* medido: los campos numéricos de hkbClipGenerator, los states de hkbStateMachine y las transiciones se devuelven vacíos (antes se leían con offsets de Fallout 4 = basura).")
@@ -270,27 +349,33 @@ Public Partial Class HkxObjectGraph_Class
         }
     End Function
 
-    ''' <summary>Resuelve el "target string" secundario de un generador (hkbClipGenerator::m_animationName,
-    ''' hkbBehaviorReferenceGenerator::m_behaviorName, BGSGamebryoSequenceGenerator::m_pSequenceName) de forma
-    ''' INDEPENDIENTE de la versión de Havok. Fallout 4 (hk_2014 con miembros extra) y Skyrim SE (hk_2014 más
-    ''' compacto) ubican ese string en offsets DISTINTOS (clip: FO4 +0x90 / SSE +0x48; behRef: FO4 +0x88 / SSE
-    ''' +0x48) y el packfile NO los distingue (ambos son 2014.1.0). Estos nodos tienen EXACTAMENTE dos hkStringPtr:
-    ''' m_name (@+0x38, base hkbNode, estable en ambas versiones) y el target; el resto de miembros son refs
-    ''' (global-fixups), no strings locales. Por eso el target = el único string apuntado por un LOCAL fixup del
-    ''' objeto cuyo source-offset ≠ +0x38. Se prueba primero el offset FO4 validado (para no alterar en NADA la
-    ''' resolución de Fallout 4) y, si está vacío, se cae al escaneo de fixups (SSE u otras versiones).</summary>
-    Public Function ResolveGeneratorTargetString(source As HkxVirtualObjectGraph_Class, fo4Offset As Integer) As String
+    ''' <summary>Resuelve el string secundario de un generador (hkbClipGenerator::m_animationName,
+    ''' hkbBehaviorReferenceGenerator::m_behaviorName, BGSGamebryoSequenceGenerator).
+    ''' <para>DATA-DRIVEN: el offset viene MEDIDO por formato desde <see cref="HkbLayout"/>
+    ''' (clip FO4 +0x90 / SSE +0x48 ; behRef FO4 +0x88 / SSE +0x48). El barrido de fixups que habia
+    ''' antes ("el unico string que no es m_name@+0x38") era un HEURISTICO: quedaba a merced del
+    ''' ORDEN de los fixups si un nodo tuviera mas de un string. Medido sobre el corpus vanilla
+    ''' completo (13.713 hkbClipGenerator + 220 hkbBehaviorReferenceGenerator de los DOS juegos):
+    ''' 0 nodos ambiguos y 0 diferencias contra el offset medido — o sea que el heuristico nunca
+    ''' llego a equivocarse, pero era una bomba de tiempo. Ahora solo se usa si el formato NO tiene
+    ''' layout medido, y en ese caso se LOGUEA.</para></summary>
+    Public Function ResolveGeneratorTargetString(source As HkxVirtualObjectGraph_Class, measuredOffset As Integer) As String
         If IsNothing(source) Then Return ""
         Dim rel = source.RelativeOffset
-        ' Camino FO4 validado: string en el offset fijo del layout FO4. Si hay algo ahí, ganó (FO4 intacto).
-        Dim fo4 = ResolveLocalString(rel + fo4Offset)
-        If Not String.IsNullOrEmpty(fo4) Then Return fo4
-        ' Otra versión de layout: el target es el string local-fixup que NO es m_name(+0x38).
+        If measuredOffset >= 0 Then
+            ' Camino unico cuando el formato TIENE layout medido: sin heuristica, sin ambiguedad.
+            Return ResolveLocalString(rel + measuredOffset)
+        End If
+        ' Formato sin layout medido: ultimo recurso por barrido de fixups, AVISANDO.
         Dim nameSrc = rel + &H38
         For Each lf In GetLocalFixupsInRange(rel, source.Size)
             If lf.SourceRelativeOffset = nameSrc Then Continue For
             Dim s = ReadNullTerminatedString(lf.DestinationRelativeOffset)
-            If Not String.IsNullOrEmpty(s) AndAlso IsPrintableString(s) Then Return s
+            If Not String.IsNullOrEmpty(s) AndAlso IsPrintableString(s) Then
+                Dim cls = source.ClassName
+                Logger.LogLazy(Function() $"[HKB-LAYOUT] '{cls}': sin offset medido para este formato, string resuelto por BARRIDO de fixups (heuristico). Medir la clase.")
+                Return s
+            End If
         Next
         Return ""
     End Function
@@ -513,13 +598,25 @@ Public Partial Class HkxObjectGraph_Class
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 Dim e = h.DataRelativeOffset + (i * &H28)
+                ' m_bitIndex es int8@+0x20 y m_bindingType int8@+0x21 — leerlos como UN int32 daba
+                ' 255 (0xFF) o 511 (0xFF|0x01<<8) en vez de -1. MEDIDO sobre 13.580 bindings de los dos
+                ' juegos: el byte@+0x21 sólo vale 0 ó 1, y los binding con VariableIndex fuera del rango
+                ' de VariableNames son SIEMPRE tipo 1 (5/5 en FO4) — no es basura: el tipo 1 indexa las
+                ' PROPERTIES del character, otro espacio de nombres. Los tipo 0 están 100% en rango
+                ' (4074 FO4 + 7781 SSE). Detectado por ValueProbe/BindProbe, 2026-07-25.
                 result.Add(New HkbVariableBinding_Class With {
                     .MemberPath = ResolveLocalString(e + 0),
                     .VariableIndex = ReadInt32(e + &H1C),
-                    .BitIndex = ReadInt32(e + &H20)})
+                    .BitIndex = ToSByteValue(ReadByte(e + &H20)),
+                    .BindingType = CInt(ReadByte(e + &H21))})
             Next
         End If
         Return result
+    End Function
+
+    ' int8 con signo desde un byte crudo (CSByte revienta con >127 bajo checked).
+    Private Shared Function ToSByteValue(b As Byte) As Integer
+        Return If(b > 127, CInt(b) - 256, CInt(b))
     End Function
 
     ''' <summary>hkbExpressionDataArray → expresiones {expression, assignmentVariableIndex, assignmentEventIndex}.
@@ -564,11 +661,15 @@ Public Partial Class HkxObjectGraph_Class
         Return result
     End Function
 
-    ''' <summary>hkbBoneWeightArray → pesos por hueso (float[])@+0x10 (máscaras de cuerpo parcial).</summary>
+    ''' <summary>hkbBoneWeightArray → pesos por hueso (float[]) @+0x30 (máscaras de cuerpo parcial).
+    ''' ⚠ Estaba en +0x10 y devolvía SIEMPRE lista vacía en los dos juegos: en +0x10 no hay fixup en
+    ''' NINGUNA instancia (0/1304 SSE, 0/621 FO4) y el array vive en +0x30 (1014/1304 y 348/621 = las
+    ''' instancias con array no vacío). Mismo offset que hkbBoneIndexArray, que ya usaba +0x30.
+    ''' Detectado por la auditoría estructural de fixups (AuditProbe), 2026-07-25.</summary>
     Public Function ParseBoneWeightArray(source As HkxVirtualObjectGraph_Class) As List(Of Single)
         Dim result As New List(Of Single)
         If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBoneWeightArray", StringComparison.OrdinalIgnoreCase) Then Return result
-        Dim h = ReadArrayHeader(source.RelativeOffset + &H10)
+        Dim h = ReadArrayHeader(source.RelativeOffset + &H30)
         If h.Count > 0 AndAlso h.DataRelativeOffset >= 0 Then
             For i = 0 To h.Count - 1
                 result.Add(ReadSingle(h.DataRelativeOffset + (i * 4)))
@@ -640,6 +741,506 @@ Public Partial Class HkxObjectGraph_Class
 
     ''' <summary>Cualquier hkb*/BS* modifier → nombre + clases de sus objetos referenciados
     ''' (bone arrays, driver-info, sub-modifiers…). Sirve para IK (Foot/Hand), twist, ragdoll-controls, etc.</summary>
+    ''' <summary>hkbBlendingTransitionEffect: el efecto de blend de una transicion (nombre + duracion).
+    ''' <para>m_duration MEDIDO POR VALOR en los dos juegos, usando instancias cuyo NOMBRE codifica la
+    ''' duracion: SSE +0x50 ('0.5secondBlend'=0.5, '1secondBlend'=1, '2secondBlend'=2 - 12 instancias);
+    ''' FO4 +0xA8 ('blend_0.25s'=0.25, 'blend_0.50s'=0.5, 'blend_0.2s'=0.2, '4Seconds'=4 - 8 instancias).
+    ''' m_toGeneratorStartTimeFraction es el float inmediatamente posterior (mismo orden en ambos).</para></summary>
+    Public Function ParseBlendingTransitionEffect(source As HkxVirtualObjectGraph_Class) As HkbBlendingTransitionEffectGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBlendingTransitionEffect", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim d = HkbLayout.TransitionDuration
+        Return New HkbBlendingTransitionEffectGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .Duration = ReadSingleAt(rel, d),
+            .ToGeneratorStartTimeFraction = ReadSingleAt(rel, If(d < 0, -1, d + 4))
+        }
+    End Function
+
+    ''' <summary>BGSGamebryoSequenceGenerator: reproduce una secuencia Gamebryo (NiControllerSequence).
+    ''' NOTA: el miembro se llamaba 'pSequenceName' en mi doc previa — ese nombre NO existe en el pool de
+    ''' reflexion del binario; el nombre real del campo no esta confirmado, asi que la propiedad se llama
+    ''' SequenceName por su contenido, no por el nombre Havok
+    ''' en vez de un clip Havok. El nombre de la secuencia vive en el MISMO offset que
+    ''' hkbBehaviorReferenceGenerator::m_behaviorName (FO4 +0x88 / SSE +0x48) y el resto del bloque es
+    ''' RELATIVO a el, identico en ambos juegos: +8 = m_eBlendModeFunction, +0xC = m_fPercent
+    ''' (medido: vale 1.0 en 603/603 instancias SSE y 875/875 FO4).</summary>
+    Public Function ParseGamebryoSequenceGenerator(source As HkxVirtualObjectGraph_Class) As HkbGamebryoSequenceGeneratorGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BGSGamebryoSequenceGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim b = HkbLayout.BehaviorRefName
+        Return New HkbGamebryoSequenceGeneratorGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .SequenceName = ResolveGeneratorTargetString(source, b),
+            .BlendModeFunction = If(b < 0, 0, ReadInt32(rel + b + 8)),
+            .Percent = ReadSingleAt(rel, If(b < 0, -1, b + &HC))
+        }
+    End Function
+
+    ' ===================== Ola 4: el resto del grafo (2026-07-25) =====================
+    ' Estas clases quedaban SIN parseo tipado (medido: 9,1% de los objetos en SSE / 12,4% en FO4).
+    ' DISENO: los generadores "wrapper" resuelven su(s) hijo(s) por la CLASE del objeto apuntado por
+    ' el global-fixup, NO por offset. Es determinista (la unica ref a clase-generador de estos nodos
+    ' ES el hijo) y no necesita una constante por juego — los offsets del array de hijos SI difieren
+    ' (ej. hkbManualSelectorGenerator: SSE header@+0x48 -> datos@+0x70 ; FO4 datos@+0xF0).
+
+    ''' <summary>hkbExpressionCondition: la condicion de una transicion, como texto.
+    ''' m_expression@+0x10, VERIFICADO identico en los dos juegos ("isInFurniture == 0" en SSE,
+    ''' "iSyncJumpState!=3" en FO4).</summary>
+    Public Function ParseExpressionCondition(source As HkxVirtualObjectGraph_Class) As String
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbExpressionCondition", StringComparison.OrdinalIgnoreCase) Then Return ""
+        Return ResolveLocalString(source.RelativeOffset + &H10)
+    End Function
+
+    ''' <summary>hkbBehaviorGraph: la raiz de un archivo de behavior. Nombre + generador raiz + data.
+    ''' Ambas refs se resuelven por CLASE del destino (hay exactamente una de cada), asi que vale para
+    ''' los dos juegos aunque los offsets difieran (root/data: SSE +0x80/+0x88, FO4 +0xC0/+0xC8).</summary>
+    Public Function ParseBehaviorGraph(source As HkxVirtualObjectGraph_Class) As HkbBehaviorGraphGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBehaviorGraph", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim result As New HkbBehaviorGraphGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(source.RelativeOffset + &H38)
+        }
+        ' DATA-DRIVEN: offsets medidos (SSE +0x80/+0x88, FO4 +0xC0/+0xC8). El class-scan que habia
+        ' antes solo se usa si el formato no tiene layout, y avisa.
+        If HkbLayout.GraphRoot >= 0 Then
+            result.RootGeneratorObject = ResolveGlobalObject(source.RelativeOffset + HkbLayout.GraphRoot)
+            result.DataObject = ResolveGlobalObject(source.RelativeOffset + HkbLayout.GraphData)
+        Else
+            For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
+                Dim tgt = GetObject(gf.TargetRelativeOffset)
+                If tgt Is Nothing Then Continue For
+                If tgt.ClassName.Equals("hkbBehaviorGraphData", StringComparison.OrdinalIgnoreCase) Then
+                    result.DataObject = tgt
+                ElseIf result.RootGeneratorObject Is Nothing AndAlso IsGeneratorClass(tgt.ClassName) Then
+                    result.RootGeneratorObject = tgt
+                End If
+            Next
+        End If
+        result.RootGeneratorSummary = DescribeGenerator(result.RootGeneratorObject)
+        Return result
+    End Function
+
+    ''' <summary>hkbBehaviorGraphData: los datos del grafo — string-data (eventos/variables) y los
+    ''' valores INICIALES de las variables. Ambos por CLASE del destino: en SSE cuelgan de +0x70/+0x78
+    ''' y en FO4 de +0x60/+0x68 (el orden de miembros no coincide entre versiones).</summary>
+    Public Function ParseBehaviorGraphData(source As HkxVirtualObjectGraph_Class) As HkbBehaviorGraphDataGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBehaviorGraphData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim result As New HkbBehaviorGraphDataGraph_Class With {.SourceObject = source}
+        ' DATA-DRIVEN: offsets medidos (SSE +0x70/+0x78, FO4 +0x60/+0x68 — ojo, el ORDEN de miembros
+        ' difiere entre juegos, no es un delta constante).
+        If HkbLayout.GraphDataStrings >= 0 Then
+            result.StringData = ParseBehaviorGraphStringData(ResolveGlobalObject(source.RelativeOffset + HkbLayout.GraphDataStrings))
+            result.InitialValues = ParseVariableValueSet(ResolveGlobalObject(source.RelativeOffset + HkbLayout.GraphDataInitial))
+        Else
+            For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
+                Dim tgt = GetObject(gf.TargetRelativeOffset)
+                If tgt Is Nothing Then Continue For
+                If tgt.ClassName.Equals("hkbBehaviorGraphStringData", StringComparison.OrdinalIgnoreCase) Then
+                    result.StringData = ParseBehaviorGraphStringData(tgt)
+                ElseIf tgt.ClassName.Equals("hkbVariableValueSet", StringComparison.OrdinalIgnoreCase) Then
+                    result.InitialValues = ParseVariableValueSet(tgt)
+                End If
+            Next
+        End If
+        Return result
+    End Function
+
+    ''' <summary>hkbBehaviorReferenceGenerator: un nodo que delega en OTRO archivo de behavior.
+    ''' m_behaviorName sale del layout medido (FO4 +0x88 / SSE +0x48).</summary>
+    Public Function ParseBehaviorReferenceGenerator(source As HkxVirtualObjectGraph_Class) As HkbBehaviorReferenceGeneratorGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbBehaviorReferenceGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Return New HkbBehaviorReferenceGeneratorGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(source.RelativeOffset + &H38),
+            .BehaviorName = ResolveGeneratorTargetString(source, HkbLayout.BehaviorRefName)
+        }
+    End Function
+
+    ''' <summary>Generadores WRAPPER: envuelven a uno o varios generadores hijos y eligen/etiquetan.
+    ''' Cubre hkbManualSelectorGenerator (elige uno de N por indice/variable),
+    ''' BSSynchronizedClipGenerator (sincroniza un clip con otro actor),
+    ''' BSiStateTaggingGenerator y DynamicAnimationTaggingGenerator (etiquetan el estado del hijo).
+    ''' Los hijos se resuelven por CLASE del destino, sin offsets por juego.</summary>
+    Public Function ParseWrapperGenerator(source As HkxVirtualObjectGraph_Class) As HkbWrapperGeneratorGraph_Class
+        If IsNothing(source) Then Return Nothing
+        Dim wrappers As String() = {"hkbManualSelectorGenerator", "BSSynchronizedClipGenerator",
+                                                "BSiStateTaggingGenerator", "DynamicAnimationTaggingGenerator",
+                                                "hkbModifierGenerator"}
+        If Not wrappers.Any(Function(w) w.Equals(source.ClassName, StringComparison.OrdinalIgnoreCase)) Then Return Nothing
+        Dim result As New HkbWrapperGeneratorGraph_Class With {
+            .SourceObject = source,
+            .ClassName = source.ClassName,
+            .Name = ResolveLocalString(source.RelativeOffset + &H38)
+        }
+        For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
+            Dim tgt = GetObject(gf.TargetRelativeOffset)
+            If tgt Is Nothing OrElse Not IsGeneratorClass(tgt.ClassName) Then Continue For
+            result.ChildObjects.Add(tgt)
+            result.ChildSummaries.Add(DescribeGenerator(tgt))
+        Next
+        Return result
+    End Function
+
+    ''' <summary>hkbModifierGenerator: aplica un modifier a un generador. m_modifier y m_generator
+    ''' MEDIDOS: SSE +0x48/+0x50, FO4 +0x88/+0x90 (1875 y 1747 instancias).</summary>
+    Public Function ParseModifierGenerator(source As HkxVirtualObjectGraph_Class) As HkbModifierGeneratorGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbModifierGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Return New HkbModifierGeneratorGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .ModifierObject = If(L.ModGenModifier < 0, Nothing, ResolveGlobalObject(rel + L.ModGenModifier)),
+            .GeneratorObject = If(L.ModGenGenerator < 0, Nothing, ResolveGlobalObject(rel + L.ModGenGenerator))
+        }
+    End Function
+
+    ''' <summary>hkbModifierList: lista ordenada de modifiers. Array MEDIDO: SSE +0x50 / FO4 +0x58.</summary>
+    Public Function ParseModifierListTyped(source As HkxVirtualObjectGraph_Class) As HkbModifierListTypedGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbModifierList", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim result As New HkbModifierListTypedGraph_Class With {
+            .SourceObject = source, .Name = ResolveLocalString(source.RelativeOffset + &H38)}
+        If HkbLayout.ModifierListArray >= 0 Then
+            result.Modifiers.AddRange(ReadObjectReferenceArray(source.RelativeOffset + HkbLayout.ModifierListArray))
+        End If
+        Return result
+    End Function
+
+    ''' <summary>hkbManualSelectorGenerator: elige UNO de N generadores. Array MEDIDO: SSE +0x48 / FO4 +0x88.
+    ''' Devuelve los generadores EN ORDEN (el indice seleccionado es relativo a este array).</summary>
+    Public Function ParseManualSelectorGenerator(source As HkxVirtualObjectGraph_Class) As HkbManualSelectorGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbManualSelectorGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim result As New HkbManualSelectorGraph_Class With {
+            .SourceObject = source, .Name = ResolveLocalString(source.RelativeOffset + &H38)}
+        If HkbLayout.ManualSelectorArray >= 0 Then
+            result.Generators.AddRange(ReadObjectReferenceArray(source.RelativeOffset + HkbLayout.ManualSelectorArray))
+        End If
+        Return result
+    End Function
+
+    ''' <summary>Nodos que envuelven a UN solo hijo por puntero, con offset medido por clase y juego:
+    ''' hkbEvaluateExpressionModifier -> hkbExpressionDataArray (SSE +0x50 / FO4 +0x58, 449 y 91 = 100%),
+    ''' hkbEventDrivenModifier -> el modifier disparado (SSE +0x50 / FO4 +0x58),
+    ''' BSiStateTaggingGenerator -> el generador etiquetado (SSE +0x50 / FO4 +0x90),
+    ''' BSSynchronizedClipGenerator -> el hkbClipGenerator sincronizado (SSE +0x50, 531/531).</summary>
+    Public Function ParseSingleChildNode(source As HkxVirtualObjectGraph_Class) As HkbSingleChildGraph_Class
+        If IsNothing(source) Then Return Nothing
+        Dim off As Integer = -1
+        Dim L = HkbLayout
+        If source.ClassName.Equals("hkbEvaluateExpressionModifier", StringComparison.OrdinalIgnoreCase) Then
+            off = L.EvalExprData
+        ElseIf source.ClassName.Equals("hkbEventDrivenModifier", StringComparison.OrdinalIgnoreCase) Then
+            off = L.EventDrivenModifier
+        ElseIf source.ClassName.Equals("BSiStateTaggingGenerator", StringComparison.OrdinalIgnoreCase) Then
+            off = L.StateTagGenerator
+        ElseIf source.ClassName.Equals("BSSynchronizedClipGenerator", StringComparison.OrdinalIgnoreCase) Then
+            off = L.SyncClipGenerator
+        ElseIf source.ClassName.Equals("DynamicAnimationTaggingGenerator", StringComparison.OrdinalIgnoreCase) Then
+            off = L.DynTagGenerator
+        Else
+            Return Nothing
+        End If
+        Return New HkbSingleChildGraph_Class With {
+            .SourceObject = source,
+            .ClassName = source.ClassName,
+            .Name = ResolveLocalString(source.RelativeOffset + &H38),
+            .ChildObject = If(off < 0, Nothing, ResolveGlobalObject(source.RelativeOffset + off))
+        }
+    End Function
+
+    ''' <summary>BSIsActiveModifier: activa/desactiva por hasta 5 flags. Enable MEDIDO SSE +0x48 / FO4 +0x50;
+    ''' los flags son BYTES consecutivos desde SSE +0x50 / FO4 +0x58 (valen 0 o 1 — invariante testeada).</summary>
+    Public Function ParseIsActiveModifier(source As HkxVirtualObjectGraph_Class) As HkbIsActiveModifierGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSIsActiveModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Dim r As New HkbIsActiveModifierGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .Enable = (L.ModEnable >= 0 AndAlso ReadByte(rel + L.ModEnable) <> 0)}
+        If L.IsActiveFlags >= 0 Then
+            For i = 0 To 9
+                r.ActiveFlags.Add(CInt(ReadByte(rel + L.IsActiveFlags + i)))
+            Next
+        End If
+        Return r
+    End Function
+
+    ''' <summary>BSCyclicBlendTransitionGenerator: mezcla ciclica sobre un blender. MEDIDO:
+    ''' m_pBlenderGenerator SSE +0x50 / FO4 +0x90 (153/153 y 77/77); los eventos van en bloques de
+    ''' 0x10 desde SSE +0x58 (2) / FO4 +0x98 (4); el parametro de blend SSE +0x7C / FO4 +0xDC.</summary>
+    Public Function ParseCyclicBlendTransitionGenerator(source As HkxVirtualObjectGraph_Class) As HkbCyclicBlendGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSCyclicBlendTransitionGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Dim r As New HkbCyclicBlendGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .BlenderGeneratorObject = If(L.CyclicBlender < 0, Nothing, ResolveGlobalObject(rel + L.CyclicBlender)),
+            .BlendParameter = ReadSingleAt(rel, L.CyclicBlendParam)}
+        If L.CyclicEvents >= 0 Then
+            For i = 0 To L.CyclicEventCount - 1
+                r.EventIds.Add(ReadInt32(rel + L.CyclicEvents + i * &H10))
+            Next
+        End If
+        Return r
+    End Function
+
+    ''' <summary>BSBoneSwitchGenerator: reparte el cuerpo entre generadores por peso de hueso.
+    ''' MEDIDO: pDefaultGenerator SSE +0x50 / FO4 +0x90 ; array ChildrenA SSE +0x58 / FO4 +0x98.
+    ''' (Ambos nombres CONFIRMADOS en el pool de reflexion del binario.)</summary>
+    Public Function ParseBoneSwitchGenerator(source As HkxVirtualObjectGraph_Class) As HkbBoneSwitchGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSBoneSwitchGenerator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Dim r As New HkbBoneSwitchGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .DefaultGeneratorObject = If(L.BoneSwitchDefault < 0, Nothing, ResolveGlobalObject(rel + L.BoneSwitchDefault))}
+        If L.BoneSwitchChildren >= 0 Then r.BoneDatas.AddRange(ReadObjectReferenceArray(rel + L.BoneSwitchChildren))
+        Return r
+    End Function
+
+    ''' <summary>BSBoneSwitchGeneratorBoneData: un generador + su mascara de pesos de hueso.
+    ''' m_pGenerator@+0x30 y m_spBoneWeight@+0x38 — MEDIDOS IDENTICOS en los dos juegos
+    ''' (137/137 SSE y 27/27 FO4 tienen el hkbBoneWeightArray en +0x38).</summary>
+    Public Function ParseBoneSwitchBoneData(source As HkxVirtualObjectGraph_Class) As HkbBoneSwitchBoneDataGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSBoneSwitchGeneratorBoneData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Return New HkbBoneSwitchBoneDataGraph_Class With {
+            .SourceObject = source,
+            .GeneratorObject = ResolveGlobalObject(rel + &H30),
+            .BoneWeightsObject = ResolveGlobalObject(rel + &H38)
+        }
+    End Function
+
+    ''' <summary>hkbLayer: una capa de hkbLayerGenerator = generador + peso + mascara de huesos.
+    ''' MEDIDO en FO4 (121 instancias): m_generator@+0x30, m_weight@+0x48. No aparece en el corpus SSE.</summary>
+    Public Function ParseLayer(source As HkxVirtualObjectGraph_Class) As HkbLayerGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbLayer", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Dim r As New HkbLayerGraph_Class With {
+            .SourceObject = source,
+            .GeneratorObject = If(L.LayerGenerator < 0, Nothing, ResolveGlobalObject(rel + L.LayerGenerator)),
+            .Weight = ReadSingleAt(rel, L.LayerWeight)}
+        For Each gf In GetGlobalFixupsInRange(rel, source.Size)
+            Dim t = GetObject(gf.TargetRelativeOffset)
+            If t IsNot Nothing AndAlso t.ClassName.Equals("hkbBoneWeightArray", StringComparison.OrdinalIgnoreCase) Then r.BoneWeightsObject = t
+        Next
+        Return r
+    End Function
+
+    ''' <summary>hkbTwistModifier: tuerce una cadena de huesos. Nombres CONFIRMADOS por los bindings
+    ''' del propio dato (memberPath = 'twistAngle', 'startBoneIndex', 'endBoneIndex').
+    ''' Offsets MEDIDOS: eje SSE +0x50/54/58 y FO4 +0x60/64/68 ; twistAngle SSE +0x60 / FO4 +0x70.</summary>
+    Public Function ParseTwistModifier(source As HkxVirtualObjectGraph_Class) As HkbTwistModifierGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("hkbTwistModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Return New HkbTwistModifierGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .Enable = (L.ModEnable >= 0 AndAlso ReadByte(rel + L.ModEnable) <> 0),
+            .AxisX = ReadSingleAt(rel, L.TwistAxis),
+            .AxisY = ReadSingleAt(rel, If(L.TwistAxis < 0, -1, L.TwistAxis + 4)),
+            .AxisZ = ReadSingleAt(rel, If(L.TwistAxis < 0, -1, L.TwistAxis + 8)),
+            .TwistAngle = ReadSingleAt(rel, L.TwistAngle)
+        }
+    End Function
+
+    ''' <summary>Nodos con UN evento + payload opcional. BSEventOnDeactivateModifier:
+    ''' enable SSE +0x48 / FO4 +0x50 ; eventId SSE +0x50 / FO4 +0x58 ; payload SSE +0x58 / FO4 +0x60.</summary>
+    Public Function ParseEventOnDeactivateModifier(source As HkxVirtualObjectGraph_Class) As HkbEventModifierGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSEventOnDeactivateModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Return New HkbEventModifierGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .Enable = (L.ModEnable >= 0 AndAlso ReadByte(rel + L.ModEnable) <> 0),
+            .EventId = If(L.DeactEventId < 0, -1, ReadInt32(rel + L.DeactEventId)),
+            .PayloadObject = If(L.DeactPayload < 0, Nothing, ResolveGlobalObject(rel + L.DeactPayload))
+        }
+    End Function
+
+    ''' <summary>hkbPoweredRagdollControlsModifier / hkbKeyframeBonesModifier: modifiers que apuntan a
+    ''' una mascara de huesos. Resueltos por CLASE del destino (hkbBoneIndexArray / hkbBoneWeightArray),
+    ''' que es 1 de cada uno y vale para ambos juegos sin constante.</summary>
+    Public Function ParseBoneMaskModifier(source As HkxVirtualObjectGraph_Class) As HkbBoneMaskModifierGraph_Class
+        If IsNothing(source) Then Return Nothing
+        If Not (source.ClassName.Equals("hkbPoweredRagdollControlsModifier", StringComparison.OrdinalIgnoreCase) OrElse
+                source.ClassName.Equals("hkbKeyframeBonesModifier", StringComparison.OrdinalIgnoreCase) OrElse
+                source.ClassName.Equals("hkbRigidBodyRagdollControlsModifier", StringComparison.OrdinalIgnoreCase)) Then Return Nothing
+        Dim r As New HkbBoneMaskModifierGraph_Class With {
+            .SourceObject = source,
+            .ClassName = source.ClassName,
+            .Name = ResolveLocalString(source.RelativeOffset + &H38),
+            .Enable = (HkbLayout.ModEnable >= 0 AndAlso ReadByte(source.RelativeOffset + HkbLayout.ModEnable) <> 0)}
+        For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
+            Dim t = GetObject(gf.TargetRelativeOffset)
+            If t Is Nothing Then Continue For
+            If t.ClassName.Equals("hkbBoneIndexArray", StringComparison.OrdinalIgnoreCase) Then r.BoneIndexObject = t
+            If t.ClassName.Equals("hkbBoneWeightArray", StringComparison.OrdinalIgnoreCase) Then r.BoneWeightObject = t
+        Next
+        Return r
+    End Function
+
+    ''' <summary>BSModifyOnceModifier: aplica un modifier al activarse y otro al desactivarse.
+    ''' Los dos hijos se resuelven por CLASE (son las unicas refs a *Modifier del nodo).</summary>
+    Public Function ParseModifyOnceModifier(source As HkxVirtualObjectGraph_Class) As HkbModifyOnceGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSModifyOnceModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim r As New HkbModifyOnceGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(source.RelativeOffset + &H38),
+            .Enable = (HkbLayout.ModEnable >= 0 AndAlso ReadByte(source.RelativeOffset + HkbLayout.ModEnable) <> 0)}
+        For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size).OrderBy(Function(x) x.SourceRelativeOffset)
+            Dim t = GetObject(gf.TargetRelativeOffset)
+            If t Is Nothing OrElse Not t.ClassName.EndsWith("Modifier", StringComparison.OrdinalIgnoreCase) Then Continue For
+            r.Modifiers.Add(t)
+        Next
+        Return r
+    End Function
+
+    ''' <summary>BSAssignVariablesModifier (FO4-only: 205 instancias, 0 en SSE): asigna valores a
+    ''' variables del grafo. Los NOMBRES salen del oraculo de bindings del propio dato
+    ''' (`enable`, `intVariable1..4`, `intValue1`, `floatVariable1..4`, `floatValue1..2`).
+    ''' <para>Estructura MEDIDA: enable@+0x50 y luego 4 pares (int32 indiceDeVariable, float32 valor)
+    ''' desde +0x58 con stride 8. La orientacion del par esta probada por VALOR: los flotantes reales
+    ''' (60, 60, 5, 75) caen SIEMPRE en el segundo miembro y el primero vale 0 — si fuese al reves, un
+    ''' "indice" de 60.0f seria basura. Hay un segundo bloque de pares en +0xF8 (enteros).</para>
+    ''' ⚠ La correspondencia exacta par-a-nombre (cual es floatVariable1 vs floatValue1) NO esta medida:
+    ''' por eso se exponen como lista indexada y no con los nombres Havok.</summary>
+    Public Function ParseAssignVariablesModifier(source As HkxVirtualObjectGraph_Class) As HkbAssignVariablesGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSAssignVariablesModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Dim r As New HkbAssignVariablesGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .Enable = (L.ModEnable >= 0 AndAlso ReadByte(rel + L.ModEnable) <> 0)}
+        If L.AssignFloatPairs >= 0 Then
+            For i = 0 To 3
+                r.FloatAssignments.Add(New HkbAssignPair_Class With {
+                    .VariableIndex = ReadInt32(rel + L.AssignFloatPairs + i * 8),
+                    .Value = ReadSingle(rel + L.AssignFloatPairs + i * 8 + 4)})
+            Next
+        End If
+        If L.AssignIntPairs >= 0 Then
+            For i = 0 To 3
+                r.IntAssignments.Add(New HkbAssignPair_Class With {
+                    .VariableIndex = ReadInt32(rel + L.AssignIntPairs + i * 8),
+                    .Value = CSng(ReadInt32(rel + L.AssignIntPairs + i * 8 + 4))})
+            Next
+        End If
+        Return r
+    End Function
+
+    ''' <summary>BSLookAtModifier: head-tracking, con un ARRAY de huesos. Nombres del oraculo de bindings
+    ''' (`bones:N/index|fwdAxisLS|upAxisLS|limitAngleDegrees|onGain|offGain|...`).
+    ''' <para>LOS DOS JUEGOS MEDIDOS, cada uno con su propio struct — no es solo otro offset:
+    ''' <list type="bullet">
+    ''' <item>SSE: array@+0x58, **stride 0x40**; dentro: index@+0x00, fwdAxis@+0x10, limitAngle@+0x20,
+    ''' onGain@+0x24, offGain@+0x28. Tiene UN solo eje.</item>
+    ''' <item>FO4: array@+0x270, **stride 0x210** (528B!); dentro: fwdAxis@+0x10, upAxis@+0x20,
+    ''' limitAngle@+0x34, onGain@+0x48, offGain@+0x4C. Tiene DOS ejes y el indice va empaquetado.</item>
+    ''' </list>
+    ''' Strides decididos por el invariante del EJE UNITARIO, no por tanteo: SSE 521/521 elementos con eje
+    ''' unitario e indice valido con 0x40 (0x50/0x60 caen a 29-39%); FO4 102/102 con 0x210 (0x200 y 0x220
+    ''' caen a 34-60%).</para></summary>
+    Public Function ParseLookAtModifier(source As HkxVirtualObjectGraph_Class) As HkbLookAtModifierGraph_Class
+        If IsNothing(source) OrElse Not source.ClassName.Equals("BSLookAtModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+        Dim rel = source.RelativeOffset
+        Dim L = HkbLayout
+        Dim r As New HkbLookAtModifierGraph_Class With {
+            .SourceObject = source,
+            .Name = ResolveLocalString(rel + &H38),
+            .Enable = (L.ModEnable >= 0 AndAlso ReadByte(rel + L.ModEnable) <> 0)}
+        If L.LookAtBones < 0 OrElse L.LookAtBoneStride <= 0 Then Return r
+        Dim h = ReadArrayHeader(rel + L.LookAtBones)
+        If h.Count <= 0 OrElse h.DataRelativeOffset < 0 Then Return r
+        For i = 0 To h.Count - 1
+            Dim b = h.DataRelativeOffset + i * L.LookAtBoneStride
+            Dim bone As New HkbLookAtBone_Class With {
+                .BoneIndex = If(L.LookAtIndex < 0, -1, ReadInt32(b + L.LookAtIndex)),
+                .FwdAxisX = ReadSingle(b + &H10), .FwdAxisY = ReadSingle(b + &H14), .FwdAxisZ = ReadSingle(b + &H18),
+                .LimitAngleDegrees = ReadSingle(b + L.LookAtLimitAngle),
+                .OnGain = ReadSingle(b + L.LookAtOnGain),
+                .OffGain = ReadSingle(b + L.LookAtOffGain)}
+            If L.LookAtUpAxis >= 0 Then
+                bone.UpAxisX = ReadSingle(b + L.LookAtUpAxis)
+                bone.UpAxisY = ReadSingle(b + L.LookAtUpAxis + 4)
+                bone.UpAxisZ = ReadSingle(b + L.LookAtUpAxis + 8)
+            End If
+            r.Bones.Add(bone)
+        Next
+        Return r
+    End Function
+
+    ''' <summary>Clases con parser de CAMPOS tipado (offsets medidos y validados). Cualquier otra clase
+    ''' sólo obtiene la vista PARCIAL de <see cref="ParseNode"/> (nombre + refs), que NO es un parseo de
+    ''' sus campos. Esta lista es la ÚNICA fuente de verdad de cobertura: las herramientas de auditoría
+    ''' deben consultarla en vez de mantener su propia tabla (una tabla a mano ya fue fuente de error).</summary>
+    Public Shared Function HasTypedFieldParser(className As String) As Boolean
+        If String.IsNullOrEmpty(className) Then Return False
+        Static typed As String() = {
+            "hkbCharacterStringData", "hkbBehaviorGraphStringData", "hkbProjectStringData",
+            "hkbClipGenerator", "hkbBlenderGenerator", "hkbBlenderGeneratorChild",
+            "hkbStateMachine", "hkbStateMachineStateInfo", "hkbStateMachineTransitionInfoArray",
+            "hkbClipTriggerArray", "hkbBoneIndexArray", "hkbVariableValueSet",
+            "hkbStateMachineEventPropertyArray", "hkbVariableBindingSet", "hkbExpressionDataArray",
+            "hkbStringEventPayload", "hkbMirroredSkeletonInfo", "hkbBoneWeightArray",
+            "hkbFootIkDriverInfo", "hkbHandIkDriverInfo", "hkbBlendingTransitionEffect",
+            "BGSGamebryoSequenceGenerator", "hkbBehaviorGraph", "hkbBehaviorGraphData",
+            "hkbBehaviorReferenceGenerator", "hkbExpressionCondition", "hkRootLevelContainer",
+            "hkbModifierGenerator", "hkbModifierList", "hkbManualSelectorGenerator",
+            "hkbEvaluateExpressionModifier", "hkbEventDrivenModifier", "BSiStateTaggingGenerator",
+            "BSSynchronizedClipGenerator", "BSIsActiveModifier", "BSCyclicBlendTransitionGenerator",
+            "BSBoneSwitchGenerator", "BSBoneSwitchGeneratorBoneData",
+            "DynamicAnimationTaggingGenerator", "hkbLayer", "hkbTwistModifier",
+            "BSEventOnDeactivateModifier", "hkbPoweredRagdollControlsModifier",
+            "hkbKeyframeBonesModifier", "hkbRigidBodyRagdollControlsModifier", "BSModifyOnceModifier",
+            "BSAssignVariablesModifier", "BSLookAtModifier"}
+        Return typed.Any(Function(t) t.Equals(className, StringComparison.OrdinalIgnoreCase))
+    End Function
+
+    ''' <summary>Vista PARCIAL de un nodo hkb/BS. NO es un parser de la clase: sirve para las que no
+    ''' tienen funcion propia (BSCyclicBlendTransitionGenerator, hkbPoseMatchingGenerator,
+    ''' BSBoneSwitchGenerator, hkbLayerGenerator, hkbReferencePoseGenerator y los ~20 *Modifier).
+    ''' <para>Devuelve HasTypedFields=False para esas clases. Extrae SOLO lo verificable sin su layout:
+    ''' m_name@+0x38 (base hkbNode — MEDIDO presente en el 100% de las instancias de todas las clases
+    ''' de nodo del corpus vanilla), los generadores hijos y los objetos referenciados, ambos por CLASE
+    ''' del fixup. NO inventa campos escalares: para eso hace falta medir la clase concreta.</para></summary>
+    Public Function ParseNode(source As HkxVirtualObjectGraph_Class) As HkbNodeGraph_Class
+        If IsNothing(source) Then Return Nothing
+        Dim result As New HkbNodeGraph_Class With {
+            .SourceObject = source,
+            .ClassName = source.ClassName,
+            .Name = ResolveLocalString(source.RelativeOffset + &H38),
+            .HasTypedFields = HasTypedFieldParser(source.ClassName)
+        }
+        For Each gf In GetGlobalFixupsInRange(source.RelativeOffset, source.Size)
+            Dim tgt = GetObject(gf.TargetRelativeOffset)
+            If tgt Is Nothing Then Continue For
+            If tgt.ClassName.Equals("hkbVariableBindingSet", StringComparison.OrdinalIgnoreCase) Then
+                result.Bindings.AddRange(ParseVariableBindingSet(tgt))
+            ElseIf IsGeneratorClass(tgt.ClassName) Then
+                result.ChildGenerators.Add(tgt)
+            Else
+                result.ReferencedObjects.Add(tgt)
+            End If
+        Next
+        Return result
+    End Function
+
+    ''' <summary>Expone IsGeneratorClass para herramientas de auditoria.</summary>
+    Public Function IsGeneratorClassPublic(className As String) As Boolean
+        Return IsGeneratorClass(className)
+    End Function
+
     Public Function ParseModifier(source As HkxVirtualObjectGraph_Class) As HkbModifierGraph_Class
         If IsNothing(source) OrElse source.ClassName.IndexOf("Modifier", StringComparison.OrdinalIgnoreCase) < 0 Then Return Nothing
         Dim result As New HkbModifierGraph_Class With {
@@ -751,6 +1352,193 @@ Public Class HkbTransitionGraph_Class
     Public Property ToStateId As Integer   ' StateId destino dentro del state-machine
 End Class
 
+Public Class HkbBlendingTransitionEffectGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property Duration As Single                      ' segundos de blend
+    Public Property ToGeneratorStartTimeFraction As Single
+End Class
+
+Public Class HkbGamebryoSequenceGeneratorGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property SequenceName As String                  ' NiControllerSequence del NIF
+    Public Property BlendModeFunction As Integer
+    Public Property Percent As Single
+End Class
+
+Public Class HkbBehaviorGraphGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property RootGeneratorObject As HkxVirtualObjectGraph_Class
+    Public Property RootGeneratorSummary As String
+    Public Property DataObject As HkxVirtualObjectGraph_Class
+End Class
+
+Public Class HkbBehaviorGraphDataGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property StringData As HkbBehaviorGraphStringDataGraph_Class
+    Public Property InitialValues As HkbVariableValueSetGraph_Class
+End Class
+
+Public Class HkbBehaviorReferenceGeneratorGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property BehaviorName As String   ' otro archivo Behaviors\X.hkx
+End Class
+
+''' <summary>Generador que envuelve a otros (selector manual, synchronized clip, i-state tagging...).</summary>
+Public Class HkbWrapperGeneratorGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property ClassName As String
+    Public Property Name As String
+    Public ReadOnly Property ChildObjects As New List(Of HkxVirtualObjectGraph_Class)
+    Public ReadOnly Property ChildSummaries As New List(Of String)
+End Class
+
+''' <summary>Vista generica de un nodo del grafo (cualquier clase).</summary>
+Public Class HkbNodeGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property ClassName As String
+    Public Property Name As String
+    ''' <summary>False = de esta clase SÓLO se conocen el nombre y las referencias; sus campos
+    ''' propios NO están identificados. No contarla como "parseada".</summary>
+    Public Property HasTypedFields As Boolean
+    Public ReadOnly Property ChildGenerators As New List(Of HkxVirtualObjectGraph_Class)
+    Public ReadOnly Property ReferencedObjects As New List(Of HkxVirtualObjectGraph_Class)
+    Public ReadOnly Property Bindings As New List(Of HkbVariableBinding_Class)
+End Class
+
+Public Class HkbModifierGeneratorGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property ModifierObject As HkxVirtualObjectGraph_Class
+    Public Property GeneratorObject As HkxVirtualObjectGraph_Class
+End Class
+
+Public Class HkbModifierListTypedGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public ReadOnly Property Modifiers As New List(Of HkxVirtualObjectGraph_Class)
+End Class
+
+Public Class HkbManualSelectorGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public ReadOnly Property Generators As New List(Of HkxVirtualObjectGraph_Class)
+End Class
+
+Public Class HkbSingleChildGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property ClassName As String
+    Public Property Name As String
+    Public Property ChildObject As HkxVirtualObjectGraph_Class
+End Class
+
+Public Class HkbIsActiveModifierGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property Enable As Boolean
+    ''' <summary>Flags crudos (0/1) leidos como bytes consecutivos. No se les pone nombre
+    ''' porque su semantica individual no esta medida.</summary>
+    Public ReadOnly Property ActiveFlags As New List(Of Integer)
+End Class
+
+Public Class HkbCyclicBlendGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property BlenderGeneratorObject As HkxVirtualObjectGraph_Class
+    Public Property BlendParameter As Single
+    Public ReadOnly Property EventIds As New List(Of Integer)
+End Class
+
+Public Class HkbBoneSwitchGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property DefaultGeneratorObject As HkxVirtualObjectGraph_Class
+    Public ReadOnly Property BoneDatas As New List(Of HkxVirtualObjectGraph_Class)
+End Class
+
+Public Class HkbBoneSwitchBoneDataGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property GeneratorObject As HkxVirtualObjectGraph_Class
+    Public Property BoneWeightsObject As HkxVirtualObjectGraph_Class
+End Class
+
+Public Class HkbLayerGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property GeneratorObject As HkxVirtualObjectGraph_Class
+    Public Property Weight As Single
+    Public Property BoneWeightsObject As HkxVirtualObjectGraph_Class
+End Class
+
+Public Class HkbTwistModifierGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property Enable As Boolean
+    Public Property AxisX As Single
+    Public Property AxisY As Single
+    Public Property AxisZ As Single
+    Public Property TwistAngle As Single
+End Class
+
+Public Class HkbEventModifierGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property Enable As Boolean
+    Public Property EventId As Integer
+    Public Property PayloadObject As HkxVirtualObjectGraph_Class
+End Class
+
+Public Class HkbBoneMaskModifierGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property ClassName As String
+    Public Property Name As String
+    Public Property Enable As Boolean
+    Public Property BoneIndexObject As HkxVirtualObjectGraph_Class
+    Public Property BoneWeightObject As HkxVirtualObjectGraph_Class
+End Class
+
+Public Class HkbModifyOnceGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property Enable As Boolean
+    Public ReadOnly Property Modifiers As New List(Of HkxVirtualObjectGraph_Class)
+End Class
+
+Public Class HkbAssignPair_Class
+    Public Property VariableIndex As Integer
+    Public Property Value As Single
+End Class
+
+Public Class HkbAssignVariablesGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property Enable As Boolean
+    Public ReadOnly Property FloatAssignments As New List(Of HkbAssignPair_Class)
+    Public ReadOnly Property IntAssignments As New List(Of HkbAssignPair_Class)
+End Class
+
+Public Class HkbLookAtBone_Class
+    Public Property BoneIndex As Integer          ' -1 = no aislado en este formato
+    Public Property FwdAxisX As Single
+    Public Property FwdAxisY As Single
+    Public Property FwdAxisZ As Single
+    Public Property UpAxisX As Single
+    Public Property UpAxisY As Single
+    Public Property UpAxisZ As Single
+    Public Property LimitAngleDegrees As Single
+    Public Property OnGain As Single
+    Public Property OffGain As Single
+End Class
+
+Public Class HkbLookAtModifierGraph_Class
+    Public Property SourceObject As HkxVirtualObjectGraph_Class
+    Public Property Name As String
+    Public Property Enable As Boolean
+    Public ReadOnly Property Bones As New List(Of HkbLookAtBone_Class)
+End Class
+
 Public Class HkbModifierGraph_Class
     Public Property SourceObject As HkxVirtualObjectGraph_Class
     Public Property ClassName As String
@@ -790,8 +1578,15 @@ End Class
 
 Public Class HkbVariableBinding_Class
     Public Property MemberPath As String   ' miembro del nodo al que se liga (ej. "bIsActive0")
+    ''' <summary>Índice en <c>hkbBehaviorGraphStringData.VariableNames</c> SÓLO si
+    ''' <see cref="BindingType"/> = 0. Con BindingType = 1 indexa las PROPERTIES del character
+    ''' (otro espacio de nombres) y resolverlo contra VariableNames da un nombre equivocado
+    ''' o fuera de rango.</summary>
     Public Property VariableIndex As Integer
-    Public Property BitIndex As Integer
+    Public Property BitIndex As Integer     ' int8; -1 = el binding no es de un bit
+    ''' <summary>hkbVariableBindingSet::Binding::m_bindingType — 0 = variable del grafo, 1 = property
+    ''' del character. Medido: sólo toma 0 ó 1 en 13.580 bindings de FO4+SSE.</summary>
+    Public Property BindingType As Integer
 End Class
 
 Public Class HkbExpressionData_Class

@@ -162,8 +162,12 @@ Public Class ReadOnlyPropertyDescriptor
         End Get
     End Property
 
+    ' Reset BLOQUEADO, igual que Set. Antes CanResetValue/ResetValue delegaban en el inner, asi que el
+    ' comando `Reset` del PropertyGrid seguia siendo una via de ESCRITURA sobre un campo presentado como
+    ' no editable: bastaba con resetear la fila para pisar el valor autorado con el default (p.ej.
+    ' ResetSpecularColor lo lleva a blanco). Un campo read-only tiene que serlo por las dos vias.
     Public Overrides Function CanResetValue(component As Object) As Boolean
-        Return inner.CanResetValue(component)
+        Return False
     End Function
 
     Public Overrides Function GetValue(component As Object) As Object
@@ -171,7 +175,7 @@ Public Class ReadOnlyPropertyDescriptor
     End Function
 
     Public Overrides Sub ResetValue(component As Object)
-        inner.ResetValue(component)
+        ' Read-only: ignore resets from the grid.
     End Sub
 
     Public Overrides Sub SetValue(component As Object, value As Object)
@@ -534,6 +538,26 @@ Public Class FO4UnifiedMaterial_Class
         If IsBGEM() Then Return EffectiveLightingType.[Default]
         If EyeEnvironmentMapping Then Return EffectiveLightingType.Eye
         If EnvironmentMapping Then Return EffectiveLightingType.Envmap
+        ' ORDEN RESTAURADO: Glowmap ANTES que Hair. Yo lo habia invertido y estaba MAL.
+        ' Lo desmiente el propio motor. La funcion que esta rutina replica es el factory de material de
+        ' Fallout4.exe (FUN_142163BE0), y es una CASCADA DE PRIORIDAD sobre los flags de 64 bits que
+        ' toma de [property+0x30]. Desensamblada, el orden de los `test rax, MASK` es:
+        '     1. 0x20000          SLSF1 bit 17 = Eye_Environment_Mapping
+        '     2. 0x80             SLSF1 bit 7  = Environment_Mapping
+        '     3. 0x4000000000     SLSF2 bit 6  = Glow_Map
+        '     4. 0x400            SLSF1 bit 10 = Face
+        '     5. 0x200000         SLSF1 bit 21 = Skin_Tint
+        '     6. 0x40000          SLSF1 bit 18 = Hair
+        ' (mapeo de bits confirmado contra las enums generadas de NiflySharp.)
+        ' O sea Eye > Envmap > GLOWMAP > Face > SkinTint > HAIR: el orden que ya estaba.
+        ' Mi argumento habia sido que el pelo con Glowmap perdia el tint. Es cierto que lo pierde, pero
+        ' ES LO QUE HACE EL MOTOR: un material de pelo con Glow_Map se convierte en material Glowmap en
+        ' el factory y tampoco recibe la tecnica Hair. La coincidencia Hair+Glowmap toca 3 materiales
+        ' vanilla (medido sobre los 6616 del BA2) y todo el pelo de mods tipo KS Hairdos, y en los dos
+        ' casos el motor los trata como Glowmap.
+        ' LECCION: esta rutina declara replicar una funcion concreta del binario. Antes de tocar el
+        ' orden hay que ABRIR ESA FUNCION, no razonar desde las tecnicas del shader, que son otra cosa
+        ' (el enum de tecnica vive en el constructor de defines, 0x14223C360, y ahi HAIR es idx5).
         If Glowmap Then Return EffectiveLightingType.Glowmap
         If Facegen Then Return EffectiveLightingType.Face
         If SkinTint Then Return EffectiveLightingType.SkinTint
@@ -3055,6 +3079,45 @@ Public Class FO4UnifiedMaterial_Class
         g(NameOf(DetailMaskTexture)) = Gate(FieldApplies.BGSM, skyrimOnly:=True)
         g(NameOf(TintMaskTexture)) = Gate(FieldApplies.BGSM, skyrimOnly:=True)
 
+        ' --- Campos IGNORADOS POR EL MOTOR (gate por JUEGO, no por versión) ---
+        ' Este gate NO es de persistencia: el campo se serializa igual (está en el BGSM v2 y en el NIF).
+        ' Se deshabilita porque en FO4 editarlo NO produce ningún cambio, ni en el juego ni en el preview,
+        ' y dejarlo editable hacía creer lo contrario.
+        '
+        ' SpecularColor. MEDIDO en Fallout4.exe y en los shaders:
+        '   1) El motor SI lo carga y SI lo sube a una constante de shader. Offsets confirmados POR NOMBRE
+        '      leyendo el deserializador del .bgsm (0x14216794E), que empareja cada nombre de campo con su
+        '      store: `cSpecularColor` -> objeto+0xC (0x1421688C9 `lea rdx,[rdi+0xc]`), `fSpecularMult`
+        '      -> +0x18, `fSmoothness` -> +0x34, `fGrayscaleToPaletteScale` -> +0x68 (ancla de control).
+        '      La transferencia al material de runtime (0x142163BE0) mapea +0xC/0x10/0x14 -> material
+        '      +0x38/0x3c/0x40 y +0x18 -> material+0x8c, y BSLightingShader::SetupMaterial (0x142232EA0,
+        '      bloque 0x1422335B9) sube pow(color,2.2) * fSpecularMult a la constante cuyo indice sale de
+        '      byte[[0x3E5AEF0]+0x71].
+        '      CORRECCION: una version anterior de esta nota decia que el motor lo DESCARTABA al cargar y
+        '      que ese color era el emisivo. Es FALSO -- el emisivo es `cEmittanceColor` (objeto+0x1C..0x24,
+        '      +0x64 fEmittanceMult) y no va al material sino a la propiedad. La inferencia vieja salia de
+        '      los defaults del constructor 0x1421C5DC0, que NO espejan los defaults del BGSM (ese ctor
+        '      tambien pone rolloff/rimpower/backlight en 0 y el BGSM los tiene en 0.3/2.0/0).
+        '   2) Ningún pixel shader de FO4 lee un color especular de material. Barrido sobre la poblacion
+        '      COMPLETA de los cuatro bloques que consumen BGSM: b06 BSLighting 18/18 (la unica constante
+        '      de 3 componentes es cb1[1] = HairTint/paletteScale; cb2[11] aparece solo como .x y .y, que
+        '      son Smoothness y SpecularMult), b09 DFPrePass 470/470 (no usan cb1 ni una vez; su unico
+        '      color de material es cb2[1].xyz -> o4 = emisivo), b10 306 y b11 180. Total 974 PS.
+        '      El unico multiplicador de 3 componentes del specular en el forward es cb2[1] = color de LUZ.
+        '   3) CONFIRMADO IN-GAME por el usuario: SpecularColor amarillo en un BGSM de FO4 se dibuja blanco.
+        ' En SKYRIM SI SE USA, y por eso el gate es por juego y no un Browsable(False):
+        '   el specular acumulado se multiplica por cb1[4].xyz antes de sumarse a la salida
+        '   (`mad r1.xyz, r4.xyzx, cb1[4].xyzx, r1.xyzx`), y cb1[4].w es el exponente del highlight
+        '   (`log / mul cb1[4].w / exp` sobre dp3_sat(half,normal)) = Glossiness. O sea cb1[4] es
+        '   (SpecularColor.rgb, Glossiness) del BSLightingShaderProperty. Medido en los PS de lighting de
+        '   SkyrimSE; NO es el color de la luz, que alli es cb2[1].xyz / cb2[rN+22].xyz.
+        '   ALCANCE: medido sobre una MUESTRA de PS de SSE, no sobre su poblacion completa. Alcanza para
+        '   afirmar que SSE SI tiene camino de color especular por material; no para cuantificar en cuantas
+        '   tecnicas. Por eso el gate habilita en Skyrim en vez de deshabilitar en todos lados.
+        ' BGEM no entra: el BGEM no tiene el campo (solo SpecularTexture y el bool EffectPbrSpecular).
+        g(NameOf(SpecularColor)) = Gate(FieldApplies.BGSM,
+                                        enabledWhen:=Function(m) Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
+
         Return g
     End Function
 
@@ -3729,10 +3792,23 @@ Public Class FO4UnifiedMaterial_Class
             shad.SkinTintAlpha = Me.SkinTintAlpha
         End If
         shad.HasBacklight = Mat.BackLighting
-        ' Back es value-driven en el NIF FO4 (bool+value en el BGSM -> solo value en el NIF, como subsurface).
-        ' El CK gatea el power por el flag al hornear; simetrico con el rolloff en 3695. No-op sobre facegen
-        ' vanilla (back siempre flag-ON); solo cubre materiales de mod/editados con flag OFF y power>0.
-        shad.BacklightPower = If(Mat.BackLighting, Mat.BackLightPower, 0.0F)
+        ' GATE SOLO EN SKYRIM. La nota anterior decia "el CK gatea el power por el flag al hornear,
+        ' simetrico con el rolloff". Es FALSO y esta medido en los DOS binarios: en la transferencia
+        ' BGSM -> material, tanto Fallout4.exe (0x142163BE0) como CreationKit.exe (0x142BB7E40) tienen
+        ' EXACTAMENTE DOS compuertas booleanas, y ninguna es el backlight:
+        '     cmp byte [rbx+0xa8], 0   -> gatea fSubsurfaceLightingRolloff (+0xac)   [juego 0x142163ED1 / CK 0x142BB822E]
+        '     cmp byte [rbx+0x54], 1   -> bWetnessControl_ScreenSpaceReflections     [juego 0x142163FD3 / CK 0x142BB83C8]
+        ' fBackLightPower (+0xb4) y fRimPower (+0xb0) se copian con un `mov` pelado, sin consultar
+        ' bBackLighting (+0xa7). Los offsets salen POR NOMBRE del deserializador del .bgsm (juego
+        ' 0x14216794E, CK 0x142BBAE10 -- mismo layout de struct en los dos).
+        ' Alcance vanilla: 171 de los 6616 BGSM del BA2 tienen bBackLighting=False con power>0, y el motor
+        ' les aplica la transmision igual. 21 son de personaje: los cuerpos/manos SkinTint con power 0.05
+        ' y TODO el pelo vanilla con power 2.0. NINGUNO es Facegen -- los 12 materiales de cabeza con
+        ' Facegen=True tienen power 0, asi que el bake de la cara no cambia por esto en ningun sentido.
+        ' En SKYRIM el gate SI corresponde: alli HasBacklight es un flag REAL del NIF (la app lo lee de
+        ' shad.HasBacklight), mientras que en FO4 se sintetiza con `power > 0` al leer.
+        shad.BacklightPower = If(Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso Not Mat.BackLighting,
+                                 0.0F, Mat.BackLightPower)
         shad.HasSpecular = Mat.SpecularEnabled AndAlso Mat.SpecularMult <> 0.0F
         shad.SpecularColor = MaterialRgbToNifColor3(Mat.SpecularColor)
         shad.SpecularStrength = Mat.SpecularMult

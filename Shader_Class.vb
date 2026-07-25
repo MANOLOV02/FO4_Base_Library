@@ -406,9 +406,35 @@ float specFactor = 1.0;
 vec2 uv = vec2(0.0);
 vec3 albedo = vec3(0.0);
 vec3 emissive = vec3(0.0);
-vec3 backlightEmissive = vec3(0.0);
 
 vec4 baseMap = vec4(0.0);
+// Equivalente al r1 del motor = el diffuse COMPUESTO (con el overlay de FaceTint ya aplicado) y SIN
+// vColor. `baseMap` NO sirve para eso: es el t0 crudo, antes del overlay. En el motor r1 ES la cabeza
+// ya horneada por la pasada b12 FaceCustom -- la app parte esa textura en diffuse + overlay, asi que
+// el analogo fiel es el compuesto, no la mitad. Usarlo en subsurface y transmision evita que esos dos
+// terminos corran sobre piel SIN TINTAR mientras el resto de la iluminacion usa la tintada.
+//
+// LA LEY, medida sobre los 18 PS del forward (poblacion COMPLETA del bloque b06):
+// **los tres consumidores -- transmision, subsurface y el multiply del albedo -- leen SIEMPRE EL MISMO
+// REGISTRO r1. 18 de 18, sin excepcion.** Eso es lo que obliga a que `diffuseComposed` siga al albedo:
+// congelarlo en el sample (que es lo que hacia) dejaba subsurface y transmision corriendo sobre la
+// textura base mientras el difuso principal usaba la ya procesada.
+// QUE ES r1 depende de la tecnica, y NO siempre esta procesado -- en 11 de los 18 es el sample crudo de
+// t0 y ahi `diffuseComposed = diffRgb` ya era correcto. Los 7 donde importa:
+//   rec1499 (tecnica 4 FACE)      L70-72 : la curva `2a-a*a` escribe r1  -> ANTES de L146 y L285
+//   rec1500 (tecnica 5 SKIN_TINT) L70-73 : la curva `a*a + 2*a*tint*(1-a)` escribe r1 -> ANTES de L147 y L286
+//   los 5 con GRADIENT_REMAP (0x041,0x051,0x141,0x641,0x651): r1 = sample_l del LUT de paleta en t15,
+//     o sea un REEMPLAZO TOTAL, no una curva. En rec1504 (0x641): L68 el sample, L154 la transmision
+//     (`mul r7.yzw, r1.xxzw, cb1[7].yyyy`), L164 el subsurface, L293 el multiply del albedo.
+//     Esos numeros valen para 4 de los 5; 0x141 tiene la misma estructura con otras lineas (71/157/167/311).
+// PRECISION sobre L293: es el multiply del ALBEDO, no la ultima instruccion. En rec1504 la cola real es
+// L296 `mad o0.xyz, r0.xyzx, r1.xzwx, r8.yzwy`, y para entonces r1.xzw ya fue PISADO en L294-295 por
+// `lerp(1, cb1[1].xyz, v7.y)` (el tinte de pelo). O sea el registro se reusa despues; lo que importa aca
+// es el valor que tiene mientras alimenta a los tres consumidores, y ese es el mismo para los tres.
+//
+// NO depende de este inicializador: main() lo asigna INCONDICIONALMENTE junto al albedo (ver la nota de
+// la invariante ahi). El valor de aca es solo para que la global este definida.
+vec3 diffuseComposed = vec3(1.0);
 vec4 normalMap = vec4(0.0);
 vec4 specMap = vec4(0.0);
 vec4 envMask = vec4(0.0);
@@ -480,7 +506,17 @@ vec3 TorranceSparrow(float NdotL, float NdotH, float NdotV, float VdotH, vec3 co
 	// and division by NdotL is removed since
 	// outgoing radiance is determined by:
 	// BRDF * NdotL * L()
-	float spec = (F * G_NdotV * D) / 4.0;
+	// El CLAMP A 15 es DEL MOTOR, no un limite defensivo. Cadena exacta del forward de FO4
+	// (b06 rec1498 L185-189; identica en el loop de luces puntuales L267-271):
+	//     mul r3.z, r7.y, r3.z          ; G * F
+	//     mul r3.z, r7.w, r3.z          ; * D
+	//     mul r3.z, r3.z, l(0.250000)   ; / 4
+	//     min r3.z, r3.z, l(15.000000)  ; <<< ACA
+	//     mul r3.z, r3.z, r3.y          ; * (specMask * SpecMult * PI)
+	// El min entra ANTES de multiplicar por la mascara y la fuerza del material, no despues.
+	// Sin el, con NdotH -> 1 y exponente alto (power = exp2(Smoothness*10+1) llega a 2048) el
+	// termino D = (power+2)/(2*PI) se dispara y el highlight revienta en vez de saturar.
+	float spec = min((F * G_NdotV * D) / 4.0, 15.0);
 
 	return color * spec * M_PI;
 }
@@ -497,7 +533,33 @@ vec3 tonemap(in vec3 x)
 	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
-void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 outDiffuse, inout vec3 outSpec)
+// Soft-light W3C/Photoshop del tono de piel sobre un diffuse LINEAL, devuelto en LINEAL.
+// Extraido tal cual del bloque uEffectiveType==4 para poder aplicarlo a los DOS analogos del r1 del
+// motor (el albedo con vColor plegado, y diffuseComposed sin el) con la misma curva y sin duplicarla.
+// La matematica es identica a la que estaba inline: no cambia el resultado del albedo.
+vec3 skinToneSoftLight(in vec3 base, in vec3 tone)
+{
+	vec3 baseD = pow(max(base, 0.0), vec3(1.0/2.2));      // linear diffuse -> display
+	vec3 blendD = pow(max(tone, 0.0), vec3(1.0/2.2));     // linear tone -> display
+	vec3 loSL = 2.0 * baseD * blendD + baseD * baseD * (1.0 - 2.0 * blendD);
+	vec3 hiSL = 2.0 * baseD * (1.0 - blendD) + sqrt(max(baseD, 0.0)) * (2.0 * blendD - 1.0);
+	vec3 slR;
+	slR.x = (blendD.x < 0.5) ? loSL.x : hiSL.x;
+	slR.y = (blendD.y < 0.5) ? loSL.y : hiSL.y;
+	slR.z = (blendD.z < 0.5) ? loSL.z : hiSL.z;
+	return pow(max(slR, 0.0), vec3(2.2));
+}
+
+// isKeyLight = esta luz hace de la UNICA direccional del motor (el sol). El rig del preview tiene 4
+// luces (key + 2 de relleno + una TRASERA dedicada), pero el forward de FO4 tiene UNA direccional mas
+// un loop de luces PUNTUALES, y hay terminos que el motor aplica SOLO a la direccional.
+// MEDIDO: cb1[7] aparece en las lineas 142/146/147 de rec1498 y el loop de puntuales va de 202 a 276:
+// NINGUNA de las tres cae adentro. O sea la transmision (cb1[7].y) y el rolloff del subsurface
+// (cb1[7].x) son EXCLUSIVOS de la direccional. Aplicarlos a las 4 luces del rig no es fidelidad: con
+// la luz TRASERA del rig sat(-N.L) vale ~0.89 sobre toda la cara visible, y el termino deja de ser un
+// borde para volverse un lavado plano -- el mismo modo de falla por el que el rim de NifSkope de mas
+// abajo esta desactivado.
+void directionalLight(in DirectionalLight light, in vec3 lightDir, in bool isKeyLight, inout vec3 outDiffuse, inout vec3 outSpec)
 {
 	vec3 halfDir = normalize(lightDir + viewDir);
 	float NdotL = dot(normal, lightDir);
@@ -544,7 +606,23 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 		}
 		else
 		{
-			outSpec += TorranceSparrow(NdotL0, NdotH, NdotV, VdotH, vec3(specMask), fSpecularPower, 0.2) * NdotL0 * light.diffuse * specularColor;
+			// SIN specularColor: FO4 NO tiene color especular por material, MEDIDO EN LOS DOS CAMINOS.
+			//   FORWARD  : en los 18 PS de b06, cb2[11] aparece SOLO con .x y .y -- dos escalares
+			//              (Smoothness y SpecMult), ningun swizzle de 3 componentes. La cadena termina
+			//              en `mul r8.yzw, r3.zzzz, cb2[1].xxyz` = el COLOR DE LA LUZ, y nada mas.
+			//   DIFERIDO : el G-buffer NO transporta un color especular. CORRECCION del conteo que puse
+			//              antes (`0 de 470 escriben o3 con 3+ componentes`): es FALSO, los 470/470 lo
+			//              escriben con 3 o 4. Pero son ESCALARES EMPAQUETADOS, no un color: o3.z es
+			//              `cb2[0].w * 0.010000` uniforme y el composite hace `r1.z*255` y lo compara
+			//              contra 2 y 3 -- es un MATERIAL ID. Solo 22 de los 470 escriben o3.xyz con
+			//              tres dp3, y eso es un vector de mundo, no un tinte.
+			//              La conclusion se sostiene; la evidencia que yo habia citado, no.
+			// OJO: el campo SI existe y esta autorado -- 1423 de los 6616 BGSM vanilla traen SpecularColor
+			// distinto de blanco. El motor simplemente lo IGNORA en el forward. O sea el uniform no es
+			// basura, es un dato real que este camino no consume.
+			// O sea el tinte del highlight sale unicamente de la luz. El `* specularColor` que habia
+			// aca era agregado. (En SSE si existe: alli es cb1[4].xyz, por eso Fragment_SSE lo conserva.)
+			outSpec += TorranceSparrow(NdotL0, NdotH, NdotV, VdotH, vec3(specMask), fSpecularPower, 0.2) * NdotL0 * light.diffuse;
 			// (Removed the NifSkope ambient*Schlick(0.2)*(1-NdotV) spec rim: the engine forward highlight
 			// is ONLY Torrance-Sparrow with the constant Schlick F0=0.2/exp5 (rec1498 L160-189 / rec1507
 			// L181-186). Ambient (cb2[3].yzw) is added to the DIFFUSE accumulator, never to specular.)
@@ -571,20 +649,56 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, inout vec3 ou
 	vec3 diff = vec3(OrenNayarFO4(lightDir, viewDir, normal, roughness, NdotL0));
 	outDiffuse += diff * light.diffuse;
 
-	// Soft Lighting -- engine subsurface rolloff (cb1[7].x). DXBC g6_PS_Default:147-152 subtracts
-	// saturate(NdotL), NOT the OrenNayar term (verified in the asm).
-	if (bSoftlight)
+	// Soft Lighting -- subsurface con rolloff (cb1[7].x). Resta saturate(NdotL), NO el termino de
+	// OrenNayar (rec1498 L147-153, verificado en el asm).
+	// TRES correcciones, las tres MEDIDAS, y las tres son el mismo defecto que tenia la transmision
+	// de mas abajo (se arreglaron juntas; dejar una y no la otra no tenia sentido):
+	//  1) SOLO LA DIRECCIONAL. cb1[7].x esta en las lineas 146/147 de rec1498 y el loop de luces
+	//     PUNTUALES va de 202 a 276 -> queda AFUERA. El motor no le da subsurface a las puntuales.
+	//     La app se lo daba a las 4 luces del rig, incluida la TRASERA, que es donde mas dispara.
+	//  2) GATE bSoftlight RESTAURADO. El motor lo tiene incondicional en 18/18, y yo lo habia quitado
+	//     diciendo que era `casi inocuo` porque con rolloff = 0 el wrap se anula solo. Eso es FALSO
+	//     sobre el corpus real: parseando los 6616 BGSM de Fallout4 - Materials.ba2 (los 6616 con
+	//     offset final == EOF exacto), **6183 tienen SubsurfaceLighting = False con rolloff > 0**, y
+	//     6152 de ellos con rolloff exactamente 0.3. Render.vb sube el rolloff CRUDO, asi que sin el
+	//     gate el 93% del corpus vanilla recibia subsurface que su propio flag apaga -- incluida la
+	//     cabeza masculina vanilla (basehumanskinHead.bgsm: sss = False, rolloff = 0.5).
+	//     El motor recibe el valor YA gateado por su loader; la app tiene el flag y el valor por
+	//     separado, asi que el gate es lo que reproduce esa entrada, no un invento.
+	if (bSoftlight && isKeyLight)
 	{
 		float wrapR = clamp((NdotL + subsurfaceRolloff) / (1.0 + subsurfaceRolloff), 0.0, 1.0);
-		outDiffuse += clamp(wrapR - clamp(NdotL, 0.0, 1.0), 0.0, 1.0) * albedo * light.diffuse;
+		outDiffuse += clamp(wrapR - clamp(NdotL, 0.0, 1.0), 0.0, 1.0) * diffuseComposed * light.diffuse;
 	}
 
-	// NO authored back-translucency (-NdotL * BackLightPower) term: VERIFIED that the FO4 engine renders
-	// NO such transmission -- the always-on RIM above (sat(V*-L)*pow(1-NdotV,0.01)*sigmoid) is the ONLY
-	// backlight, in BOTH paths (forward 18/18 b06 and deferred rec3110 each have exactly ONE dot with
-	// -lightDir = the rim; none a normal*-L*BackLightPower transmission). The old term here was an SSE/
-	// NifSkope port (SSE's backlight is texture-based: sat(-NdotL)*backlightTex*lightColor, the SSE path).
-	// Removed 06-20 to be FO4-engine-faithful (rim only).
+	// TRANSMISION AUTORADA (back-translucency). RE-AGREGADA: la nota anterior decia que el motor de FO4
+	// NO tiene transmision y que el rim de arriba era el UNICO backlight, `verificado: los 18 del forward
+	// tienen exactamente UN dot con -lightDir`. Eso es FALSO: hay DOS, y el segundo es este.
+	// El barrido viejo lo perdio porque busco un producto punto contra el vector de luz NEGADO, y el
+	// motor no hace eso: reusa el N.L ya calculado y NIEGA EL ESCALAR (`mov_sat rX, -rY`), que ningun
+	// grep de `dot con -L` encuentra.
+	// Medido en b06 rec1498 L142-145, y presente en **18 de 18** (incondicional, sin define que lo gatee):
+	//     mul     r7.yzw, r1.xxyz, cb1[7].yyyy   ; diffuse(t0) * BackLightPower
+	//     mov_sat r8.x,   -r3.z                  ; saturate(-(N.L))   [r3.z = dot(L,N) de L109]
+	//     mul     r7.yzw, r7.yyzw, r8.xxxx
+	//     mad     r6.xzw, cb2[1].xxyz, r7.yyzw, r6.xxzw   ; ACUMULADOR DE LUZ += lightColor * eso
+	// cb1[7].x ya estaba identificado como SubsurfaceRolloff (L146 lo usa para el wrap del sss), y
+	// cb1[7].y es el BackLightPower del material -> uniform backlightPower (Render.vb:3558, vale 0
+	// cuando el material no tiene backlight, por eso NO hace falta gate por bBacklight: replica el
+	// incondicional del motor y queda inerte solo).
+	// Va al acumulador de DIFUSO igual que el motor, o sea que el composite lo vuelve a multiplicar por
+	// el albedo: el resultado final es albedo^2 * BackLightPower * sat(-N.L) * lightColor. Eso es lo que
+	// dice la instruccion (r1 entra aca Y en el multiply final), no un descuido.
+	// OJO: NO es el backlight de SSE. SSE lo saca de una TEXTURA (slot 7): sat(-N.L)*backlightTex*
+	// lightColor. FO4 lo saca de un ESCALAR del material sobre el propio diffuse. Los dos shaders
+	// difieren aca porque los motores difieren, y ahora los dos estan medidos.
+	// vColor UNA sola vez: el motor multiplica por r1 (rec1498 L142) y aplica el vertex color recien
+	// en la cola. Si aca se usara el global `albedo` -- que ya lleva pow(vColor,2.2) plegado -- el
+	// composite lo volveria a multiplicar y el vColor quedaria al CUADRADO. Se usa `diffuseComposed`,
+	// que es el diffuse con el overlay de FaceTint ya aplicado y SIN vColor: ese es el analogo de r1
+	// en esta app (ver la nota de su declaracion). NO es baseMap.rgb, que es el t0 previo al overlay.
+	if (isKeyLight)
+		outDiffuse += diffuseComposed * backlightPower * clamp(-NdotL, 0.0, 1.0) * light.diffuse;
 }
 
 vec4 colorLookup(in float x, in float y)
@@ -592,8 +706,15 @@ vec4 colorLookup(in float x, in float y)
 	return texture(texGreyscale, vec2(clamp(x, 0.0, 1.0), clamp(y, 0.0, 1.0)));
 }
 
-// Hemispheric ambient = engine-faithful STRUCTURE: FO4/SSE light the ambient as a normal-dependent
-// term (DirectionalAmbient . vec4(N,1)), NOT a flat scalar. We have no cell ambient matrix, so we
+// Hemispheric ambient = INVENCION DE PREVIEW. La justificacion que estaba aca (`FO4/SSE iluminan el ambiente como termino dependiente de la normal, DirectionalAmbient . vec4(N,1)`) es FALSA para
+// el FORWARD de FO4: el ambiente ahi es un vec3 PLANO, `add r0.xyz, r6.xzwx, cb2[3].yzwy` en 16/18,
+// y en los dos Glowmap `mad r0.xyz, cb2[3].yzwy, r0.xyzx, r6.xzwx` -- sin dot con N y sin matriz.
+// Lo direccional en FO4 existe SOLO en el diferido y por otro mecanismo: un cubemap array de probes
+// IBL en el composite (b11 rec3401, `dcl_resource_texturecubearray t8`, 80/180 PS del bloque).
+// O sea el hemisferio de abajo NO replica al motor de FO4: es una decision de preview (da volumen sin
+// tener la matriz de ambiente de la celda). Se conserva por eso, con la justificacion corregida.
+// (En SSE la afirmacion SI se sostiene: alli el ambiente es `dp4 cb2[11..13] . vec4(N,1)`.)
+// (-Z), mezclados por la componente Z de la normal llevada a mundo:
 // synthesize it from two preview colors: sky from world-up (+Z), ground from world-down (-Z). The
 // shading normal is view-space; transform to world (reusing the envmap matrices) and blend by its
 // up (Z) component. Anchored to world up so the hemisphere stays put as the camera orbits.
@@ -616,7 +737,32 @@ void main(void)
 	// did NOT mean raw, because the VS had already decoded it. Universal (NOT tree-gated -- Tree was
 	// just one BGSM with non-white vColor). RGB only; vColor.a (color.a) stays raw for the alpha-test
 	// (the VS decodes rgb only: o.w = vColor.w). White verts (=1) -> pow=1 -> no change.
-	albedo = pow(max(vColor.rgb, 0.0), vec3(2.2));
+	// El pelo del FORWARD NO lleva vColor: en la tecnica 6 la cola es `mad o0.xyz, r0, r1, spec`
+	// con r1 = lerp(1, HairTintColor, vColor.g) -- el tint OCUPA EL LUGAR del vertex color, no se
+	// suma a el (la tecnica 2, en cambio, cierra con `mad o0.xyz, r0, v7.xyzx, spec`). La app
+	// plegaba vColor aca Y aplicaba el tint mas abajo, o sea los dos. Se excluye el fold en el mismo
+	// caso EXACTO en que se aplica el tint (tipo 5 + alpha-blend), para no dejar al pelo alpha-test
+	// -- que va por el diferido y no lleva el lerp -- sin vColor y sin tint.
+	// INVARIANTE DEL SHADER, no un default: `albedo == vcFold * diffuseComposed` en todo momento.
+	// diffuseComposed es el albedo SIN el vertex color = el analogo del r1 del motor. Los dos se asignan
+	// JUNTOS, aca y dentro de bShowTexture, para que no puedan desincronizarse. Antes diffuseComposed
+	// dependia de un inicializador global y se quedaba en su valor inicial cuando bShowTexture era false.
+	// El diffuse `neutro` es BLANCO, no negro: con la textura apagada el albedo vale vcFold, o sea
+	// diffuseComposed = 1. Eso es exactamente lo que hacia el shader antes de introducir la variable
+	// (el subsurface multiplicaba por `albedo` directamente), asi que la vista sin textura no cambia.
+	// REVERTIDA la exclusion del vColor en el pelo (`(uEffectiveType==5 && bHasAlphaBlend) ? vec3(1.0)`).
+	// La medicion que la motivaba SIGUE SIENDO CIERTA: en la tecnica 6 del forward el PS ni siquiera
+	// recibe el RGB del vertex color (`dcl_input_ps linear v7.yw` en rec1502/1503, `v7.xyw` en
+	// rec1504/1505 -- nunca .z) y el lerp del tint OCUPA su lugar. Pero en ESTA app no compraba nada:
+	//  1) INERTE en la practica. NpcMaterialResolver (:152) fuerza GrayscaleToPaletteColor=True en TODO
+	//     el pelo, asi que corre el bloque de recolor de paleta, que PISA `albedo` entero unas lineas
+	//     mas abajo y descarta este valor. Solo llegaba a importar en pelo SIN paleta, que aca no hay.
+	//  2) TENIA COSTO. `vColor.rgb` no es solo el vertex color de la malla: el VS le pliega `subColor`
+	//     (el tinte por-shape de Wardrobe Manager) y el wirecolor. Forzar 1.0 los mataba a los tres.
+	// O sea: cero beneficio medible y una regresion real. Vuelve al comportamiento de HEAD.
+	vec3 vcFold = pow(max(vColor.rgb, 0.0), vec3(2.2));
+	albedo = vcFold;
+	diffuseComposed = vec3(1.0);
 	vec3 outDiffuse = vec3(0.0);
 	vec3 outSpecular = vec3(0.0);
 
@@ -640,6 +786,7 @@ void main(void)
 				diffRgb = diffRgb * (1.0 - ov.a) + ov.rgb;
 			}
 			if (bDiffuseIsColor) diffRgb = diffRgb; //pow(diffRgb, vec3(2.2))   // C1: sRGB/G22 -> linear, combined
+			diffuseComposed = diffRgb;   // = el r1 del motor (overlay ya compuesto, sin vColor)
 			albedo *= diffRgb;
 
 			// Diffuse texture without lighting
@@ -741,6 +888,11 @@ void main(void)
                     vec4 luG = colorLookup(palU, palV);
 					albedo = luG.rgb;
 					albedo = pow(max(albedo, vec3(0.0)), vec3(2.2));
+					// El recolor PISA el albedo y con eso descarta el vColor, igual que el motor: en las
+					// tecnicas con GRADIENT_REMAP el multiplicador final es r1 (la paleta) y v7.x se consume
+					// como coordenada V del LUT, no como factor. Asi que aca albedo YA es el analogo exacto
+					// de r1 -- sin vColor -- y diffuseComposed lo copia tal cual (rec1504 L68/L154/L164/L293).
+					diffuseComposed = albedo;
 				}
 			}
 
@@ -758,17 +910,36 @@ void main(void)
 			// (= the tone .w / app SkinTintAlpha, default 1.0). tintColor here is already pow(skinTone,2.2)
 			// = linear, so pow(.,1/2.2) recovers the DISPLAY tone. (The old forward g6 curve
 			// a^2 + 2a*tint*(1-a) matched at tint=0/0.5 but diverged at bright tones -> sqrt(a) vs 2a-a^2.)
-			if (uEffectiveType == 4)       // SkinTint body: deferred W3C soft-light of the per-actor tone
+			// `bHasTintColor` AGREGADO. Estaba declarado y NUNCA LEIDO en Fragment_FO4 (solo lo leia
+			// Fragment_SSE), asi que la supresion `Ya esta` de Render.vb -- que lo pone en False cuando
+			// SkinToneBaked, justamente para que el soft-light NO se aplique dos veces sobre una malla que
+			// ya trae el tono horneado en su diffuse -- era INERTE en FO4: la rama se gateaba solo por el
+			// tipo y el tono se aplicaba igual.
+			// CAVEAT que este gate ACTIVA (preexistente, no lo crea): `SkinToneBaked` es un latch de una
+			// sola via -- NpcFaceTintResolver lo pone en True al final de la iteracion INCONDICIONALMENTE,
+			// aunque no se haya compuesto nada, y NUNCA lo resetea a False (su flag hermano
+			// SseFoldDetailNeutralized si se resetea). Camino concreto: edicion viva de tints -> se restaura
+			// el diffuse PRISTINE -> el usuario borra todas las capas -> TryApplyFaceTints sale temprano ->
+			// el flag queda True con un diffuse sin tono => con este gate esa malla se dibuja SIN tono.
+			// Antes era invisible porque el uniform no se leia. El fix correcto es del lado del latch
+			// (setearlo solo si esa malla realmente compuso, y bajarlo en el camino no-compuesto).
+			// Y OJO: en una cabeza FO4 con el bit SLSF1 `Face` puesto el tipo resuelve a 3, que NO tiene
+			// curva de tono, asi que este gate solo muerde el subconjunto DESINCRONIZADO (ShaderType=FaceTint
+			// con `Face` apagado y `Skin_Tint` prendido). La `doble aplicacion` NO esta probada en la cabeza
+			// estandar. Lo que SI arregla, medido: un leak de uniform -- Render.vb sube `tintColor` solo
+			// `If hasTint`, asi que una malla tipo 4 con hasTint=False soft-lighteaba con el tintColor que
+			// hubiera dejado la shape anterior en el mismo program.
+			if (uEffectiveType == 4 && bHasTintColor)   // SkinTint body: soft-light W3C del tono por actor
 			{
-				vec3 baseD = pow(max(albedo, 0.0), vec3(1.0/2.2));      // linear diffuse -> display
-				vec3 blendD = pow(max(tintColor, 0.0), vec3(1.0/2.2));  // linear tone -> display
-				vec3 loSL = 2.0 * baseD * blendD + baseD * baseD * (1.0 - 2.0 * blendD);
-				vec3 hiSL = 2.0 * baseD * (1.0 - blendD) + sqrt(max(baseD, 0.0)) * (2.0 * blendD - 1.0);
-				vec3 slR;
-				slR.x = (blendD.x < 0.5) ? loSL.x : hiSL.x;
-				slR.y = (blendD.y < 0.5) ? loSL.y : hiSL.y;
-				slR.z = (blendD.z < 0.5) ? loSL.z : hiSL.z;
-				albedo = mix(albedo, pow(max(slR, 0.0), vec3(2.2)), skinTintStrength);
+				albedo = mix(albedo, skinToneSoftLight(albedo, tintColor), skinTintStrength);
+				// MISMA curva sobre diffuseComposed. En el motor la curva de tono de la tecnica 5 se aplica
+				// AL PROPIO r1 (rec1500 L70-73 la escribe en r1) y recien despues r1 alimenta la transmision
+				// (L147), el subsurface (L157) y el multiply final (L286). Si se tintara solo el albedo, esos
+				// dos terminos correrian sobre la piel SIN TONO mientras el difuso principal usa la tintada
+				// -- justamente el defecto que diffuseComposed decia evitar.
+				// Se recalcula sobre diffuseComposed en vez de derivarlo del albedo porque el albedo ya trae
+				// pow(vColor,2.2) plegado y el soft-light NO es lineal: dividirlo no reconstruye la base.
+				diffuseComposed = mix(diffuseComposed, skinToneSoftLight(diffuseComposed, tintColor), skinTintStrength);
 			}
 			// uEffectiveType == 3 (Face / Facegen): NO tone curve -- the face renders its BAKED diffuse RAW.
 			// The FaceGen head diffuse is fully baked by the engine BSFaceCustomization pass (b12 FaceCustom
@@ -797,10 +968,10 @@ void main(void)
 			// horneado por la pasada b12 FaceCustom. Si alguna vez se quiere cerrar si corresponde
 			// re-agregarla, hace falta un A/B in-app contra un render del juego: no se decide leyendo shaders.
 
-			directionalLight(frontal, lightFrontal, outDiffuse, outSpecular);
-			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
-			directionalLight(directional1, lightDirectional1, outDiffuse, outSpecular);
-			directionalLight(directional2, lightDirectional2, outDiffuse, outSpecular);
+			directionalLight(frontal, lightFrontal, true, outDiffuse, outSpecular);   // key = la direccional del motor
+			directionalLight(directional0, lightDirectional0, false, outDiffuse, outSpecular);
+			directionalLight(directional1, lightDirectional1, false, outDiffuse, outSpecular);
+			directionalLight(directional2, lightDirectional2, false, outDiffuse, outSpecular);
 
 			// Rim lighting (FO4): disabled for multi-light rig. With the back fill
 			// light dot(-L,V)~1 and low rimPower values (0.1) the smoothstep term
@@ -872,6 +1043,23 @@ void main(void)
 			// emissive spatial pattern) -- it does NOT modulate ambient (that is the FORWARD/alpha-blend
 			// path, rec1512 `ambient*glowmap`, applied below for bHasAlphaBlend). 76/470 prepass perms use
 			// the glow-mask, 375 the constant.
+			// GATE `!bHasAlphaBlend` AGREGADO. En el FORWARD de FO4 (= el camino ALPHA-BLEND) el motor
+			// NO suma emisivo en ningun lado: la tecnica Glowmap MODULA EL AMBIENTE y nada mas
+			// (rec1512 L282-283: `sample r0.xyz, v1.xy, t6` ; `mad r0.xyz, cb2[3].yzwy, r0.xyzx,
+			// r6.xzwx` -- el glow multiplica cb2[3].yzw, que es el ambiente, y se suma al acumulador
+			// de luz). Las 18 colas de b06 son `mad o0.xyz, <alb*(luz+amb)>, <vColor>, <spec>`: CERO
+			// sumas de emisivo. El emisivo aditivo existe SOLO en el diferido, donde el prepass escribe
+			// o4 = EmitColor (462/470 con 3 componentes) y el composite lo suma -- o sea el camino
+			// OPACO. Antes esto sumaba emisivo tambien en alpha-blend, que el forward no hace.
+			// REVERTIDO el gate `!bHasAlphaBlend`. La medicion (el forward no suma emisivo; el Glowmap
+			// modula el ambiente) es correcta, pero el PREDICADO de la app no significa alpha-blend:
+			// Render.vb lo sube como `hasAlphaBlend OrElse EyeEnvironmentMapping`, y hasAlphaBlend a su
+			// vez es `AlphaBlendEnabled OrElse Alpha < 1`. Con el gate, un OJO OPACO con emisivo
+			// (sintetico, ghoul) perdia el brillo, igual que cualquier material opaco con Alpha = 0.99.
+			// Y la compensacion (ambiente *= glowmap) exige ADEMAS uEffectiveType == 2, que casi nunca
+			// se alcanza porque ResolveEffectiveType prioriza Eye/Envmap por encima de Glowmap: el
+			// resultado neto era PERDER el emisivo sin ganar nada. Para gatearlo bien hace falta un
+			// predicado que signifique `este material va por el forward`, que hoy no existe.
 			if (bEmissive)
 			{
 				vec3 emitMask = (bGlowmap && !bHair && !bHasAlphaBlend) ? texture(texGlowmap, uv).rgb : vec3(1.0);
@@ -882,7 +1070,10 @@ void main(void)
 			// sk_default.frag:124-143: el glowmap modula SOLO el self-emissive, NO el backlight
 			// de translucencia). Antes el backlight entraba en 'emissive' dentro del loop de luz
 			// y el '*= glowMap' lo contaminaba (en pelo, glowTex = el flow map _f).
-			emissive += backlightEmissive;
+			// ELIMINADO `emissive += backlightEmissive;`: era CODIGO MUERTO -- backlightEmissive se
+			// declaraba en vec3(0.0) y NUNCA se asignaba en ningun lado, asi que sumaba cero. Peor,
+			// hacia creer (a mi entre otros) que en FO4 el backlight iba por 'emissive'. No va: la
+			// transmision del motor entra al acumulador de DIFUSO (ver directionalLight, rec1498 L142-145).
 
 			// Composite (DXBC g6_PS): out = albedo*(diffuse + ambient) + specular + emissive.
 			// Per-type albedo curve (SkinTint a*a / Face 2a-a*a) was applied pre-lighting above.
@@ -900,10 +1091,82 @@ void main(void)
 			// blend-vs-test): the tint-lerp is the FORWARD b6 hair path = ALPHA-BLEND only. ALPHA-TEST hair
 			// goes DEFERRED -> Kajiya-Kay + palette recolor/diffuse, NO tint-lerp (the color comes from the
 			// recolor block above when bGreyscaleColor, else the diffuse). So gate the tint-lerp on
-			// bHasAlphaBlend. (recolor vs tint are mutually exclusive upstream: palette-hair sets
-			// GrayscaleToPaletteColor + HairTintColor=white -> lerp is identity; tint-hair sets HairTintColor.)
+			// bHasAlphaBlend. PREMISA ANTERIOR REFUTADA. Decia que recolor y tint eran mutuamente excluyentes porque
+			// `el pelo palette pone HairTintColor = blanco`. NO lo pone: la rama palette de
+			// NpcMaterialResolver marca didPalette y NO toca el campo, asi que queda el valor CRUDO del
+			// BGSM. Medido sobre el BA2 de Bethesda (6616 BGSM, EOF exacto): de los 18 materiales con
+			// Hair = True, **NINGUNO** tiene HairTintColor blanco -- 12 son (0.502,0.502,0.502) y 6 son
+			// (0.9882,...). O sea el lerp NO es identidad: con vColor.g = 1 y el gris 0.502 el pelo se
+			// oscurece fuerte. Eso PUEDE ser lo que hace el motor (su tecnica 6 hace el mismo lerp y
+			// tambien reemplaza al vColor), pero depende de en que espacio de color esta cb1[1], que NO
+			// esta verificado.
+			// ALCANCE REAL, MEDIDO EN ESTA INSTALACION: la rama dispara en CERO materiales.
+			//   vanilla (BA2, 6616): 18 con Hair=True; los 3 que el reorden desvia a este tipo son
+			//                        alpha-TEST, y este bloque exige bHasAlphaBlend.
+			//   mods (sueltos, 174): 174/174 con g2p=True, HairTintColor (0.502)^3, y **174/174 alpha-TEST**
+			//                        -> alpha-BLEND = 0.
+			// O sea el reorden Hair-antes-de-Glowmap es CORRECTO pero hoy es INERTE en este arbol: deja de
+			// ser codigo muerto recien con pelo alpha-blend, que aca no hay. Si algun dia aparece, esto es
+			// lo primero que hay que mirar, y ademas hay que resolver antes lo siguiente:
+			// OJO: cb1[1] esta SOBRECARGADO en el motor. En la tecnica HAIR + GRADIENT_REMAP (rec1504 t=0x641)
+			//   el MISMO registro es la coordenada V de la PALETA (L67-68, con el sample del LUT en t15) y
+			//   el TINT (L294). Por eso los HairTintColor de vanilla son GRISES (0.502 / 0.9882) y no
+			//   colores: en pelo-paleta el motor lee ese valor como COORDENADA, no como tinte. La app los
+			//   trata como dos cosas independientes (paletteScale vs tintColor). Aplicar tintColor como
+			//   color sobre pelo g2p seria usar una coordenada de paleta como multiplicador.
+			// GATE `!bGreyscaleColor` REVERTIDO -- lo habia agregado y estaba MAL. Lo desmiente el asm:
+			// en HAIR + GRADIENT_REMAP (rec1504 t=0x641) el motor aplica LOS DOS terminos, no uno u otro:
+			//   L67  sample_l r1.xzw, (U, cb1[1].x), t15   <- salida de la PALETA
+			//   L292 mul  r0.xyz, r1.xzwx, r0.xyzx        <- la luz se multiplica por la PALETA
+			//   L293 add  r1.xzw, cb1[1].xxyz, l(-1,..)
+			//   L294 mad  r1.xzw, v7.yyyy, r1.xxzw, l(1,..)  <- lerp(1, tint, vColor.g)
+			//   L295 mad  o0.xyz, r0.xyzx, r1.xzwx, r8.yzwy  <- y ADEMAS por el TINT
+			// Mi argumento era `con g2p el valor ya lo consume paletteScale`: plausible, no medido, y la
+			// medicion dice lo contrario. Ademas la premisa `los dos campos son el mismo numero` vale sobre
+			// el ARCHIVO pero NO en runtime: NpcMaterialResolver pone paletteScale = RemappingIndex del CLFM
+			// del NPC (por actor) y deja tintColor con el valor de disco del BGSM (por material). La app
+			// rompe esa igualdad a proposito, asi que el modelo `es un solo registro` no se traslada.
+			// PENDIENTE DE MEDIR: el alcance. Yo cense alpha-blend con el campo del BGSM, pero el uniform
+			// sale de `AlphaBlendEnabled OrElse Alpha < 1`, y AlphaBlendEnabled viene de la NiAlphaProperty
+			// del NIF, NO del BGSM. O sea `10 de 18` y `los 174 de mod no llegan` estan medidos con el
+			// predicado EQUIVOCADO y hay que rehacerlos sobre los NIF.
+			// EL VECTOR DEL TINT ES MIXTO CUANDO HAY PALETA. Trazado en el binario:
+			// BSLightingShader::SetupMaterial = 0x142232EA0 (switch por feature sobre el techID).
+			//   rama feature 6 (HairTint) @0x1422331E3: escribe TRES floats en la constante [tabla+0x6D]
+			//       pow(mat+0xC0, 2.2) -> .x   pow(mat+0xC4, 2.2) -> .y   pow(mat+0xC8, 2.2) -> .z
+			//   y despues CAE en 0x1422330C7, que hace:
+			//       test byte [rdi+0x194], 0x40      ; bit GRADIENT_REMAP del techID
+			//       movzx ecx, byte [rax+0x6d]       ; LA MISMA constante
+			//       mov eax, [rsi+0xB8] ; mov [rdx], eax   ; PISA SOLO .x, en CRUDO (sin pow)
+			// mat+0xB8 = GrayscaleToPaletteScale (default 1.0f, escritura gateada por el bit de remap,
+			// consumida como V del LUT en el PS). Resultado:
+			//   sin paleta : cb1[1] = (pow(tint.r,2.2), pow(tint.g,2.2), pow(tint.b,2.2))
+			//   con paleta : cb1[1] = (paletteScale CRUDO, pow(tint.g,2.2), pow(tint.b,2.2))
+			// => con paleta el canal ROJO del HairTintColor NUNCA llega al shader; lo reemplaza la escala.
+			// `tintColor` de la app ya viene linealizado (Vector_to_Linear = pow 2.2), asi que .g y .b
+			// coinciden; `paletteScale` se sube crudo (Render.vb: GrayscaleToPaletteScale), asi que va tal cual.
+			// OJO: esto NO es `no apliques el tint con paleta` -- eso lo probe MAL y lo reverti. El motor
+			// aplica los dos terminos (rec1504 L292 por la paleta y L296 por el lerp), con las mismas 3
+			// instrucciones que 0x601. Lo unico que cambia es DE DONDE sale el .x del vector.
 			if (uEffectiveType == 5 && bHasAlphaBlend)
+			{
+				// REVERTIDO el vector MIXTO `vec3(paletteScale, tintColor.g, tintColor.b)`. Lo puse yo y
+				// ROMPIA EL PELO: dejaba el hairline verde/cian. Sintoma reproducido y explicado.
+				// La medicion del motor era correcta -- en la tecnica 0x641 (HAIR + GRADIENT_REMAP) el
+				// registro cb1[1] esta SOBRECARGADO: su .x es la coordenada V del LUT (rec1504 L67) Y el
+				// canal rojo del tint (L294). Pero esa mezcla solo tiene sentido porque en el motor
+				// **es UN SOLO numero** cumpliendo los dos roles.
+				// EN ESTA APP NO LO ES, y esta roto a proposito: NpcMaterialResolver (:152) fuerza
+				// GrayscaleToPaletteColor=True en el pelo y pisa GrayscaleToPaletteScale con el
+				// RemappingIndex del CLFM del NPC -- un indice de FILA del LUT, por ACTOR -- mientras
+				// tintColor sigue siendo el HairTintColor de disco del BGSM, por MATERIAL. Son dos
+				// numeros distintos. Meter el indice en el canal rojo da, con HairTintColor = 0.502
+				// (tintColor lineal ~0.216) y un RemappingIndex chico, algo como (0.1, 0.216, 0.216):
+				// el ROJO se aplasta al doble que verde y azul => viraje cian/verde.
+				// La leccion: una identidad del motor solo se puede copiar si los valores que la
+				// sostienen tambien son identicos en la app. Aca no lo son, y estaba escrito.
 				color.rgb *= vec3(1.0) + vColor.y * (tintColor - vec3(1.0));
+			}
 
 			color.rgb += outSpecular;
 			color.rgb += emissive;
@@ -1017,11 +1280,17 @@ void main(void)
 			color.rgb *= weightColor;
 		}
 
-		// Tonemap + sRGB encode are the BSLighting display path. The engine BGEM (b05) has NO tonemap and
-		// NO in-shader encode (verified: 0 b05 PS contain the Hable curve) -- the effect output is linear and
-		// the blend mode composites it; tonemapping a BGEM desaturates/washes it. Gate BOTH by !bIsEffectShader
-		// (the encode was already gated; the tonemap was not -- that washed BGEM-with-glow toward white).
-		// DebugMode writes fragColor after this and is left unencoded.
+		// Tonemap + encode sRGB: DECISION DE PREVIEW, no el camino de display de BSLighting.
+		// CORREGIDO: la nota anterior decia que eran `the BSLighting display path`. No lo son --
+		// **0 de los 18** PS de b06 contienen la constante de Hable l(0.150000), y las 18 colas escriben
+		// LINEAL a o0 (`mad o0.xyz, ...` sin curva ni pow). En el juego el tonemap y el encode son
+		// POST-PROCESO, en otro bloque de shaders, sobre el buffer ya compuesto.
+		// El preview no tiene esa pasada de post, asi que si no se hiciera aca los valores HDR (el
+		// specular llega a min(...,15) por el propio motor) se recortarian a 1 y el highlight se
+		// aplastaria. Se conserva por eso, como afordancia del visor, con la atribucion corregida.
+		// Lo que SI esta medido y por eso sigue gateado: el BGEM (b05) no lleva tonemap ni encode en el
+		// shader (0 PS de b05 con la curva de Hable) -- su salida es lineal y la compone el blend mode;
+		// tonemapear un BGEM lo lava. DebugMode escribe fragColor despues de esto y queda sin encodear.
 		if (!bIsEffectShader)
 		{
 			color.rgb = tonemap(color.rgb) / tonemap(vec3(1.0));
@@ -1158,7 +1427,20 @@ if (bHide)
 			if (fragColor.a < alphaThreshold) // GL_GEQUAL (engine: discard si alpha < ref)
 				discard;
 
-		// Material Alpha = the OUTPUT/blend alpha (BGSM). BGEM baked it into effAlpha already.
+		// REVERTIDO a `*= alpha`. La MEDICION del motor es correcta -- los 18 PS del forward escriben
+		// `mov o0.w, cb2[2].z`, o sea alpha CONSTANTE del material, y el alpha de textura y vertice
+		// alimentan solo el test -- pero aplicarla aca rompe DOS cosas que el motor no tiene y la app si:
+		//  1) EL ALPHA DE VERTICE ES UNA FEATURE VIVA: el VS hace `if (bShowVertexAlpha) vColor.a =
+		//     vertexAlpha`, y el uniform sale de un TOGGLE DEL USUARIO + dato del NIF
+		//     (Render.vb: ShowVertexColor AndAlso hasVertexColorData AndAlso Not isTreeAnim).
+		//     Con el alpha constante ese degradado desaparece y el toggle deja de hacer nada en FO4.
+		//  2) EL PASE DE OVERLAYS (tatuajes / LooksMenu) dibuja LA MISMA geometria como decal coplanar
+		//     con SrcAlpha/InvSrcAlpha y DepthMask(False), y su transparencia la lleva el ALPHA DE LA
+		//     TEXTURA del overlay (un tatuaje es casi todo transparente). El motor no tiene ese pase.
+		//     Si el material del slot es .bgsm -> bIsEffectShader = false -> con alpha constante el
+		//     decal sale OPACO y tapa la cabeza entera.
+		// O sea: la ley del motor vale para el camino que el motor tiene; este shader ademas sirve
+		// pases que el motor no tiene. Se conserva el multiply y se deja la medicion documentada.
 		if (!bIsEffectShader)
 			fragColor.a *= alpha;
 	}
@@ -1550,7 +1832,6 @@ float specFactor = 1.0;
 vec2 uv = vec2(0.0);
 vec3 albedo = vec3(0.0);
 vec3 emissive = vec3(0.0);
-vec3 backlightEmissive = vec3(0.0);
 
 vec4 baseMap = vec4(0.0);
 vec4 normalMap = vec4(0.0);
