@@ -1,4 +1,4 @@
-Imports System.Runtime.CompilerServices
+﻿Imports System.Runtime.CompilerServices
 
 ''' <summary>
 ''' SSE (Skyrim Special Edition) FaceGen BAKE — the single source of truth for producing the two vanilla
@@ -146,41 +146,31 @@ Public Module SseFaceGenBaker
     ''' <summary>Un facetint _d NEUTRAL para el slot 6 cuando la cadena se pliega en el diffuse: gris <b>128</b>
     ''' uniforme = IDENTIDAD del SOFT-LIGHT a 8 bits (ver <see cref="EngineDefaultTint"/>: residuo ≤ 0.00098, el
     ''' mismo que tiene el motor con su DefaultGreyMap). ⚠️ NO es (63,64,63): ese es el neutro
-    ''' del AMPLIFY y le corresponde al slot 3 (<see cref="NeutralDetailDds"/>). Coincide además con el default de
+    ''' del AMPLIFY y le corresponde al slot 3 (<see cref="DetailNeutralChannel"/>). Coincide además con el default de
     ''' engine del propio slot (<c>DefaultGreyMap</c>), así que sirve igual si el slot queda vacío. El tint se
     ''' samplea CRUDO (raw), así que 0.5 = byte 128 literal. Formato: el que pase el caller (CharGen Options →
     ''' Diffuse); -1 = BC3 (default, = vanilla). Al ser un color CONSTANTE el formato no cambia el resultado (BC3
     ''' codifica un bloque uniforme sin error), pero el archivo sigue al setting en vez de hardcodear.</summary>
-    Public Function NeutralFacetintDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
-        Dim npix = w * h
-        Dim acc(npix * 4 - 1) As Single
-        For i = 0 To npix - 1
-            acc(i * 4) = CSng(EngineDefaultTint) : acc(i * 4 + 1) = CSng(EngineDefaultTint)
-            acc(i * 4 + 2) = CSng(EngineDefaultTint) : acc(i * 4 + 3) = 1.0F
-        Next
-        Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
-    End Function
+        ' (Eliminada NeutralFacetintDds: el fold YA NO neutraliza el slot 6 — conserva el facetint REAL y la
+    '  cadena del engine se cancela con PreCompensateEngineChain.)
 
     ''' <summary>Un detail map (slot 3 / DisplacementTexture) NEUTRAL para el AMPLIFY del engine:
     ''' <c>(v+off)·255/64 = 1</c> ⇒ v = (63,64,63)/255. Se usa cuando la cadena se pliega en el diffuse (el amplify
     ''' con el detail REAL ya está horneado en slot 0), para que el engine NO lo re-aplique. ⚠️ NO es 0.5: 0.5 es la
-    ''' identidad del SOFT-LIGHT y le corresponde al slot 6 (<see cref="NeutralFacetintDds"/>).
+    ''' identidad del SOFT-LIGHT y le corresponde al slot 6 (que el fold ya no neutraliza).
     ''' ⛔ NO se puede VACIAR el slot 3: el engine lo rellena con <see cref="EngineDefaultDetail"/> (0.251), que
     ''' amplificado da (1.015625, 1.0, 1.015625) ≠ 1 ⇒ la cara saldría 1.5% más clara en R/B. El detail se samplea
     ''' CRUDO (raw). Constante ⇒ compartible por plugin; el engine SÍ respeta el slot 3 del NIF (a diferencia del
     ''' tint, que arma por path canónico). Formato = el que pase el caller; -1 = BC3 (constante ⇒ sin error).</summary>
-    Public Function NeutralDetailDds(w As Integer, h As Integer, Optional dxgiFormat As Integer = -1) As Byte()
-        Dim npix = w * h
-        Dim acc(npix * 4 - 1) As Single
-        Dim nR = DetailNeutralChannel(0), nG = DetailNeutralChannel(1), nB = DetailNeutralChannel(2)
-        For i = 0 To npix - 1
-            acc(i * 4) = CSng(nR) : acc(i * 4 + 1) = CSng(nG) : acc(i * 4 + 2) = CSng(nB) : acc(i * 4 + 3) = 1.0F
-        Next
-        Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
-    End Function
+    ' (Eliminada NeutralDetailDds: el fold ya no neutraliza el slot 3 — deja el detail REAL y pre-compensa el
+    '  amplify en el diffuse. Ver PreCompensateDetailAmplify. DetailNeutralChannel SIGUE: documenta el valor de
+    '  identidad del amplify y lo verifica el probe NpcSseRoundtripProbe.)
 
     ''' <summary>Pliega la cadena de albedo facegen DENTRO del complexion (in place): reproduce la op del engine
     ''' <c>albedo_lin = softlight(complexion_lin, TINT) × ((DETAIL + off)·255/64)</c>.
+    ''' <para>⚠️ El resultado de ESTA función es la BASE sobre la que van los overlays (sin teñir): ése es el
+    ''' orden de RaceMenu y es lo que el preview muestra. Para que el juego muestre lo MISMO, el caller debe
+    ''' después llamar a <see cref="PreCompensateDetailAmplify"/> — ver la nota ahí.</para></summary>
     ''' ⚠️ El engine opera en LINEAR: el complexion (slot 0) es un diffuse sRGB que el shader decodifica sRGB→linear
     ''' ANTES de la cadena. Como el <paramref name="complexionRgba"/> llega CRUDO (sRGB, de DecodeDds), acá se hace
     ''' sRGB→linear, la cadena, y linear→sRGB para volver a almacenarlo como diffuse (el engine lo re-samplea
@@ -214,6 +204,73 @@ Public Module SseFaceGenBaker
                         Dim det = If(detailRgba IsNot Nothing, detailRgba(i * 4 + ch), EngineDefaultDetail)  ' slot 3 -> t4
                         Dim sl = clin * clin + 2.0 * clin * tint * (1.0 - clin)      ' softlight(complexion_lin, tint)
                         complexionRgba(i * 4 + ch) = CSng(Lin2Srgb(sl * FgTintChannel(det, ch)))
+                    Next
+                Next
+            End Sub)
+    End Sub
+
+    ''' <summary>⭐⭐⭐ PRE-COMPENSACIÓN del amplify del detail. Divide el buffer (in place, sRGB) por
+    ''' <c>amplify(detail)</c> EN LINEAL, para que cuando el motor lo multiplique por ESE MISMO amplify desde el
+    ''' slot 3 el resultado sea EXACTAMENTE el buffer que entró — o sea, lo que muestra el preview.
+    '''
+    ''' <para><b>Por qué hace falta.</b> El fold deja en el slot 0 la base ya amplificada CON los overlays encima
+    ''' (orden RaceMenu: el overlay NO lleva tint ni detail). Para que el motor no re-aplicara nada, el bake
+    ''' neutralizaba los slots 3 y 6. El 6 funciona (el motor arma su path canónico y ahí escribimos el gris).
+    ''' El 3 NO: la nota de RE del repo (<c>arch_sse_face_txst_layered_law</c>) registra que
+    ''' <c>RegenerateHead 0x14042BD90</c> empuja <c>_sk</c>/detail al material (<c>+0xB0</c>/<c>+0xA8</c>) desde el
+    ''' TXST RESUELTO al attachear la cabeza ⇒ el neutro del NIF se descarta y el amplify se aplica DOS VECES.
+    ''' Con el detail medido de un NPC real (0,256/0,241/0,245) el amplify es (1,036, 0,960, 0,992); al cuadrado
+    ''' (1,073, 0,922, 0,984) ⇒ ~2% más oscuro en luminancia, verde −8%. Es el síntoma reportado, y explica que el
+    ''' PREVIEW se viera bien: el preview sí respeta su propio neutro.</para>
+    '''
+    ''' <para><b>Por qué pre-compensar y no dejar de plegar el detail.</b> Sacar el amplify del fold arregla la
+    ''' base pero se lo aplica AL OVERLAY, que en RaceMenu va limpio. Pre-compensar preserva el orden exacto: el
+    ''' motor calcula <c>((base×amp) ⊕ overlay)/amp × amp</c> = el buffer original, overlay intacto.</para>
+    '''
+    ''' <para><b>Robusto ante la incógnita del motor.</b> El slot 3 queda con el detail REAL. Si el motor lo
+    ''' reinstala, reinstala EL MISMO archivo; si lo respeta, es el mismo también. En los dos casos multiplica por
+    ''' el amplify que acá dividimos ⇒ ya no depende de que un neutro sobreviva. Y desaparece
+    ''' <c>facedetailneutral.dds</c>, el único artefacto COMPARTIDO por plugin entre NPCs/ESPs.</para>
+    '''
+    ''' <para>⚠️ <paramref name="detailRgba"/> DEBE ser el MISMO buffer que recibió
+    ''' <see cref="FoldFacetintIntoDiffuse"/>, al mismo tamaño. Nothing ⇒ no-op: sin detail el fold usó el default
+    ''' del engine (0,251) y el motor usará ese mismo default, así que ya está balanceado.
+    ''' El divisor se acota por abajo (un detail patológicamente oscuro dispararía el brillo) y el resultado se
+    ''' satura a 1: donde <c>amp &lt; 1</c> la división sube el valor y un LDR de 8 bits no tiene cabecera.</para></summary>
+    Public Sub PreCompensateEngineChain(bufferSrgb As Single(), facetintRgba As Single(), detailRgba As Single(),
+                                        npix As Integer)
+        If bufferSrgb Is Nothing Then Return
+        Const MinAmp As Double = 0.25
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, npix),
+            Sub(range)
+                For i = range.Item1 To range.Item2 - 1
+                    For ch = 0 To 2
+                        Dim y = Srgb2Lin(bufferSrgb(i * 4 + ch))
+
+                        ' 1) invertir el AMPLIFY del detail (slot 3): y /= amp
+                        If detailRgba IsNot Nothing Then
+                            Dim amp = FgTintChannel(detailRgba(i * 4 + ch), ch)
+                            If amp < MinAmp Then amp = MinAmp
+                            y /= amp
+                        End If
+
+                        ' 2) invertir el SOFT-LIGHT del facetint (slot 6).
+                        '    softlight(x,b) = x²(1−2b) + 2bx = y  ⇒  x = (−b + √(b² + k·y)) / k,  k = 1−2b.
+                        '    k→0 (b=0,5) es la identidad: el límite es x = y (la fórmula daría 0/0).
+                        If facetintRgba IsNot Nothing Then
+                            Dim b = facetintRgba(i * 4 + ch)
+                            Dim k = 1.0 - 2.0 * b
+                            If Math.Abs(k) > 0.000001 Then
+                                Dim disc = b * b + k * y
+                                If disc < 0.0 Then disc = 0.0
+                                y = (-b + Math.Sqrt(disc)) / k
+                            End If
+                        End If
+
+                        If y < 0.0 Then y = 0.0
+                        If y > 1.0 Then y = 1.0
+                        bufferSrgb(i * 4 + ch) = CSng(Lin2Srgb(y))
                     Next
                 Next
             End Sub)

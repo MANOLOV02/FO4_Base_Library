@@ -181,6 +181,11 @@ Public Class FaceTintLayerInput
     ''' complexion. ⚠️ Los nombres FgTint* quedaron por compatibilidad: el offset/amp se aplican al DETAIL, no al
     ''' tint. Default off (FO4 inerte).</summary>
     Public Property FgTintFold As Boolean = False
+    ''' <summary>Con <see cref="FgTintFold"/>: en vez de PLEGAR la cadena, aplica su INVERSA (unfold). Deja en el
+    ''' diffuse el valor que, despues de que el motor le aplique softlight(.,TINT) x amplify(DETAIL), devuelve
+    ''' exactamente lo que entro. Hace falta porque los slots 3 y 6 ya NO se neutralizan. Espejo GPU de
+    ''' <c>SseFaceGenBaker.PreCompensateEngineChain</c> (CPU) — si tocas una, toca la otra.</summary>
+    Public Property FgTintUnfold As Boolean = False
     ''' <summary>Offset por canal del amplify del DETAIL (engine (1/255, 0, 1/255)). Solo si <see cref="FgTintFold"/>.</summary>
     Public Property FgTintOffR As Single = 0F
     Public Property FgTintOffG As Single = 0F
@@ -787,6 +792,27 @@ void main() {
     // Si el fold la heredara, cambiar una opcion de la UI lo desviaria del engine y el bake dejaria de matchear el juego.
     // prev = complexion en sRGB (el caller lo sube en Rgba32f: un DDS lo cuantizaria a 8 bits y el fgTint amplifica x4).
     // Salida en sRGB = exactamente lo que escribe el fold CPU.
+    // uFgTintFold==2: INVERSA de la cadena (unfold). Espejo exacto de PreCompensateEngineChain (CPU).
+    //   y = srgbToLin(prev) / amplify(DETAIL)
+    //   softlight(x,b) = x*x*(1-2b) + 2bx = y  =>  x = (-b + sqrt(b*b + k*y)) / k,  k = 1-2b
+    //   k -> 0 (b = 0.5) es la identidad: el limite es x = y (la formula daria 0/0).
+    if (uFgTintFold == 2) {
+        vec3 cs = clamp(prev, 0.0, 1.0);
+        vec3 y  = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
+        vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.2509803922);
+        vec3 fg = max((dt + uFgTintOff) * uFgTintAmp, vec3(0.25));
+        y = y / fg;
+        vec3 b = layerSample.rgb;
+        vec3 k = vec3(1.0) - 2.0 * b;
+        vec3 isId = step(abs(k), vec3(0.000001));
+        vec3 ksafe = mix(k, vec3(1.0), isId);
+        vec3 xr = (-b + sqrt(max(b * b + k * y, vec3(0.0)))) / ksafe;
+        vec3 x = clamp(mix(xr, y, isId), 0.0, 1.0);
+        vec3 outc = vec3(linearToSrgb1(x.r), linearToSrgb1(x.g), linearToSrgb1(x.b));
+        fragColor = vec4(outc, prevRgba.a);
+        return;
+    }
+
     if (uFgTintFold == 1) {
         vec3 cs = clamp(prev, 0.0, 1.0);
         vec3 cl = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
@@ -1286,7 +1312,7 @@ void main() {
                                                       AndAlso layer.Kind = FaceTintLayerKind.TextureSetDiffuse _
                                                       AndAlso channel = FaceTintChannel.Diffuse _
                                                       AndAlso Not useHairPaletteEffective AndAlso Not forceUniformColorEffective AndAlso Not texTimesColorEffective)
-                GL.Uniform1(state._uFgTintFoldLoc, If(fgTintFoldEffective, 1, 0))
+                GL.Uniform1(state._uFgTintFoldLoc, If(fgTintFoldEffective, If(layer.FgTintUnfold, 2, 1), 0))
                 GL.Uniform3(state._uFgTintOffLoc, layer.FgTintOffR, layer.FgTintOffG, layer.FgTintOffB)
                 GL.Uniform1(state._uFgTintAmpLoc, layer.FgTintAmp)
                 ' Detail (slot 3) del pliegue SSE en la unit 6. Sin detail ⇒ uHasFoldDetail=0 ⇒ el shader usa
