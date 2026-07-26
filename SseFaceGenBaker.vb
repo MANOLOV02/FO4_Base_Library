@@ -136,6 +136,29 @@ Public Module SseFaceGenBaker
         Return (dChannel + FgOff(ch)) * FgTintAmp
     End Function
 
+    ''' <summary>⭐⭐ PISO del multiplicador del amplify, COMPARTIDO por el fold y por su inversa.
+    '''
+    ''' <para>⛔ EL BUG QUE ESTO ARREGLA: el piso existía SÓLO en la inversa
+    ''' (<see cref="PreCompensateEngineChain"/> acotaba con <c>MinAmp = 0.25</c> "para que un detail
+    ''' patológicamente oscuro no dispare el brillo") y NO en <see cref="FoldFacetintIntoDiffuse"/>. Con un detail
+    ''' oscuro —<c>detail &lt; 0,0587</c> ⇒ <c>amp &lt; 0,25</c>— el fold MULTIPLICABA por el amp real y la inversa
+    ''' DIVIDÍA por 0,25: la cadena dejaba de cancelar y el diffuse horneado quedaba mal en esos píxeles. Una
+    ''' inversa que no usa el mismo número que la directa no es una inversa. El mismo desbalance estaba en el
+    ''' shader (rama <c>uFgTintFold==2</c> con <c>max(..., 0.25)</c> y la <c>==1</c> sin piso).</para>
+    '''
+    ''' <para>⚠️ Poner el piso en LOS DOS lados cambia el resultado SÓLO donde antes la cadena ya estaba rota
+    ''' (amp &lt; 0,25). Donde amp ≥ 0,25 —todo el corpus normal, incluido el default del engine 0,251 ⇒ amp ≈ 1,0156—
+    ''' es byte-inerte.</para></summary>
+    Public Const FgAmpFloor As Double = 0.25
+
+    ''' <summary>El multiplicador del amplify de un canal, YA ACOTADO por <see cref="FgAmpFloor"/>. Es la ÚNICA
+    ''' función que deben usar el fold y la inversa, para que no puedan volver a divergir.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Public Function FgTintChannelClamped(dChannel As Double, ch As Integer) As Double
+        Dim a = FgTintChannel(dChannel, ch)
+        Return If(a < FgAmpFloor, FgAmpFloor, a)
+    End Function
+
     ''' <summary>Valor crudo del DETAIL que hace el amplify IDENTIDAD (multiplicador = 1) por canal — para dejar el
     ''' slot 3 no-op cuando la cadena ya se plegó en el diffuse. (v+off)·(255/64)=1 ⇒ v = 64/255 − off.
     ''' R,B=63/255; G=64/255.</summary>
@@ -188,8 +211,11 @@ Public Module SseFaceGenBaker
         ' Slot vacío ⇒ default del engine, NO identidad arbitraria:
         '   detail  vacío -> EngineDefaultDetail 0.251 -> amplify (1.015625, 1.0, 1.015625)
         '   facetint vacío -> EngineDefaultTint  0.5    -> softlight identidad
-        ' (mods que borran el TX04 del TXST, ej. Enhanced Khajiit, caen en el primero). El caller DEBE neutralizar
-        ' los slots del NIF: slot 3 -> (63,64,63), slot 6 -> 0.5 (si no, el engine re-aplica encima del plegado).
+        ' (mods que borran el TX04 del TXST, ej. Enhanced Khajiit, caen en el primero).
+        ' ⛔ ESTA NOTA DECÍA: "El caller DEBE neutralizar los slots del NIF: slot 3 -> (63,64,63), slot 6 -> 0.5
+        ' (si no, el engine re-aplica encima del plegado)". YA NO — y hacerlo hoy ROMPERÍA el resultado: los dos
+        ' slots quedan con su contenido REAL y el caller cancela la cadena del motor con PreCompensateEngineChain.
+        ' Ningún caller neutraliza nada.
         ' PARALELO por rangos de píxeles: cada píxel lee/escribe SOLO sus propios índices (sin estado compartido,
         ' sin acumulación cruzada) ⇒ resultado BIT-IDÉNTICO al loop serial (el mismo double-math por píxel; sólo
         ' cambia qué thread lo ejecuta). Por qué: la op lleva 2 Math.Pow por canal (Srgb2Lin+Lin2Srgb) y el fold
@@ -203,7 +229,9 @@ Public Module SseFaceGenBaker
                         Dim tint = facetintRgba(i * 4 + ch)                                              ' slot 6 -> t3
                         Dim det = If(detailRgba IsNot Nothing, detailRgba(i * 4 + ch), EngineDefaultDetail)  ' slot 3 -> t4
                         Dim sl = clin * clin + 2.0 * clin * tint * (1.0 - clin)      ' softlight(complexion_lin, tint)
-                        complexionRgba(i * 4 + ch) = CSng(Lin2Srgb(sl * FgTintChannel(det, ch)))
+                        ' ⭐ FgTintChannelClamped, NO FgTintChannel: el MISMO piso que aplica la inversa
+                        ' (PreCompensateEngineChain). Ver FgAmpFloor — tenerlo en un solo lado rompia la cancelacion.
+                        complexionRgba(i * 4 + ch) = CSng(Lin2Srgb(sl * FgTintChannelClamped(det, ch)))
                     Next
                 Next
             End Sub)
@@ -240,7 +268,6 @@ Public Module SseFaceGenBaker
     Public Sub PreCompensateEngineChain(bufferSrgb As Single(), facetintRgba As Single(), detailRgba As Single(),
                                         npix As Integer)
         If bufferSrgb Is Nothing Then Return
-        Const MinAmp As Double = 0.25
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, npix),
             Sub(range)
@@ -250,9 +277,8 @@ Public Module SseFaceGenBaker
 
                         ' 1) invertir el AMPLIFY del detail (slot 3): y /= amp
                         If detailRgba IsNot Nothing Then
-                            Dim amp = FgTintChannel(detailRgba(i * 4 + ch), ch)
-                            If amp < MinAmp Then amp = MinAmp
-                            y /= amp
+                            ' MISMO piso que el fold (FgTintChannelClamped). Ver FgAmpFloor.
+                            y /= FgTintChannelClamped(detailRgba(i * 4 + ch), ch)
                         End If
 
                         ' 2) invertir el SOFT-LIGHT del facetint (slot 6).

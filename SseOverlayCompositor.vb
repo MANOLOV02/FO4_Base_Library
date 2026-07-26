@@ -211,10 +211,17 @@ Public Module SseOverlayCompositor
         Dim faceOrdered = SortFaceOverlays(overlays.
             Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
         For Each ov In faceOrdered
+            ' Predicado ÚNICO con el gate (HasBakeableFaceOverlays) ⇒ no pueden discrepar. Va ANTES del decode:
+            ' una capa invisible no justifica leer su textura.
+            If Not OverlayIsVisible(ov) Then Continue For
             Dim tex = decode(ov.DiffusePath, w, h)
-            If tex Is Nothing OrElse tex.Length < npix * 4 Then Continue For
+            If tex Is Nothing OrElse tex.Length < npix * 4 Then
+                ' El gate dijo que SÍ (hay ruta + opacidad) y acá no se pudo leer ⇒ es un ERROR, no un no-op.
+                Dim dpFail = ov.DiffusePath
+                Logger.LogLazy(Function() $"[SSE-OVL] overlay de cara SALTEADO: no se pudo leer/decodificar el diffuse '{dpFail}'")
+                Continue For
+            End If
             Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
-            If opacity <= 0.0 Then Continue For
             Dim tr As Double = If(ov.HasTint, ov.TintR, 1.0)
             Dim tg As Double = If(ov.HasTint, ov.TintG, 1.0)
             Dim tb As Double = If(ov.HasTint, ov.TintB, 1.0)
@@ -257,13 +264,18 @@ Public Module SseOverlayCompositor
         Dim faceOrdered = SortFaceOverlays(overlays.
             Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath)).ToList())   ' predicado unico + orden skee
         For Each ov In faceOrdered
+            ' Predicado ÚNICO con el gate (HasFaceOverlayNormals), y ANTES del decode. Ver ComposeFaceOverlaysIntoDiffuse.
+            If Not OverlayIsVisible(ov) Then Continue For
             Dim ovNorm = decode(ov.NormalPath, w, h)
-            If ovNorm Is Nothing OrElse ovNorm.Length < npix * 4 Then Continue For
+            If ovNorm Is Nothing OrElse ovNorm.Length < npix * 4 Then
+                Dim npFail = ov.NormalPath
+                Logger.LogLazy(Function() $"[SSE-OVL] normal de overlay SALTEADO: no se pudo leer/decodificar '{npFail}'")
+                Continue For
+            End If
             ' Cobertura = alpha del DIFFUSE del overlay (la forma del tatuaje) × opacidad. Si no hay diffuse,
             ' usa el alpha del propio normal (fallback).
             Dim ovDiff = If(Not String.IsNullOrEmpty(ov.DiffusePath), decode(ov.DiffusePath, w, h), Nothing)
             Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
-            If opacity <= 0.0 Then Continue For
             ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); orden entre overlays = For Each serial.
             System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
@@ -288,13 +300,22 @@ Public Module SseOverlayCompositor
         Return any
     End Function
 
-    ''' <summary>True iff any FACE overlay carries a normal map (cheap check, no decode).</summary>
+    ''' <summary>True iff any FACE overlay carries a normal map AND is visible (cheap check, no decode).
+    ''' ⭐ La opacidad entra en el gate porque entra en el compose (<see cref="ComposeFaceOverlayNormalsIntoMsn"/>
+    ''' saltea <c>opacity &lt;= 0</c>) — ver la nota de <see cref="HasBakeableFaceOverlays"/>.</summary>
     Public Function HasFaceOverlayNormals(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
-            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) Then Return True
+            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) AndAlso OverlayIsVisible(ov) Then Return True
         Next
         Return False
+    End Function
+
+    ''' <summary>Opacidad efectiva del overlay (key8 <c>Alpha</c>, 1.0 si no la declara) &gt; 0. Predicado ÚNICO
+    ''' compartido por los gates y por los dos composers, para que no puedan discrepar.</summary>
+    Public Function OverlayIsVisible(ov As RaceMenuJslot.JslotOverlayNode) As Boolean
+        If ov Is Nothing Then Return False
+        Return If(ov.HasAlpha, ov.Alpha, 1.0) > 0.0
     End Function
 
     ''' <summary>⭐ THE canonical "is this overlay on the head?" test. EVERY path — CPU bake, GPU bake, the folded
@@ -324,12 +345,19 @@ Public Module SseOverlayCompositor
         Return overlays.Where(AddressOf IsFaceOverlay).ToList()
     End Function
 
-    ''' <summary>True iff <paramref name="overlays"/> has at least one FACE overlay with a diffuse texture — i.e.
-    ''' whether <see cref="ComposeFaceOverlaysIntoDiffuse"/> would emit anything.</summary>
+    ''' <summary>True iff <paramref name="overlays"/> has at least one FACE overlay with a diffuse texture AND
+    ''' non-zero opacity — i.e. whether <see cref="ComposeFaceOverlaysIntoDiffuse"/> would emit anything.
+    '''
+    ''' <para>⭐ LA OPACIDAD ENTRA EN EL GATE. Antes el gate sólo exigía <c>DiffusePath</c> mientras el compose
+    ''' además saltea <c>opacity &lt;= 0</c>: un overlay con opacidad 0 hacía que el gate dijera SÍ y el compose
+    ''' no hiciera NADA. Eso no era inerte — el bake entraba al camino plegado, salía por el return de
+    ''' <c>WriteSseFaceDiffuseWithOverlays</c> sin componer, y de paso se saltaba el borrado de los artefactos
+    ''' del fold anterior. Las dos condiciones que el gate NO puede replicar sin tocar disco (que la textura
+    ''' exista y decodifique) quedan como error REPORTADO, no como salida silenciosa.</para></summary>
     Public Function HasBakeableFaceOverlays(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
-            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.DiffusePath) Then Return True
+            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.DiffusePath) AndAlso OverlayIsVisible(ov) Then Return True
         Next
         Return False
     End Function
@@ -356,12 +384,23 @@ Public Module SseOverlayCompositor
     ''' (<paramref name="skinRgb"/>/<paramref name="hairRgb"/>, hair ×2 clamped). <paramref name="opacity"/> is
     ''' MASKA (skee folds it into the colour's A byte). <paramref name="layerType"/> 0=Normal/1=Mask/2=Color;
     ''' <paramref name="blend"/> the technique (default normal). <paramref name="texRgba"/> = decoded mask texture
-    ''' (linear RGBA w*h*4) or Nothing for a type-2 solid layer.</summary>
+    ''' (RGBA de almacenamiento [0,1], w*h*4) or Nothing for a type-2 solid layer.</summary>
+    ''' <param name="hasColor">False = la capa NO declara color (p.ej. un MASKC ausente en el NIF). ⭐ NO es lo
+    ''' mismo que "el color vale 0xFFFFFFFF": ese valor ES <see cref="SkeePresetHair"/>, el sentinel de skee para
+    ''' "usar el color de pelo del NPC". Usarlo como default de "sin dato" hacía que una capa sin MASKC entrara por
+    ''' la resolución de presets; y como los dos callers pasan <c>hairRgb = Nothing</c>, caía al decode literal del
+    ''' 0xFFFFFFFF ⇒ BLANCO opaco pintado con la cobertura de la máscara. Con hasColor=False se saltea la
+    ''' resolución de sentinels y se usa blanco DIRECTO — el mismo valor de antes (no hay fuente RE para otro),
+    ''' pero por la rama correcta y sin poder confundirse con un preset.</param>
     Public Function BuildSkeeMaskLayer(colorArgbOrPreset As UInteger, opacity As Double, texRgba As Single(),
                                        layerType As Integer, blend As SseBlendMode,
-                                       skinRgb As Double(), hairRgb As Double()) As SseOverlay
+                                       skinRgb As Double(), hairRgb As Double(),
+                                       Optional hasColor As Boolean = True) As SseOverlay
         Dim r As Double, g As Double, b As Double
-        If colorArgbOrPreset = SkeePresetSkin AndAlso skinRgb IsNot Nothing AndAlso skinRgb.Length >= 3 Then
+        If Not hasColor Then
+            ' "Esta capa no trae color" ⇒ blanco (neutro multiplicativo). NUNCA pasa por los sentinels.
+            r = 1.0 : g = 1.0 : b = 1.0
+        ElseIf colorArgbOrPreset = SkeePresetSkin AndAlso skinRgb IsNot Nothing AndAlso skinRgb.Length >= 3 Then
             r = skinRgb(0) : g = skinRgb(1) : b = skinRgb(2)
         ElseIf colorArgbOrPreset = SkeePresetHair AndAlso hairRgb IsNot Nothing AndAlso hairRgb.Length >= 3 Then
             r = Clamp01(hairRgb(0) * 2.0) : g = Clamp01(hairRgb(1) * 2.0) : b = Clamp01(hairRgb(2) * 2.0)   ' skee ×2 clamp

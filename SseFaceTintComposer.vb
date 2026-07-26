@@ -1,3 +1,4 @@
+Imports System.Collections.Concurrent
 Imports System.Runtime.CompilerServices
 Imports System.Linq
 
@@ -13,8 +14,18 @@ Imports System.Linq
 '''  - Per layer: coverage = maskR × TINV, then acc = lerp(acc, color, coverage). Uniform for all layers.
 '''  - Base = the NPC skin colour (QNAM) FLAT. Measured: CK's baked _d skin region is flat = QNAM (Dremora
 '''    QNAM=0 → CK black exact). The diffuse skin DETAIL is added at RENDER by the shader, so it is NOT in the
-'''    baked _d (using the head diffuse as the base gives ~52/255 — wrong). Compose in LINEAR (DecodeDds
-'''    returns linear); the DXT5 target has a ~3-5/255 compression floor.
+'''    baked _d (using the head diffuse as the base gives ~52/255 — wrong). The DXT5 target has a ~3-5/255
+'''    compression floor.
+'''
+''' ⚠️ SOBRE LA PALABRA "LINEAR" EN ESTE MODULO (anotado, NO renombrado): ni
+''' <see cref="FaceTintCpuCompositor.DecodeDds"/> ni <see cref="DecodeTextureRgba"/> aplican la curva
+''' sRGB→lineal. Devuelven <c>byte/255</c> CRUDO (ver el bucle de conversion de DecodeDds:
+''' <c>outArr(o) = CSng(r / 255.0)</c>, sin curva). O sea que "linear RGBA" en las firmas y summaries de este
+''' modulo, de SseOverlayCompositor y de SseSkeeMaskReader significa "valor de ALMACENAMIENTO normalizado a
+''' [0,1]" — que para una textura de color es sRGB, no luz lineal. Es correcto para lo que hace el compose del
+''' facetint (las mascaras son datos, no color, y el seed 0.5 es un valor de almacenamiento), pero NO hay que
+''' leerlo como "aca se trabaja en lineal". El UNICO lugar que de verdad linealiza es el fold
+''' (<see cref="SseFaceGenBaker.FoldFacetintIntoDiffuse"/>, que llama Srgb2Lin/Lin2Srgb explicitamente).
 '''
 ''' Measured mean 4.68/255 over 2032 Skyrim.esm NPCs (median 2.36, 98.4% ≤20/255). Tattoo masks (TINI 65-74)
 ''' carry TINT but no TINP — they must still register (flush-on-new-TINI), else war-paint NPCs go to ~74/255.
@@ -48,19 +59,27 @@ Public Module SseFaceTintComposer
         Public Presets As List(Of SseTintPreset) ' the CK dropdown's swatches for this layer (TIRS→CLFM/value); may be empty
     End Structure
 
+    ' ⭐⭐ CONCURRENTDICTIONARY, NO Dictionary. Estos cuatro caches los tocan DOS HILOS a la vez:
+    '   • el BAKE corre en el ThreadPool (MainForm.RunChargenBake / BuildCharGenSingle / el batch loose hacen
+    '     `Await Task.Run(...)` cuando WriteGPUSandboxOutput=False, que es el caso de RELEASE), y
+    '   • el RENDER corre en el hilo UI — que sigue bombeando mensajes DURANTE ese await, así que un WM_PAINT
+    '     entra a NpcFaceTintResolver → ComposeLinearRgba/DecodeTextureRgba → acá, en paralelo con el bake.
+    ' Un Dictionary en escritura concurrente no da "un valor raro": puede colgar el proceso en un bucle infinito
+    ' dentro de Insert() al re-hashear. Con ConcurrentDictionary el patrón de uso (TryGetValue + indexer set) es
+    ' idéntico, así que no cambia ni la lógica ni el resultado — sólo deja de ser una bomba de tiempo.
     ' Per-race+gender ORDERED tint-layer list cache (identical across NPCs of the same race). The engine
     ' composes cb2[0..15] in this RACE order (builder @0x18C9F40). Keyed "<raceFid><F|M>".
-    Private ReadOnly _layersCache As New Dictionary(Of String, List(Of SseTintMask))
+    Private ReadOnly _layersCache As New ConcurrentDictionary(Of String, List(Of SseTintMask))
     ' Decoded+resized mask cache at 512² (race-shared masks decode once across a batch). Keyed by dict path.
-    Private ReadOnly _texCache As New Dictionary(Of String, Single())(StringComparer.OrdinalIgnoreCase)
+    Private ReadOnly _texCache As New ConcurrentDictionary(Of String, Single())(StringComparer.OrdinalIgnoreCase)
     ' FUENTE decodificada por (path, target) — para targets != 512² (el fold SSE compone a la resolución NATIVA
     ' del complexion, p.ej. 4096² con COtR) cada fold re-leía (GetBytes) y re-decodeaba (DirectXTex) TODAS las
     ' máscaras del RACE. Acá se cachea el DECODE de la fuente (al mip que DecodeDds elige para ese target — por
     ' eso el target integra la key); el RESAMPLE al target NO se cachea (4096² ≈ 537 MB de Double por máscara,
     ' inviable retenerlo) pero corre paralelo en DecodeMask. Nothing cacheado = archivo ausente/indecodificable.
-    Private ReadOnly _texSrcCache As New Dictionary(Of String, FaceTintCpuCompositor.DecodedTex)(StringComparer.OrdinalIgnoreCase)
+    Private ReadOnly _texSrcCache As New ConcurrentDictionary(Of String, FaceTintCpuCompositor.DecodedTex)(StringComparer.OrdinalIgnoreCase)
     ' Resolved CLFM formID -> linear RGB [0,1] (race-default colours), cached.
-    Private ReadOnly _clfmCache As New Dictionary(Of UInteger, Double())
+    Private ReadOnly _clfmCache As New ConcurrentDictionary(Of UInteger, Double())
 
     ''' <summary>Drop the per-race layer + decoded-texture + CLFM caches (call on FilesDictionary rebuild).</summary>
     Public Sub ClearCaches()
@@ -244,8 +263,8 @@ Public Module SseFaceTintComposer
                 maskPath = custPath
             End If
             If iv <= 0.0 OrElse String.IsNullOrEmpty(maskPath) Then Continue For
-            Dim key = maskPath.Replace("/"c, "\"c).ToLowerInvariant()
-            If Not key.StartsWith("textures\") Then key = "textures\" & key
+            Dim key = NormalizeTextureKey(maskPath)   ' ⭐ MISMA normalización que el CPU (ver NormalizeTextureKey)
+            If String.IsNullOrEmpty(key) Then Continue For
             Dim mb = FilesDictionary_class.GetBytes(key)
             If mb Is Nothing Then Continue For
             outp.Add(New FaceTintLayerInput With {
@@ -531,6 +550,22 @@ Public Module SseFaceTintComposer
         Return layers
     End Function
 
+    ''' <summary>⭐ LA normalización de una ruta de textura a clave del FilesDictionary, para TODO el SSE.
+    ''' Delega en <see cref="FO4UnifiedMaterial_Class.CorrectTexturePath"/>, que es la MISMA que ya usaba el
+    ''' camino GPU (<c>SseFoldLayerStack.BuildFaceOverlayGpuLayers</c> / <c>BuildSkeeGpuLayers</c>).
+    '''
+    ''' <para>⛔ POR QUÉ EXISTE: acá había una normalización propia — <c>Replace("/","\").ToLowerInvariant()</c>
+    ''' + anteponer <c>textures\</c> si faltaba — mientras el GPU usaba <c>CorrectTexturePath</c>. Dos leyes
+    ''' distintas para el MISMO path ⇒ una podía resolver y la otra no, y eso se manifiesta como "el overlay
+    ''' aparece en un camino y desaparece en el otro" (rompe la paridad CPU==GPU en el ORIGEN, antes de componer
+    ''' un solo píxel). El caso concreto que sólo fallaba en CPU: un path que ya trae el prefijo <c>data\</c> —
+    ''' el que <c>FaceGenBuilder.EmbeddedEngineTexPath</c> escribe en el slot 6 — daba
+    ''' <c>textures\data\textures\…</c> ⇒ no existe. CorrectTexturePath lo resuelve (busca <c>\textures</c> en
+    ''' cualquier posición), y además cubre rutas absolutas y con <c>\</c> inicial.</para></summary>
+    Public Function NormalizeTextureKey(texPath As String) As String
+        Return FO4UnifiedMaterial_Class.CorrectTexturePath(texPath)
+    End Function
+
     ''' <summary>Decode a texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear). Public
     ''' wrapper over <see cref="DecodeMask"/> so other SSE compositors (overlays into the per-NPC diffuse) reuse
     ''' the SAME decode+resize+cache path. Nothing when the file is missing/undecodable.</summary>
@@ -541,8 +576,8 @@ Public Module SseFaceTintComposer
     ''' <summary>Decode a mask texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear).
     ''' Cached at 512². Nothing when the file is missing/undecodable.</summary>
     Private Function DecodeMask(texPath As String, w As Integer, h As Integer) As Single()
-        Dim key = texPath.Replace("/"c, "\"c).ToLowerInvariant()
-        If Not key.StartsWith("textures\") Then key = "textures\" & key
+        Dim key = NormalizeTextureKey(texPath)   ' ⭐ MISMA normalización que el camino GPU (ver NormalizeTextureKey)
+        If String.IsNullOrEmpty(key) Then Return Nothing
         Dim cached As Single() = Nothing
         If w = 512 AndAlso h = 512 AndAlso _texCache.TryGetValue(key, cached) Then Return cached
         ' Fuente decodificada, cacheada por (path, target) — ver _texSrcCache. La elección de mip de DecodeDds

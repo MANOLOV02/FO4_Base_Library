@@ -312,13 +312,9 @@ Public Class PreviewControl
     ''' por eso 0.251 NO oscurece: da (1.015625, 1.0, 1.015625). Se emula acá para que render == lo que el NIF
     ''' horneado (slot 3 vacío) rinde in-game.</summary>
     Public defaultFacegenDetailTex As Integer
-    ''' <summary>Detail neutro del AMPLIFY = (63,64,63)/255 ⇒ <c>(v + off)·255/64 = 1</c> EXACTO en los 3 canales.
-    ''' Se bindea en lugar de <see cref="defaultFacegenDetailTex"/> (0.251) SÓLO cuando el diffuse de la malla ya
-    ''' viene PLEGADO y el slot 3 está vacío (MaterialData.SseFoldDetailNeutralized): el amplify del detail ya
-    ''' está horneado en el slot 0, así que el shader debe multiplicar por 1 y no por (1.015625, 1.0, 1.015625).
-    ''' ⚠️ NO es 0.5: 0.5 es la identidad del SOFT-LIGHT (slot 6 / tint), no la del amplify. Mismo formato que el
-    ''' 0.251 (64², mips) para que el sampler no introduzca diferencia por minificación.</summary>
-    Public defaultFacegenFoldNeutralDetailTex As Integer
+    ' (ELIMINADA `defaultFacegenFoldNeutralDetailTex`, el detail neutro del amplify (63,64,63).) La bindeaba
+    ' la rama `SseFoldDetailNeutralized` del render, que era código muerto: con la ley actual el fold deja los
+    ' slots 3/6 REALES y pre-compensa la cadena, así que el amplify del engine SIEMPRE debe aplicarse.
     ''' <summary>Emulación de <c>DefaultGreyMap</c>: el default que el motor bindea al slot TINT (texture-set
     ''' slot 6 → material+0xA0 → PS <b>t3</b>) cuando no hay facetint. RE byte-level: init 0x140E57E30 crea
     ''' <c>DefaultGreyMap</c> con fill <c>0x80808080</c> = 0.5 y la guarda en manager+0x70 (= 0x328CC90, el
@@ -426,7 +422,6 @@ Public Class PreviewControl
 
         ' Detail neutro del AMPLIFY (63,64,63) ⇒ (v+off)·255/64 = 1 exacto, para heads PLEGADOS sin slot 3
         ' (ver campo). NO es 0.5 (esa es la identidad del soft-light = slot 6). Mismo 64²+mips que el 0.251.
-        defaultFacegenFoldNeutralDetailTex = CreateColorTexture(64, 64, 63, 64, 63, 255, mipped:=True)
 
         ' default FaceGen TINT = DefaultGreyMap del motor (0x80 = 0.5 = soft-light identidad; ver campo).
         ' Mismo 64²+mips que los otros dos para que el sampler no meta diferencia por minificación.
@@ -1619,7 +1614,6 @@ Public Class PreviewControl
         If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
         If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex)
-        If defaultFacegenFoldNeutralDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenFoldNeutralDetailTex)
         If defaultFacegenTintTex <> 0 Then GL.DeleteTexture(defaultFacegenTintTex)
         If defaultSseMsnSpecTex <> 0 Then GL.DeleteTexture(defaultSseMsnSpecTex)
         If defaultSseEngineGenericTex <> 0 Then GL.DeleteTexture(defaultSseEngineGenericTex)
@@ -1877,18 +1871,35 @@ Public Class PreviewModel
             ''' survives material cloning, same as <see cref="SkinToneColor"/> / <see cref="FaceTintOverlay_ID"/>.</summary>
             Public Property SkinToneBaked As Boolean = False
 
-            ''' <summary>"Ya está" flag para el DETAIL (slot 3 → PS t4) — el multiplicador amplificado
-            ''' <c>(detail + off)·255/64</c> YA se plegó en el diffuse de esta malla (fold SSE), así que el amplify del
-            ''' engine debe ser IDENTIDAD. Con un slot 3 PRESENTE el fold lo neutraliza reemplazando la textura por
-            ''' (63,64,63) bajo su key ⇒ detailMaskId resuelve a ese neutro y no hace falta este flag. Pero con el
-            ''' slot 3 AUSENTE (mods que borran el TX04, ej. Enhanced Khajiit) detailMaskId=0 y el shader bindea
-            ''' defaultFacegenDetailTex (0.251 ⇒ ×(1.015625, 1.0, 1.015625)) = RE-APLICA (bHasDetailMask es SIEMPRE
-            ''' True en facegen). Este flag hace que, plegado + sin detail, se use el neutro (63,64,63) en vez del
-            ''' 0.251 ⇒ folded == unfolded == bake. ⚠️ El slot 6 (tint) NO necesita flag análogo: su default de engine
-            ''' (gris 0.5) YA es la identidad del soft-light, así que sirve para plegado y no plegado por igual.
-            ''' Per-mesh en MaterialData (sobrevive el clone), igual que
-            ''' <see cref="SkinToneBaked"/> / <see cref="FaceTintOverlay_ID"/>. False = camino no plegado (default).</summary>
-            Public Property SseFoldDetailNeutralized As Boolean = False
+            ''' <summary>⭐⭐ SSE, camino PLEGADO: clave del diccionario de texturas donde vive el diffuse plegado
+            ''' de ESTE NPC. Vacía (default) = camino normal, y entonces <see cref="DiffuseTexture_ID"/> se resuelve
+            ''' exactamente como siempre ⇒ FO4, Wardrobe y el SSE no plegado quedan byte-idénticos.
+            '''
+            ''' <para>⛔ EL PROBLEMA QUE RESUELVE (contaminación entre NPCs): el fold instalaba su resultado bajo la
+            ''' clave del COMPLEXION (<c>…\female\femalehead.dds</c>), que es COMPARTIDA entre shapes y entre NPCs de
+            ''' la misma raza. Dos cabezas que resuelven al mismo complexion en un mismo PreviewModel ⇒ la segunda
+            ''' hereda el face-paint de la primera. El facetint no tiene el problema porque su clave YA es per-NPC
+            ''' (<c>facetint\&lt;plugin&gt;\&lt;formid&gt;.dds</c>); esto le aplica la MISMA ley al diffuse.</para>
+            '''
+            ''' <para>⚠️ ES UNA CLAVE (String), NO UN Texture_ID. A propósito: guardar el id crudo lo dejaría COLGADO
+            ''' si alguien limpia el diccionario sin reconstruir este MaterialData (CleanTextures borra las texturas
+            ''' pero el MaterialData puede sobrevivir), y samplear una textura ya borrada da basura. Resolviendo por
+            ''' clave, un diccionario limpio devuelve 0 y se cae solo al complexion real — el MISMO comportamiento
+            ''' que hoy, sin ventana de dangling.</para>
+            '''
+            ''' <para>⛔ Y NO se toca <c>MaterialBase.Diffuse_or_Base_Texture</c>: el material sigue apuntando al
+            ''' complexion REAL. Es lo que impide la cara blanca — <c>Process_Textures_GL</c> pide al loader los
+            ''' paths de <see cref="Textures_Path_List"/> y sólo los que NO están ya en el diccionario; si el material
+            ''' apuntara a una ruta sintética, tras un CleanTextures el loader la pediría, no existiría en disco, y la
+            ''' shape saldría BLANCA (que es exactamente lo que pasó cuando se intentó por ese lado).</para></summary>
+            Public Property SseFoldedDiffuseKey As String = ""
+
+            ' (ELIMINADA `SseFoldDetailNeutralized`.) Era el flag "el amplify del detail ya está plegado en el
+            ' diffuse, bindeá el neutro (63,64,63) en vez del 0.251". Quedó MUERTA cuando el fold dejó de
+            ' neutralizar los slots 3/6 y pasó a PRE-COMPENSAR la cadena entera: desde entonces sus dos únicas
+            ' asignaciones (NpcFaceTintResolver, camino plegado y no plegado) la ponían en False, así que la rama
+            ' del render que la consultaba nunca se tomaba y `defaultFacegenFoldNeutralDetailTex` no se bindeaba
+            ' jamás. Se fueron las tres cosas juntas: propiedad, rama y textura.
 
             ' OS-faithful blend decision. Two independent triggers, either suffices:
             '   1. NIF NiAlphaProperty.Flags.AlphaBlend (bit 0) — carried in the wrapper's
@@ -2006,6 +2017,13 @@ Public Class PreviewModel
             End Function
             Public ReadOnly Property DiffuseTexture_ID As UInteger
                 Get
+                    ' ⭐ SSE plegado: el diffuse de ESTE NPC vive bajo una clave PER-NPC. Ver SseFoldedDiffuseKey.
+                    ' Si la clave está vacía (todo FO4, Wardrobe, y el SSE no plegado) o el diccionario ya no la
+                    ' tiene (post-CleanTextures), se cae al complexion real: comportamiento idéntico al previo.
+                    If Not String.IsNullOrEmpty(SseFoldedDiffuseKey) Then
+                        Dim foldedId = GetTextureID(SseFoldedDiffuseKey)
+                        If foldedId <> 0 Then Return foldedId
+                    End If
                     Return GetTextureID(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.Diffuse_or_Base_Texture))
                 End Get
             End Property
@@ -3642,21 +3660,19 @@ Public Class PreviewModel
                 ' in-game (render == bake).
                 shader.SetBool("bHasDetailMask", isFaceTint)
                 If isFaceTint Then
-                    ' Slot 3 vacío: normalmente el default del engine 0.251. PERO si el diffuse ya viene PLEGADO
-                    ' (SseFoldDetailNeutralized) el amplify del detail ya está horneado ⇒ acá debe ser IDENTIDAD
-                    ' EXACTA (63,64,63) ⇒ (v+off)·255/64 = 1, o el head plegado sin detail sale 1.5% más claro en
-                    ' R/B que el unfolded/bake. Con slot 3 PRESENTE el fold ya reemplazó su textura por ese mismo
-                    ' (63,64,63) ⇒ detailMaskId<>0 y esta rama no aplica.
-                    Dim detailDefault = If(material.SseFoldDetailNeutralized,
-                                           Me.ParentModel.ParentControl.defaultFacegenFoldNeutralDetailTex,
-                                           Me.ParentModel.ParentControl.defaultFacegenDetailTex)
-                    Dim detailTex = If(detailMaskId <> 0, detailMaskId, detailDefault)
+                    ' Slot 3 vacío ⇒ default del engine 0.251 (BSShader_DefFacegenDetail), SIEMPRE.
+                    ' ⛔ Acá había una rama que, cuando el diffuse venía plegado, bindeaba un neutro (63,64,63) para
+                    ' que el amplify fuera identidad. Eso valía con la ley VIEJA del fold (que neutralizaba los
+                    ' slots 3 y 6). Con la ley actual el fold deja los slots REALES y PRE-COMPENSA la cadena
+                    ' (SseFaceGenBaker.PreCompensateEngineChain), así que el shader tiene que aplicar el amplify
+                    ' NORMALMENTE — es justo lo que cancela la pre-compensación. La rama, su flag
+                    ' (MaterialData.SseFoldDetailNeutralized) y su textura quedaron muertos y se eliminaron.
+                    Dim detailTex = If(detailMaskId <> 0, detailMaskId, Me.ParentModel.ParentControl.defaultFacegenDetailTex)
                     If Logger.Enabled Then
                         Dim shpN = MeshData.Shape?.ShapeName
-                        Dim foldN = material.SseFoldDetailNeutralized
                         Dim hasSlot = (detailMaskId <> 0)
-                        Dim defVal = If(foldN, "(63,64,63)-amp-identity", "0.251-engine-default")
-                        Logger.LogLazy(Function() $"[DETAIL-DBG] FACE shape='{shpN}' detailSlotBound={hasSlot} foldNeutralized={foldN} → default={defVal} | facegenChain={materialBase.Facegen} skinTintColor=({materialBase.SkinTintColor.R},{materialBase.SkinTintColor.G},{materialBase.SkinTintColor.B}) specStr={materialBase.SpecularMult:F2} specColor=({materialBase.SpecularColor.R},{materialBase.SpecularColor.G},{materialBase.SpecularColor.B}) gloss={materialBase.NifGlossiness:F3} | LIGHT-ADD soft={materialBase.SubsurfaceLighting}/roll={materialBase.SubsurfaceLightingRolloff:F3} back={materialBase.BackLighting}/pow={materialBase.BackLightPower:F3} rim={materialBase.RimLighting}/pow={materialBase.RimPower:F3} emit={materialBase.EmitEnabled}/col=({materialBase.EmittanceColor.R},{materialBase.EmittanceColor.G},{materialBase.EmittanceColor.B})x{materialBase.EmittanceMult:F2} glowFlag={materialBase.Glowmap}/glowTexId={glowTextureId}")
+                        Dim defVal = "0.251-engine-default"
+                        Logger.LogLazy(Function() $"[DETAIL-DBG] FACE shape='{shpN}' detailSlotBound={hasSlot} → default={defVal} | facegenChain={materialBase.Facegen} skinTintColor=({materialBase.SkinTintColor.R},{materialBase.SkinTintColor.G},{materialBase.SkinTintColor.B}) specStr={materialBase.SpecularMult:F2} specColor=({materialBase.SpecularColor.R},{materialBase.SpecularColor.G},{materialBase.SpecularColor.B}) gloss={materialBase.NifGlossiness:F3} | LIGHT-ADD soft={materialBase.SubsurfaceLighting}/roll={materialBase.SubsurfaceLightingRolloff:F3} back={materialBase.BackLighting}/pow={materialBase.BackLightPower:F3} rim={materialBase.RimLighting}/pow={materialBase.RimPower:F3} emit={materialBase.EmitEnabled}/col=({materialBase.EmittanceColor.R},{materialBase.EmittanceColor.G},{materialBase.EmittanceColor.B})x{materialBase.EmittanceMult:F2} glowFlag={materialBase.Glowmap}/glowTexId={glowTextureId}")
                     End If
                     shader.BindTexture("texDetailMask", detailTex, TextureUnit.Texture8)
                 End If

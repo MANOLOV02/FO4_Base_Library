@@ -931,8 +931,10 @@ void main(void)
 			// tipo y el tono se aplicaba igual.
 			// CAVEAT que este gate ACTIVA (preexistente, no lo crea): `SkinToneBaked` es un latch de una
 			// sola via -- NpcFaceTintResolver lo pone en True al final de la iteracion INCONDICIONALMENTE,
-			// aunque no se haya compuesto nada, y NUNCA lo resetea a False (su flag hermano
-			// SseFoldDetailNeutralized si se resetea). Camino concreto: edicion viva de tints -> se restaura
+			// aunque no se haya compuesto nada, y NUNCA lo resetea a False. (La comparacion original era contra
+			// SseFoldDetailNeutralized -- su flag hermano, que si se reseteaba. Esa propiedad YA NO EXISTE: se
+			// elimino por muerta cuando el fold paso a PRE-COMPENSAR la cadena en vez de neutralizar los slots 3/6.)
+			// Camino concreto: edicion viva de tints -> se restaura
 			// el diffuse PRISTINE -> el usuario borra todas las capas -> TryApplyFaceTints sale temprano ->
 			// el flag queda True con un diffuse sin tono => con este gate esa malla se dibuja SIN tono.
 			// Antes era invisible porque el uniform no se leia. El fix correcto es del lado del latch

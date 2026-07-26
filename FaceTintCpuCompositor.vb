@@ -59,11 +59,19 @@ Public Module FaceTintCpuCompositor
     Public Sub G22DiffuseBgraToLinearInPlace(bgra As Byte())
         If bgra Is Nothing Then Return
         Dim n = bgra.Length \ 4
-        For i = 0 To n - 1
-            bgra(i * 4) = CByte(Math.Round(G22ToLin1(bgra(i * 4) / 255.0) * 255.0))          ' B
-            bgra(i * 4 + 1) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 1) / 255.0) * 255.0))  ' G
-            bgra(i * 4 + 2) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 2) / 255.0) * 255.0))  ' R
-        Next
+        ' Paralelo por rangos: in-place PURAMENTE POR PIXEL (cada i lee y escribe SOLO bgra(i*4..i*4+2), el
+        ' alpha ni se toca) => sin lectura cruzada pese a ser in-place, y BIT-IDENTICO al serial. Pesa porque
+        ' son TRES Math.Pow por pixel (G22ToLin1) sobre el diffuse de la cara a resolucion nativa, y corre en
+        ' cada refresh del render en modo CPU-skinning.
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, n),
+            Sub(range)
+                For i = range.Item1 To range.Item2 - 1
+                    bgra(i * 4) = CByte(Math.Round(G22ToLin1(bgra(i * 4) / 255.0) * 255.0))          ' B
+                    bgra(i * 4 + 1) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 1) / 255.0) * 255.0))  ' G
+                    bgra(i * 4 + 2) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 2) / 255.0) * 255.0))  ' R
+                Next
+            End Sub)
     End Sub
 
     Private Function LinToG221(c As Double) As Double
@@ -322,6 +330,45 @@ Public Module FaceTintCpuCompositor
     ''' GL_LINEAR + CLAMP_TO_EDGE, texel = uv*size-0.5, pixel-center u=(x+0.5)/dw (idéntico a <see cref="SampleBilinear"/>
     ''' / <c>SampleChannelAt</c>). Para que el resize del bake SSE (diffuse/normal plegados a una resolución != Inherit)
     ''' matchee el resample per-layer de FO4. sw==dw AndAlso sh==dh ⇒ devuelve el mismo array (no-op, byte-inerte).</summary>
+    ''' <summary>⭐ Gemelo FLOAT de <see cref="ResampleBgra"/>: MISMO filtro (GL_LINEAR + CLAMP_TO_EDGE,
+    ''' texel = uv*size-0.5, pixel-center u=(x+0.5)/dw) sobre un acumulador <c>Single()</c> RGBA, SIN pasar por
+    ''' bytes.
+    '''
+    ''' <para>Existe para que el RENDER pueda honrar la resolución de CharGen Options igual que el bake. El bake
+    ''' resamplea el buffer ya convertido a BGRA (es lo que va a un DDS de 8 bits); el render trabaja en float de
+    ''' punta a punta y NO debe cuantizar en el medio — es la misma regla que ya rige acá: la pérdida de 8 bits y
+    ''' de BCn es del ARCHIVO, no del COMPOSE. Con el filtro idéntico, render y bake dan el mismo píxel salvo esa
+    ''' cuantización final que sólo paga el archivo.</para>
+    '''
+    ''' <para>⚠️ Se resamplea SOBRE LOS MISMOS VALORES que el bake, o sea en el espacio en que esté el buffer
+    ''' (para el fold SSE: sRGB, ANTES del sRGB→lineal final). Bilinear en sRGB ≠ bilinear en lineal, así que el
+    ''' punto de la cadena donde se llama es parte del contrato — ver el call site del fold.</para>
+    ''' <para>sw==dw AndAlso sh==dh ⇒ devuelve el MISMO array (no-op, bit-inerte).</para></summary>
+    Public Function ResampleRgbaFloat(src As Single(), sw As Integer, sh As Integer, dw As Integer, dh As Integer) As Single()
+        If src Is Nothing OrElse sw <= 0 OrElse sh <= 0 OrElse dw <= 0 OrElse dh <= 0 Then Return src
+        If sw = dw AndAlso sh = dh Then Return src
+        Dim outp(dw * dh * 4 - 1) As Single
+        System.Threading.Tasks.Parallel.For(0, dh, Sub(y)
+                                                       Dim v = (y + 0.5) / dh
+                                                       Dim fy = Clamp01(v) * sh - 0.5
+                                                       Dim iy = CInt(Math.Floor(fy)) : Dim ty = fy - iy
+                                                       Dim y0 = Math.Max(0, Math.Min(sh - 1, iy)), y1 = Math.Max(0, Math.Min(sh - 1, iy + 1))
+                                                       For x = 0 To dw - 1
+                                                           Dim u = (x + 0.5) / dw
+                                                           Dim fx = Clamp01(u) * sw - 0.5
+                                                           Dim ix = CInt(Math.Floor(fx)) : Dim tx = fx - ix
+                                                           Dim x0 = Math.Max(0, Math.Min(sw - 1, ix)), x1 = Math.Max(0, Math.Min(sw - 1, ix + 1))
+                                                           Dim i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4, i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4
+                                                           Dim o = (y * dw + x) * 4
+                                                           For ch = 0 To 3
+                                                               outp(o + ch) = CSng(src(i00 + ch) * (1 - tx) * (1 - ty) + src(i10 + ch) * tx * (1 - ty) +
+                                                                                   src(i01 + ch) * (1 - tx) * ty + src(i11 + ch) * tx * ty)
+                                                           Next
+                                                       Next
+                                                   End Sub)
+        Return outp
+    End Function
+
     Public Function ResampleBgra(bgra As Byte(), sw As Integer, sh As Integer, dw As Integer, dh As Integer) As Byte()
         If bgra Is Nothing OrElse sw <= 0 OrElse sh <= 0 OrElse dw <= 0 OrElse dh <= 0 Then Return bgra
         If sw = dw AndAlso sh = dh Then Return bgra
@@ -382,9 +429,16 @@ Public Module FaceTintCpuCompositor
     ''' source (face d/_n/_s) + tint + swap se REPITEN entre clones, asi que cada DDS se decodifica UNA
     ''' sola vez en todo el batch (el path GPU ya hacia esto via TintGpuCache). Sin esto, cada clon
     ''' re-decodifica las ~49 texturas via DirectXTex. Nothing = comportamiento per-cara (1 bake aislado).
-    ''' OJO: los bakes del batch son SECUENCIALES (un await a la vez) -> Dictionary plano alcanza; si se
-    ''' paraleliza el loop de clones, cambiar a ConcurrentDictionary.</summary>
-    Public Property BatchDecodeCache As Dictionary(Of String, DecodedTex)
+    ''' ⭐ CONCURRENTDICTIONARY. La nota vieja decia "los bakes del batch son SECUENCIALES (un await a la vez)
+    ''' -> Dictionary plano alcanza; si se paraleliza el loop de clones, cambiar a ConcurrentDictionary". Es cierto
+    ''' ENTRE BAKES, pero el segundo hilo no es otro bake: es el RENDER. El batch corre cada bake con
+    ''' `Await Task.Run(...)` (release, WriteGPUSandboxOutput=False) y durante ese await la bomba de mensajes de
+    ''' WinForms SIGUE VIVA -> un WM_PAINT entra al render EN EL HILO UI y llega a este mismo cache mientras el
+    ''' bake escribe desde el ThreadPool. Un Dictionary en escritura concurrente no da "un valor raro": puede
+    ''' colgar el proceso en un bucle infinito dentro de Insert() al rehashear. El patron de uso (TryGetValue +
+    ''' indexer set) es identico, asi que no cambia ni la logica ni el resultado. Mismo motivo que los caches de
+    ''' SseFaceTintComposer.</summary>
+    Public Property BatchDecodeCache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)
 
     ''' <summary>Saltea el trabajo de PIXELES del compose (seed + region swaps + tint layers) devolviendo el
     ''' canal con sus dimensiones reales y un buffer sin componer. SOLO para barridos que validan el NIF
@@ -398,7 +452,7 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>Arranca el cache de decode batch (llamar ANTES del loop de clones).</summary>
     Public Sub BeginBatchDecodeCache()
-        BatchDecodeCache = New Dictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)
+        BatchDecodeCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)
     End Sub
 
     ''' <summary>Cierra y libera el cache de decode batch (llamar en Finally despues del loop). Los
@@ -426,7 +480,7 @@ Public Module FaceTintCpuCompositor
                                        Optional headDiffuseAlphaTest As Boolean = False) As CpuPipelineResult
         Dim res As New CpuPipelineResult()
         ' BatchDecodeCache (si activo) reusa decodes entre clones; si no, dict per-call (1 cara).
-        Dim cache = If(BatchDecodeCache, New Dictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase))
+        Dim cache = If(BatchDecodeCache, New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase))
         res.Diffuse = ComposeChannelCpu(diffuseBytes, FaceTintChannel.Diffuse, layers, swaps, cache, resolution, diffuseKey, headDiffuseAlphaTest)
         res.Normal = ComposeChannelCpu(normalBytes, FaceTintChannel.Normal, layers, swaps, cache, resolution, normalKey)
         res.Specular = ComposeChannelCpu(specBytes, FaceTintChannel.Specular, layers, swaps, cache, resolution, specKey)
@@ -435,7 +489,7 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>Decode cacheado. preferW/H>0 -> usa el MIP de ese tamaño (key suffix @WxH para no chocar
     ''' con el mip0 de la misma textura).</summary>
-    Private Function CachedDecode(cache As Dictionary(Of String, DecodedTex), key As String, bytes As Byte(),
+    Private Function CachedDecode(cache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex), key As String, bytes As Byte(),
                                   Optional preferW As Integer = 0, Optional preferH As Integer = 0) As DecodedTex
         If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
         Dim ck = If(preferW > 0 OrElse preferH > 0, $"{key}@{preferW}x{preferH}", key)
@@ -452,7 +506,7 @@ Public Module FaceTintCpuCompositor
     Private Function ComposeChannelCpu(srcBytes As Byte(), channel As FaceTintChannel,
                                        layers As IList(Of FaceTintLayerInput),
                                        swaps As IList(Of FaceRegionSwapInput),
-                                       cache As Dictionary(Of String, DecodedTex),
+                                       cache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex),
                                        resolution As FaceTintResolutionSettings,
                                        Optional srcKey As String = Nothing,
                                        Optional headDiffuseAlphaTest As Boolean = False) As CpuChannelResult
@@ -708,10 +762,20 @@ Public Module FaceTintCpuCompositor
         ' CK=False). Inerte para N/S (BC5 sin alpha). Ver reference_acbs_diffuse_alpha_test_flag.
         Dim outB(n * 4 - 1) As Byte
         Dim keepBaseAlpha As Boolean = headDiffuseAlphaTest AndAlso isD
-        For i As Integer = 0 To n - 1
-            Dim o = i * 4
-            outB(o) = ToByte(accB(i)) : outB(o + 1) = ToByte(accG(i)) : outB(o + 2) = ToByte(accR(i)) : outB(o + 3) = If(keepBaseAlpha, ToByte(accA(i)), CByte(255))
-        Next
+        ' Paralelo por rangos: empaquetado float->byte PURAMENTE POR PIXEL (lee acc*(i), escribe outB(i*4..+3)),
+        ' sin estado compartido ni acumulacion cruzada => BIT-IDENTICO al serial (mismo ToByte sobre el mismo
+        ' double; solo cambia que thread lo ejecuta). Es el ULTIMO tramo per-pixel que quedaba serial en el
+        ' compose CPU de FO4, y corre UNA VEZ POR CANAL (D, N y S) a resolucion nativa: con una cara 4096 son
+        ' 3 x 16,7M iteraciones, mientras el seed, los region-swaps y el loop de capas de mas arriba ya
+        ' paralelizan. Mismo patron y misma justificacion que esos.
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, n),
+            Sub(range)
+                For i As Integer = range.Item1 To range.Item2 - 1
+                    Dim o = i * 4
+                    outB(o) = ToByte(accB(i)) : outB(o + 1) = ToByte(accG(i)) : outB(o + 2) = ToByte(accR(i)) : outB(o + 3) = If(keepBaseAlpha, ToByte(accA(i)), CByte(255))
+                Next
+            End Sub)
         Return New CpuChannelResult With {.Width = w, .Height = h, .Bgra = outB}
     End Function
 

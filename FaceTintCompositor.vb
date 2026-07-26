@@ -823,7 +823,10 @@ void main() {
         // (caso Enhanced Khajiit, TX04 borrado).
         vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.2509803922);
         vec3 sl = cl*cl + 2.0*cl*layerSample.rgb*(1.0 - cl);   // softlight(complexion_lin, TINT = facetint)
-        vec3 fg = (dt + uFgTintOff) * uFgTintAmp;              // amplify del DETAIL
+        // PISO 0.25 = EL MISMO que aplica la rama de UNFOLD (uFgTintFold==2). Tenerlo solo alla hacia que la
+        // inversa dividiera por 0.25 mientras el fold multiplicaba por el amp real => la cadena no cancelaba
+        // con un detail oscuro (detail < 0.0587). Espejo de SseFaceGenBaker.FgAmpFloor / FgTintChannelClamped.
+        vec3 fg = max((dt + uFgTintOff) * uFgTintAmp, vec3(0.25));   // amplify del DETAIL, acotado
         vec3 lin = sl * fg;
         vec3 outc = vec3(linearToSrgb1(lin.r), linearToSrgb1(lin.g), linearToSrgb1(lin.b));
         fragColor = vec4(outc, prevRgba.a);
