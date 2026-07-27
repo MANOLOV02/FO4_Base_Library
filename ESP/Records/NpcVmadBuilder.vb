@@ -320,7 +320,14 @@ Public Module NpcVmadBuilder
     ''' edits an NPC and re-saves, only THAT NPC's hash changes, so only that actor re-applies on its next load.
     ''' Every other NPC keeps its number and stays quiet. A global constant would instead force every NPC in the
     ''' plugin to re-apply on any edit.</para></summary>
-    Public Function StablePayloadHash(script As VmadScriptSpec, excludeProperty As String) As Integer
+    ''' <param name="logicRevision">Revisión de la LÓGICA del script (no del payload). Se mezcla igual que
+    ''' un campo más, así que cambiarla cambia el hash de TODOS los NPC de una. Existe porque el sello sólo
+    ''' cubría el payload: si arreglábamos el .pex (p.ej. que RemovePrevious barra también los nodos Face),
+    ''' los actores cuyo payload no había cambiado seguían viendo el MISMO número, el guard de OnLoad
+    ''' cortaba en la primera línea y el arreglo no llegaba a ejecutarse NUNCA. Nothing/"" ⇒ no se mezcla
+    ''' (hash idéntico al de antes de existir este parámetro).</param>
+    Public Function StablePayloadHash(script As VmadScriptSpec, excludeProperty As String,
+                                      Optional logicRevision As String = Nothing) As Integer
         ' FNV-1a depends on the 32-bit multiply WRAPPING AROUND. VB.NET has integer overflow checks on by
         ' default, so `h * 16777619UI` on a UInteger throws OverflowException instead of truncating (C gets
         ' the wrap for free; VB does not). Accumulate in 64 bits and mask back to 32 after every step — same
@@ -338,6 +345,9 @@ Public Module NpcVmadBuilder
 
         If script IsNot Nothing AndAlso script.Properties IsNot Nothing Then
             mix(script.Name)
+            ' Va DENTRO del mismo FNV y con el mismo separador que los demás campos: no es un post-proceso,
+            ' es un campo más del sello. Así "revisión 2 + payload P" nunca puede colisionar con "payload P".
+            If Not String.IsNullOrEmpty(logicRevision) Then mix(logicRevision)
             For Each p In script.Properties
                 If p Is Nothing Then Continue For
                 If String.Equals(p.Name, excludeProperty, StringComparison.OrdinalIgnoreCase) Then Continue For
