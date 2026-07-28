@@ -243,7 +243,46 @@ Public Module FaceTintCpuCompositor
         ' debajo de la cuantización a 8-bit. La MATEMÁTICA sigue en Double (los escalares widen al leer). = la
         ' misma clase de precisión que el GPU (Rgba32f). Delta byte vs baseline: validar con el compare batch.
         Public Rgba As Single()   ' length W*H*4, orden R,G,B,A en [0,1]
+        ''' <summary>Canales REALES de la fuente ANTES del pack a RGBA: 4 (BC1/3/7, RGBA8/BGRA8), 2 (BC5 → R8G8)
+        ''' o 1 (BC4 → gray). El pack de abajo rellena lo que falta con constantes (2 canales ⇒ <c>B=0, A=1</c>),
+        ''' y hasta acá ese relleno era INDISTINGUIBLE de un píxel real: un consumidor que interpreta el RGB como
+        ''' un VECTOR (un normal map) leía <c>z = 2·0−1 = −1</c>, la normal apuntando hacia adentro.
+        ''' <para>⛔ NO se puede deducir del píxel: en un normal MODEL-SPACE <c>B=0</c> es un valor legítimo
+        ''' (z=−1, la nuca). Tiene que salir del FORMATO — por eso viaja acá. Ver
+        ''' <see cref="ReconstructNormalZ"/>.</para>
+        ''' Default 4 ⇒ cualquier consumidor que no lo mire se comporta EXACTAMENTE como antes.</summary>
+        Public Channels As Integer = 4
     End Class
+
+    ''' <summary>⭐ LA ley de reconstrucción del eje Z de un normal map de 2 canales (BC5/R8G8), in-place sobre un
+    ''' buffer RGBA [0,1]. UNA sola implementación: la usan el decode de las texturas de overlay
+    ''' (<c>SseFaceTintComposer.DecodeNormalRgba</c>) y el decode del <c>_msn</c> de la cabeza en el bake y en el
+    ''' render — si divergieran, el mismo tatuaje se hornearía distinto de como se ve.
+    '''
+    ''' <para>Fórmula: se decodifica x,y a [−1,1] y se despeja <c>z = sqrt(max(0, 1 − x² − y²))</c>, que es la
+    ''' inversa EXACTA (no una heurística) del encode de un normal unitario. El signo no es ambiguo: una fuente de
+    ''' 2 canales no puede ser model-space —es justo lo que valida CharGen Options para el <c>_msn</c>— así que es
+    ''' tangent-space autorada y ahí <c>z ≥ 0</c> SIEMPRE.</para>
+    '''
+    ''' <para>Se aplica DESPUÉS del resample, no sobre los texels de origen: es lo que hace el hardware (se
+    ''' samplea el BC5 ya FILTRADO y recién ahí el shader despeja z), así que este orden es el que matchea al
+    ''' GPU. El alpha no se toca (una fuente de 2 canales no tiene alpha; vale la constante 1 del pack).</para></summary>
+    Public Sub ReconstructNormalZ(rgba As Single(), npix As Integer)
+        If rgba Is Nothing OrElse npix <= 0 OrElse rgba.Length < npix * 4 Then Return
+        ' Por-píxel puro, escrituras disjuntas ⇒ bit-idéntico al serial (misma justificación que el resto del
+        ' módulo). El _msn de la cabeza puede ser 4096² con COtR.
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, npix),
+            Sub(range)
+                For i = range.Item1 To range.Item2 - 1
+                    Dim x = 2.0 * rgba(i * 4) - 1.0
+                    Dim y = 2.0 * rgba(i * 4 + 1) - 1.0
+                    Dim zz = 1.0 - x * x - y * y
+                    Dim z = If(zz > 0.0, Math.Sqrt(zz), 0.0)
+                    rgba(i * 4 + 2) = CSng((z + 1.0) * 0.5)
+                Next
+            End Sub)
+    End Sub
 
     ''' <summary>Decodifica un DDS (BCn -> uncompressed) por CPU/DirectXTex (useCompress:=False) a RGBA
     ''' float [0,1]. 4-canales (BC1/3/7 -> RGBA/BGRA), 2-canales (BC5 -> R8G8, B=0 A=1), 1-canal (BC4 ->
@@ -319,7 +358,10 @@ Public Module FaceTintCpuCompositor
                         outArr(o) = CSng(r / 255.0) : outArr(o + 1) = CSng(g / 255.0) : outArr(o + 2) = CSng(b / 255.0) : outArr(o + 3) = CSng(a / 255.0)
                     Next
                 End Sub)
-            Return New DecodedTex With {.Width = w, .Height = h, .Rgba = outArr}
+            ' `bpp` acá ES el número de canales de la fuente (4 = RGBA/BGRA8, 2 = R8G8 de un BC5, 1 = R8 de un
+            ' BC4): la tabla de formatos de arriba lo asigna con ese significado. Se propaga para que un
+            ' consumidor VECTORIAL (normal map) sepa que el B/A que ve es relleno del pack. Ver DecodedTex.Channels.
+            Return New DecodedTex With {.Width = w, .Height = h, .Rgba = outArr, .Channels = bpp}
         Catch
             Return Nothing
         End Try

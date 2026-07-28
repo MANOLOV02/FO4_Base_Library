@@ -1894,6 +1894,19 @@ Public Class PreviewModel
             ''' shape saldría BLANCA (que es exactamente lo que pasó cuando se intentó por ese lado).</para></summary>
             Public Property SseFoldedDiffuseKey As String = ""
 
+            ''' <summary>⭐ GEMELO de <see cref="SseFoldedDiffuseKey"/> para el NORMAL (<c>_msn</c>) de la cabeza en
+            ''' SSE: clave PER-NPC bajo la que vive el <c>_msn</c> con los normales de los overlays de cara ya
+            ''' plegados. "" = no hay pliegue de normal (todo FO4, Wardrobe, y el SSE sin overlays-con-normal) ⇒ el
+            ''' bind cae al <c>_msn</c> real, byte-idéntico al comportamiento previo.
+            '''
+            ''' <para>Existe para que el PREVIEW muestre lo que el bake hornea: el bake ya plegaba el normal
+            ''' (<c>FaceGenBuilder.WriteSseFaceDiffuseWithOverlays</c>, bloque de NORMALES) y el render no lo hacía
+            ''' NUNCA, así que un face-paint con relieve se horneaba pero no se veía. Mismas razones de diseño que
+            ''' el diffuse: clave y no id (un diccionario limpio devuelve 0 y se cae solo al real, sin dangling), y
+            ''' el material sigue apuntando al <c>_msn</c> REAL para que el loader nunca pida una ruta
+            ''' sintética.</para></summary>
+            Public Property SseFoldedNormalKey As String = ""
+
             ' (ELIMINADA `SseFoldDetailNeutralized`.) Era el flag "el amplify del detail ya está plegado en el
             ' diffuse, bindeá el neutro (63,64,63) en vez del 0.251". Quedó MUERTA cuando el fold dejó de
             ' neutralizar los slots 3/6 y pasó a PRE-COMPENSAR la cadena entera: desde entonces sus dos únicas
@@ -2029,6 +2042,14 @@ Public Class PreviewModel
             End Property
             Public ReadOnly Property NormalTexture_ID As UInteger
                 Get
+                    ' ⭐ SSE plegado: el _msn de ESTE NPC (con los normales de overlay compuestos) vive bajo una
+                    ' clave PER-NPC. Espejo EXACTO de DiffuseTexture_ID — ver SseFoldedNormalKey. Clave vacía
+                    ' (todo FO4, Wardrobe, SSE sin overlay-normal) o diccionario ya limpiado ⇒ se cae al _msn real:
+                    ' comportamiento idéntico al previo.
+                    If Not String.IsNullOrEmpty(SseFoldedNormalKey) Then
+                        Dim foldedId = GetTextureID(SseFoldedNormalKey)
+                        If foldedId <> 0 Then Return foldedId
+                    End If
                     Return GetTextureID(FO4UnifiedMaterial_Class.CorrectTexturePath(MaterialBase.NormalTexture))
                 End Get
             End Property

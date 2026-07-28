@@ -573,13 +573,36 @@ Public Module SseFaceTintComposer
         Return DecodeMask(texPath, w, h)
     End Function
 
+    ''' <summary>⭐ Decode de un NORMAL MAP (FilesDictionary key) a RGBA[0,1] en exactamente W×H — el MISMO
+    ''' camino de decode + resize + caché que <see cref="DecodeTextureRgba"/>, y encima la reconstrucción del eje Z
+    ''' cuando la fuente trae 2 canales (BC5/R8G8), vía <see cref="FaceTintCpuCompositor.ReconstructNormalZ"/>.
+    '''
+    ''' <para>⛔ POR QUÉ EXISTE Y POR QUÉ NO ALCANZA CON EL DE COLOR: <c>DecodeDds</c> empaqueta las fuentes de 2
+    ''' canales como <c>B=0, A=1</c>. Leído como color eso es inocuo; leído como VECTOR da <c>z = −1</c> — la
+    ''' normal del tatuaje apuntando hacia adentro, con el lighting invertido en toda la zona cubierta. Y BC5 es
+    ''' justamente el formato estándar de los normales tangent-space de SSE, que es lo que traen los face-paint de
+    ''' RaceMenu. La compresión que el usuario elige en CharGen Options es la de SALIDA y no cubre nada de esto:
+    ''' el defecto está en la ENTRADA, en una textura que la app no controla.</para>
+    '''
+    ''' <para>La caché usa un NAMESPACE PROPIO (sufijo <c>|nrm</c>): la misma ruta puede pedirse como color
+    ''' (cobertura) y como normal, y servir una por la otra devolvería un buffer con el B equivocado.</para></summary>
+    Public Function DecodeNormalRgba(texPath As String, w As Integer, h As Integer) As Single()
+        Return DecodeMask(texPath, w, h, asNormalMap:=True)
+    End Function
+
     ''' <summary>Decode a mask texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear).
     ''' Cached at 512². Nothing when the file is missing/undecodable.</summary>
-    Private Function DecodeMask(texPath As String, w As Integer, h As Integer) As Single()
+    ''' <param name="asNormalMap">True ⇒ la fuente se interpreta como VECTOR: si trae 2 canales se despeja el eje
+    ''' Z tras el resample (ver <see cref="DecodeNormalRgba"/>). False (default) = comportamiento previo, sin tocar
+    ''' un solo byte de ningún caller existente.</param>
+    Private Function DecodeMask(texPath As String, w As Integer, h As Integer,
+                                Optional asNormalMap As Boolean = False) As Single()
         Dim key = NormalizeTextureKey(texPath)   ' ⭐ MISMA normalización que el camino GPU (ver NormalizeTextureKey)
         If String.IsNullOrEmpty(key) Then Return Nothing
+        ' Namespace de caché separado para el decode vectorial (ver DecodeNormalRgba): mismo path, otro contenido.
+        Dim ckey = If(asNormalMap, key & "|nrm", key)
         Dim cached As Single() = Nothing
-        If w = 512 AndAlso h = 512 AndAlso _texCache.TryGetValue(key, cached) Then Return cached
+        If w = 512 AndAlso h = 512 AndAlso _texCache.TryGetValue(ckey, cached) Then Return cached
         ' Fuente decodificada, cacheada por (path, target) — ver _texSrcCache. La elección de mip de DecodeDds
         ' depende del target ⇒ el target integra la key. El miss (Nothing) también se cachea (archivo ausente).
         ' Fuentes grandes (> 1024² tras elegir mip) no se retienen: 32 MB de Double por entrada es el techo.
@@ -600,9 +623,13 @@ Public Module SseFaceTintComposer
             If Not isRedundantAt512 AndAlso (t Is Nothing OrElse t.Rgba.Length <= 1024 * 1024 * 4) Then _texSrcCache(srcKey) = t
         End If
         If t Is Nothing Then
-            If w = 512 AndAlso h = 512 Then _texCache(key) = Nothing
+            If w = 512 AndAlso h = 512 Then _texCache(ckey) = Nothing
             Return Nothing
         End If
+        ' ⭐ `_texSrcCache` SE COMPARTE entre el decode de color y el vectorial a propósito: la DecodedTex es la
+        ' fuente CRUDA y ahora lleva su propio `Channels`, así que las dos interpretaciones salen del MISMO decode
+        ' (el caro). Lo que se separa es sólo la caché del buffer YA empaquetado (`ckey`), que sí difiere.
+        Dim needsZ As Boolean = asNormalMap AndAlso t.Channels < 3
         Dim outp(w * h * 4 - 1) As Single
         ' ⭐ IDENTIDAD: si la fuente ya está en el tamaño pedido, el bilineal de abajo devuelve exactamente el
         ' texel de origen y sólo cuesta una pasada completa de trabajo. Con sw=dw: fx = (x+0,5)·W/W − 0,5 = x
@@ -616,7 +643,8 @@ Public Module SseFaceTintComposer
         ' bilineal también devolvía un array fresco.)
         If t.Width = w AndAlso t.Height = h AndAlso t.Rgba.Length = outp.Length Then
             Array.Copy(t.Rgba, outp, outp.Length)
-            If w = 512 AndAlso h = 512 Then _texCache(key) = outp
+            If needsZ Then FaceTintCpuCompositor.ReconstructNormalZ(outp, w * h)
+            If w = 512 AndAlso h = 512 Then _texCache(ckey) = outp
             Return outp
         End If
         ' Resample bilineal PARALELO por filas (misma fórmula, cada fila escribe sólo sus índices ⇒ bit-idéntico).
@@ -634,7 +662,9 @@ Public Module SseFaceTintComposer
                                                           Next
                                                       Next
                                                   End Sub)
-        If w = 512 AndAlso h = 512 Then _texCache(key) = outp
+        ' DESPUÉS del resample, igual que el hardware (se samplea el BC5 filtrado y recién ahí se despeja z).
+        If needsZ Then FaceTintCpuCompositor.ReconstructNormalZ(outp, w * h)
+        If w = 512 AndAlso h = 512 Then _texCache(ckey) = outp
         Return outp
     End Function
 

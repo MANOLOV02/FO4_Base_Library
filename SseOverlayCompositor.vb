@@ -254,34 +254,73 @@ Public Module SseOverlayCompositor
     ''' el normal del overlay se interpreta en el MISMO espacio que el head (sin conversión TS→MS). Cobertura =
     ''' alpha del DIFFUSE del overlay × opacidad (el decal blendea por el alpha del diffuse). Solo overlays con
     ''' <see cref="JslotOverlayNode.NormalPath"/>; los que no traen normal no tocan el _msn. Returns True si alguno
-    ''' contribuyó. <paramref name="msnAcc"/> = head _msn decodificado RGBA [0,1] (length w*h*4).</summary>
+    ''' contribuyó. <paramref name="msnAcc"/> = head _msn decodificado RGBA [0,1] (length w*h*4).
+    '''
+    ''' <para>⭐ EL ALPHA NO SE MEZCLA, y eso MATCHEA a skee exactamente (no es una aproximación). skee reemplaza
+    ''' el slot 1 del decal ENTERO —RGB y alpha— con el normal del overlay (OverlayInterface::InstallOverlay), pero
+    ''' el decal hereda el flag MSN de la cabeza (:198-202), y en una malla MODEL-SPACE el mask especular sale del
+    ''' SLOT 7 (t2, canal .r), que el decal COPIA de la cabeza (:214-233). O sea que el alpha del normal del overlay
+    ''' no lo lee nadie tampoco in-game. Vale con o sin BC5: con BC5 ni siquiera existe.</para>
+    '''
+    ''' <para>⚠️ Lo que SÍ es aproximación es el RGB, y sólo en el medio: el motor dibuja DOS shapes y mezcla dos
+    ''' resultados YA SOMBREADOS (alpha-over del decal sobre la cabeza), mientras que un bake tiene una sola
+    ''' geometría y sombrea UNA entrada mezclada. Coinciden EXACTO en los extremos —cobertura 0 (queda el normal de
+    ''' la cabeza) y cobertura 1 (queda el del overlay tal cual, que es lo que el decal muestra)— y divergen en el
+    ''' medio porque el lighting no es lineal en N. No hay forma de cerrarlo sin una segunda geometría.</para>
+    '''
+    ''' <para>La COBERTURA sí es exacta: skee usa <c>iAlphaFlags=4845</c> (0x12ED = blend SRC_ALPHA/INV_SRC_ALPHA +
+    ''' alpha-test GREATER) con <c>iAlphaThreshold=0</c> (main.cpp:130-133) ⇒ descarta sólo alpha==0 y mezcla suave
+    ''' el resto — que es lo que hace el loop de abajo (<c>If cov &lt;= 0 Then Continue For</c> + lerp).</para></summary>
     Public Function ComposeFaceOverlayNormalsIntoMsn(msnAcc As Single(), overlays As IList(Of RaceMenuJslot.JslotOverlayNode),
                                                      w As Integer, h As Integer,
-                                                     decode As Func(Of String, Integer, Integer, Single())) As Boolean
+                                                     decode As Func(Of String, Integer, Integer, Single()),
+                                                     Optional decodeNormal As Func(Of String, Integer, Integer, Single()) = Nothing) As Boolean
         If msnAcc Is Nothing OrElse overlays Is Nothing OrElse overlays.Count = 0 OrElse decode Is Nothing Then Return False
+        ' El normal se lee con el decode VECTORIAL (reconstruye el eje Z de una fuente BC5/2-canales). Si el caller
+        ' no lo pasa se cae al de color = comportamiento previo exacto, así que ningún call site queda roto.
+        Dim decodeN = If(decodeNormal, decode)
         Dim npix = w * h
         Dim any = False
+        ' Filtro = "puede aportar": nodo Face + normal que plegar + diffuse del que sacar la COBERTURA. Los tres
+        ' términos están también en el gate (HasFaceOverlayNormals) ⇒ no pueden discrepar. El chequeo de adentro
+        ' cubre el otro caso, el que el gate NO puede saber sin tocar disco: declarado pero ilegible = ERROR.
         Dim faceOrdered = SortFaceOverlays(overlays.
-            Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath)).ToList())   ' predicado unico + orden skee
+            Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath) AndAlso
+                              Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
         For Each ov In faceOrdered
             ' Predicado ÚNICO con el gate (HasFaceOverlayNormals), y ANTES del decode. Ver ComposeFaceOverlaysIntoDiffuse.
             If Not OverlayIsVisible(ov) Then Continue For
-            Dim ovNorm = decode(ov.NormalPath, w, h)
+            Dim ovNorm = decodeN(ov.NormalPath, w, h)
             If ovNorm Is Nothing OrElse ovNorm.Length < npix * 4 Then
                 Dim npFail = ov.NormalPath
                 Logger.LogLazy(Function() $"[SSE-OVL] normal de overlay SALTEADO: no se pudo leer/decodificar '{npFail}'")
                 Continue For
             End If
-            ' Cobertura = alpha del DIFFUSE del overlay (la forma del tatuaje) × opacidad. Si no hay diffuse,
-            ' usa el alpha del propio normal (fallback).
+            ' ⭐⭐ COBERTURA = ALPHA DEL DIFFUSE DEL OVERLAY × opacidad, y NADA MÁS. Es la ley del MOTOR: el overlay
+            ' es una geometría clonada que se dibuja encima, y lo que la recorta es el alpha de su SLOT 0
+            ' (OverlayInterface::InstallOverlay) — el normal vive en el slot 1 y no recorta nada.
+            ' ⛔ ACÁ HABÍA UN FALLBACK AL ALPHA DEL PROPIO NORMAL, roto por partida doble: (1) no es lo que hace el
+            ' motor, y (2) toda fuente sin alpha real —BC5 y BC1, o sea la mayoría de los normales— decodifica con
+            ' A=1 CONSTANTE ⇒ cobertura plena en TODA la cara: el "tatuaje" se comía la cabeza entera.
+            ' Un overlay SIN diffuse no tiene de dónde sacar cobertura y por eso se saltea — que es también lo que
+            ' pasa in-game: sin diffuse propio el slot 0 del decal queda con la textura por defecto de skee (la de
+            ' `sDefaultTexture`, en blanco), así que el overlay no se ve. MISMO predicado que
+            ' ComposeFaceOverlaysIntoDiffuse, que ya filtraba por DiffusePath: los dos composers, una sola regla.
             Dim ovDiff = If(Not String.IsNullOrEmpty(ov.DiffusePath), decode(ov.DiffusePath, w, h), Nothing)
+            If ovDiff Is Nothing OrElse ovDiff.Length < npix * 4 Then
+                Dim cpFail = If(ov.DiffusePath, "(sin diffuse)")
+                Logger.LogLazy(Function() $"[SSE-OVL] normal de overlay SALTEADO: sin COBERTURA legible (diffuse = '{cpFail}'). El alpha del propio normal NO se usa: no es la ley del motor y las fuentes de 2 canales lo devuelven constante = cara entera cubierta.")
+                Continue For
+            End If
             Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
             ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); orden entre overlays = For Each serial.
             System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
                 Sub(range)
                     For i = range.Item1 To range.Item2 - 1
-                        Dim cov As Double = If(ovDiff IsNot Nothing AndAlso ovDiff.Length >= npix * 4, ovDiff(i * 4 + 3), ovNorm(i * 4 + 3)) * opacity
+                        ' Sin ternario: el guard de arriba ya garantiza ovDiff válido. La rama `ovNorm(...)` que
+                        ' había acá ERA el fallback roto — dejarla como código muerto es cómo vuelve.
+                        Dim cov As Double = ovDiff(i * 4 + 3) * opacity
                         If cov <= 0.0 Then Continue For
                         If cov > 1.0 Then cov = 1.0
                         ' decode ambos a [-1,1], lerp, renormalize, re-encode a [0,1].
@@ -300,13 +339,22 @@ Public Module SseOverlayCompositor
         Return any
     End Function
 
-    ''' <summary>True iff any FACE overlay carries a normal map AND is visible (cheap check, no decode).
+    ''' <summary>True iff any FACE overlay carries a normal map the fold can actually consume (cheap check, no
+    ''' decode): nodo Face + <see cref="JslotOverlayNode.NormalPath"/> + <see cref="JslotOverlayNode.DiffusePath"/>
+    ''' + visible.
     ''' ⭐ La opacidad entra en el gate porque entra en el compose (<see cref="ComposeFaceOverlayNormalsIntoMsn"/>
-    ''' saltea <c>opacity &lt;= 0</c>) — ver la nota de <see cref="HasBakeableFaceOverlays"/>.</summary>
+    ''' saltea <c>opacity &lt;= 0</c>) — ver la nota de <see cref="HasBakeableFaceOverlays"/>.
+    '''
+    ''' <para>⭐ Y EL DIFFUSE TAMBIÉN, por la MISMA razón: es de su alpha que sale la COBERTURA del normal, así que
+    ''' un overlay solo-normal no aporta nada y hacer que el gate dijera "sí" dejaba al compose sin hacer NADA — el
+    ''' patrón que este archivo ya documenta dos veces como caro (en el bake hace entrar al camino plegado para
+    ''' salir sin componer). Es además lo que hace el motor: sin diffuse propio el slot 0 del decal queda con la
+    ''' textura por defecto de skee y el overlay no se ve in-game.</para></summary>
     Public Function HasFaceOverlayNormals(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
-            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) AndAlso OverlayIsVisible(ov) Then Return True
+            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) AndAlso
+               Not String.IsNullOrEmpty(ov.DiffusePath) AndAlso OverlayIsVisible(ov) Then Return True
         Next
         Return False
     End Function
@@ -362,10 +410,15 @@ Public Module SseOverlayCompositor
         Return False
     End Function
 
-    ''' <summary>⭐ The gate EVERY bake path must use: is there ANY face overlay the bake can fold — diffuse OR
-    ''' normal? A normal-only face overlay is legal (<see cref="ComposeFaceOverlayNormalsIntoMsn"/> folds it using
-    ''' the normal's own alpha as coverage), and gating on diffuse alone made the bake return early and drop it —
-    ''' while the apply-script skips ALL face nodes on principle, so nobody applied it and it vanished.</summary>
+    ''' <summary>⭐ The gate EVERY bake path must use: is there ANY face overlay the bake can fold — diffuse o
+    ''' normal?
+    ''' <para>⛔ ESTA NOTA DECÍA que un overlay solo-normal era legal porque el compose usaba "el alpha del propio
+    ''' normal como cobertura". Ese fallback SE ELIMINÓ: no es la ley del motor (la cobertura sale del slot 0 del
+    ''' decal, nunca del normal) y encima estaba roto — una fuente de 2 canales decodifica con A=1 constante, así
+    ''' que cubría la cara ENTERA. Hoy los dos términos exigen diffuse, con lo cual esta función es equivalente a
+    ''' <see cref="HasBakeableFaceOverlays"/>; se conserva como el nombre que expresa la intención en los call
+    ''' sites del bake y del render, y para que el día que aparezca una fuente de cobertura legítima para el
+    ''' normal el cambio sea de UNA línea acá.</para></summary>
     Public Function HasAnyFoldableFaceOverlay(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         Return HasBakeableFaceOverlays(overlays) OrElse HasFaceOverlayNormals(overlays)
     End Function
