@@ -1,75 +1,146 @@
 Imports FO4_Base_Library.Config_App
+
+''' <summary>
+''' Editor del rig de luces del previewer. Opera SIEMPRE sobre el rig del JUEGO ACTIVO
+''' (<see cref="Config_App.ActiveLights"/> / <see cref="Config_App.SetActiveLights"/>): FO4 y SSE
+''' tienen sets separados, igual que las opciones de CharGen. Ver PreviewLightRig.vb.
+''' </summary>
 Partial Public Class LightRigForm
     Inherits Form
 
     ''' <summary>
-    ''' Raised whenever the user edits any control (slider / NUD / Reset). The new values have
-    ''' already been written to <see cref="Config_App.Current.Setting_Lightrig"/>. Hosts (WM,
+    ''' Raised whenever the user edits any control (slider / NUD / preset / Reset). The new values have
+    ''' already been written to the active game's rig in <see cref="Config_App.Current"/>. Hosts (WM,
     ''' NPC_Manager) subscribe to refresh their own preview surface — the form itself owns no
     ''' preview reference.
     ''' </summary>
     Public Event LightsChanged()
+
+    Private ReadOnly _presets As LightRigPreset() = PreviewLightRig.Presets()
 
     Public Sub New()
 
         InitializeComponent()
         'ThemeManager.SetTheme(Config_App.Current.theme, Me)
 
+        ' El rig es por juego: decirlo en el título, que si no dos sets distintos parecen el mismo diálogo.
+        Text = If(Config_App.Current.Game = Config_App.Game_Enum.Skyrim, "Light Rig - Skyrim SE", "Light Rig - Fallout 4")
+
+        CargarPresets()
         CargarValoresIniciales()
         AddHandlers()
     End Sub
 
-    ' ====== Valores recomendados (coinciden con tu rig) ======
+    ' ====== Presets ======
+    ' El combo tiene los presets + una entrada "Custom" AL FINAL: es la que queda seleccionada cuando el
+    ' rig no coincide con ninguno (o sea, apenas el usuario toca un control). No es un set aplicable —
+    ' seleccionarla deshabilita Apply — pero deja el combo siempre diciendo qué se está viendo.
+    Private Const CustomLabel As String = "Custom"
+
+    Private ReadOnly Property CustomIndex As Integer
+        Get
+            Return _presets.Length
+        End Get
+    End Property
+
+    Private Sub CargarPresets()
+        cmbPreset.Items.Clear()
+        For Each p In _presets
+            cmbPreset.Items.Add(p)          ' LightRigPreset.ToString = Name
+        Next
+        cmbPreset.Items.Add(CustomLabel)
+    End Sub
+
+    ''' <summary>Selecciona en el combo el preset que coincide con el rig actual, o "Custom" si el
+    ''' usuario editó a mano. El combo nunca queda vacío ni miente sobre lo que se está viendo.</summary>
+    Private Sub SincronizarComboConRig(rig As PreviewLightRig)
+        Dim idx = Array.FindIndex(_presets, Function(p) RigCoincide(p.Rig, rig))
+        If idx < 0 Then idx = CustomIndex
+        If cmbPreset.SelectedIndex <> idx Then cmbPreset.SelectedIndex = idx
+        ActualizarTooltipPreset()
+    End Sub
+
+    ' Comparación con tolerancia, NO igualdad exacta: el viaje por la UI cuantiza los colores a 8 bits
+    ' (swatch = System.Drawing.Color), así que aplicar un preset y releerlo devuelve p.ej. 0.58 -> 148/255
+    ' = 0.5803922. Con Equals el combo se deseleccionaría solo apenas se aplica el preset. Epsilon = un
+    ' paso de 8 bits (1/255) con margen.
+    Private Const RigMatchEpsilon As Single = 0.005F
+
+    Private Shared Function CasiIgual(a As Single, b As Single) As Boolean
+        Return Math.Abs(a - b) <= RigMatchEpsilon
+    End Function
+
+    Private Shared Function ColorCoincide(a As RigColor, b As RigColor) As Boolean
+        Return CasiIgual(a.R, b.R) AndAlso CasiIgual(a.G, b.G) AndAlso CasiIgual(a.B, b.B)
+    End Function
+
+    Private Shared Function LuzCoincide(a As PreviewLight, b As PreviewLight) As Boolean
+        Return CasiIgual(a.Strength, b.Strength) AndAlso ColorCoincide(a.Color, b.Color) AndAlso
+               CasiIgual(a.Up, b.Up) AndAlso CasiIgual(a.Down, b.Down) AndAlso
+               CasiIgual(a.Left, b.Left) AndAlso CasiIgual(a.Right, b.Right) AndAlso
+               CasiIgual(a.Forward, b.Forward) AndAlso CasiIgual(a.Back, b.Back)
+    End Function
+
+    Private Shared Function RigCoincide(a As PreviewLightRig, b As PreviewLightRig) As Boolean
+        Return LuzCoincide(a.KeyLight, b.KeyLight) AndAlso LuzCoincide(a.FillLeft, b.FillLeft) AndAlso
+               LuzCoincide(a.FillRight, b.FillRight) AndAlso LuzCoincide(a.BackLight, b.BackLight) AndAlso
+               CasiIgual(a.AmbientIntensity, b.AmbientIntensity) AndAlso
+               CasiIgual(a.AmbientGroundLevel, b.AmbientGroundLevel) AndAlso
+               ColorCoincide(a.AmbientSkyColor, b.AmbientSkyColor) AndAlso
+               ColorCoincide(a.AmbientGroundColor, b.AmbientGroundColor)
+    End Function
+
+    Private Sub ActualizarTooltipPreset()
+        Dim esPreset = cmbPreset.SelectedIndex >= 0 AndAlso cmbPreset.SelectedIndex < _presets.Length
+        Dim descr = If(esPreset,
+                       _presets(cmbPreset.SelectedIndex).Description,
+                       "The current rig does not match any preset (you edited it by hand). Nothing to apply.")
+        ToolTip1.SetToolTip(cmbPreset, descr)
+        btnApplyPreset.Enabled = esPreset
+    End Sub
+
+    ' ====== Modelo -> UI ======
     Private Sub CargarValoresIniciales()
-        ' Strengths
-        tbKey.Value = Config_App.Current.Setting_Lightrig.DirectL.Strength
-        tbFillL.Value = Config_App.Current.Setting_Lightrig.FillLight_1.Strength
-        tbFillR.Value = Config_App.Current.Setting_Lightrig.FillLight_2.Strength
-        tbBack.Value = Config_App.Current.Setting_Lightrig.BackLight.Strength
-        tambient.Value = Config_App.Current.Setting_Lightrig.Ambient
+        Dim rig = Config_App.Current.ActiveLights()
 
-        ' Frontal (Key): Forward=+1
-        nudK_U.Value = Config_App.Current.Setting_Lightrig.DirectL.Up : nudK_D.Value = Config_App.Current.Setting_Lightrig.DirectL.Down
-        nudK_L.Value = Config_App.Current.Setting_Lightrig.DirectL.Left : nudK_R.Value = Config_App.Current.Setting_Lightrig.DirectL.Right
-        nudK_F.Value = Config_App.Current.Setting_Lightrig.DirectL.Forward : nudK_B.Value = Config_App.Current.Setting_Lightrig.DirectL.Back
+        ' Strengths + swatch de color de cada luz
+        tbKey.Value = rig.KeyLight.Strength
+        tbFillL.Value = rig.FillLeft.Strength
+        tbFillR.Value = rig.FillRight.Strength
+        tbBack.Value = rig.BackLight.Strength
+        btnKeyColor.BackColor = rig.KeyLight.Color.ToColor()
+        btnFillLColor.BackColor = rig.FillLeft.Color.ToColor()
+        btnFillRColor.BackColor = rig.FillRight.Color.ToColor()
+        btnBackColor.BackColor = rig.BackLight.Color.ToColor()
 
-        ' Fill Izquierda: vector NEGADO de (0.4*up -0.6*right -0.7*forward)
-        ' w = -v => Up=-0.4, Right=+0.6, Forward=+0.7
-        nudL_U.Value = Config_App.Current.Setting_Lightrig.FillLight_1.Up : nudL_D.Value = Config_App.Current.Setting_Lightrig.FillLight_1.Down
-        nudL_L.Value = Config_App.Current.Setting_Lightrig.FillLight_1.Left : nudL_R.Value = Config_App.Current.Setting_Lightrig.FillLight_1.Right
-        nudL_F.Value = Config_App.Current.Setting_Lightrig.FillLight_1.Forward : nudL_B.Value = Config_App.Current.Setting_Lightrig.FillLight_1.Back
+        ' Grilla de dirección de cada luz (6 multiplicadores relativos a la cámara)
+        nudK_U.Value = CDec(rig.KeyLight.Up) : nudK_D.Value = CDec(rig.KeyLight.Down)
+        nudK_L.Value = CDec(rig.KeyLight.Left) : nudK_R.Value = CDec(rig.KeyLight.Right)
+        nudK_F.Value = CDec(rig.KeyLight.Forward) : nudK_B.Value = CDec(rig.KeyLight.Back)
 
-        ' Fill Derecha: vector NEGADO de (0.4*up +0.6*right -0.7*forward)
-        ' w = -v => Up=-0.4, Right=-0.6, Forward=+0.7
-        nudR_U.Value = Config_App.Current.Setting_Lightrig.FillLight_2.Up : nudR_D.Value = Config_App.Current.Setting_Lightrig.FillLight_2.Down
-        nudR_L.Value = Config_App.Current.Setting_Lightrig.FillLight_2.Left : nudR_R.Value = Config_App.Current.Setting_Lightrig.FillLight_2.Right
-        nudR_F.Value = Config_App.Current.Setting_Lightrig.FillLight_2.Forward : nudR_B.Value = Config_App.Current.Setting_Lightrig.FillLight_2.Back
+        nudL_U.Value = CDec(rig.FillLeft.Up) : nudL_D.Value = CDec(rig.FillLeft.Down)
+        nudL_L.Value = CDec(rig.FillLeft.Left) : nudL_R.Value = CDec(rig.FillLeft.Right)
+        nudL_F.Value = CDec(rig.FillLeft.Forward) : nudL_B.Value = CDec(rig.FillLeft.Back)
 
-        ' Contraluz (Back): 0.6*up -0.2*right +1.0*forward
-        nudB_U.Value = Config_App.Current.Setting_Lightrig.BackLight.Up : nudB_D.Value = Config_App.Current.Setting_Lightrig.BackLight.Down
-        nudB_L.Value = Config_App.Current.Setting_Lightrig.BackLight.Left : nudB_R.Value = Config_App.Current.Setting_Lightrig.BackLight.Right
-        nudB_F.Value = Config_App.Current.Setting_Lightrig.BackLight.Forward : nudB_B.Value = Config_App.Current.Setting_Lightrig.BackLight.Back
+        nudR_U.Value = CDec(rig.FillRight.Up) : nudR_D.Value = CDec(rig.FillRight.Down)
+        nudR_L.Value = CDec(rig.FillRight.Left) : nudR_R.Value = CDec(rig.FillRight.Right)
+        nudR_F.Value = CDec(rig.FillRight.Forward) : nudR_B.Value = CDec(rig.FillRight.Back)
+
+        nudB_U.Value = CDec(rig.BackLight.Up) : nudB_D.Value = CDec(rig.BackLight.Down)
+        nudB_L.Value = CDec(rig.BackLight.Left) : nudB_R.Value = CDec(rig.BackLight.Right)
+        nudB_F.Value = CDec(rig.BackLight.Forward) : nudB_B.Value = CDec(rig.BackLight.Back)
+
+        ' Ambient = 3 perillas independientes: intensidad, hemisferio (ground level) y tintes.
+        tambient.Value = rig.AmbientIntensity
+        tGroundLevel.Value = rig.AmbientGroundLevel
+        btnAmbSky.BackColor = rig.AmbientSkyColor.ToColor()
+        btnAmbGround.BackColor = rig.AmbientGroundColor.ToColor()
 
         ' Background color picker (handler is wired later in AddHandlers, so this init does not fire it)
         cmbBackground.Rellena()
         cmbBackground.SelectedColor = Config_App.Current.Setting_BackColor
 
-        ' Ambient = 3 perillas independientes: intensidad (tambient), hemisferio (tGroundLevel) y tinte
-        ' (swatches Sky/Ground). NormalizeAmbient migra configs viejos (deriva el groundLevel del brillo del
-        ' color ground del modelo intermedio; tintes a blanco) y se persiste para que el resto del app lo vea.
-        ' Tints (0,0,0)=unset -> blanco. Cada swatch de luz vive ahora al lado del slider de su grupo.
-        Dim rig = Config_App.Current.Setting_Lightrig
-        Config_App.NormalizeAmbient(rig)
-        Config_App.Current.Setting_Lightrig = rig
-        tGroundLevel.Value = rig.AmbientGroundLevel
-        btnAmbSky.BackColor = VecToCol(rig.AmbientSky, Color.White)
-        btnAmbGround.BackColor = VecToCol(rig.AmbientGround, Color.White)
-        btnKeyColor.BackColor = VecToCol(rig.DirectL.Tint, Color.White)
-        btnFillLColor.BackColor = VecToCol(rig.FillLight_1.Tint, Color.White)
-        btnFillRColor.BackColor = VecToCol(rig.FillLight_2.Tint, Color.White)
-        btnBackColor.BackColor = VecToCol(rig.BackLight.Tint, Color.White)
-
-        VolcarUIenModelo()
+        SincronizarComboConRig(rig)
     End Sub
 
     Private Sub AddHandlers()
@@ -91,21 +162,12 @@ Partial Public Class LightRigForm
         Next
 
         AddHandler cmbBackground.SelectedIndexChanged, AddressOf BackgroundChanged
+        AddHandler cmbPreset.SelectedIndexChanged, Sub(sender, e) ActualizarTooltipPreset()
 
         For Each b In New Button() {btnAmbSky, btnAmbGround, btnKeyColor, btnFillLColor, btnFillRColor, btnBackColor}
             AddHandler b.Click, AddressOf PickColor
         Next
     End Sub
-
-    ' Color <-> Vector3 (0..1). Vector3(0,0,0) se muestra con el fallback (legacy/unset).
-    Private Shared Function ColToVec(c As Color) As System.Numerics.Vector3
-        Return New System.Numerics.Vector3(c.R / 255.0F, c.G / 255.0F, c.B / 255.0F)
-    End Function
-    Private Shared Function VecToCol(v As System.Numerics.Vector3, fallback As Color) As Color
-        If v.X = 0 AndAlso v.Y = 0 AndAlso v.Z = 0 Then Return fallback
-        Dim Clamp = Function(f As Single) Math.Max(0, Math.Min(255, CInt(f * 255.0F)))
-        Return Color.FromArgb(255, Clamp(v.X), Clamp(v.Y), Clamp(v.Z))
-    End Function
 
     Private Sub PickColor(sender As Object, e As EventArgs)
         Dim b = CType(sender, Button)
@@ -129,31 +191,56 @@ Partial Public Class LightRigForm
     End Sub
 
     Private _preventchanges As Boolean = False
+
     ' ====== Transferencia UI -> Modelo ======
     Private Sub VolcarUIenModelo()
-        If _PreventChanges = False Then
-            Dim Lrig = New LightsRig_struct With {.Ambient = CSng(tambient.Value),
+        If _preventchanges Then Return
+
+        Dim rig As New PreviewLightRig With {
+            .KeyLight = LeerLuz(tbKey, btnKeyColor, nudK_U, nudK_D, nudK_L, nudK_R, nudK_F, nudK_B),
+            .FillLeft = LeerLuz(tbFillL, btnFillLColor, nudL_U, nudL_D, nudL_L, nudL_R, nudL_F, nudL_B),
+            .FillRight = LeerLuz(tbFillR, btnFillRColor, nudR_U, nudR_D, nudR_L, nudR_R, nudR_F, nudR_B),
+            .BackLight = LeerLuz(tbBack, btnBackColor, nudB_U, nudB_D, nudB_L, nudB_R, nudB_F, nudB_B),
+            .AmbientIntensity = CSng(tambient.Value),
             .AmbientGroundLevel = CSng(tGroundLevel.Value),
-            .AmbientConfigured = True,
-            .AmbientSky = ColToVec(btnAmbSky.BackColor),
-            .AmbientGround = ColToVec(btnAmbGround.BackColor),
-            .DirectL = New LightData_struct With {.Strength = CSng(tbKey.Value), .Tint = ColToVec(btnKeyColor.BackColor), .Left = CSng(nudK_L.Value), .Right = CSng(nudK_R.Value), .Back = CSng(nudK_B.Value), .Down = CSng(nudK_D.Value), .Forward = CSng(nudK_F.Value), .Up = CSng(nudK_U.Value)},
-            .FillLight_1 = New LightData_struct With {.Strength = CSng(tbFillL.Value), .Tint = ColToVec(btnFillLColor.BackColor), .Left = CSng(nudL_L.Value), .Right = CSng(nudL_R.Value), .Back = CSng(nudL_B.Value), .Down = CSng(nudL_D.Value), .Forward = CSng(nudL_F.Value), .Up = CSng(nudL_U.Value)},
-            .FillLight_2 = New LightData_struct With {.Strength = CSng(tbFillR.Value), .Tint = ColToVec(btnFillRColor.BackColor), .Left = CSng(nudR_L.Value), .Right = CSng(nudR_R.Value), .Back = CSng(nudR_B.Value), .Down = CSng(nudR_D.Value), .Forward = CSng(nudR_F.Value), .Up = CSng(nudR_U.Value)},
-            .BackLight = New LightData_struct With {.Strength = CSng(tbBack.Value), .Tint = ColToVec(btnBackColor.BackColor), .Left = CSng(nudB_L.Value), .Right = CSng(nudB_R.Value), .Back = CSng(nudB_B.Value), .Down = CSng(nudB_D.Value), .Forward = CSng(nudB_F.Value), .Up = CSng(nudB_U.Value)}}
-            Config_App.Current.Setting_Lightrig = Lrig
-            RaiseEvent LightsChanged()
-        End If
+            .AmbientSkyColor = RigColor.FromColor(btnAmbSky.BackColor),
+            .AmbientGroundColor = RigColor.FromColor(btnAmbGround.BackColor)}
+
+        Config_App.Current.SetActiveLights(rig)
+        SincronizarComboConRig(rig)
+        RaiseEvent LightsChanged()
     End Sub
 
-    Private Sub BtnReset_Click(sender As Object, e As EventArgs) Handles btnReset.Click
+    Private Shared Function LeerLuz(strength As TinySliderTextBox, swatch As Button,
+                                    up As NumericUpDown, down As NumericUpDown,
+                                    left As NumericUpDown, right As NumericUpDown,
+                                    forward As NumericUpDown, back As NumericUpDown) As PreviewLight
+        Return New PreviewLight(CSng(strength.Value),
+                                up:=CSng(up.Value), down:=CSng(down.Value),
+                                left:=CSng(left.Value), right:=CSng(right.Value),
+                                forward:=CSng(forward.Value), back:=CSng(back.Value)) With {
+            .Color = RigColor.FromColor(swatch.BackColor)}
+    End Function
+
+    ''' <summary>Carga un rig completo en la UI sin disparar un evento por control (un solo
+    ''' <see cref="LightsChanged"/> al final).</summary>
+    Private Sub AplicarRig(rig As PreviewLightRig)
         _preventchanges = True
-        Config_App.Current.Setting_Lightrig = Default_Lights()
-        ' Reset también el background al default del config (DarkGray). CargarValoresIniciales recarga
-        ' el combo desde Setting_BackColor; el VolcarUIenModelo final (LightsChanged) refresca el preview.
-        Config_App.Current.Setting_BackColorName = Color.DarkGray.Name
+        Config_App.Current.SetActiveLights(rig)
         CargarValoresIniciales()
         _preventchanges = False
         VolcarUIenModelo()
+    End Sub
+
+    Private Sub BtnApplyPreset_Click(sender As Object, e As EventArgs) Handles btnApplyPreset.Click
+        If cmbPreset.SelectedIndex < 0 OrElse cmbPreset.SelectedIndex >= _presets.Length Then Return   ' "Custom"
+        AplicarRig(_presets(cmbPreset.SelectedIndex).Rig)
+    End Sub
+
+    Private Sub BtnReset_Click(sender As Object, e As EventArgs) Handles btnReset.Click
+        ' Reset = preset Studio + background al default del config (DarkGray). CargarValoresIniciales
+        ' recarga el combo de background desde Setting_BackColor; el VolcarUIenModelo final refresca el preview.
+        Config_App.Current.Setting_BackColorName = Color.DarkGray.Name
+        AplicarRig(PreviewLightRig.Defaults())
     End Sub
 End Class

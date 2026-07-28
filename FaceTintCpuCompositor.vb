@@ -56,20 +56,42 @@ Public Module FaceTintCpuCompositor
     ''' CPU del DIFFUSE saca g22 (para el DDS del bake); el RENDER GL deja el output en linear (G22→Linear final).
     ''' Para que el render en modo CPU-skinning se vea IGUAL que en GPU, el diffuse compuesto por CPU se convierte
     ''' a linear antes de subir a GL. N/S ya son lineales (no llamar esto sobre ellos).</summary>
+    ''' <summary>⭐ LUT byte→byte de <see cref="G22DiffuseBgraToLinearInPlace"/>. BIT-IDENTICA a calcularlo,
+    ''' no una aproximacion: la entrada de esa conversion es SIEMPRE <c>unByte / 255.0</c>, o sea EXACTAMENTE
+    ''' 256 valores posibles, y la salida es un byte. Tabular el dominio ENTERO con la MISMA expresion y el
+    ''' MISMO redondeo (<c>Math.Round</c> sin overload = ToEven, igual que antes) da por enumeracion exhaustiva
+    ''' el mismo byte para las 256 entradas — no hay forma de que difiera.
+    ''' <para>Cambia TRES <c>Math.Pow</c> por pixel por tres lecturas de tabla. Corre en cada refresh del
+    ''' render en modo CPU-skinning, sobre el diffuse de la cara a resolucion nativa.</para></summary>
+    ' Sin `Shared`: esto es un Module, sus miembros ya lo son implícitamente. El inicializador corre en el
+    ' constructor estático del módulo ⇒ la tabla está completa antes del primer uso, con la garantía de
+    ' thread-safety del CLR (no hace falta lock ni doble chequeo).
+    Private ReadOnly _g22ToLinByteLut As Byte() = BuildG22ToLinByteLut()
+
+    Private Function BuildG22ToLinByteLut() As Byte()
+        Dim lut(255) As Byte
+        For b As Integer = 0 To 255
+            ' MISMA expresion que tenia el loop: G22ToLin1(byte / 255.0) * 255.0, Math.Round (ToEven), CByte.
+            lut(b) = CByte(Math.Round(G22ToLin1(b / 255.0) * 255.0))
+        Next
+        Return lut
+    End Function
+
     Public Sub G22DiffuseBgraToLinearInPlace(bgra As Byte())
         If bgra Is Nothing Then Return
         Dim n = bgra.Length \ 4
         ' Paralelo por rangos: in-place PURAMENTE POR PIXEL (cada i lee y escribe SOLO bgra(i*4..i*4+2), el
-        ' alpha ni se toca) => sin lectura cruzada pese a ser in-place, y BIT-IDENTICO al serial. Pesa porque
-        ' son TRES Math.Pow por pixel (G22ToLin1) sobre el diffuse de la cara a resolucion nativa, y corre en
-        ' cada refresh del render en modo CPU-skinning.
+        ' alpha ni se toca) => sin lectura cruzada pese a ser in-place, y BIT-IDENTICO al serial.
+        ' La tabla (ver _g22ToLinByteLut) reemplaza los tres Math.Pow por pixel; el resultado es el mismo
+        ' byte por enumeracion exhaustiva del dominio (256 entradas), no por aproximacion.
+        Dim lut = _g22ToLinByteLut
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, n),
             Sub(range)
                 For i = range.Item1 To range.Item2 - 1
-                    bgra(i * 4) = CByte(Math.Round(G22ToLin1(bgra(i * 4) / 255.0) * 255.0))          ' B
-                    bgra(i * 4 + 1) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 1) / 255.0) * 255.0))  ' G
-                    bgra(i * 4 + 2) = CByte(Math.Round(G22ToLin1(bgra(i * 4 + 2) / 255.0) * 255.0))  ' R
+                    bgra(i * 4) = lut(bgra(i * 4))                  ' B
+                    bgra(i * 4 + 1) = lut(bgra(i * 4 + 1))          ' G
+                    bgra(i * 4 + 2) = lut(bgra(i * 4 + 2))          ' R
                 Next
             End Sub)
     End Sub
@@ -548,22 +570,39 @@ Public Module FaceTintCpuCompositor
         ' alpha del head diffuse de origen (Valentine 0x00002F24 vs gen2skinheadvalentine_d.dds:
         ' RMS 0,229/255, 99,59% byte-exact, maxD 18 en 0,02% de px = ruido de bloque BC3). Antes esta
         ' funcion escribia alpha=255 fija y el canal se perdia. Inerte para N/S (BC5 no tiene alpha).
-        Dim accA(n - 1) As Single
+        ' ⭐ El acumulador ALPHA sólo se consume en el pack de más abajo, y SÓLO bajo `keepBaseAlpha`
+        ' (= headDiffuseAlphaTest AndAlso isD); si no, ese pack escribe 255 fijo. Los dos términos son
+        ' parámetros de esta función, así que la condición se conoce ACÁ, antes de reservar nada. Para N/S
+        ' es muerto SIEMPRE (isD=False), y para un diffuse sin el flag ACBS también. Antes se reservaba el
+        ' array y se sampleaba el canal 3 por píxel en los tres canales, pasara lo que pasara: a 4096² son
+        ' 67 MB y una pasada completa por canal tirados. Mismo valor empaquetado, mismo byte de salida.
+        Dim keepBaseAlpha As Boolean = headDiffuseAlphaTest AndAlso isD
+        Dim accA As Single() = Nothing
+        If keepBaseAlpha Then ReDim accA(n - 1)
         ' Seed del base diffuse: la base ES una textura de color ⇒ src→output config-driven (no literal 1,2):
         ' SeedDiffuseSrcSpaceValue (=DiffuseTextureSrcSpace, Srgb) → SeedDiffuseOutputSpaceValue (=Diffuse.OutputSpace, G22).
         Dim seedSrc = SeedDiffuseSrcSpaceValue, seedOut = SeedDiffuseOutputSpaceValue
-        System.Threading.Tasks.Parallel.For(0, n, Sub(i)
-                                                      Dim r0 = SampleChannelAt(src, i, w, h, 0)
-                                                      Dim g0 = SampleChannelAt(src, i, w, h, 1)
-                                                      Dim b0 = SampleChannelAt(src, i, w, h, 2)
-                                                      ' Alpha RAW: no es color ⇒ NO pasa por Cvt1 (ninguna conversion de espacio).
-                                                      accA(i) = CSng(SampleChannelAt(src, i, w, h, 3))
-                                                      If SeedConventionIs_G22 AndAlso isD Then
-                                                          accR(i) = CSng(Cvt1(r0, seedSrc, seedOut)) : accG(i) = CSng(Cvt1(g0, seedSrc, seedOut)) : accB(i) = CSng(Cvt1(b0, seedSrc, seedOut))
-                                                      Else
-                                                          accR(i) = CSng(r0) : accG(i) = CSng(g0) : accB(i) = CSng(b0)
-                                                      End If
-                                                  End Sub)
+        ' Paralelo POR RANGOS (Partitioner) en vez de Parallel.For(0, n, Sub(i)): el cuerpo es puramente
+        ' por-píxel con escrituras disjuntas, así que es BIT-IDENTICO — sólo cambia que en vez de un
+        ' delegate POR PIXEL se invoca uno por rango y el cuerpo corre en un For cerrado (el JIT puede izar
+        ' los campos de la clausura y elidir chequeos de rango). Mismo patrón y misma justificación que los
+        ' loops de DecodeDds y del pack, que ya lo usaban.
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, n),
+            Sub(range)
+                For i As Integer = range.Item1 To range.Item2 - 1
+                    Dim r0 = SampleChannelAt(src, i, w, h, 0)
+                    Dim g0 = SampleChannelAt(src, i, w, h, 1)
+                    Dim b0 = SampleChannelAt(src, i, w, h, 2)
+                    ' Alpha RAW: no es color ⇒ NO pasa por Cvt1 (ninguna conversion de espacio).
+                    If keepBaseAlpha Then accA(i) = CSng(SampleChannelAt(src, i, w, h, 3))
+                    If SeedConventionIs_G22 AndAlso isD Then
+                        accR(i) = CSng(Cvt1(r0, seedSrc, seedOut)) : accG(i) = CSng(Cvt1(g0, seedSrc, seedOut)) : accB(i) = CSng(Cvt1(b0, seedSrc, seedOut))
+                    Else
+                        accR(i) = CSng(r0) : accG(i) = CSng(g0) : accB(i) = CSng(b0)
+                    End If
+                Next
+            End Sub)
 
         ' --- Region swaps UNIFICADOS = tint-replace (2026-06-01): cada swap es un replace mas -> lerp desde el
         '     RUNNING acc, cov = srgb_encode(mask)*msdv, en LINEAR (D decode/encode sRGB / N-S raw). MISMA regla
@@ -584,16 +623,22 @@ Public Module FaceTintCpuCompositor
                 Dim cv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
                 Dim sws = CInt(cv.WorkingSpace), scs = CInt(cv.CompositeSpace), sss = CInt(cv.SrcSpace), sos = CInt(cv.OutputSpace)
                 Dim smc = CInt(cv.MaskConv), sbop = CInt(cv.Blend), ssl = CInt(cv.SoftLight)
-                System.Threading.Tasks.Parallel.For(0, n, Sub(i)
-                                                              Dim sr = SampleChannelAt(swTex, i, w, h, 0)
-                                                              Dim sg = SampleChannelAt(swTex, i, w, h, 1)
-                                                              Dim sb = SampleChannelAt(swTex, i, w, h, 2)
-                                                              Dim mask = SampleChannelAt(mkTex, i, w, h, 0)
-                                                              Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)
-                                                              accR(i) = CSng(ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl))
-                                                              accG(i) = CSng(ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl))
-                                                              accB(i) = CSng(ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl))
-                                                          End Sub)
+                ' Paralelo POR RANGOS — ver la nota del seed. Cuerpo per-pixel con escrituras disjuntas
+                ' (cada i toca sólo acc*(i)) ⇒ bit-idéntico; sólo cambia el particionado.
+                System.Threading.Tasks.Parallel.ForEach(
+                    System.Collections.Concurrent.Partitioner.Create(0, n),
+                    Sub(range)
+                        For i As Integer = range.Item1 To range.Item2 - 1
+                            Dim sr = SampleChannelAt(swTex, i, w, h, 0)
+                            Dim sg = SampleChannelAt(swTex, i, w, h, 1)
+                            Dim sb = SampleChannelAt(swTex, i, w, h, 2)
+                            Dim mask = SampleChannelAt(mkTex, i, w, h, 0)
+                            Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)
+                            accR(i) = CSng(ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl))
+                            accG(i) = CSng(ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl))
+                            accB(i) = CSng(ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl))
+                        Next
+                    End Sub)
             Next
         End If
 
@@ -602,8 +647,43 @@ Public Module FaceTintCpuCompositor
         ' su uBase = ese input -> uBase del GL es post-swap. Se captura acá (después de los region swaps) para
         ' que los frameworks base-relativos (OverBase/AddBase) compongan sobre el baseline young-morpheado, NO
         ' sobre el seed Hero pre-swap. OverPrev (default) NO usa base -> byte-idéntico al modelo previo.
-        Dim baseR(n - 1) As Single, baseG(n - 1) As Single, baseB(n - 1) As Single
-        Array.Copy(accR, baseR, n) : Array.Copy(accG, baseG, n) : Array.Copy(accB, baseB, n)
+        ' ⭐ ¿HACE FALTA el snapshot? SÓLO lo leen los frameworks OverBase(1) y AddBase(2) dentro de
+        ' ComposeOne; OverPrev(0 — el DEFAULT) y ModSrc(3) no tocan `base` en ninguna de sus ramas. Con la
+        ' config default esto era trabajo puro perdido en CADA canal de CADA NPC: tres arrays + tres
+        ' Array.Copy de n elementos (a 4096², 201 MB de LOH y tres pasadas completas de memoria por canal).
+        ' Tampoco lo usan los region-swaps ni el pre-tono TakesSkinTone: sus ComposeOne no pasan
+        ' base/framework, así que caen a los Optional (0.0, OverPrev).
+        '
+        ' ⛔ El pre-scan enumera el ESPACIO DE PARÁMETROS COMPLETO que el loop de capas puede pasarle a
+        ' ResolveConvention: los (IsTextureSet, Slot, BlendOp) reales de cada capa × LOS DOS valores de
+        ' useHairPalette (que ahí depende del decode de la LUT, no resuelto todavía acá). Con eso el guard
+        ' sigue siendo correcto aunque alguien haga que Framework dependa de cualquiera de esas entradas.
+        ' Hoy no depende de ninguna (ResolveConvention: Framework = bucket.Framework, y el bucket se elige
+        ' sólo por (canal, forSwap)), así que en la práctica el barrido converge en la primera capa.
+        '
+        ' ⛔ Es CONSERVADOR a propósito: NO replica los `Continue For` del loop real (capa sin bytes para
+        ' este canal, o cuya textura no decodifica). Como mucho reserva el snapshot de más — nunca de menos,
+        ' que es el único error que cambiaría un byte.
+        Dim needsBase As Boolean = False
+        If layers IsNot Nothing Then
+            For Each pLayer In layers
+                If pLayer Is Nothing Then Continue For
+                For Each hp As Boolean In New Boolean() {False, True}
+                    Dim pfw = FaceTintConvention.ResolveConvention(
+                        pLayer.IsTextureSet, pLayer.Slot, pLayer.BlendOp, channel, hp, forBake:=True).Framework
+                    If pfw = FaceTintFramework.OverBase OrElse pfw = FaceTintFramework.AddBase Then
+                        needsBase = True
+                        Exit For
+                    End If
+                Next
+                If needsBase Then Exit For
+            Next
+        End If
+        Dim baseR As Single() = Nothing, baseG As Single() = Nothing, baseB As Single() = Nothing
+        If needsBase Then
+            ReDim baseR(n - 1) : ReDim baseG(n - 1) : ReDim baseB(n - 1)
+            Array.Copy(accR, baseR, n) : Array.Copy(accG, baseG, n) : Array.Copy(accB, baseB, n)
+        End If
 
         ' --- Tint layers (over-running). La ley sale del resolver (compositor AGNOSTICO). ---
         If layers IsNot Nothing Then
@@ -687,59 +767,74 @@ Public Module FaceTintCpuCompositor
                 ' (OverBase/AddBase -> el skintone NO llega por el base, hay que pre-tonar TODA flagged).
                 Dim preToneSkin As Boolean = (isD AndAlso layer.TakesSkinTone AndAlso skintoneFound AndAlso (stSeen OrElse nonAccum))
 
-                System.Threading.Tasks.Parallel.For(0, n, Sub(i)
-                    Dim lr = SampleChannelAt(layerTex, i, w, h, 0)
-                    Dim lg = SampleChannelAt(layerTex, i, w, h, 1)
-                    Dim lb = SampleChannelAt(layerTex, i, w, h, 2)
-                    Dim la = SampleChannelAt(layerTex, i, w, h, 3)
+                ' Paralelo POR RANGOS — ver la nota del seed. Es el loop MAS PESADO de los tres (corre una
+                ' vez por CAPA, y su cuerpo hace varios Math.Pow por canal via ComposeOne), y era el que
+                ' pagaba un delegate por pixel. Cuerpo per-pixel con escrituras disjuntas ⇒ bit-idéntico.
+                System.Threading.Tasks.Parallel.ForEach(
+                    System.Collections.Concurrent.Partitioner.Create(0, n),
+                    Sub(range)
+                        For i As Integer = range.Item1 To range.Item2 - 1
+                        Dim lr = SampleChannelAt(layerTex, i, w, h, 0)
+                        Dim lg = SampleChannelAt(layerTex, i, w, h, 1)
+                        Dim lb = SampleChannelAt(layerTex, i, w, h, 2)
+                        Dim la = SampleChannelAt(layerTex, i, w, h, 3)
 
-                    ' mask + src por kind (= rama uLayerKind del shader)
-                    Dim maskV As Double
-                    Dim srcR As Double, srcG As Double, srcB As Double
-                    If kind = FaceTintLayerKind.PaletteMask Then
-                        If useHairPalette Then
-                            srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
-                        Else
-                            srcR = uColR : srcG = uColG : srcB = uColB
+                        ' mask + src por kind (= rama uLayerKind del shader)
+                        Dim maskV As Double
+                        Dim srcR As Double, srcG As Double, srcB As Double
+                        If kind = FaceTintLayerKind.PaletteMask Then
+                            If useHairPalette Then
+                                srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
+                            Else
+                                srcR = uColR : srcG = uColG : srcB = uColB
+                            End If
+                            maskV = lg
+                        Else ' TextureSetDiffuse
+                            If useHairPalette Then
+                                srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
+                            ElseIf forceUniform Then
+                                srcR = uColR : srcG = uColG : srcB = uColB
+                            ElseIf texTimesColor Then
+                                srcR = lr * uColR : srcG = lg * uColG : srcB = lb * uColB   ' skee type-0: tex × tint
+                            Else
+                                srcR = lr : srcG = lg : srcB = lb
+                            End If
+                            If isD Then
+                                maskV = la
+                            ElseIf diffMaskTex IsNot Nothing Then
+                                maskV = SampleChannelAt(diffMaskTex, i, w, h, 3)
+                            Else
+                                maskV = Math.Max(lr, Math.Max(lg, lb))
+                            End If
                         End If
-                        maskV = lg
-                    Else ' TextureSetDiffuse
-                        If useHairPalette Then
-                            srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
-                        ElseIf forceUniform Then
-                            srcR = uColR : srcG = uColG : srcB = uColB
-                        ElseIf texTimesColor Then
-                            srcR = lr * uColR : srcG = lg * uColG : srcB = lb * uColB   ' skee type-0: tex × tint
-                        Else
-                            srcR = lr : srcG = lg : srcB = lb
+
+                        ' Pre-tono TakesSkinTone (guard preToneSkin): aplica el softlight del skintone al SOURCE
+                        ' de la flagged con la coverage del skintone en ese pixel (mask.G del skintone), antes del
+                        ' composite normal. = harness pre_softlight(s01, skintone). Inerte si preToneSkin=False.
+                        If preToneSkin Then
+                            Dim stMaskV = SampleChannelAt(stMaskTex, i, w, h, stMaskCh)
+                            Dim stCov = Clamp01(ConvMask1(stMaskV, stMc) * stOpac)
+                            srcR = ComposeOne(srcR, stColR, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
+                            srcG = ComposeOne(srcG, stColG, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
+                            srcB = ComposeOne(srcB, stColB, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
                         End If
-                        If isD Then
-                            maskV = la
-                        ElseIf diffMaskTex IsNot Nothing Then
-                            maskV = SampleChannelAt(diffMaskTex, i, w, h, 3)
-                        Else
-                            maskV = Math.Max(lr, Math.Max(lg, lb))
+
+                        Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
+
+                        ' base SÓLO existe si algún framework del canal es OverBase/AddBase (ver needsBase). Con
+                        ' OverPrev/ModSrc ComposeOne no lee este parámetro en ninguna rama, así que pasar 0.0
+                        ' es exactamente lo mismo que pasar el snapshot. Cuando SÍ hace falta, se lee el mismo
+                        ' Single y se ensancha a Double igual que antes ⇒ bit-idéntico en los dos caminos.
+                        Dim bR As Double = 0.0, bG As Double = 0.0, bB As Double = 0.0
+                        If needsBase Then
+                            bR = baseR(i) : bG = baseG(i) : bB = baseB(i)
                         End If
-                    End If
-
-                    ' Pre-tono TakesSkinTone (guard preToneSkin): aplica el softlight del skintone al SOURCE
-                    ' de la flagged con la coverage del skintone en ese pixel (mask.G del skintone), antes del
-                    ' composite normal. = harness pre_softlight(s01, skintone). Inerte si preToneSkin=False.
-                    If preToneSkin Then
-                        Dim stMaskV = SampleChannelAt(stMaskTex, i, w, h, stMaskCh)
-                        Dim stCov = Clamp01(ConvMask1(stMaskV, stMc) * stOpac)
-                        srcR = ComposeOne(srcR, stColR, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
-                        srcG = ComposeOne(srcG, stColG, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
-                        srcB = ComposeOne(srcB, stColB, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
-                    End If
-
-                    Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
-
-                    ' composite agnostico (= shader): blend en ws, lerp en cs, storage en os.
-                    accR(i) = CSng(ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, baseR(i), fw))
-                    accG(i) = CSng(ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, baseG(i), fw))
-                    accB(i) = CSng(ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, baseB(i), fw))
-                End Sub)
+                        ' composite agnostico (= shader): blend en ws, lerp en cs, storage en os.
+                        accR(i) = CSng(ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, bR, fw))
+                        accG(i) = CSng(ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, bG, fw))
+                        accB(i) = CSng(ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, bB, fw))
+                        Next
+                    End Sub)
 
                 ' Capturar el skintone (slot 12) tras componerlo: color/op/mask/conv para pre-tonar las
                 ' flagged-after-skintone. mask.G (Palette) o .A (TextureSet-D), = como el loop calcula maskV.
@@ -761,7 +856,8 @@ Public Module FaceTintCpuCompositor
         ' Antes: passthrough incondicional inventaba el alpha de DiMA (medición: DLC03DiMA _d ALPHA varía=True vs
         ' CK=False). Inerte para N/S (BC5 sin alpha). Ver reference_acbs_diffuse_alpha_test_flag.
         Dim outB(n * 4 - 1) As Byte
-        Dim keepBaseAlpha As Boolean = headDiffuseAlphaTest AndAlso isD
+        ' keepBaseAlpha se resolvió ARRIBA, antes del seed, porque además de elegir el alpha de salida decide
+        ' si accA se reserva y se llena (ver ahí). Mismos dos términos, mismo valor.
         ' Paralelo por rangos: empaquetado float->byte PURAMENTE POR PIXEL (lee acc*(i), escribe outB(i*4..+3)),
         ' sin estado compartido ni acumulacion cruzada => BIT-IDENTICO al serial (mismo ToByte sobre el mismo
         ' double; solo cambia que thread lo ejecuta). Es el ULTIMO tramo per-pixel que quedaba serial en el

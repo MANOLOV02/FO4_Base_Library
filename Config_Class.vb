@@ -4,79 +4,6 @@ Imports System.Numerics
 Imports System.Text.Json
 Imports FO4_Base_Library.RecalcTBN
 Public Class Config_App
-    Public Structure LightData_struct
-        Public Property Strength As Single
-
-        ' Multiplicadores relativos a la base de cámara
-        Public Property Up As Single
-        Public Property Down As Single
-        Public Property Left As Single
-        Public Property Right As Single
-        Public Property Forward As Single   ' hacia cámara
-        Public Property Back As Single      ' opuesto a cámara
-
-        ''' <summary>
-        ''' Calcula el vector de dirección de la luz usando la orientación actual de la cámara orbital.
-        ''' </summary>
-        Public Function GetDirection(cam As OrbitCamera) As OpenTK.Mathematics.Vector3
-            ' Eje Up mundial
-            Dim upVec As New OpenTK.Mathematics.Vector3(0, 0, 1)
-
-            ' Eje Right relativo a la cámara
-            Dim rightVec As OpenTK.Mathematics.Vector3 = OpenTK.Mathematics.Vector3.Normalize(OpenTK.Mathematics.Vector3.Cross(cam.Forward, upVec))
-
-            ' Forward de la cámara
-            Dim forwardVec As OpenTK.Mathematics.Vector3 = cam.Forward
-
-            ' Combinación ponderada de ejes
-            Dim dir As OpenTK.Mathematics.Vector3 = (Up - Down) * upVec + (Right - Left) * rightVec + (Forward - Back) * forwardVec
-
-            ' Si el vector es muy pequeño, usar forward para evitar NaN
-            If dir.LengthSquared() < 0.00000001F Then
-                dir = forwardVec
-            End If
-
-            Return OpenTK.Mathematics.Vector3.Normalize(dir)
-        End Function
-        ''' <summary>Tinte RGB de la luz (0..1). Default/legacy (config viejo sin la key) = (0,0,0),
-        ''' que <see cref="GetDifuse"/> trata como blanco -&gt; preserva el comportamiento gris×Strength.</summary>
-        Public Property Tint As Vector3
-
-        Public Function GetDifuse() As OpenTK.Mathematics.Vector3
-            ' Tint (0,0,0) = legacy/unset -> blanco (luz gris neutra). Para "apagar" una luz usar Strength=0.
-            Dim t = Tint
-            If t.X = 0 AndAlso t.Y = 0 AndAlso t.Z = 0 Then t = New Vector3(1, 1, 1)
-            Return New OpenTK.Mathematics.Vector3(t.X, t.Y, t.Z) * Strength
-        End Function
-
-    End Structure
-    Public Structure LightsRig_struct
-        Public Property DirectL As LightData_struct
-        Public Property FillLight_1 As LightData_struct
-        Public Property FillLight_2 As LightData_struct
-        Public Property BackLight As LightData_struct
-        ''' <summary>Intensidad global del ambient (legacy). Sigue siendo el control de fuerza; el color
-        ''' del hemisferio lo dan <see cref="AmbientSky"/>/<see cref="AmbientGround"/>.</summary>
-        Public Property Ambient As Single
-        ''' <summary>Ambient HEMISFÉRICO engine-faithful (FO4/SSE usan ambient dependiente de la normal,
-        ''' no plano): color que recibe la superficie cuando su normal apunta hacia ARRIBA (world +Z).
-        ''' Default/legacy (0,0,0) -&gt; Render lo deriva del escalar <see cref="Ambient"/>.</summary>
-        Public Property AmbientSky As Vector3
-        ''' <summary>TINTE (hue) del ambient cuando la normal apunta hacia ABAJO. El BRILLO del suelo
-        ''' lo da <see cref="AmbientGroundLevel"/>, no este color (default blanco = neutro).</summary>
-        Public Property AmbientGround As Vector3
-        ''' <summary>HEMISFERIO: brillo del suelo (normal hacia abajo) como fracción del cielo, 0..1.
-        ''' 1 = ambient plano (suelo = cielo); 0.5 = suelo a la mitad; 0 = suelo negro. Independiente de
-        ''' la intensidad (<see cref="Ambient"/>) y del tinte. Default 0.5. Legacy (=0) -&gt; <see cref="NormalizeAmbient"/>.</summary>
-        Public Property AmbientGroundLevel As Single
-        ''' <summary>True una vez que el ambient se guardó en el modelo de 3 perillas. Distingue
-        ''' "usuario puso groundLevel=0" (válido, suelo negro) de "campo ausente en config viejo".
-        ''' False por default (JSON sin la key) -&gt; <see cref="NormalizeAmbient"/> migra una vez.</summary>
-        Public Property AmbientConfigured As Boolean
-
-    End Structure
-
-
     Public Structure CameraSettings
         Public Property ResetAngles As Boolean
         Public Property ResetZoom As Boolean
@@ -229,7 +156,31 @@ Public Class Config_App
     ' (El compositor GPU/CPU NO es una preferencia persistida: es una REGLA derivada — render = GPU si
     '  skinning=GPU, sino CPU ; chargen = siempre CPU (async, no toca GL). Ver FaceGenBuilder.)
 
-    Public Property Setting_Lightrig As LightsRig_struct = Default_Lights()
+    ' === Rig de luces del previewer, SEPARADO POR JUEGO (misma convención que las opciones de CharGen) ===
+    ' Nadie lee estas dos directamente: el render y LightRigForm van por ActiveLights()/SetActiveLights(),
+    ' así cambiar Game cambia el rig sin que el caller se entere. Ver PreviewLightRig.vb.
+    ' ⛔ Reemplaza al viejo `Setting_Lightrig` (LightsRig_struct), BORRADO sin compatibilidad: guardaba los
+    ' colores como System.Numerics.Vector3 (X/Y/Z son CAMPOS) y System.Text.Json los escribía como `{}`,
+    ' así que al releer volvían (0,0,0) = ambient negro. La key vieja del config.json se ignora al cargar
+    ' (STJ saltea las desconocidas) y desaparece en el próximo guardado.
+    Public Property Setting_PreviewLights_FO4 As PreviewLightRig = PreviewLightRig.Defaults()
+    Public Property Setting_PreviewLights_SSE As PreviewLightRig = PreviewLightRig.Defaults()
+
+    ''' <summary>El rig del juego activo. Value-type: devuelve una COPIA (editarla no persiste nada;
+    ''' para escribir usar <see cref="SetActiveLights"/>).</summary>
+    Public Function ActiveLights() As PreviewLightRig
+        Return If(Game = Game_Enum.Skyrim, Setting_PreviewLights_SSE, Setting_PreviewLights_FO4)
+    End Function
+
+    ''' <summary>Escribe el rig en el slot del juego activo.</summary>
+    Public Sub SetActiveLights(rig As PreviewLightRig)
+        If Game = Game_Enum.Skyrim Then
+            Setting_PreviewLights_SSE = rig
+        Else
+            Setting_PreviewLights_FO4 = rig
+        End If
+    End Sub
+
     Private _color As Color = Color.DarkGray
     Private _colorGrod As Color = Color.LightGray
 
@@ -268,45 +219,6 @@ Public Class Config_App
     Public Shared Function Default_CameraSettings() As CameraSettings
         Return New CameraSettings With {.ResetAngles = True, .ResetZoom = True, .FreezeCamera = False}
     End Function
-    Public Shared Function Default_Lights() As LightsRig_struct
-        Dim white As New Vector3(1, 1, 1)
-        ' Ambient = intensidad global (slider). AmbientGroundLevel = hemisferio (brillo del suelo vs cielo,
-        ' 0.5 = mitad). AmbientSky/Ground = solo TINTE (blanco = neutro). Tres perillas independientes.
-        Dim Lrig = New LightsRig_struct With {.Ambient = 1,
-            .AmbientSky = white,
-            .AmbientGround = white,
-            .AmbientGroundLevel = 0.5F,
-            .AmbientConfigured = True,
-            .DirectL = New LightData_struct With {.Strength = 0.6F, .Tint = white, .Left = 0, .Right = 0, .Back = 0, .Down = 0, .Forward = 1, .Up = 0},
-            .FillLight_1 = New LightData_struct With {.Strength = 0.4F, .Tint = white, .Left = 0, .Right = 0.7, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
-            .FillLight_2 = New LightData_struct With {.Strength = 0.4, .Tint = white, .Left = 0.7, .Right = 0, .Back = 0, .Down = 0, .Forward = 0.7, .Up = 0.7},
-            .BackLight = New LightData_struct With {.Strength = 0.2F, .Tint = white, .Left = 0.0, .Right = 0, .Back = 1, .Down = 0, .Forward = 0, .Up = 0.0}}
-        Return Lrig
-    End Function
-
-    ''' <summary>
-    ''' Normaliza el ambient al modelo de 3 perillas (intensity + groundLevel + tinte). Migra configs
-    ''' previos: si <see cref="LightsRig_struct.AmbientGroundLevel"/> &lt;= 0 (campo ausente), deriva el
-    ''' level del BRILLO del color ground del modelo intermedio (o 0.5 legacy) y deja los tintes en blanco;
-    ''' un tinte (0,0,0) ausente -&gt; blanco. Idempotente (no toca un rig ya normalizado). Trabaja sobre el
-    ''' struct pasado ByRef (es value-type; el caller decide si persistir).
-    ''' </summary>
-    Public Shared Sub NormalizeAmbient(ByRef rig As LightsRig_struct)
-        If rig.AmbientConfigured Then Return   ' ya en el modelo nuevo -> respetar todo (incl. groundLevel=0)
-        Dim g = rig.AmbientGround
-        If g.X = 0 AndAlso g.Y = 0 AndAlso g.Z = 0 Then
-            rig.AmbientGroundLevel = 0.5F
-        Else
-            ' modelo intermedio: el brillo del suelo vivía en el color -> pasarlo al level
-            rig.AmbientGroundLevel = (g.X + g.Y + g.Z) / 3.0F
-        End If
-        rig.AmbientGround = New Vector3(1, 1, 1)
-        If rig.AmbientSky.X = 0 AndAlso rig.AmbientSky.Y = 0 AndAlso rig.AmbientSky.Z = 0 Then
-            rig.AmbientSky = New Vector3(1, 1, 1)
-        End If
-        rig.AmbientConfigured = True
-    End Sub
-
     Public Property Setting_TBN As TBNOptions = DefaultTBNOptions()
 
     ' Instancia única accesible desde cualquier parte

@@ -79,6 +79,10 @@ Partial Class LightRigForm
         Label16 = New Label()
         Label17 = New Label()
         Label18 = New Label()
+        grpPresets = New GroupBox()
+        lblPreset = New Label()
+        cmbPreset = New ComboBox()
+        btnApplyPreset = New Button()
         btnReset = New Button()
         GroupBox1 = New GroupBox()
         tambient = New FO4_Base_Library.TinySliderTextBox()
@@ -127,6 +131,7 @@ Partial Class LightRigForm
         CType(nudB_D, ComponentModel.ISupportInitialize).BeginInit()
         GroupBox1.SuspendLayout()
         grpBackground.SuspendLayout()
+        grpPresets.SuspendLayout()
         SuspendLayout()
         '
         ' grpKey
@@ -785,13 +790,54 @@ Partial Class LightRigForm
         Label18.TabIndex = 13
         Label18.Text = "Forward"
         '
+        ' grpPresets -- una sola fila: [Preset v] [Apply] [Reset]. Reemplaza al botón "Reset to default"
+        ' que ocupaba una banda de 418x49 él solo.
+        '
+        grpPresets.Controls.Add(lblPreset)
+        grpPresets.Controls.Add(cmbPreset)
+        grpPresets.Controls.Add(btnApplyPreset)
+        grpPresets.Controls.Add(btnReset)
+        grpPresets.Location = New Point(436, 386)
+        grpPresets.Name = "grpPresets"
+        grpPresets.Size = New Size(418, 66)
+        grpPresets.TabIndex = 7
+        grpPresets.TabStop = False
+        grpPresets.Text = "Presets"
+        '
+        ' lblPreset
+        '
+        lblPreset.AutoSize = True
+        lblPreset.Location = New Point(11, 31)
+        lblPreset.Name = "lblPreset"
+        lblPreset.Size = New Size(43, 15)
+        lblPreset.TabIndex = 0
+        lblPreset.Text = "Set"
+        '
+        ' cmbPreset
+        '
+        cmbPreset.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbPreset.FormattingEnabled = True
+        cmbPreset.Location = New Point(56, 27)
+        cmbPreset.Name = "cmbPreset"
+        cmbPreset.Size = New Size(186, 23)
+        cmbPreset.TabIndex = 1
+        '
+        ' btnApplyPreset
+        '
+        btnApplyPreset.Location = New Point(252, 26)
+        btnApplyPreset.Name = "btnApplyPreset"
+        btnApplyPreset.Size = New Size(72, 25)
+        btnApplyPreset.TabIndex = 2
+        btnApplyPreset.Text = "Apply"
+        btnApplyPreset.UseVisualStyleBackColor = True
+        '
         ' btnReset
         '
-        btnReset.Location = New Point(436, 388)
+        btnReset.Location = New Point(332, 26)
         btnReset.Name = "btnReset"
-        btnReset.Size = New Size(418, 49)
-        btnReset.TabIndex = 4
-        btnReset.Text = "Reset to default"
+        btnReset.Size = New Size(74, 25)
+        btnReset.TabIndex = 3
+        btnReset.Text = "Reset"
         btnReset.UseVisualStyleBackColor = True
         '
         ' GroupBox1
@@ -917,7 +963,8 @@ Partial Class LightRigForm
         ToolTip1.SetToolTip(nudB_D, "Move back light downward.")
 
         ToolTip1.SetToolTip(tambient, "Adjust ambient light intensity.")
-        ToolTip1.SetToolTip(btnReset, "Restore the default light rig values.")
+        ToolTip1.SetToolTip(btnApplyPreset, "Load the selected preset into every control below.")
+        ToolTip1.SetToolTip(btnReset, "Back to the Studio preset AND the default background color.")
         ToolTip1.SetToolTip(cmbBackground, "Select the preview background color.")
         ToolTip1.SetToolTip(btnAmbSky, "Ambient color when a surface faces UP (world +Z). Engine ambient is normal-dependent.")
         ToolTip1.SetToolTip(btnAmbGround, "Ambient color when a surface faces DOWN (world -Z) -- ground bounce.")
@@ -984,7 +1031,7 @@ Partial Class LightRigForm
         ClientSize = New Size(866, 487)
         Controls.Add(grpBackground)
         Controls.Add(GroupBox1)
-        Controls.Add(btnReset)
+        Controls.Add(grpPresets)
         Controls.Add(grpBack)
         Controls.Add(grpFillR)
         Controls.Add(grpFillL)
@@ -1031,6 +1078,8 @@ Partial Class LightRigForm
         GroupBox1.PerformLayout()
         grpBackground.ResumeLayout(False)
         grpBackground.PerformLayout()
+        grpPresets.ResumeLayout(False)
+        grpPresets.PerformLayout()
         ResumeLayout(False)
 
     End Sub
@@ -1092,6 +1141,10 @@ Partial Class LightRigForm
     Friend WithEvents Label17 As Label
     Friend WithEvents Label18 As Label
     Friend WithEvents btnReset As Button
+    Friend WithEvents grpPresets As GroupBox
+    Friend WithEvents lblPreset As Label
+    Friend WithEvents cmbPreset As ComboBox
+    Friend WithEvents btnApplyPreset As Button
     Friend WithEvents GroupBox1 As GroupBox
     Friend WithEvents tambient As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents ToolTip1 As ToolTip

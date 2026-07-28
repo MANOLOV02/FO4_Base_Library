@@ -323,7 +323,31 @@ Public Class FilesDictionary_class
     Private Shared _keysByDirectoryBuilt As Boolean = False
     Private Shared ReadOnly _keysByDirectoryLock As New Object
 
+    ''' <summary>⛔ LAZY — construido en el PRIMER USO, no durante el scan. Mismo patrón, misma razón y mismo
+    ''' candado que <see cref="_KeysByDirectory"/>; la única diferencia es que a éste SÍ lo consultan queries
+    ''' reales, y por eso hasta ahora se poblaba durante el scan.
+    '''
+    ''' <para>Sus ÚNICOS lectores son <see cref="GetFilesInDirectory"/> (rama con extensiones) y
+    ''' <see cref="GetFilteredKeys"/>, y TODOS sus call sites son on-demand de UI o de tools: los pickers de
+    ''' mesh/material de los editores, los catálogos SSE, el picker de texturas de FO4UnifiedMaterial, los dos
+    ''' de Wardrobe_Manager y el import de poses. NINGUNO está en el camino de arranque. Construir el índice
+    ''' dentro de <see cref="Fill_DictionaryAsync"/> era, por lo tanto, una pasada COMPLETA sobre todas las
+    ''' claves del diccionario —millones en una instalación modeada, cada una con un GetDirectoryName + un
+    ''' GetExtension + un ToLowerInvariant + una concatenación + un insert hasheado OrdinalIgnoreCase— pagada
+    ''' en CADA arranque para responder preguntas que la mayoría de las sesiones nunca hace. Ahora esa fase no
+    ''' existe: el arranque sólo deja los índices en "sin construir".</para>
+    '''
+    ''' <para>El costo se mudó, no desapareció: la primera vez que se abre un picker se paga la construcción
+    ''' (en paralelo, una sola vez por scan). Es una decisión consciente — es trabajo que sólo paga quien lo
+    ''' usa, y ya no bloquea el arranque de todos.</para>
+    '''
+    ''' <para>Coherencia posterior idéntica a la de antes: una vez construido, <see cref="IndexNormalizedKey"/>
+    ''' lo mantiene (altas de <see cref="RegisterArchive"/> / <see cref="AddOrUpdateDictionaryEntry"/>) y
+    ''' <see cref="RemoveDictionaryEntry"/> lo poda; <see cref="ClearSearchIndexes"/> lo devuelve al estado sin
+    ''' construir. Si NO está construido, esas tres operaciones son no-ops correctas: la construcción posterior
+    ''' lee el diccionario YA con el alta o el baja aplicados.</para></summary>
     Private Shared ReadOnly _KeysByDirectoryExtension As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
+    Private Shared _keysByDirectoryExtensionBuilt As Boolean = False
 
     ''' <summary>De-duplicates the strings we store LONG-TERM (dictionary keys and
     ''' <see cref="File_Location.FullPath"/>), which is what <c>String.Intern</c> used to do here.
@@ -1165,20 +1189,54 @@ Public Class FilesDictionary_class
     ''' four normalization passes per key where one does. Same normalizers, same resulting bucket strings;
     ''' only the redundant work is gone, so the lookup side (which still calls the normalizers on the
     ''' caller's argument) keeps matching exactly.</para></summary>
+    ''' <para>⛔⛔ CORRE BAJO <see cref="_keysByDirectoryLock"/>, y eso NO es decoración: es lo que hace
+    ''' correcta la construcción diferida frente a un alta concurrente. Sin el candado hay una ventana que
+    ''' PIERDE claves en silencio:
+    ''' <code>
+    ''' T1 (build):  toma el lock, empieza a enumerar _dictionary …
+    ''' T2 (alta):   _dictionary.TryAdd(k) ✔  →  IndexNormalizedKey(k) lee built=False (T1 todavía no
+    '''              publicó el flag) → SALTEA
+    ''' T1:          su enumeración ya pasó por ese bucket ⇒ NO vio k → publica built=True
+    ''' resultado:   k está en el diccionario y NO está en el índice. El picker no lo muestra. Nunca.
+    ''' </code>
+    ''' El enumerador de ConcurrentDictionary es lock-free y NO garantiza observar los elementos agregados
+    ''' después de empezar, así que el argumento "el build lo va a levantar del diccionario igual" no se
+    ''' sostiene. Con el candado, un alta que llegue durante el build queda BLOQUEADA hasta que el build
+    ''' publica, y entonces ve built=True y se indexa. Las dos ventanas quedan cerradas.</para>
+    '''
+    ''' <para>Costo: un SyncLock sin contención (~decenas de ns) por clave indexada. Es despreciable porque
+    ''' este método YA NO corre durante el scan — sus únicos callers son las altas puntuales
+    ''' (<see cref="TryAddDictionaryEntry"/>, <see cref="AddOrUpdateDictionaryEntry"/>) y el loop de
+    ''' <see cref="RegisterArchive"/>. Los builds NO lo llaman: usan <c>AddKeyToSearchIndex</c> directo, así
+    ''' que no hay reentrada del candado desde sus hilos worker.</para>
+    '''
+    ''' <para>⚠️ Esto además TAPA un agujero preexistente del mismo tipo en <see cref="_KeysByDirectory"/>,
+    ''' cuyo comentario afirmaba que el build "lo va a levantar del diccionario igual". No era cierto por lo
+    ''' de arriba; sólo que ese índice se consulta poco y el síntoma no había aparecido.</para>
     Private Shared Sub IndexNormalizedKey(fullKey As String)
         If String.IsNullOrEmpty(fullKey) Then Exit Sub
+
+        ' LOS DOS índices son lazy ahora. Si ninguno está construido no hay nada que mantener, y salir ACÁ
+        ' evita también el GetDirectoryName + GetExtension + ToLowerInvariant de abajo — que era lo caro y se
+        ' pagaba igual aunque después no se escribiera en ningún lado. Chequeo barato SIN candado primero:
+        ' si acá da "ninguno construido" y un build arranca justo después, ese build enumera el diccionario
+        ' que YA contiene esta clave (el caller la insertó antes de llamarnos) ⇒ la levanta igual.
+        If Not Volatile.Read(_keysByDirectoryBuilt) AndAlso Not Volatile.Read(_keysByDirectoryExtensionBuilt) Then Exit Sub
 
         Dim directoryKey = NormalizeDirectoryKey(IO.Path.GetDirectoryName(fullKey))
         Dim extensionKey = NormalizeExtensionKey(IO.Path.GetExtension(fullKey))
 
-        ' Only maintained once someone has actually asked for it — see _KeysByDirectory.
-        If Volatile.Read(_keysByDirectoryBuilt) Then
-            AddKeyToSearchIndex(_KeysByDirectory, directoryKey, fullKey)
-        End If
+        SyncLock _keysByDirectoryLock
+            ' Re-leídos DENTRO del candado: entre el chequeo barato de arriba y este punto pudo terminar (o
+            ' empezar y terminar) un build, o un ClearSearchIndexes pudo bajar los flags.
+            If _keysByDirectoryBuilt Then
+                AddKeyToSearchIndex(_KeysByDirectory, directoryKey, fullKey)
+            End If
 
-        If extensionKey <> "" Then
-            AddKeyToSearchIndex(_KeysByDirectoryExtension, directoryKey & "|" & extensionKey, fullKey)
-        End If
+            If _keysByDirectoryExtensionBuilt AndAlso extensionKey <> "" Then
+                AddKeyToSearchIndex(_KeysByDirectoryExtension, directoryKey & "|" & extensionKey, fullKey)
+            End If
+        End SyncLock
     End Sub
 
     ''' <summary>Build <see cref="_KeysByDirectory"/> on demand, from the dictionary as it stands. Idempotent
@@ -1199,30 +1257,70 @@ Public Class FilesDictionary_class
         End SyncLock
     End Sub
 
+    ''' <summary>Build <see cref="_KeysByDirectoryExtension"/> on demand. Gemelo exacto de
+    ''' <see cref="EnsureKeysByDirectoryBuilt"/> (mismo candado, misma publicación del flag DENTRO del lock y
+    ''' sólo después de poblar), con una diferencia: la pasada va en PARALELO, porque es la que antes corría
+    ''' dentro del scan y la que motivó el comentario de <see cref="RebuildSearchIndexesFromDictionary"/> —
+    ''' millones de claves, cada una con GetDirectoryName + GetExtension + ToLowerInvariant + un insert
+    ''' hasheado. Es seguro paralelizarla por lo mismo que allá: el índice y sus buckets son ConcurrentDictionary
+    ''' y los inserts son independientes del orden (un set de claves por bucket).
+    '''
+    ''' <para>El Parallel.ForEach corre DENTRO del SyncLock a propósito: su cuerpo no toma este candado (sólo
+    ''' normaliza strings e inserta en ConcurrentDictionary), así que no hay reentrada posible; y otro hilo que
+    ''' entre acá mientras tanto queda bloqueado, que es exactamente lo que se quiere (espera la construcción
+    ''' en vez de duplicarla).</para>
+    '''
+    ''' <para>Itera el diccionario directamente, no <c>.Keys</c> — esa propiedad toma todos los locks internos
+    ''' y materializa un array snapshot de todas las claves (decenas de MB de basura pura). Mismo motivo que
+    ''' documentaba el rebuild original.</para></summary>
+    Private Shared Sub EnsureKeysByDirectoryExtensionBuilt()
+        If Volatile.Read(_keysByDirectoryExtensionBuilt) Then Exit Sub
+        SyncLock _keysByDirectoryLock
+            If _keysByDirectoryExtensionBuilt Then Exit Sub
+            _KeysByDirectoryExtension.Clear()
+            Parallel.ForEach(_dictionary,
+                Sub(kvp)
+                    Dim key = kvp.Key
+                    If String.IsNullOrEmpty(key) Then Exit Sub
+                    Dim extensionKey = NormalizeExtensionKey(IO.Path.GetExtension(key))
+                    If extensionKey = "" Then Exit Sub
+                    AddKeyToSearchIndex(_KeysByDirectoryExtension,
+                                        NormalizeDirectoryKey(IO.Path.GetDirectoryName(key)) & "|" & extensionKey,
+                                        key)
+                End Sub)
+            Volatile.Write(_keysByDirectoryExtensionBuilt, True)
+        End SyncLock
+    End Sub
+
     Private Shared Sub ClearSearchIndexes()
+        ' ⛔ LOS DOS clears van DENTRO del candado ahora. Antes el de _KeysByDirectoryExtension estaba afuera
+        ' porque ese índice no tenía flag y limpiarlo era idempotente. Con el flag hay estado que mantener
+        ' coherente con el contenido: si el Clear corriera fuera del lock podría intercalarse con una
+        ' construcción en curso y dejar el flag en True sobre un índice ya vaciado — o sea, "construido" y
+        ' vacío, que se lee como "este directorio no tiene archivos" en vez de reconstruirse.
         SyncLock _keysByDirectoryLock
             _KeysByDirectory.Clear()
             Volatile.Write(_keysByDirectoryBuilt, False)
+            _KeysByDirectoryExtension.Clear()
+            Volatile.Write(_keysByDirectoryExtensionBuilt, False)
         End SyncLock
-        _KeysByDirectoryExtension.Clear()
     End Sub
 
-    ''' <summary>Rebuilds the search index from the dictionary. Runs in PARALLEL: this is a pass over every
-    ''' key (millions on a modded install), and each key costs a GetDirectoryName + GetExtension +
-    ''' ToLowerInvariant plus a ConcurrentDictionary insert hashed OrdinalIgnoreCase over a long path.
-    ''' Serially that was tens of seconds at the tail of the scan, with the progress bar already full.
-    ''' Safe to parallelize: the index and its buckets are ConcurrentDictionary, and the inserts are
-    ''' order-independent (a set of keys per bucket — no last-writer-wins semantics to preserve).
-    ''' AddKeyToSearchIndex's GetOrAdd factory may run twice under contention; the loser is a discarded
-    ''' empty bucket.
+    ''' <summary>Invalida los índices de búsqueda: el diccionario cambió de arriba abajo y lo que hubiera
+    ''' indexado ya no le corresponde.
     '''
-    ''' <para>Iterates the dictionary directly rather than <c>.Keys</c>: that property takes every internal
-    ''' lock and materializes a snapshot ARRAY of all keys — tens of MB of pure garbage at the exact moment
-    ''' the process is already at its peak. The ConcurrentDictionary enumerator is lock-free and safe to use
-    ''' concurrently with writers by design, and here there are none anyway (the scan workers have joined).</para></summary>
+    ''' <para>⛔ Ya NO reconstruye nada, y por eso conserva el nombre sólo para no tocar sus dos call sites
+    ''' (el setter de <see cref="Dictionary"/> y el final de <see cref="Fill_DictionaryAsync"/>). Los DOS
+    ''' índices son lazy, así que la reconstrucción es justamente lo que no hay que hacer acá: se difiere a
+    ''' <see cref="EnsureKeysByDirectoryBuilt"/> / <see cref="EnsureKeysByDirectoryExtensionBuilt"/>, que
+    ''' corren cuando —y sólo si— alguien consulta. La pasada paralela que vivía acá era el grueso de la fase
+    ''' "Building search index…" del arranque.</para>
+    '''
+    ''' <para>El resultado observable es el mismo: antes quedaban índices poblados y coherentes con el
+    ''' diccionario; ahora quedan vacíos y marcados "sin construir", y el primer lector los puebla desde ese
+    ''' MISMO diccionario. Lo único que cambia es CUÁNDO.</para></summary>
     Private Shared Sub RebuildSearchIndexesFromDictionary()
         ClearSearchIndexes()
-        Parallel.ForEach(_dictionary, Sub(kvp) IndexNormalizedKey(kvp.Key))
     End Sub
 
     Public Shared Function TryAddDictionaryEntry(fullPath As String, location As File_Location) As Boolean
@@ -1288,14 +1386,23 @@ Public Class FilesDictionary_class
         Else
             Dim removed As File_Location = Nothing
             If _dictionary.TryRemove(normalized, removed) Then
-                ' Remove from search indexes only if truly gone
+                ' Remove from search indexes only if truly gone.
+                ' ⛔ BAJO EL CANDADO, por la ventana SIMÉTRICA a la de IndexNormalizedKey: si un build está
+                ' enumerando el diccionario y alcanzó a ver esta clave ANTES del TryRemove de arriba, la va a
+                ' insertar en el índice; si la poda corriera sin candado podría ejecutarse ANTES de esa
+                ' inserción y no borrar nada, dejando en el índice una clave que ya no está en el diccionario
+                ' (un picker ofreciendo un archivo inexistente). Con el candado la poda espera a que el build
+                ' publique y borra después. Si el índice no está construido, los TryGetValue no encuentran
+                ' bucket y esto es un no-op correcto: el build posterior lee el diccionario YA sin la clave.
                 Dim directoryKey = NormalizeDirectoryKey(IO.Path.GetDirectoryName(normalized))
                 Dim extensionKey = NormalizeExtensionKey(IO.Path.GetExtension(normalized))
-                Dim bucket As ConcurrentDictionary(Of String, Byte) = Nothing
-                If _KeysByDirectory.TryGetValue(directoryKey, bucket) Then bucket.TryRemove(normalized, 0)
-                If extensionKey <> "" Then
-                    If _KeysByDirectoryExtension.TryGetValue(BuildDirectoryExtensionBucketKey(directoryKey, extensionKey), bucket) Then bucket.TryRemove(normalized, 0)
-                End If
+                SyncLock _keysByDirectoryLock
+                    Dim bucket As ConcurrentDictionary(Of String, Byte) = Nothing
+                    If _KeysByDirectory.TryGetValue(directoryKey, bucket) Then bucket.TryRemove(normalized, 0)
+                    If extensionKey <> "" Then
+                        If _KeysByDirectoryExtension.TryGetValue(BuildDirectoryExtensionBucketKey(directoryKey, extensionKey), bucket) Then bucket.TryRemove(normalized, 0)
+                    End If
+                End SyncLock
             End If
         End If
     End Sub
@@ -1412,6 +1519,9 @@ Public Class FilesDictionary_class
                 Next
             End If
         Else
+            ' El índice por (directorio, extensión) tampoco se puebla durante el scan — ver
+            ' _KeysByDirectoryExtension. Construirlo en el primer pedido.
+            EnsureKeysByDirectoryExtensionBuilt()
             For Each ext In extensionSet
                 Dim bucketKey = BuildDirectoryExtensionBucketKey(directoryKey, ext)
                 Dim directoryExtBucket As ConcurrentDictionary(Of String, Byte) = Nothing
@@ -1452,6 +1562,11 @@ Public Class FilesDictionary_class
         End If
 
         If extensionSet.Count = 0 Then Return New List(Of String)
+
+        ' Único otro lector del índice por (directorio, extensión). Ver _KeysByDirectoryExtension: se
+        ' construye acá, en el primer pedido, no durante el scan. El guard de arriba va ANTES a propósito —
+        ' sin extensiones esta función devuelve vacío sin mirar el índice, así que no hay por qué construirlo.
+        EnsureKeysByDirectoryExtensionBuilt()
 
         For Each ext In extensionSet
             Dim suffix = "|" & ext   ' ej: "|.dds"
@@ -1662,13 +1777,14 @@ Public Class FilesDictionary_class
             Logger.LogLazy(Function() $"[FilesDictionary] walk+scan: {workerCount} workers, {looseCount} loose, {hits} cache-hit / {missed} re-indexed archives, {entryCount} entries in {msScan} ms (walk done at {msWalkAndScan} ms)")
             swPhase.Restart()
 
-            ' Phase 2 of the "it looks frozen" problem: this pass runs with the bar already at 100% and the
-            ' label still naming the last archive, so on a big install it reads as a hang at the very end.
-            ' Say what it is doing.
-            ReportScan(progress, "Building search index…", totalCount, totalCount)
-
-            ' O1.3: Build the secondary index in a single batch pass after the parallel scan completes.
-            ' This avoids lock contention on the ConcurrentDictionary index during parallel insert.
+            ' ⛔ Acá vivía la fase "Building search index…" — una pasada COMPLETA sobre todas las claves del
+            ' diccionario, corriendo con la barra ya en 100% y por eso reportada aparte para que no se leyera
+            ' como un cuelgue. Esa fase YA NO EXISTE: los dos índices de búsqueda son lazy y sólo los
+            ' consultan pickers y catálogos on-demand, ninguno en el arranque (ver _KeysByDirectoryExtension).
+            ' Esto ahora sólo los deja en "sin construir"; el primer lector los puebla desde este mismo
+            ' diccionario. Sin fase no hay nada que reportar — un label para trabajo que no ocurre es
+            ' desinformación, no feedback. El timing de abajo (msIndex) se conserva: verlo caer a ~0 ms en
+            ' LastScanDiagnostics es justamente la evidencia de que el diferido está funcionando.
             RebuildSearchIndexesFromDictionary()
 
             Dim msIndex = swPhase.ElapsedMilliseconds

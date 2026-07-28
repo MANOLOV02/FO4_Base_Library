@@ -3368,32 +3368,29 @@ Public Class PreviewModel
             ' no plano). Dos colores -- cielo (normal hacia world +Z) y suelo (-Z) -- que el shader mezcla
             ' por la componente up de la normal. Config legacy (sin hemisferio) -> derivar uno neutro del
             ' escalar Ambient (cielo=Ambient, suelo=Ambient/2). Se linealizan (pow 2.2) como el resto del rig.
-            ' Ambient = 3 perillas independientes (NormalizeAmbient migra configs viejos): intensidad global
-            ' (Ambient), hemisferio (AmbientGroundLevel = brillo del suelo respecto del cielo) y tinte
-            ' (Sky/Ground, blanco = neutro). sky = skyTint*intensity ; ground = groundTint*intensity*groundLevel.
+            ' Ambient = 3 perillas independientes: intensidad global (AmbientIntensity), hemisferio
+            ' (AmbientGroundLevel = brillo del suelo respecto del cielo) y tinte (Sky/Ground, blanco =
+            ' neutro). sky = skyTint*intensity ; ground = groundTint*intensity*groundLevel.
             ' Linealizado (pow 2.2) como el resto del rig.
-            Dim arig = Config_App.Current.Setting_Lightrig
-            Config_App.NormalizeAmbient(arig)
-            Dim ambientVal As Single = arig.Ambient
-            Dim aSky = arig.AmbientSky
-            Dim aGround = arig.AmbientGround
-            Dim gLevel As Single = arig.AmbientGroundLevel
-            shader.SetVector3("ambientSky", Shader_Base_Class.Vector_to_Linear(New OpenTK.Mathematics.Vector3(aSky.X, aSky.Y, aSky.Z) * ambientVal))
-            shader.SetVector3("ambientGround", Shader_Base_Class.Vector_to_Linear(New OpenTK.Mathematics.Vector3(aGround.X, aGround.Y, aGround.Z) * (ambientVal * gLevel)))
+            ' El rig sale de ActiveLights() = el set del JUEGO activo (FO4/SSE tienen el suyo). Se lee UNA
+            ' vez por shape: es un value-type, copiarlo sale gratis y evita 8 lecturas del singleton.
+            Dim rig = Config_App.Current.ActiveLights()
+            shader.SetVector3("ambientSky", Shader_Base_Class.Vector_to_Linear(rig.AmbientSkyDiffuse()))
+            shader.SetVector3("ambientGround", Shader_Base_Class.Vector_to_Linear(rig.AmbientGroundDiffuse()))
 
-            shader.SetVector3("frontal.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.DirectL.GetDifuse))
-            shader.SetVector3("frontal.direction", Config_App.Current.Setting_Lightrig.DirectL.GetDirection(cam))
+            shader.SetVector3("frontal.diffuse", Shader_Base_Class.Vector_to_Linear(rig.KeyLight.Diffuse()))
+            shader.SetVector3("frontal.direction", rig.KeyLight.Direction(cam))
             ' Luz direccional 0
-            shader.SetVector3("directional0.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.FillLight_1.GetDifuse))
-            shader.SetVector3("directional0.direction", Config_App.Current.Setting_Lightrig.FillLight_1.GetDirection(cam))
+            shader.SetVector3("directional0.diffuse", Shader_Base_Class.Vector_to_Linear(rig.FillLeft.Diffuse()))
+            shader.SetVector3("directional0.direction", rig.FillLeft.Direction(cam))
 
             ' Luz direccional 1
-            shader.SetVector3("directional1.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.FillLight_2.GetDifuse))
-            shader.SetVector3("directional1.direction", Config_App.Current.Setting_Lightrig.FillLight_2.GetDirection(cam))
+            shader.SetVector3("directional1.diffuse", Shader_Base_Class.Vector_to_Linear(rig.FillRight.Diffuse()))
+            shader.SetVector3("directional1.direction", rig.FillRight.Direction(cam))
 
             ' Luz direccional 2
-            shader.SetVector3("directional2.diffuse", Shader_Base_Class.Vector_to_Linear(Config_App.Current.Setting_Lightrig.BackLight.GetDifuse))
-            shader.SetVector3("directional2.direction", Config_App.Current.Setting_Lightrig.BackLight.GetDirection(cam))
+            shader.SetVector3("directional2.diffuse", Shader_Base_Class.Vector_to_Linear(rig.BackLight.Diffuse()))
+            shader.SetVector3("directional2.direction", rig.BackLight.Direction(cam))
 
             '===============================
             ' ?? TEXTURAS (Sample BINDs)

@@ -604,6 +604,21 @@ Public Module SseFaceTintComposer
             Return Nothing
         End If
         Dim outp(w * h * 4 - 1) As Single
+        ' ⭐ IDENTIDAD: si la fuente ya está en el tamaño pedido, el bilineal de abajo devuelve exactamente el
+        ' texel de origen y sólo cuesta una pasada completa de trabajo. Con sw=dw: fx = (x+0,5)·W/W − 0,5 = x
+        ' EXACTO en Double (el producto usa ≤24 bits de mantisa y la división por el mismo entero es exacta),
+        ' así que x0=x, tx=0 y la fórmula colapsa a (p00·1 + p10·0)·1 + (…)·0 = p00. Ídem en y. Es la misma
+        ' salida bit a bit, sin la pasada. Sus dos gemelos del compositor FO4 (ResampleBgra /
+        ' ResampleRgbaFloat) ya traían este corto; éste no lo tenía, y 512²→512² es el caso NORMAL en SSE.
+        ' ⛔ Se COPIA, no se aliasea t.Rgba: el array devuelto puede terminar en _texCache y en manos de
+        ' varios consumidores, mientras que t vive en _texSrcCache con otro ciclo de vida. Aliasarlos dejaría
+        ' que una mutación río abajo corrompiera la caché de fuentes. (Contrato idéntico al de hoy: el
+        ' bilineal también devolvía un array fresco.)
+        If t.Width = w AndAlso t.Height = h AndAlso t.Rgba.Length = outp.Length Then
+            Array.Copy(t.Rgba, outp, outp.Length)
+            If w = 512 AndAlso h = 512 Then _texCache(key) = outp
+            Return outp
+        End If
         ' Resample bilineal PARALELO por filas (misma fórmula, cada fila escribe sólo sus índices ⇒ bit-idéntico).
         ' A 4096² de target el serial era parte de los segundos por fold.
         System.Threading.Tasks.Parallel.For(0, h, Sub(y)
