@@ -1014,6 +1014,16 @@ Public Class NPC_Data
     ''' <summary>RaceMenu NiOverride CUSTOM morphs (CME_/EFM_ names + value) from the .jslot. Applied by name
     ''' against the chargen TriHead (no-op for names the tri doesn't carry). Nothing = none.</summary>
     Public Property SseCustomMorphs As List(Of NPC_CustomMorph) = Nothing
+    ''' <summary>SSE-ONLY RaceMenu absolute hair tint, packed 0xRRGGBB (.jslot <c>actor.hairColor</c>,
+    ''' PresetInterface.cpp:677). Takes precedence over <see cref="HairColorFormID"/> at hair-material
+    ''' resolution; Nothing = use the CLFM. Carried on the overlay shadow so RENDER and BAKE resolve the
+    ''' same colour (the bake builds its NPCVisualState from this shadow, FaceGenBuilder.vb:272).
+    ''' <para>NOT a subrecord: it has no NPC_ field of its own. Save ESP materializes it into a real CLFM
+    ''' (reuse-or-create) and points HCLF at it — see SaveNpcEspWriter.ClfmRecordEntry. That's the only
+    ''' persistent channel: the engine re-pushes the CLFM colour onto every HairTint material on every
+    ''' actor 3D update (skee64 SKEEHooks.cpp:1057 hooks that very function), so a colour baked into the
+    ''' FaceGeom alone would be overwritten in-game.</para></summary>
+    Public Property SseHairColorRgb As Integer? = Nothing
     ''' <summary>SSE actor sounds as a flat ordered list of CSDT/CSDI/CSDC subrecords. CSDI entries
     ''' are marked IsFormId (resolved to GLOBAL at parse) so the writer remaps them; CSDT/CSDC are
     ''' emitted verbatim. Replaces the FO4 CS2H/CS2K/CS2D/CS2E/CS2F block on SSE.</summary>
@@ -4254,7 +4264,17 @@ Public Module RecordParsers
         Next
 
         If hasRawColor Then
-            If (clfm.Flags And 2UI) = 0UI Then
+            ' ⛔ GAME-AWARE: CNAM es una UNIÓN decidida por FNAM **sólo en FO4** (wbDefinitionsFO4.pas:9921-9932:
+            ' FNAM = 'Flags' con bit 1 = 'Remapping Index', y CNAM pasa a ser un float con la fila del LUT).
+            ' En SKYRIM el mismo FNAM es `wbInteger(FNAM, 'Playable', itU32, wbBoolEnum)` (wbDefinitionsTES5.pas:7953)
+            ' — un booleano, sin concepto de remapping index — y CNAM es SIEMPRE wbByteRGBA. Aplicarle la regla de
+            ' FO4 a un record de Skyrim hacía que un CLFM con FNAM=2 se leyera como fila de paleta y perdiera su RGB:
+            ' el color de pelo se resolvía mal y, peor, el camino de preservación de Save ESP lo habría re-escrito
+            ' como negro. MEDIDO sobre Skyrim.esm: 178 CLFM, FNAM ∈ {1 (×174), 0 (×4)} — nunca 2, así que en la
+            ' práctica el bug no se disparaba con datos vanilla; el gate lo cierra igual para records de mods.
+            Dim isFo4Union As Boolean = Config_App.Current IsNot Nothing AndAlso
+                                        Config_App.Current.Game = Config_App.Game_Enum.Fallout4
+            If Not isFo4Union OrElse (clfm.Flags And 2UI) = 0UI Then
                 clfm.Color = ParseClfmColor(rawColor)
                 clfm.HasColor = True
             Else

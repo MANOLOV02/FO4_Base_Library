@@ -213,6 +213,43 @@ Public Module SaveNpcEspWriter
         Public SourceRecord As PluginRecord = Nothing
     End Class
 
+    ''' <summary>One CLFM (Color) record to write into the plugin — the persistence vehicle for the SSE
+    ''' RaceMenu absolute hair tint (<c>.jslot actor.hairColor</c>, a packed RGB that is NOT a CLFM ref).
+    ''' Two flavours, mirroring <see cref="OtftRecordEntry"/>:
+    '''   • NEW (IsOverride=False): <see cref="FormID"/> is the caller's PROVISIONAL sentinel (0xFF high
+    '''     byte); the writer assigns the real self-index FormID and remaps every reference to it — notably
+    '''     the NPC_.HCLF pointing at the provisional.
+    '''   • OVERRIDE (IsOverride=True): a CLFM authored by a PRIOR save of this same plugin, re-emitted so
+    '''     a re-save doesn't drop it and leave every HCLF that points at it dangling.
+    ''' <para>Body per wbDefinitionsTES5.pas:7946 / wbDefinitionsFO4.pas: EDID + [FULL] + CNAM + FNAM. FULL is
+    ''' deliberately NOT emitted: xEdit marks it optional (only CNAM/FNAM are Required) and it is a
+    ''' translatable lstring, so skipping it keeps the record valid in both a localized and a
+    ''' non-localized plugin without a strings table. CNAM is wbByteRGBA = bytes [R,G,B,A] — MEASURED over
+    ''' Skyrim.esm: 178/178 CLFM carry A=0, and the 15 hair colours carry FNAM=1 (Playable), so those are
+    ''' the values a synthesized hair colour gets. CLFM carries NO FormID in its body; only its own record
+    ''' FormID is remapped.</para>
+    ''' <para>⚠️ SSE-ONLY BY CONSTRUCTION (the caller gates it): a Fallout 4 hair CLFM carries a
+    ''' RemappingIndex (FNAM bit 1) instead of an RGB — the packed colour has no meaning there. The writer
+    ''' itself stays game-agnostic and only picks the record version, like every other entry kind.</para></summary>
+    Public Class ClfmRecordEntry
+        ''' <summary>NEW: provisional sentinel (0xFF…). OVERRIDE: the existing CLFM's real global FormID.</summary>
+        Public FormID As UInteger
+        Public EditorID As String = ""
+        ''' <summary>Packed 0xRRGGBB. Emitted to CNAM as bytes R,G,B then <see cref="ColorAlpha"/>.</summary>
+        Public ColorRgb As Integer
+        ''' <summary>CNAM's 4th byte. Default 0 = what all 178 vanilla Skyrim.esm CLFM carry (measured).
+        ''' Preserved verbatim from the source record on OVERRIDE entries.</summary>
+        Public ColorAlpha As Byte = 0
+        ''' <summary>FNAM. Skyrim: 'Playable' bool (1 on all 15 vanilla hair colours). FO4: a flag field.
+        ''' Emitted verbatim as u32 either way.</summary>
+        Public Flags As UInteger = 1UI
+        Public IsOverride As Boolean = False
+        ''' <summary>VCS1/VCS2 preserved from the source record on OVERRIDE entries. See
+        ''' <see cref="OtftRecordEntry.OriginalVcs1"/>.</summary>
+        Public OriginalVcs1 As UInteger = 0UI
+        Public OriginalVcs2 As UShort = 0US
+    End Class
+
     ''' <summary>One ARMA (Armor Addon) record to write. NEW-only in this task: <see cref="FormID"/> is
     ''' the caller's PROVISIONAL sentinel (0xFF…), assigned a real self-index FormID by the writer. Body
     ''' order per wbDefinitionsFO4.pas:6210 (see <see cref="SerializeArmaRecord"/> for the exact stream
@@ -387,7 +424,8 @@ Public Module SaveNpcEspWriter
                                        Optional npcCreateEntries As List(Of NpcCreateEntry) = Nothing,
                                        Optional armoEntries As List(Of ArmoRecordEntry) = Nothing,
                                        Optional armaEntries As List(Of ArmaRecordEntry) = Nothing,
-                                       Optional mswpEntries As List(Of MswpRecordEntry) = Nothing) As SaveResult
+                                       Optional mswpEntries As List(Of MswpRecordEntry) = Nothing,
+                                       Optional clfmEntries As List(Of ClfmRecordEntry) = Nothing) As SaveResult
 
         If String.IsNullOrWhiteSpace(outputPath) Then Throw New ArgumentException("outputPath is empty.", NameOf(outputPath))
         If entries Is Nothing Then entries = New List(Of NpcOverrideEntry)()
@@ -400,6 +438,7 @@ Public Module SaveNpcEspWriter
         If armoEntries Is Nothing Then armoEntries = New List(Of ArmoRecordEntry)()
         If armaEntries Is Nothing Then armaEntries = New List(Of ArmaRecordEntry)()
         If mswpEntries Is Nothing Then mswpEntries = New List(Of MswpRecordEntry)()
+        If clfmEntries Is Nothing Then clfmEntries = New List(Of ClfmRecordEntry)()
 
         Dim gameMaster = MasterFileNamePublic(game)
 
@@ -490,6 +529,12 @@ Public Module SaveNpcEspWriter
         Next
         For Each mw In mswpEntries
             CollectFormIDsFromMswp(mw, allFormIDs)
+        Next
+        ' CLFM: the body carries NO FormID (EDID/CNAM/FNAM only). An OVERRIDE entry still brings in its own
+        ' record's master so the MAST list keeps the plugin that defines it; NEW entries are owned by this
+        ' plugin and resolve through draftRemap. Same shape as the OTFT collector above.
+        For Each ce In clfmEntries
+            If ce.IsOverride AndAlso ce.FormID <> 0UI Then allFormIDs.Add(ce.FormID)
         Next
 
         ' ====================================================================
@@ -644,6 +689,15 @@ Public Module SaveNpcEspWriter
             draftRemap(ao.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
             nextSelfObjIndex += 1UI
         Next
+        ' NEW CLFM drafts (SSE hair colour materialized from a RaceMenu preset). Same pre-assignment as every
+        ' other draft kind, so the NPC_.HCLF that points at the provisional sentinel rewrites to the real
+        ' self-index FormID through the single remapper regardless of emit order.
+        For Each ce In clfmEntries
+            If ce.IsOverride Then Continue For
+            If draftRemap.ContainsKey(ce.FormID) Then Continue For
+            draftRemap(ce.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
+            nextSelfObjIndex += 1UI
+        Next
 
         Dim remapper As NpcSubrecordWriter.FormIdRemapper =
             Function(globalFormID As UInteger) As UInteger
@@ -753,6 +807,13 @@ Public Module SaveNpcEspWriter
             armoBuffers.Add(SerializeArmoRecord(ao, remapper, game, pluginManager))
         Next
 
+        ' CLFM colour records (SSE hair tint materialized from a RaceMenu preset). NEW ones take a self-index
+        ' FormID via draftRemap; OVERRIDE ones (authored by a prior save of this plugin) keep their real FormID.
+        Dim clfmBuffers As New List(Of Byte())
+        For Each ce In clfmEntries
+            clfmBuffers.Add(SerializeClfmRecord(ce, remapper, game))
+        Next
+
         ' ====================================================================
         ' Step 5: Wrap each record type in its own top-level GRUP. Order matches xEdit canonical
         ' wbGroupOrder (built from wbRecord(...) declaration order in wbDefinitionsFO4.pas):
@@ -763,9 +824,18 @@ Public Module SaveNpcEspWriter
         ' FormID resolution is global, so engine doesn't require this order — it's pure xEdit
         ' canonicality.
         ' ====================================================================
-        ' Referenced-first GRUP order: MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_. A referenced record
-        ' precedes its referrer (MSWP is referenced by ARMA/ARMO; ARMA by ARMO; ARMA/ARMO by OTFT/LVLI/NPC_).
+        ' Referenced-first GRUP order: CLFM → MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_. A referenced
+        ' record precedes its referrer (CLFM is referenced by NPC_.HCLF; MSWP by ARMA/ARMO; ARMA by ARMO;
+        ' ARMA/ARMO by OTFT/LVLI/NPC_).
         ' FormID resolution is global so the engine doesn't require this — it keeps the file readable/clean.
+        ' ⚠️ Deliberate, PRE-EXISTING deviation from xEdit's canonical wbGroupOrder, which in BOTH games puts
+        ' CLFM near the END (FO4 wbDefinitionsFO4.pas:13686, after NPC_ 13593 / ARMA 13654 / OTFT 13677;
+        ' Skyrim wbDefinitionsTES5.pas:11212, after NPC_ 11121 / ARMA 11181 / OTFT 11203). This writer already
+        ' emits referenced-first for the other 7 groups; CLFM follows the SAME local convention rather than
+        ' splitting the file's ordering across two rules. Nothing rejects it: top-level GRUP order carries no
+        ' meaning for the engine or the CK (FormID resolution is global), and xEdit re-sorts by SortOrder on
+        ' its own save (wbImplementation.pas:5212). What DOES have to be right is HEDR.numRecords below.
+        Dim grupClfmBytes As Byte() = If(clfmBuffers.Count > 0, BuildGrup("CLFM", clfmBuffers), Array.Empty(Of Byte)())
         Dim grupMswpBytes As Byte() = If(mswpBuffers.Count > 0, BuildGrup("MSWP", mswpBuffers), Array.Empty(Of Byte)())
         Dim grupArmaBytes As Byte() = If(armaBuffers.Count > 0, BuildGrup("ARMA", armaBuffers), Array.Empty(Of Byte)())
         Dim grupArmoBytes As Byte() = If(armoBuffers.Count > 0, BuildGrup("ARMO", armoBuffers), Array.Empty(Of Byte)())
@@ -800,11 +870,12 @@ Public Module SaveNpcEspWriter
         ' Counting only the records made the CK pop "Form counts don't match / correct the file header?".
         ' The NPC_ GRUP is always emitted (Step 7), the rest only when non-empty.
         Dim grupCount As Integer = 1 +
+                                   If(clfmBuffers.Count > 0, 1, 0) +
                                    If(mswpBuffers.Count > 0, 1, 0) + If(armaBuffers.Count > 0, 1, 0) +
                                    If(armoBuffers.Count > 0, 1, 0) + If(otftBuffers.Count > 0, 1, 0) +
                                    If(lvlnBuffers.Count > 0, 1, 0) + If(lvliBuffers.Count > 0, 1, 0)
         Dim totalRecords As Integer = recordBuffers.Count + otftBuffers.Count + lvliBuffers.Count + lvlnBuffers.Count +
-                                      mswpBuffers.Count + armaBuffers.Count + armoBuffers.Count + grupCount
+                                      mswpBuffers.Count + armaBuffers.Count + armoBuffers.Count + clfmBuffers.Count + grupCount
         Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
@@ -818,7 +889,8 @@ Public Module SaveNpcEspWriter
         Dim tmpPath = outputPath & ".tmp"
         Using fs As FileStream = File.Create(tmpPath)
             fs.Write(tes4Bytes, 0, tes4Bytes.Length)
-            ' Canonical referenced-first GRUP order: MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_ (Step 5).
+            ' Canonical referenced-first GRUP order: CLFM → MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_ (Step 5).
+            If grupClfmBytes.Length > 0 Then fs.Write(grupClfmBytes, 0, grupClfmBytes.Length)
             If grupMswpBytes.Length > 0 Then fs.Write(grupMswpBytes, 0, grupMswpBytes.Length)
             If grupArmaBytes.Length > 0 Then fs.Write(grupArmaBytes, 0, grupArmaBytes.Length)
             If grupArmoBytes.Length > 0 Then fs.Write(grupArmoBytes, 0, grupArmoBytes.Length)
@@ -1316,6 +1388,59 @@ Public Module SaveNpcEspWriter
                 bw.Write(entry.OriginalVcs1)                ' VCS1 (preserved from source on overrides, 0 for new drafts)
                 bw.Write(recordVersion)                     ' Version
                 bw.Write(entry.OriginalVcs2)                ' VCS2 (preserved from source on overrides, 0 for new drafts)
+                bw.Write(body)
+            End Using
+            Return ms.ToArray()
+        End Using
+    End Function
+
+    ''' <summary>Serialize one CLFM (Color) record: 24-byte header + body. Body order per
+    ''' wbDefinitionsTES5.pas:7946 (identical in FO4): EDID + [FULL] + CNAM + FNAM.
+    ''' <list type="bullet">
+    ''' <item>EDID — ZSTRING, cp1252 non-translatable (same encoder as every other EDID here).</item>
+    ''' <item>FULL — NOT emitted. xEdit marks it optional (only CNAM/FNAM are Required) and it is a
+    '''   translatable lstring: emitting it as a raw ZSTRING would be wrong in a LOCALIZED plugin (there it
+    '''   must be a u32 string-table ID), and we have no strings table to add to. Skipping it is valid in
+    '''   both flavours; the record shows by EditorID.</item>
+    ''' <item>CNAM — wbByteRGBA, 4 bytes in [R,G,B,A] order (mirror of RecordParsers.ParseClfmColor, which
+    '''   reads byte0=R…byte3=A). MEASURED over Skyrim.esm: alpha is 0 on all 178 CLFM.</item>
+    ''' <item>FNAM — u32. Skyrim: 'Playable' bool, =1 on all 15 vanilla hair colours (measured). FO4: flag
+    '''   field where bit 1 means "CNAM is a RemappingIndex, not an RGB" — a synthesized entry never sets
+    '''   it, which is exactly why this path is SSE-only at the caller.</item>
+    ''' </list>
+    ''' The record FormID is the draft's real self-index (NEW, via draftRemap inside the remapper) or the
+    ''' existing global FormID (OVERRIDE, master-remapped). CLFM has no FormID in its body.</summary>
+    Private Function SerializeClfmRecord(entry As ClfmRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper, game As Config_App.Game_Enum) As Byte()
+        Dim body As Byte()
+        Using bms As New MemoryStream()
+            Using bw As New BinaryWriter(bms)
+                Dim edidBytes = PluginEncodingSettings.EncodeGeneral(If(entry.EditorID, ""))
+                WriteSubrecordHeader(bw, "EDID", edidBytes.Length + 1)
+                bw.Write(edidBytes)
+                bw.Write(CByte(0))
+                ' CNAM — [R,G,B,A]. ColorRgb is packed 0xRRGGBB (the .jslot convention).
+                WriteSubrecordHeader(bw, "CNAM", 4)
+                bw.Write(CByte((entry.ColorRgb >> 16) And &HFF))
+                bw.Write(CByte((entry.ColorRgb >> 8) And &HFF))
+                bw.Write(CByte(entry.ColorRgb And &HFF))
+                bw.Write(entry.ColorAlpha)
+                ' FNAM — u32.
+                WriteSubrecordHeader(bw, "FNAM", 4)
+                bw.Write(entry.Flags)
+            End Using
+            body = bms.ToArray()
+        End Using
+
+        Dim recordVersion As UShort = If(game = Config_App.Game_Enum.Fallout4, TES4_RECORD_VERSION_FO4, TES4_RECORD_VERSION_SSE)
+        Using ms As New MemoryStream()
+            Using bw As New BinaryWriter(ms)
+                bw.Write(Encoding.ASCII.GetBytes("CLFM"))
+                bw.Write(CUInt(body.Length))
+                bw.Write(0UI)                               ' Flags (uncompressed; nothing to preserve)
+                bw.Write(remapper(entry.FormID))            ' self-index for NEW / master-remap for OVERRIDE
+                bw.Write(entry.OriginalVcs1)
+                bw.Write(recordVersion)
+                bw.Write(entry.OriginalVcs2)
                 bw.Write(body)
             End Using
             Return ms.ToArray()
@@ -3083,7 +3208,10 @@ Public Module SaveNpcEspWriter
         End Try
     End Function
 
-    Private Function MasterFileNamePublic(game As Config_App.Game_Enum) As String
+    ''' <summary>The game's master file name. Public so callers building entries (NpcOverrideSaver's SSE
+    ''' hair-colour materialization) can tell "this record lives in the game master, reusing it adds no
+    ''' dependency" from "this record would drag a new plugin into the MAST list".</summary>
+    Public Function MasterFileNamePublic(game As Config_App.Game_Enum) As String
         Select Case game
             Case Config_App.Game_Enum.Fallout4 : Return "Fallout4.esm"
             Case Config_App.Game_Enum.Skyrim : Return "Skyrim.esm"
