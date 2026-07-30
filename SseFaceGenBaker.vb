@@ -31,8 +31,15 @@ Public Module SseFaceGenBaker
                                     Optional w As Integer = 512, Optional h As Integer = 512,
                                     Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
                                     Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing,
-                                    Optional dxgiFormat As Integer = -1) As Byte()
+                                    Optional dxgiFormat As Integer = -1,
+                                    Optional ByRef accOut As Single() = Nothing) As Byte()
+        ' accOut devuelve el ACUMULADOR que se acaba de componer, para que el caller que ademas vuelca el
+        ' TGA no tenga que componerlo de nuevo. El doc de ComposeFacetintAcc ya decia "public so the bake
+        ' can dump a lossless TGA without a second compose", pero el call site del bake SI recomponia:
+        ' con "Generate TGA" tildado (que NO es un flag de debug — es la opcion de CharGen Options) el
+        ' facetint de CADA NPC de SSE se componia DOS VECES. Devolverlo aca lo deja en una.
         Dim acc = ComposeFacetintAcc(pm, npcRec, race, raceFormID, isFemale, w, h, npcTintOverride, tintTexOverride)
+        accOut = acc
         If acc Is Nothing Then Return Nothing
         Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function

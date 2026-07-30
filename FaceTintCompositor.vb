@@ -294,6 +294,10 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uWorkingSpaceLoc As Integer = -1
     Friend _uSrcSpaceLoc As Integer = -1
     Friend _uOutputSpaceLoc As Integer = -1
+    ' Espacio del ACUMULADOR (ver FaceTintConventionSet.AccumSpace). Con el default vale lo mismo que
+    ' _uOutputSpaceLoc, asi que el render queda BYTE-IDENTICO mientras no se cambie el config.
+    Friend _uAccumSpaceLoc As Integer = -1
+
     Friend _uCompositeSpaceLoc As Integer = -1
     Friend _uMaskConvFullLoc As Integer = -1
     Friend _uModeLoc As Integer = -1
@@ -375,6 +379,57 @@ Public NotInheritable Class FaceTintCompositorState
 End Class
 
 Public Module FaceTintCompositor
+
+    ''' <summary>⭐⭐ ¿El GL recibe las texturas COMPRIMIDAS (BCn, las decodifica el HARDWARE) o ya decodificadas
+    ''' por DirectXTex (RGBA8, el MISMO decode que usa el CPU)?
+    ''' <para>⛔ POR QUE IMPORTA PARA LA PARIDAD: el compositor CPU llama
+    ''' <c>Loader.LoadTextures(useCompress:=False)</c> ⇒ decodifica los BCn con DirectXTex. El GL llamaba con
+    ''' <c>True</c> ⇒ subia el bloque comprimido y lo decodificaba el GPU. **El decode de BCn por hardware NO es
+    ''' bit-identico al de software**: el spec deja libertad en el redondeo de los interpolantes (1/3, 2/3) y
+    ''' cada vendor elige. O sea que los dos compositores estaban leyendo PIXELES DISTINTOS de la misma textura,
+    ''' antes de componer nada — con lo cual la paridad ±1 era inalcanzable POR CONSTRUCCION, y ninguna cantidad
+    ''' de trabajo sobre la ley del compose la hubiera logrado.</para>
+    ''' <para>Con <c>False</c> los dos lados consumen EXACTAMENTE los mismos bytes. Cuesta memoria de GPU y ancho
+    ''' de banda de subida (una 1024² pasa de 0,7-1,4 MB a 4 MB), que es justamente lo que compraba el
+    ''' <c>True</c>. Es un intercambio declarado: exactitud contra VRAM.</para>
+    ''' <para>Override por entorno para poder medir el A/B sin recompilar:
+    ''' <c>FGBAKE_GL_DECODE_HW=1</c> vuelve al decode por hardware.</para></summary>
+    ''' <summary>⭐⭐ DEFAULT = True (decode por HARDWARE) — decidido CON la medicion, no antes de ella.
+    ''' <para>El orden importa: primero se alineo TODO lo demas con decode por software en los dos lados, y
+    ''' recien con eso probado se midio cuanto cuesta el hardware. Resultados sobre la misma muestra de 60
+    ''' NPCs de FO4 (peor |delta| sobre los tres canales):</para>
+    ''' <list type="bullet">
+    ''' <item>software en los dos lados, comparando SOLO el seed: 100,000 % identico, peor 0.</item>
+    ''' <item>software en los dos lados, compose completo: peor 1 (float32 GPU vs float64 CPU).</item>
+    ''' <item>hardware en GPU: peor 8, 6.797 px de 96,7 M (0,0070 %).</item>
+    ''' </list>
+    ''' <para>Como lo unico que cambia entre la segunda y la tercera fila es el decoder, ese +-8 es
+    ''' atribuible AL DECODE Y A NADA MAS, y esta acotado: el spec de BCn deja libertad en el redondeo de
+    ''' los interpolantes (1/3, 2/3) y cada vendor elige, asi que el error vive en los LSB del bloque.</para>
+    ''' <para>A cambio, subir el bloque comprimido ahorra VRAM y ancho de banda (una 1024^2 pasa de 4 MB a
+    ''' 0,7-1,4 MB). Con el resto probado, se elige lo eficiente.</para>
+    ''' <para><c>FGBAKE_GL_DECODE_HW=0</c> fuerza el decode por software: es lo que hay que poner para
+    ''' MEDIR paridad CPU/GPU, porque con hardware el +-8 del decoder tapa cualquier otra divergencia.</para></summary>
+    ''' <summary>Setter para que la app empuje el valor persistido (NPC_Config.UseHardwareBcDecode). La
+    ''' variable de entorno <c>FGBAKE_GL_DECODE_HW</c> tiene PRIORIDAD sobre el config: existe para medir el
+    ''' A/B de paridad sin tocar el archivo del usuario ni recompilar.</summary>
+    Public Sub SetGlDecodeUseCompress(value As Boolean)
+        Dim ov = If(Environment.GetEnvironmentVariable("FGBAKE_GL_DECODE_HW"), "").Trim()
+        If ov = "0" OrElse ov = "1" Then Return   ' el entorno manda: no lo pisa el config
+        _glDecodeUseCompress = value
+    End Sub
+
+    Public ReadOnly Property GlDecodeUseCompress As Boolean
+        Get
+            If _glDecodeUseCompress Is Nothing Then
+                Dim ov = If(Environment.GetEnvironmentVariable("FGBAKE_GL_DECODE_HW"), "").Trim()
+                _glDecodeUseCompress = (ov <> "0")   ' default ON; solo un "0" explicito lo apaga
+            End If
+            Return _glDecodeUseCompress.Value
+        End Get
+    End Property
+    Private _glDecodeUseCompress As Boolean? = Nothing
+
 
     ' === TGA writers (output final + CLI --dump/_3). La instrumentacion de dump/diff (per-layer
     ' readback GL.GetTexImage, mask/intermediate dump) fue REMOVIDA de la libreria 2026-06-06: los
@@ -501,6 +556,7 @@ uniform int uWorkingSpace;     // 0=linear 1=srgb 2=g22. Espacio donde corre el 
 uniform int uSrcSpace;         // 0=linear 1=srgb 2=g22. Espacio del color de la capa (D=srgb, N/S=linear).
 uniform int uOutputSpace;      // 0=linear 1=srgb 2=g22. Espacio del acumulador/almacenamiento (D=g22, N/S=linear).
 uniform int uCompositeSpace;   // 0=linear 1=srgb 2=g22. Espacio donde corre el COMPOSITE (lerp por cov). Ley gen3: blend en working, lerp en linear. ==uWorkingSpace reduce al modelo previo.
+uniform int uAccumSpace;       // 0=linear 1=srgb 2=g22. Espacio en el que VIVE el acumulador durante el compose. Default = uOutputSpace (comportamiento previo). Ver FaceTintConventionSet.AccumSpace.
 uniform int uMaskConvFull;     // mask conv: 0=raw 1=srgbEncode 2=srgbDecode 3=g22Encode 4=g22Decode
 uniform int uMode;             // 0=tint (additive-over-base) ; 1=region swap (crossfade mix(prev,swap,mask.r*op))
 uniform int uSoftLight;        // modelo de soft-light cuando uBlendOp==3: 0=W3C 1=GIMP 2=Illusions 3=pegtop
@@ -739,11 +795,11 @@ vec3 blendDispatchBop(vec3 d, vec3 s, int bop, int sl){
 // deltas. Single-layer es identico a over-original (prev == base en la 1a capa). Parity con
 // compose_py (Tools/FaceGenByteCompare) / FaceTintConvention.ResolveConvention.
 //   cov     = convMaskFull(mask) * opacity
-//   base_w  = cvt(prev -> uWorkingSpace)     (prev = acumulador corriente en uOutputSpace)
+//   base_w  = cvt(prev -> uWorkingSpace)     (prev = acumulador corriente en uAccumSpace)
 //   src_w   = cvt(src  -> uWorkingSpace)
 //   blended = blendDispatch(base_w, src_w)   (blend en uWorkingSpace)
 //   res_c   = cvt(prev->uCompositeSpace) + cov*(cvt(blended->uCompositeSpace) - cvt(prev->uCompositeSpace))
-//   final   = cvt(res_c -> uOutputSpace)     (el resultado ES el nuevo prev)
+//   final   = cvt(res_c -> uAccumSpace)     (el resultado ES el nuevo prev)
 // mask source: PaletteMask -> layer.G ; TextureSet D -> layer.a ; TextureSet N/S -> uLayerDiffuseAlpha.a
 // src: PaletteMask -> uColor (o LUT) ; TextureSet -> layer.rgb (o LUT / uColor forzado)
 void main() {
@@ -752,28 +808,28 @@ void main() {
     vec4 layerSample = texture(uLayer, vUV);
 
     // uMode==1: region swap = alpha-over mix(prev, swap, mask.r * intensity). Es composicion de
-    // color por cobertura -> se hace en LINEAR. prev viene en uOutputSpace, swap en uSrcSpace;
-    // se convierten a linear, se mezclan, y vuelve a uOutputSpace. mask RAW (.r).
+    // color por cobertura -> se hace en LINEAR. prev viene en uAccumSpace, swap en uSrcSpace;
+    // se convierten a linear, se mezclan, y vuelve a uAccumSpace. mask RAW (.r).
     if (uMode == 1) {
         // Region swap = REPLACE resuelto por FaceTintConvention.ResolveConvention(forSwap) (NO hardcoded):
         // cov = convMask(mask, uMaskConvFull) * op ; compose generico (blend en uWorkingSpace, lerp en
-        // uCompositeSpace, storage en uOutputSpace), blended=src (replace). = misma algebra que ComposeOne (CPU).
+        // uCompositeSpace, storage en uAccumSpace), blended=src (replace). = misma algebra que ComposeOne (CPU).
         // El override de convencion (incl. #If DEBUG full-linear) ahora alcanza tambien los swaps.
         float mask = texture(uLayerDiffuseAlpha, vUV).r;
         float cov = clamp(uOpacity * convMaskFull(mask), 0.0, 1.0);
         vec3 src_w   = cvt(layerSample.rgb, uSrcSpace, uWorkingSpace);
-        vec3 base_c  = cvt(prev, uOutputSpace, uCompositeSpace);
+        vec3 base_c  = cvt(prev, uAccumSpace, uCompositeSpace);
         vec3 blend_c = cvt(src_w, uWorkingSpace, uCompositeSpace);   // replace: blended = src_w
         vec3 res_c   = clamp(base_c + cov * (blend_c - base_c), 0.0, 1.0);
-        fragColor = vec4(cvt(res_c, uCompositeSpace, uOutputSpace), prevRgba.a);
+        fragColor = vec4(cvt(res_c, uCompositeSpace, uAccumSpace), prevRgba.a);
         return;
     }
 
     // uMode==2: CONVERT puro de espacio (sin blend, sin mask). Convierte la textura bindeada en uPrev
-    // de uSrcSpace a uOutputSpace. Se usa para el SEED del path unico (source sRGB -> acumulador g22 en
+    // de uSrcSpace a uAccumSpace. Se usa para el SEED del path unico (source sRGB -> acumulador g22 en
     // D) y queda reservado para el camino inverso g22 -> sRGB (flag BakeMode, si el render lo necesita).
     if (uMode == 2) {
-        fragColor = vec4(cvt(prev, uSrcSpace, uOutputSpace), prevRgba.a);
+        fragColor = vec4(cvt(prev, uSrcSpace, uAccumSpace), prevRgba.a);
         return;
     }
 
@@ -894,32 +950,32 @@ void main() {
     }
 
     float cov = clamp(convMaskFull(maskV) * uOpacity, 0.0, 1.0);
-    // over-RUNNING + 4 espacios (shader AGNOSTICO): el acumulador prev vive en uOutputSpace; el BLEND OP
+    // over-RUNNING + 4 espacios (shader AGNOSTICO): el acumulador prev vive en uAccumSpace; el BLEND OP
     // corre en uWorkingSpace; el color de capa esta en uSrcSpace; y el COMPOSITE (lerp por cov) corre en
     // uCompositeSpace. Ley gen3: el blend va en su espacio (g22/srgb) pero la lerp por cobertura va en
     // LINEAR-light. uFramework decide como blend(prev/base,src) entra al acumulador (ver FaceTintFramework).
-    // base = uBase (original sin tintar, en uOutputSpace). OverPrev (0, default) = el modelo previo
+    // base = uBase (original sin tintar, en uAccumSpace). OverPrev (0, default) = el modelo previo
     // BYTE-IDENTICO (cuando uCompositeSpace==uWorkingSpace se reduce a lerp en working). 1:1 con CPU ComposeOne.
     vec3 src_w = cvt(srcColor, uSrcSpace, uWorkingSpace);
     vec3 base  = texture(uBase, vUV).rgb;
     vec3 res_c;
     if (uFramework == 1) {                 // OverBase: mix(base, blend(base,src), cov)
-        vec3 anchor_w = cvt(base, uOutputSpace, uWorkingSpace);
+        vec3 anchor_w = cvt(base, uAccumSpace, uWorkingSpace);
         vec3 blended  = blendDispatch(anchor_w, src_w);
-        vec3 anchor_c = cvt(base, uOutputSpace, uCompositeSpace);
+        vec3 anchor_c = cvt(base, uAccumSpace, uCompositeSpace);
         vec3 blend_c  = cvt(blended, uWorkingSpace, uCompositeSpace);
         res_c = anchor_c + cov * (blend_c - anchor_c);
     } else if (uFramework == 2) {          // AddBase: prev + cov*(blend(base,src) - base)
-        vec3 anchor_w = cvt(base, uOutputSpace, uWorkingSpace);
+        vec3 anchor_w = cvt(base, uAccumSpace, uWorkingSpace);
         vec3 blended  = blendDispatch(anchor_w, src_w);
-        vec3 prev_c   = cvt(prev, uOutputSpace, uCompositeSpace);
-        vec3 base_c   = cvt(base, uOutputSpace, uCompositeSpace);
+        vec3 prev_c   = cvt(prev, uAccumSpace, uCompositeSpace);
+        vec3 base_c   = cvt(base, uAccumSpace, uCompositeSpace);
         vec3 blend_c  = cvt(blended, uWorkingSpace, uCompositeSpace);
         res_c = prev_c + cov * (blend_c - base_c);
     } else if (uFramework == 3) {          // ModSrc: blend(prev, mix(neutral,src,cov)); replace -> OverPrev
-        vec3 base_w = cvt(prev, uOutputSpace, uWorkingSpace);
+        vec3 base_w = cvt(prev, uAccumSpace, uWorkingSpace);
         if (uBlendOp == 0) {
-            vec3 bc = cvt(prev, uOutputSpace, uCompositeSpace);
+            vec3 bc = cvt(prev, uAccumSpace, uCompositeSpace);
             vec3 sc = cvt(src_w, uWorkingSpace, uCompositeSpace);
             res_c = bc + cov * (sc - bc);
         } else {
@@ -929,14 +985,14 @@ void main() {
             res_c = cvt(blended, uWorkingSpace, uCompositeSpace);
         }
     } else {                               // OverPrev (0, default): mix(prev, blend(prev,src), cov)
-        vec3 base_w  = cvt(prev, uOutputSpace, uWorkingSpace);
+        vec3 base_w  = cvt(prev, uAccumSpace, uWorkingSpace);
         vec3 blended = blendDispatch(base_w, src_w);
-        vec3 base_c  = cvt(prev, uOutputSpace, uCompositeSpace);
+        vec3 base_c  = cvt(prev, uAccumSpace, uCompositeSpace);
         vec3 blend_c = cvt(blended, uWorkingSpace, uCompositeSpace);
         res_c = base_c + cov * (blend_c - base_c);
     }
     res_c = clamp(res_c, 0.0, 1.0);
-    vec3 finalRgb = cvt(res_c, uCompositeSpace, uOutputSpace);
+    vec3 finalRgb = cvt(res_c, uCompositeSpace, uAccumSpace);
     float outA = (uForceOpaqueAlpha == 1) ? 1.0 : prevRgba.a;
     fragColor = vec4(finalRgb, outA);
 }"
@@ -950,10 +1006,12 @@ void main() {
     ' the accumulator seeded from this texture preserves the base alpha exactly. srgbToLinear is the
     ' IEC 61966-2-1 standard transfer (same as the compositor's), not a magic curve.
 
-    ''' <summary>Backward-compat wrapper that composes onto the diffuse channel without skin tinting.</summary>
-    Public Function ComposeOntoFaceDiffuse(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput)) As Integer
-        Return ComposeOntoFaceTexture(state, originalTexId, width, height, layers, FaceTintChannel.Diffuse)
-    End Function
+    ' ⛔ ELIMINADO `ComposeOntoFaceDiffuse` (2026-07-30). Se anunciaba como "backward-compat wrapper" pero
+    ' NO tenia UN SOLO caller en todo el repo, y en esta misma tanda se le habia agregado un parametro
+    ' OBLIGATORIO (cpuMirror) — o sea que su compatibilidad hacia atras ya estaba rota igual. Un wrapper muerto
+    ' que miente en su propio resumen es exactamente la clase de superficie que hace elegir la funcion
+    ' equivocada. El reemplazo es `ComposeOntoFaceTexture(..., FaceTintChannel.Diffuse, cpuMirror)`.
+
 
     ''' <summary>Compose all layers that contribute to the requested channel onto a copy of the
     ''' supplied face texture (diffuse / normal / specular) and return the new GL texture ID.
@@ -968,7 +1026,11 @@ void main() {
     ''' Pass Nothing (default) to skip skin-tone handling entirely and rely on the legacy render
     ''' uniform. No-op on Normal/Specular channels regardless of the value.
     ''' </summary>
-    Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel, Optional cache As FaceTintTextureCache = Nothing, Optional headDiffuseAlphaTest As Boolean = False) As Integer
+    ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja este camino — decide si el acumulador
+    ''' puede vivir fuera de OutputSpace. Ver <see cref="FaceTintConvention.AccumSpaceForChannel"/>.</param>
+    Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel,
+                                           cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
+                                           Optional cache As FaceTintTextureCache = Nothing, Optional headDiffuseAlphaTest As Boolean = False) As Integer
         ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If layers Is Nothing OrElse layers.Count = 0 Then Return 0
@@ -1063,7 +1125,12 @@ void main() {
                 Else
                     ' srgb=False para TODAS: las texturas del compositor se cargan CRUDAS; el decode lo hace el
                     ' shader por convención (uSrcSpace/ss) por-capa. sRGB-loadearlas acá = doble decode.
-                    batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True, New Boolean(loadKeys.Count - 1) {})
+                    batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), GlDecodeUseCompress, True, New Boolean(loadKeys.Count - 1) {})
+            If batchLoaded IsNot Nothing Then
+                For Each kvB In batchLoaded
+                    If kvB.Value IsNot Nothing Then ForceMip0Sampling(kvB.Value.Texture_ID)
+                Next
+            End If
                     ' Library default is Repeat wrap; compositor samples a fullscreen quad over UV [0,1]
                     ' and seams at the edges would bleed, so force ClampToEdge on each loaded texture.
                     ForceClampToEdge(batchLoaded)
@@ -1266,7 +1333,12 @@ void main() {
 
                 ' Unit 4 (uBase): el shader SÍ lee uBase en los frameworks OverBase (uFramework==1) y
                 ' AddBase (uFramework==2) — ahí 'base' es el ancla del blend/composite (el original sin
-                ' tintar, en uOutputSpace). En OverPrev (0, default) y ModSrc (3) la base del blend es el
+                ' tintar). ⭐ VIVE EN uAccumSpace, no en uOutputSpace: `baseTexForCompose` es la textura de
+                ' ENTRADA de este pase, o sea el acumulador ya sembrado y post-region-swaps, y el seed del
+                ' pipeline lo deja en AccumSpace (ver ApplyFaceTintPipeline). Es exactamente lo que hace el
+                ' CPU: su snapshot `base` se toma de accR/accG/accB despues de los swaps, o sea en accSp.
+                ' Por eso el shader lo lee con uAccumSpace y no hay conversion que agregar acá.
+                ' En OverPrev (0, default) y ModSrc (3) la base del blend es el
                 ' acumulador corriente uPrev y uBase no se usa; aun así se bindea un texture válido para
                 ' que el sampler nunca quede indefinido (el shader lo samplea incondicionalmente).
                 GL.ActiveTexture(TextureUnit.Texture4)
@@ -1284,6 +1356,7 @@ void main() {
                 GL.Uniform1(state._uWorkingSpaceLoc, CInt(conv.WorkingSpace))
                 GL.Uniform1(state._uSrcSpaceLoc, CInt(conv.SrcSpace))
                 GL.Uniform1(state._uOutputSpaceLoc, CInt(conv.OutputSpace))
+                GL.Uniform1(state._uAccumSpaceLoc, CInt(FaceTintConvention.AccumSpaceForChannel(channel, cpuMirror)))   ' PARIDAD CPU: MISMA funcion que usa ComposeChannelCpu
                 GL.Uniform1(state._uCompositeSpaceLoc, CInt(conv.CompositeSpace))
                 GL.Uniform1(state._uMaskConvFullLoc, CInt(conv.MaskConv))
                 GL.Uniform1(state._uSoftLightLoc, CInt(conv.SoftLight))   ' modelo de softlight (agnostico) para bop3
@@ -1516,11 +1589,14 @@ void main() {
     ''' base outside). Swaps are applied in list order; if multiple swaps overlap on the
     ''' same region (shouldn't happen in vanilla — one preset per group at a time) the
     ''' last one wins inside the overlap.</summary>
+    ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja este camino — decide si el acumulador
+    ''' puede vivir fuera de OutputSpace. Ver <see cref="FaceTintConvention.AccumSpaceForChannel"/>.</param>
     Public Function ApplyRegionSwapsOntoFaceTexture(state As FaceTintCompositorState,
                                                      originalTexId As Integer,
                                                      width As Integer, height As Integer,
                                                      swaps As IList(Of FaceRegionSwapInput),
                                                      channel As FaceTintChannel,
+                                                     cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
                                                      Optional cache As FaceTintTextureCache = Nothing) As Integer
         ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
@@ -1586,7 +1662,12 @@ void main() {
             Else
                 ' srgb=False para TODAS: las texturas del compositor se cargan CRUDAS; el decode lo hace el
                 ' shader por convención (uSrcSpace/ss) por-capa. sRGB-loadearlas acá = doble decode.
-                batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), True, True, New Boolean(loadKeys.Count - 1) {})
+                batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), GlDecodeUseCompress, True, New Boolean(loadKeys.Count - 1) {})
+            If batchLoaded IsNot Nothing Then
+                For Each kvB In batchLoaded
+                    If kvB.Value IsNot Nothing Then ForceMip0Sampling(kvB.Value.Texture_ID)
+                Next
+            End If
                 ForceClampToEdge(batchLoaded)
             End If
 
@@ -1604,8 +1685,9 @@ void main() {
             GL.BindVertexArray(state._quadVao)
             ' Shader unico: region swap = uMode=1 (RUNNING CLOSED-FORM en stored space = build_3 + CPU). swap
             ' tex -> uLayer(1), region mask -> uLayerDiffuseAlpha(2), intensity(msdv) -> uOpacity, SEED ->
-            ' uBase(4). El acumulador D vive en sRGB (storage build_3); el swap tex (MPPT TXST diffuse) es
-            ' sRGB -> src=srgb(1)=output. N/S: datos lineales, src=output=linear(0). El running necesita el
+            ' uBase(4). ⭐ El acumulador vive en uAccumSpace (con el default = OutputSpace: D en g22, N/S en
+            ' linear); el swap tex (MPPT TXST diffuse) es sRGB -> src=srgb(1). N/S: datos lineales, src=0.
+            ' El running necesita el
             ' SEED (= originalTexId) aparte del acumulador (uPrev): se bindea uBase=originalTexId POR-DRAW en
             ' el loop (no solo en el setup) para garantizar que la unit 4 este siempre el seed en cada draw.
             GL.Uniform1(state._uModeLoc, 1)
@@ -1625,6 +1707,23 @@ void main() {
             End If
             GL.Uniform1(state._uSrcSpaceLoc, CInt(swConv.SrcSpace))
             GL.Uniform1(state._uOutputSpaceLoc, CInt(swConv.OutputSpace))
+            ' ⛔ NO swConv.AccumSpace: el storage del acumulador es del CANAL, no de la fase del swap
+            ' (ver AccumSpaceForChannel). Con swConv se podria configurar el swap en un espacio y el tint en
+            ' otro sobre el MISMO buffer, y el CPU —que usa el del canal— divergiria.
+            Dim swAccSp As Integer = CInt(FaceTintConvention.AccumSpaceForChannel(channel, cpuMirror))
+            ' ⛔⛔ CAMBIO DE COMPORTAMIENTO DECLARADO (no es inerte). ANTES el acumulador del swap se trataba
+            ' como si viviera en `swConv.OutputSpace` (el bucket SWAP) y el de los tints en el del CANAL: DOS
+            ' etiquetas para EL MISMO buffer. Ahora manda el canal, en los dos lados (CPU y GL se movieron
+            ' juntos, asi que la PARIDAD no se rompe). Con los defaults de fabrica de los dos juegos es
+            ' byte-identico —FO4 Swap.OutputSpace = Diffuse.OutputSpace = G22; SSE todo Linear— pero NO lo es
+            ' si el usuario separa esos dos combos en CharGen Options, que es editable. Mismo tratamiento que
+            ' el guard FT-002 de arriba: se avisa FUERTE en vez de cambiar la salida en silencio.
+            ' ⛔ Misma advertencia y mismo canal que el CPU (FaceTintConvention, latcheada + always-on). NO se
+            ' usa Logger: esta apagado en release, que es justo donde el usuario necesitaria el aviso.
+            If channel = FaceTintChannel.Diffuse AndAlso CInt(swConv.OutputSpace) <> swAccSp Then
+                FaceTintConvention.NoteSwapAccumMismatch(channel, CInt(swConv.OutputSpace), swAccSp)
+            End If
+            GL.Uniform1(state._uAccumSpaceLoc, swAccSp)
             GL.Uniform1(state._uCompositeSpaceLoc, CInt(swConv.CompositeSpace))
             GL.Uniform1(state._uWorkingSpaceLoc, CInt(swConv.WorkingSpace))
             GL.Uniform1(state._uMaskConvFullLoc, CInt(swConv.MaskConv))
@@ -1699,7 +1798,7 @@ void main() {
                 GL.Uniform1(state._uBaseLoc, 4)
 
                 ' Morph intensity (MSDV value) -> uOpacity = el msdv del running (escala n y cov). Clamp.
-                GL.Uniform1(state._uOpacityLoc, Math.Max(0.0F, Math.Min(1.0F, sw.Intensity)))
+                GL.Uniform1(state._uOpacityLoc, FaceTintConvention.ClampSwapIntensity(sw.Intensity))   ' ley UNICA compartida con el CPU
 
                 GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
                 drawn += 1
@@ -2002,6 +2101,7 @@ void main() {
         state._uWorkingSpaceLoc = GL.GetUniformLocation(state._program, "uWorkingSpace")
         state._uSrcSpaceLoc = GL.GetUniformLocation(state._program, "uSrcSpace")
         state._uOutputSpaceLoc = GL.GetUniformLocation(state._program, "uOutputSpace")
+        state._uAccumSpaceLoc = GL.GetUniformLocation(state._program, "uAccumSpace")
         state._uCompositeSpaceLoc = GL.GetUniformLocation(state._program, "uCompositeSpace")
         state._uMaskConvFullLoc = GL.GetUniformLocation(state._program, "uMaskConvFull")
         state._uModeLoc = GL.GetUniformLocation(state._program, "uMode")
@@ -2076,6 +2176,12 @@ void main() {
             GL.Uniform1(state._uModeLoc, 2)
             GL.Uniform1(state._uSrcSpaceLoc, fromSpace)
             GL.Uniform1(state._uOutputSpaceLoc, toSpace)
+            ' ⛔ OBLIGATORIO: uMode=2 es el conversor GENERICO de espacios y comparte el shader con el SEED del
+            ' acumulador (la misma linea `cvt(prev, uSrcSpace, uAccumSpace)`). Para este pase el destino es
+            ' `toSpace`, NO el AccumSpace de la convencion: aca no se esta sembrando un acumulador, se esta
+            ' convirtiendo una textura de A a B. Sin esta linea el pase convertiria al espacio del acumulador y
+            ' el render quedaria en el espacio equivocado en cuanto AccumSpace deje de ser OutputSpace.
+            GL.Uniform1(state._uAccumSpaceLoc, toSpace)
             GL.ActiveTexture(TextureUnit.Texture0)
             GL.BindTexture(TextureTarget.Texture2D, srcTexId)
             GL.Uniform1(state._uPrevLoc, 0)
@@ -2125,6 +2231,12 @@ void main() {
         Public Property Diffuse As FaceTintPipelineChannelResult
         Public Property Normal As FaceTintPipelineChannelResult
         Public Property Specular As FaceTintPipelineChannelResult
+        ''' <summary>⛔ True si el pase final AccumSpace-&gt;OutputSpace no se pudo ejecutar en algun canal (fallo
+        ''' de asignacion GL). Cuando pasa, ESE canal queda en AccumSpace en vez de OutputSpace: la textura es
+        ''' consumible pero tiene la gamma corrida. Se MARCA en vez de degradarse en silencio — un instrumento
+        ''' de paridad tiene que poder fallar la corrida en vez de reportar una divergencia como si fuera del
+        ''' compositor. Con el default (AccumSpace == OutputSpace) el pase ni se intenta y esto es siempre False.</summary>
+        Public Property SpaceConversionFailed As Boolean
     End Class
 
     ''' <summary>Apply the face-tint pipeline (region-swap → tint compose) to a triplet of
@@ -2162,6 +2274,7 @@ void main() {
                                           height As Integer,
                                           layers As IList(Of FaceTintLayerInput),
                                           swaps As IList(Of FaceRegionSwapInput),
+                                          cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
                                           Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing,
                                           Optional baseDiffuseIsLinearOnGpu As Boolean = False,
                                           Optional headDiffuseAlphaTest As Boolean = False) As FaceTintPipelineResult
@@ -2171,9 +2284,34 @@ void main() {
         ' trabaja a ESTE tamaño; los samplers GL resizean source/capas/swaps por UV (bilineal) igual que
         ' el CPU (FaceTintCpuCompositor.SampleChannelAt) -> GL==CPU para cualquier resolución. Bodyparts:
         ' el caller pasa resolution=Nothing (fuerzan heredar; el enum es solo para la cara).
-        Dim dT = ChannelTargetSize(resolution, FaceTintChannel.Diffuse, width, height)
-        Dim nT = ChannelTargetSize(resolution, FaceTintChannel.Normal, width, height)
-        Dim sT = ChannelTargetSize(resolution, FaceTintChannel.Specular, width, height)
+        ' ⭐⭐ EL NATIVO ES POR CANAL, NO EL DEL DIFFUSE. `width/height` es UN solo par —el del diffuse— y se
+        ' usaba como "nativo" para los TRES canales. Pero el `_msn` y el `_s` de una cabeza NO tienen por que
+        ' medir lo mismo que el `_d` (el caso comun: `_d` 1024² y `_s` 512²).
+        ' ⛔ QUE ROMPIA (medido): el CPU compone cada canal a SU tamaño de origen, el GL los componia todos al
+        ' del diffuse ⇒ (a) los buffers CPU y GPU salian de distinto largo y el instrumento de paridad tenia
+        ' que DESCARTAR esos slots (26 de 52 en la muestra: el canal `_s` entero quedaba sin medir), y (b) con
+        ' el GPU encendido el plan de slots tomaba la dimension del GL y encodeaba el buffer del CPU con ella
+        ' ⇒ "The BGRA buffer must be 4194304 bytes but got 1048576" y el `_s` NO SE ESCRIBIA. Estaba invisible
+        ' mientras el batch corria needGl=False, porque ahi el plan caia siempre a la dimension del CPU.
+        ' ✅ Se consulta el tamaño REAL de cada textura fuente al GL. Property-driven: no agrega parametros ni
+        ' supone nada; si la textura no existe (0) se cae al par del caller, que es el comportamiento previo.
+        ' ⭐⭐ MIP 0 TAMBIEN EN LAS TEXTURAS FUENTE. `ForceMip0Sampling` se estaba aplicando SOLO a las
+        ' texturas que carga el compositor (capas, mascaras, swaps) — pero las FUENTE (el _d/_msn/_s de la
+        ' cabeza) las carga el caller via DirectXDDSLoader, que con mips presentes setea LinearMipmapLinear.
+        ' El acumulador ARRANCA siendo una de esas texturas, y el region swap la lee como `prev`
+        ' (readTexId = originalTexId) ⇒ el GPU podia mezclar MIP 1 donde el CPU siempre usa mip 0.
+        ' MEDIDO: era la unica cola que quedaba en `_msn` con 0 capas de tint (7 px), y materializar el seed
+        ' en float la subia a 1.147 justamente porque ese pase tambien sampleaba con mips.
+        ForceMip0Sampling(srcDiffuseId)
+        ForceMip0Sampling(srcNormalId)
+        ForceMip0Sampling(srcSpecId)
+
+        Dim dNat = SourceTextureSize(srcDiffuseId, width, height)
+        Dim nNat = SourceTextureSize(srcNormalId, width, height)
+        Dim sNat = SourceTextureSize(srcSpecId, width, height)
+        Dim dT = ChannelTargetSize(resolution, FaceTintChannel.Diffuse, dNat.W, dNat.H)
+        Dim nT = ChannelTargetSize(resolution, FaceTintChannel.Normal, nNat.W, nNat.H)
+        Dim sT = ChannelTargetSize(resolution, FaceTintChannel.Specular, sNat.W, sNat.H)
 
         Dim result As New FaceTintPipelineResult With {
             .Diffuse = New FaceTintPipelineChannelResult With {.TextureId = srcDiffuseId, .IsFresh = False, .Width = dT.W, .Height = dT.H},
@@ -2194,31 +2332,67 @@ void main() {
         ' N/S = lineal raw (sin conversión). GL==CPU: el CPU siempre tiene base crudo (DecodeDds raw) → su seed
         ' equivale al caso "crudo" de acá; el caso linear-on-gpu es exclusivo del GL live.
         ' Seed config-driven (ya no literales): la base es textura de color → src = SeedDiffuseSrcSpaceValue
-        ' (=DiffuseTextureSrcSpace, Srgb), target = SeedDiffuseOutputSpaceValue (=Diffuse.OutputSpace, G22).
+        ' (=DiffuseTextureSrcSpace, Srgb).
+        ' ⭐⭐ TARGET DEL SEED = AccumSpace, NO OutputSpace. El acumulador tiene que NACER en el espacio en el
+        ' que el compose lo va a leer: el shader interpreta `prev` (y `uBase`) como uAccumSpace en TODAS sus
+        ' ramas. Sembrar en OutputSpace y componer como si fuera AccumSpace es componer un buffer MAL
+        ' ETIQUETADO — con el flag prendido salia cara lavada/quemada en el viewport.
+        ' Paridad exacta con el CPU: FaceTintCpuCompositor siembra `Cvt1(r0, seedSrc, accSp)` — al ACUMULADOR,
+        ' no al OutputSpace.
+        ' ⛔ Con el default AccumSpace == OutputSpace ⇒ estas 3 lineas valen EXACTAMENTE lo que valian antes.
+        Dim accSpD As Integer = CInt(FaceTintConvention.AccumSpaceForChannel(FaceTintChannel.Diffuse, cpuMirror))
+        Dim outSpD As Integer = CInt(FaceTintConvention.OutputSpaceForChannel(FaceTintChannel.Diffuse))
         ' Caso live (baseDiffuseIsLinearOnGpu): el GPU ya decodeó el SRV sRGB → la base entra LINEAL (0).
         If baseDiffuseIsLinearOnGpu Then
-            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, 0, SeedDiffuseOutputSpaceValue)
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dNat.W, dNat.H, 0, accSpD)
         ElseIf SeedConventionIs_G22 Then
-            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height, SeedDiffuseSrcSpaceValue, SeedDiffuseOutputSpaceValue)
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dNat.W, dNat.H, SeedDiffuseSrcSpaceValue, accSpD)
         Else
-            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, width, height)
+            ' Seed CRUDO: su espacio implicito es OutputSpace ⇒ outSp->accSp. MISMA regla y misma justificacion
+            ' que el Else del seed del CPU (ver FaceTintCpuCompositor). No-op exacto con el default.
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dNat.W, dNat.H, outSpD, accSpD)
         End If
-        ConvertChannelIfNeeded(result.Normal, state, nT.W, nT.H, width, height)
-        ConvertChannelIfNeeded(result.Specular, state, sT.W, sT.H, width, height)
+        ' N/S: seed crudo tambien, y por lo tanto la MISMA conversion implicita outSp->accSp que el diffuse
+        ' crudo de arriba. El CPU hace exactamente esto (su Else cubre N/S siempre, porque isD=False).
+        ConvertChannelIfNeeded(result.Normal, state, nT.W, nT.H, nNat.W, nNat.H,
+                               CInt(FaceTintConvention.OutputSpaceForChannel(FaceTintChannel.Normal)),
+                               CInt(FaceTintConvention.AccumSpaceForChannel(FaceTintChannel.Normal, cpuMirror)))
+        ConvertChannelIfNeeded(result.Specular, state, sT.W, sT.H, sNat.W, sNat.H,
+                               CInt(FaceTintConvention.OutputSpaceForChannel(FaceTintChannel.Specular)),
+                               CInt(FaceTintConvention.AccumSpaceForChannel(FaceTintChannel.Specular, cpuMirror)))
 
         ' --- Region-swap pre-pass (no-op if swaps empty / no contribution to a channel) ---
         If swaps IsNot Nothing AndAlso swaps.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, Nothing, swaps, headDiffuseAlphaTest)
-            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, Nothing, swaps)
-            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, Nothing, swaps)
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, Nothing, swaps, cpuMirror, headDiffuseAlphaTest)
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, Nothing, swaps, cpuMirror)
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, Nothing, swaps, cpuMirror)
         End If
 
         ' --- Tint compose ---
         If layers IsNot Nothing AndAlso layers.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing, headDiffuseAlphaTest)
-            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, layers, Nothing)
-            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing)
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing, cpuMirror, headDiffuseAlphaTest)
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, layers, Nothing, cpuMirror)
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing, cpuMirror)
         End If
+
+        ' --- ⭐⭐ PASE FINAL AccumSpace -> OutputSpace: UNA SOLA VEZ, ACA, PARA LOS TRES CANALES ---
+        ' El compose deja el acumulador en AccumSpace; el consumidor —el storage del DDS del bake y el render—
+        ' espera OutputSpace. El CPU hace exactamente esta conversion UNA vez por canal, en el pack
+        ' (FaceTintCpuCompositor, justo antes de empaquetar a BGRA).
+        ' ⛔ POR QUE ACA Y NO EN ProcessChannel: `ProcessChannel` se llama DOS VECES por canal — una para los
+        ' region swaps y otra para los tints. Si el pase viviera adentro, toda cara CON swaps se comeria DOS
+        ' conversiones de gamma (la segunda sobre un buffer ya convertido) mientras el CPU hace una sola.
+        ' El acumulador es UNO y cruza las dos fases: su conversion de salida es del PIPELINE, no de la fase.
+        ' (Esto NO describe al codigo commiteado: en HEAD no existe ningun pase final. Fue un bug de un borrador
+        '  intermedio de esta misma tanda, y queda anotado como la razon de la ubicacion, no como historia.)
+        ' ⛔ TAMBIEN CORRE SIN CAPAS NI SWAPS: el seed ya dejo el diffuse en AccumSpace, asi que si esto se
+        ' saltara cuando no hay contribuciones, el canal saldria en el espacio equivocado. El CPU tampoco lo
+        ' condiciona a que haya capas.
+        ' ⛔ CON EL DEFAULT ES UN NO-OP EXACTO (AccumSpace == OutputSpace en los 3 canales): el guard de
+        ' ConvertChannelIfNeeded ve mismo tamaño y mismo espacio y no dibuja NADA.
+        ConvertAccumToOutputSpace(result, FaceTintChannel.Diffuse, result.Diffuse, state, dT.W, dT.H, cpuMirror)
+        ConvertAccumToOutputSpace(result, FaceTintChannel.Normal, result.Normal, state, nT.W, nT.H, cpuMirror)
+        ConvertAccumToOutputSpace(result, FaceTintChannel.Specular, result.Specular, state, sT.W, sT.H, cpuMirror)
 
         ' --- B: salida LIVE del DIFFUSE en LINEAL ---
         ' El render reusa la textura fresca (Rgba32f = float; los float NO tienen decode sRGB) y la samplea
@@ -2227,11 +2401,90 @@ void main() {
         ' path live (baseDiffuseIsLinearOnGpu): el BAKE mantiene G22 (hornea el _d.dds vía GetTexImage, que toma
         ' el byte G22 crudo, = vanilla). N/S ya están en Linear (os=Linear). Sin pérdida (float). Junto con el
         ' seed encode-only, el path live queda lineal-consistente extremo a extremo.
+        ' ⭐ El origen es OutputSpace (no AccumSpace): el pase final de arriba ya corrió, así que a esta altura
+        ' el diffuse está SIEMPRE en OutputSpace, tenga el flag prendido o no. Se lee por OutputSpaceForChannel
+        ' —el MISMO resolver que usó ese pase como destino— para que el par no se pueda desalinear.
         If baseDiffuseIsLinearOnGpu Then
-            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dT.W, dT.H, SeedDiffuseOutputSpaceValue, 0)
+            ConvertChannelIfNeeded(result.Diffuse, state, dT.W, dT.H, dT.W, dT.H,
+                                   CInt(FaceTintConvention.OutputSpaceForChannel(FaceTintChannel.Diffuse)), 0)
         End If
 
         Return result
+    End Function
+
+    ''' <summary>Pase final del acumulador de UN canal: AccumSpace → OutputSpace. Es el espejo GL de la
+    ''' conversión que el compositor CPU hace en su pack, y por eso usa el MISMO par de resolvers
+    ''' (<see cref="FaceTintConvention.AccumSpaceForChannel"/> / <see cref="FaceTintConvention.OutputSpaceForChannel"/>)
+    ''' con los mismos argumentos: origen y destino no pueden desalinearse.
+    ''' <para>No-op EXACTO cuando los dos espacios coinciden (el caso del default): no se dibuja nada.</para>
+    ''' <para>⛔ Si la conversión falla (asignación GL), NO se degrada en silencio: se loguea y se marca
+    ''' <see cref="FaceTintPipelineResult.SpaceConversionFailed"/> para que un instrumento de paridad pueda
+    ''' invalidar la corrida en vez de atribuirle la divergencia al compositor.</para></summary>
+    Private Sub ConvertAccumToOutputSpace(result As FaceTintPipelineResult,
+                                          channel As FaceTintChannel,
+                                          ch As FaceTintPipelineChannelResult,
+                                          state As FaceTintCompositorState,
+                                          width As Integer, height As Integer,
+                                          cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability)
+        If ch Is Nothing OrElse ch.TextureId = 0 Then Return
+        Dim accSp As Integer = CInt(FaceTintConvention.AccumSpaceForChannel(channel, cpuMirror))
+        Dim outSp As Integer = CInt(FaceTintConvention.OutputSpaceForChannel(channel))
+        If accSp = outSp Then Return
+
+        Dim converted = ConvertTextureSpace(state, ch.TextureId, width, height, accSp, outSp)
+        If converted = 0 Then
+            result.SpaceConversionFailed = True
+            Logger.LogLazy(Function() $"[FACETINT] FINAL PASS FAILED channel={channel} {accSp}->{outSp}: the accumulator stays in AccumSpace (gamma will be off). Run marked invalid.")
+            Return
+        End If
+        Dim oldId = ch.TextureId, oldFresh = ch.IsFresh
+        ch.TextureId = converted
+        ch.IsFresh = True
+        If oldFresh Then Try : GL.DeleteTexture(oldId) : Catch : End Try
+    End Sub
+
+    ''' <summary>Fuerza filtrado SIN MIPMAP en una textura que el compositor va a muestrear.
+    ''' <para>⛔ POR QUE: <c>DirectXDDSLoader</c> es un loader COMPARTIDO con el render 3D y, cuando el DDS
+    ''' trae mips, setea <c>LinearMipmapLinear</c> + anisotropia (correcto para una superficie en
+    ''' perspectiva). Pero el compositor de facetint resamplea en ESPACIO DE IMAGEN y su espejo CPU
+    ''' (<c>FaceTintCpuCompositor.SampleBilinear</c>) muestrea SIEMPRE el <b>mip 0</b>. Con mipmapping, en
+    ''' cuanto un canal MINIFICA (el caso real: el <c>_s</c> compone a 512 con mascaras de 1024) el GPU lee
+    ''' el MIP 1 y el CPU el mip 0 — y los mips de Bethesda NO son un box del mip 0, son su propio filtro.</para>
+    ''' <para>MEDIDO: con mipmap el canal <c>_s</c> daba <b>14.000 px</b> de divergencia CPU-vs-GPU y peor
+    ''' delta <b>32</b>; es el UNICO canal que minifica y el UNICO con esa cola. NO era precision de los pesos
+    ''' del sampler (en un 2:1 exacto las fracciones son 0,5 y los pesos salen exactos de los dos lados): era
+    ''' una CONVENCION distinta entre los dos compositores.</para>
+    ''' <para>Se cambia SOLO en las texturas del compositor (su cache y sus cargas por-llamada), NO en el
+    ''' loader: bajarle el mipmap al render 3D lo degradaria.</para></summary>
+    Friend Sub ForceMip0Sampling(texId As Integer)
+        If texId = 0 Then Return
+        Try
+            GL.BindTexture(TextureTarget.Texture2D, texId)
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+            ' Techo de LOD por si algun driver ignora el min-filter con mips presentes.
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, 0)
+        Catch
+        End Try
+    End Sub
+
+    ''' <summary>Tamaño REAL de una textura fuente del GL (mip 0). Se consulta al driver en vez de asumir
+    ''' el par del caller, porque los tres canales de una cabeza pueden medir distinto y el CPU compone cada
+    ''' uno al SUYO. Devuelve el fallback si la textura es 0 o el driver devuelve algo no positivo — nunca
+    ''' un tamaño invalido, que es peor que el fallback.</summary>
+    Private Function SourceTextureSize(texId As Integer, fbW As Integer, fbH As Integer) As (W As Integer, H As Integer)
+        If texId = 0 Then Return (fbW, fbH)
+        Try
+            Dim prev As Integer = GL.GetInteger(GetPName.TextureBinding2D)
+            GL.BindTexture(TextureTarget.Texture2D, texId)
+            Dim tw As Integer = 0, th As Integer = 0
+            GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureWidth, tw)
+            GL.GetTexLevelParameter(TextureTarget.Texture2D, 0, GetTextureParameter.TextureHeight, th)
+            GL.BindTexture(TextureTarget.Texture2D, prev)
+            If tw > 0 AndAlso th > 0 Then Return (tw, th)
+        Catch
+        End Try
+        Return (fbW, fbH)
     End Function
 
     ''' <summary>Tamaño target de un canal: nativo si Inherit (o resolution Nothing), si no el del enum
@@ -2248,7 +2501,7 @@ void main() {
     ''' (1,2) -> Srgb->G22 ADEMÁS del resize (D). No-op SOLO si no hay resize NI conversión.
     Private Sub ConvertChannelIfNeeded(ch As FaceTintPipelineChannelResult, state As FaceTintCompositorState,
                                    targetW As Integer, targetH As Integer, nativeW As Integer, nativeH As Integer,
-                                   Optional fromSpace As Integer = 0, Optional toSpace As Integer = 0)
+                                   fromSpace As Integer, toSpace As Integer)
         If ch.TextureId = 0 Then Return
         If targetW = nativeW AndAlso targetH = nativeH AndAlso fromSpace = toSpace Then Return  ' <- el guard ahora incluye el espacio
         Dim converted = ConvertTextureSpace(state, ch.TextureId, targetW, targetH, fromSpace, toSpace)
@@ -2273,17 +2526,22 @@ void main() {
                                width As Integer, height As Integer,
                                layers As IList(Of FaceTintLayerInput),
                                swaps As IList(Of FaceRegionSwapInput),
+                               cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
                                Optional headDiffuseAlphaTest As Boolean = False)
         If ch.TextureId = 0 Then
             Return
         End If
         Dim newId As Integer
         If swaps IsNot Nothing Then
-            newId = ApplyRegionSwapsOntoFaceTexture(state, ch.TextureId, width, height, swaps, channel, cache)
+            newId = ApplyRegionSwapsOntoFaceTexture(state, ch.TextureId, width, height, swaps, channel, cpuMirror, cache)
         Else
-            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, cache, headDiffuseAlphaTest)
+            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, cpuMirror, cache, headDiffuseAlphaTest)
         End If
         If newId = 0 OrElse newId = ch.TextureId Then Return
+
+        ' ⛔ ACA NO VA EL PASE FINAL AccumSpace->OutputSpace. Esta funcion corre DOS VECES por canal (una para
+        ' region swaps y otra para tints) y el acumulador es UNO SOLO que cruza las dos fases: convertirlo acá
+        ' lo convertiria dos veces en toda cara con swaps. Vive en ApplyFaceTintPipeline, una sola vez al cierre.
         Dim oldId = ch.TextureId
         Dim oldFresh = ch.IsFresh
         ch.TextureId = newId
@@ -2379,7 +2637,10 @@ Public NotInheritable Class FaceTintTextureCache
 
         If missKeys.Count > 0 Then
             ' srgb=False: texturas del compositor crudas; el decode lo hace el shader por convención (ss).
-            Dim loaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(missKeys.ToArray(), missBytes.ToArray(), True, True, New Boolean(missKeys.Count - 1) {})
+            Dim loaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(missKeys.ToArray(), missBytes.ToArray(), GlDecodeUseCompress, True, New Boolean(missKeys.Count - 1) {})
+            For Each kvL In loaded
+                If kvL.Value IsNot Nothing Then ForceMip0Sampling(kvL.Value.Texture_ID)
+            Next
             If loaded IsNot Nothing Then
                 If wrapClampToEdge Then
                     For Each kvp In loaded

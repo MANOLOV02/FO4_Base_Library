@@ -4286,6 +4286,33 @@ Public Module RecordParsers
         Return clfm
     End Function
 
+    ''' <summary>⛔⛔ LOS NOMBRES DE LOS CAMPOS SON LOS DE FALLOUT 4 Y SE USAN EN LOS DOS JUEGOS.
+    ''' Los slots TX00..TX07 son POSICIONALES: el parser copia el subrecord N al campo N-esimo y NADA MAS. El
+    ''' NOMBRE del campo describe la semantica de FO4; en Skyrim ESE MISMO SLOT SIGNIFICA OTRA COSA. El caso
+    ''' canonico: <c>TX02</c> se guarda en <see cref="TXST_Data.WrinklesTexture"/> — en Skyrim el slot 2 NO es
+    ''' wrinkles.
+    ''' <para>MEDIDO (ocupacion de slots en los TXST de facegen de cada juego):</para>
+    ''' <code>
+    '''   slot   FO4 facegen (47)   SSE facegen (252)
+    '''   TX00        25                  252
+    '''   TX01        25                  244
+    '''   TX02         9                    0
+    '''   TX03         0                  168
+    '''   TX04        10                  115
+    '''   TX07        25                  188
+    '''   MNAM        22                    0
+    ''' </code>
+    ''' Son perfiles COMPLETAMENTE distintos: los slots que FO4 usa (TX02, MNAM) estan vacios en SSE, y los que
+    ''' SSE usa (TX03) estan vacios en FO4.
+    ''' <para>⛔ CONSECUENCIA PARA QUIEN TOQUE ESTO: cualquier codigo que lea
+    ''' <c>WrinklesTexture</c>/<c>GlowTexture</c>/<c>HeightTexture</c> "por su nombre" y corra en los DOS juegos
+    ''' esta leyendo un slot con OTRA semantica en uno de los dos, EN SILENCIO. Antes de usar un campo por su
+    ''' nombre: verificar contra que juego se valido. Los unicos con la misma semantica en ambos son TX00
+    ''' (diffuse) y TX01 (normal).</para>
+    ''' <para>NO se renombran los campos en esta pasada: <c>TXST_Data</c> lo consumen ~20 sitios y un rename
+    ''' masivo mezclado con un fix de comportamiento haria imposible atribuir una regresion. Se DOCUMENTA el
+    ''' mapeo, que es lo que evita el error; el rename por juego (o un indexador posicional
+    ''' <c>Slot(i)</c>) queda como refactor aparte.</para></summary>
     Public Function ParseTXST(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TXST_Data
         Dim txst As New TXST_Data With {
             .FormID = rec.Header.FormID,

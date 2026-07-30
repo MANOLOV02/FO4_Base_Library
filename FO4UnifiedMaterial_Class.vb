@@ -3755,11 +3755,22 @@ Public Class FO4UnifiedMaterial_Class
         ' SSE lo guarda en Lighting Effect 1 (shad.Softlight); FO4 en shad.SubsurfaceRolloff. Escribir siempre
         ' a SubsurfaceRolloff dejaba el valor en un campo que el motor SSE ignora (round-trip roto: se perdia
         ' el rolloff, incluido el flujo WM NIF->BGSM->NIF).
-        Dim softRolloffVal As Single = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
+        ' ⛔ LA COMPUERTA ES SOLO DE FO4. En Skyrim el valor vive en el NIF (no hay BGSM) y el CK lo copia
+        ' VERBATIM, sin mirar el flag Soft_Lighting. Medido sobre el FaceGeom vanilla del BSA
+        ' (0x00013480, 'MaleMouthHumanoidDefault'): fuente y CK traen SSPF2=0x00208001 -> bit 25
+        ' (Soft_Lighting) APAGADO y aun asi LightingEffect1 = 0,3; con la compuerta puesta nuestro bake
+        ' escribia 0 y destruia el campo en 14.616 shapes / 3.141 NPCs (97,7 % del corpus SSE), con TODO
+        ' el resto del shader byte-identico.
+        ' Por que no puede haber regresion: con el flag APAGADO el motor no consume LightingEffect1
+        ' (nifskope/engine: hasSoftlight = hasSF2(SLSF2_Soft_Lighting)), asi que el valor es INERTE ahi;
+        ' y con el flag ENCENDIDO Mat.SubsurfaceLighting es True, o sea la compuerta vieja ya dejaba pasar
+        ' exactamente el mismo valor. El unico efecto posible es preservar un campo que hoy se pierde.
+        ' FO4 NO se toca: alli la compuerta replica una del motor, verificada por RE en los DOS binarios
+        ' (cmp byte [rbx+0xa8],0 -> fSubsurfaceLightingRolloff; juego 0x142163ED1 / CK 0x142BB822E).
         If Nif.Header.Version.IsSSE Then
-            shad.Softlight = softRolloffVal
+            shad.Softlight = Mat.SubsurfaceLightingRolloff
         Else
-            shad.SubsurfaceRolloff = softRolloffVal
+            shad.SubsurfaceRolloff = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
         End If
         shad.ModelSpace = Mat.ModelSpaceNormals
         shad.ShaderType_SK_FO4 = effectiveShaderType

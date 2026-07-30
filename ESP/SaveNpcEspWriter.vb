@@ -222,9 +222,9 @@ Public Module SaveNpcEspWriter
     '''   • OVERRIDE (IsOverride=True): a CLFM authored by a PRIOR save of this same plugin, re-emitted so
     '''     a re-save doesn't drop it and leave every HCLF that points at it dangling.
     ''' <para>Body per wbDefinitionsTES5.pas:7946 / wbDefinitionsFO4.pas: EDID + [FULL] + CNAM + FNAM. FULL is
-    ''' deliberately NOT emitted: xEdit marks it optional (only CNAM/FNAM are Required) and it is a
-    ''' translatable lstring, so skipping it keeps the record valid in both a localized and a
-    ''' non-localized plugin without a strings table. CNAM is wbByteRGBA = bytes [R,G,B,A] — MEASURED over
+    ''' optional per xEdit (only CNAM/FNAM are Required) and translatable, so it travels in TWO shapes —
+    ''' see <see cref="FullName"/> (NEW: authored here, encoded) and <see cref="FullNameRaw"/> (OVERRIDE:
+    ''' the source payload verbatim). CNAM is wbByteRGBA = bytes [R,G,B,A] — MEASURED over
     ''' Skyrim.esm: 178/178 CLFM carry A=0, and the 15 hair colours carry FNAM=1 (Playable), so those are
     ''' the values a synthesized hair colour gets. CLFM carries NO FormID in its body; only its own record
     ''' FormID is remapped.</para>
@@ -235,6 +235,21 @@ Public Module SaveNpcEspWriter
         ''' <summary>NEW: provisional sentinel (0xFF…). OVERRIDE: the existing CLFM's real global FormID.</summary>
         Public FormID As UInteger
         Public EditorID As String = ""
+        ''' <summary>FULL — optional display name, the string the CK / xEdit / our own editor combo show
+        ''' instead of the EditorID. NEW entries author it here (see NpcOverrideSaver.MaterializeSseHairColors:
+        ''' "NPC Manager custom hair color #RRGGBB"); empty = no FULL emitted, which is what every CLFM this
+        ''' writer produced before carried. ⛔ ENCODING: emitted with <c>EncodeTranslatable</c> (FULL is a
+        ''' cpTranslate lstring per wbDefinitionsTES5.pas:7946 — NOT the cp1252 General encoder that EDID uses),
+        ''' and that encoder has an ExceptionFallback, so an authored name MUST be ASCII-only: this record is
+        ''' not covered by the Phase 2b encoding-conflict pre-check (that one walks NPC_ FULL/SHRT/ATTX), and a
+        ''' character the chosen codepage can't represent would throw mid-write instead of being reported.</summary>
+        Public FullName As String = ""
+        ''' <summary>OVERRIDE-only: the source FULL subrecord's payload copied VERBATIM (NUL included), so a
+        ''' re-save round-trips the name byte-exactly instead of decoding it with the source plugin's encoding
+        ''' and re-encoding it with the current global Translatable — a lossy step that could also throw
+        ''' mid-write for a name authored under another codepage. Same reasoning as CNAM/FNAM being copied from
+        ''' the bytes in the preservation sweep. Nothing = source had no FULL. Wins over <see cref="FullName"/>.</summary>
+        Public FullNameRaw As Byte() = Nothing
         ''' <summary>Packed 0xRRGGBB. Emitted to CNAM as bytes R,G,B then <see cref="ColorAlpha"/>.</summary>
         Public ColorRgb As Integer
         ''' <summary>CNAM's 4th byte. Default 0 = what all 178 vanilla Skyrim.esm CLFM carry (measured).
@@ -1398,10 +1413,12 @@ Public Module SaveNpcEspWriter
     ''' wbDefinitionsTES5.pas:7946 (identical in FO4): EDID + [FULL] + CNAM + FNAM.
     ''' <list type="bullet">
     ''' <item>EDID — ZSTRING, cp1252 non-translatable (same encoder as every other EDID here).</item>
-    ''' <item>FULL — NOT emitted. xEdit marks it optional (only CNAM/FNAM are Required) and it is a
-    '''   translatable lstring: emitting it as a raw ZSTRING would be wrong in a LOCALIZED plugin (there it
-    '''   must be a u32 string-table ID), and we have no strings table to add to. Skipping it is valid in
-    '''   both flavours; the record shows by EditorID.</item>
+    ''' <item>FULL — optional display name. OVERRIDE: <see cref="ClfmRecordEntry.FullNameRaw"/> verbatim.
+    '''   NEW: <see cref="ClfmRecordEntry.FullName"/> as a ZSTRING through <c>EncodeTranslatable</c> — the
+    '''   cpTranslate encoder, NOT the cp1252 General one EDID uses. Both empty = no FULL, the old behaviour.
+    '''   Emitting the literal (rather than a u32 string-table ID) is the same contract the whole writer runs
+    '''   under: it targets NON-localized plugins and ships no strings table (NpcSubrecordWriter.EmitLString
+    '''   documents it, and NPC_/ARMO FULL already go out this way).</item>
     ''' <item>CNAM — wbByteRGBA, 4 bytes in [R,G,B,A] order (mirror of RecordParsers.ParseClfmColor, which
     '''   reads byte0=R…byte3=A). MEASURED over Skyrim.esm: alpha is 0 on all 178 CLFM.</item>
     ''' <item>FNAM — u32. Skyrim: 'Playable' bool, =1 on all 15 vanilla hair colours (measured). FO4: flag
@@ -1418,6 +1435,17 @@ Public Module SaveNpcEspWriter
                 WriteSubrecordHeader(bw, "EDID", edidBytes.Length + 1)
                 bw.Write(edidBytes)
                 bw.Write(CByte(0))
+                ' FULL — verbatim on OVERRIDE (byte-exact round-trip, and no re-encode that could throw),
+                ' EncodeTranslatable on NEW. Nothing/empty on both = no subrecord.
+                If entry.FullNameRaw IsNot Nothing Then
+                    WriteSubrecordHeader(bw, "FULL", entry.FullNameRaw.Length)
+                    If entry.FullNameRaw.Length > 0 Then bw.Write(entry.FullNameRaw)
+                ElseIf Not String.IsNullOrEmpty(entry.FullName) Then
+                    Dim fullBytes = PluginEncodingSettings.EncodeTranslatable(entry.FullName)
+                    WriteSubrecordHeader(bw, "FULL", fullBytes.Length + 1)
+                    bw.Write(fullBytes)
+                    bw.Write(CByte(0))
+                End If
                 ' CNAM — [R,G,B,A]. ColorRgb is packed 0xRRGGBB (the .jslot convention).
                 WriteSubrecordHeader(bw, "CNAM", 4)
                 bw.Write(CByte((entry.ColorRgb >> 16) And &HFF))

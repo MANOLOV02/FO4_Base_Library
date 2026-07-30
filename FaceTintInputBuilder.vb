@@ -335,6 +335,7 @@ Public Module FaceTintInputBuilder
                 If p.TextureFormID = 0UI Then Continue For
                 Dim msdvVal As Single = 0F
                 If Not npcData.MorphValues.TryGetValue(p.Index, msdvVal) Then Continue For
+                NoteSwapIntensity(msdvVal)   ' censo del valor REAL que llega al clamp (ver abajo)
                 ' Gate de msdv<=0.001 REMOVIDO (a pedido): se incluye el swap aunque el msdv sea bajo o 0
                 ' (Intensity baja -> running con cov chica; 0 = no-op). build_3 compone todo msdv>0; el
                 ' gate viejo se comia valores fraccionarios bajos. (El TryGetValue de arriba sigue: si el
@@ -1094,5 +1095,61 @@ Public Module FaceTintInputBuilder
     Public Function NormalizeDictionaryKeyWithTexturesPrefix(rawPath As String) As String
         Return FO4UnifiedMaterial_Class.CorrectTexturePath(rawPath)
     End Function
+
+    ' =====================================================================================================
+    ' CENSO de intensidades de region swap (lo alimenta NoteSwapIntensity desde el builder).
+    ' =====================================================================================================
+    ' Una comparacion por SWAP (no por pixel), asi que es gratis. Existe para responder con DATOS del corpus
+    ' entero, y no con una muestra, si algun preset de FaceMorph trae un MSDV NEGATIVO o mayor a 1.
+    ' ⛔ POR QUE IMPORTA: los DOS compositores clampean la intensidad a [0,1]
+    ' (FaceTintConvention.ClampSwapIntensity), asi que un valor negativo se vuelve 0 = el swap se DESCARTA
+    ' EN SILENCIO. Si eso ocurriera en vanilla seria un bug de FIDELIDAD contra el CK — NO de paridad
+    ' CPU/GPU, porque los dos lados hacen lo mismo. Sobre 6 NPCs se midieron 0 negativos, pero 6 NPCs no
+    ' validan nada (regla del proyecto: no generalizar de pocos casos), de ahi el censo.
+    Private ReadOnly _swiLock As New Object()
+    Private _swiCount As Long = 0
+    Private _swiNegative As Long = 0
+    Private _swiAboveOne As Long = 0
+    Private _swiMin As Single = Single.MaxValue
+    Private _swiMax As Single = Single.MinValue
+    Private _swiFirstNeg As String = ""
+
+    Friend Sub NoteSwapIntensity(v As Single)
+        SyncLock _swiLock
+            _swiCount += 1
+            If v < 0.0F Then
+                _swiNegative += 1
+                If _swiFirstNeg = "" Then _swiFirstNeg = v.ToString("F4")
+            End If
+            If v > 1.0F Then _swiAboveOne += 1
+            If v < _swiMin Then _swiMin = v
+            If v > _swiMax Then _swiMax = v
+        End SyncLock
+    End Sub
+
+    ''' <summary>Censo de las intensidades de region swap vistas en la corrida. Lo imprime el resumen del
+    ''' barrido. Si <c>negative</c> o <c>&gt;1</c> son distintos de cero, el clamp a [0,1] esta DESCARTANDO
+    ''' swaps reales y hay que decidir la ley contra el CK antes de tocar nada.</summary>
+    Public Function SwapIntensityCensus() As String
+        SyncLock _swiLock
+            If _swiCount = 0 Then Return "Region-swap intensity census: no swaps were built in this run."
+            Dim extra As String = ""
+            If _swiNegative > 0 Then
+                extra = "  ** FIRST NEGATIVE=" & _swiFirstNeg & " -> that swap is silently DROPPED by the [0,1] clamp on BOTH compositors **"
+            End If
+            Return "Region-swap intensity census: n=" & _swiCount &
+                   "  negative=" & _swiNegative &
+                   "  >1=" & _swiAboveOne &
+                   "  min=" & _swiMin.ToString("F4") &
+                   "  max=" & _swiMax.ToString("F4") & extra
+        End SyncLock
+    End Function
+
+    Public Sub ResetSwapIntensityCensus()
+        SyncLock _swiLock
+            _swiCount = 0 : _swiNegative = 0 : _swiAboveOne = 0
+            _swiMin = Single.MaxValue : _swiMax = Single.MinValue : _swiFirstNeg = ""
+        End SyncLock
+    End Sub
 
 End Module

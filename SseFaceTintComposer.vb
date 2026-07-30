@@ -1,4 +1,4 @@
-Imports System.Collections.Concurrent
+﻿Imports System.Collections.Concurrent
 Imports System.Runtime.CompilerServices
 Imports System.Linq
 
@@ -34,6 +34,25 @@ Imports System.Linq
 ''' <c>Config_App.Current.Game = Config_App.Game_Enum.Skyrim</c>. See project_sse_facetint_spec.
 ''' </summary>
 Public Module SseFaceTintComposer
+
+    ''' <summary>CAPACIDAD DECLARADA de este compositor, para los caminos GL que lo tienen de ESPEJO.
+    ''' Este modulo SI implementa la ley de los cuatro espacios: compone con
+    ''' <see cref="FaceTintCpuCompositor.ComposePixel"/> (el MISMO ComposeOne del loop FO4) y mantiene su
+    ''' acumulador en <c>conv.AccumSpace</c> — siembra en AccumSpace y hace UNA sola conversion a OutputSpace
+    ''' al final. Por eso declara <c>FourSpaceAccumulator</c> y <c>AccumInCompositeSpace</c> vale acá igual
+    ''' que en FO4.
+    ''' <para>ANTES declaraba <c>OutputSpaceOnly</c> y el flag quedaba INERTE en SSE. Eso NO era un diseño:
+    ''' era una compensacion. El GL comparte <c>FaceTintCompositor.ApplyFaceTintPipeline</c> con FO4
+    ''' (SseFoldLayerStack lo llama en 7 sitios), asi que con el CPU sin implementarlo habia que SUPRIMIR el
+    ''' flag del lado GL para que los dos no divergieran — se apagaba el sintoma en un lado en vez de cerrar
+    ''' el hueco en el otro. El argumento de que "SSE es all-linear asi que da igual" tampoco servia: eso es
+    ''' una COINCIDENCIA de configuracion (alcanza con poner os=G22 desde CharGen Options para romperla), y
+    ''' ademas dejaba abierto un hueco MAYOR — con espacios separados el GL honraba la ley y el CPU no.</para>
+    ''' <para>REGRESION: nula por construccion en vanilla. Con los defaults de SSE (all-linear)
+    ''' CompositeSpace == OutputSpace ⇒ AccumSpace == OutputSpace prendido o apagado ⇒ las dos conversiones
+    ''' nuevas son no-op y la salida es byte-identica al modelo previo.</para></summary>
+    Public Const AccumSpaceCapability As FaceTintConvention.FaceTintCpuMirrorCapability =
+        FaceTintConvention.FaceTintCpuMirrorCapability.FourSpaceAccumulator
 
     ''' <summary>One RACE tint mask: the greyscale mask texture path + its TINP mask type (-1 when the layer
     ''' omits TINP, e.g. tattoos). Type is retained for tooling/diagnostics only — the blend is uniform.</summary>
@@ -134,8 +153,33 @@ Public Module SseFaceTintComposer
         If settings.SeedMode = FaceTintConvention.FaceTintSeedMode.Constant AndAlso settings.SeedConstant IsNot Nothing AndAlso settings.SeedConstant.Length >= 3 Then
             seedR = settings.SeedConstant(0) : seedG = settings.SeedConstant(1) : seedB = settings.SeedConstant(2)
         End If
+        ' ACUMULADOR EN AccumSpace (misma ley que FO4). El seed del motor (0,5) y la baseImg del caller estan
+        ' expresados en OutputSpace; el compose corre en AccumSpace y hay UNA sola conversion al final. Con la
+        ' config default de SSE (all-linear) CompositeSpace == OutputSpace ⇒ accSp == osSp ⇒ las dos
+        ' conversiones son no-op y la salida es BYTE-IDENTICA al modelo previo. Solo cambia si el usuario
+        ' separa los espacios desde CharGen Options — que es justo el caso donde antes el CPU se quedaba en
+        ' OutputSpace y el GL (compartido con FO4) honraba la ley, o sea DIVERGIAN.
+        Dim accSp As Integer = CInt(conv.AccumSpace)
+        Dim osSp As Integer = CInt(conv.OutputSpace)
+        Dim needSpaceCvt As Boolean = (accSp <> osSp)
+        If needSpaceCvt Then
+            seedR = FaceTintCpuCompositor.ConvertSpaceShared(seedR, osSp, accSp)
+            seedG = FaceTintCpuCompositor.ConvertSpaceShared(seedG, osSp, accSp)
+            seedB = FaceTintCpuCompositor.ConvertSpaceShared(seedB, osSp, accSp)
+        End If
         If baseImg IsNot Nothing AndAlso baseImg.Length >= npix * 4 Then
             Array.Copy(baseImg, acc, npix * 4)
+            If needSpaceCvt Then
+                System.Threading.Tasks.Parallel.ForEach(
+                    System.Collections.Concurrent.Partitioner.Create(0, npix),
+                    Sub(range)
+                        For i = range.Item1 To range.Item2 - 1
+                            For ch = 0 To 2
+                                acc(i * 4 + ch) = CSng(FaceTintCpuCompositor.ConvertSpaceShared(acc(i * 4 + ch), osSp, accSp))
+                            Next
+                        Next
+                    End Sub)
+            End If
         Else
             ' Paralelo por rangos (escrituras disjuntas por píxel ⇒ bit-idéntico); a 4K son 67M de writes.
             System.Threading.Tasks.Parallel.ForEach(
@@ -174,6 +218,18 @@ Public Module SseFaceTintComposer
             Dim mi = DecodeMask(maskPath, w, h)
             If mi IsNot Nothing Then ComposeLayer(acc, mi, cr, cg, cbb, iv, npix, conv, maskConvI, maskCh)
         Next
+        ' UNICA conversion de vuelta a OutputSpace (no-op cuando accSp == osSp).
+        If needSpaceCvt Then
+            System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, npix),
+                Sub(range)
+                    For i = range.Item1 To range.Item2 - 1
+                        For ch = 0 To 2
+                            acc(i * 4 + ch) = CSng(FaceTintCpuCompositor.ConvertSpaceShared(acc(i * 4 + ch), accSp, osSp))
+                        Next
+                    Next
+                End Sub)
+        End If
         Return acc
     End Function
 
@@ -605,13 +661,15 @@ Public Module SseFaceTintComposer
         If w = 512 AndAlso h = 512 AndAlso _texCache.TryGetValue(ckey, cached) Then Return cached
         ' Fuente decodificada, cacheada por (path, target) — ver _texSrcCache. La elección de mip de DecodeDds
         ' depende del target ⇒ el target integra la key. El miss (Nothing) también se cachea (archivo ausente).
-        ' Fuentes grandes (> 1024² tras elegir mip) no se retienen: 32 MB de Double por entrada es el techo.
+        ' Fuentes grandes (> 1024² tras elegir mip) no se retienen. El techo se expresa en ELEMENTOS (W·H·4), así
+        ' que el criterio no cambió al angostar el storage a Byte; lo que bajó es lo que cuesta cada entrada
+        ' retenida: 4 MB en vez de los 16 MB de Single (32 MB cuando esto era Double).
         Dim srcKey = $"{key}|{w}x{h}"
         Dim t As FaceTintCpuCompositor.DecodedTex = Nothing
         If Not _texSrcCache.TryGetValue(srcKey, t) Then
             Dim b = FilesDictionary_class.GetBytes(key)
             t = If(b Is Nothing, Nothing, FaceTintCpuCompositor.DecodeDds(b, w, h))
-            If t IsNot Nothing AndAlso t.Rgba Is Nothing Then t = Nothing
+            If t IsNot Nothing AndAlso t.Rgba8 Is Nothing Then t = Nothing
             ' A 512² la entrada de _texSrcCache es INALCANZABLE como hit, por construcción: toda llamada 512²
             ' o pega en _texCache y retorna arriba (sin llegar acá), o falla — y como ambas cachés se pueblan
             ' SIEMPRE juntas en este camino (:524 y :543 cubren miss y éxito), un miss de _texCache implica un
@@ -620,7 +678,7 @@ Public Module SseFaceTintComposer
             ' (fold a resolución nativa del complexion, p.ej. 4096²) _texCache no participa y ésta es la ÚNICA
             ' caché: ahí sí se retiene, que es el caso para el que se creó.
             Dim isRedundantAt512 = (w = 512 AndAlso h = 512)
-            If Not isRedundantAt512 AndAlso (t Is Nothing OrElse t.Rgba.Length <= 1024 * 1024 * 4) Then _texSrcCache(srcKey) = t
+            If Not isRedundantAt512 AndAlso (t Is Nothing OrElse t.Rgba8.Length <= 1024 * 1024 * 4) Then _texSrcCache(srcKey) = t
         End If
         If t Is Nothing Then
             If w = 512 AndAlso h = 512 Then _texCache(ckey) = Nothing
@@ -637,12 +695,19 @@ Public Module SseFaceTintComposer
         ' así que x0=x, tx=0 y la fórmula colapsa a (p00·1 + p10·0)·1 + (…)·0 = p00. Ídem en y. Es la misma
         ' salida bit a bit, sin la pasada. Sus dos gemelos del compositor FO4 (ResampleBgra /
         ' ResampleRgbaFloat) ya traían este corto; éste no lo tenía, y 512²→512² es el caso NORMAL en SSE.
-        ' ⛔ Se COPIA, no se aliasea t.Rgba: el array devuelto puede terminar en _texCache y en manos de
+        ' ⛔ Se COPIA, no se aliasea t.Rgba8: el array devuelto puede terminar en _texCache y en manos de
         ' varios consumidores, mientras que t vive en _texSrcCache con otro ciclo de vida. Aliasarlos dejaría
         ' que una mutación río abajo corrompiera la caché de fuentes. (Contrato idéntico al de hoy: el
         ' bilineal también devolvía un array fresco.)
-        If t.Width = w AndAlso t.Height = h AndAlso t.Rgba.Length = outp.Length Then
-            Array.Copy(t.Rgba, outp, outp.Length)
+        If t.Width = w AndAlso t.Height = h AndAlso t.Rgba8.Length = outp.Length Then
+            ' ⛔ NO Array.Copy: la fuente es Byte() crudo (0..255) y el destino es la unidad [0,1]. Array.Copy
+            ' haría la conversión WIDENING (255 → 255,0F) en vez de la de escala, así que la expansión pasa
+            ' explícita por ByteToUnit — que devuelve el mismo Single que guardaba el storage viejo.
+            Dim srcArr = t.Rgba8
+            Dim lut = FaceTintCpuCompositor.ByteToUnit
+            For i As Integer = 0 To outp.Length - 1
+                outp(i) = lut(srcArr(i))
+            Next
             If needsZ Then FaceTintCpuCompositor.ReconstructNormalZ(outp, w * h)
             If w = 512 AndAlso h = 512 Then _texCache(ckey) = outp
             Return outp
@@ -656,8 +721,8 @@ Public Module SseFaceTintComposer
                                                           Dim fx = (x + 0.5) * t.Width / w - 0.5
                                                           Dim x0 = Math.Max(0, Math.Min(t.Width - 1, CInt(Math.Floor(fx)))) : Dim x1 = Math.Min(t.Width - 1, x0 + 1) : Dim tx = fx - Math.Floor(fx)
                                                           For c = 0 To 3
-                                                              Dim p00 = t.Rgba((y0 * t.Width + x0) * 4 + c), p10 = t.Rgba((y0 * t.Width + x1) * 4 + c)
-                                                              Dim p01 = t.Rgba((y1 * t.Width + x0) * 4 + c), p11 = t.Rgba((y1 * t.Width + x1) * 4 + c)
+                                                              Dim p00 = t.Unit((y0 * t.Width + x0) * 4 + c), p10 = t.Unit((y0 * t.Width + x1) * 4 + c)
+                                                              Dim p01 = t.Unit((y1 * t.Width + x0) * 4 + c), p11 = t.Unit((y1 * t.Width + x1) * 4 + c)
                                                               outp((y * w + x) * 4 + c) = CSng((p00 * (1 - tx) + p10 * tx) * (1 - ty) + (p01 * (1 - tx) + p11 * tx) * ty)
                                                           Next
                                                       Next

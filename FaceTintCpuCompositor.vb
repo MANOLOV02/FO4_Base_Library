@@ -1,4 +1,5 @@
 ﻿Imports FO4_Base_Library.FaceTintConvention
+Imports System.Runtime.CompilerServices
 
 ' ============================================================================
 ' FaceTintCpuCompositor — espejo CPU EXACTO del compositor GL (FaceTintCompositor).
@@ -31,23 +32,55 @@
 
 Public Module FaceTintCpuCompositor
 
+    ''' <summary>⭐ CAPACIDAD DECLARADA de este compositor, para los caminos GL que lo tienen de ESPEJO.
+    ''' Este modulo SI implementa la ley completa del acumulador: siembra en <c>AccumSpace</c>, compone
+    ''' entero ahi (<c>ComposeOne(..., accSpace:=accSp)</c>) y hace UN unico pase final
+    ''' <c>AccumSpace-&gt;OutputSpace</c> en el pack. Por eso declara <c>FourSpaceAccumulator</c>.
+    ''' <para>El <c>ApplyFaceTintPipeline</c> del GL recibe esta constante desde los call sites cuyo espejo CPU
+    ''' es este modulo. Si algun dia se rompe esa propiedad acá, se cambia ESTA linea y los dos lados se
+    ''' reajustan solos — no hay que acordarse de ningun <c>If</c> remoto.</para></summary>
+    Public Const AccumSpaceCapability As FaceTintConvention.FaceTintCpuMirrorCapability =
+        FaceTintConvention.FaceTintCpuMirrorCapability.FourSpaceAccumulator
+
+    ' ⛔ SACADO (2026-07-30): el contador de resampleo por canal (NoteSamplerBinding / SamplerStatsLine).
+    ' Era diagnostico puro y corria POR CAPA con un SyncLock dentro del camino caliente del compose.
+    ' Ya cumplio su funcion: REFUTO la hipotesis de que el bilineal explicara la divergencia CPU/GPU
+    ' (`_msn` = 0/320 bindings resampleados y aun asi 148 px de cola). El dato quedo en memoria
+    ' (reference_cpu_gpu_parity_bc_decode); el codigo no tiene por que pagarlo en cada bake.
+
     ' ---- Conversiones de espacio (transcripción 1:1 del shader; ws: 0=linear 1=srgb 2=g22) ----
+    ' ⭐ AggressiveInlining: estos helpers se invocan MILLONES de veces por capa desde los loops
+    ' per-pixel y el costo de la LLAMADA domina sobre su cuerpo (3-6 lineas). Es una HINT de
+    ' compilacion: no cambia ni una operacion ni el orden, y .NET usa SSE sin precision excedente
+    ' (no hay x87), asi que la salida es BIT-IDENTICA. Ver el izado de invariantes de los 3 loops.
+    ' ⛔ SACADO (2026-07-30): las variantes de diagnostico `FGBAKE_COMPOSE_F32` (angostar cada intermedio
+    ' de ComposeOne a Single) y `FGBAKE_MASK_POW_F32` (emular el pow float32 del GLSL en la mascara).
+    ' Las DOS quedaron REFUTADAS con datos: la primera dio un histograma BIT-IDENTICO en aislamiento
+    ' (1 swap, 0 capas) y la segunda no movio un pixel. La causa real era otra —el GPU mezclaba MIPMAPS
+    ' donde este modulo siempre muestrea mip 0— y esta arreglada en FaceTintCompositor.ForceMip0Sampling.
+    ' Se sacan porque cambiaban (o podian cambiar) el artefacto horneado sin comprar nada.
+    ' El detalle de las mediciones queda en memoria: reference_cpu_gpu_parity_bc_decode.
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function Clamp01(c As Double) As Double
         If c < 0.0 Then Return 0.0
         If c > 1.0 Then Return 1.0
         Return c
     End Function
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function SrgbToLin1(c As Double) As Double
         c = Clamp01(c)
         Return If(c <= 0.04045, c / 12.92, Math.Pow((c + 0.055) / 1.055, 2.4))
     End Function
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToSrgb1(c As Double) As Double
         c = Clamp01(c)
         Return If(c <= 0.0031308, c * 12.92, 1.055 * Math.Pow(c, 1.0 / 2.4) - 0.055)
     End Function
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function G22ToLin1(c As Double) As Double
         Return Math.Pow(Clamp01(c), 2.2)
     End Function
@@ -96,18 +129,22 @@ Public Module FaceTintCpuCompositor
             End Sub)
     End Sub
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToG221(c As Double) As Double
         Return Math.Pow(Clamp01(c), 1.0 / 2.2)
     End Function
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function G24ToLin1(c As Double) As Double
         Return Math.Pow(Clamp01(c), 2.4)
     End Function
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToG241(c As Double) As Double
         Return Math.Pow(Clamp01(c), 1.0 / 2.4)
     End Function
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function SpaceToLin1(c As Double, s As Integer) As Double
         If s = 0 Then Return c
         If s = 1 Then Return SrgbToLin1(c)
@@ -115,6 +152,7 @@ Public Module FaceTintCpuCompositor
         Return G22ToLin1(c)   ' s=2
     End Function
 
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToSpace1(c As Double, s As Integer) As Double
         If s = 0 Then Return c
         If s = 1 Then Return LinToSrgb1(c)
@@ -123,12 +161,14 @@ Public Module FaceTintCpuCompositor
     End Function
 
     ''' <summary>cvt agnóstico entre espacios (0=linear 1=srgb 2=g22) via linear. = shader cvt().</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function Cvt1(c As Double, fromS As Integer, toS As Integer) As Double
         If fromS = toS Then Return c
         Return LinToSpace1(SpaceToLin1(c, fromS), toS)
     End Function
 
     ''' <summary>mask conv (0=raw 1=srgbEnc 2=srgbDec 3=g22Enc 4=g22Dec). = shader convMaskFull().</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function ConvMask1(m As Double, mc As Integer) As Double
         Select Case mc
             Case 1 : Return LinToSrgb1(m)
@@ -142,6 +182,7 @@ Public Module FaceTintCpuCompositor
     End Function
 
     ' ---- Blend ops (transcripción 1:1 del shader blendDispatch; uBlendOp 0..4) ----
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function BlendOverlay1(d As Double, s As Double) As Double
         ' GLSL step(0.5,d): d>=0.5 -> 1-2(1-d)(1-s) ; d<0.5 -> 2ds
         If d >= 0.5 Then Return 1.0 - 2.0 * (1.0 - d) * (1.0 - s)
@@ -168,10 +209,12 @@ Public Module FaceTintCpuCompositor
     End Function
 
     ' ---- Modos separables estandar adicionales (5..19). Transcripcion 1:1 del shader. ----
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function BlendColorDodge1(d As Double, s As Double) As Double
         If s >= 1.0 Then Return 1.0
         Return Math.Min(1.0, d / (1.0 - s))
     End Function
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function BlendColorBurn1(d As Double, s As Double) As Double
         If s <= 0.0 Then Return 0.0
         Return 1.0 - Math.Min(1.0, (1.0 - d) / s)
@@ -192,12 +235,23 @@ Public Module FaceTintCpuCompositor
     ''' <summary>Identidad del blend op: el src que hace blend(prev,src)=prev. La usa ModSrc para que
     ''' cov=0 deje prev intacto: mix(neutral, src, cov). = shader blendNeutral(). bop=replace no tiene
     ''' identidad constante -> ModSrc degrada a OverPrev (ver ComposeOne).</summary>
+    ''' ⭐ TABLA en vez de Select Case: `bop` es INVARIANTE para toda la textura, asi que este Select
+    ''' devolvia SIEMPRE la misma constante y se re-evaluaba una vez por pixel y por canal (millones por
+    ''' capa). La tabla da el MISMO valor con un indexado, sin ramas.
+    ''' ⛔ BIT-IDENTICO: son exactamente los mismos tres literales (1.0 / 0.5 / 0.0) mapeados a los mismos
+    ''' bop. El indice 0 y cualquier bop fuera de [0,18] caen en 0.0, igual que el `Case Else` de antes.
+    Private ReadOnly BlendNeutralTable As Double() = BuildBlendNeutralTable()
+    Private Function BuildBlendNeutralTable() As Double()
+        Dim t(18) As Double                                  ' default 0.0 = el Case Else previo
+        For Each b In New Integer() {1, 6, 9, 13, 15} : t(b) = 1.0 : Next    ' multiply/darken/colorburn/linearburn/divide
+        For Each b In New Integer() {2, 3, 4, 16, 17, 18} : t(b) = 0.5 : Next ' overlay/softlight/hardlight/linearlight/vividlight/pinlight
+        Return t
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function BlendNeutral1(bop As Integer) As Double
-        Select Case bop
-            Case 1, 6, 9, 13, 15 : Return 1.0      ' multiply/darken/colorburn/linearburn/divide
-            Case 2, 3, 4, 16, 17, 18 : Return 0.5  ' overlay/softlight/hardlight/linearlight/vividlight/pinlight
-            Case Else : Return 0.0                 ' screen/lighten/colordodge/difference/exclusion/lineardodge/subtract/hardmix
-        End Select
+        If bop < 0 OrElse bop > 18 Then Return 0.0
+        Return BlendNeutralTable(bop)
     End Function
 
     ''' <summary>Dispatch de blend por canal escalar. 0=replace 1=mult 2=overlay 3=softlight 4=hardlight,
@@ -235,14 +289,65 @@ Public Module FaceTintCpuCompositor
     End Function
 
     ' ---- Decode DDS -> RGBA float [0,1] (mirror de FaceTintCompositor.WritePristineTga) ----
+    ''' <summary>⭐ Tabla byte→unidad: <c>ByteToUnit(b) = CSng(b / 255.0)</c>, los 256 valores posibles.
+    ''' <para>Es lo que hace BIT-IDÉNTICO el storage en Byte de <see cref="DecodedTex.Rgba8"/>. El decode
+    ''' guardaba <c>CSng(r/255.0)</c> y los lectores lo widenean a Double; leer por esta tabla devuelve
+    ''' EXACTAMENTE ese mismo Single ⇒ el mismo Double ⇒ la misma cuenta. ⛔ NO reemplazar por
+    ''' <c>b / 255.0</c> en Double: eso es MÁS preciso pero es OTRO número (p.ej. b=1 difiere en el bit 24)
+    ''' y cambiaría la salida horneada.</para>
+    ''' 1 KB, vive en L1 — un lookup en vez de una carga de float, sobre un array 4× más chico.</summary>
+    Public ReadOnly ByteToUnit As Single() = BuildByteToUnit()
+    Private Function BuildByteToUnit() As Single()
+        Dim t(255) As Single
+        For i As Integer = 0 To 255
+            t(i) = CSng(i / 255.0)
+        Next
+        Return t
+    End Function
+
     Public Class DecodedTex
         Public Width As Integer
         Public Height As Integer
-        ' STORAGE en Single (float32) para cortar la memoria a la mitad (el término dominante: cada source
-        ' decodificado, 536 MB→268 MB @4K). El source es 8-bit ⇒ Single lo representa con error ~1e-8, muy por
-        ' debajo de la cuantización a 8-bit. La MATEMÁTICA sigue en Double (los escalares widen al leer). = la
-        ' misma clase de precisión que el GPU (Rgba32f). Delta byte vs baseline: validar con el compare batch.
-        Public Rgba As Single()   ' length W*H*4, orden R,G,B,A en [0,1]
+        ' ⭐ STORAGE en Byte: el ancho NATIVO del dato. TODO lo que produce DecodeDds es de 8 bits (BC1/3/7 y
+        ' RGBA8/BGRA8 → RGBA8; BC5 → R8G8; BC4 → R8: no hay UN formato de más de 8 bits en la tabla de abajo),
+        ' así que guardarlo en Single desperdiciaba 4× (16 B/px para 4 B/px de información). Antes fue
+        ' Double→Single ("536 MB→268 MB @4K"); esto lo lleva a 67 MB. Se lee vía ByteToUnit ⇒ el Single que sale
+        ' es EL MISMO que se guardaba antes, bit a bit, y la MATEMÁTICA sigue en Double (los escalares widen).
+        ' ⛔ INVARIANTE: este buffer es READ-ONLY después del decode. Nadie escribe en él — ReconstructNormalZ
+        ' y el compose trabajan sobre ACUMULADORES aparte (outp/macc/acc), que siguen en Single y sin cuantizar.
+        ' Si alguna vez hiciera falta escribir un valor arbitrario acá, esto deja de ser lossless.
+        ' ⛔ El campo se llama Rgba8 y NO Rgba A PROPOSITO: al angostar el storage, TODO consumidor que siguiera
+        ' escribiendo `t.Unit(i)` habria COMPILADO igual (VB widenea Byte→Double en silencio) y leido 255 donde
+        ' esperaba 1,0 — corrupcion muda en ~80 sitios. Con el nombre nuevo el compilador los marca a todos y la
+        ' migracion es exhaustiva por construccion. Leer SIEMPRE por Unit()/CopyUnitTo(), nunca el byte crudo.
+        Public Rgba8 As Byte()   ' length W*H*4, orden R,G,B,A crudos 0..255 (unidad = ByteToUnit(v))
+
+        ''' <summary>Elemento <paramref name="i"/> en unidad [0,1]. Devuelve EXACTAMENTE el Single que este
+        ''' buffer guardaba cuando era Single() ⇒ las cuentas rio abajo no cambian ni un bit.</summary>
+        Public Function Unit(i As Integer) As Single
+            Return ByteToUnit(Rgba8(i))
+        End Function
+
+        ''' <summary>Expande el buffer entero a unidad [0,1] sobre <paramref name="dst"/> (mismo largo).
+        ''' Reemplaza a los `Array.Copy(t.Rgba8, acc, …)`: Array.Copy con Byte()→Single() haria la conversion
+        ''' WIDENING (255 → 255,0F) en vez de la de ESCALA, o sea el bug exacto que este rename previene.</summary>
+        Public Sub CopyUnitTo(dst As Single())
+            Dim n = Math.Min(If(dst Is Nothing, 0, dst.Length), If(Rgba8 Is Nothing, 0, Rgba8.Length))
+            Dim lut = ByteToUnit, src = Rgba8
+            For i As Integer = 0 To n - 1
+                dst(i) = lut(src(i))
+            Next
+        End Sub
+
+        ''' <summary>El buffer entero como Single() fresco en unidad [0,1]. Para los pocos consumidores que
+        ''' necesitan un array Single completo (subida a GL, APIs que toman Single()). ⛔ Materializa 4× la
+        ''' memoria: no usar dentro de un loop ni en el camino cacheado.</summary>
+        Public Function ToUnitArray() As Single()
+            If Rgba8 Is Nothing Then Return Nothing
+            Dim outp(Rgba8.Length - 1) As Single
+            CopyUnitTo(outp)
+            Return outp
+        End Function
         ''' <summary>Canales REALES de la fuente ANTES del pack a RGBA: 4 (BC1/3/7, RGBA8/BGRA8), 2 (BC5 → R8G8)
         ''' o 1 (BC4 → gray). El pack de abajo rellena lo que falta con constantes (2 canales ⇒ <c>B=0, A=1</c>),
         ''' y hasta acá ese relleno era INDISTINGUIBLE de un píxel real: un consumidor que interpreta el RGB como
@@ -334,34 +439,34 @@ Public Module FaceTintCpuCompositor
             End Select
             If w <= 0 OrElse h <= 0 OrElse px Is Nothing OrElse bpp = 0 OrElse px.Length < w * h * bpp Then Return Nothing
             Dim isBgra8 = (fmt = 87 OrElse fmt = 88 OrElse fmt = 91 OrElse fmt = 93)
-            Dim outArr(w * h * 4 - 1) As Single
-            ' Paralelo por rangos: conversión byte→double puramente por-píxel (escrituras disjuntas ⇒ bit-idéntico).
+            Dim outArr(w * h * 4 - 1) As Byte
+            ' Paralelo por rangos: el pack es puramente por-píxel (escrituras disjuntas ⇒ bit-idéntico al serial).
             ' El fold SSE decodea el complexion a resolución NATIVA (4096² con COtR = 16,7M px) en cada fold.
+            ' Se guardan los bytes CRUDOS: la división por 255 se hace al LEER, por ByteToUnit (misma cuenta,
+            ' menos memoria). Las constantes de relleno del pack son las mismas de siempre: 2 canales ⇒ B=0 A=255.
             System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, w * h),
                 Sub(range)
                     For i As Integer = range.Item1 To range.Item2 - 1
                         Dim o As Integer = i * 4, s As Integer = i * bpp
-                        Dim r As Double, g As Double, b As Double, a As Double
                         Select Case bpp
                             Case 4
                                 If isBgra8 Then
-                                    b = px(s) : g = px(s + 1) : r = px(s + 2) : a = px(s + 3)
+                                    outArr(o) = px(s + 2) : outArr(o + 1) = px(s + 1) : outArr(o + 2) = px(s) : outArr(o + 3) = px(s + 3)
                                 Else
-                                    r = px(s) : g = px(s + 1) : b = px(s + 2) : a = px(s + 3)
+                                    outArr(o) = px(s) : outArr(o + 1) = px(s + 1) : outArr(o + 2) = px(s + 2) : outArr(o + 3) = px(s + 3)
                                 End If
                             Case 2
-                                r = px(s) : g = px(s + 1) : b = 0 : a = 255
+                                outArr(o) = px(s) : outArr(o + 1) = px(s + 1) : outArr(o + 2) = 0 : outArr(o + 3) = 255
                             Case Else ' 1
-                                r = px(s) : g = px(s) : b = px(s) : a = 255
+                                outArr(o) = px(s) : outArr(o + 1) = px(s) : outArr(o + 2) = px(s) : outArr(o + 3) = 255
                         End Select
-                        outArr(o) = CSng(r / 255.0) : outArr(o + 1) = CSng(g / 255.0) : outArr(o + 2) = CSng(b / 255.0) : outArr(o + 3) = CSng(a / 255.0)
                     Next
                 End Sub)
             ' `bpp` acá ES el número de canales de la fuente (4 = RGBA/BGRA8, 2 = R8G8 de un BC5, 1 = R8 de un
             ' BC4): la tabla de formatos de arriba lo asigna con ese significado. Se propaga para que un
             ' consumidor VECTORIAL (normal map) sepa que el B/A que ve es relleno del pack. Ver DecodedTex.Channels.
-            Return New DecodedTex With {.Width = w, .Height = h, .Rgba = outArr, .Channels = bpp}
+            Return New DecodedTex With {.Width = w, .Height = h, .Rgba8 = outArr, .Channels = bpp}
         Catch
             Return Nothing
         End Try
@@ -383,10 +488,10 @@ Public Module FaceTintCpuCompositor
         Dim tx = fx - ix, ty = fy - iy
         Dim x0 = Math.Max(0, Math.Min(w - 1, ix)), x1 = Math.Max(0, Math.Min(w - 1, ix + 1))
         Dim y0 = Math.Max(0, Math.Min(h - 1, iy)), y1 = Math.Max(0, Math.Min(h - 1, iy + 1))
-        Dim c00 = t.Rgba((y0 * w + x0) * 4 + ch)
-        Dim c10 = t.Rgba((y0 * w + x1) * 4 + ch)
-        Dim c01 = t.Rgba((y1 * w + x0) * 4 + ch)
-        Dim c11 = t.Rgba((y1 * w + x1) * 4 + ch)
+        Dim c00 = t.Unit((y0 * w + x0) * 4 + ch)
+        Dim c10 = t.Unit((y0 * w + x1) * 4 + ch)
+        Dim c01 = t.Unit((y1 * w + x0) * 4 + ch)
+        Dim c11 = t.Unit((y1 * w + x1) * 4 + ch)
         Return c00 * (1 - tx) * (1 - ty) + c10 * tx * (1 - ty) + c01 * (1 - tx) * ty + c11 * tx * ty
     End Function
 
@@ -470,7 +575,7 @@ Public Module FaceTintCpuCompositor
         Dim u As Double = Cvt1(green01, srcSpace, coordSpace)
         Dim tx As Integer = Math.Max(0, Math.Min(t.Width - 1, CInt(Math.Floor(u * t.Width))))
         Dim ty As Integer = Math.Max(0, Math.Min(t.Height - 1, CInt(Math.Floor(v01 * t.Height))))
-        Return t.Rgba((ty * t.Width + tx) * 4 + ch)
+        Return t.Unit((ty * t.Width + tx) * 4 + ch)
     End Function
 
     ' ---- Resultado de la pipeline CPU (espejo de FaceTintPipelineResult) ----
@@ -514,9 +619,41 @@ Public Module FaceTintCpuCompositor
     ''' cambia son los pixeles de los .dds, que en ese modo no se usan.</summary>
     Public Property SkipPixelCompose As Boolean = False
 
+    ''' <summary>Techo de memoria del <see cref="BatchDecodeCache"/>, en bytes. <b>0 = sin tope</b> = el
+    ''' comportamiento historico, asi que este agregado no cambia nada si nadie lo setea.
+    '''
+    ''' <para><b>Por que hace falta.</b> El cache no tenia NINGUN limite: crecia durante todo el bake
+    ''' (`BeginBatchDecodeCache` … `EndBatchDecodeCache`, o sea miles de NPCs). Medido en el barrido FO4
+    ''' completo: working set pico ~9,5 GB. En una maquina con menos RAM eso es paginacion o muerte por
+    ''' agotamiento — que ya paso antes en este arnes.</para>
+    '''
+    ''' <para><b>Por que ADMISION y no evicción.</b> Evictar una entrada GARANTIZA que se re-decodifique
+    ''' cuando el proximo NPC la pida; no admitirla solo lo ARRIESGA. Con claves que son rutas de textura
+    ''' SOURCE compartidas entre NPCs, las primeras que entran son justamente las mas reusadas (las bases
+    ''' de cabeza), asi que quedarse con las primeras es mejor politica que LRU.</para>
+    '''
+    ''' <para><b>Por que no puede cambiar la salida.</b> El valor cacheado es funcion PURA de
+    ''' (bytes de la textura, tamaño destino) — es lo que devuelve <c>DecodeDds</c>. No cachear no altera
+    ''' el valor, solo lo recalcula. La salida es byte-identica por construccion; lo unico que se mueve es
+    ''' el tiempo.</para></summary>
+    Public Property BatchDecodeCacheBudgetBytes As Long = 0
+
+    ''' <summary>Bytes vivos en el <see cref="BatchDecodeCache"/> (solo se contabiliza si hay presupuesto).</summary>
+    Private _batchCacheBytes As Long = 0
+    ''' <summary>Cuantas entradas se rechazaron por presupuesto. Se reporta: un rechazo alto significa que el
+    ''' techo esta costando re-decodes, y eso hay que poder verlo en vez de deducirlo del reloj.</summary>
+    Private _batchCacheRejected As Integer = 0
+
+    ''' <summary>Bytes vivos y rechazos del cache batch, para el log del runner.</summary>
+    Public Function BatchDecodeCacheStats() As (Bytes As Long, Rejected As Integer)
+        Return (Threading.Interlocked.Read(_batchCacheBytes), Threading.Volatile.Read(_batchCacheRejected))
+    End Function
+
     ''' <summary>Arranca el cache de decode batch (llamar ANTES del loop de clones).</summary>
     Public Sub BeginBatchDecodeCache()
         BatchDecodeCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)
+        Threading.Interlocked.Exchange(_batchCacheBytes, 0L)
+        Threading.Volatile.Write(_batchCacheRejected, 0)
     End Sub
 
     ''' <summary>Cierra y libera el cache de decode batch (llamar en Finally despues del loop). Los
@@ -560,7 +697,24 @@ Public Module FaceTintCpuCompositor
         Dim t As DecodedTex = Nothing
         If Not String.IsNullOrEmpty(key) AndAlso cache.TryGetValue(ck, t) Then Return t
         t = DecodeDds(bytes, preferW, preferH)
-        If Not String.IsNullOrEmpty(key) AndAlso t IsNot Nothing Then cache(ck) = t
+        If Not String.IsNullOrEmpty(key) AndAlso t IsNot Nothing Then
+            ' El presupuesto SOLO aplica al cache de batch (el compartido entre NPCs). Cuando `cache` es el
+            ' diccionario per-call de una sola cara, no cachear no ahorraria nada y solo agregaria re-decodes
+            ' dentro del mismo compose.
+            Dim budget = BatchDecodeCacheBudgetBytes
+            If budget <= 0L OrElse Not Object.ReferenceEquals(cache, BatchDecodeCache) Then
+                cache(ck) = t
+            Else
+                Dim sz As Long = If(t.Rgba8 Is Nothing, 0L, CLng(t.Rgba8.Length))   ' Byte() ⇒ 1 B por elemento
+                If Threading.Interlocked.Add(_batchCacheBytes, sz) <= budget Then
+                    cache(ck) = t
+                Else
+                    ' No entra: se devuelve el decode igual (correcto), simplemente no se retiene.
+                    Threading.Interlocked.Add(_batchCacheBytes, -sz)
+                    Threading.Interlocked.Increment(_batchCacheRejected)
+                End If
+            End If
+        End If
         Return t
     End Function
 
@@ -621,27 +775,56 @@ Public Module FaceTintCpuCompositor
         Dim keepBaseAlpha As Boolean = headDiffuseAlphaTest AndAlso isD
         Dim accA As Single() = Nothing
         If keepBaseAlpha Then ReDim accA(n - 1)
-        ' Seed del base diffuse: la base ES una textura de color ⇒ src→output config-driven (no literal 1,2):
-        ' SeedDiffuseSrcSpaceValue (=DiffuseTextureSrcSpace, Srgb) → SeedDiffuseOutputSpaceValue (=Diffuse.OutputSpace, G22).
-        Dim seedSrc = SeedDiffuseSrcSpaceValue, seedOut = SeedDiffuseOutputSpaceValue
+        ' Seed del base diffuse: la base ES una textura de color ⇒ src config-driven (no el literal 1):
+        ' SeedDiffuseSrcSpaceValue (= DiffuseTextureSrcSpace, Srgb por default).
+        Dim seedSrc = SeedDiffuseSrcSpaceValue
+        ' ⭐ ESPACIO DEL ACUMULADOR, resuelto UNA VEZ POR CANAL. Tiene que ser UNO SOLO: es el storage de
+        ' accR/accG/accB, que viven a lo largo de TODO el compose del canal. Aunque la convencion se resuelva
+        ' por capa, el acumulador no puede cambiar de espacio entre capas — por eso se toma a nivel canal.
+        ' ⭐ UNICA fuente de verdad del espacio del acumulador, COMPARTIDA con el GL (ver AccumSpaceForChannel):
+        ' el bucket del CANAL manda; el del Swap NO participa del storage. Asi los dos compositores leen el
+        ' MISMO valor por construccion, tambien si el usuario cambia los settings.
+        Dim accSp As Integer = CInt(FaceTintConvention.AccumSpaceForChannel(channel, AccumSpaceCapability))
+        ' OutputSpace del canal: destino del UNICO pase final (abajo, en el pack) y ORIGEN implicito del seed
+        ' crudo (ver el Else del loop). Con AccumInCompositeSpace=False vale lo mismo que accSp ⇒ toda
+        ' conversion de este par es identidad y el compose queda byte-identico al comportamiento previo.
+        Dim outSp As Integer = CInt(FaceTintConvention.OutputSpaceForChannel(channel))
         ' Paralelo POR RANGOS (Partitioner) en vez de Parallel.For(0, n, Sub(i)): el cuerpo es puramente
         ' por-píxel con escrituras disjuntas, así que es BIT-IDENTICO — sólo cambia que en vez de un
         ' delegate POR PIXEL se invoca uno por rango y el cuerpo corre en un For cerrado (el JIT puede izar
         ' los campos de la clausura y elidir chequeos de rango). Mismo patrón y misma justificación que los
         ' loops de DecodeDds y del pack, que ya lo usaban.
+        ' ⭐ INVARIANTE IZADO — misma justificacion y misma garantia que en el loop de capas de mas abajo.
+        Dim srcDirect As Boolean = (src.Width = w AndAlso src.Height = h)
+        Dim srcPx As Byte() = If(srcDirect, src.Rgba8, Nothing)
+        Dim seedLut = ByteToUnit
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, n),
             Sub(range)
                 For i As Integer = range.Item1 To range.Item2 - 1
-                    Dim r0 = SampleChannelAt(src, i, w, h, 0)
-                    Dim g0 = SampleChannelAt(src, i, w, h, 1)
-                    Dim b0 = SampleChannelAt(src, i, w, h, 2)
-                    ' Alpha RAW: no es color ⇒ NO pasa por Cvt1 (ninguna conversion de espacio).
-                    If keepBaseAlpha Then accA(i) = CSng(SampleChannelAt(src, i, w, h, 3))
-                    If SeedConventionIs_G22 AndAlso isD Then
-                        accR(i) = CSng(Cvt1(r0, seedSrc, seedOut)) : accG(i) = CSng(Cvt1(g0, seedSrc, seedOut)) : accB(i) = CSng(Cvt1(b0, seedSrc, seedOut))
+                    Dim r0 As Double, g0 As Double, b0 As Double
+                    If srcDirect Then
+                        Dim pb = i * 4
+                        r0 = seedLut(srcPx(pb)) : g0 = seedLut(srcPx(pb + 1)) : b0 = seedLut(srcPx(pb + 2))
+                        ' Alpha RAW: no es color ⇒ NO pasa por Cvt1 (ninguna conversion de espacio).
+                        If keepBaseAlpha Then accA(i) = seedLut(srcPx(pb + 3))
                     Else
-                        accR(i) = CSng(r0) : accG(i) = CSng(g0) : accB(i) = CSng(b0)
+                        r0 = SampleChannelAt(src, i, w, h, 0)
+                        g0 = SampleChannelAt(src, i, w, h, 1)
+                        b0 = SampleChannelAt(src, i, w, h, 2)
+                        If keepBaseAlpha Then accA(i) = CSng(SampleChannelAt(src, i, w, h, 3))
+                    End If
+                    If SeedConventionIs_G22 AndAlso isD Then
+                        accR(i) = CSng(Cvt1(r0, seedSrc, accSp)) : accG(i) = CSng(Cvt1(g0, seedSrc, accSp)) : accB(i) = CSng(Cvt1(b0, seedSrc, accSp))
+                    Else
+                        ' ⭐ SEED CRUDO (N/S siempre; el diffuse cuando SeedDiffuseG22=False): el valor entra SIN
+                        ' curva. Su espacio implicito es OutputSpace — es lo que asumia el comportamiento previo,
+                        ' donde el pack escribia este mismo numero como salida sin tocarlo. Por eso hay que
+                        ' llevarlo outSp->accSp: si no, con el acumulador en CompositeSpace el compose leeria un
+                        ' buffer sembrado en OutputSpace creyendolo CompositeSpace, y el pase final le sumaria
+                        ' encima otra conversion. (Bug real: rompia N/S y el diffuse con SeedDiffuseG22 apagado.)
+                        ' ⛔ Con accSp == outSp (el DEFAULT) `Cvt1` cortocircuita ⇒ identidad exacta, mismos bits.
+                        accR(i) = CSng(Cvt1(r0, outSp, accSp)) : accG(i) = CSng(Cvt1(g0, outSp, accSp)) : accB(i) = CSng(Cvt1(b0, outSp, accSp))
                     End If
                 Next
             End Sub)
@@ -658,27 +841,59 @@ Public Module FaceTintCpuCompositor
                 Dim swTex = CachedDecode(cache, sw.GetSwapCacheKey(channel), swBytes)
                 Dim mkTex = CachedDecode(cache, sw.RegionMaskCacheKey, sw.RegionMaskDdsBytes)
                 If swTex Is Nothing OrElse mkTex Is Nothing Then Continue For
-                Dim msdv As Double = Math.Max(0.0, CDbl(sw.Intensity))
+                Dim msdv As Double = CDbl(FaceTintConvention.ClampSwapIntensity(sw.Intensity))   ' ley UNICA compartida con el GL
                 ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> sin convención
                 ' hardcodeada; el override (incl. #If DEBUG full-linear) alcanza también los swaps. NON-DEBUG
                 ' byte-idéntico al closed-form previo (cov=srgbenc(mask), D lerp linear-desde-srgb, N/S raw).
                 Dim cv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
                 Dim sws = CInt(cv.WorkingSpace), scs = CInt(cv.CompositeSpace), sss = CInt(cv.SrcSpace), sos = CInt(cv.OutputSpace)
+                ' ⛔⛔ `sos` (Swap.OutputSpace) ES UN ARGUMENTO MUERTO ACA, a proposito y declarado.
+                ' `ComposeOne` lo usa SOLO para derivar `asp` (`asp = If(accSpace < 0, os, accSpace)`); como abajo
+                ' se pasa `accSpace:=accSp` explicito, `os` no se lee en NINGUNA de las 4 ramas de framework.
+                ' Se sigue pasando por simetria con los otros call sites, no porque haga algo.
+                ' CAMBIO DE COMPORTAMIENTO DECLARADO: antes (sin accSpace) el acumulador del swap se trataba como
+                ' si viviera en `sos`, y el de los tints en el del CANAL — dos etiquetas para EL MISMO buffer.
+                ' Ahora manda el canal. Con los defaults de fabrica de los dos juegos es byte-identico
+                ' (FO4 Swap.OutputSpace = Diffuse.OutputSpace = G22; SSE todo Linear), pero NO si el usuario
+                ' separa esos combos en CharGen Options. El GL hace lo MISMO (ver el guard gemelo alla), asi que
+                ' la paridad CPU/GPU se mantiene; lo que cambia es la salida respecto de la version previa.
+                ' ⛔ La advertencia va por FaceTintConvention (latcheada + always-on), NO por Logger: `Logger`
+                ' esta APAGADO en release, asi que un aviso por ahi no existiria justo para el usuario que
+                ' necesita verlo. El runner lo imprime en el resumen. Latcheado ⇒ no spamea por swap ni por NPC.
+                If channel = FaceTintChannel.Diffuse AndAlso sos <> accSp Then
+                    FaceTintConvention.NoteSwapAccumMismatch(channel, sos, accSp)
+                End If
                 Dim smc = CInt(cv.MaskConv), sbop = CInt(cv.Blend), ssl = CInt(cv.SoftLight)
                 ' Paralelo POR RANGOS — ver la nota del seed. Cuerpo per-pixel con escrituras disjuntas
                 ' (cada i toca sólo acc*(i)) ⇒ bit-idéntico; sólo cambia el particionado.
+                ' ⭐ INVARIANTE IZADO (x2: la textura del swap y la mascara) — ver la nota del loop de capas.
+                Dim swDirect As Boolean = (swTex.Width = w AndAlso swTex.Height = h)
+                Dim mkDirect As Boolean = (mkTex.Width = w AndAlso mkTex.Height = h)
+                Dim swPx As Byte() = If(swDirect, swTex.Rgba8, Nothing)
+                Dim mkPx As Byte() = If(mkDirect, mkTex.Rgba8, Nothing)
+                Dim swLut = ByteToUnit
                 System.Threading.Tasks.Parallel.ForEach(
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
                         For i As Integer = range.Item1 To range.Item2 - 1
-                            Dim sr = SampleChannelAt(swTex, i, w, h, 0)
-                            Dim sg = SampleChannelAt(swTex, i, w, h, 1)
-                            Dim sb = SampleChannelAt(swTex, i, w, h, 2)
-                            Dim mask = SampleChannelAt(mkTex, i, w, h, 0)
+                            Dim sr As Double, sg As Double, sb As Double, mask As Double
+                            If swDirect Then
+                                Dim pb = i * 4
+                                sr = swLut(swPx(pb)) : sg = swLut(swPx(pb + 1)) : sb = swLut(swPx(pb + 2))
+                            Else
+                                sr = SampleChannelAt(swTex, i, w, h, 0)
+                                sg = SampleChannelAt(swTex, i, w, h, 1)
+                                sb = SampleChannelAt(swTex, i, w, h, 2)
+                            End If
+                            If mkDirect Then
+                                mask = swLut(mkPx(i * 4))
+                            Else
+                                mask = SampleChannelAt(mkTex, i, w, h, 0)
+                            End If
                             Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)
-                            accR(i) = CSng(ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl))
-                            accG(i) = CSng(ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl))
-                            accB(i) = CSng(ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl))
+                            accR(i) = CSng(ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl, accSpace:=accSp))
+                            accG(i) = CSng(ComposeOne(accG(i), sg, cov, sws, scs, sss, sos, sbop, ssl, accSpace:=accSp))
+                            accB(i) = CSng(ComposeOne(accB(i), sb, cov, sws, scs, sss, sos, sbop, ssl, accSpace:=accSp))
                         Next
                     End Sub)
             Next
@@ -812,14 +1027,31 @@ Public Module FaceTintCpuCompositor
                 ' Paralelo POR RANGOS — ver la nota del seed. Es el loop MAS PESADO de los tres (corre una
                 ' vez por CAPA, y su cuerpo hace varios Math.Pow por canal via ComposeOne), y era el que
                 ' pagaba un delegate por pixel. Cuerpo per-pixel con escrituras disjuntas ⇒ bit-idéntico.
+                ' ⭐ INVARIANTE IZADO (ver SampleChannelAt): "¿el tex mide lo mismo que el acumulador?" NO
+                ' depende del pixel, pero se evaluaba DENTRO de SampleChannelAt, o sea 4 veces por pixel y
+                ' por CAPA — a 1024² con ~18 capas son >70M ramas + llamadas anidadas de puro overhead. Se
+                ' resuelve una vez por capa y el caso directo lee los 4 canales desde UN indice base.
+                ' ⛔ BIT-IDENTICO por construccion: es el MISMO valor por el MISMO camino (ByteToUnit sobre
+                ' el byte crudo, widening a Double al asignar) — lo unico que desaparece es la re-decision.
+                ' Los tipos van EXPLICITOS en Double: si quedaran inferidos como Single, la aritmetica de
+                ' abajo cambiaria de precision y la salida dejaria de ser identica.
+                Dim layerDirect As Boolean = (layerTex.Width = w AndAlso layerTex.Height = h)
+                Dim layerPx As Byte() = If(layerDirect, layerTex.Rgba8, Nothing)
+                Dim lut = ByteToUnit
                 System.Threading.Tasks.Parallel.ForEach(
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
                         For i As Integer = range.Item1 To range.Item2 - 1
-                        Dim lr = SampleChannelAt(layerTex, i, w, h, 0)
-                        Dim lg = SampleChannelAt(layerTex, i, w, h, 1)
-                        Dim lb = SampleChannelAt(layerTex, i, w, h, 2)
-                        Dim la = SampleChannelAt(layerTex, i, w, h, 3)
+                        Dim lr As Double, lg As Double, lb As Double, la As Double
+                        If layerDirect Then
+                            Dim pb = i * 4
+                            lr = lut(layerPx(pb)) : lg = lut(layerPx(pb + 1)) : lb = lut(layerPx(pb + 2)) : la = lut(layerPx(pb + 3))
+                        Else
+                            lr = SampleChannelAt(layerTex, i, w, h, 0)
+                            lg = SampleChannelAt(layerTex, i, w, h, 1)
+                            lb = SampleChannelAt(layerTex, i, w, h, 2)
+                            la = SampleChannelAt(layerTex, i, w, h, 3)
+                        End If
 
                         ' mask + src por kind (= rama uLayerKind del shader)
                         Dim maskV As Double
@@ -872,9 +1104,9 @@ Public Module FaceTintCpuCompositor
                             bR = baseR(i) : bG = baseG(i) : bB = baseB(i)
                         End If
                         ' composite agnostico (= shader): blend en ws, lerp en cs, storage en os.
-                        accR(i) = CSng(ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, bR, fw))
-                        accG(i) = CSng(ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, bG, fw))
-                        accB(i) = CSng(ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, bB, fw))
+                        accR(i) = CSng(ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, bR, fw, accSpace:=accSp))
+                        accG(i) = CSng(ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, bG, fw, accSpace:=accSp))
+                        accB(i) = CSng(ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, bB, fw, accSpace:=accSp))
                         Next
                     End Sub)
 
@@ -897,6 +1129,22 @@ Public Module FaceTintCpuCompositor
         ' SkinHeadValentine con alpha en la textura, pero su material NO la testea) → opaco, como el CK.
         ' Antes: passthrough incondicional inventaba el alpha de DiMA (medición: DLC03DiMA _d ALPHA varía=True vs
         ' CK=False). Inerte para N/S (BC5 sin alpha). Ver reference_acbs_diffuse_alpha_test_flag.
+        ' ⭐ CONVERSION FINAL accSp -> OutputSpace, UNA sola vez para todo el canal. Con el default
+        ' (accSp == OutputSpace) `Cvt1` cortocircuita y esto es un no-op exacto: el pack ve los MISMOS doubles
+        ' que antes. Con el acumulador en CompositeSpace, este es el UNICO lugar donde se paga la conversion de
+        ' salida, en vez de pagarla ida-y-vuelta en CADA capa (que es de donde salen los Math.Pow del 94,9 %).
+        If accSp <> outSp Then
+            System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, n),
+                Sub(range)
+                    For i As Integer = range.Item1 To range.Item2 - 1
+                        accR(i) = CSng(Cvt1(accR(i), accSp, outSp))
+                        accG(i) = CSng(Cvt1(accG(i), accSp, outSp))
+                        accB(i) = CSng(Cvt1(accB(i), accSp, outSp))
+                    Next
+                End Sub)
+        End If
+
         Dim outB(n * 4 - 1) As Byte
         ' keepBaseAlpha se resolvió ARRIBA, antes del seed, porque además de elegir el alpha de salida decide
         ' si accA se reserva y se llena (ver ahí). Mismos dos términos, mismo valor.
@@ -917,23 +1165,32 @@ Public Module FaceTintCpuCompositor
         Return New CpuChannelResult With {.Width = w, .Height = h, .Bgra = outB}
     End Function
 
-    ''' <summary>composite de UN canal escalar = exactamente el bloque del shader (rama uFramework). El
-    ''' framework decide cómo blend(prev/base,src) entra en el acumulador (ver FaceTintFramework). DEFAULT
-    ''' framework=0 (OverPrev) = el modelo previo BYTE-IDENTICO; base/framework opcionales para no tocar los
-    ''' call sites que no usan los frameworks nuevos. base = textura original sin tintar (= uBase del shader).</summary>
-    ''' <summary>Compositor por-píxel COMPARTIDO, ley-driven: aplica UN color de capa sobre el acumulador con
-    ''' la cobertura <paramref name="cov"/> ya resuelta (mask×opacidad), usando la convención
-    ''' <paramref name="conv"/> (working/composite/src/output spaces, blend op, softlight, framework). Es el
-    ''' MISMO <see cref="ComposeOne"/> que usa el loop FO4 — expuesto para que otros compositores (SSE) compongan
-    ''' por la ley del config en vez de hardcodear el álgebra. GL == CPU == este por construcción.
-    ''' <paramref name="base"/> sólo lo usan los frameworks OverBase/AddBase; en OverPrev (default) es inerte.</summary>
+    ''' <summary>Compositor por-pixel COMPARTIDO, ley-driven: aplica UN color de capa sobre el acumulador con
+    ''' la cobertura <paramref name="cov"/> ya resuelta (mask x opacidad), usando la convencion
+    ''' <paramref name="conv"/> (working/composite/src/output/ACCUM spaces, blend op, softlight, framework). Es
+    ''' el MISMO <see cref="ComposeOne"/> que usa el loop FO4 — expuesto para que otros compositores (SSE)
+    ''' compongan por la ley del config en vez de hardcodear el algebra. GL == CPU == este por construccion.
+    ''' <para>Honra <c>conv.AccumSpace</c>: el acumulador que recibe y devuelve vive en AccumSpace, no en
+    ''' OutputSpace. Antes no lo pasaba, asi que el acumulador se trataba SIEMPRE como OutputSpace y cada capa
+    ''' pagaba el ida-y-vuelta — es decir, el unico caller (SSE) no podia honrar AccumInCompositeSpace ni
+    ''' aunque el config lo prendiera, y habia que suprimir el flag del lado GL para que los dos no
+    ''' divergieran. El caller es responsable de sembrar EN AccumSpace y de hacer la unica conversion final a
+    ''' OutputSpace.</para>
+    ''' <paramref name="base"/> solo lo usan los frameworks OverBase/AddBase; en OverPrev (default) es inerte.</summary>
     Public Function ComposePixel(prev As Double, src As Double, cov As Double,
                                  conv As FaceTintConvention.FaceTintConventionSet,
                                  Optional base As Double = 0.0) As Double
         Return ComposeOne(prev, src, cov,
                           CInt(conv.WorkingSpace), CInt(conv.CompositeSpace), CInt(conv.SrcSpace),
                           CInt(conv.OutputSpace), CInt(conv.Blend), CInt(conv.SoftLight),
-                          base, CInt(conv.Framework))
+                          base, CInt(conv.Framework), accSpace:=CInt(conv.AccumSpace))
+    End Function
+
+    ''' <summary>Conversion de espacio expuesta, para que un compositor que mantiene su propio acumulador
+    ''' (SSE) siembre en AccumSpace y haga la conversion final con EXACTAMENTE la misma funcion que usa el
+    ''' compose. Mismo criterio que <see cref="ConvMaskShared"/>.</summary>
+    Public Function ConvertSpaceShared(v As Double, fromSpace As Integer, toSpace As Integer) As Double
+        Return Cvt1(v, fromSpace, toSpace)
     End Function
 
     ''' <summary>mask conv expuesta (0=raw 1=srgbEnc 2=srgbDec 3=g22Enc 4=g22Dec…) para que los compositores
@@ -942,42 +1199,57 @@ Public Module FaceTintCpuCompositor
         Return ConvMask1(m, maskConv)
     End Function
 
+    ''' <param name="accSpace">Espacio en el que VIVE el acumulador (`prev` y `base`) y en el que se devuelve el
+    ''' resultado. −1 (default) = usar <paramref name="os"/> ⇒ comportamiento previo EXACTO, y ningun call site
+    ''' existente cambia. Ver FaceTintConventionSet.AccumSpace: con accSpace = cs, las conversiones del
+    ''' acumulador por capa (os→ws, os→cs, cs→os) colapsan a identidad y desaparecen sus Math.Pow.</param>
     Private Function ComposeOne(prev As Double, src As Double, cov As Double,
                                 ws As Integer, cs As Integer, ss As Integer, os As Integer, bop As Integer,
                                 softLight As Integer,
-                                Optional base As Double = 0.0, Optional framework As Integer = 0) As Double
+                                Optional base As Double = 0.0, Optional framework As Integer = 0,
+                                Optional accSpace As Integer = -1) As Double
+        ' asp = espacio del acumulador. Sin especificar, ES os (identico a antes).
+        Dim asp As Integer = If(accSpace < 0, os, accSpace)
         Dim src_w = Cvt1(src, ss, ws)
         Select Case framework
             Case 1 ' OverBase: mix(base, blend(base,src), cov)
-                Dim anchor_w = Cvt1(base, os, ws)
+                Dim anchor_w = Cvt1(base, asp, ws)
                 Dim blended = BlendDispatch1(bop, softLight, anchor_w, src_w)
-                Dim anchor_c = Cvt1(base, os, cs)
+                Dim anchor_c = If(cs = ws, anchor_w, Cvt1(base, asp, cs))   ' redundante si cs=ws — ver el Case Else
                 Dim blend_c = Cvt1(blended, ws, cs)
-                Return Cvt1(Clamp01(anchor_c + cov * (blend_c - anchor_c)), cs, os)
+                Return Cvt1(Clamp01(anchor_c + cov * (blend_c - anchor_c)), cs, asp)
             Case 2 ' AddBase: prev + cov*(blend(base,src) - base)
-                Dim anchor_w = Cvt1(base, os, ws)
+                Dim anchor_w = Cvt1(base, asp, ws)
                 Dim blended = BlendDispatch1(bop, softLight, anchor_w, src_w)
-                Dim prev_c = Cvt1(prev, os, cs)
-                Dim base_c2 = Cvt1(base, os, cs)
+                Dim prev_c = Cvt1(prev, asp, cs)
+                Dim base_c2 = If(cs = ws, anchor_w, Cvt1(base, asp, cs))    ' idem: misma entrada `base`, mismo par
                 Dim blend_c = Cvt1(blended, ws, cs)
-                Return Cvt1(Clamp01(prev_c + cov * (blend_c - base_c2)), cs, os)
+                Return Cvt1(Clamp01(prev_c + cov * (blend_c - base_c2)), cs, asp)
             Case 3 ' ModSrc: blend(prev, mix(neutral, src, cov)). bop=replace no tiene neutral -> OverPrev.
-                Dim base_w = Cvt1(prev, os, ws)
+                Dim base_w = Cvt1(prev, asp, ws)
                 If bop = 0 Then
-                    Dim bc = Cvt1(prev, os, cs)
+                    Dim bc = Cvt1(prev, asp, cs)
                     Dim sc = Cvt1(src_w, ws, cs)
-                    Return Cvt1(Clamp01(bc + cov * (sc - bc)), cs, os)
+                    Return Cvt1(Clamp01(bc + cov * (sc - bc)), cs, asp)
                 End If
                 Dim neut = BlendNeutral1(bop)
                 Dim smod_w = neut + cov * (src_w - neut)
                 Dim blended3 = BlendDispatch1(bop, softLight, base_w, smod_w)
-                Return Cvt1(Clamp01(Cvt1(blended3, ws, cs)), cs, os)
+                Return Cvt1(Clamp01(Cvt1(blended3, ws, cs)), cs, asp)
             Case Else ' 0 = OverPrev (DEFAULT, byte-identico al modelo previo)
-                Dim base_w = Cvt1(prev, os, ws)
+                Dim base_w = Cvt1(prev, asp, ws)
                 Dim blended = BlendDispatch1(bop, softLight, base_w, src_w)
-                Dim base_c = Cvt1(prev, os, cs)
-                Dim blend_c = Cvt1(blended, ws, cs)
-                Return Cvt1(Clamp01(base_c + cov * (blend_c - base_c)), cs, os)
+                ' ⭐ CONVERSION REDUNDANTE ELIMINADA. Con `cs = ws`, `Cvt1(prev, asp, cs)` es la MISMA llamada
+                ' que `Cvt1(prev, asp, ws)` de arriba: misma entrada, mismo par de espacios ⇒ mismo Double.
+                ' Reusarla es bit-identico por construccion (no es una aproximacion: es la misma funcion pura
+                ' con los mismos argumentos) y ahorra DOS Math.Pow por canal, por pixel y por capa.
+                ' Por que importa: medido, el compose es el 94,9 % del bake y ~325 ns por operacion de
+                ' pixel-capa, consistente con 4-5 Math.Pow (~60 ns c/u). Y `cs = ws` es el caso NORMAL: la ley
+                ' gen3 pone cs=Linear y ws=Linear para todo blend que no sea SoftLight (ver FaceTintConvention).
+                ' ⛔ NO se toca la LEY: cuando cs <> ws (SoftLight) se calcula igual que antes.
+                Dim base_c = If(cs = ws, base_w, Cvt1(prev, asp, cs))
+                Dim blend_c = Cvt1(blended, ws, cs)   ' ya cortocircuita solo cuando ws = cs
+                Return Cvt1(Clamp01(base_c + cov * (blend_c - base_c)), cs, asp)
         End Select
     End Function
 
@@ -985,7 +1257,7 @@ Public Module FaceTintCpuCompositor
     ''' es del MISMO tamaño, índice directo; si difiere, bilineal por UV (resolución por canal / LUT).</summary>
     Private Function SampleChannelAt(t As DecodedTex, accIdx As Integer, accW As Integer, accH As Integer, ch As Integer) As Double
         If t.Width = accW AndAlso t.Height = accH Then
-            Return t.Rgba(accIdx * 4 + ch)
+            Return t.Unit(accIdx * 4 + ch)
         End If
         Dim x = accIdx Mod accW, y = accIdx \ accW
         Dim u = (x + 0.5) / accW, v = (y + 0.5) / accH
