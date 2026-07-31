@@ -305,6 +305,8 @@ Public NotInheritable Class FaceTintCompositorState
     Friend _uSkinSlLoc As Integer = -1
     Friend _uSkinMcLoc As Integer = -1
     Friend _uSkinMaskChLoc As Integer = -1
+    Friend _uTargetSizeLoc As Integer = -1
+    Friend _uDownsizeFromMip0Loc As Integer = -1
     Friend _quadVao As Integer = 0
     Friend _quadVbo As Integer = 0
 
@@ -538,6 +540,64 @@ uniform int uSkinBop;          // blendop del skintone (ResolveConvention slot 1
 uniform int uSkinSl;           // softlight model del skintone
 uniform int uSkinMc;           // mask conv del skintone
 uniform int uSkinMaskCh;       // canal del mask del skintone: 1=.g (Palette) 3=.a (TextureSet)
+uniform ivec2 uTargetSize;     // tamano del DESTINO de este pase (= viewport). Lo necesita fetchAt para
+                               // decidir 1:1 vs resample; no se puede consultar desde el fragment shader.
+uniform int uDownsizeFromMip0; // 1 = pickLod devuelve 0 siempre (opcion Downsize-from-mip-0 de CharGen
+                               // Options). Espeja FaceTintCpuCompositor.DownsizeFromMip0: el MISMO valor
+                               // tiene que llegar a los dos compositores o el par CPU/GPU se parte.
+                               // OJO: este shader vive en un string de VB, aca NO pueden ir comillas dobles.
+
+// SYNC: CPU/GPU compositor - transcripcion EXACTA de SampleChannelAt + SampleBilinear del CPU:
+// indice directo si el tamano coincide, si no bilineal con texel = uv*size-0.5 y clamp a borde.
+// vUV interpolado YA vale (x+0.5)/W en el centro del fragmento, o sea el mismo u,v que calcula el CPU.
+//
+// Se lee por texelFetch y NO por texture() a proposito: asi el resultado no depende de NINGUN estado de
+// sampleo del objeto textura (filtro, wrap, nivel de mip, anisotropia). El compositor ESPECIFICA su
+// filtro en vez de heredarlo del driver, que es lo que un espejo bit a bit de un resampler por software
+// necesita. Ademas cierra por construccion una familia de divergencias que ya costaron mediciones: el
+// GPU leyendo mip 1 donde el CPU lee 0, y los pesos cuantizados del bilineal de funcion fija.
+// El parametro lod queda explicito porque es el punto de entrada para elegir un mip STORED distinto
+// del 0 sin tocar estado de la textura. Ver 50-facetint-leyes-y-compositor.
+// Espejo EXACTO de SelectLevelForTarget (FaceTintCpuCompositor): nivel con el tamano EXACTO del target si
+// existe; si no, el mas CHICO de los que son >= target; si ninguno llega, el 0. Los niveles vienen del DDS
+// ordenados grande->chico. Sin mips (acumulador, ping-pong) textureQueryLevels da 1 y esto devuelve 0.
+// OJO: la ley vive en DOS idiomas pero es UNA sola. Si se toca alla, se toca aca. Es lo que hace que CPU
+// y GPU lean el MISMO texel en vez de coincidir por casualidad.
+int pickLod(sampler2D tex) {
+    if (uDownsizeFromMip0 == 1) return 0;
+    int n = textureQueryLevels(tex);
+    int ge = -1;
+    for (int i = 0; i < n; i++) {
+        ivec2 s = textureSize(tex, i);
+        if (s == uTargetSize) return i;
+        if (s.x >= uTargetSize.x && s.y >= uTargetSize.y) ge = i;
+    }
+    return (ge >= 0) ? ge : 0;
+}
+
+vec4 fetchAt(sampler2D tex) {
+    int lod = pickLod(tex);
+    ivec2 ssz = textureSize(tex, lod);
+    if (ssz == uTargetSize) {
+        return texelFetch(tex, clamp(ivec2(gl_FragCoord.xy), ivec2(0), ssz - ivec2(1)), lod);
+    }
+    float fx = clamp(vUV.x, 0.0, 1.0) * float(ssz.x) - 0.5;
+    float fy = clamp(vUV.y, 0.0, 1.0) * float(ssz.y) - 0.5;
+    int ix = int(floor(fx));
+    int iy = int(floor(fy));
+    float tx = fx - float(ix);
+    float ty = fy - float(iy);
+    int x0 = clamp(ix,     0, ssz.x - 1);
+    int x1 = clamp(ix + 1, 0, ssz.x - 1);
+    int y0 = clamp(iy,     0, ssz.y - 1);
+    int y1 = clamp(iy + 1, 0, ssz.y - 1);
+    vec4 c00 = texelFetch(tex, ivec2(x0, y0), lod);
+    vec4 c10 = texelFetch(tex, ivec2(x1, y0), lod);
+    vec4 c01 = texelFetch(tex, ivec2(x0, y1), lod);
+    vec4 c11 = texelFetch(tex, ivec2(x1, y1), lod);
+    return c00 * (1.0 - tx) * (1.0 - ty) + c10 * tx * (1.0 - ty)
+         + c01 * (1.0 - tx) * ty         + c11 * tx * ty;
+}
 
 vec3 blendDefault(vec3 d, vec3 s) { return s; }
 vec3 blendMultiply(vec3 d, vec3 s) { return d * s; }
@@ -762,9 +822,9 @@ vec3 blendDispatchBop(vec3 d, vec3 s, int bop, int sl){
 // mask source: PaletteMask -> layer.G ; TextureSet D -> layer.a ; TextureSet N/S -> uLayerDiffuseAlpha.a
 // src: PaletteMask -> uColor (o LUT) ; TextureSet -> layer.rgb (o LUT / uColor forzado)
 void main() {
-    vec4 prevRgba = texture(uPrev, vUV);
+    vec4 prevRgba = fetchAt(uPrev);
     vec3 prev = prevRgba.rgb;
-    vec4 layerSample = texture(uLayer, vUV);
+    vec4 layerSample = fetchAt(uLayer);
 
     // uMode==1: region swap = alpha-over mix(prev, swap, mask.r * intensity). Es composicion de
     // color por cobertura -> se hace en LINEAR. prev viene en uAccumSpace, swap en uSrcSpace;
@@ -774,7 +834,7 @@ void main() {
         // cov = convMask(mask, uMaskConvFull) * op ; compose generico (blend en uWorkingSpace, lerp en
         // uCompositeSpace, storage en uAccumSpace), blended=src (replace). = misma algebra que ComposeOne (CPU).
         // El override de convencion (incl. #If DEBUG full-linear) ahora alcanza tambien los swaps.
-        float mask = texture(uLayerDiffuseAlpha, vUV).r;
+        float mask = fetchAt(uLayerDiffuseAlpha).r;
         float cov = clamp(uOpacity * convMaskFull(mask), 0.0, 1.0);
         vec3 src_w   = cvt(layerSample.rgb, uSrcSpace, uWorkingSpace);
         vec3 base_c  = cvt(prev, uAccumSpace, uCompositeSpace);
@@ -814,7 +874,7 @@ void main() {
     if (uFgTintFold == 2) {
         vec3 cs = clamp(prev, 0.0, 1.0);
         vec3 y  = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
-        vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.2509803922);
+        vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(0.2509803922);
         vec3 fg = max((dt + uFgTintOff) * uFgTintAmp, vec3(0.25));
         y = y / fg;
         vec3 b = layerSample.rgb;
@@ -836,7 +896,7 @@ void main() {
         // blankdetailmap) => multiplicador (1.015625, 1.0, 1.015625). DEBE ser el MISMO default que el CPU
         // (SseFaceGenBaker.EngineDefaultDetail) o el fold GPU se desvia del bake para NPCs sin detail
         // (caso Enhanced Khajiit, TX04 borrado).
-        vec3 dt = (uHasFoldDetail == 1) ? texture(uFoldDetail, vUV).rgb : vec3(0.2509803922);
+        vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(0.2509803922);
         vec3 sl = cl*cl + 2.0*cl*layerSample.rgb*(1.0 - cl);   // softlight(complexion_lin, TINT = facetint)
         // PISO 0.25 = EL MISMO que aplica la rama de UNFOLD (uFgTintFold==2). Tenerlo solo alla hacia que la
         // inversa dividiera por 0.25 mientras el fold multiplicaba por el amp real => la cadena no cancelaba
@@ -874,7 +934,7 @@ void main() {
         if (uChannel == 0) {
             maskV = layerSample.a;
         } else {
-            maskV = (uHasDiffuseMask == 1) ? texture(uLayerDiffuseAlpha, vUV).a
+            maskV = (uHasDiffuseMask == 1) ? fetchAt(uLayerDiffuseAlpha).a
                                            : max(max(layerSample.r, layerSample.g), layerSample.b);
         }
     } else {
@@ -897,7 +957,8 @@ void main() {
     // flagged con la coverage del skintone (mask .g) en este pixel, ANTES del composite normal. = el
     // ComposeOne(src, skinColor, skinCov, skinConv, softlight) del CPU. Inerte byte-identico si uPreToneSkin==0.
     if (uPreToneSkin == 1) {
-        float skMaskV = (uSkinMaskCh == 3) ? texture(uSkinMask, vUV).a : texture(uSkinMask, vUV).g;
+        vec4 skMaskRgba = fetchAt(uSkinMask);   // una sola lectura: antes se sampleaba dos veces por el ternario
+        float skMaskV = (uSkinMaskCh == 3) ? skMaskRgba.a : skMaskRgba.g;
         float skCov   = clamp(convMaskMc(skMaskV, uSkinMc) * uSkinOpacity, 0.0, 1.0);
         vec3 sk_bw  = cvt(srcColor, uSkinOs, uSkinWs);
         vec3 sk_sw  = cvt(uSkinColor, uSkinSs, uSkinWs);
@@ -916,7 +977,7 @@ void main() {
     // base = uBase (original sin tintar, en uAccumSpace). OverPrev (0, default) = el modelo previo
     // BYTE-IDENTICO (cuando uCompositeSpace==uWorkingSpace se reduce a lerp en working). 1:1 con CPU ComposeOne.
     vec3 src_w = cvt(srcColor, uSrcSpace, uWorkingSpace);
-    vec3 base  = texture(uBase, vUV).rgb;
+    vec3 base  = fetchAt(uBase).rgb;
     vec3 res_c;
     if (uFramework == 1) {                 // OverBase: mix(base, blend(base,src), cov)
         vec3 anchor_w = cvt(base, uAccumSpace, uWorkingSpace);
@@ -1075,19 +1136,11 @@ void main() {
             Next
             If loadKeys.Count > 0 Then
                 If cache IsNot Nothing Then
-                    batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
+                    batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable)
                 Else
                     ' srgb=False para TODAS: las texturas del compositor se cargan CRUDAS; el decode lo hace el
                     ' shader por convención (uSrcSpace/ss) por-capa. sRGB-loadearlas acá = doble decode.
                     batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), GlDecodeUseCompress, True, New Boolean(loadKeys.Count - 1) {})
-            If batchLoaded IsNot Nothing Then
-                For Each kvB In batchLoaded
-                    If kvB.Value IsNot Nothing Then ForceMip0Sampling(kvB.Value.Texture_ID)
-                Next
-            End If
-                    ' Library default is Repeat wrap; compositor samples a fullscreen quad over UV [0,1]
-                    ' and seams at the edges would bleed, so force ClampToEdge on each loaded texture.
-                    ForceClampToEdge(batchLoaded)
                 End If
             End If
 
@@ -1119,6 +1172,12 @@ void main() {
 
             GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
+            ' fetchAt necesita el tamaño del DESTINO para decidir indice directo vs resample, y no hay forma
+            ' de consultarlo desde el fragment shader. Va pegado al UseProgram de cada pase, con los MISMOS
+            ' width/height del GL.Viewport de arriba: si los dos valores se separan, fetchAt resamplea donde
+            ' correspondia copia directa (y al reves) sin que nada falle visiblemente.
+            GL.Uniform2(state._uTargetSizeLoc, width, height)
+            GL.Uniform1(state._uDownsizeFromMip0Loc, If(FaceTintCpuCompositor.DownsizeFromMip0, 1, 0))   ' MISMO valor que la ley del CPU
 
             ' BASEIN se dumpea PRISTINO (CPU/DirectXTex) NPC-side en FaceGenBuilder.DumpPristineTgas.
             ' El readback GL de aca daba el decode de la GPU (~max 62 off vs CK) y gastaba recursos
@@ -1603,17 +1662,11 @@ void main() {
             End If
 
             If cache IsNot Nothing Then
-                batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable, wrapClampToEdge:=True)
+                batchLoaded = cache.GetOrLoadBatch(loadKeys, loadBytes, loadCacheable)
             Else
                 ' srgb=False para TODAS: las texturas del compositor se cargan CRUDAS; el decode lo hace el
                 ' shader por convención (uSrcSpace/ss) por-capa. sRGB-loadearlas acá = doble decode.
                 batchLoaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(loadKeys.ToArray(), loadBytes.ToArray(), GlDecodeUseCompress, True, New Boolean(loadKeys.Count - 1) {})
-            If batchLoaded IsNot Nothing Then
-                For Each kvB In batchLoaded
-                    If kvB.Value IsNot Nothing Then ForceMip0Sampling(kvB.Value.Texture_ID)
-                Next
-            End If
-                ForceClampToEdge(batchLoaded)
             End If
 
             ' Reuse persistent ping-pong attachments at this size; allocate caller-owned
@@ -1628,6 +1681,8 @@ void main() {
 
             GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
+            GL.Uniform2(state._uTargetSizeLoc, width, height)
+            GL.Uniform1(state._uDownsizeFromMip0Loc, If(FaceTintCpuCompositor.DownsizeFromMip0, 1, 0))   ' MISMO valor que la ley del CPU
             ' Shader unico: region swap = uMode=1 (RUNNING CLOSED-FORM en stored space = build_3 + CPU). swap
             ' tex -> uLayer(1), region mask -> uLayerDiffuseAlpha(2), intensity(msdv) -> uOpacity, SEED ->
             ' uBase(4). ⭐ El acumulador vive en uAccumSpace (con el default = OutputSpace: D en g22, N/S en
@@ -1861,26 +1916,6 @@ void main() {
         If s.WasBlend Then GL.Enable(EnableCap.Blend) Else GL.Disable(EnableCap.Blend)
     End Sub
 
-    ''' <summary>Force ClampToEdge wrap on every texture in a freshly batch-loaded dict. The library
-    ''' loader defaults to Repeat wrap; the compositor samples a fullscreen quad over UV [0,1] and
-    ''' edge seams would bleed under Repeat, so each loaded texture is re-wrapped to ClampToEdge.
-    ''' Only used on the no-cache path (the cache loader applies the same wrap internally via
-    ''' wrapClampToEdge:=True). No-op when <paramref name="batch"/> is Nothing. MUST run on the GL
-    ''' thread.</summary>
-    Private Sub ForceClampToEdge(batch As Dictionary(Of String, PreviewModel.Texture_Loaded_Class))
-        If batch Is Nothing Then Return
-        For Each kvp In batch
-            Dim e = kvp.Value
-            If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                GL.BindTexture(TextureTarget.Texture2D, e.Texture_ID)
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-            End If
-        Next
-        GL.BindTexture(TextureTarget.Texture2D, 0)
-    End Sub
-
-
     ''' <summary>Allocate (or reuse) the two persistent ping-pong colour attachments at
     ''' (width, height). Re-allocates when dims change; reuses verbatim when they match.
     ''' Returns True on success; False on framebuffer-incompleteness (in which case the
@@ -2064,6 +2099,8 @@ void main() {
         state._uSkinSlLoc = GL.GetUniformLocation(state._program, "uSkinSl")
         state._uSkinMcLoc = GL.GetUniformLocation(state._program, "uSkinMc")
         state._uSkinMaskChLoc = GL.GetUniformLocation(state._program, "uSkinMaskCh")
+        state._uTargetSizeLoc = GL.GetUniformLocation(state._program, "uTargetSize")
+        state._uDownsizeFromMip0Loc = GL.GetUniformLocation(state._program, "uDownsizeFromMip0")
 
         Dim quadVerts() As Single = {
             -1.0F, -1.0F,
@@ -2118,6 +2155,11 @@ void main() {
             GL.Disable(EnableCap.Blend)
             GL.UseProgram(state._program)
             GL.BindVertexArray(state._quadVao)
+            ' ⭐ ACA es donde el pase RESAMPLEA: uMode=2 convierte espacio Y cambia de tamaño (es el seed del
+            ' acumulador y el resize por canal). fetchAt compara el tamaño de la fuente contra este target y
+            ' aplica el bilineal del CPU cuando difieren. Ver ComposeOntoFaceTexture.
+            GL.Uniform2(state._uTargetSizeLoc, width, height)
+            GL.Uniform1(state._uDownsizeFromMip0Loc, If(FaceTintCpuCompositor.DownsizeFromMip0, 1, 0))   ' MISMO valor que la ley del CPU
             GL.Uniform1(state._uModeLoc, 2)
             GL.Uniform1(state._uSrcSpaceLoc, fromSpace)
             GL.Uniform1(state._uOutputSpaceLoc, toSpace)
@@ -2221,12 +2263,13 @@ void main() {
         ' largo ⇒ el instrumento de paridad descartaba esos slots y, con GPU encendido, el `_s` ni se
         ' escribía. Se consulta al GL el tamaño real de cada textura fuente; si no existe, se cae al par del
         ' caller.
-        ' ⛔ SYNC: y mip 0 TAMBIÉN en las texturas fuente. Las carga el caller por el loader compartido, que
-        ' con mips presentes activa LinearMipmapLinear; como el acumulador ARRANCA siendo una de ellas, el
-        ' GPU podía mezclar MIP 1 donde el CPU siempre usa mip 0. Ver ForceMip0Sampling.
-        ForceMip0Sampling(srcDiffuseId)
-        ForceMip0Sampling(srcNormalId)
-        ForceMip0Sampling(srcSpecId)
+        ' ⛔ Las tres fuentes son PROPIEDAD DEL CALLER — en el camino vivo son las MISMAS texturas del render 3D.
+        ' Antes se les forzaba acá mip 0 + filtro lineal, sin restaurar: eso pisaba el LinearMipmapLinear y la
+        ' anisotropía que el loader les pone a propósito, y quedaba pisado (los parámetros de sampleo viven
+        ' adentro del objeto textura). Se veía cuando la original seguía siendo la que se dibuja: canal que
+        ' vuelve IsFresh=False (sin swap) u objeto compartido bajo la misma clave.
+        ' Ya no hace falta tocar nada: el shader las lee por texelFetch (ver fetchAt), que ignora filtro, wrap,
+        ' nivel de mip y anisotropía. El compositor especifica su sampleo en vez de heredarlo del objeto.
 
         Dim dNat = SourceTextureSize(srcDiffuseId, width, height)
         Dim nNat = SourceTextureSize(srcNormalId, width, height)
@@ -2351,27 +2394,6 @@ void main() {
         If oldFresh Then Try : GL.DeleteTexture(oldId) : Catch : End Try
     End Sub
 
-    ''' <summary>Fuerza filtrado SIN MIPMAP en una textura que el compositor va a muestrear.
-    ''' <para>⛔ SYNC: CPU/GPU compositor — el loader es COMPARTIDO con el render 3D y, con mips presentes,
-    ''' activa <c>LinearMipmapLinear</c> (correcto para una superficie en perspectiva). Pero el compositor
-    ''' resamplea en espacio de IMAGEN y su espejo CPU muestrea siempre el <b>mip 0</b>: en cuanto un canal
-    ''' MINIFICA (el <c>_s</c>, que compone a 512 con máscaras de 1024) el GPU lee el mip 1 y el CPU el 0 — y
-    ''' los mips de Bethesda no son un box del mip 0. Medido: era una divergencia de 14.000 px con peor delta
-    ''' 32, y no era precisión del sampler sino una CONVENCIÓN distinta entre los dos compositores.</para>
-    ''' <para>⛔ Se cambia SÓLO en las texturas del compositor, NO en el loader: bajarle el mipmap al render
-    ''' 3D lo degradaría.</para></summary>
-    Friend Sub ForceMip0Sampling(texId As Integer)
-        If texId = 0 Then Return
-        Try
-            GL.BindTexture(TextureTarget.Texture2D, texId)
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-            ' Techo de LOD por si algun driver ignora el min-filter con mips presentes.
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMaxLevel, 0)
-        Catch
-        End Try
-    End Sub
-
     ''' <summary>Tamaño REAL de una textura fuente del GL (mip 0). Se consulta al driver en vez de asumir
     ''' el par del caller, porque los tres canales de una cabeza pueden medir distinto y el CPU compone cada
     ''' uno al SUYO. Devuelve el fallback si la textura es 0 o el driver devuelve algo no positivo — nunca
@@ -2487,7 +2509,7 @@ Public NotInheritable Class FaceTintTextureCache
     ''' debe borrarlas despues de usarlas; las True sobreviven a la llamada. El compositor usa True para las
     ''' keys que provee el caller (path de textura) y False para keys sinteticas por llamada, asi el mismo
     ''' batch loader sirve a los dos ciclos de vida.</para></summary>
-    Public Function GetOrLoadBatch(keys As IList(Of String), bytes As IList(Of Byte()), isCacheable As IList(Of Boolean), wrapClampToEdge As Boolean) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
+    Public Function GetOrLoadBatch(keys As IList(Of String), bytes As IList(Of Byte()), isCacheable As IList(Of Boolean)) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
         Dim result As New Dictionary(Of String, PreviewModel.Texture_Loaded_Class)(StringComparer.OrdinalIgnoreCase)
         If keys Is Nothing OrElse keys.Count = 0 Then Return result
 
@@ -2525,22 +2547,11 @@ Public NotInheritable Class FaceTintTextureCache
         If missKeys.Count > 0 Then
             ' srgb=False: texturas del compositor crudas; el decode lo hace el shader por convención (ss).
             Dim loaded = DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory(missKeys.ToArray(), missBytes.ToArray(), GlDecodeUseCompress, True, New Boolean(missKeys.Count - 1) {})
-            For Each kvL In loaded
-                If kvL.Value IsNot Nothing Then ForceMip0Sampling(kvL.Value.Texture_ID)
-            Next
+            ' ⭐ NO se le tocan los parametros de sampleo a lo que sale del loader (antes se forzaba aca mip 0 y
+            ' ClampToEdge). El shader lee TODO por texelFetch con coordenada entera y clamp explicito (ver
+            ' fetchAt), asi que filtro, wrap, mip y anisotropia de la textura son irrelevantes para el compose
+            ' — y estas entradas viven en un cache compartido, donde pisarlas viajaba a otros consumidores.
             If loaded IsNot Nothing Then
-                If wrapClampToEdge Then
-                    For Each kvp In loaded
-                        Dim e = kvp.Value
-                        If e IsNot Nothing AndAlso e.Texture_ID <> 0 Then
-                            OpenTK.Graphics.OpenGL4.GL.BindTexture(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, e.Texture_ID)
-                            OpenTK.Graphics.OpenGL4.GL.TexParameter(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL4.TextureParameterName.TextureWrapS, CInt(OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge))
-                            OpenTK.Graphics.OpenGL4.GL.TexParameter(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, OpenTK.Graphics.OpenGL4.TextureParameterName.TextureWrapT, CInt(OpenTK.Graphics.OpenGL4.TextureWrapMode.ClampToEdge))
-                        End If
-                    Next
-                    OpenTK.Graphics.OpenGL4.GL.BindTexture(OpenTK.Graphics.OpenGL4.TextureTarget.Texture2D, 0)
-                End If
-
                 For i As Integer = 0 To missKeys.Count - 1
                     Dim k = missKeys(i)
                     Dim entry As PreviewModel.Texture_Loaded_Class = Nothing

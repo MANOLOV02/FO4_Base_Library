@@ -368,6 +368,49 @@ Public Module FaceTintCpuCompositor
             End Sub)
     End Sub
 
+    ''' <summary>⭐ INTERRUPTOR de la ley del mip, para TODO el compositor y los DOS juegos (CharGen Options →
+    ''' "Downsize from mip 0"). False (default) = se usa el MIP STORED del target. True = se parte siempre del
+    ''' nivel 0 y se baja con un unico bilineal, que es mas lento — sobre todo con un target chico contra una
+    ''' fuente grande (4096 → 1024 desempaqueta 16x los pixeles) — y ademas multiplica decodes, porque la clave
+    ''' del cache lleva el tamaño (key@WxH) y la misma mascara se decodifica una vez por canal.
+    ''' <para>⛔ Lo lee <see cref="SelectLevelForTarget"/>, que es el UNICO punto por el que pasan todos los
+    ''' caminos CPU (source, capas, swaps, mascaras de los dos juegos), y el GL lo recibe por el uniform
+    ''' <c>uDownsizeFromMip0</c> que consume su <c>pickLod</c>. Un solo valor, un solo gate por idioma: por eso
+    ''' no puede quedar mitad y mitad. Medido: mip-stored en UN solo lado degrada la paridad CPU/GPU (peor
+    ''' delta 9 → 39); en los dos lados vuelve a 9. Ver 50-facetint-leyes-y-compositor.</para></summary>
+    Public Property DownsizeFromMip0 As Boolean = False
+
+    ''' <summary>⭐ LEY UNICA de seleccion de mip. Devuelve el INDICE del nivel que hay que usar para componer
+    ''' a <paramref name="targetW"/>×<paramref name="targetH"/>, con los niveles ordenados largest->smallest
+    ''' (0 = nativo), tal como los entrega un DDS:
+    ''' <list type="number">
+    ''' <item>EXACTO: hay un nivel a ESE tamaño -> ése. Resample CERO: el texel sale verbatim del filtro con
+    ''' que Bethesda generó el mip, que es el que consumió el motor.</item>
+    ''' <item>DOWNSIZE: no hay exacto pero sí niveles >= target -> el MAS CHICO de ellos. Bajar en el paso
+    ''' corto aliasa menos que un unico bilineal grande desde el nivel 0.</item>
+    ''' <item>UPSIZE, sin target, o sin niveles >= target -> el 0 (el mas grande). No hay de donde bajar.</item>
+    ''' </list>
+    ''' <para>⛔ Existe como funcion aparte para que la ley este escrita UNA vez: el CPU le pasa las
+    ''' dimensiones de los niveles del DDS y el GL puede pedirselas al driver. La incoherencia historica
+    ''' (source por mip stored, capas por mip 0, GL siempre mip 0) venia de que la regla estaba inlineada en
+    ''' un solo camino y los otros dos no la tenian. Mismo patron que ResolveConvention: paridad por
+    ''' construccion, no por coincidencia. Ver 50-facetint-leyes-y-compositor.</para>
+    ''' <para>Toma pares (0,0) para niveles ausentes y los ignora, asi el caller no tiene que filtrarlos.</para></summary>
+    Public Function SelectLevelForTarget(levels As IList(Of (W As Integer, H As Integer)),
+                                         targetW As Integer, targetH As Integer) As Integer
+        If DownsizeFromMip0 Then Return 0
+        If levels Is Nothing OrElse levels.Count <= 1 Then Return 0
+        If targetW <= 0 OrElse targetH <= 0 Then Return 0
+        Dim geIdx As Integer = -1   ' como el indice sube y el tamaño baja, el ULTIMO que cumpla >= target
+        For li As Integer = 0 To levels.Count - 1   ' es el mas chico que lo cumple
+            Dim cw = levels(li).W, ch = levels(li).H
+            If cw <= 0 OrElse ch <= 0 Then Continue For
+            If cw = targetW AndAlso ch = targetH Then Return li
+            If cw >= targetW AndAlso ch >= targetH Then geIdx = li
+        Next
+        Return If(geIdx >= 0, geIdx, 0)
+    End Function
+
     ''' <summary>Decodifica un DDS (BCn -> uncompressed) por CPU/DirectXTex (useCompress:=False) a RGBA
     ''' float [0,1]. 4-canales (BC1/3/7 -> RGBA/BGRA), 2-canales (BC5 -> R8G8, B=0 A=1), 1-canal (BC4 ->
     ''' gray). Nothing si falla o formato no soportado. MISMA tabla de formatos que WritePristineTga.
@@ -381,31 +424,12 @@ Public Module FaceTintCpuCompositor
             If loaded Is Nothing OrElse loaded.Count = 0 OrElse loaded(0) Is Nothing OrElse Not loaded(0).Loaded Then Return Nothing
             Dim tex = loaded(0)
             If tex.Levels Is Nothing OrElse tex.Levels.Count = 0 OrElse tex.Levels(0) Is Nothing Then Return Nothing
-            ' Selección de mip para el target (mips ordenados largest->smallest, level 0 = nativo):
-            '   1) EXACTO: hay un mip a ESE tamaño -> usarlo (mejor camino, filtro de Bethesda).
-            '   2) DOWNSIZE: no exacto pero target < nativo -> usar el mip más cercano-MAYOR (el más chico
-            '      con W>=target y H>=target). Downsamplear desde ahí (paso chico) aliasa menos que un único
-            '      bilineal grande desde el mip0.
-            '   3) UPSIZE (target > nativo) o sin mips: no hay mip >= target -> usar el mip0 (el más grande).
-            ' El caller (SampleChannelAt) hace el resize bilineal desde el mip elegido.
-            Dim lvlIdx As Integer = 0
-            If preferW > 0 AndAlso preferH > 0 AndAlso tex.Levels.Count > 1 Then
-                Dim exactIdx As Integer = -1
-                Dim geIdx As Integer = -1   ' mip más cercano-mayor (>= target); como i sube y el size baja,
-                For li As Integer = 0 To tex.Levels.Count - 1   ' el último que cumpla >=target es el más chico >=target
-                    Dim cand = tex.Levels(li)
-                    If cand Is Nothing Then Continue For
-                    If cand.Width = preferW AndAlso cand.Height = preferH Then exactIdx = li : Exit For
-                    If cand.Width >= preferW AndAlso cand.Height >= preferH Then geIdx = li
-                Next
-                If exactIdx >= 0 Then
-                    lvlIdx = exactIdx
-                ElseIf geIdx >= 0 Then
-                    lvlIdx = geIdx
-                Else
-                    lvlIdx = 0   ' upsize: ningún mip >= target -> el más grande (mip0)
-                End If
-            End If
+            Dim dims As New List(Of (W As Integer, H As Integer))(tex.Levels.Count)
+            For li As Integer = 0 To tex.Levels.Count - 1
+                Dim cand = tex.Levels(li)
+                dims.Add(If(cand Is Nothing, (0, 0), (cand.Width, cand.Height)))
+            Next
+            Dim lvlIdx As Integer = SelectLevelForTarget(dims, preferW, preferH)
             Dim lvl = tex.Levels(lvlIdx)
             Dim w = lvl.Width, h = lvl.Height
             Dim px = lvl.Data
@@ -732,9 +756,8 @@ Public Module FaceTintCpuCompositor
         If src Is Nothing Then Return Nothing
         Dim isD = (channel = FaceTintChannel.Diffuse)
         ' Tamaño del ACUMULADOR: Inherit (default) = nativo del source (preserva no-cuadrado, sin
-        ' downgrade). Enum explícito = cuadrado del target. Regla mip-stored-sino-resize: HOY se resize
-        ' el mip0 via SampleChannelAt bilineal; usar el MIP STORED del source a ese tamaño es refinamiento
-        ' de calidad (TODO). Bodyparts: el caller pasa Nothing -> Inherit (el enum es solo cara).
+        ' downgrade). Enum explícito = cuadrado del target. Bodyparts: el caller pasa Nothing -> Inherit
+        ' (el enum es solo cara). El mip del que se siembra lo elige SelectLevelForTarget, unas lineas abajo.
         Dim res = If(resolution IsNot Nothing, resolution.ForChannel(channel), FaceTintChannelResolution.Inherit)
         Dim w As Integer, h As Integer
         If res = FaceTintChannelResolution.Inherit Then
@@ -832,8 +855,11 @@ Public Module FaceTintCpuCompositor
                 Dim swBytes = sw.GetSwapBytes(channel)
                 If swBytes Is Nothing OrElse swBytes.Length = 0 Then Continue For
                 If sw.RegionMaskDdsBytes Is Nothing OrElse sw.RegionMaskDdsBytes.Length = 0 Then Continue For
-                Dim swTex = CachedDecode(cache, sw.GetSwapCacheKey(channel), swBytes)
-                Dim mkTex = CachedDecode(cache, sw.RegionMaskCacheKey, sw.RegionMaskDdsBytes)
+                ' Mip-stored: las dos son ESPACIALES (se muestrean por UV contra el acumulador), asi que
+                ' piden el nivel del target igual que el source. El GL hace lo MISMO por pickLod, que espeja
+                ' SelectLevelForTarget: por eso los dos compositores leen el mismo texel.
+                Dim swTex = CachedDecode(cache, sw.GetSwapCacheKey(channel), swBytes, w, h)
+                Dim mkTex = CachedDecode(cache, sw.RegionMaskCacheKey, sw.RegionMaskDdsBytes, w, h)
                 If swTex Is Nothing OrElse mkTex Is Nothing Then Continue For
                 Dim msdv As Single = FaceTintConvention.ClampSwapIntensity(sw.Intensity)   ' ley UNICA compartida con el GL
                 ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> sin convención
@@ -942,7 +968,7 @@ Public Module FaceTintCpuCompositor
                     If sLayer Is Nothing OrElse Not sLayer.IsSkinTone Then Continue For
                     Dim sBytes = sLayer.GetChannelBytes(channel)
                     If sBytes Is Nothing OrElse sBytes.Length = 0 Then Continue For
-                    Dim sTex = CachedDecode(cache, sLayer.GetChannelCacheKey(channel), sBytes)
+                    Dim sTex = CachedDecode(cache, sLayer.GetChannelCacheKey(channel), sBytes, w, h)
                     If sTex Is Nothing Then Continue For
                     Dim sConv = FaceTintConvention.ResolveConvention(sLayer.IsTextureSet, sLayer.Slot, sLayer.BlendOp, channel, False, forBake:=True)
                     stColR = sLayer.R / 255.0F : stColG = sLayer.G / 255.0F : stColB = sLayer.B / 255.0F
@@ -961,12 +987,15 @@ Public Module FaceTintCpuCompositor
                 If layer Is Nothing Then Continue For
                 Dim chanBytes = layer.GetChannelBytes(channel)
                 If chanBytes Is Nothing OrElse chanBytes.Length = 0 Then Continue For
-                Dim layerTex = CachedDecode(cache, layer.GetChannelCacheKey(channel), chanBytes)
+                Dim layerTex = CachedDecode(cache, layer.GetChannelCacheKey(channel), chanBytes, w, h)
                 If layerTex Is Nothing Then Continue For
 
                 Dim useHairPalette = (layer.UseHairPalette AndAlso isD AndAlso layer.HairLutDdsBytes IsNot Nothing AndAlso layer.HairLutDdsBytes.Length > 0)
                 Dim lutTex As DecodedTex = Nothing
                 If useHairPalette Then
+                    ' ⛔ La LUT NUNCA lleva target, ni siquiera si algun dia las capas volvieran a pedirlo: no es
+                    ' una textura espacial sino una PALETA indexada por valor (U=f(green), V=RemappingIndex),
+                    ' leida NEAREST engine-exact. Resamplearla correria las entradas de la paleta.
                     lutTex = CachedDecode(cache, layer.HairLutCacheKey, layer.HairLutDdsBytes)
                     If lutTex Is Nothing Then useHairPalette = False
                 End If
@@ -977,7 +1006,7 @@ Public Module FaceTintCpuCompositor
                 Dim diffMaskTex As DecodedTex = Nothing
                 If layer.Kind = FaceTintLayerKind.TextureSetDiffuse AndAlso Not isD _
                    AndAlso layer.LayerDdsBytes IsNot Nothing AndAlso layer.LayerDdsBytes.Length > 0 Then
-                    diffMaskTex = CachedDecode(cache, layer.LayerCacheKey, layer.LayerDdsBytes)
+                    diffMaskTex = CachedDecode(cache, layer.LayerCacheKey, layer.LayerDdsBytes, w, h)
                 End If
 
                 Dim conv = FaceTintConvention.ResolveConvention(
