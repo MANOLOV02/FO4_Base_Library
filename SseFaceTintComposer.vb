@@ -1,4 +1,6 @@
-﻿Imports System.Collections.Concurrent
+﻿Option Strict On
+
+Imports System.Collections.Concurrent
 Imports System.Runtime.CompilerServices
 Imports System.Linq
 
@@ -151,9 +153,9 @@ Public Module SseFaceTintComposer
 
         ' Seed del acumulador: Constant (SSE, engine-verificado 0.5) o la baseImg del caller (diagnóstico).
         Dim acc(npix * 4 - 1) As Single
-        Dim seedR As Double = 0.5, seedG As Double = 0.5, seedB As Double = 0.5
+        Dim seedR As Single = 0.5F, seedG As Single = 0.5F, seedB As Single = 0.5F
         If settings.SeedMode = FaceTintConvention.FaceTintSeedMode.Constant AndAlso settings.SeedConstant IsNot Nothing AndAlso settings.SeedConstant.Length >= 3 Then
-            seedR = settings.SeedConstant(0) : seedG = settings.SeedConstant(1) : seedB = settings.SeedConstant(2)
+            seedR = CSng(settings.SeedConstant(0)) : seedG = CSng(settings.SeedConstant(1)) : seedB = CSng(settings.SeedConstant(2))
         End If
         ' ACUMULADOR EN AccumSpace (misma ley que FO4). El seed del motor (0,5) y la baseImg del caller estan
         ' expresados en OutputSpace; el compose corre en AccumSpace y hay UNA sola conversion al final. Con la
@@ -218,7 +220,7 @@ Public Module SseFaceTintComposer
             End If
             If iv <= 0.0 OrElse String.IsNullOrEmpty(maskPath) Then Continue For
             Dim mi = DecodeMask(maskPath, w, h)
-            If mi IsNot Nothing Then ComposeLayer(acc, mi, cr, cg, cbb, iv, npix, conv, maskConvI, maskCh)
+            If mi IsNot Nothing Then ComposeLayer(acc, mi, CSng(cr), CSng(cg), CSng(cbb), CSng(iv), npix, conv, maskConvI, maskCh)
         Next
         ' UNICA conversion de vuelta a OutputSpace (no-op cuando accSp == osSp).
         If needSpaceCvt Then
@@ -325,7 +327,7 @@ Public Module SseFaceTintComposer
             outp.Add(New FaceTintLayerInput With {
                 .Kind = FaceTintLayerKind.PaletteMask,
                 .LayerDdsBytes = mb, .LayerCacheKey = key,
-                .R = ClampByteLocal(cr * 255.0), .G = ClampByteLocal(cg * 255.0), .B = ClampByteLocal(cbb * 255.0),
+                .R = ClampByteLocal(CSng(cr * 255.0)), .G = ClampByteLocal(CSng(cg * 255.0)), .B = ClampByteLocal(CSng(cbb * 255.0)),
                 .Opacity = CSng(iv), .BlendOp = 0, .Slot = 0US, .IsTextureSet = False,
                 .PaletteMaskChannel = maskCh,
                 .DebugName = $"sse-tint idx={layer.Index}"})
@@ -334,10 +336,10 @@ Public Module SseFaceTintComposer
     End Function
 
     ''' <summary>Clamp a double a byte [0,255] con redondeo. Local (SseFaceTintComposer no comparte el de FaceGenBuilder).</summary>
-    Private Function ClampByteLocal(v As Double) As Byte
-        If v < 0.0 Then Return 0
-        If v > 255.0 Then Return 255
-        Return CByte(Math.Round(v))
+    Private Function ClampByteLocal(v As Single) As Byte
+        If v < 0.0F Then Return 0
+        If v > 255.0F Then Return 255
+        Return CByte(MathF.Round(v, MidpointRounding.ToEven))
     End Function
 
     ''' <summary>Índice de canal (0..3) de la máscara según la ley del bucket. ByKind en SSE = R (todas las
@@ -400,9 +402,9 @@ Public Module SseFaceTintComposer
         End If
 
         ' Fold intensity into the colour: q = lerp(0.5, TINC, TINV) per channel. QNAM.A = 255 (no SSE alpha).
-        Dim rB = FoldSkinChannel(cr, iv)
-        Dim gB = FoldSkinChannel(cg, iv)
-        Dim bB = FoldSkinChannel(cbb, iv)
+        Dim rB = FoldSkinChannel(CSng(cr), CSng(iv))
+        Dim gB = FoldSkinChannel(CSng(cg), CSng(iv))
+        Dim bB = FoldSkinChannel(CSng(cbb), CSng(iv))
         If Logger.Enabled Then
             Dim skIdx = skin.Value.Index
             Dim wasAuthored = (authored IsNot Nothing)
@@ -426,11 +428,11 @@ Public Module SseFaceTintComposer
 
     ''' <summary>Fold the skin-tone intensity into one colour channel: q = clamp(0.5 + tinv*(cNorm - 0.5), 0, 1),
     ''' returned as a 0..255 byte (round). cNorm is TINC/255 (0..1), tinv is the layer interp (0..1).</summary>
-    Private Function FoldSkinChannel(cNorm As Double, tinv As Double) As Integer
-        Dim q = 0.5 + tinv * (cNorm - 0.5)
-        If q < 0.0 Then q = 0.0
-        If q > 1.0 Then q = 1.0
-        Return CInt(Math.Round(q * 255.0))
+    Private Function FoldSkinChannel(cNorm As Single, tinv As Single) As Integer
+        Dim q = 0.5F + tinv * (cNorm - 0.5F)
+        If q < 0.0F Then q = 0.0F
+        If q > 1.0F Then q = 1.0F
+        Return CInt(MathF.Round(q * 255.0F, MidpointRounding.ToEven))
     End Function
 
     ''' <summary>Color de una CLFM (CNAM). ⛔ EL FALLO NO PUEDE SER SILENCIOSO.
@@ -479,7 +481,7 @@ Public Module SseFaceTintComposer
     ''' ComposePixel) con la convención <paramref name="conv"/> de la ley SSE. coverage = convMask(mask[ch],
     ''' maskConv) × TINV, y el composite lo hace la ley (default SSE = lerp uniforme en linear, byte-idéntico al
     ''' modelo previo). El canal de máscara y la mask-conv salen de la ley — sin ramas por tipo hardcodeadas.</summary>
-    Private Sub ComposeLayer(acc As Single(), mask As Single(), cR As Double, cG As Double, cB As Double, tinv As Double, npix As Integer,
+    Private Sub ComposeLayer(acc As Single(), mask As Single(), cR As Single, cG As Single, cB As Single, tinv As Single, npix As Integer,
                              conv As FaceTintConvention.FaceTintConventionSet, maskConv As Integer, maskCh As Integer,
                              Optional cov As Single() = Nothing)
         ' PARALELO por rangos: cada píxel toca sólo sus índices (acc/cov por i) ⇒ bit-idéntico al serial. El fold
@@ -692,10 +694,10 @@ Public Module SseFaceTintComposer
         ' Resample bilineal PARALELO por filas (misma fórmula, cada fila escribe sólo sus índices ⇒ bit-idéntico).
         ' A 4096² de target el serial era parte de los segundos por fold.
         System.Threading.Tasks.Parallel.For(0, h, Sub(y)
-                                                      Dim fy = (y + 0.5) * t.Height / h - 0.5
+                                                      Dim fy = CSng((y + 0.5) * t.Height / h - 0.5)
                                                       Dim y0 = Math.Max(0, Math.Min(t.Height - 1, CInt(Math.Floor(fy)))) : Dim y1 = Math.Min(t.Height - 1, y0 + 1) : Dim ty = fy - Math.Floor(fy)
                                                       For x = 0 To w - 1
-                                                          Dim fx = (x + 0.5) * t.Width / w - 0.5
+                                                          Dim fx = CSng((x + 0.5) * t.Width / w - 0.5)
                                                           Dim x0 = Math.Max(0, Math.Min(t.Width - 1, CInt(Math.Floor(fx)))) : Dim x1 = Math.Min(t.Width - 1, x0 + 1) : Dim tx = fx - Math.Floor(fx)
                                                           For c = 0 To 3
                                                               Dim p00 = t.Unit((y0 * t.Width + x0) * 4 + c), p10 = t.Unit((y0 * t.Width + x1) * 4 + c)

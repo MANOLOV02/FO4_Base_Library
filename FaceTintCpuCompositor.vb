@@ -1,4 +1,6 @@
-﻿Imports FO4_Base_Library.FaceTintConvention
+﻿Option Strict On
+
+Imports FO4_Base_Library.FaceTintConvention
 Imports System.Runtime.CompilerServices
 
 ' FaceTintCpuCompositor - espejo CPU EXACTO del compositor GL.
@@ -41,28 +43,34 @@ Public Module FaceTintCpuCompositor
     ' costo de la LLAMADA domina sobre su cuerpo. Es una hint de compilacion: no cambia ninguna operacion ni
     ' el orden, y .NET usa SSE sin precision excedente, asi que la salida es BIT-IDENTICA.
 
+    ''' <summary>Exponentes de las transfer functions. Se calculan en Double y RECIÉN AHÍ se angostan: el
+    ''' float más cercano al exponente real. Escribirlos como <c>1.0F/2.2F</c> daría OTRO float
+    ''' (0,45454544 en vez de 0,45454547) y por lo tanto otra imagen.</summary>
+    Private ReadOnly InvG22 As Single = CSng(1.0 / 2.2)
+    Private ReadOnly InvG24 As Single = CSng(1.0 / 2.4)
+
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function Clamp01(c As Double) As Double
-        If c < 0.0 Then Return 0.0
-        If c > 1.0 Then Return 1.0
+    Private Function Clamp01(c As Single) As Single
+        If c < 0.0F Then Return 0.0F
+        If c > 1.0F Then Return 1.0F
         Return c
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function SrgbToLin1(c As Double) As Double
+    Private Function SrgbToLin1(c As Single) As Single
         c = Clamp01(c)
-        Return If(c <= 0.04045, c / 12.92, Math.Pow((c + 0.055) / 1.055, 2.4))
+        Return If(c <= 0.04045F, c / 12.92F, MathF.Pow((c + 0.055F) / 1.055F, 2.4F))
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function LinToSrgb1(c As Double) As Double
+    Private Function LinToSrgb1(c As Single) As Single
         c = Clamp01(c)
-        Return If(c <= 0.0031308, c * 12.92, 1.055 * Math.Pow(c, 1.0 / 2.4) - 0.055)
+        Return If(c <= 0.0031308F, c * 12.92F, 1.055F * MathF.Pow(c, InvG24) - 0.055F)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function G22ToLin1(c As Double) As Double
-        Return Math.Pow(Clamp01(c), 2.2)
+    Private Function G22ToLin1(c As Single) As Single
+        Return MathF.Pow(Clamp01(c), 2.2F)
     End Function
 
     ''' <summary>⭐ LUT byte→byte de <see cref="G22DiffuseBgraToLinearInPlace"/>. BIT-IDENTICA a calcularlo,
@@ -81,7 +89,7 @@ Public Module FaceTintCpuCompositor
         Dim lut(255) As Byte
         For b As Integer = 0 To 255
             ' MISMA expresion que tenia el loop: G22ToLin1(byte / 255.0) * 255.0, Math.Round (ToEven), CByte.
-            lut(b) = CByte(Math.Round(G22ToLin1(b / 255.0) * 255.0))
+            lut(b) = CByte(MathF.Round(G22ToLin1(CSng(b / 255.0)) * 255.0F, MidpointRounding.ToEven))
         Next
         Return lut
     End Function
@@ -106,22 +114,22 @@ Public Module FaceTintCpuCompositor
     End Sub
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function LinToG221(c As Double) As Double
-        Return Math.Pow(Clamp01(c), 1.0 / 2.2)
+    Private Function LinToG221(c As Single) As Single
+        Return MathF.Pow(Clamp01(c), InvG22)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function G24ToLin1(c As Double) As Double
-        Return Math.Pow(Clamp01(c), 2.4)
+    Private Function G24ToLin1(c As Single) As Single
+        Return MathF.Pow(Clamp01(c), 2.4F)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function LinToG241(c As Double) As Double
-        Return Math.Pow(Clamp01(c), 1.0 / 2.4)
+    Private Function LinToG241(c As Single) As Single
+        Return MathF.Pow(Clamp01(c), InvG24)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function SpaceToLin1(c As Double, s As Integer) As Double
+    Private Function SpaceToLin1(c As Single, s As Integer) As Single
         If s = 0 Then Return c
         If s = 1 Then Return SrgbToLin1(c)
         If s = 3 Then Return G24ToLin1(c)
@@ -129,7 +137,7 @@ Public Module FaceTintCpuCompositor
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function LinToSpace1(c As Double, s As Integer) As Double
+    Private Function LinToSpace1(c As Single, s As Integer) As Single
         If s = 0 Then Return c
         If s = 1 Then Return LinToSrgb1(c)
         If s = 3 Then Return LinToG241(c)
@@ -138,14 +146,14 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>cvt agnóstico entre espacios (0=linear 1=srgb 2=g22) via linear. = shader cvt().</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function Cvt1(c As Double, fromS As Integer, toS As Integer) As Double
+    Private Function Cvt1(c As Single, fromS As Integer, toS As Integer) As Single
         If fromS = toS Then Return c
         Return LinToSpace1(SpaceToLin1(c, fromS), toS)
     End Function
 
     ''' <summary>mask conv (0=raw 1=srgbEnc 2=srgbDec 3=g22Enc 4=g22Dec). = shader convMaskFull().</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function ConvMask1(m As Double, mc As Integer) As Double
+    Private Function ConvMask1(m As Single, mc As Integer) As Single
         Select Case mc
             Case 1 : Return LinToSrgb1(m)
             Case 2 : Return SrgbToLin1(m)
@@ -159,53 +167,55 @@ Public Module FaceTintCpuCompositor
 
     ' ---- Blend ops (transcripción 1:1 del shader blendDispatch; uBlendOp 0..4) ----
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function BlendOverlay1(d As Double, s As Double) As Double
+    Private Function BlendOverlay1(d As Single, s As Single) As Single
         ' GLSL step(0.5,d): d>=0.5 -> 1-2(1-d)(1-s) ; d<0.5 -> 2ds
-        If d >= 0.5 Then Return 1.0 - 2.0 * (1.0 - d) * (1.0 - s)
-        Return 2.0 * d * s
+        If d >= 0.5F Then Return 1.0F - 2.0F * (1.0F - d) * (1.0F - s)
+        Return 2.0F * d * s
     End Function
 
     ''' <summary>Soft-light AGNOSTICO por modelo (= shader blendSoftLightModel; paridad CPU/GL). model:
     ''' 0=W3C 1=GIMP 2=Illusions 3=pegtop (FaceTintSoftLight). d=base, s=src. Default del resolver = GIMP.</summary>
-    Private Function BlendSoftLightModel(model As Integer, d As Double, s As Double) As Double
+    Private Function BlendSoftLightModel(model As Integer, d As Single, s As Single) As Single
         d = Clamp01(d) : s = Clamp01(s)
         Select Case model
             Case 1 ' GIMP / Photoshop
-                If s <= 0.5 Then Return 2.0 * d * s + d * d * (1.0 - 2.0 * s)
-                Return 2.0 * d * (1.0 - s) + Math.Sqrt(d) * (2.0 * s - 1.0)
+                If s <= 0.5F Then Return 2.0F * d * s + d * d * (1.0F - 2.0F * s)
+                Return 2.0F * d * (1.0F - s) + MathF.Sqrt(d) * (2.0F * s - 1.0F)
             Case 2 ' Illusions.hu  d^(2^(2(0.5-s)))
-                Return Math.Pow(Math.Max(d, 0.000001), Math.Pow(2.0, 2.0 * (0.5 - s)))
+                ' El exponente interno queda acotado a [0,5 , 2] para s en [0,1] y la base a >=1e-6, asi que
+                ' el peor caso es 1e-12: muy por encima del minimo normal de float. No hace falta guard.
+                Return MathF.Pow(MathF.Max(d, 0.000001F), MathF.Pow(2.0F, 2.0F * (0.5F - s)))
             Case 3 ' pegtop
-                Return (1.0 - 2.0 * s) * d * d + 2.0 * s * d
+                Return (1.0F - 2.0F * s) * d * d + 2.0F * s * d
             Case Else ' 0 = W3C SVG
-                Dim g As Double = If(d >= 0.25, Math.Sqrt(d), ((16.0 * d - 12.0) * d + 4.0) * d)
-                If s >= 0.5 Then Return d + (2.0 * s - 1.0) * (g - d)
-                Return d - (1.0 - 2.0 * s) * d * (1.0 - d)
+                Dim g As Single = If(d >= 0.25F, MathF.Sqrt(d), ((16.0F * d - 12.0F) * d + 4.0F) * d)
+                If s >= 0.5F Then Return d + (2.0F * s - 1.0F) * (g - d)
+                Return d - (1.0F - 2.0F * s) * d * (1.0F - d)
         End Select
     End Function
 
     ' ---- Modos separables estandar adicionales (5..19). Transcripcion 1:1 del shader. ----
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function BlendColorDodge1(d As Double, s As Double) As Double
-        If s >= 1.0 Then Return 1.0
-        Return Math.Min(1.0, d / (1.0 - s))
+    Private Function BlendColorDodge1(d As Single, s As Single) As Single
+        If s >= 1.0F Then Return 1.0F
+        Return MathF.Min(1.0F, d / (1.0F - s))
     End Function
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function BlendColorBurn1(d As Double, s As Double) As Double
-        If s <= 0.0 Then Return 0.0
-        Return 1.0 - Math.Min(1.0, (1.0 - d) / s)
+    Private Function BlendColorBurn1(d As Single, s As Single) As Single
+        If s <= 0.0F Then Return 0.0F
+        Return 1.0F - MathF.Min(1.0F, (1.0F - d) / s)
     End Function
-    Private Function BlendDivide1(d As Double, s As Double) As Double
-        If s <= 0.0 Then Return 1.0
-        Return Math.Min(1.0, d / s)
+    Private Function BlendDivide1(d As Single, s As Single) As Single
+        If s <= 0.0F Then Return 1.0F
+        Return MathF.Min(1.0F, d / s)
     End Function
-    Private Function BlendVividLight1(d As Double, s As Double) As Double
-        If s < 0.5 Then Return BlendColorBurn1(d, 2.0 * s)
-        Return BlendColorDodge1(d, 2.0 * (s - 0.5))
+    Private Function BlendVividLight1(d As Single, s As Single) As Single
+        If s < 0.5F Then Return BlendColorBurn1(d, 2.0F * s)
+        Return BlendColorDodge1(d, 2.0F * (s - 0.5F))
     End Function
-    Private Function BlendPinLight1(d As Double, s As Double) As Double
-        If s < 0.5 Then Return Math.Min(d, 2.0 * s)
-        Return Math.Max(d, 2.0 * s - 1.0)
+    Private Function BlendPinLight1(d As Single, s As Single) As Single
+        If s < 0.5F Then Return MathF.Min(d, 2.0F * s)
+        Return MathF.Max(d, 2.0F * s - 1.0F)
     End Function
 
     ''' <summary>Identidad del blend op: el src que hace blend(prev,src)=prev. La usa ModSrc para que
@@ -216,43 +226,43 @@ Public Module FaceTintCpuCompositor
     ''' capa). La tabla da el MISMO valor con un indexado, sin ramas.
     ''' ⛔ BIT-IDENTICO: son exactamente los mismos tres literales (1.0 / 0.5 / 0.0) mapeados a los mismos
     ''' bop. El indice 0 y cualquier bop fuera de [0,18] caen en 0.0, igual que el `Case Else` de antes.
-    Private ReadOnly BlendNeutralTable As Double() = BuildBlendNeutralTable()
-    Private Function BuildBlendNeutralTable() As Double()
-        Dim t(18) As Double                                  ' default 0.0 = el Case Else previo
-        For Each b In New Integer() {1, 6, 9, 13, 15} : t(b) = 1.0 : Next    ' multiply/darken/colorburn/linearburn/divide
-        For Each b In New Integer() {2, 3, 4, 16, 17, 18} : t(b) = 0.5 : Next ' overlay/softlight/hardlight/linearlight/vividlight/pinlight
+    Private ReadOnly BlendNeutralTable As Single() = BuildBlendNeutralTable()
+    Private Function BuildBlendNeutralTable() As Single()
+        Dim t(18) As Single                                  ' default 0.0 = el Case Else previo
+        For Each b In New Integer() {1, 6, 9, 13, 15} : t(b) = 1.0F : Next    ' multiply/darken/colorburn/linearburn/divide
+        For Each b In New Integer() {2, 3, 4, 16, 17, 18} : t(b) = 0.5F : Next ' overlay/softlight/hardlight/linearlight/vividlight/pinlight
         Return t
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Function BlendNeutral1(bop As Integer) As Double
-        If bop < 0 OrElse bop > 18 Then Return 0.0
+    Private Function BlendNeutral1(bop As Integer) As Single
+        If bop < 0 OrElse bop > 18 Then Return 0.0F
         Return BlendNeutralTable(bop)
     End Function
 
     ''' <summary>Dispatch de blend por canal escalar. 0=replace 1=mult 2=overlay 3=softlight 4=hardlight,
     ''' 5..19 = modos separables estandar. softLight: modelo cuando blendOp=3. = shader blendDispatchBop().</summary>
-    Private Function BlendDispatch1(blendOp As Integer, softLight As Integer, d As Double, s As Double) As Double
+    Private Function BlendDispatch1(blendOp As Integer, softLight As Integer, d As Single, s As Single) As Single
         Select Case blendOp
             Case 1 : Return d * s                                ' multiply
             Case 2 : Return BlendOverlay1(d, s)                  ' overlay
             Case 3 : Return BlendSoftLightModel(softLight, d, s) ' softlight (modelo elegido)
             Case 4 : Return BlendOverlay1(s, d)                  ' hardlight = overlay(s,d)
             Case 5 : Return d + s - d * s                        ' screen
-            Case 6 : Return Math.Min(d, s)                       ' darken
-            Case 7 : Return Math.Max(d, s)                       ' lighten
+            Case 6 : Return MathF.Min(d, s)                      ' darken
+            Case 7 : Return MathF.Max(d, s)                      ' lighten
             Case 8 : Return BlendColorDodge1(d, s)               ' colordodge
             Case 9 : Return BlendColorBurn1(d, s)                ' colorburn
-            Case 10 : Return Math.Abs(d - s)                     ' difference
-            Case 11 : Return d + s - 2.0 * d * s                 ' exclusion
-            Case 12 : Return Math.Min(1.0, d + s)                ' lineardodge (add)
-            Case 13 : Return Math.Max(0.0, d + s - 1.0)          ' linearburn
-            Case 14 : Return Math.Max(0.0, d - s)                ' subtract
+            Case 10 : Return MathF.Abs(d - s)                    ' difference
+            Case 11 : Return d + s - 2.0F * d * s                ' exclusion
+            Case 12 : Return MathF.Min(1.0F, d + s)              ' lineardodge (add)
+            Case 13 : Return MathF.Max(0.0F, d + s - 1.0F)       ' linearburn
+            Case 14 : Return MathF.Max(0.0F, d - s)              ' subtract
             Case 15 : Return BlendDivide1(d, s)                  ' divide
-            Case 16 : Return Clamp01(d + 2.0 * s - 1.0)          ' linearlight
+            Case 16 : Return Clamp01(d + 2.0F * s - 1.0F)        ' linearlight
             Case 17 : Return BlendVividLight1(d, s)              ' vividlight
             Case 18 : Return BlendPinLight1(d, s)                ' pinlight
-            Case 19 : Return If(d + s >= 1.0, 1.0, 0.0)          ' hardmix
+            Case 19 : Return If(d + s >= 1.0F, 1.0F, 0.0F)       ' hardmix
             Case Else : Return s                                 ' replace (0, default)
         End Select
     End Function
@@ -260,7 +270,7 @@ Public Module FaceTintCpuCompositor
     ''' <summary>Per-channel blend op, PUBLIC re-use of the CPU/GL-parity dispatch (BlendDispatch1 = shader
     ''' blendDispatchBop). Used by the SSE RaceMenu-overlay compositor so it shares the SAME blend math as the
     ''' FO4 facetint (one source of truth, CPU==GL). blendOp/softLightModel per the enum above.</summary>
-    Public Function BlendChannel(blendOp As Integer, softLightModel As Integer, base As Double, src As Double) As Double
+    Public Function BlendChannel(blendOp As Integer, softLightModel As Integer, base As Single, src As Single) As Single
         Return BlendDispatch1(blendOp, softLightModel, base, src)
     End Function
 
@@ -349,11 +359,11 @@ Public Module FaceTintCpuCompositor
             System.Collections.Concurrent.Partitioner.Create(0, npix),
             Sub(range)
                 For i = range.Item1 To range.Item2 - 1
-                    Dim x = 2.0 * rgba(i * 4) - 1.0
-                    Dim y = 2.0 * rgba(i * 4 + 1) - 1.0
-                    Dim zz = 1.0 - x * x - y * y
-                    Dim z = If(zz > 0.0, Math.Sqrt(zz), 0.0)
-                    rgba(i * 4 + 2) = CSng((z + 1.0) * 0.5)
+                    Dim x = 2.0F * rgba(i * 4) - 1.0F
+                    Dim y = 2.0F * rgba(i * 4 + 1) - 1.0F
+                    Dim zz = 1.0F - x * x - y * y
+                    Dim z = If(zz > 0.0F, MathF.Sqrt(zz), 0.0F)
+                    rgba(i * 4 + 2) = (z + 1.0F) * 0.5F
                 Next
             End Sub)
     End Sub
@@ -443,7 +453,7 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>Sample bilineal de un canal (0=R 1=G 2=B 3=A) en coord normalizada (u,v) [0,1], clamp
     ''' a borde. Para la hair-LUT (= GL_LINEAR del sampler uHairLut). Mismo filtro que el shader.</summary>
-    Private Function SampleBilinear(t As DecodedTex, u As Double, v As Double, ch As Integer) As Double
+    Private Function SampleBilinear(t As DecodedTex, u As Single, v As Single, ch As Integer) As Single
         Dim w = t.Width, h = t.Height
         ' Convencion GL_LINEAR + CLAMP_TO_EDGE (= el sampler del shader, single source of truth): el texel es
         ' uv*size - 0.5 (offset de medio texel), se lerpea entre floor(texel) y floor(texel)+1, ambos
@@ -451,9 +461,9 @@ Public Module FaceTintCpuCompositor
         ' el resampling GPU/CPU divergia en canales a OTRA resolucion que el acumulador, p.ej. S: acumulador
         ' 512 con capas/swaps 1024. D/N no entran aca: SampleChannelAt usa indice directo si los tamanos
         ' coinciden. Tambien alinea el sample de la hair-LUT del brow.)
-        Dim fx = Clamp01(u) * w - 0.5
-        Dim fy = Clamp01(v) * h - 0.5
-        Dim ix = CInt(Math.Floor(fx)), iy = CInt(Math.Floor(fy))
+        Dim fx = Clamp01(u) * w - 0.5F
+        Dim fy = Clamp01(v) * h - 0.5F
+        Dim ix = CInt(MathF.Floor(fx)), iy = CInt(MathF.Floor(fy))
         Dim tx = fx - ix, ty = fy - iy
         Dim x0 = Math.Max(0, Math.Min(w - 1, ix)), x1 = Math.Max(0, Math.Min(w - 1, ix + 1))
         Dim y0 = Math.Max(0, Math.Min(h - 1, iy)), y1 = Math.Max(0, Math.Min(h - 1, iy + 1))
@@ -477,14 +487,14 @@ Public Module FaceTintCpuCompositor
         If sw = dw AndAlso sh = dh Then Return src
         Dim outp(dw * dh * 4 - 1) As Single
         System.Threading.Tasks.Parallel.For(0, dh, Sub(y)
-                                                       Dim v = (y + 0.5) / dh
-                                                       Dim fy = Clamp01(v) * sh - 0.5
-                                                       Dim iy = CInt(Math.Floor(fy)) : Dim ty = fy - iy
+                                                       Dim v = CSng((y + 0.5) / dh)
+                                                       Dim fy = Clamp01(v) * sh - 0.5F
+                                                       Dim iy = CInt(MathF.Floor(fy)) : Dim ty = fy - iy
                                                        Dim y0 = Math.Max(0, Math.Min(sh - 1, iy)), y1 = Math.Max(0, Math.Min(sh - 1, iy + 1))
                                                        For x = 0 To dw - 1
-                                                           Dim u = (x + 0.5) / dw
-                                                           Dim fx = Clamp01(u) * sw - 0.5
-                                                           Dim ix = CInt(Math.Floor(fx)) : Dim tx = fx - ix
+                                                           Dim u = CSng((x + 0.5) / dw)
+                                                           Dim fx = Clamp01(u) * sw - 0.5F
+                                                           Dim ix = CInt(MathF.Floor(fx)) : Dim tx = fx - ix
                                                            Dim x0 = Math.Max(0, Math.Min(sw - 1, ix)), x1 = Math.Max(0, Math.Min(sw - 1, ix + 1))
                                                            Dim i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4, i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4
                                                            Dim o = (y * dw + x) * 4
@@ -502,21 +512,21 @@ Public Module FaceTintCpuCompositor
         If sw = dw AndAlso sh = dh Then Return bgra
         Dim outp(dw * dh * 4 - 1) As Byte
         System.Threading.Tasks.Parallel.For(0, dh, Sub(y)
-                                                       Dim v = (y + 0.5) / dh
-                                                       Dim fy = Clamp01(v) * sh - 0.5
-                                                       Dim iy = CInt(Math.Floor(fy)) : Dim ty = fy - iy
+                                                       Dim v = CSng((y + 0.5) / dh)
+                                                       Dim fy = Clamp01(v) * sh - 0.5F
+                                                       Dim iy = CInt(MathF.Floor(fy)) : Dim ty = fy - iy
                                                        Dim y0 = Math.Max(0, Math.Min(sh - 1, iy)), y1 = Math.Max(0, Math.Min(sh - 1, iy + 1))
                                                        For x = 0 To dw - 1
-                                                           Dim u = (x + 0.5) / dw
-                                                           Dim fx = Clamp01(u) * sw - 0.5
-                                                           Dim ix = CInt(Math.Floor(fx)) : Dim tx = fx - ix
+                                                           Dim u = CSng((x + 0.5) / dw)
+                                                           Dim fx = Clamp01(u) * sw - 0.5F
+                                                           Dim ix = CInt(MathF.Floor(fx)) : Dim tx = fx - ix
                                                            Dim x0 = Math.Max(0, Math.Min(sw - 1, ix)), x1 = Math.Max(0, Math.Min(sw - 1, ix + 1))
                                                            Dim i00 = (y0 * sw + x0) * 4, i10 = (y0 * sw + x1) * 4, i01 = (y1 * sw + x0) * 4, i11 = (y1 * sw + x1) * 4
                                                            Dim o = (y * dw + x) * 4
                                                            For ch = 0 To 3
                                                                Dim c = bgra(i00 + ch) * (1 - tx) * (1 - ty) + bgra(i10 + ch) * tx * (1 - ty) +
                                                                        bgra(i01 + ch) * (1 - tx) * ty + bgra(i11 + ch) * tx * ty
-                                                               outp(o + ch) = CByte(Math.Max(0, Math.Min(255.0, Math.Round(c, MidpointRounding.ToEven))))
+                                                               outp(o + ch) = CByte(MathF.Max(0.0F, MathF.Min(255.0F, MathF.Round(c, MidpointRounding.ToEven))))
                                                            Next
                                                        Next
                                                    End Sub)
@@ -530,10 +540,10 @@ Public Module FaceTintCpuCompositor
     ''' eso es pow(srgbToLin(green),1/2.2), que es lo que hace el engine. Luego texel (tx,ty)=ftoi(U*W, v01*H),
     ''' fetch NEAREST (`ld`; sin bilineal ni half-texel), clamp a [0,size-1]. Verificado byte-exact vs CK.
     ''' <paramref name="v01"/> = RemappingIndex (row, 0..1). PARIDAD con el shader GPU (cvt + texelFetch).</summary>
-    Private Function SampleLutEngine(t As DecodedTex, green01 As Double, v01 As Double, ch As Integer, srcSpace As Integer, coordSpace As Integer) As Double
-        Dim u As Double = Cvt1(green01, srcSpace, coordSpace)
-        Dim tx As Integer = Math.Max(0, Math.Min(t.Width - 1, CInt(Math.Floor(u * t.Width))))
-        Dim ty As Integer = Math.Max(0, Math.Min(t.Height - 1, CInt(Math.Floor(v01 * t.Height))))
+    Private Function SampleLutEngine(t As DecodedTex, green01 As Single, v01 As Single, ch As Integer, srcSpace As Integer, coordSpace As Integer) As Single
+        Dim u As Single = Cvt1(green01, srcSpace, coordSpace)
+        Dim tx As Integer = Math.Max(0, Math.Min(t.Width - 1, CInt(MathF.Floor(u * t.Width))))
+        Dim ty As Integer = Math.Max(0, Math.Min(t.Height - 1, CInt(MathF.Floor(v01 * t.Height))))
         Return t.Unit((ty * t.Width + tx) * 4 + ch)
     End Function
 
@@ -786,7 +796,7 @@ Public Module FaceTintCpuCompositor
             System.Collections.Concurrent.Partitioner.Create(0, n),
             Sub(range)
                 For i As Integer = range.Item1 To range.Item2 - 1
-                    Dim r0 As Double, g0 As Double, b0 As Double
+                    Dim r0 As Single, g0 As Single, b0 As Single
                     If srcDirect Then
                         Dim pb = i * 4
                         r0 = seedLut(srcPx(pb)) : g0 = seedLut(srcPx(pb + 1)) : b0 = seedLut(srcPx(pb + 2))
@@ -825,7 +835,7 @@ Public Module FaceTintCpuCompositor
                 Dim swTex = CachedDecode(cache, sw.GetSwapCacheKey(channel), swBytes)
                 Dim mkTex = CachedDecode(cache, sw.RegionMaskCacheKey, sw.RegionMaskDdsBytes)
                 If swTex Is Nothing OrElse mkTex Is Nothing Then Continue For
-                Dim msdv As Double = CDbl(FaceTintConvention.ClampSwapIntensity(sw.Intensity))   ' ley UNICA compartida con el GL
+                Dim msdv As Single = FaceTintConvention.ClampSwapIntensity(sw.Intensity)   ' ley UNICA compartida con el GL
                 ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> sin convención
                 ' hardcodeada; el override (incl. #If DEBUG full-linear) alcanza también los swaps. NON-DEBUG
                 ' byte-idéntico al closed-form previo (cov=srgbenc(mask), D lerp linear-desde-srgb, N/S raw).
@@ -856,7 +866,7 @@ Public Module FaceTintCpuCompositor
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
                         For i As Integer = range.Item1 To range.Item2 - 1
-                            Dim sr As Double, sg As Double, sb As Double, mask As Double
+                            Dim sr As Single, sg As Single, sb As Single, mask As Single
                             If swDirect Then
                                 Dim pb = i * 4
                                 sr = swLut(swPx(pb)) : sg = swLut(swPx(pb + 1)) : sb = swLut(swPx(pb + 2))
@@ -918,7 +928,7 @@ Public Module FaceTintCpuCompositor
             ' posteriores. GUARD: solo se activa con flagged-after-skintone (inerte/byte-identico en todo bake
             ' actual, p.ej. Alana, donde las flagged van antes del skintone). Mismo ComposeOne -> paridad GL.
             Dim stSeen As Boolean = False
-            Dim stColR As Double = 0, stColG As Double = 0, stColB As Double = 0, stOpac As Double = 0
+            Dim stColR As Single = 0F, stColG As Single = 0F, stColB As Single = 0F, stOpac As Single = 0F
             Dim stMaskTex As DecodedTex = Nothing
             Dim stMaskCh As Integer = 1, stMc As Integer = 0
             Dim stWs As Integer = 0, stCs As Integer = 0, stSs As Integer = 0, stOs As Integer = 0, stBop As Integer = 0, stSl As Integer = 0
@@ -935,8 +945,8 @@ Public Module FaceTintCpuCompositor
                     Dim sTex = CachedDecode(cache, sLayer.GetChannelCacheKey(channel), sBytes)
                     If sTex Is Nothing Then Continue For
                     Dim sConv = FaceTintConvention.ResolveConvention(sLayer.IsTextureSet, sLayer.Slot, sLayer.BlendOp, channel, False, forBake:=True)
-                    stColR = sLayer.R / 255.0 : stColG = sLayer.G / 255.0 : stColB = sLayer.B / 255.0
-                    stOpac = Math.Max(0.0, Math.Min(1.0, CDbl(sLayer.Opacity)))
+                    stColR = sLayer.R / 255.0F : stColG = sLayer.G / 255.0F : stColB = sLayer.B / 255.0F
+                    stOpac = MathF.Max(0.0F, MathF.Min(1.0F, sLayer.Opacity))
                     stMaskTex = sTex : stMc = CInt(sConv.MaskConv)
                     stMaskCh = If(sLayer.Kind = FaceTintLayerKind.PaletteMask, 1, 3)
                     stWs = CInt(sConv.WorkingSpace) : stCs = CInt(sConv.CompositeSpace)
@@ -977,14 +987,14 @@ Public Module FaceTintCpuCompositor
                 Dim mc = CInt(conv.MaskConv), bop = CInt(conv.Blend)
                 Dim sl = CInt(conv.SoftLight)   ' modelo de softlight (agnostico) para bop3
                 Dim fw = CInt(conv.Framework)   ' framework de composite (OverPrev default)
-                Dim op = Math.Max(0.0, Math.Min(1.0, CDbl(layer.Opacity)))
-                Dim uColR = layer.R / 255.0, uColG = layer.G / 255.0, uColB = layer.B / 255.0
-                Dim row = Math.Max(0.0, Math.Min(1.0, CDbl(layer.HairPaletteRow)))
+                Dim op = MathF.Max(0.0F, MathF.Min(1.0F, layer.Opacity))
+                Dim uColR = layer.R / 255.0F, uColG = layer.G / 255.0F, uColB = layer.B / 255.0F
+                Dim row = MathF.Max(0.0F, MathF.Min(1.0F, layer.HairPaletteRow))
                 ' brow grayscale->palette LUT lookup = ENGINE-EXACT (BSFaceCustomizationShader PS, `ld` t4):
                 ' el mask (verde) se decodea sRGB->linear (t1 = SRV sRGB), U=pow(lin,1/2.2), texel=ftoi(U*W,
                 ' row*H), fetch NEAREST (ld; sin bilineal ni half-texel). Verificado byte-exact vs CK (resid 0.4).
                 ' El verde crudo (lg) se pasa a SampleLutEngine, que hace sRGB-decode + pow + ftoi + nearest.
-                Dim luY As Double = row
+                Dim luY As Single = row
                 Dim kind = layer.Kind
                 ' GUARD del pre-tono TakesSkinTone: solo D, capa flagged, y skintone ya compuesto antes.
                 ' Pre-tono si: capa flagged (D) Y hay skintone Y (ya se compuso antes -> over-running tona
@@ -1007,7 +1017,7 @@ Public Module FaceTintCpuCompositor
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
                         For i As Integer = range.Item1 To range.Item2 - 1
-                        Dim lr As Double, lg As Double, lb As Double, la As Double
+                        Dim lr As Single, lg As Single, lb As Single, la As Single
                         If layerDirect Then
                             Dim pb = i * 4
                             lr = lut(layerPx(pb)) : lg = lut(layerPx(pb + 1)) : lb = lut(layerPx(pb + 2)) : la = lut(layerPx(pb + 3))
@@ -1019,8 +1029,8 @@ Public Module FaceTintCpuCompositor
                         End If
 
                         ' mask + src por kind (= rama uLayerKind del shader)
-                        Dim maskV As Double
-                        Dim srcR As Double, srcG As Double, srcB As Double
+                        Dim maskV As Single
+                        Dim srcR As Single, srcG As Single, srcB As Single
                         If kind = FaceTintLayerKind.PaletteMask Then
                             If useHairPalette Then
                                 srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
@@ -1064,7 +1074,7 @@ Public Module FaceTintCpuCompositor
                         ' OverPrev/ModSrc ComposeOne no lee este parámetro en ninguna rama, así que pasar 0.0
                         ' es exactamente lo mismo que pasar el snapshot. Cuando SÍ hace falta, se lee el mismo
                         ' Single y se ensancha a Double igual que antes ⇒ bit-idéntico en los dos caminos.
-                        Dim bR As Double = 0.0, bG As Double = 0.0, bB As Double = 0.0
+                        Dim bR As Single = 0.0F, bG As Single = 0.0F, bB As Single = 0.0F
                         If needsBase Then
                             bR = baseR(i) : bG = baseG(i) : bB = baseB(i)
                         End If
@@ -1133,9 +1143,9 @@ Public Module FaceTintCpuCompositor
     ''' <para>Honra <c>conv.AccumSpace</c>: el acumulador que recibe y devuelve vive en AccumSpace, no en
     ''' OutputSpace. El caller siembra EN AccumSpace y hace la unica conversion final.</para>
     ''' <paramref name="base"/> solo lo usan los frameworks OverBase/AddBase; en OverPrev es inerte.</summary>
-    Public Function ComposePixel(prev As Double, src As Double, cov As Double,
+    Public Function ComposePixel(prev As Single, src As Single, cov As Single,
                                  conv As FaceTintConvention.FaceTintConventionSet,
-                                 Optional base As Double = 0.0) As Double
+                                 Optional base As Single = 0.0F) As Single
         Return ComposeOne(prev, src, cov,
                           CInt(conv.WorkingSpace), CInt(conv.CompositeSpace), CInt(conv.SrcSpace),
                           CInt(conv.OutputSpace), CInt(conv.Blend), CInt(conv.SoftLight),
@@ -1145,13 +1155,13 @@ Public Module FaceTintCpuCompositor
     ''' <summary>Conversion de espacio expuesta, para que un compositor que mantiene su propio acumulador
     ''' (SSE) siembre en AccumSpace y haga la conversion final con EXACTAMENTE la misma funcion que usa el
     ''' compose. Mismo criterio que <see cref="ConvMaskShared"/>.</summary>
-    Public Function ConvertSpaceShared(v As Double, fromSpace As Integer, toSpace As Integer) As Double
+    Public Function ConvertSpaceShared(v As Single, fromSpace As Integer, toSpace As Integer) As Single
         Return Cvt1(v, fromSpace, toSpace)
     End Function
 
     ''' <summary>mask conv expuesta (0=raw 1=srgbEnc 2=srgbDec 3=g22Enc 4=g22Dec…) para que los compositores
     ''' que resuelven su propia cobertura (SSE) apliquen la MISMA transformación de máscara que el loop FO4.</summary>
-    Public Function ConvMaskShared(m As Double, maskConv As Integer) As Double
+    Public Function ConvMaskShared(m As Single, maskConv As Integer) As Single
         Return ConvMask1(m, maskConv)
     End Function
 
@@ -1159,11 +1169,11 @@ Public Module FaceTintCpuCompositor
     ''' resultado. −1 (default) = usar <paramref name="os"/> ⇒ comportamiento previo EXACTO, y ningun call site
     ''' existente cambia. Ver FaceTintConventionSet.AccumSpace: con accSpace = cs, las conversiones del
     ''' acumulador por capa (os→ws, os→cs, cs→os) colapsan a identidad y desaparecen sus Math.Pow.</param>
-    Private Function ComposeOne(prev As Double, src As Double, cov As Double,
+    Private Function ComposeOne(prev As Single, src As Single, cov As Single,
                                 ws As Integer, cs As Integer, ss As Integer, os As Integer, bop As Integer,
                                 softLight As Integer,
-                                Optional base As Double = 0.0, Optional framework As Integer = 0,
-                                Optional accSpace As Integer = -1) As Double
+                                Optional base As Single = 0.0F, Optional framework As Integer = 0,
+                                Optional accSpace As Integer = -1) As Single
         ' asp = espacio del acumulador. Sin especificar, ES os (identico a antes).
         Dim asp As Integer = If(accSpace < 0, os, accSpace)
         Dim src_w = Cvt1(src, ss, ws)
@@ -1211,26 +1221,26 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>Sample de un canal del DecodedTex en el índice de píxel del acumulador (w,h). Si el tex
     ''' es del MISMO tamaño, índice directo; si difiere, bilineal por UV (resolución por canal / LUT).</summary>
-    Private Function SampleChannelAt(t As DecodedTex, accIdx As Integer, accW As Integer, accH As Integer, ch As Integer) As Double
+    Private Function SampleChannelAt(t As DecodedTex, accIdx As Integer, accW As Integer, accH As Integer, ch As Integer) As Single
         If t.Width = accW AndAlso t.Height = accH Then
             Return t.Unit(accIdx * 4 + ch)
         End If
         Dim x = accIdx Mod accW, y = accIdx \ accW
-        Dim u = (x + 0.5) / accW, v = (y + 0.5) / accH
+        Dim u = CSng((x + 0.5) / accW), v = CSng((y + 0.5) / accH)
         Return SampleBilinear(t, u, v, ch)
     End Function
 
-    Private Function ToByte(c As Double) As Byte
+    Private Function ToByte(c As Single) As Byte
         ' np.rint de gen3 = round-half-to-EVEN (banker's) = MidpointRounding.ToEven (default de Math.Round).
         ' El redondeo a byte se hace SOLO al final (los acumuladores quedan float toda la pasada), igual
         ' que gen3 (rint solo en el write). Asi CPU == `_3` byte-exacto.
         ' Guard NaN: Clamp01 NO atrapa NaN (Math.Min/Max con NaN devuelve NaN) y CByte(NaN) tira
         ' OverflowException. ±Infinity SI lo clampa Clamp01. NaN -> 0 (defensivo; no cambia ningún byte
         ' válido -> la paridad byte-exacta con _3 se preserva, sólo evita el crash si un blend/framework NaN-ea).
-        If Double.IsNaN(c) Then c = 0.0
-        Dim v = Math.Round(Clamp01(c) * 255.0, MidpointRounding.ToEven)
-        If v < 0 Then v = 0
-        If v > 255 Then v = 255
+        If Single.IsNaN(c) Then c = 0.0F
+        Dim v = MathF.Round(Clamp01(c) * 255.0F, MidpointRounding.ToEven)
+        If v < 0.0F Then v = 0.0F
+        If v > 255.0F Then v = 255.0F
         Return CByte(v)
     End Function
 

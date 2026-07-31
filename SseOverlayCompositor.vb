@@ -1,4 +1,6 @@
-﻿Imports System.Linq
+﻿Option Strict On
+
+Imports System.Linq
 
 ''' <summary>
 ''' RaceMenu / NiOverride (skee64) face-overlay compositor — the engine-EXACT blend of overlay layers ON TOP
@@ -101,20 +103,23 @@ Public Module SseOverlayCompositor
             Dim ov = ovIter   ' copia local para el lambda (el iterador muta)
             ' El mapeo modo→(blendOp, softLight) es constante por capa: se resuelve UNA vez, no por píxel.
             Dim m = BlendOpFromSseMode(ov.BlendMode)
+            ' Color de capa: invariante del loop. Se iza a Single una vez por capa (antes se releia
+            ' del Double() en cada pixel).
+            Dim c0 = CSng(ov.Color(0)), c1 = CSng(ov.Color(1)), c2 = CSng(ov.Color(2)), c3 = CSng(ov.Color(3))
             System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
                 Sub(range)
                     For i = range.Item1 To range.Item2 - 1
                         ' (1) TYPE: combine the overlay texture with the layer colour → premultiplied layer {rgb, a}
-                        Dim lr As Double, lg As Double, lb As Double, la As Double
-                        Dim tr = 1.0, tg = 1.0, tb = 1.0, ta = 1.0
+                        Dim lr As Single, lg As Single, lb As Single, la As Single
+                        Dim tr = 1.0F, tg = 1.0F, tb = 1.0F, ta = 1.0F
                         If ov.Texture IsNot Nothing Then tr = ov.Texture(i * 4) : tg = ov.Texture(i * 4 + 1) : tb = ov.Texture(i * 4 + 2) : ta = ov.Texture(i * 4 + 3)
                         Select Case ov.LayerType
-                            Case 1 : lr = ov.Color(0) : lg = ov.Color(1) : lb = ov.Color(2) : la = tr * ov.Color(3)          ' colour.rgb, alpha = mask.r × colour.a
-                            Case 2 : lr = ov.Color(0) : lg = ov.Color(1) : lb = ov.Color(2) : la = ov.Color(3)               ' solid colour
-                            Case Else : lr = tr * ov.Color(0) : lg = tg * ov.Color(1) : lb = tb * ov.Color(2) : la = ta * ov.Color(3) ' texture × colour
+                            Case 1 : lr = c0 : lg = c1 : lb = c2 : la = tr * c3          ' colour.rgb, alpha = mask.r × colour.a
+                            Case 2 : lr = c0 : lg = c1 : lb = c2 : la = c3               ' solid colour
+                            Case Else : lr = tr * c0 : lg = tg * c1 : lb = tb * c2 : la = ta * c3 ' texture × colour
                         End Select
-                        If la <= 0.0 Then Continue For
+                        If la <= 0.0F Then Continue For
 
                         Dim ar = acc(i * 4), ag = acc(i * 4 + 1), ab = acc(i * 4 + 2)
                         If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
@@ -125,13 +130,13 @@ Public Module SseOverlayCompositor
                         Else
                             ' all other modes un-premultiply the layer colour, blend, then alpha-over
                             Dim br = Clamp01(lr / la), bg = Clamp01(lg / la), bbl = Clamp01(lb / la)
-                            Dim rr As Double, rg As Double, rb As Double
+                            Dim rr As Single, rg As Single, rb As Single
                             If ov.BlendMode = SseBlendMode.Grayscale Then
-                                Dim lum = 0.299 * ar + 0.587 * ag + 0.114 * ab
+                                Dim lum = 0.299F * ar + 0.587F * ag + 0.114F * ab
                                 rr = lum * br : rg = lum * bg : rb = lum * bbl
                             ElseIf ov.BlendMode = SseBlendMode.ColorMode Then
                                 Dim hsvBlend = RgbToHsv(br, bg, bbl)
-                                Dim vSrc = Math.Max(ar, Math.Max(ag, ab))
+                                Dim vSrc = MathF.Max(ar, MathF.Max(ag, ab))
                                 Dim outc = HsvToRgb(hsvBlend(0), hsvBlend(1), vSrc)
                                 rr = outc(0) : rg = outc(1) : rb = outc(2)
                             Else
@@ -205,9 +210,11 @@ Public Module SseOverlayCompositor
                 Continue For
             End If
             Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
-            Dim tr As Double = If(ov.HasTint, ov.TintR, 1.0)
-            Dim tg As Double = If(ov.HasTint, ov.TintG, 1.0)
-            Dim tb As Double = If(ov.HasTint, ov.TintB, 1.0)
+            ' Invariantes del loop: se angostan UNA vez por overlay, no por pixel.
+            Dim opa = CSng(opacity)
+            Dim tr = CSng(If(ov.HasTint, ov.TintR, 1.0))
+            Dim tg = CSng(If(ov.HasTint, ov.TintG, 1.0))
+            Dim tb = CSng(If(ov.HasTint, ov.TintB, 1.0))
             ' COBERTURA = ALPHA del diffuse (FIEL AL ENGINE). VERIFICADO (Shader_Class.vb:1851-1859, sse_facegen_skin
             ' RE): en SSE el BSLightingShader —el shader del overlay decal (SkinTint/FaceGen)— NO tiene greyscale-to-
             ' color/alpha (eso vive SOLO en el BSEffectShader). El diffuse se usa normal: RGB=color, alpha=cobertura
@@ -218,8 +225,8 @@ Public Module SseOverlayCompositor
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
                 Sub(range)
                     For i = range.Item1 To range.Item2 - 1
-                        Dim la = Clamp01(tex(i * 4 + 3) * opacity)
-                        If la <= 0.0 Then Continue For
+                        Dim la = Clamp01(tex(i * 4 + 3) * opa)
+                        If la <= 0.0F Then Continue For
                         acc(i * 4) = CSng((tex(i * 4) * tr) * la + acc(i * 4) * (1 - la))
                         acc(i * 4 + 1) = CSng((tex(i * 4 + 1) * tg) * la + acc(i * 4 + 1) * (1 - la))
                         acc(i * 4 + 2) = CSng((tex(i * 4 + 2) * tb) * la + acc(i * 4 + 2) * (1 - la))
@@ -296,6 +303,7 @@ Public Module SseOverlayCompositor
                 Continue For
             End If
             Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
+            Dim opa = CSng(opacity)   ' invariante del loop: se angosta una vez, no por pixel
             ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); orden entre overlays = For Each serial.
             System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
@@ -303,18 +311,18 @@ Public Module SseOverlayCompositor
                     For i = range.Item1 To range.Item2 - 1
                         ' Sin ternario: el guard de arriba ya garantiza ovDiff válido. La rama `ovNorm(...)` que
                         ' había acá ERA el fallback roto — dejarla como código muerto es cómo vuelve.
-                        Dim cov As Double = ovDiff(i * 4 + 3) * opacity
-                        If cov <= 0.0 Then Continue For
-                        If cov > 1.0 Then cov = 1.0
+                        Dim cov As Single = ovDiff(i * 4 + 3) * opa
+                        If cov <= 0.0F Then Continue For
+                        If cov > 1.0F Then cov = 1.0F
                         ' decode ambos a [-1,1], lerp, renormalize, re-encode a [0,1].
-                        Dim hx = 2.0 * msnAcc(i * 4) - 1.0, hy = 2.0 * msnAcc(i * 4 + 1) - 1.0, hz = 2.0 * msnAcc(i * 4 + 2) - 1.0
-                        Dim ox = 2.0 * ovNorm(i * 4) - 1.0, oy = 2.0 * ovNorm(i * 4 + 1) - 1.0, oz = 2.0 * ovNorm(i * 4 + 2) - 1.0
+                        Dim hx = 2.0F * msnAcc(i * 4) - 1.0F, hy = 2.0F * msnAcc(i * 4 + 1) - 1.0F, hz = 2.0F * msnAcc(i * 4 + 2) - 1.0F
+                        Dim ox = 2.0F * ovNorm(i * 4) - 1.0F, oy = 2.0F * ovNorm(i * 4 + 1) - 1.0F, oz = 2.0F * ovNorm(i * 4 + 2) - 1.0F
                         Dim nx = hx + cov * (ox - hx), ny = hy + cov * (oy - hy), nz = hz + cov * (oz - hz)
-                        Dim len = Math.Sqrt(nx * nx + ny * ny + nz * nz)
-                        If len > 0.0000001 Then nx /= len : ny /= len : nz /= len
-                        msnAcc(i * 4) = CSng((nx + 1.0) * 0.5)
-                        msnAcc(i * 4 + 1) = CSng((ny + 1.0) * 0.5)
-                        msnAcc(i * 4 + 2) = CSng((nz + 1.0) * 0.5)
+                        Dim len = MathF.Sqrt(nx * nx + ny * ny + nz * nz)
+                        If len > 0.0000001F Then nx /= len : ny /= len : nz /= len
+                        msnAcc(i * 4) = (nx + 1.0F) * 0.5F
+                        msnAcc(i * 4 + 1) = (ny + 1.0F) * 0.5F
+                        msnAcc(i * 4 + 2) = (nz + 1.0F) * 0.5F
                     Next
                 End Sub)
             any = True
@@ -439,7 +447,7 @@ Public Module SseOverlayCompositor
         ElseIf colorArgbOrPreset = SkeePresetSkin AndAlso skinRgb IsNot Nothing AndAlso skinRgb.Length >= 3 Then
             r = skinRgb(0) : g = skinRgb(1) : b = skinRgb(2)
         ElseIf colorArgbOrPreset = SkeePresetHair AndAlso hairRgb IsNot Nothing AndAlso hairRgb.Length >= 3 Then
-            r = Clamp01(hairRgb(0) * 2.0) : g = Clamp01(hairRgb(1) * 2.0) : b = Clamp01(hairRgb(2) * 2.0)   ' skee ×2 clamp
+            r = Clamp01Dbl(hairRgb(0) * 2.0) : g = Clamp01Dbl(hairRgb(1) * 2.0) : b = Clamp01Dbl(hairRgb(2) * 2.0)   ' skee ×2 clamp
         Else
             ' ARGB byte order (skee SetColorA: A<<24|R<<16|G<<8|B). RGB from bits 16/8/0.
             r = CDbl((colorArgbOrPreset >> 16) And &HFF) / 255.0
@@ -449,7 +457,7 @@ Public Module SseOverlayCompositor
         Return New SseOverlay With {
             .BlendMode = blend,
             .LayerType = layerType,
-            .Color = New Double() {r, g, b, Clamp01(opacity)},
+            .Color = New Double() {r, g, b, Clamp01Dbl(opacity)},
             .Texture = texRgba}
     End Function
 
@@ -471,25 +479,31 @@ Public Module SseOverlayCompositor
         Return If(Integer.TryParse(digits, n), n, Integer.MaxValue)
     End Function
 
-    Private Function Clamp01(v As Double) As Double
-        Return If(v < 0, 0, If(v > 1, 1, v))
+    ''' <summary>Clamp en Double para los DATOS (color de capa, opacidad del jslot). El de Single es para
+    ''' la math por pixel.</summary>
+    Private Function Clamp01Dbl(v As Double) As Double
+        Return If(v < 0.0, 0.0, If(v > 1.0, 1.0, v))
     End Function
 
-    Private Function RgbToHsv(r As Double, g As Double, b As Double) As Double()
-        Dim mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b)), d = mx - mn
-        Dim h As Double = 0
-        If d > 0.0000001 Then
-            If mx = r Then h = ((g - b) / d) Mod 6 Else If mx = g Then h = (b - r) / d + 2 Else h = (r - g) / d + 4
-            h /= 6 : If h < 0 Then h += 1
+    Private Function Clamp01(v As Single) As Single
+        Return If(v < 0.0F, 0.0F, If(v > 1.0F, 1.0F, v))
+    End Function
+
+    Private Function RgbToHsv(r As Single, g As Single, b As Single) As Single()
+        Dim mx = MathF.Max(r, MathF.Max(g, b)), mn = MathF.Min(r, MathF.Min(g, b)), d = mx - mn
+        Dim h As Single = 0.0F
+        If d > 0.0000001F Then
+            If mx = r Then h = ((g - b) / d) Mod 6.0F Else If mx = g Then h = (b - r) / d + 2.0F Else h = (r - g) / d + 4.0F
+            h /= 6.0F : If h < 0.0F Then h += 1.0F
         End If
-        Return New Double() {h, If(mx <= 0, 0, d / mx), mx}
+        Return New Single() {h, If(mx <= 0.0F, 0.0F, d / mx), mx}
     End Function
 
-    Private Function HsvToRgb(h As Double, s As Double, v As Double) As Double()
-        Dim r = Clamp01(Math.Abs(((h * 6 + 0) Mod 6) - 3) - 1)
-        Dim g = Clamp01(Math.Abs(((h * 6 + 4) Mod 6) - 3) - 1)
-        Dim b = Clamp01(Math.Abs(((h * 6 + 2) Mod 6) - 3) - 1)
-        Return New Double() {v * (1 + s * (r - 1)), v * (1 + s * (g - 1)), v * (1 + s * (b - 1))}
+    Private Function HsvToRgb(h As Single, s As Single, v As Single) As Single()
+        Dim r = Clamp01(MathF.Abs(((h * 6.0F + 0.0F) Mod 6.0F) - 3.0F) - 1.0F)
+        Dim g = Clamp01(MathF.Abs(((h * 6.0F + 4.0F) Mod 6.0F) - 3.0F) - 1.0F)
+        Dim b = Clamp01(MathF.Abs(((h * 6.0F + 2.0F) Mod 6.0F) - 3.0F) - 1.0F)
+        Return New Single() {v * (1.0F + s * (r - 1.0F)), v * (1.0F + s * (g - 1.0F)), v * (1.0F + s * (b - 1.0F))}
     End Function
 
 End Module
