@@ -71,21 +71,20 @@ End Structure
 
 Public Class SkinningHelper
 
-    ' ┌─────────────────────────────────────────────────────────────────────────┐
-    ' │ CPU SKINNING — SYNC CONTRACT                                          │
-    ' │                                                                       │
-    ' │ This function is the CPU-side bone blend (double precision).           │
-    ' │ The GPU equivalent is the vertex shader skinning block in             │
-    ' │ Shader_Class.vb (both FO4 and SSE variants).                          │
-    ' │                                                                       │
-    ' │ Formula: skinMatrix = Σ(bones[idx[j]] * weight[j]) / sumW             │
-    ' │ GPU version: same sum but weights are pre-normalized (sumW=1).        │
-    ' │ Fallback (sumW=0): bones[idx[0]] — same in both.                      │
-    ' │                                                                       │
-    ' │ If you change the blend logic, fallback, or weight handling here,     │
-    ' │ you MUST update the vertex shader skinning block to match.            │
-    ' │ See also: RecomputeGPUBoneMatrices, ExtractSkinnedGeometry.           │
-    ' └─────────────────────────────────────────────────────────────────────────┘
+    ' ⛔ SYNC: CPU/GPU skinning — blend de bone matrices del lado CPU (double).
+    '   Fórmula: skinMatrix = Σ(bones[idx[j]] · weight[j]) / sumW.  Fallback (sumW=0): bones[idx[0]].
+    '   Sitios gemelos que hay que mover JUNTOS (si divergen, el bug es silencioso: compila, no tira, y
+    '   sólo se ve mal el OTRO camino, que el usuario alterna con el toggle):
+    '     1. Shader_Class.vb — bloque de skinning del vertex shader (DUPLICADO en FO4 y en SSE)
+    '     2. esta función
+    '     3. RecomputeGPUBoneMatrices  (composición de matrices → SSBO)
+    '     4. ExtractSkinnedGeometry    (arrays de GPU: índices/pesos, normalizados a sum=1)
+    '     5. Render.UpdateSkinBuffers_GL (pre-skin del camino CPU)
+    '     + SkinBakeMath / FaceGenBuildPipeline (el bake usa la misma fórmula)
+    '   Diferencias POR DISEÑO, no drift: la GPU va en float con pesos ya normalizados; la CPU en double y
+    '   normaliza en runtime; la GPU aplica transpose(inverse(mat3)) a N/T/B y la CPU los deja en local.
+    '   Test de paridad: alternar Setting_GPUSkinning sobre un shape posado — debe verse idéntico.
+    '   Ver 00-reglas-ui-y-vb.md (§10) y 00-reglas-comentarios.md.
     Private Shared Function BlendBoneMatrices(boneWeights As System.Half(), boneIndices As Byte(), precomputed() As Matrix4d) As Matrix4d
         If boneWeights Is Nothing OrElse boneIndices Is Nothing OrElse precomputed.Length = 0 Then Return If(precomputed.Length > 0, precomputed(0), Matrix4d.Identity)
         Dim result As Matrix4d = Matrix4d.Zero
@@ -155,10 +154,11 @@ Public Class SkinningHelper
         Return result * (1.0 / sumW)
     End Function
 
-    ''' <summary>
-    ''' Extrae vértices, normales, tangentes y bitangentes del shape,
-    ''' aplicando el mismo skinning que LoadShapeSafe.
-    ''' </summary>
+    ''' <summary>Extrae vértices, normales, tangentes y bitangentes del shape, aplicando el mismo skinning
+    ''' que LoadShapeSafe, y arma los arrays de índices y pesos que consume la GPU.
+    ''' <para>⛔ SYNC: CPU/GPU skinning — acá se NORMALIZAN los pesos que después usa el vertex shader
+    ''' (sum=1), así que un cambio en este sitio mueve la GPU sin tocar el camino CPU. Lista completa de
+    ''' sitios gemelos en el contrato de <c>BlendBoneMatrices</c> y en 00-reglas-ui-y-vb.md §10.</para></summary>
     ''' <param name="skeleton">SkeletonInstance to read bind/pose transforms from. If Nothing,
     ''' falls back to <see cref="SkeletonInstance.Default"/>. Pose application is implicit:
     ''' bones whose <see cref="HierarchiBone_class.DeltaTransform"/> is set get pose-folded;
@@ -176,12 +176,14 @@ Public Class SkinningHelper
         Dim bones = shape.ShapeBones
         Dim boneTrans = shape.ShapeBoneTransforms
 
-        If boneTrans.Count <> bones.Count Then Throw New Exception("BonesTransform y Bones desincronizados")
+        If boneTrans.Count <> bones.Count Then Throw New Exception("BonesTransform and Bones are out of sync")
         Dim Nifversion = shape.NifContent.Header.Version
         ' 1) Transformación global del shape
         Dim shapeNode = TryCast(shape.NifContent.GetParentNode(backing), NiNode)
         If IsNothing(shapeNode) Then
+#If DEBUG Then
             Debugger.Break()
+#End If
             shapeNode = shape.NifContent.GetRootNode()
         End If
 
@@ -242,7 +244,9 @@ Public Class SkinningHelper
                 (rawBitangs.Length = vertexCount OrElse Not shapeGeom.HasNormals) AndAlso
                 (Not shapeGeom.HasVertexColors OrElse vertexColorsList.Count = vertexCount) AndAlso
                 (Not shapeGeom.HasUVs OrElse uvsList.Count = vertexCount)) Then
+#If DEBUG Then
             Debugger.Break()
+#End If
             Throw New Exception("The vertex attributes do not all have the same length!")
         End If
 
@@ -1022,19 +1026,6 @@ Public Class SkinningHelper
         geo.Maxv = maxV
     End Sub
 
-    ' ┌─────────────────────────────────────────────────────────────────────────┐
-    ' │ GPU BONE MATRIX RECOMPUTATION — SYNC CONTRACT                         │
-    ' │                                                                       │
-    ' │ Recomputes GPUBoneMatrices (SSBO data) for a new pose.                │
-    ' │ Matrix composition: GlobalTransform * poseT.ComposeTransforms(localT) │
-    ' │ This MUST match the composition in ExtractSkinnedGeometry.            │
-    ' │ The resulting matrices are uploaded to the SSBO and consumed by the   │
-    ' │ vertex shader's bone blend loop. See Shader_Class.vb sync contract.   │
-    ' └─────────────────────────────────────────────────────────────────────────┘
-    ''' <param name="skeleton">SkeletonInstance to read bind/pose transforms from. Same fallback
-    ''' contract as <see cref="ExtractSkinnedGeometry"/>: Nothing → SkeletonInstance.Default.
-    ''' Pose application is implicit via DeltaTransforms; callers wanting bind call
-    ''' <see cref="SkeletonInstance.Reset"/> first.</param>
     ''' <summary>bindMount global del hueso (Original×Mount): de la cache de pase si está, o recursivo
     ''' (fallback: hueso huérfano / sin cache). Bit-idéntico a <c>OriginalGetGlobalTransform</c>.</summary>
     Private Shared Function CachedBindMount(bone As HierarchiBone_class, cache As SkeletonGlobalTransformCache) As Transform_Class
@@ -1051,6 +1042,12 @@ Public Class SkinningHelper
         Return bone.GetGlobalTransform
     End Function
 
+    ''' <summary>Recompone las <c>GPUBoneMatrices</c> (los datos del SSBO) para una pose nueva.
+    ''' Composición: <c>GlobalTransform · poseT.ComposeTransforms(localT)</c>.
+    ''' <para>⛔ SYNC: CPU/GPU skinning — esta composición tiene que coincidir con la de
+    ''' <see cref="ExtractSkinnedGeometry"/>, y las matrices que produce las consume el loop de blend del
+    ''' vertex shader. Lista completa de sitios gemelos en el contrato de
+    ''' <c>BlendBoneMatrices</c> (arriba en este archivo) y en 00-reglas-ui-y-vb.md §10.</para></summary>
     ''' <param name="updateWorldCache">False saltea la pasada 3 (ComputeWorldBounds + world-cache
     ''' per-vértice): en animación + mesh OPACO nadie la muestra (frustum congelado; el display —GPU
     ''' del SSBO, CPU de UpdateSkinBuffers— NO lee el world-cache; en CPU es además redundante con

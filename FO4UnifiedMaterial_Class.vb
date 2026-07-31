@@ -29,19 +29,15 @@ Public Enum FieldApplies
     BGEM = 2
 End Enum
 
-' Data-driven grid gate for one wrapper property. Replaces the old BGSMOnly/BGEMOnly-only filter:
-'  - AppliesTo: hide the property when it does not apply to the current material type.
-'  - Per-type persistence window (Bgsm/Bgem Min/MaxExclusive) from the spec's "Gate binario" column.
-'    Persistible iff Version >= Min AND Version < MaxExclusive for the CURRENT material type. The two
-'    pairs are separate because shared wrapper props (SpecularTexture/LightingTexture/GlowTexture/
-'    EmittanceColor/Glowmap/AdaptativeEmissive_*) gate at DIFFERENT versions for BGSM vs BGEM.
-'    When the current Version is outside the window the field is DISABLED (shown read-only) rather
-'    than edited into a layout that won't serialize it. MaxExclusive = UInteger.MaxValue = no upper bound.
-'  - EnabledWhen: optional predicate over the instance; when it returns False the field is DISABLED
-'    (e.g. EmittanceColor when EmitEnabled=False; Glass* when GlassEnabled=False).
-'  - VisibleWhen: optional predicate over the instance; when it returns False the field is HIDDEN
-'    (e.g. SkinTintColor only when SkinTint=True).
-'  - SkyrimOnly: only visible when Config_App.Current.Game = Skyrim (DetailMask/TintMask aliases).
+' Gate data-driven de una propiedad del grid:
+'  - AppliesTo: se oculta cuando no aplica al tipo de material actual.
+'  - Ventana de persistencia por tipo (Bgsm/Bgem Min/MaxExclusive): persistible si Version >= Min y < MaxExcl
+'    para el tipo ACTUAL. Los dos pares son separados porque las props compartidas gatean a versiones
+'    DISTINTAS en BGSM y en BGEM. Fuera de la ventana el campo queda DISABLED (read-only) en vez de editarse
+'    hacia un layout que no lo va a serializar.
+'  - EnabledWhen / VisibleWhen: predicados sobre la instancia que deshabilitan u ocultan (p.ej. EmittanceColor
+'    con EmitEnabled=False, SkinTintColor solo con SkinTint=True).
+'  - SkyrimOnly: visible solo en Skyrim.
 Public Structure FieldGate
     Public AppliesTo As FieldApplies
     Public BgsmMinVersion As UInteger
@@ -398,18 +394,14 @@ Public Class FO4UnifiedMaterial_Class
         End Get
     End Property
 
-    ' Alpha-blend state model:
-    ' The four canonical AlphaBlendMode values (None/Standard/Additive/Multiplicative) each
-    ' fix a tuple (enabled, src, dst). Unknown is the escape hatch for combinations that
-    ' don't match any canonical — when Unknown, the three fields below (AlphaBlendEnabled,
-    ' BlendFunctionSource, BlendFunctionDest) are the authoritative state and come from the
-    ' NIF's NiAlphaProperty, not from the BGSM file (whose serializer hardcodes (0,6,7) for
-    ' Unknown and can't carry arbitrary tuples). Setters of the three fields auto-classify
-    ' the resulting tuple against the 5 canonical patterns and promote/degrade the enum
-    ' reactively. The setter of AlphaBlendMode derives the three fields when the value is
-    ' canonical; when Unknown, it leaves them alone so caller-provided values survive.
-    ' Renderers (OutfitStudio GLSurface.cpp:1349, NifSkope glproperty.cpp:255) consume
-    ' NiAlphaProperty.Flags from the NIF, so persistence into the NIF is the source of truth.
+    ' Modelo del estado de alpha-blend: los cuatro valores canonicos (None/Standard/Additive/Multiplicative)
+    ' fijan cada uno una tupla (enabled, src, dst). Unknown es la valvula de escape para combinaciones que no
+    ' matchean ninguno: ahi los tres campos de abajo son el estado autoritativo y vienen del NiAlphaProperty
+    ' del NIF, no del BGSM (cuyo serializador hardcodea (0,6,7) para Unknown y no puede llevar tuplas
+    ' arbitrarias). Los setters de los tres campos re-clasifican la tupla contra los 5 patrones y promueven o
+    ' degradan el enum; el setter del enum deriva los tres campos cuando el valor es canonico y los deja en paz
+    ' cuando es Unknown. Los renderers consumen NiAlphaProperty.Flags del NIF, asi que la persistencia en el NIF
+    ' es la fuente de verdad.
     Private _alphaBlendEnabled As Boolean = False
     Private _blendFunctionSource As NiflySharp.Enums.AlphaFunction = NiflySharp.Enums.AlphaFunction.SRC_ALPHA
     Private _blendFunctionDest As NiflySharp.Enums.AlphaFunction = NiflySharp.Enums.AlphaFunction.INV_SRC_ALPHA
@@ -538,26 +530,14 @@ Public Class FO4UnifiedMaterial_Class
         If IsBGEM() Then Return EffectiveLightingType.[Default]
         If EyeEnvironmentMapping Then Return EffectiveLightingType.Eye
         If EnvironmentMapping Then Return EffectiveLightingType.Envmap
-        ' ORDEN RESTAURADO: Glowmap ANTES que Hair. Yo lo habia invertido y estaba MAL.
-        ' Lo desmiente el propio motor. La funcion que esta rutina replica es el factory de material de
-        ' Fallout4.exe (FUN_142163BE0), y es una CASCADA DE PRIORIDAD sobre los flags de 64 bits que
-        ' toma de [property+0x30]. Desensamblada, el orden de los `test rax, MASK` es:
-        '     1. 0x20000          SLSF1 bit 17 = Eye_Environment_Mapping
-        '     2. 0x80             SLSF1 bit 7  = Environment_Mapping
-        '     3. 0x4000000000     SLSF2 bit 6  = Glow_Map
-        '     4. 0x400            SLSF1 bit 10 = Face
-        '     5. 0x200000         SLSF1 bit 21 = Skin_Tint
-        '     6. 0x40000          SLSF1 bit 18 = Hair
-        ' (mapeo de bits confirmado contra las enums generadas de NiflySharp.)
-        ' O sea Eye > Envmap > GLOWMAP > Face > SkinTint > HAIR: el orden que ya estaba.
-        ' Mi argumento habia sido que el pelo con Glowmap perdia el tint. Es cierto que lo pierde, pero
-        ' ES LO QUE HACE EL MOTOR: un material de pelo con Glow_Map se convierte en material Glowmap en
-        ' el factory y tampoco recibe la tecnica Hair. La coincidencia Hair+Glowmap toca 3 materiales
-        ' vanilla (medido sobre los 6616 del BA2) y todo el pelo de mods tipo KS Hairdos, y en los dos
-        ' casos el motor los trata como Glowmap.
-        ' LECCION: esta rutina declara replicar una funcion concreta del binario. Antes de tocar el
-        ' orden hay que ABRIR ESA FUNCION, no razonar desde las tecnicas del shader, que son otra cosa
-        ' (el enum de tecnica vive en el constructor de defines, 0x14223C360, y ahi HAIR es idx5).
+        ' ⛔ ORDEN DE PRIORIDAD, NO TOCAR SIN ABRIR EL BINARIO. Esta rutina replica el factory de material
+        ' de Fallout4.exe, que es una cascada sobre los flags en este orden exacto:
+        '     Eye_Environment_Mapping > Environment_Mapping > GLOW_MAP > Face > Skin_Tint > HAIR
+        ' Glowmap va ANTES que Hair: un material de pelo con Glow_Map se vuelve material Glowmap en el
+        ' factory y tampoco recibe la técnica Hair — pierde el tint, y ESO es lo que hace el motor.
+        ' Afecta a 3 materiales vanilla y a todo el pelo de mods tipo KS Hairdos.
+        ' ⛔ Razonar desde las TÉCNICAS del shader lleva al orden equivocado: son otra cosa (otro enum, otro
+        ' constructor). Antes de reordenar acá, abrir la función del factory.
         If Glowmap Then Return EffectiveLightingType.Glowmap
         If Facegen Then Return EffectiveLightingType.Face
         If SkinTint Then Return EffectiveLightingType.SkinTint
@@ -975,35 +955,20 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
-    ''' <summary>
-    ''' <b>Decisión del CONSUMIDOR sobre el alpha-test de la geometría que se ESCRIBE.</b> La librería es
-    ''' agnóstica: no sabe qué es un NPC, un head part ni un texture set — sólo recibe una decisión.
-    '''
-    ''' Existe porque está MEDIDO que la decisión NO es función del material. Sobre los 1489 NIFs horneados
-    ''' por el CK (BA2 vanilla Fallout4 - Meshes + los 6 DLC, 16.883 shapes): el bit
-    ''' <c>Fallout4ShaderPropertyFlags2.Alpha_Test</c> (1&lt;&lt;25) está puesto en EXACTAMENTE 1 shape,
-    ''' mientras que 10.995 shapes SÍ tienen <c>NiAlphaProperty</c> y NO tienen el bit. Un material con
-    ''' <see cref="AlphaTest"/>=True no implica el bit, así que la lib no puede derivarlo: sólo el
-    ''' consumidor conoce la regla de su dominio.
-    '''
-    ''' Semántica (las dos ramas están medidas; no hay una tercera inventada):
-    '''   <c>Nothing</c> = sin decisión externa ⇒ la lib se comporta como siempre (deriva del material).
-    '''                    Es el default: ningún consumidor existente cambia de comportamiento.
-    '''   <c>False</c>   = VETO: si el shape fuente NO traía <c>NiAlphaProperty</c>, no se le ESTRENA uno.
-    '''                    El round-trip (el shape ya traía uno) NO se toca. Y el bit SF2 queda limpio.
-    '''   <c>True</c>    = el bit SF2 <c>Alpha_Test</c> se escribe, y la fabricación queda permitida.
-    '''
-    ''' ⚠️ NO implementado a propósito: "forzar la fabricación cuando el material NO tiene alpha". El CK sí
-    ''' lo haría (arma flags 0x02EC literal), pero NO existe ni un caso: el único consumidor que pone True
-    ''' es el bake de FaceGen FO4, y su único NPC con el flag tiene material CON alpha. Implementarlo sería
-    ''' construir para un caso que no existe.
-    '''
-    ''' Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.
-    ''' Reemplaza a <c>AlphaTestFromNpcFtst</c>, cuyo nombre metía dominio de NPC (FTST) dentro de la lib
-    ''' y además describía una regla REFUTADA (el árbitro real del bake FO4 es el flag de record
-    ''' <c>ACBS\Diffuse Alpha Test</c>, RE CreationKit 0x140ED41F6; el FTST era un proxy que coincidía por
-    ''' casualidad). Quién decide es asunto del consumidor; acá sólo se transporta la decisión.
-    ''' </summary>
+    ''' <summary><b>Decision del CONSUMIDOR sobre el alpha-test de la geometria que se ESCRIBE.</b> La libreria
+    ''' es agnostica: no sabe que es un NPC, un head part ni un texture set, solo recibe una decision.
+    ''' <para>Existe porque esta MEDIDO que la decision NO es funcion del material: sobre los 1489 NIFs
+    ''' horneados por el CK (16.883 shapes) el bit Alpha_Test esta puesto en EXACTAMENTE 1 shape, mientras que
+    ''' 10.995 shapes tienen NiAlphaProperty y NO tienen el bit. Un material con <see cref="AlphaTest"/>=True no
+    ''' implica el bit, asi que la lib no puede derivarlo.</para>
+    ''' <para>Semantica (las dos ramas estan medidas, no hay una tercera inventada): <c>Nothing</c> = sin
+    ''' decision externa, la lib deriva del material como siempre (es el default, ningun consumidor cambia de
+    ''' comportamiento); <c>False</c> = VETO, si el shape fuente no traia NiAlphaProperty no se le ESTRENA uno
+    ''' -el round-trip no se toca- y el bit queda limpio; <c>True</c> = se escribe el bit y se permite fabricar.</para>
+    ''' <para>âš ï¸ NO implementado a proposito: forzar la fabricacion cuando el material NO tiene alpha. El CK si
+    ''' lo haria, pero no existe ni un caso (el unico consumidor que pone True es el bake FO4 y su unico NPC con
+    ''' el flag tiene material CON alpha).</para>
+    ''' <para>Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.</para></summary>
     <Browsable(False)>
     Public Property AlphaTestWriteDecision As Boolean?
 
@@ -1763,19 +1728,15 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
-    ''' <summary>Runtime multiplier (NOT serialized) aplicado al tint del material al convertirlo a color
-    ''' FLOAT — tanto al escribir el shader del NIF (bake) como al subir el uniform del render. Default 1.0
-    ''' = sin efecto, así que ningún camino preexistente cambia.
-    ''' <para>Motivo: el storage del material es de 3 BYTES (0x00RRGGBB, techo duro 255 ⇒ 1.0), pero el
-    ''' dominio del shader NO está acotado a 1.0 (Shader_Class: <c>color.rgb *= vec3(1.0) + vColor.y *
-    ''' (tintColor - vec3(1.0))</c>). La convención SSE de pelo dobla el color del CLFM, y el CK hace ese ×2
-    ''' EN FLOAT: CLFM=(130,130,130) → CK HairTintColor=(1,020,1,020,1,020) = 2,0 × (130/255). Doblar en
-    ''' espacio byte daba min(255,260)=255 ⇒ 1,000 (MEDIDO: 9 NPCs / 25 shapes, p.ej. BrowsMaleSnowElf,
-    ''' Δ=0,0196). Este factor sube el ×2 al dominio float y elimina el clamp estructural.</para>
-    ''' <para>⚠️ HairTintColor y SkinTintColor comparten el MISMO storage BGSM, así que este factor aplica
-    ''' a los dos por igual — que es exactamente lo que hacía el ×2 en bytes (Save_To_Shader copia el mismo
-    ''' valor a shad.SkinTintColor cuando SkinTint=True). Quien lo setea debe hacerlo explícitamente (también
-    ''' a 1.0F) para no arrastrar estado si el material se reutiliza.</para></summary>
+    ''' <summary>Multiplicador de runtime (NO se serializa) aplicado al tint del material al convertirlo a color
+    ''' FLOAT, tanto al escribir el shader del NIF (bake) como al subir el uniform del render. Default 1.0.
+    ''' <para>Motivo: el storage del material son 3 BYTES (techo duro 255 = 1.0) pero el dominio del shader no
+    ''' esta acotado a 1.0. La convencion SSE de pelo dobla el color del CLFM y el CK hace ese x2 EN FLOAT, asi
+    ''' que doblar en espacio byte clampeaba y perdia el exceso. Este factor sube el x2 al dominio float y
+    ''' elimina el clamp estructural.</para>
+    ''' <para>âš ï¸ HairTintColor y SkinTintColor comparten el MISMO storage BGSM, asi que el factor aplica a los
+    ''' dos por igual, que es exactamente lo que hacia el x2 en bytes. Quien lo setea debe hacerlo
+    ''' explicitamente (tambien a 1.0F) para no arrastrar estado si el material se reutiliza.</para></summary>
     <Browsable(False)>
     Public Property TintColorScale As Single = 1.0F
 
@@ -2958,16 +2919,12 @@ Public Class FO4UnifiedMaterial_Class
     End Function
 
     ' ====================================================================================
-    ' FieldGates — tabla estática data-driven (requisito B/C). Una entrada por propiedad del
-    ' grid que necesita gating MÁS ALLÁ del simple applies-to por tipo. Las propiedades que
-    ' SOLO necesitan applies-to siguen gateadas por los atributos BGSMOnly/BGEMOnly (fallback
-    ' en FilterProperties). Cada ventana de versión sale de la columna "Gate binario" del spec.
-    ' Reglas:
-    '  - Persistible iff Version >= Min AND Version < MaxExcl para el tipo actual. Fuera de la
-    '    ventana ⇒ DISABLED (read-only). En FO4 / contenedor Skyrim (b) la Version es 2.
-    '  - EnabledWhen ⇒ DISABLED cuando el flag habilitador está off.
-    '  - VisibleWhen ⇒ HIDDEN cuando el predicado es falso.
-    '  - SkyrimOnly ⇒ HIDDEN salvo Config_App.Current.Game = Skyrim.
+    ' FieldGates - tabla estatica data-driven. Una entrada por propiedad del grid que necesita gating MAS ALLA
+    ' del applies-to por tipo (las que solo necesitan eso siguen gateadas por los atributos BGSMOnly/BGEMOnly).
+    ' Cada ventana de version sale de la columna "Gate binario" del spec.
+    '  - Persistible si Version >= Min y < MaxExcl para el tipo actual; fuera de la ventana, DISABLED.
+    '  - EnabledWhen: DISABLED cuando el flag habilitador esta off.  VisibleWhen: HIDDEN si el predicado es falso.
+    '  - SkyrimOnly: HIDDEN salvo en Skyrim.
     ' ====================================================================================
     Private Const NoMaxVersion As UInteger = UInteger.MaxValue
 
@@ -3079,42 +3036,15 @@ Public Class FO4UnifiedMaterial_Class
         g(NameOf(DetailMaskTexture)) = Gate(FieldApplies.BGSM, skyrimOnly:=True)
         g(NameOf(TintMaskTexture)) = Gate(FieldApplies.BGSM, skyrimOnly:=True)
 
-        ' --- Campos IGNORADOS POR EL MOTOR (gate por JUEGO, no por versión) ---
-        ' Este gate NO es de persistencia: el campo se serializa igual (está en el BGSM v2 y en el NIF).
-        ' Se deshabilita porque en FO4 editarlo NO produce ningún cambio, ni en el juego ni en el preview,
-        ' y dejarlo editable hacía creer lo contrario.
-        '
-        ' SpecularColor. MEDIDO en Fallout4.exe y en los shaders:
-        '   1) El motor SI lo carga y SI lo sube a una constante de shader. Offsets confirmados POR NOMBRE
-        '      leyendo el deserializador del .bgsm (0x14216794E), que empareja cada nombre de campo con su
-        '      store: `cSpecularColor` -> objeto+0xC (0x1421688C9 `lea rdx,[rdi+0xc]`), `fSpecularMult`
-        '      -> +0x18, `fSmoothness` -> +0x34, `fGrayscaleToPaletteScale` -> +0x68 (ancla de control).
-        '      La transferencia al material de runtime (0x142163BE0) mapea +0xC/0x10/0x14 -> material
-        '      +0x38/0x3c/0x40 y +0x18 -> material+0x8c, y BSLightingShader::SetupMaterial (0x142232EA0,
-        '      bloque 0x1422335B9) sube pow(color,2.2) * fSpecularMult a la constante cuyo indice sale de
-        '      byte[[0x3E5AEF0]+0x71].
-        '      CORRECCION: una version anterior de esta nota decia que el motor lo DESCARTABA al cargar y
-        '      que ese color era el emisivo. Es FALSO -- el emisivo es `cEmittanceColor` (objeto+0x1C..0x24,
-        '      +0x64 fEmittanceMult) y no va al material sino a la propiedad. La inferencia vieja salia de
-        '      los defaults del constructor 0x1421C5DC0, que NO espejan los defaults del BGSM (ese ctor
-        '      tambien pone rolloff/rimpower/backlight en 0 y el BGSM los tiene en 0.3/2.0/0).
-        '   2) Ningún pixel shader de FO4 lee un color especular de material. Barrido sobre la poblacion
-        '      COMPLETA de los cuatro bloques que consumen BGSM: b06 BSLighting 18/18 (la unica constante
-        '      de 3 componentes es cb1[1] = HairTint/paletteScale; cb2[11] aparece solo como .x y .y, que
-        '      son Smoothness y SpecularMult), b09 DFPrePass 470/470 (no usan cb1 ni una vez; su unico
-        '      color de material es cb2[1].xyz -> o4 = emisivo), b10 306 y b11 180. Total 974 PS.
-        '      El unico multiplicador de 3 componentes del specular en el forward es cb2[1] = color de LUZ.
-        '   3) CONFIRMADO IN-GAME por el usuario: SpecularColor amarillo en un BGSM de FO4 se dibuja blanco.
-        ' En SKYRIM SI SE USA, y por eso el gate es por juego y no un Browsable(False):
-        '   el specular acumulado se multiplica por cb1[4].xyz antes de sumarse a la salida
-        '   (`mad r1.xyz, r4.xyzx, cb1[4].xyzx, r1.xyzx`), y cb1[4].w es el exponente del highlight
-        '   (`log / mul cb1[4].w / exp` sobre dp3_sat(half,normal)) = Glossiness. O sea cb1[4] es
-        '   (SpecularColor.rgb, Glossiness) del BSLightingShaderProperty. Medido en los PS de lighting de
-        '   SkyrimSE; NO es el color de la luz, que alli es cb2[1].xyz / cb2[rN+22].xyz.
-        '   ALCANCE: medido sobre una MUESTRA de PS de SSE, no sobre su poblacion completa. Alcanza para
-        '   afirmar que SSE SI tiene camino de color especular por material; no para cuantificar en cuantas
-        '   tecnicas. Por eso el gate habilita en Skyrim en vez de deshabilitar en todos lados.
-        ' BGEM no entra: el BGEM no tiene el campo (solo SpecularTexture y el bool EffectPbrSpecular).
+        ' --- Campos IGNORADOS POR EL MOTOR (gate por JUEGO, no por version) ---
+        ' No es un gate de persistencia: el campo se serializa igual. Se deshabilita porque en FO4 editarlo no
+        ' produce ningun cambio, ni en el juego ni en el preview, y dejarlo editable hacia creer lo contrario.
+        ' SpecularColor: en FO4 el motor lo carga y lo sube a una constante, pero NINGUN pixel shader lo lee
+        ' (barrido sobre la poblacion COMPLETA de los 974 PS que consumen BGSM). El unico multiplicador de 3
+        ' componentes del specular en el forward es el color de LUZ; confirmado in-game.
+        ' En SKYRIM si se usa, y por eso el gate es POR JUEGO en vez de un Browsable(False).
+        ' âš ï¸ Alcance honesto: en SSE esta medido sobre una MUESTRA de PS, no sobre la poblacion completa - alcanza
+        ' para afirmar que hay camino, no para cuantificar en cuantas tecnicas.
         g(NameOf(SpecularColor)) = Gate(FieldApplies.BGSM,
                                         enabledWhen:=Function(m) Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
 
@@ -3280,20 +3210,14 @@ Public Class FO4UnifiedMaterial_Class
                 createdNew = True
             End If
             Dim alp = CType(Nif.Blocks(shap.AlphaPropertyRef.Index), NiAlphaProperty)
-            ' REGLA (FO4, bake CK): cuando el shape FUENTE no traía NiAlphaProperty, el CK NO deriva el
-            ' bloque del material — CONSTRUYE uno con SU default y le espeja ÚNICAMENTE el booleano
-            ' AlphaTest del material. Su base es 0x00EC (AlphaBlend=0, src=SRC_ALPHA(6),
-            ' dst=INV_SRC_ALPHA(7), TestFunc=ALWAYS(0)) + 0x200 si AlphaTest ⇒ 0x02EC, threshold=0.
-            ' Ignora tanto `alphaBlend` como `alphaTestRef` del BGSM.
-            ' EVIDENCIA MEDIDA: NPC Fallout4.esm 0x00002F24 (Valentine), shape SynthGen2Head1 /
-            ' SynthHeadGen2. MNAM = actors\synths\gen2skinheadvalentine.bgsm con
-            ' alphaBlend=1 src=6 dst=7 alphaTest=1 alphaTestRef=128.
-            '   CK       : flags=0x02EC threshold=0   (AlphaBlend=0, TestFunc=ALWAYS, thr ignorado)
-            '   nosotros : flags=0x12ED threshold=128 (default NiflySharp 0x12EC = TestFunc=GREATER,
-            '              + bit AlphaBlend del BGSM, + AlphaTestRef del BGSM)
-            ' El camino de round-trip (el shape fuente YA tenía NiAlphaProperty) queda intacto: ahí el
-            ' bloque clonado se reescribe desde el material, que salió de ese mismo bloque ⇒ idéntico.
-            ' Game-aware: SÓLO FO4; el camino Skyrim no se toca.
+            ' REGLA (FO4, bake CK): cuando el shape FUENTE no traia NiAlphaProperty, el CK NO deriva el bloque
+            ' del material: CONSTRUYE uno con SU default y le espeja UNICAMENTE el booleano AlphaTest del
+            ' material. Su base es 0x00EC (AlphaBlend=0, src=SRC_ALPHA, dst=INV_SRC_ALPHA, TestFunc=ALWAYS) mas
+            ' 0x200 si AlphaTest, o sea 0x02EC con threshold=0, ignorando alphaBlend y alphaTestRef del BGSM.
+            ' Medido con Valentine (shape SynthGen2Head1): CK flags=0x02EC threshold=0, nosotros dabamos
+            ' flags=0x12ED threshold=128 (default de NiflySharp + bit del BGSM + AlphaTestRef del BGSM).
+            ' El camino de round-trip (el shape ya tenia NiAlphaProperty) queda intacto: ahi el bloque clonado se
+            ' reescribe desde el material, que salio de ese mismo bloque. Solo FO4; Skyrim no se toca.
             If createdNew AndAlso Not Nif.Header.Version.IsSSE Then
                 alp.Flags.Value = &HECUS
                 alp.Flags.AlphaTest = Underlying_Material.AlphaTest
@@ -3752,21 +3676,15 @@ Public Class FO4UnifiedMaterial_Class
             shad.Smoothness = Mat.Smoothness
         End If
         ' Rolloff del soft-lighting al campo correcto por juego (simetrico con la lectura en ExtractFromNif):
-        ' SSE lo guarda en Lighting Effect 1 (shad.Softlight); FO4 en shad.SubsurfaceRolloff. Escribir siempre
-        ' a SubsurfaceRolloff dejaba el valor en un campo que el motor SSE ignora (round-trip roto: se perdia
-        ' el rolloff, incluido el flujo WM NIF->BGSM->NIF).
-        ' ⛔ LA COMPUERTA ES SOLO DE FO4. En Skyrim el valor vive en el NIF (no hay BGSM) y el CK lo copia
-        ' VERBATIM, sin mirar el flag Soft_Lighting. Medido sobre el FaceGeom vanilla del BSA
-        ' (0x00013480, 'MaleMouthHumanoidDefault'): fuente y CK traen SSPF2=0x00208001 -> bit 25
-        ' (Soft_Lighting) APAGADO y aun asi LightingEffect1 = 0,3; con la compuerta puesta nuestro bake
-        ' escribia 0 y destruia el campo en 14.616 shapes / 3.141 NPCs (97,7 % del corpus SSE), con TODO
-        ' el resto del shader byte-identico.
-        ' Por que no puede haber regresion: con el flag APAGADO el motor no consume LightingEffect1
-        ' (nifskope/engine: hasSoftlight = hasSF2(SLSF2_Soft_Lighting)), asi que el valor es INERTE ahi;
-        ' y con el flag ENCENDIDO Mat.SubsurfaceLighting es True, o sea la compuerta vieja ya dejaba pasar
-        ' exactamente el mismo valor. El unico efecto posible es preservar un campo que hoy se pierde.
-        ' FO4 NO se toca: alli la compuerta replica una del motor, verificada por RE en los DOS binarios
-        ' (cmp byte [rbx+0xa8],0 -> fSubsurfaceLightingRolloff; juego 0x142163ED1 / CK 0x142BB822E).
+        ' SSE lo guarda en Lighting Effect 1 y FO4 en SubsurfaceRolloff. Escribir siempre a SubsurfaceRolloff
+        ' dejaba el valor en un campo que el motor SSE ignora, rompiendo el round-trip.
+        ' â›” LA COMPUERTA POR EL FLAG ES SOLO DE FO4. En Skyrim el valor vive en el NIF y el CK lo copia
+        ' VERBATIM, sin mirar el flag Soft_Lighting: medido sobre el FaceGeom vanilla del BSA, fuente y CK traen
+        ' el bit APAGADO y aun asi LightingEffect1 = 0,3; con la compuerta puesta nuestro bake escribia 0 y
+        ' destruia el campo en 14.616 shapes / 3.141 NPCs (97,7 % del corpus SSE).
+        ' Por que no puede haber regresion: con el flag apagado el motor no consume LightingEffect1, asi que el
+        ' valor es INERTE; y con el flag encendido la compuerta vieja ya dejaba pasar el mismo valor.
+        ' FO4 no se toca: alli la compuerta replica una del motor, verificada por RE en los dos binarios.
         If Nif.Header.Version.IsSSE Then
             shad.Softlight = Mat.SubsurfaceLightingRolloff
         Else
@@ -3803,21 +3721,15 @@ Public Class FO4UnifiedMaterial_Class
             shad.SkinTintAlpha = Me.SkinTintAlpha
         End If
         shad.HasBacklight = Mat.BackLighting
-        ' GATE SOLO EN SKYRIM. La nota anterior decia "el CK gatea el power por el flag al hornear,
-        ' simetrico con el rolloff". Es FALSO y esta medido en los DOS binarios: en la transferencia
-        ' BGSM -> material, tanto Fallout4.exe (0x142163BE0) como CreationKit.exe (0x142BB7E40) tienen
-        ' EXACTAMENTE DOS compuertas booleanas, y ninguna es el backlight:
-        '     cmp byte [rbx+0xa8], 0   -> gatea fSubsurfaceLightingRolloff (+0xac)   [juego 0x142163ED1 / CK 0x142BB822E]
-        '     cmp byte [rbx+0x54], 1   -> bWetnessControl_ScreenSpaceReflections     [juego 0x142163FD3 / CK 0x142BB83C8]
-        ' fBackLightPower (+0xb4) y fRimPower (+0xb0) se copian con un `mov` pelado, sin consultar
-        ' bBackLighting (+0xa7). Los offsets salen POR NOMBRE del deserializador del .bgsm (juego
-        ' 0x14216794E, CK 0x142BBAE10 -- mismo layout de struct en los dos).
-        ' Alcance vanilla: 171 de los 6616 BGSM del BA2 tienen bBackLighting=False con power>0, y el motor
-        ' les aplica la transmision igual. 21 son de personaje: los cuerpos/manos SkinTint con power 0.05
-        ' y TODO el pelo vanilla con power 2.0. NINGUNO es Facegen -- los 12 materiales de cabeza con
-        ' Facegen=True tienen power 0, asi que el bake de la cara no cambia por esto en ningun sentido.
-        ' En SKYRIM el gate SI corresponde: alli HasBacklight es un flag REAL del NIF (la app lo lee de
-        ' shad.HasBacklight), mientras que en FO4 se sintetiza con `power > 0` al leer.
+        ' GATE SOLO EN SKYRIM. La nota anterior decia que el CK gatea el power por el flag al hornear, simetrico
+        ' con el rolloff. Es FALSO y esta medido en los DOS binarios: en la transferencia BGSM -> material hay
+        ' EXACTAMENTE DOS compuertas booleanas y ninguna es el backlight (una gatea fSubsurfaceLightingRolloff y
+        ' la otra bWetnessControl_ScreenSpaceReflections). fBackLightPower y fRimPower se copian con un mov
+        ' pelado, sin consultar bBackLighting.
+        ' Alcance vanilla: 171 de los 6616 BGSM del BA2 tienen bBackLighting=False con power > 0 y el motor les
+        ' aplica la transmision igual; ninguno es Facegen, asi que el bake de la cara no cambia por esto.
+        ' En SKYRIM el gate SI corresponde: alli HasBacklight es un flag REAL del NIF, mientras que en FO4 se
+        ' sintetiza con power > 0 al leer.
         shad.BacklightPower = If(Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso Not Mat.BackLighting,
                                  0.0F, Mat.BackLightPower)
         shad.HasSpecular = Mat.SpecularEnabled AndAlso Mat.SpecularMult <> 0.0F
@@ -3873,47 +3785,14 @@ Public Class FO4UnifiedMaterial_Class
             Else
                 shad.ShaderFlags_F4SPF1 = shad.ShaderFlags_F4SPF1 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate
             End If
-            ' F4SPF2 Alpha_Test (1<<25) — REGLA MEDIDA 2026-07-18.
-            '
-            ' ⛔ NO espejar aquí Mat.AlphaTest: está MEDIDO que este bit NO es función del material
-            '    (ver el desglose abajo: 10.995 shapes con NiAlphaProperty y SIN el bit). La lib no
-            '    puede derivarlo ⇒ lo recibe del consumidor por Me.AlphaTestWriteDecision, que vive en
-            '    el WRAPPER (no en el BGSM). `Nothing` (ningún consumidor decidió) = bit LIMPIO, que es
-            '    exactamente el comportamiento histórico para todo consumidor que no sea el bake FO4.
-            '
-            ' ⛔ REGRESIÓN PREVIA (revertida): espejar Mat.AlphaTest incondicionalmente puso el bit
-            '    en 1443 NPCs / 3465 shapes donde el CK NO lo pone, porque conflacionaba (1) con (2).
-            '
-            ' EVIDENCIA MEDIDA (referencia = NIFs horneados por el CK, extraídos de los BA2 vanilla
-            ' Fallout4 - Meshes + los 6 DLC; NO de nuestro propio bake):
-            '   · 1489 NIFs / 16.883 shapes: el bit está puesto en EXACTAMENTE 1 shape en todo el
-            '     juego + DLCs → Fallout4.esm 0x00002F24 (Valentine), shape 'SynthHeadGen2'
-            '     (F4SPF2 = 0x02000081).
-            '   · 10.995 shapes SÍ tienen NiAlphaProperty y NO tienen el bit ⇒ el bit NO es función
-            '     de la presencia de alpha ni del `bAlphaTest` del material. Refuta el fix anterior.
-            '   · Población del productor (2): 677 NPCs (de 1488 con facegeom del CK) declaran FTST
-            '     propio, resolviendo a 15 TXST distintos. Sólo 5 de esos 15 traen MNAM, y de esos 5
-            '     sólo gen2skinheadvalentine.bgsm tiene bAlphaTest=1 (gen2skinhead, ghoulmalehead,
-            '     supermutantfgheadstrong1 y supermutant1suicidehead lo tienen en 0). Ese TXST
-            '     (0x0010C3CD SkinHeadValentine) lo referencia UN solo NPC como FTST explícito.
-            '     ⇒ el productor (2) con AlphaTest=True cae en exactamente 1 shape = el mismo que
-            '     el CK marca. Correspondencia 1:1, 0 falsos positivos y 0 falsos negativos.
-            '   · Control negativo: DiMA (DLCCoast.esm 0x00004639) tiene la MISMA shape
-            '     'SynthHeadGen2' y cae al MISMO TXST 0x0010C3CD por el DFT de su RACE
-            '     (0x03042EBB DLC03_SynthGen2RaceDiMa → SkinHeadValentine, verificado con
-            '     --alphagatescan 2026-07-21); el CK le deja F4SPF2 = 0x00000081 (bit CLARO, sin
-            '     NiAlphaProperty).
-            '
-            ' ⛔ CORRECCIÓN 2026-07-21 — CUÁL es el árbitro. La correlación de arriba es REAL pero el
-            '    mecanismo que se le atribuía (el proxy "FTST declarado a nivel NPC") era FALSO:
-            '    Valentine y DiMA resuelven AL MISMO TXST CON ALPHA, así que el material no los separa.
-            '    El árbitro medido es el flag de record ACBS\Diffuse Alpha Test (0x01000000):
-            '    RE CreationKit 0x140ED41F6 (gate `test byte [rdi+0x9b],1`) + schema xEdit
-            '    wbDefinitionsFO4.pas:10655. Medido sobre el corpus vanilla+DLC (--alphagatescan):
-            '    lo tiene 1 NPC de 4471 = 0x00002F24 Valentine, y es el mismo y único shape donde el CK
-            '    pone este bit ⇒ los dos hechos son el MISMO hecho, y por eso alcanza UNA decisión.
-            '    (SSE: 0 de 6462 — el bit 24 es 'Unknown 24' allá, control positivo del scan.)
-            '    Quién es el árbitro NO se decide acá: la lib sólo transporta la decisión.
+            ' ⛔ F4SPF2 Alpha_Test: NO espejar acá Mat.AlphaTest. Está MEDIDO que este bit NO es función del
+            ' material — hay ~11.000 shapes con NiAlphaProperty y SIN el bit, y en todo el juego + DLC el CK
+            ' lo pone en UNA sola shape. Espejarlo incondicionalmente lo puso en 3465 shapes donde el CK no
+            ' lo pone (regresión revertida).
+            ' El árbitro real es el flag de record ACBS\Diffuse Alpha Test, pero eso NO se decide acá: la lib
+            ' sólo TRANSPORTA la decisión del consumidor vía AlphaTestWriteDecision. `Nothing` = bit limpio,
+            ' que es el comportamiento de todo consumidor que no sea el bake de FO4.
+            ' Ley completa y evidencia: 40-bake-leyes-fo4.md §8.
             If Me.AlphaTestWriteDecision.GetValueOrDefault(False) Then
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
             Else
@@ -4356,16 +4235,38 @@ Public Class FO4UnifiedMaterial_Class
         Return normalized.ToLowerInvariant()
     End Function
 
+    ''' <summary>Memo de <see cref="NormalizeGameRelativePath"/>: función PURA ⇒ bit-idéntico por construcción.
+    ''' Existe porque Render.ApplyMaterial llama a CorrectTexturePath 13 veces por malla por frame y cada una
+    ''' aloca ~7 strings. Comparador Ordinal a propósito (garantía trivial "misma clave ⇒ mismo valor").</summary>
+    Private Shared ReadOnly TexturePathCache As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+    Private Shared ReadOnly MaterialPathCache As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+    Private Shared ReadOnly MeshPathCache As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+
     Public Shared Function CorrectTexturePath(Texture As String) As String
-        Return NormalizeGameRelativePath(Texture, TexturesPrefix)
+        If String.IsNullOrWhiteSpace(Texture) Then Return NormalizeGameRelativePath(Texture, TexturesPrefix)
+        Dim hit As String = Nothing
+        If TexturePathCache.TryGetValue(Texture, hit) Then Return hit
+        Dim v = NormalizeGameRelativePath(Texture, TexturesPrefix)
+        TexturePathCache(Texture) = v
+        Return v
     End Function
 
     Public Shared Function CorrectMaterialPath(Texture As String) As String
-        Return NormalizeGameRelativePath(Texture, MaterialsPrefix)
+        If String.IsNullOrWhiteSpace(Texture) Then Return NormalizeGameRelativePath(Texture, MaterialsPrefix)
+        Dim hit As String = Nothing
+        If MaterialPathCache.TryGetValue(Texture, hit) Then Return hit
+        Dim v = NormalizeGameRelativePath(Texture, MaterialsPrefix)
+        MaterialPathCache(Texture) = v
+        Return v
     End Function
 
     Public Shared Function CorrectMeshPath(Mesh As String) As String
-        Return NormalizeGameRelativePath(Mesh, MeshesPrefix)
+        If String.IsNullOrWhiteSpace(Mesh) Then Return NormalizeGameRelativePath(Mesh, MeshesPrefix)
+        Dim hit As String = Nothing
+        If MeshPathCache.TryGetValue(Mesh, hit) Then Return hit
+        Dim v = NormalizeGameRelativePath(Mesh, MeshesPrefix)
+        MeshPathCache(Mesh) = v
+        Return v
     End Function
 
 
@@ -4416,35 +4317,19 @@ Public Class FO4UnifiedMaterial_Class
         End Sub
     End Class
 
-    ''' <summary>
-    ''' Inspecciona cada propiedad pública de instancia y devuelve la lista de las que
-    ''' no comparan iguales, usando el mismo set de reglas por tipo que <see cref="AreEqualWithTrace"/>:
-    ''' Single → igualdad (con la excepción <see cref="GrayscaleToPaletteScale"/> que delega
-    ''' a <see cref="AreEquivalentGrayscaleScale"/>); String → OrdinalIgnoreCase; Type →
-    ''' Equals (Nothing-safe); <see cref="MaterialLib.BaseMaterialFile"/> → siempre igual
-    ''' (es el subyacente, no se compara aquí); resto → Object.Equals.
-    '''
-    ''' Si <paramref name="a"/> o <paramref name="b"/> es Nothing devuelve lista vacía sólo
-    ''' cuando ambos lo son; si uno es Nothing y el otro no, devuelve un único entry
-    ''' "&lt;instance&gt;" reflejando esa asimetría — equivalente al `a Is b` que
-    ''' AreEqualWithTrace devuelve para el caso degenerado.
-    '''
-    ''' Cobertura de <c>NifShaderType</c>: GetDifferences itera TODAS las propiedades públicas
-    ''' por reflexión, así que NifShaderType (propiedad pública) se compara como cualquier otra,
-    ''' y AreEqualWithTrace delega aquí — NINGUNO de los dos lo excluye. Tipo y flags están
-    ''' desacoplados (el tipo se lee/escribe fiel del shader, no se deriva de los flags), por lo
-    ''' que comparar el tipo es legítimo y no es ruido redundante. Para diagnóstico
-    ''' (NPC_Manager.FaceGenComparator validando un bake contra el FaceGen de CK) preferimos ver
-    ''' ese campo si difiere.
-    '''
-    ''' Diseño: este método existe para que call sites que necesitan reportar QUÉ difiere
-    ''' (no sólo si difiere algo) no tengan que duplicar el bucle de reflexión. AreEqualWithTrace
-    ''' delega a este método; agregar nuevas propiedades a FO4UnifiedMaterial_Class las cubre
-    ''' automáticamente en los dos call paths.
-    ''' </summary>
-    ''' <param name="ignoreNames">Nombres de propiedad a OMITIR de la comparación. Default Nothing =
-    ''' compara todo (contrato histórico; lo usan FaceGenComparator y AreEqualTo). El gating del
-    ''' editor pasa <see cref="NifShaderOnlyPropertyNames"/> para excluir el estado solo-NIF.</param>
+    ''' <summary>Inspecciona cada propiedad publica de instancia y devuelve las que no comparan iguales, con el
+    ''' mismo set de reglas por tipo que <see cref="AreEqualWithTrace"/>: Single por igualdad (con la excepcion
+    ''' de <see cref="GrayscaleToPaletteScale"/>), String por OrdinalIgnoreCase, Type por Equals Nothing-safe,
+    ''' <see cref="MaterialLib.BaseMaterialFile"/> siempre igual (es el subyacente) y el resto por Object.Equals.
+    ''' <para>Con uno de los dos en Nothing devuelve un unico entry "&lt;instance&gt;" reflejando la asimetria;
+    ''' con los dos en Nothing, lista vacia.</para>
+    ''' <para><c>NifShaderType</c> entra como cualquier otra propiedad y ninguno de los dos caminos lo excluye:
+    ''' tipo y flags estan desacoplados (el tipo se lee y escribe fiel del shader, no se deriva de los flags),
+    ''' asi que compararlo es legitimo y util para el diagnostico del bake contra el FaceGen del CK.</para>
+    ''' <para>Existe para que los call sites que necesitan reportar QUE difiere no dupliquen el bucle de
+    ''' reflexion; AreEqualWithTrace delega aca, asi que toda propiedad nueva queda cubierta en los dos.</para></summary>
+    ''' <param name="ignoreNames">Propiedades a OMITIR. Nothing = comparar todo (contrato historico). El gating
+    ''' del editor pasa <see cref="NifShaderOnlyPropertyNames"/> para excluir el estado solo-NIF.</param>
     Public Shared Function GetDifferences(a As FO4UnifiedMaterial_Class, b As FO4UnifiedMaterial_Class,
                                           Optional ignoreNames As ICollection(Of String) = Nothing) As List(Of MaterialDifference)
         Dim diffs As New List(Of MaterialDifference)

@@ -23,7 +23,7 @@ Imports OpenTK.Mathematics
 ' los cloth-bones (verificado: Δ<5e-4 u vs el embebido), pero el render no tiene el path del NIF
 ' (Nifcontent_Class_Manolo no guarda su filename), así que el embebido es la fuente in-memory.
 ' Si BSClothExtraData falta (CloneShape_Original no lo transfiere) la solución correcta es preservarlo
-' en el clone / leer del NIF source — NO recalcular desde el skin. Ver [[arch_cloth_bones_inject]].
+' en el clone / leer del NIF source — NO recalcular desde el skin. Ver [[25-cloth-inyeccion-de-huesos]].
 '
 ' PENDIENTES CONOCIDOS:
 '  - LocalReferencePoseToTransform y ResolveUniformScale están duplicadas aquí

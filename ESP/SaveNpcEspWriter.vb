@@ -1,42 +1,19 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Linq
 Imports System.Text
 
-' ============================================================================
-' Save NPC ESP/ESM — emits a Bethesda plugin containing one or more NPC_
-' overrides with proper master cleanup (xEdit CleanMasters algorithm).
+' Save NPC ESP/ESM — emite un plugin de Bethesda con uno o más overrides de NPC_, con limpieza de masters
+' (el algoritmo CleanMasters de xEdit).
 '
-' Algorithm overview:
-'   1. For each NPC override the caller wants to save:
-'      a. Collect all FormIDs the override references (from the type-safe parse
-'         model + VMAD position list).
-'      b. Map each global FormID to (sourcePluginName, localObjectID).
-'   2. Build the new plugin's MAST list:
-'      a. Start with the game master (Fallout4.esm / Skyrim.esm) — always present.
-'      b. Add any plugin name that owns at least one referenced FormID.
-'      c. Sort by load order (PluginManager is the authority).
-'   3. Build the FormIdRemapper closure:
-'      For a given global FormID, find its source plugin name + local ObjectID,
-'      look up the new MAST index, return (newMastIdx << 24) | localObjectID.
-'   4. Serialize each NPC_ record:
-'      a. Body via NpcSubrecordWriter.SerializeNpcBody(npc, remapper).
-'      b. Wrap in NPC_ record header (24 bytes) with the original (post-remap)
-'         FormID. Override semantics: the record FormID is the same as the
-'         source NPC's, with master index re-mapped to point at the source via
-'         our new MAST list.
-'   5. Wrap all NPC_ records in a single GRUP NPC_ top-level group.
-'   6. Emit TES4 header with HEDR (numRecords = content records + top-level GRUPs),
-'      CNAM (author), MAST/DATA pairs for each MAST in the new list, then GRUP.
-'   7. Atomic write: write to .tmp, fsync, rename to final path.
+' Secuencia: se recolectan los FormID que referencia cada override y se mapean a (plugin origen, ObjectID
+' local) → se arma la MAST list nueva (el master del juego siempre primero, después todo plugin que sea
+' dueño de algún FormID referenciado, ordenados por load order) → con eso se arma el remapper
+' (global → (nuevo índice MAST << 24) | ObjectID) → se serializa cada NPC_ con ese remapper, se envuelven
+' en un GRUP y se emite el TES4. La escritura es atómica: .tmp + fsync + rename.
 '
-' Update-existing flow:
-'   When the caller passes an existing plugin path that already contains other
-'   NPC overrides, the old records are preserved verbatim (their PluginRecord
-'   subrecords are re-emitted unchanged) but their FormIDs and any embedded
-'   FormID references inside them are remapped against the NEW MAST list. This
-'   matches xEdit's CleanMasters behavior of recomputing master indices when
-'   the master list shifts.
-' ============================================================================
+' Al actualizar un plugin existente, los records ajenos se re-emiten VERBATIM, pero sus FormID y los
+' embebidos dentro de ellos se remapean contra la MAST list NUEVA — que es justamente lo que hace
+' CleanMasters cuando la lista de masters se corre.
 
 Public Module SaveNpcEspWriter
 
@@ -213,24 +190,18 @@ Public Module SaveNpcEspWriter
         Public SourceRecord As PluginRecord = Nothing
     End Class
 
-    ''' <summary>One CLFM (Color) record to write into the plugin — the persistence vehicle for the SSE
-    ''' RaceMenu absolute hair tint (<c>.jslot actor.hairColor</c>, a packed RGB that is NOT a CLFM ref).
-    ''' Two flavours, mirroring <see cref="OtftRecordEntry"/>:
-    '''   • NEW (IsOverride=False): <see cref="FormID"/> is the caller's PROVISIONAL sentinel (0xFF high
-    '''     byte); the writer assigns the real self-index FormID and remaps every reference to it — notably
-    '''     the NPC_.HCLF pointing at the provisional.
-    '''   • OVERRIDE (IsOverride=True): a CLFM authored by a PRIOR save of this same plugin, re-emitted so
-    '''     a re-save doesn't drop it and leave every HCLF that points at it dangling.
-    ''' <para>Body per wbDefinitionsTES5.pas:7946 / wbDefinitionsFO4.pas: EDID + [FULL] + CNAM + FNAM. FULL is
-    ''' optional per xEdit (only CNAM/FNAM are Required) and translatable, so it travels in TWO shapes —
-    ''' see <see cref="FullName"/> (NEW: authored here, encoded) and <see cref="FullNameRaw"/> (OVERRIDE:
-    ''' the source payload verbatim). CNAM is wbByteRGBA = bytes [R,G,B,A] — MEASURED over
-    ''' Skyrim.esm: 178/178 CLFM carry A=0, and the 15 hair colours carry FNAM=1 (Playable), so those are
-    ''' the values a synthesized hair colour gets. CLFM carries NO FormID in its body; only its own record
-    ''' FormID is remapped.</para>
-    ''' <para>⚠️ SSE-ONLY BY CONSTRUCTION (the caller gates it): a Fallout 4 hair CLFM carries a
-    ''' RemappingIndex (FNAM bit 1) instead of an RGB — the packed colour has no meaning there. The writer
-    ''' itself stays game-agnostic and only picks the record version, like every other entry kind.</para></summary>
+    ''' <summary>Un record CLFM (Color) a escribir: es el vehiculo de persistencia del tinte de pelo absoluto
+    ''' de RaceMenu en SSE (el .jslot guarda un RGB empaquetado, no una ref a CLFM). Dos sabores, como
+    ''' <see cref="OtftRecordEntry"/>: NEW (IsOverride=False), donde <see cref="FormID"/> es el centinela
+    ''' provisional del caller y el writer asigna el FormID self-index real y remapea toda referencia -entre
+    ''' ellas el NPC_.HCLF-; y OVERRIDE, un CLFM autorado por un guardado previo de este mismo plugin, que se
+    ''' re-emite para que un re-save no lo tire y deje colgados los HCLF que lo apuntan.
+    ''' <para>Cuerpo: EDID + [FULL] + CNAM + FNAM. FULL es opcional y traducible, asi que viaja en DOS formas
+    ''' (<see cref="FullName"/> autorado aca para NEW, <see cref="FullNameRaw"/> verbatim para OVERRIDE). CNAM
+    ''' es wbByteRGBA [R,G,B,A]; medido sobre Skyrim.esm, los 178 CLFM llevan A=0 y los 15 de pelo FNAM=1
+    ''' (Playable), que son los valores que recibe un color sintetizado. El CLFM no lleva FormID en el cuerpo.</para>
+    ''' <para>âš ï¸ SSE-ONLY por construccion (lo gatea el caller): un CLFM de pelo de FO4 lleva RemappingIndex en
+    ''' vez de RGB. El writer en si se mantiene game-agnostic.</para></summary>
     Public Class ClfmRecordEntry
         ''' <summary>NEW: provisional sentinel (0xFF…). OVERRIDE: the existing CLFM's real global FormID.</summary>
         Public FormID As UInteger
@@ -475,17 +446,13 @@ Public Module SaveNpcEspWriter
             CollectFormIDs(ce.NpcData, allFormIDs)
         Next
         For Each rec In existingRecords
-            ' rec.Header.FormID is LOCAL when rec comes from a fresh PluginReader (caller's
-            ' "update existing" path in NpcOverrideSaver Phase 2 loads with a new reader that
-            ' never goes through PluginManager.MergeRecords, which is what mutates the header
-            ' to GLOBAL — see PluginManager.vb:320-324). The audit downstream uses
-            ' GetOriginatingPluginName(fid) which interprets the high byte as a LOAD ORDER
-            ' slot, so passing LOCAL would pull in whichever plugin happens to occupy that
-            ' slot (typically a DLC ESM) as a spurious master. Resolve to GLOBAL via the
-            ' source plugin's MAST list — same operation MergeRecords does on load, and the
-            ' same convention xEdit uses internally (records carry FixedFormID = LoadOrder
-            ' FormID; CleanMasters / MastersUpdated / ReportRequiredMasters all operate over
-            ' GLOBAL FormIDs — wbImplementation.pas:3024-3120 / 5014 / 13572).
+            ' rec.Header.FormID es LOCAL cuando rec viene de un PluginReader fresco (el camino de "actualizar
+            ' existente" carga con un reader nuevo, que nunca pasa por MergeRecords, que es lo que muta el
+            ' header a GLOBAL). El audit de aguas abajo interpreta el byte alto como slot de LOAD ORDER, asi que
+            ' pasarle el LOCAL arrastraria como master espurio al plugin que ocupe ese slot (tipicamente un DLC).
+            ' Se resuelve a GLOBAL por la MAST del plugin de origen: la misma operacion que hace MergeRecords al
+            ' cargar y la misma convencion de xEdit, cuyos records llevan FixedFormID y cuyo CleanMasters opera
+            ' sobre FormID globales.
             Dim globalRecFid = pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rec.Header.FormID)
             allFormIDs.Add(globalRecFid)
             CollectFormIDsFromSubrecords(rec, existingMasters, pluginManager, allFormIDs)
@@ -553,17 +520,11 @@ Public Module SaveNpcEspWriter
         Next
 
         ' ====================================================================
-        ' Step 2: Build the new MAST list.
-        ' Mirrors xEdit's TwbMainRecord.ReportRequiredMasters (wbImplementation.pas:13572) +
-        ' TwbMainRecord.GetReferenceFile (wbImplementation.pas:12185): for each FormID in the
-        ' record we add the file that DEFINES the master (via FormID high byte → MAST list of
-        ' source plugin → load order). The override file (where the FormID was last seen) is
-        ' NOT what xEdit adds — it adds the file that owns the master record.
-        '
-        ' GetOriginatingPluginName(fid) replicates this: it indexes the high byte against the
-        ' load-order, and our ResolveFormID already mapped local FormIDs to master files via
-        ' the source plugin's MAST list. So GetOriginatingPluginName returns the master-defining
-        ' plugin, equivalent to xEdit's GetMasterForFileID.
+        ' Paso 2: armar la MAST list nueva. Espeja ReportRequiredMasters + GetReferenceFile de xEdit: por cada
+        ' FormID del record se agrega el archivo que DEFINE el master (byte alto -> MAST del plugin origen ->
+        ' load order). El archivo donde se vio por ultima vez el FormID NO es lo que agrega xEdit: agrega el
+        ' que es dueno del record master. GetOriginatingPluginName replica eso, y nuestro ResolveFormID ya
+        ' mapeo los FormID locales a archivos master por la MAST del plugin de origen.
         ' ====================================================================
         Dim referencedPluginNames As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         ' Audit table: which FormID is bringing in which master plugin? Logged so the user can
@@ -622,16 +583,10 @@ Public Module SaveNpcEspWriter
         Next
 
         ' ====================================================================
-        ' Step 3: Build FormIdRemapper.
-        ' For each global FormID:
-        '   - Resolve to source plugin name via PluginManager.
-        '   - Look up new MAST index (or -1 if plugin not in new MAST list — error).
-        '   - Return (newMastIdx << 24) | (FormID & 0xFFFFFF).
-        ' Special cases:
-        '   - FormID == 0: emit 0 (NULL reference).
-        '   - Source plugin == output plugin name: master idx is the plugin's own
-        '     "self FileFileID" which xEdit encodes as len(masters). Auto-generated
-        '     plugins don't typically own non-override records, but support it.
+        ' Paso 3: armar el FormIdRemapper. Por cada FormID global: resolver el plugin de origen, buscar su nuevo
+        ' indice de MAST (-1 = error) y devolver (newMastIdx << 24) | (FormID & 0xFFFFFF).
+        ' Casos especiales: FormID 0 se emite como 0 (ref nula); si el plugin de origen es el propio archivo de
+        ' salida, el indice es el "self FileID", que xEdit codifica como len(masters).
         ' ====================================================================
         Dim outputName = Path.GetFileName(outputPath)
         Dim masterIndexLookup As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
@@ -641,17 +596,13 @@ Public Module SaveNpcEspWriter
         ' "Self" master index (records owned by THIS plugin) = sortedMasters.Count.
         Dim selfMasterIdx As Integer = sortedMasters.Count
 
-        ' Assign real self-index FormIDs to NEW OTFT outfits. The caller handed each NEW entry a
-        ' PROVISIONAL sentinel (0xFF high byte); the real FormID is (selfMasterIdx << 24) | objIndex,
-        ' objIndex starting at NEXT_OBJECT_ID_DEFAULT (0x800) — the FO4/xEdit new-record convention.
-        ' draftRemap maps provisional → real so the remapper rewrites BOTH the OTFT record header AND
-        ' every reference to it (notably the NPC.DOFT pointing at the provisional FormID). OVERRIDE
-        ' entries keep their real FormID and resolve through the normal master-remap path.
-        ' Every NEW draft (OTFT outfits AND LVLI leveled lists) is pre-assigned its real self-index
-        ' FormID BEFORE serialization, so cross-draft references (OTFT.INAM → draft LVLI, draft LVLI.LVLO
-        ' → another draft LVLI, NPC.DOFT → draft OTFT) resolve through the single remapper irrespective of
-        ' emit order. OTFTs are numbered first, then LVLIs — any stable order works; the keys (provisional
-        ' FormIDs) are globally unique across both kinds because they come from one app-side counter.
+        ' Cada draft NUEVO (outfits OTFT y leveled lists LVLI) recibe su FormID self-index real ANTES de
+        ' serializar: (selfMasterIdx << 24) | objIndex, con objIndex arrancando en 0x800 (convencion de
+        ' nuevo record de FO4/xEdit). El caller les habia dado un centinela PROVISIONAL con byte alto 0xFF, y
+        ' draftRemap mapea provisional -> real para que el remapper reescriba tanto el header del record como
+        ' toda referencia a el (el NPC.DOFT, el OTFT.INAM que apunta a un LVLI draft, un LVLI a otro).
+        ' Asi las referencias cruzadas resuelven por el unico remapper sin importar el orden de emision; las
+        ' claves son unicas entre ambos tipos porque salen de un solo contador de la app.
         Dim draftRemap As New Dictionary(Of UInteger, UInteger)
         ' Seed the draft object-ID counter from the disk HEDR if it's ahead of the default. On
         ' update-existing, a prior save consumed object IDs 0x800..existingNextObjectId-1 (those
@@ -830,26 +781,16 @@ Public Module SaveNpcEspWriter
         Next
 
         ' ====================================================================
-        ' Step 5: Wrap each record type in its own top-level GRUP. Order matches xEdit canonical
-        ' wbGroupOrder (built from wbRecord(...) declaration order in wbDefinitionsFO4.pas):
-        '   OTFT (9698) → LVLI (10352) → NPC_ (10617). xEdit's PrepareSave sorts top-level GRUPs
-        '   by SortOrder (wbImplementation.pas:5212 wbMergeSortPtr CompareSortOrder), so any
-        '   plugin loaded into xEdit + re-saved comes out in this order. Match it on write so
-        '   our output is byte-comparable.
-        ' FormID resolution is global, so engine doesn't require this order — it's pure xEdit
-        ' canonicality.
+        ' Paso 5: envolver cada tipo de record en su GRUP de primer nivel, en orden referenced-first:
+        ' CLFM -> MSWP -> ARMA -> ARMO -> OTFT -> LVLN -> LVLI -> NPC_ (un record referenciado precede a su
+        ' referrer). La resolucion de FormID es global, asi que al motor el orden no le importa: es para que el
+        ' archivo quede legible.
+        ' âš ï¸ Es una desviacion DELIBERADA y PREEXISTENTE del wbGroupOrder canonico de xEdit, que en los dos
+        ' juegos pone CLFM cerca del FINAL. Este writer ya emite referenced-first para los otros 7 grupos y CLFM
+        ' sigue la MISMA convencion local en vez de partir el orden del archivo en dos reglas. Nada lo rechaza:
+        ' el orden de GRUP no significa nada para el motor ni para el CK, y xEdit re-ordena por SortOrder en su
+        ' propio guardado. Lo que SI tiene que estar bien es HEDR.numRecords, mas abajo.
         ' ====================================================================
-        ' Referenced-first GRUP order: CLFM → MSWP → ARMA → ARMO → OTFT → LVLN → LVLI → NPC_. A referenced
-        ' record precedes its referrer (CLFM is referenced by NPC_.HCLF; MSWP by ARMA/ARMO; ARMA by ARMO;
-        ' ARMA/ARMO by OTFT/LVLI/NPC_).
-        ' FormID resolution is global so the engine doesn't require this — it keeps the file readable/clean.
-        ' ⚠️ Deliberate, PRE-EXISTING deviation from xEdit's canonical wbGroupOrder, which in BOTH games puts
-        ' CLFM near the END (FO4 wbDefinitionsFO4.pas:13686, after NPC_ 13593 / ARMA 13654 / OTFT 13677;
-        ' Skyrim wbDefinitionsTES5.pas:11212, after NPC_ 11121 / ARMA 11181 / OTFT 11203). This writer already
-        ' emits referenced-first for the other 7 groups; CLFM follows the SAME local convention rather than
-        ' splitting the file's ordering across two rules. Nothing rejects it: top-level GRUP order carries no
-        ' meaning for the engine or the CK (FormID resolution is global), and xEdit re-sorts by SortOrder on
-        ' its own save (wbImplementation.pas:5212). What DOES have to be right is HEDR.numRecords below.
         Dim grupClfmBytes As Byte() = If(clfmBuffers.Count > 0, BuildGrup("CLFM", clfmBuffers), Array.Empty(Of Byte)())
         Dim grupMswpBytes As Byte() = If(mswpBuffers.Count > 0, BuildGrup("MSWP", mswpBuffers), Array.Empty(Of Byte)())
         Dim grupArmaBytes As Byte() = If(armaBuffers.Count > 0, BuildGrup("ARMA", armaBuffers), Array.Empty(Of Byte)())
@@ -861,17 +802,13 @@ Public Module SaveNpcEspWriter
         Dim grupNpcBytes = BuildGrup("NPC_", recordBuffers)
 
         ' ====================================================================
-        ' Step 6: Build TES4 header + emit final stream.
-        ' numRecords: see the derivation right above the grupCount computation below.
-        ' nextObjectId follows TwbFile.NewFormID semantics (wbImplementation.pas:5083-5122):
-        '   - The draft counter (nextSelfObjIndex) was seeded from max(0x800, disk HEDR) and
-        '     advanced once per NEW draft (OTFT + LVLI). Its final value is the first free slot
-        '     after this save → exactly what HEDR.nextObjectId must hold.
-        '   - Fresh plugin with no drafts: nextSelfObjIndex stayed at 0x800.
-        '   - Update-existing with no new drafts but disk had advanced counter: preserved through
-        '     the seed.
-        ' Mask clamps the counter to the object-ID width: ESL/light = 12 bits (0xFFF),
-        ' full plugin = 24 bits (0xFFFFFF). Mirror of TwbFile.NewFormID mask logic.
+        ' Paso 6: armar el header TES4 y emitir el stream final.
+        ' nextObjectId sigue la semantica de TwbFile.NewFormID: el contador de drafts se sembro con
+        ' max(0x800, HEDR del disco) y avanzo una vez por draft NUEVO, asi que su valor final es el primer slot
+        ' libre despues de este guardado, que es exactamente lo que debe llevar HEDR.nextObjectId. Un plugin
+        ' fresco sin drafts se queda en 0x800, y actualizar uno existente sin drafts nuevos preserva el contador
+        ' por la semilla.
+        ' La mascara clampea el contador al ancho del object-ID: ESL/light 12 bits, plugin completo 24 bits.
         ' ====================================================================
         Dim objectIdMask As UInteger = If(lightMaster, &HFFFUI, &HFFFFFFUI)
         Dim nextObjectId As UInteger = nextSelfObjIndex
@@ -1409,24 +1346,21 @@ Public Module SaveNpcEspWriter
         End Using
     End Function
 
-    ''' <summary>Serialize one CLFM (Color) record: 24-byte header + body. Body order per
-    ''' wbDefinitionsTES5.pas:7946 (identical in FO4): EDID + [FULL] + CNAM + FNAM.
+    ''' <summary>Serializa un record CLFM (Color): header de 24 bytes + cuerpo EDID + [FULL] + CNAM + FNAM.
     ''' <list type="bullet">
-    ''' <item>EDID — ZSTRING, cp1252 non-translatable (same encoder as every other EDID here).</item>
-    ''' <item>FULL — optional display name. OVERRIDE: <see cref="ClfmRecordEntry.FullNameRaw"/> verbatim.
-    '''   NEW: <see cref="ClfmRecordEntry.FullName"/> as a ZSTRING through <c>EncodeTranslatable</c> — the
-    '''   cpTranslate encoder, NOT the cp1252 General one EDID uses. Both empty = no FULL, the old behaviour.
-    '''   Emitting the literal (rather than a u32 string-table ID) is the same contract the whole writer runs
-    '''   under: it targets NON-localized plugins and ships no strings table (NpcSubrecordWriter.EmitLString
-    '''   documents it, and NPC_/ARMO FULL already go out this way).</item>
-    ''' <item>CNAM — wbByteRGBA, 4 bytes in [R,G,B,A] order (mirror of RecordParsers.ParseClfmColor, which
-    '''   reads byte0=R…byte3=A). MEASURED over Skyrim.esm: alpha is 0 on all 178 CLFM.</item>
-    ''' <item>FNAM — u32. Skyrim: 'Playable' bool, =1 on all 15 vanilla hair colours (measured). FO4: flag
-    '''   field where bit 1 means "CNAM is a RemappingIndex, not an RGB" — a synthesized entry never sets
-    '''   it, which is exactly why this path is SSE-only at the caller.</item>
+    ''' <item>EDID - ZSTRING cp1252 no traducible, el mismo encoder que todos los EDID de aca.</item>
+    ''' <item>FULL - nombre opcional. OVERRIDE: <see cref="ClfmRecordEntry.FullNameRaw"/> verbatim. NEW:
+    '''   <see cref="ClfmRecordEntry.FullName"/> por <c>EncodeTranslatable</c>, NO por el encoder cp1252 del
+    '''   EDID. Los dos vacios = sin FULL. Se emite el literal y no un id de string table porque todo el writer
+    '''   apunta a plugins NO localizados y no shippea strings.</item>
+    ''' <item>CNAM - wbByteRGBA, 4 bytes [R,G,B,A] (espejo del parser). Medido sobre Skyrim.esm: alpha 0 en los
+    '''   178 CLFM.</item>
+    ''' <item>FNAM - u32. Skyrim: bool Playable, =1 en los 15 colores de pelo vanilla. FO4: campo de flags donde
+    '''   el bit 1 significa "CNAM es un RemappingIndex, no un RGB", que es justo por lo que este camino es
+    '''   SSE-only en el caller.</item>
     ''' </list>
-    ''' The record FormID is the draft's real self-index (NEW, via draftRemap inside the remapper) or the
-    ''' existing global FormID (OVERRIDE, master-remapped). CLFM has no FormID in its body.</summary>
+    ''' El FormID del record es el self-index real del draft (NEW, via draftRemap) o el global existente
+    ''' (OVERRIDE, master-remapeado). El CLFM no lleva FormID en el cuerpo.</summary>
     Private Function SerializeClfmRecord(entry As ClfmRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper, game As Config_App.Game_Enum) As Byte()
         Dim body As Byte()
         Using bms As New MemoryStream()
@@ -1673,12 +1607,6 @@ Public Module SaveNpcEspWriter
         Return WrapRecord("MSWP", body, flags, remapper(entry.FormID), entry.OriginalVcs1, entry.OriginalVcs2, game, recordVersion)
     End Function
 
-    ''' <summary>Serialize one ARMA (Armor Addon) record. Body order per wbDefinitionsFO4.pas:6210:
-    ''' EDID, BOD2(u32 slot mask), RNAM(opt), DNAM(12-byte struct, required), Biped Model
-    ''' (MOD2/MO2C/MO2S/MO2F then MOD3/MO3C/MO3S/MO3F), 1st Person (MOD4/MO4F then MOD5/MO5F), NAM0..NAM3,
-    ''' Additional Races (MODL array), Bone Scale (BSMP + per-bone BSMB/BSMS). Header flags carry bits
-    ''' 6 (No Underarmor Scaling) / 9 (Has Sculpt Data) / 30 (Hi-Res 1st Person Only).
-    ''' BOD2 confirmed single u32 at wbDefinitionsFO4.pas:3782.</summary>
     ''' <summary>Serialize one ARMA (Armor Addon). Public so the round-trip probe
     ''' (Tools\ArmoArmaSseRoundtripProbe) can exercise the serializer directly with an identity remapper.
     ''' Game-branched: FO4 body per wbDefinitionsFO4.pas:6210, Skyrim per wbDefinitionsTES5.pas:4409.</summary>
@@ -2260,51 +2188,25 @@ Public Module SaveNpcEspWriter
         End Using
     End Function
 
-    ' ========================================================================
-    ' OVERRIDE-MERGE serializers (re-save an EXISTING ARMA/ARMO with edits).
-    '
-    ' The entry carries the FINAL desired state of every OWNED field (app pre-fills from the parsed
-    ' source, then applies the user's edits). The writer emits the record in CANONICAL xEdit order:
-    '   • OWNED subrecords come from the entry (via the SAME EmitArmoXxx/EmitArmaXxx helpers the create
-    '     path uses — one source of truth for byte layout).
-    '   • PRESERVED subrecords (everything else in the source) are copied verbatim from SourceRecord,
-    '     with any FormIDs they carry remapped from the SOURCE plugin's MAST list to the NEW MAST list.
-    '
-    ' FormID remap of a preserved subrecord: each FormID stored in the source bytes is SOURCE-LOCAL
-    ' (master-indexed to the source plugin). We resolve it to GLOBAL via the source plugin's MAST list
-    ' (pluginManager.ResolveReferencedFormID — same operation the parser's ResolveFormIDReference does),
-    ' then through the single 'remapper' (global → new MAST index). This is the identical technique
-    ' EmitVmad / ApplyObtsRemap use (patch FormIDs at known offsets in a raw copy), generalized to raw
-    ' source subrecords. If a preserved signature might carry FormIDs but its layout is not classified
-    ' here, we THROW (NotSupportedException) rather than copy raw FormID bytes (which would point at the
-    ' wrong master) — mirror of SerializeExistingRecord's fail-loud policy.
-    ' ========================================================================
+    ' Serializers de OVERRIDE-MERGE (re-guardar un ARMA/ARMO existente con ediciones).
+    ' El entry trae el estado FINAL de cada campo PROPIO y el writer emite el record en el orden canónico
+    ' de xEdit: los subrecords propios salen del entry (por los MISMOS helpers que usa el camino de
+    ' creación, una sola fuente para el layout de bytes) y todo lo demás se copia VERBATIM del source,
+    ' remapeando los FormID que lleve de la MAST list del source a la nueva.
+    ' ⛔ Un FormID guardado en los bytes del source es LOCAL a ese plugin: hay que resolverlo a global por
+    ' su propia MAST list y recién ahí pasarlo por el remapper. Y si una signatura preservada puede llevar
+    ' FormIDs pero su layout no está clasificado acá, se TIRA en vez de copiar los bytes crudos — que
+    ' apuntarían al master equivocado. Fail-loud, igual que el resto del writer.
 
-    ''' <summary>Preserved-subrecord signatures that carry exactly ONE 4-byte FormID at offset 0 (the
-    ''' whole payload is the FormID). Confirmed against wbDefinitionsFO4.pas:
-    '''   ARMO: PTRN(5626), EITM(wbEnchantment→wbFormIDCk EITM), YNAM(5629), ZNAM(5630), ETYP(5236),
-    '''         BIDS(6180), BAMT(6181), DMDS(inside DEST stage = [MSWP]).
-    '''   ARMA: ONAM(6252 [ARTO]), MO4S/MO5S (1st-person material swap [MSWP], not modeled by ArmaRecordEntry
-    '''         so PRESERVED).
-    ''' NOTE: ARMO INRD (5632 [INNR]) and ARMA SNDD (6251 [FSTS]) are NOT here — they are OWNED single-FormID
-    ''' subrecords (entry.InstanceNamingFormID / entry.FootstepSetFormID), emitted at their canonical position by
-    ''' EmitArmoInrd / EmitArmaSndd, so they never route through EmitPreservedSubrecord.</summary>
-    ''' NOTE: EITM/PTRN/YNAM/ZNAM/ETYP/BAMT (ARMO) and ONAM/MO4S/MO5S (ARMA) were promoted to OWNED single-FormID
-    ''' subrecords (emitted from the entry at their canonical position) — they are no longer preserved. Only BIDS
-    ''' ([IPDS], ARMO) and DMDS ([MSWP], inside DEST) remain preserved single-FormID subrecords.
+    ''' <summary>Firmas de subrecord preservado que llevan exactamente UN FormID de 4 bytes en el offset 0 (el
+    ''' payload entero es el FormID): del ARMO quedan BIDS ([IPDS]) y DMDS ([MSWP], dentro del DEST).
+    ''' <para>EITM/PTRN/YNAM/ZNAM/ETYP/BAMT del ARMO y ONAM/MO4S/MO5S del ARMA fueron promovidos a subrecords
+    ''' PROPIOS (se emiten desde la entry en su posicion canonica), asi que ya no se preservan. INRD del ARMO y
+    ''' SNDD del ARMA tampoco estan aca por lo mismo.</para></summary>
     Private ReadOnly _singleFormIdPreservedSigs As New HashSet(Of String)(
         {"BIDS", "DMDS"},
         StringComparer.Ordinal)
 
-    ''' <summary>Preserved-subrecord signatures that carry NO FormIDs — copied byte-for-byte. Confirmed
-    ''' against xEdit: OBND(bounds), MO2T/MO3T/MO4T/MO5T(texture-set hashes, not FormIDs), MODC/MO2C/MO3C/
-    ''' MO4C/MO5C(color-remap float), MO2F/MO3F/MO4F/MO5F(model flag byte), ICON/MICO/ICO2/MIC2(icon path
-    ''' string), DESC(translatable lstring), DSTA(sequence name string), DMDL(model filename string),
-    ''' DMDT(texture data blob), DMDF(model flag byte), DSTF/STOP/OBTF(empty markers),
-    ''' EAMT(wbEnchantment Capacity = u16 amount, NOT a FormID — wbDefinitionsFO4.pas wbEnchantment).
-    ''' NOTE: this set is consulted only for signatures NOT otherwise classified (single-FormID / complex /
-    ''' owned). It is the "known non-FormID" allow-list; anything outside ALL classifications throws.</summary>
-    ''' NOTE: OBND (now editable 6×i16) and DESC (now owned translatable) were promoted to OWNED — removed here.
     ''' <summary>BMCT (Skyrim ARMO 'Ragdoll Constraint Template', wbDefinitionsTES5.pas:4393) is a plain string —
     ''' no FormID — so it is copied verbatim. FO4 ARMO has no BMCT, so this only matters under Skyrim.</summary>
     Private ReadOnly _verbatimPreservedSigs As New HashSet(Of String)(

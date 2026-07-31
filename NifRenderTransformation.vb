@@ -144,7 +144,9 @@ Public Class Transform_Class
                 Translation = New Numerics.Vector3(Origen.X, Origen.Y, Origen.Z)
                 Scale = Origen.Scale
             Case Else
+#If DEBUG Then
                 Debugger.Break()
+#End If
                 Throw New Exception
         End Select
         ' Non-uniform scale → ScaleVector como property explícita (no se baked-in en Rotation).

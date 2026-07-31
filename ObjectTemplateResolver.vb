@@ -1,4 +1,4 @@
-Imports System.Linq
+﻿Imports System.Linq
 Imports FO4_Base_Library
 
 ''' <summary>
@@ -459,66 +459,33 @@ Public Module ObjectTemplateResolver
         Next
     End Sub
 
-    ''' <summary>
-    ''' Chooses WHICH include a DontUseAll container contributes.  This decides which OMOD — and
-    ''' therefore which model and which material — is written to the NIF, so it must never depend
-    ''' on ambient process state.
-    '''
-    ''' ENGINE LAW (VERIFIED FROM BINARY — Fallout4.exe, image base 0x140000000; include evaluator
-    ''' at 0x140251AAE, DontUseAll gate at 0x140251D19, picker at 0x140251740):
-    '''   - The engine applies EXACTLY ONE include, never a subset (single call to the apply path
-    '''     0x140251A70 at 0x1402521B0, versus the use-all loop at 0x140251D50..0x140251D9C).
-    '''     Picking one, as we do, is structurally correct.
-    '''   - Its choice is RANDOM, drawn from a PROCESS-GLOBAL RNG stream (randRange 0x14165B140
-    '''     over global state 0x142F3F6A0 — the same stream Papyrus Utility.RandomInt uses).  It is
-    '''     seeded from NOTHING stable: not the base form, not the RefID, not the instance.
-    '''
-    ''' Therefore the engine's selection is NON-REPRODUCIBLE BY DESIGN.  There is no seed we could
-    ''' derive that would make a bake match a specific in-game actor — being engine-faithful and
-    ''' being deterministic are mutually exclusive here.  A bake must be reproducible, so it takes
-    ''' the deterministic side, and that choice is a documented BAKE CONVENTION, NOT an engine law:
-    '''
-    '''   rngSeed = Nothing (default)  → first-wins.  Index 0 of the record-order include list.
-    '''                                  Fully deterministic, derives from nothing but the record,
-    '''                                  and is the most conservative choice available: it invents
-    '''                                  no distribution and no per-instance mimicry.
-    '''   rngSeed = supplied           → deterministic FUNCTION of (seed, container FormID, apIdx).
-    '''                                  Lets a caller that WANTS variation (an interactive re-roll)
-    '''                                  get it while keeping every run reproducible from its seed.
-    '''
-    ''' What this replaces: Random.Shared.Next, which made the SAME NPC produce DIFFERENT NIFs on
-    ''' two runs.  That silently invalidated every byte-identical-hash comparison downstream — a
-    ''' diff could be noise and a match could be luck.
-    '''
-    ''' MEASURED blast radius (vanilla FO4 + all DLC, 3987 unique OMODs): 493 OMODs hold two or
-    ''' more valid DontUseAll includes and were therefore genuinely nondeterministic (candidate
-    ''' pools of 2..30; the weapon/armor/robot modcol_* part-and-material collections).  This was a
-    ''' LIVE defect, not a latent one.
-    '''
-    ''' ⚠ KNOWN DIVERGENCES from the engine, surfaced by the RE above and deliberately NOT fixed
-    ''' here (they are separate defects, each needing context this resolver is not given — recorded
-    ''' so they are not mistaken for settled behaviour):
-    '''   1. MINIMUM LEVEL is not filtered.  The engine drops includes whose Minimum Level exceeds
-    '''      the item/actor level, on BOTH the use-all and the pick-one path (0x140251D50).  We
-    '''      consider every include regardless of level; no level is threaded into this resolver.
-    '''   2. LEVEL-TIER PREFERENCE is not applied.  The engine does not choose uniformly over the
-    '''      valid includes: it keeps only the highest-level-tier survivors and randomizes within
-    '''      that window (picker 0x140251740).  A uniform/first-wins choice over the whole list
-    '''      therefore over-selects LOW-tier mods relative to the engine.
-    '''   3. The OMOD FORM's own "don't use all" bit is ignored.  A second, independent gate at
-    '''      0x140251D24 reads it from the OMOD record itself (one of xEdit's OMOD DATA "Unknown
-    '''      Bool" fields, wbDefinitionsFO4.pas:12861-12862); either source triggers the same path.
-    '''      We honour only the include-side flag, so some containers that the engine treats as
-    '''      pick-one are still expanded as use-all here.
-    '''
-    ''' The mixer below is written out explicitly rather than using GetHashCode so the mapping is
-    ''' stable across processes, runtimes and platforms — GetHashCode guarantees none of that.
-    '''
-    ''' It is XOR/shift ONLY (xorshift64), deliberately with no multiply step: this project does not
-    ''' set RemoveIntegerChecks, so VB's integer overflow checking is ON and the wrap-around
-    ''' multiply that a classic FNV/SplitMix mixer depends on would raise OverflowException at
-    ''' runtime.  Shift and XOR never overflow-check, so this stays exception-free.
-    ''' </summary>
+    ''' <summary>Elige QUE include aporta un contenedor DontUseAll. Decide que OMOD -y por lo tanto que modelo y
+    ''' que material- se escribe al NIF, asi que no puede depender de estado ambiente del proceso.
+    ''' <para>LEY DEL MOTOR (verificada sobre el binario): aplica EXACTAMENTE UN include, nunca un subconjunto,
+    ''' asi que elegir uno es estructuralmente correcto. Pero su eleccion es ALEATORIA, de un RNG GLOBAL DEL
+    ''' PROCESO (el mismo stream que usa Utility.RandomInt), sembrado desde NADA estable: ni el base form, ni el
+    ''' RefID, ni la instancia.</para>
+    ''' <para>O sea que la seleccion del motor es NO REPRODUCIBLE POR DISENO: no hay semilla que podamos derivar
+    ''' para que un bake matchee a un actor concreto in-game. Ser engine-faithful y ser determinista son
+    ''' mutuamente excluyentes aca, y un bake tiene que ser reproducible, asi que se toma el lado determinista.
+    ''' Eso es una CONVENCION DEL BAKE, NO una ley del motor:</para>
+    '''   <c>rngSeed = Nothing</c> (default) â†’ first-wins, el indice 0 del orden del record. No inventa
+    '''                                        distribucion ni mimetiza nada por instancia.
+    '''   <c>rngSeed</c> provisto            â†’ funcion determinista de (semilla, FormID del contenedor, apIdx),
+    '''                                        para un caller que QUIERA variacion sin perder reproducibilidad.
+    ''' <para>Reemplaza a Random.Shared.Next, que hacia que el MISMO NPC produjera NIFs distintos en dos
+    ''' corridas e invalidaba en silencio toda comparacion por hash. Medido sobre vanilla + DLC (3987 OMODs):
+    ''' 493 tienen dos o mas includes DontUseAll validos, o sea que era un defecto VIVO, no latente.</para>
+    ''' <para>âš ï¸ DIVERGENCIAS CONOCIDAS contra el motor, deliberadamente NO arregladas aca porque cada una
+    ''' necesita contexto que este resolver no recibe: (1) no se filtra por Minimum Level, que el motor si
+    ''' descarta; (2) no se aplica la preferencia por tier, el motor se queda solo con los de tier mas alto y
+    ''' sortea dentro de esa ventana, asi que first-wins sobre-selecciona tiers BAJOS; (3) se ignora el bit
+    ''' "don't use all" del propio record OMOD, que es una segunda compuerta independiente, asi que algun
+    ''' contenedor que el motor trata como pick-one aca se expande como use-all.</para>
+    ''' <para>El mixer de abajo va escrito a mano y no por GetHashCode, que no garantiza estabilidad entre
+    ''' procesos ni plataformas. Es XOR/shift puro (xorshift64) SIN multiplicacion a proposito: el proyecto no
+    ''' desactiva el chequeo de overflow, asi que el multiply con wrap-around de un mixer tipo FNV/SplitMix
+    ''' tiraria OverflowException en runtime.</para></summary>
     Private Function SelectDontUseAllIndex(omod As OMOD_Data,
                                            apIdx As Byte,
                                            count As Integer,

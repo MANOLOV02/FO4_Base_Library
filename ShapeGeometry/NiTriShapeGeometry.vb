@@ -5,47 +5,25 @@ Imports NiflySharp.Structs
 Imports SysHalf = System.Half
 Imports SysNumerics = System.Numerics
 
-''' <summary>
-''' IShapeGeometry adapter for the NiTriBasedGeom family (NiTriShape, BSLODTriShape,
-''' NiTriStrips).  All three resolve geometry through DataRef → NiTriBasedGeomData
-''' (NiTriShapeData for the first two, NiTriStripsData for strips), and all three rely on
-''' NiSkinInstance / BSDismemberSkinInstance + NiSkinData + NiSkinPartition for skinning
-''' instead of inline BSVertexData.
-'''
-''' Tangent / Bitangent semantics: applies the same INVERTIDAS swap as BSTriShape
-''' (renderer Tangent ⇆ NIF Bitangent, renderer Bitangent ⇆ NIF Tangent).  The renderer
-''' was tuned around BSTriShape's convention; Skyrim NiTriShape fields use the same naming
-''' convention with the same effective swap relative to FO4 shader expectations, so the
-''' adapter applies it uniformly to keep TBN consistent across families.
-'''
-''' Triangles vs strips: NiTriShapeData stores a triangle list directly.  NiTriStripsData
-''' stores triangle strips (compact GPU-strip format).  GetTriangles() converts strips to
-''' triangles via NiflySharp.Helpers.IndicesHelper.GenerateTrianglesFromStrips so callers
-''' see a uniform triangle list.  SetTriangles() writes back as a triangle list for
-''' NiTriShapeData; for NiTriStripsData it emits "degenerate strips" (one 3-point strip
-''' per triangle), which is the simplest tri→strip encoding that survives round-trip
-''' (no stripification heuristic, no GPU-batching benefit, but byte-perfect read after
-''' write).  If the original NIF was carefully strip-optimized that batching information
-''' is lost; for our edit/save use case this is acceptable.
-'''
-''' Skinning extraction strategy:
-'''   1. Prefer NiSkinPartition (GPU-friendly per-vertex layout).  Walks each partition,
-'''      maps partition-local vertex indices through VertexMap to global vertex indices and
-'''      partition-local bone indices through Partitions[p].Bones to shape-level bone palette
-'''      indices.
-'''   2. Fallback to NiSkinData.BoneList[i].VertexWeights (per-bone {vertexIdx, weight} list)
-'''      when no partition is present (legacy / unbuilt meshes).  Each vertex collects up to
-'''      4 influences sorted by descending weight.
-''' Output is the same flat 4-slot-per-vertex format the BSTriShape adapter emits, so the
-''' downstream skinning math in SkinningHelper does not branch by adapter.
-'''
-''' Writeback: SetVertexPositions / SetTriangles / etc. mutate the NiTriBasedGeomData block.
-''' The skin partition is NOT touched here — caller must invoke
-''' Nifcontent_Class_Manolo.UpdateSkinPartitions(shape) after structural changes (same
-''' contract as BSTriShape).  BSLODTriShape's LOD0/1/2 sizes are preserved verbatim; this
-''' adapter does not regenerate them when the triangle list size changes (out of scope —
-''' LOD redistribution would need a heuristic).
-''' </summary>
+''' <summary>Adaptador IShapeGeometry para la familia NiTriBasedGeom (NiTriShape, BSLODTriShape, NiTriStrips).
+''' Los tres resuelven la geometria por DataRef y skinnean con NiSkinInstance/BSDismemberSkinInstance +
+''' NiSkinData + NiSkinPartition en vez de BSVertexData inline.
+''' <para>Tangente y bitangente: aplica el MISMO swap que BSTriShape (tangente del renderer = bitangente del
+''' NIF y viceversa), uniforme para toda la familia, asi el TBN queda consistente entre adaptadores.</para>
+''' <para>Triangulos vs strips: NiTriShapeData guarda lista de triangulos; NiTriStripsData guarda strips.
+''' GetTriangles convierte los strips para que el caller siempre vea una lista uniforme. SetTriangles escribe
+''' lista para NiTriShapeData y "strips degenerados" (uno de 3 puntos por triangulo) para NiTriStripsData: es
+''' la codificacion mas simple que sobrevive el round-trip byte a byte. Si el NIF original venia optimizado
+''' para batching de GPU, esa informacion se pierde - aceptable para el caso de uso de editar y guardar.</para>
+''' <para>Skinning: se prefiere la NiSkinPartition (layout por vertice, GPU-friendly), mapeando los indices
+''' locales de cada particion a indices globales de vertice y a la paleta de huesos de la shape; si no hay
+''' particion (mallas legacy o sin construir) se cae a NiSkinData.BoneList, juntando hasta 4 influencias por
+''' vertice ordenadas por peso. La salida es el mismo formato plano de 4 slots que emite el adaptador de
+''' BSTriShape, asi que la matematica de SkinningHelper no ramifica por adaptador.</para>
+''' <para>Escritura: los setters mutan el bloque NiTriBasedGeomData. La particion de skin NO se toca aca - el
+''' caller tiene que llamar a UpdateSkinPartitions tras un cambio estructural, mismo contrato que BSTriShape.
+''' Los tamanos LOD0/1/2 de BSLODTriShape se preservan verbatim y no se regeneran si cambia la cantidad de
+''' triangulos (redistribuir LODs necesitaria una heuristica).</para></summary>
 Public Class NiTriShapeGeometry
     Implements IShapeGeometry
 
@@ -465,7 +443,9 @@ Public Class NiTriShapeGeometry
             ' (Geometry.cpp:1248).  Note: BSSegmented is FO3-era and rare in FO4 vanilla;
             ' WM filter currently blocks it from split/zap until the deeper NiTri-family
             ' refactor lands (see notes in memory).
+#If DEBUG Then
             Debugger.Break()
+#End If
             Dim newSegs = BSTriShapeGeometry.RedistributeSegments(oldSegments, provenance, triangles.Count)
             WriteSegmentedSegments(bsSeg, newSegs)
         End If
@@ -808,7 +788,7 @@ Public Class NiTriShapeGeometry
                 $"WriteStrips: {strips.Count} strips exceeds NiTriStripsData._numStrips UShort16 " &
                 "limit (65535).  Mesh is too large for the degenerate-strips (1 tri per strip) " &
                 "encoding used by this adapter.  True stripification would consolidate triangles " &
-                "into fewer longer strips — not implemented; see pending_tests_shape_metadata.md.")
+                "into fewer longer strips - not implemented.")
         End If
         ' Per-strip length is also UShort16 but degenerate strips are always length 3 — safe.
         ' For future proper stripification this would need per-strip check too.

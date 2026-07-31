@@ -1,9 +1,9 @@
-Imports System.Linq
+﻿Imports System.Linq
 
 ''' <summary>
 ''' RaceMenu / NiOverride (skee64) face-overlay compositor — the engine-EXACT blend of overlay layers ON TOP
 ''' of the vanilla facetint, decoded from the RaceMenu HLSL SOURCE (.fx in RaceMenu.bsa, not inferred). See
-''' reference_racemenu_overlay_blend. skee applies overlays live (bExternalHeads=0 → not baked); to bake a
+''' 60-racemenu-blend-de-overlays. skee applies overlays live (bExternalHeads=0 → not baked); to bake a
 ''' WYSIWYG _d (as the app does for LooksMenu overlays in FO4) we composite them here.
 '''
 ''' Per layer: (1) TYPE combines the overlay texture with the layer colour; (2) BLENDMODE composites over the
@@ -12,7 +12,7 @@ Imports System.Linq
 ''' </summary>
 Public Module SseOverlayCompositor
 
-    ''' <summary>NiOverride blend modes (technique name → this enum). Math is per reference_racemenu_overlay_blend.</summary>
+    ''' <summary>NiOverride blend modes (technique name → this enum). Math is per 60-racemenu-blend-de-overlays.</summary>
     Public Enum SseBlendMode
         Normal
         Multiply
@@ -63,8 +63,6 @@ Public Module SseOverlayCompositor
         End Select
     End Function
 
-    ''' <summary>Composite the overlays over <paramref name="acc"/> (linear RGBA, in place). No-op when the list
-    ''' is empty (vanilla NPCs) — the code path always runs so modded NPCs bake WYSIWYG.</summary>
     ''' <summary>Mapea un blend-mode de skee al par (blendOp, softLightModel) del dispatch COMPARTIDO CPU/GL.
     ''' ⭐ FUENTE ÚNICA: la usan <see cref="ApplyOverlays"/> (CPU) y el path GPU (uniform uBlendOp del compositor),
     ''' así los dos no pueden desincronizarse (antes el mapeo vivía inline en el CPU y el GPU no tenía ninguno).
@@ -153,21 +151,6 @@ Public Module SseOverlayCompositor
         Next
     End Sub
 
-    ''' <summary>Bake the NPC's FACE overlays (the <c>Face [Ovl{n}]</c> nodes of the .jslot <c>overrides</c>
-    ''' array — the SAME <see cref="RaceMenuJslot.JslotOverlayNode"/> list the editor edits and the render draws
-    ''' as coplanar decals) INTO a diffuse accumulator, in place. The engine renders these live and never bakes
-    ''' them; we bake so the per-NPC diffuse is WYSIWYG. Composite = skee's <c>normal.fx</c> straight-alpha-over
-    ''' (the .jslot overrides carry NO per-overlay blend mode → skee uses "normal"): per pixel the overlay colour
-    ''' is <c>tex.rgb × tint.rgb</c> (type 0, when <see cref="JslotOverlayNode.HasTint"/>) else <c>tex.rgb</c>,
-    ''' and coverage = <c>tex.a × opacity</c> (opacity = key8 <see cref="JslotOverlayNode.Alpha"/> when
-    ''' <see cref="JslotOverlayNode.HasAlpha"/>, else 1). Overlays with no diffuse texture are skipped.
-    '''
-    ''' <paramref name="acc"/> is linear RGBA [0,1] (length w*h*4) — the resolved head complexion diffuse.
-    ''' <paramref name="overlays"/> is the FULL overrides list; only nodes whose name starts with "Face" are
-    ''' composited (body/hands/feet are the body path). Returns True iff at least one overlay contributed.
-    ''' Decode is via <paramref name="decode"/> (path → linear RGBA at w×h) so the module stays FilesDictionary-
-    ''' agnostic; callers pass <see cref="SseFaceTintComposer.DecodeTextureRgba"/>. Order = por ÍNDICE DE NODO
-    ''' Ovl{n} ascendente (Ovl0 abajo → OvlN arriba), = skee (OverlayInterface for i=0..N), NO por posición de lista.</summary>
     ''' <summary>Orden configurable de los overlays Face[Ovl] (= análogo SSE de los SWAPS de FO4:
     ''' <c>Setting_FaceTintSort_SSE.SwapRules</c>, claves <see cref="FaceTintSseOverlaySortKey"/>). DEFAULT =
     ''' <c>[Ovl_Index asc]</c> = orden skee (Ovl0 abajo→OvlN arriba, OverlayInterface for i=0..N) = IDENTIDAD ⇒

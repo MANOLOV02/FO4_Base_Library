@@ -611,7 +611,7 @@ Public NotInheritable Class HclClothPackageParser_Class
         ' maxVertexIndex >= particleCount, visto en CBBE Far Harbor Hunter). El puente correcto
         ' skin→partícula es MoveParticles; sin par, el vértice de skin no tiene partícula correspondiente.
         ' (Antes: pose.Pose(VertexIndex) directo = cruce de espacios → match/PositionError errados en esos
-        ' items. Es solo metadata diagnóstica, pero ahora correcta. Ver arch_cloth_deform_algorithm.)
+        ' items. Es solo metadata diagnóstica, pero ahora correcta. Ver 25-cloth-deform.)
         Dim vertToParticle As New Dictionary(Of Integer, Integer)
         If config.MoveParticles?.Pairs IsNot Nothing Then
             For Each mpPair In config.MoveParticles.Pairs

@@ -127,18 +127,11 @@ End Class
 ' Each helper class corresponds to one subrecord struct in the xEdit definition.
 ' ============================================================================
 
-''' <summary>NPC_.ACBS struct. GAME-AWARE LAYOUT — the field set and offsets differ between engines:
-''' <para>• FO4 (20 bytes, wbDefinitionsFO4.pas:10629-10677): Flags u32(0) · XP Value Offset s16(4) ·
-''' Level u16(6) · Calc min u16(8) · Calc max u16(10) · Disposition Base s16(12) · Template Flags u16(14) ·
-''' Bleedout Override u16(16) · Unknown byte[2](18).</para>
-''' <para>• SSE (24 bytes, wbDefinitionsTES5.pas:8618-8668): Flags u32(0) · Magicka Offset s16(4) ·
-''' Stamina Offset s16(6) · Level u16(8) · Calc min u16(10) · Calc max u16(12) · Speed Multiplier u16(14) ·
-''' Disposition Base s16(16) · Template Flags u16(18) · Health Offset s16(20) · Bleedout Override u16(22).</para>
-''' The shared fields below (Flags, LevelOrLevelMult, CalcMinLevel, CalcMaxLevel, DispositionBase,
-''' TemplateFlags, BleedoutOverride) hold the SEMANTIC value for whichever game parsed the record; the
-''' game-specific fields (XpValueOffset FO4-only; MagickaOffset/StaminaOffset/SpeedMultiplier/HealthOffset
-''' SSE-only) carry the rest. ParseNPC + NpcSubrecordWriter.EmitAcbs branch on the game so the emit
-''' reproduces the exact byte layout it was parsed from. Required subrecord.</summary>
+''' <summary>NPC_.ACBS. LAYOUT GAME-AWARE: el set de campos y los offsets difieren por motor (FO4 20 bytes,
+''' SSE 24 - la lista de campos y offsets esta en 20-app-npc-subrecord-spec). Los campos compartidos guardan
+''' el valor SEMANTICO del juego que parseo el record y los especificos (XpValueOffset en FO4;
+''' Magicka/Stamina/SpeedMultiplier/HealthOffset en SSE) el resto. ParseNPC y NpcSubrecordWriter.EmitAcbs
+''' ramifican por juego para reproducir el layout exacto del que se parseo. Subrecord obligatorio.</summary>
 Public Class NPC_AcbsData
     ''' <summary>+0 u32 Flags (both games). Bit 0x01 Female, 0x02 Essential, 0x04 IsCharGenFacePreset,
     ''' 0x08 Respawn, 0x10 AutoCalcStats, 0x20 Unique, 0x40 DoesntAffectStealth, 0x80 PCLevelMult,
@@ -360,18 +353,11 @@ Public Class NPC_TetiStruct
     Public Index As UShort
 End Class
 
-''' <summary>NPC_.TEND subrecord. wbDefinitionsFO4.pas:10786-10790. xEdit declares this as
-''' wbStruct(..., aOptionalFromElement:=1) so members from index 1 onward (Color, TemplateColorIndex)
-''' may be absent. Three valid lengths produced by vanilla / xEdit:
-'''
-'''   1 byte  : Value only (TextureSet entries, Discriminator=2)
-'''   5 bytes : Value + Color (Color = wbByteColors → R u8 + G u8 + B u8 + wbUnused(1) padding)
-'''   7 bytes : Value + Color + TemplateColorIndex (Palette/Mask, Discriminator=1)
-'''
-''' Per xEdit ParseValuesFromContainer (wbImplementation.pas:22356-22389), missing trailing
-''' members are flagged "OptionalAndMissing" on read and NOT serialized on write. So TEND is
-''' never 8 bytes; that was a parser bug. The "ColorA" we used to read at offset 4 was the
-''' wbUnused(1) padding inside wbByteColors, not an alpha channel.</summary>
+''' <summary>NPC_.TEND. xEdit lo declara con aOptionalFromElement:=1, asi que los miembros desde Color en
+''' adelante pueden faltar: hay TRES largos validos - 1 byte (solo Value, entradas TextureSet), 5 (Value +
+''' Color, con 1 byte de padding wbUnused dentro de wbByteColors) y 7 (+ TemplateColorIndex).
+''' Los miembros finales ausentes no se serializan al escribir, asi que TEND NUNCA mide 8 bytes; el "ColorA"
+''' que se leia en el offset 4 era ese padding, no un canal alpha.</summary>
 Public Class NPC_TendStruct
     ''' <summary>+0 u8 raw value. xEdit shows divide-by-100 (so 100 → 1.0 opacity).</summary>
     Public RawValue As Byte
@@ -480,17 +466,12 @@ Public Class NPC_ActorSound
     Public HasKeyword As Boolean = False
 End Class
 
-''' <summary>VMAD opaque payload. wbDefinitionsFO4.pas:4383-4388.
-'''
-''' Strategy: keep the VMAD subrecord as raw bytes plus a parallel list of FormID positions
-''' inside that buffer (extracted by NpcVmadFormIdScanner). This preserves the entire VMAD
-''' (versions, scripts, properties, recursive structs) byte-for-byte while exposing exactly
-''' the FormIDs the engine resolves through the plugin's MAST list — required for cleanup MAST
-''' equivalence with xEdit's CleanMasters algorithm.
-'''
-''' Each FormID position records: byte offset inside RawBytes, the resolved global FormID, and
-''' the raw u32 value as stored. The writer can rewrite the high byte at the recorded offset
-''' when the MAST list reorder produces a new master index.</summary>
+''' <summary>VMAD como payload opaco: se guarda el subrecord en bytes crudos mas una lista paralela de
+''' posiciones de FormID dentro del buffer (las extrae NpcVmadFormIdScanner). Asi el VMAD entero -versiones,
+''' scripts, properties, structs recursivos- sobrevive byte a byte, y a la vez quedan expuestos exactamente
+''' los FormID que el motor resuelve por la MAST, que es lo que exige la equivalencia de cleanup con xEdit.
+''' Cada posicion lleva offset, FormID global resuelto y el u32 crudo, para poder reescribir el byte alto
+''' cuando un reorden de la MAST cambia el indice de master.</summary>
 Public Class NPC_VmadData
     Public RawBytes As Byte() = Array.Empty(Of Byte)()
     ''' <summary>Detected version (s16 @ +0). 6 vanilla.</summary>
@@ -652,7 +633,7 @@ Public Class NPC_Data
     ''' body part (Bot_TorsoAssaultron, Bot_ArmLeft, Bot_ArmRight, Bot_Legs, armor mods, etc).
     ''' Spec: wbDefinitionsFO4.pas:5867-5898 (OBTS struct + ObjectTemplate RStruct).
     ''' Future: expose multiple combinations as outfit-like variants (see
-    ''' project_robot_rendering_combinations.md). First iteration reads only combination #0.</summary>
+    ''' 24-robots-mounting.md). First iteration reads only combination #0.</summary>
     Private _objectTemplateOMODFormIDs As List(Of UInteger)
     Public Property ObjectTemplateOMODFormIDs As List(Of UInteger)
         Get
@@ -970,7 +951,7 @@ Public Class NPC_Data
     ' SSE-specific captures (Game = Skyrim). All Nothing/empty for FO4 data, so they never touch the
     ' FO4 emit path. Consumed by NpcSubrecordWriter's SSE branches for a byte-exact round-trip.
     ' Structs whose SSE semantics we don't need for editing yet are preserved verbatim (NAM9 19 sliders,
-    ' NAMA 4 face-parts). See reference_sse_engine_facegen_re.
+    ' NAMA 4 face-parts). See 31-sse-facegen-motor-re.
     ' ========================================================================
     ''' <summary>DNAM Player Skills (SSE), parsed into fields so the NPC editor can edit them. FO4 uses the
     ''' 8-byte CalculatedStats struct instead; on SSE that struct is left Nothing and this one drives writeback.
@@ -1075,20 +1056,13 @@ Public Class RACE_MorphPresetDef
     Public Playable As Boolean = True        ' MPPF
 End Class
 
-''' <summary>RACE Morph Group - contains a list of MorphPresetDefs sharing a common
-''' face region mask (MPPK) and a group name (MPGN). Each group represents a face
-''' region (Forehead, Eyes, Nose, Ears, Cheeks, Mouth, Neck).
-'''
-''' Selection model — IMPORTANT: the NPC record has NO explicit "selected preset per group"
-''' index. The NPC just carries MSDK/MSDV pairs (key→value); whether a key is a "preset"
-''' or a "slider" is determined by lookup against this RACE record. Multiple presets from
-''' the same group can be present simultaneously in the NPC and the engine appears to apply
-''' all of them (verified: F4SEPlugins/CharGenInterface.cpp:120-138 walks morphSetData with
-''' no per-group dedup; our render in MainForm.BuildFaceRegionSwaps:2929-2933 mirrors that).
-''' The "one preset per group" convention is how the vanilla chargen UI presents the choice
-''' to the user (radio buttons), not a hard schema/engine rule.
-'''
-''' Verified from wbDefinitionsFO4.pas:3523 wbMorphGroups.</summary>
+''' <summary>Grupo de morphs de la RACE: lista de MorphPresetDefs que comparten mascara de region facial
+''' (MPPK) y nombre (MPGN), uno por region (frente, ojos, nariz, orejas, mejillas, boca, cuello).
+''' <para>Modelo de seleccion, IMPORTANTE: el NPC NO lleva un indice de "preset elegido por grupo". Solo trae
+''' pares MSDK/MSDV, y que una clave sea preset o slider se decide por lookup contra este RACE. Pueden
+''' convivir varios presets del mismo grupo y el motor los aplica todos (CharGenInterface.cpp camina
+''' morphSetData sin dedup por grupo, y el render hace lo mismo). El "un preset por grupo" es como lo presenta
+''' la UI de chargen, no una regla del schema ni del motor.</para></summary>
 Public Class RACE_MorphGroup
     Public Name As String = ""           ' MPGN = "Forehead", "Eyes", etc.
     Public MaskEnum As UShort = 0US      ' MPPK = u16 enum from wbDefinitionsFO4.pas:3538.
@@ -1153,20 +1127,14 @@ Public Enum TintSlot As UShort
     Beards = 25
 End Enum
 
-''' <summary>Per-bone body weight morph data from a RACE record. Combines two sections from the
-''' xEdit Bone Data Set (wbDefinitionsFO4.pas:5901): the Weight Scale Data (BSMS 9 floats = 3 Vec3
-''' for Thin/Muscular/Fat absolute scales around 1.0) and the Bone Range Modifier Data (BSMS 4
-''' floats = MinY, MinZ, MaxY, MaxZ delta clamps around 0.0). A given bone typically appears in
-''' BOTH sections — we merge them into a single entry per bone name.
-'''
-''' X is always 1.0 in the scale section and absent from the range section, so the body weight
-''' morph affects only Y/Z (bone-local). X is the bone's long axis and does not deform.
-'''
-''' "Range Modifier" interpretation (evidence-based): the Y/Z range is a CLAMP on the weighted
-''' scale DELTA (scale - 1). Bethesda authors aggressive raw scale values in BSMS (e.g. Belly Fat
-''' Y=1.895) but the range modifier limits how far the delta can actually go (e.g. MaxY=0.15 caps
-''' growth at 15%). This keeps the weight morph within anatomically reasonable bounds regardless
-''' of how extreme the archetype values are.</summary>
+''' <summary>Datos de morph por peso corporal, por hueso, de un RACE. Fusiona las dos secciones del Bone Data
+''' Set de xEdit: Weight Scale Data (9 floats = 3 Vec3 con escalas absolutas Thin/Muscular/Fat alrededor de
+''' 1.0) y Bone Range Modifier Data (4 floats = MinY, MinZ, MaxY, MaxZ, clamps de delta alrededor de 0.0). Un
+''' hueso suele aparecer en las dos, y se mergean en una entrada por nombre.
+''' <para>X es siempre 1.0 en la seccion de escala y no existe en la de rango: el morph de peso solo afecta
+''' Y/Z en espacio del hueso, porque X es el eje largo y no deforma.</para>
+''' <para>El rango es un CLAMP sobre el DELTA de escala (scale - 1): Bethesda autora valores crudos agresivos
+''' (Belly Fat Y=1.895) y el modificador limita cuanto puede moverse de verdad (MaxY=0.15 = 15%).</para></summary>
 Public Class RACE_BoneData
     Public BoneName As String = ""
     ' --- Weight Scale section (BSMS with 9 floats, absolute scales around 1.0) ---
@@ -1328,14 +1296,14 @@ Public Class RACE_Data
     ''' lugar de la raza propia del actor cuando está presente, permitiendo que las razas-copia reusen las
     ''' armaduras de una raza base. 0 = usar la raza misma. MEDIDO: ccOTMFO4001_EnclaveTurretRace.RNAM =
     ''' TurretTripodRace (0x000B1F08), la raza que su skin ARMA targetea. wbDefinitionsFO4.pas:11673.
-    ''' Ver [[arch_armor_race_redirect]].</summary>
+    ''' Ver [[23-armor-race-redirect-rnam]].</summary>
     Public ArmorRaceFormID As UInteger
     ''' <summary>NAM8 - Morph Race (FormID→RACE), SKYRIM. La raza cuyo morph FACIAL de FaceGen usa esta raza
     ''' en vez del propio. MEDIDO en Skyrim.esm (esm_race): 15 razas redirigen — TODAS las *Vampire → su raza
     ''' base, DremoraRace→DarkElfRace, DA13AfflictedRace→BretonRace, NordRaceAstrid→NordRace. El morph base de
     ''' la cabeza se aplica con el EditorID de ESTA raza (no la propia): p.ej. Dremora usa el morph "DarkElfRace"
     ''' de maleheadraces.tri (su "DremoraRace" es ~0). 0/ausente = usar la raza misma. Ver
-    ''' [[project_sse_bake_morph_fix_and_unify]] / [[project_sse_nam9_morph_map]].</summary>
+    ''' [[40-bake-estado-cerrado]] / [[22-morphs-sse-nam9-map]].</summary>
     Public MorphRaceFormID As UInteger
     ''' <summary>Subgraph Data (RArray). Cada entry = un behaviour graph .hkx (SGNM) enchufado a un slot,
     ''' con su Role/Perspective (SRAF, terminator de cada entry) + keywords (SAKD actor/STKD target) +
@@ -1343,7 +1311,7 @@ Public Class RACE_Data
     Public SubgraphData As New List(Of RACE_SubgraphData)
     ''' <summary>KWDA — keywords del RACE (KYWD FormIDs). Incluye el keyword de actor 'Anims&lt;X&gt;Race' que
     ''' gatea qué subgraph (SAKD) aplica a este robot (Assaultron/Protectron/SentryBot comparten subgraphs vía
-    ''' SRAC; el keyword del race los discrimina). Ver [[arch_race_behavior_resolution]].</summary>
+    ''' SRAC; el keyword del race los discrimina). Ver [[24-anim-behavior-por-raza]].</summary>
     Public Keywords As New List(Of UInteger)
     Public MaleHeadPartFormIDs As New List(Of UInteger)
     Public FemaleHeadPartFormIDs As New List(Of UInteger)
@@ -1448,7 +1416,7 @@ Public Class RACE_Data
     ''' PowerArmor races (+DLC variants), CLEAR on dogs/creatures/robots/turrets/feral ghouls/
     ''' HumanRaceSubGraphData/AlienRace/SupermutantBehemothRace/DefaultRace/LibertyPrimeRace. Verified
     ''' exact (faceGenHead &lt;=&gt; race has &gt;=1 head-part default) across all 110 races. Use the shared
-    ''' RaceUtil.RaceSupportsFaceGen helper to gate bake + FaceGen-only UI. See [[arch_race_behavior_resolution]].</summary>
+    ''' RaceUtil.RaceSupportsFaceGen helper to gate bake + FaceGen-only UI. See [[24-anim-behavior-por-raza]].</summary>
     Public FaceGenHead As Boolean = False
 
     ''' <summary>RACE.DATA head-part occlusion "biped object" fields — the engine's per-RACE rule for which
@@ -1460,28 +1428,21 @@ Public Class RACE_Data
     ''' Object field is present only when form version ≥ 124, else None). Distinct vanilla values confirm these
     ''' are per-race, NOT constant: A∈{-1,0,2}, B∈{-1,0,1}, C∈{-1,18} (HumanRace A=2→slot32, B=0→slots30&amp;31,
     ''' C=18→slot48). Default -1 = None (also the value for a record that doesn't carry the field). Turn these
-    ''' into slot-30-relative bit masks via the RaceUtil.Race*Mask helpers; see [[project_re_occlusion_engine]].</summary>
+    ''' into slot-30-relative bit masks via the RaceUtil.Race*Mask helpers; see [[23-armor-oclusion-fo4-re]].</summary>
     Public OcclusionFaceCullBiped As Integer = -1   ' A — face-cull biped object  (DATA[0x30], v109+)
     Public OcclusionHairBiped As Integer = -1       ' B — hair biped object       (DATA[0x34], v109+, occludes 30+B AND 30+B+1)
     Public OcclusionFacialHairBiped As Integer = -1 ' C — facial-hair (beard) biped object (DATA[0x40], v124+)
 
-    ''' <summary>'Pipboy Biped Object' — WHICH biped slot this race reserves for the Pipboy device. s32, same
-    ''' encoding as the occlusion biped objects above (v -> slot 30+v when 0 ≤ v ≤ 31; -1 / v &gt; 31 = None).
-    ''' SOURCE: wbDefinitionsFO4.pas:11538 <c>wbInteger('Pipboy Biped Object', itS32, wbBipedObjectEnum)</c>,
-    ''' declared INSIDE the RACE DATA struct ⇒ the Pipboy's slot is PER-RACE DATA, not the constant slot 60.
-    ''' FILE offset derived by summing the xEdit DATA field layout (wbDefinitionsFO4.pas:11439-11538) from the
-    ''' start of the payload: 0x00 Male/0x04 Female Height, 0x08+0x14 the two 3-float Default Weight structs,
-    ''' 0x20 Flags, 0x24 Accel, 0x28 Decel, 0x2C Size, 0x30/0x34 Unknown Bytes1/2, 0x38 Injured Health Pct,
-    ''' 0x3C Shield Biped Object, 0x40 Beard Biped Object (v124+ ONLY), 0x44 Body Biped Object, 0x48 Aim Angle
-    ''' Tolerance, 0x4C Flight Radius, 0x50 Angular Accel, 0x54 Angular Tolerance, 0x58 Flags 2, 0x5C/0x60
-    ''' Unknown Float1/2, 0x64..0x78 Unknown Bytes3-7, 0x78 Unknown Float3, 0x7C Unknown Bytes8, 0x80 Pipboy.
-    ''' Below v124 the Beard field is absent ⇒ everything after it shifts down 4 ⇒ 0x7C.
-    ''' CROSS-CHECK (this is what makes the arithmetic trustworthy, not just counted): the SAME summation puts
-    ''' 'Beard Biped Object' at 0x40, which is EXACTLY the offset <see cref="OcclusionFacialHairBiped"/> was
-    ''' independently derived at from Fallout4.exe + Fallout4.esm. Two independent methods agreeing on a field
-    ''' in the middle of the struct validates the field ordering for the whole struct.
-    ''' NOT VERIFIED against live Fallout4.esm bytes for the Pipboy field itself — the offset is arithmetic +
-    ''' the cross-check above. FO4 only (the field does not exist in the Skyrim RACE DATA layout).</summary>
+    ''' <summary>'Pipboy Biped Object': que slot biped reserva esta raza para el Pipboy. s32 con la misma
+    ''' codificacion que los biped objects de oclusion de arriba (v -> slot 30+v con 0 &lt;= v &lt;= 31; -1 o
+    ''' v &gt; 31 = None). Declarado DENTRO del struct RACE DATA, o sea que el slot del Pipboy es POR RAZA, no
+    ''' la constante 60. El offset 0x80 sale de sumar el layout del DATA de xEdit; por debajo de la version 124
+    ''' el campo Beard no existe y todo lo posterior baja 4 (0x7C).
+    ''' <para>La misma suma pone 'Beard Biped Object' en 0x40, que es exactamente donde
+    ''' <see cref="OcclusionFacialHairBiped"/> se derivo de forma independiente desde Fallout4.exe + .esm: dos
+    ''' metodos coincidiendo en un campo del medio validan el orden de todo el struct.</para>
+    ''' <para>NO VERIFICADO contra bytes vivos para el campo Pipboy en si: es aritmetica mas ese cruce.
+    ''' Solo FO4, el campo no existe en el layout de Skyrim.</para></summary>
     Public PipboyBiped As Integer = -1
 
     ''' <summary>APPR — Attach Parent Slots declarados a nivel race. Lista de KYWD FormIDs
@@ -1527,7 +1488,7 @@ Public Class RaceUtil
     ''' Child/SuperMutant/Synth/PowerArmor races (+DLC variants), CLEAR on dogs/creatures/robots/
     ''' turrets/feral ghouls/HumanRaceSubGraphData/AlienRace/SupermutantBehemothRace/DefaultRace/
     ''' LibertyPrimeRace. Returns False for a missing/zero FormID or a record that isn't a RACE — so
-    ''' it is safe to call as a preventive gate without throwing. See [[arch_race_behavior_resolution]].</summary>
+    ''' it is safe to call as a preventive gate without throwing. See [[24-anim-behavior-por-raza]].</summary>
     Public Shared Function RaceSupportsFaceGen(raceFormID As UInteger, pm As PluginManager) As Boolean
         If raceFormID = 0UI OrElse pm Is Nothing Then Return False
         Dim rec = pm.GetRecord(raceFormID)
@@ -2040,12 +2001,6 @@ End Class
 
 Public Module RecordParsers
 
-    ''' <summary>Read a 32-bit float from the buffer, treating Bethesda/CK's "Default" sentinel
-    ''' as a missing value. xEdit (wbInterface.pas:17146-17153 + wbDataFormat.pas:3301-3304)
-    ''' uses Single.MaxValue (0x7F7FFFFF) and -Single.MaxValue (0xFF7FFFFF) as wire encodings of
-    ''' "field not assigned, fall back to default". NaN/Infinity are treated as the same case
-    ''' since they cannot represent a valid weight/scale value either. Returns Nothing when the
-    ''' slot is the sentinel; the caller decides what default to substitute.</summary>
     ''' <summary>Reinterpret a raw byte as a signed 8-bit value (s8 / SByte). Direct CSByte(b)
     ''' overflows when bit 7 is set because VB does a checked narrowing conversion that requires
     ''' the value to fit in [-128, 127]. We need bit-pattern reinterpret: 0xFF → -1, 0x80 → -128.
@@ -2079,23 +2034,15 @@ Public Module RecordParsers
         Return ResolveFormIDReference(rec, sr.AsUInt32, pluginManager)
     End Function
 
-    ''' <summary>Parse the OBTS payload (Object Mod Template Item, wbOBTSReq @ wbDefinitionsFO4.pas:5867-5886).
-    ''' Layout (offsets verified against xEdit wbInterface.pas:13933-13948 prefix rules:
-    ''' arCount=-1→u32 prefix, arCount=-2→u16 prefix, arCount=-4→u8 prefix):
-    '''   u32 IncludeCount  @0
-    '''   u32 PropertyCount @4
-    '''   u8  LevelMin @8, u8 pad, u8 LevelMax @10, u8 pad
-    '''   s16 ParentCombinationIndex @12, u8 Default @14
-    '''   u8  KeywordCount @15 (wbArray(..., -4) = 1-byte prefix)
-    '''   KeywordCount × u32 (Keyword FormIDs)
-    '''   u8  MinLevelForRanks, u8 AltLevelsPerTier
-    '''   IncludeCount × 7 bytes: u32 Mod FormID + u8 AttachPointIdx + u8 Optional + u8 DontUseAll
-    '''   PropertyCount × 24 bytes: same layout as wbObjectModProperties (parsed via shared
-    '''       CraftingRecordParsers.ParseObjectModProperty so OMOD.DATA Properties and OBTS
-    '''       inline Properties stay in lockstep).
-    '''
-    ''' Returns a parsed combination, or Nothing if the payload is malformed (length checks).
-    ''' Used by both NPC_.OBTS (robot/template rendering) and ARMO.OBTS (multi-addon keyword swap).</summary>
+    ''' <summary>Parsea el payload OBTS (Object Mod Template Item). Layout, con los prefijos de array segun las
+    ''' reglas de xEdit (arCount=-1 -> u32, -2 -> u16, -4 -> u8):
+    '''   u32 IncludeCount @0 Â· u32 PropertyCount @4 Â· u8 LevelMin @8 + pad Â· u8 LevelMax @10 + pad
+    '''   s16 ParentCombinationIndex @12 Â· u8 Default @14 Â· u8 KeywordCount @15 + KeywordCount x u32
+    '''   u8 MinLevelForRanks Â· u8 AltLevelsPerTier
+    '''   IncludeCount x 7 bytes (u32 Mod FormID + u8 AttachPointIdx + u8 Optional + u8 DontUseAll)
+    '''   PropertyCount x 24 bytes, parseadas por CraftingRecordParsers.ParseObjectModProperty para que las
+    '''   Properties de OMOD.DATA y las inline del OBTS no puedan divergir.
+    ''' Nothing si el payload esta malformado. Lo usan NPC_.OBTS (robots/templates) y ARMO.OBTS (multi-addon).</summary>
     Friend Function ParseOBTSPayload(d As Byte(), rec As PluginRecord, pluginManager As PluginManager) As ARMO_Combination
         If d Is Nothing OrElse d.Length < 17 Then Return Nothing
         Dim combo As New ARMO_Combination()
@@ -2258,7 +2205,7 @@ Public Module RecordParsers
     ''' Returns 0 when the payload is too short.
     ''' <para>Used by the fast ParseNPCLight path (which reads Template Flags directly without building an
     ''' NPC_AcbsData). The full ParseNPC parses the whole ACBS struct game-aware into NPC_AcbsData instead.
-    ''' See project_npc_manager_multigame_plan.</para></summary>
+    ''' See 60-feature-npc-manager.</para></summary>
     Private Function ReadAcbsTemplateFlags(d As Byte(), game As Config_App.Game_Enum) As UShort
         If d Is Nothing Then Return 0US
         Dim off As Integer = If(game = Config_App.Game_Enum.Skyrim, 18, 14)
@@ -2266,23 +2213,12 @@ Public Module RecordParsers
         Return BitConverter.ToUInt16(d, off)
     End Function
 
-    ' ============================================================================
-    ' ParseNPC — type-safe full coverage of NPC_ subrecords for FO4.
-    ' Spec source: memory/npc_subrecord_spec.md + wbDefinitionsFO4.pas:10617-10819.
-    '
-    ' Covers ALL 71 documented subrecords. Subrecords whose payloads are not yet
-    ' captured into structured fields are stored verbatim (raw bytes) so the
-    ' writer can re-emit the record byte-equivalent. The pre-existing fields
-    ' (RaceFormID, SkinFormID, HeadPartFormIDs, etc.) are populated alongside
-    ' the new structured fields for backward compat with renderer / editors.
-    '
-    ' Order of Case branches mirrors xEdit declaration order to make the
-    ' reviewer's job easier when cross-checking against the .pas spec.
-    '
-    ' For bulk listing / tree population use ParseNPCLight instead — orders of
-    ' magnitude faster because it skips VMAD scanner, Attacks, DEST stages,
-    ' OBTS combinations, Factions/Perks/Properties/Inventory, etc.
-    ' ============================================================================
+    ' ParseNPC - cobertura type-safe de los 71 subrecords documentados del NPC_ en FO4 (spec:
+    ' 20-app-npc-subrecord-spec). Los subrecords cuyo payload todavia no se captura en campos estructurados se
+    ' guardan verbatim para que el writer re-emita el record byte-equivalente. El orden de los Case sigue el de
+    ' xEdit para poder cruzarlo contra el .pas.
+    ' Para listados masivos usar ParseNPCLight: es ordenes de magnitud mas rapido porque saltea VMAD, Attacks,
+    ' DEST, combinaciones OBTS, Factions/Perks/Properties/Inventory.
     Public Function ParseNPC(rec As PluginRecord, pluginName As String, Optional pluginManager As PluginManager = Nothing) As NPC_Data
         Dim npc As New NPC_Data With {
             .FormID = rec.Header.FormID,
@@ -2338,7 +2274,7 @@ Public Module RecordParsers
                 ' (wbDefinitionsTES5.pas:8618-8668): SSE inserts Magicka/Stamina Offset before Level and
                 ' Speed Multiplier + Health Offset around Template Flags, shifting Template Flags from @14 to
                 ' @18. Parse into the semantically-correct fields per game; NpcSubrecordWriter.EmitAcbs emits
-                ' the matching order so the bytes round-trip. See NPC_AcbsData + project_npc_manager_multigame_plan.
+                ' the matching order so the bytes round-trip. See NPC_AcbsData + 60-feature-npc-manager.
                 Case "ACBS"
                     Dim a As New NPC_AcbsData
                     Dim d = sr.Data
@@ -3163,11 +3099,6 @@ Public Module RecordParsers
         Return npc
     End Function
 
-    ''' <summary>Effective FaceGen MORPH-race EditorID for a race: the EditorID of RACE.NAM8 (Morph Race) when
-    ''' set, else the race's own EditorID. This is the name the head/hair base race-morph is looked up by in the
-    ''' race tri (Skyrim: all *Vampire→base race, DremoraRace→DarkElfRace, DA13AfflictedRace→BretonRace,
-    ''' NordRaceAstrid→NordRace — measured in Skyrim.esm). SSE-relevant; a race with no NAM8 returns its own EDID
-    ''' so FO4/most SSE races are unaffected. See RACE_Data.MorphRaceFormID.</summary>
     ''' <summary>RACE-AGNOSTIC face-morph driver: resolve the race's KWDA keyword EditorIDs. The SSE face plan
     ''' applies a chargen morph named "&lt;keyword&gt;Morph" at full weight for EACH — so a race carrying the
     ''' "Vampire" KYWD gets "VampireMorph", and any race+morph naming pairing works the same. It is NOT a
@@ -3317,7 +3248,7 @@ Public Module RecordParsers
                 Case "SADD"
                     race.SubgraphAdditiveRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "RNAM"
-                    ' Armor Race redirect — see RACE_Data.ArmorRaceFormID / [[arch_armor_race_redirect]].
+                    ' Armor Race redirect — see RACE_Data.ArmorRaceFormID / [[23-armor-race-redirect-rnam]].
                     race.ArmorRaceFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "NAM8"
                     ' Morph Race redirect (Skyrim) — see RACE_Data.MorphRaceFormID. En NPC_/CREA NAM8 = Sound
@@ -4286,33 +4217,16 @@ Public Module RecordParsers
         Return clfm
     End Function
 
-    ''' <summary>⛔⛔ LOS NOMBRES DE LOS CAMPOS SON LOS DE FALLOUT 4 Y SE USAN EN LOS DOS JUEGOS.
-    ''' Los slots TX00..TX07 son POSICIONALES: el parser copia el subrecord N al campo N-esimo y NADA MAS. El
-    ''' NOMBRE del campo describe la semantica de FO4; en Skyrim ESE MISMO SLOT SIGNIFICA OTRA COSA. El caso
-    ''' canonico: <c>TX02</c> se guarda en <see cref="TXST_Data.WrinklesTexture"/> — en Skyrim el slot 2 NO es
-    ''' wrinkles.
-    ''' <para>MEDIDO (ocupacion de slots en los TXST de facegen de cada juego):</para>
-    ''' <code>
-    '''   slot   FO4 facegen (47)   SSE facegen (252)
-    '''   TX00        25                  252
-    '''   TX01        25                  244
-    '''   TX02         9                    0
-    '''   TX03         0                  168
-    '''   TX04        10                  115
-    '''   TX07        25                  188
-    '''   MNAM        22                    0
-    ''' </code>
-    ''' Son perfiles COMPLETAMENTE distintos: los slots que FO4 usa (TX02, MNAM) estan vacios en SSE, y los que
-    ''' SSE usa (TX03) estan vacios en FO4.
-    ''' <para>⛔ CONSECUENCIA PARA QUIEN TOQUE ESTO: cualquier codigo que lea
-    ''' <c>WrinklesTexture</c>/<c>GlowTexture</c>/<c>HeightTexture</c> "por su nombre" y corra en los DOS juegos
-    ''' esta leyendo un slot con OTRA semantica en uno de los dos, EN SILENCIO. Antes de usar un campo por su
-    ''' nombre: verificar contra que juego se valido. Los unicos con la misma semantica en ambos son TX00
-    ''' (diffuse) y TX01 (normal).</para>
-    ''' <para>NO se renombran los campos en esta pasada: <c>TXST_Data</c> lo consumen ~20 sitios y un rename
-    ''' masivo mezclado con un fix de comportamiento haria imposible atribuir una regresion. Se DOCUMENTA el
-    ''' mapeo, que es lo que evita el error; el rename por juego (o un indexador posicional
-    ''' <c>Slot(i)</c>) queda como refactor aparte.</para></summary>
+    ''' <summary>â›”â›” LOS NOMBRES DE LOS CAMPOS SON LOS DE FALLOUT 4 Y SE USAN EN LOS DOS JUEGOS.
+    ''' Los slots TX00..TX07 son POSICIONALES: el parser copia el subrecord N al campo N-esimo y nada mas. El
+    ''' NOMBRE describe la semantica de FO4; en Skyrim ese mismo slot significa OTRA COSA (el caso canonico es
+    ''' TX02, que se guarda en <see cref="TXST_Data.WrinklesTexture"/> y en Skyrim no es wrinkles).
+    ''' <para>Medido sobre los TXST de facegen: los slots que usa FO4 (TX02, MNAM) estan VACIOS en SSE y el que
+    ''' usa SSE (TX03) esta vacio en FO4. Son perfiles completamente distintos.</para>
+    ''' <para>â›” Cualquier codigo que lea WrinklesTexture/GlowTexture/HeightTexture "por su nombre" y corra en
+    ''' los dos juegos esta leyendo, EN SILENCIO, un slot con otra semantica en uno de ellos. Los unicos con la
+    ''' misma semantica en ambos son TX00 (diffuse) y TX01 (normal). El rename por juego (o un indexador
+    ''' posicional Slot(i)) queda como refactor aparte: TXST_Data lo consumen ~20 sitios.</para></summary>
     Public Function ParseTXST(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TXST_Data
         Dim txst As New TXST_Data With {
             .FormID = rec.Header.FormID,

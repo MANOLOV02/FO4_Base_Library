@@ -161,20 +161,11 @@ Public Class FilesDictionary_class
     Private Shared _dictionary As New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
     ''' <summary>Stack of overridden entries per key. When a loose overrides a BA2 (or a BA2 overrides another), the loser is pushed here.</summary>
     Private Shared ReadOnly _overriddenEntries As New ConcurrentDictionary(Of String, ConcurrentStack(Of File_Location))(StringComparer.OrdinalIgnoreCase)
-    ''' <summary>Extensions the dictionary indexes from loose files and archives.
-    ''' The last three cover the data files RaceMenu (skee64) and LooksMenu (f4ee) read — both open their
-    ''' configuration through the game's archive layer (BSResourceNiBinaryStream), so it can live inside a BSA/BA2
-    ''' and frequently does:
-    '''   • <c>.ini</c> — RaceMenu extended face morphs (<c>Meshes\actors\character\FaceGenMorphs\&lt;mod&gt;\races.ini</c>,
-    '''     <c>morphs.ini</c>, <c>sliders\*.ini</c> — shipped inside RaceMenu.bsa) and BodyGen
-    '''     (<c>...\BodyGenData\&lt;mod&gt;\templates.ini</c>, <c>morphs.ini</c>); LooksMenu bodygen/bodymorph.
-    '''   • <c>.jslot</c> / <c>.slot</c> — RaceMenu presets (JSON and binary), <c>Data\SKSE\Plugins\CharGen\</c>.
-    '''   • <c>.pex</c> / <c>.psc</c> — compiled/source Papyrus scripts. RaceMenu (skee64) builds its warpaint and
-    '''     body/hand/feet/face paint lists at runtime from every mod's <c>Add*Paint(name,path)</c> registrations,
-    '''     which live in the scripts (loose <c>Data\Scripts\</c> or inside a mod's BSA). Indexing them here makes
-    '''     them readable via <see cref="GetBytes"/>; only the SSE editors parse them (RaceMenuPaintCatalog).
-    ''' Omitting <c>.ini</c> made the extended-slider config invisible, so the catalog loaded nothing and every
-    ''' extended face slider silently resolved to no morph. Extensions verified against the plugin sources.</summary>
+    ''' <summary>Extensiones que el diccionario indexa de sueltos y archives. Las ultimas cubren archivos de
+    ''' configuracion de RaceMenu (skee64) y LooksMenu (f4ee): los dos los abren por la capa de archives del
+    ''' juego, asi que pueden vivir DENTRO de un BSA/BA2 y a menudo lo hacen - .ini (morphs extendidos, BodyGen),
+    ''' .jslot/.slot (presets) y .pex/.psc (de donde salen las listas de paints, ver 60-racemenu-listas-de-paint).
+    ''' Sin .ini el catalogo de sliders extendidos cargaba vacio y todo slider extra resolvia a "sin morph".</summary>
     Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt", ".json", ".xml", ".ssf", ".sclp", ".hkx", ".hkt", ".ini", ".jslot", ".slot", ".pex", ".psc"}
 
     ''' <summary>App-specific data store. Apps register their own data here (presets, high heels, etc.) keyed by type.</summary>
@@ -302,69 +293,36 @@ Public Class FilesDictionary_class
         _bytesCache.Clear()
     End Sub
 
-    ' There used to be a third index here, _KeysByExtension (every key bucketed by extension alone).
-    ' It was written on every insert and cleared on every rebuild, but NO query ever read it —
-    ' GetFilesInDirectory reads _KeysByDirectory / _KeysByDirectoryExtension, GetFilteredKeys reads
-    ' only _KeysByDirectoryExtension. On a modded install that is a full extra copy of every key
-    ' (millions) built and held for nothing. Removed.
-    ''' <summary>⛔ LAZY — built on first use, NOT during the scan. Its ONLY reader is the
-    ''' <c>extensionSet.Count = 0</c> branch of <see cref="GetFilesInDirectory"/> (i.e. "give me every file
-    ''' in this directory, any extension"), and no caller in either app passes an empty extension set today:
-    ''' WM's two call sites pass <c>{".bgsm",".bgem"}</c> and <c>{ext}</c>, and GetFilteredKeys reads only
-    ''' <see cref="_KeysByDirectoryExtension"/>. Populating it during the scan therefore built a SECOND full
-    ''' copy of every dictionary key — millions of them on a modded install, hashed OrdinalIgnoreCase over
-    ''' long paths — for a query nobody makes. That is the same "write-only index" trap that _KeysByExtension
-    ''' was deleted for; this one survives because the empty-extension query is part of the public contract,
-    ''' so it must still WORK — it just doesn't get to cost anything until someone actually asks.
-    '''
-    ''' <para>Kept coherent afterwards: once built, <see cref="IndexDictionaryKey"/> maintains it like before,
-    ''' and <see cref="ClearSearchIndexes"/> drops it back to the unbuilt state.</para></summary>
+    ' ⛔ NO volver a agregar un índice por extensión sola: existió, se escribía en cada alta, y NINGUNA query
+    ' lo leía — una copia completa de todas las claves (millones en un install modeado) sostenida al pedo.
+    ''' <summary>⛔ LAZY — se construye en el PRIMER USO, no durante el scan. Su único lector es la rama
+    ''' "sin extensiones" de <see cref="GetFilesInDirectory"/>, que hoy ningún caller usa; poblarlo durante el
+    ''' scan era una segunda copia completa de todas las claves para una query que nadie hace. Sobrevive
+    ''' porque esa query es parte del contrato público y tiene que FUNCIONAR — sólo que no cuesta nada hasta
+    ''' que alguien la pida.
+    ''' <para>Una vez construido, <see cref="IndexDictionaryKey"/> lo mantiene y
+    ''' <see cref="ClearSearchIndexes"/> lo devuelve al estado sin construir.</para></summary>
     Private Shared ReadOnly _KeysByDirectory As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
     Private Shared _keysByDirectoryBuilt As Boolean = False
     Private Shared ReadOnly _keysByDirectoryLock As New Object
 
-    ''' <summary>⛔ LAZY — construido en el PRIMER USO, no durante el scan. Mismo patrón, misma razón y mismo
-    ''' candado que <see cref="_KeysByDirectory"/>; la única diferencia es que a éste SÍ lo consultan queries
-    ''' reales, y por eso hasta ahora se poblaba durante el scan.
-    '''
-    ''' <para>Sus ÚNICOS lectores son <see cref="GetFilesInDirectory"/> (rama con extensiones) y
-    ''' <see cref="GetFilteredKeys"/>, y TODOS sus call sites son on-demand de UI o de tools: los pickers de
-    ''' mesh/material de los editores, los catálogos SSE, el picker de texturas de FO4UnifiedMaterial, los dos
-    ''' de Wardrobe_Manager y el import de poses. NINGUNO está en el camino de arranque. Construir el índice
-    ''' dentro de <see cref="Fill_DictionaryAsync"/> era, por lo tanto, una pasada COMPLETA sobre todas las
-    ''' claves del diccionario —millones en una instalación modeada, cada una con un GetDirectoryName + un
-    ''' GetExtension + un ToLowerInvariant + una concatenación + un insert hasheado OrdinalIgnoreCase— pagada
-    ''' en CADA arranque para responder preguntas que la mayoría de las sesiones nunca hace. Ahora esa fase no
-    ''' existe: el arranque sólo deja los índices en "sin construir".</para>
-    '''
-    ''' <para>El costo se mudó, no desapareció: la primera vez que se abre un picker se paga la construcción
-    ''' (en paralelo, una sola vez por scan). Es una decisión consciente — es trabajo que sólo paga quien lo
-    ''' usa, y ya no bloquea el arranque de todos.</para>
-    '''
-    ''' <para>Coherencia posterior idéntica a la de antes: una vez construido, <see cref="IndexNormalizedKey"/>
-    ''' lo mantiene (altas de <see cref="RegisterArchive"/> / <see cref="AddOrUpdateDictionaryEntry"/>) y
-    ''' <see cref="RemoveDictionaryEntry"/> lo poda; <see cref="ClearSearchIndexes"/> lo devuelve al estado sin
-    ''' construir. Si NO está construido, esas tres operaciones son no-ops correctas: la construcción posterior
-    ''' lee el diccionario YA con el alta o el baja aplicados.</para></summary>
+    ''' <summary>LAZY: se construye en el PRIMER USO, no durante el scan. Mismo patron y candado que
+    ''' <see cref="_KeysByDirectory"/>. Todos sus lectores son on-demand de UI o tools (pickers, catalogos,
+    ''' import de poses), ninguno esta en el arranque; construirlo en el scan era una pasada COMPLETA sobre
+    ''' millones de claves pagada en CADA arranque. El costo se MUDO, no desaparecio: lo paga quien abre un
+    ''' picker, una vez por scan. Si no esta construido, altas y bajas son no-ops correctas: la construccion
+    ''' posterior lee el diccionario ya con el cambio aplicado.</summary>
     Private Shared ReadOnly _KeysByDirectoryExtension As New ConcurrentDictionary(Of String, ConcurrentDictionary(Of String, Byte))(StringComparer.OrdinalIgnoreCase)
     Private Shared _keysByDirectoryExtensionBuilt As Boolean = False
 
-    ''' <summary>De-duplicates the strings we store LONG-TERM (dictionary keys and
-    ''' <see cref="File_Location.FullPath"/>), which is what <c>String.Intern</c> used to do here.
-    '''
-    ''' <para>⛔ Why not String.Intern: it takes a lock on the runtime's GLOBAL intern table, and the scan
-    ''' pushes every entry of every archive through it — millions of paths on a heavily modded install,
-    ''' from several workers at once. Worse, interned strings are never released, so every load-order
-    ''' reload leaked the previous scan's paths for the life of the process. This pool is cleared at the
-    ''' start of each scan.</para>
-    '''
-    ''' <para>⛔ Ordinal, NOT OrdinalIgnoreCase: an ignore-case pool would collapse <c>Textures\A.dds</c>
-    ''' and <c>textures\a.dds</c> onto a single instance and silently rewrite the casing — and these
-    ''' strings are surfaced verbatim in the pickers and written into records.</para>
-    '''
-    ''' <para>⛔ Insert sites only (<see cref="ProcessBa2File"/> / <see cref="ProcessLooseFile"/>), never
-    ''' the lookup path: pooling arbitrary caller-supplied lookup strings would recreate exactly the leak
-    ''' described above.</para></summary>
+    ''' <summary>Pool para de-duplicar las strings que se guardan A LARGO PLAZO (claves y FullPath).
+    ''' <para>No se usa String.Intern: toma un lock sobre la tabla GLOBAL del runtime con millones de paths
+    ''' desde varios workers, y lo interned no se libera nunca, asi que cada recarga de load order filtraba
+    ''' los paths del scan anterior. Este pool se limpia al empezar cada scan.</para>
+    ''' <para>Ordinal, NO OrdinalIgnoreCase: colapsaria Textures\A.dds con textures\a.dds y reescribiria el
+    ''' casing en silencio, y estas strings se muestran verbatim en los pickers y se escriben en records.</para>
+    ''' <para>Solo en los sitios de INSERCION, nunca en el lookup: poolear strings arbitrarias del caller
+    ''' recrearia la fuga de arriba.</para></summary>
     Private Shared _pathPool As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
 
     Private Shared Function PoolPath(s As String) As String
@@ -382,24 +340,16 @@ Public Class FilesDictionary_class
     End Function
 
 
-    ''' <summary>
-    ''' Reads the ARCHIVED (BA2/BSA) original bytes for <paramref name="path"/>, IGNORING any loose
-    ''' override AND the path-keyed <see cref="_bytesCache"/>. The cache is keyed by File_Location.FullPath,
-    ''' which is identical for the loose winner and the BA2 loser of the same logical path — so a cached
-    ''' read of the loose winner would otherwise be returned for the BA2 entry too (collision). This reads
-    ''' straight from the archive via ExtractToMemory and never touches the cache.
-    '''
-    ''' Resolution: among ALL archived (IsLosseFile=False) candidates for the key — the dictionary winner
-    ''' (if archived) plus every archived entry in the override stack — pick the one with the LOWEST
-    ''' File_Location.SourceOrder. That is the VANILLA archive: BuildArchivePriority assigns the base game
-    ''' (Fallout4*) + DLC archives the lowest SourceOrder (they're processed first), active-mod BA2s rank
-    ''' higher, and loose files get Integer.MaxValue (excluded here since they're loose). "First non-loose"
-    ''' was wrong: the override stack is a ConcurrentStack filled in parallel, so when a mod ships its
-    ''' override inside a .ba2 (multiple archived candidates) the first could be the MOD's archive.
-    ''' NPC_Manager loads with includeInactive=False, so inactive-mod archives aren't in the dictionary at
-    ''' all and can't be picked. Returns Nothing when no archived candidate exists at all (the caller should
-    ''' then fall back to the normal resolver, whose winner is already vanilla).
-    ''' </summary>
+    ''' <summary>Lee los bytes ORIGINALES del archive (BA2/BSA) para un path, IGNORANDO cualquier suelto que
+    ''' lo sombree y también la caché por path — que está indexada por ruta y sería la MISMA para el suelto
+    ''' ganador y para la entrada del archive, así que devolvería el suelto por colisión.
+    ''' <para>Es la función que hay que usar para comparar contra la referencia vanilla: ver
+    ''' 10-stack-arnes-de-medicion.md, donde usar el resolver normal es la trampa #1.</para>
+    ''' <para>⛔ Entre todos los candidatos archivados elige el de SourceOrder MÁS BAJO, que es el archive
+    ''' vanilla. "El primero no-suelto" está MAL: la pila de overrides se llena en paralelo, así que cuando un
+    ''' mod shippea su override dentro de un .ba2 el primero puede ser el del MOD.</para>
+    ''' <para>Devuelve Nothing si no hay ningún candidato archivado; ahí el caller cae al resolver normal,
+    ''' cuyo ganador ya es vanilla.</para></summary>
     Public Shared Function GetArchiveOriginalBytes(path As String) As Byte()
         Dim key = NormalizeDictionaryKey(path)
         If String.IsNullOrEmpty(key) Then Return Nothing
@@ -457,43 +407,22 @@ Public Class FilesDictionary_class
         .IgnoreInaccessible = True
     }
 
-    ''' <summary>PARALLEL recursive walk of Data\, filtering by extension in managed code, streaming each
-    ''' matching file to <paramref name="onFile"/> as it is found. Returns the number of files emitted.
-    '''
-    ''' <para>⛔ History, because both mistakes are easy to make again. It FIRST globbed once per supported
-    ''' extension ("*.dds", then "*.nif", then "*.tri"…) — ~17 full traversals of the Data tree. That became
-    ''' ONE recursive traversal + a HashSet lookup per file. This is the next step: that single traversal was
-    ''' still SEQUENTIAL, and it is the one cost in the whole scan that scales with the thing users actually
-    ''' complain about (hundreds of thousands of loose files). Under MO2 every FindNextFile goes through the
-    ''' USVFS hook, so the traversal — not the archives — is what "freezes on Mounting archives".</para>
-    '''
-    ''' <para>⛔ Why a work QUEUE of directories and not a fixed depth split (e.g. one task per subdir of
-    ''' Data\): the tree is wildly unbalanced. Textures\ and Meshes\ hold the overwhelming majority of a
-    ''' modded install, so a depth-1 split degenerates into one thread doing ~all the work while the rest
-    ''' idle. Here EVERY directory found at ANY depth goes back into the shared queue, so the threads
-    ''' rebalance continuously and depth doesn't matter — a deep Textures\actors\character\… subtree is
-    ''' spread across all of them.</para>
-    '''
-    ''' <para>Completion: <paramref name="pending"/> counts directories enqueued-but-not-yet-finished. A
-    ''' worker that finds the queue momentarily empty while others still have directories in flight spins
-    ''' (SpinWait yields/sleeps, it does not burn a core); when the last directory is done the count hits 0
-    ''' and every worker exits. No worker can exit while a directory that might still produce subdirectories
-    ''' is being processed, which is the bug a naive "queue empty ⇒ done" check would have.</para>
-    '''
-    ''' <para>Still DirectoryInfo/FileInfo, not the string overload: FileInfo comes back with its metadata
-    ''' pre-populated from WIN32_FIND_DATA, so reading fi.LastWriteTime issues NO second syscall — and that
-    ''' mtime is not decoration, it lands in <see cref="File_Location.FileDate"/>, which WM's clone planner
-    ''' reads to decide whether an already-cloned file needs rewriting. EnumerateFileSystemInfos (not
-    ''' EnumerateFiles + EnumerateDirectories) so each directory is enumerated ONCE for both.</para>
-    '''
-    ''' <para>Order is NOT preserved, and never was: the old walk wasn't sorted either. Two distinct loose
-    ''' files under one root cannot produce the same relative path, so loose-vs-loose never reaches a
-    ''' conflict and the insertion order of the results cannot change the resulting dictionary.</para>
-    '''
-    ''' <param name="extensions">Snapshot of the supported extensions (OrdinalIgnoreCase). Taken by the
-    ''' caller before the walk so a concurrent RegisterExtensions can't mutate the set mid-enumeration.</param>
-    ''' <param name="onFile">Called once per matching file, FROM MULTIPLE THREADS — must be thread-safe.
-    ''' Receives the full path, the path relative to <paramref name="root"/>, and the mtime.</param>
+    ''' <summary>Walk recursivo PARALELO de Data\, filtrando por extension en managed code y emitiendo cada
+    ''' archivo que matchea a <paramref name="onFile"/>. Devuelve cuantos emitio.
+    ''' <para>UNA sola travesia del arbol, no una por extension: bajo MO2 cada FindNextFile pasa por el hook
+    ''' de USVFS y es lo que "congela" el arranque, no los archives.</para>
+    ''' <para>COLA de directorios, no split por profundidad fija: el arbol es muy desbalanceado (Textures\ y
+    ''' Meshes\ concentran casi todo) y un split a profundidad 1 deja un hilo haciendo todo.</para>
+    ''' <para>Cierre: <paramref name="pending"/> cuenta directorios encolados-pero-no-terminados. "Cola vacia
+    ''' implica listo" seria un bug - perderia los subdirectorios que un directorio en proceso aun puede
+    ''' producir - asi que el worker que la ve vacia hace SpinWait, no sale.</para>
+    ''' <para>DirectoryInfo/FileInfo y no la sobrecarga de string: FileInfo llega con la metadata de
+    ''' WIN32_FIND_DATA, asi que leer LastWriteTime no cuesta otro syscall, y ese mtime alimenta
+    ''' <see cref="File_Location.FileDate"/>, que el planner de clonado de WM usa para decidir reescrituras.</para>
+    ''' <param name="extensions">Snapshot de las extensiones soportadas, tomado por el caller antes del walk
+    ''' para que un RegisterExtensions concurrente no mute el set a mitad de la enumeracion.</param>
+    ''' <param name="onFile">Se llama una vez por archivo que matchea, DESDE VARIOS HILOS: debe ser thread-safe.
+    ''' Recibe el path completo, el relativo a <paramref name="root"/> y el mtime.</param>
     ''' </summary>
     Private Shared Function WalkLooseFilesParallel(root As String,
                                                    extensions As HashSet(Of String),
@@ -640,23 +569,13 @@ Public Class FilesDictionary_class
     Private Shared totalCount As Integer
     Private Shared completed As Integer
 
-    ''' <summary>⛔ Loose files report their count progress every Nth item (this mask + 1), not every item.
-    '''
-    ''' <para>The count channel is reported once per WORK ITEM, and on a heavily modded rig the loose files
-    ''' alone are hundreds of thousands of them. Every Report is a SynchronizationContext.Post that the UI
-    ''' thread has to drain, each one setting ProgressBar.Value and Label.Text (invalidate + repaint). The
-    ''' workers never block on it — Post is fire-and-forget — so the message queue grew without bound and
-    ''' the form kept churning through it long after the scan itself had finished. That is the shape of the
-    ''' "stuck on Mounting archives for ten minutes" reports.</para>
-    '''
-    ''' <para>Archives are NOT throttled: there are only tens-to-hundreds of them, and each one carries the
-    ''' informative label. Neither is the BYTE channel (<see cref="_archiveByteProgress"/>), which already
-    ''' fires once per archive and is the only thing driving Preflight_Form's Detail bar — throttling that
-    ''' by item count would freeze the bar at 0 for the whole archive phase.</para>
-    '''
-    ''' <para>The final item always reports regardless of the mask: MainForm.UpdateAssetLoadProgress and
-    ''' Wardrobe_Manager_Form set Value straight from the report and never clamp to Max afterwards, so
-    ''' without a forced last tick their bars would stop visibly short.</para></summary>
+    ''' <summary>Los sueltos reportan progreso cada N (esta mascara + 1), no en cada item.
+    ''' <para>Cada Report es un Post que el hilo de UI tiene que drenar y los workers no bloquean, asi que con
+    ''' cientos de miles de sueltos la cola crecia sin limite y el form seguia procesandola mucho despues de
+    ''' terminado el scan: esa es la forma exacta del "se queda colgado montando archives".</para>
+    ''' <para>Los ARCHIVES no se throttlean (son decenas y cada uno trae su label), ni el canal de BYTES, que
+    ''' es lo unico que mueve la barra de detalle. El ULTIMO item siempre reporta pase lo que pase: los
+    ''' consumidores no clampean al maximo y sin ese tick la barra queda visiblemente corta.</para></summary>
     Private Const LooseProgressReportMask As Integer = &H1FF   ' report every 512th loose file
 
     ''' <summary>Heartbeat cadence for the loose WALK (every 4096th file discovered). Same reasoning as
@@ -808,22 +727,14 @@ Public Class FilesDictionary_class
 
     ''' <summary>⛔ Dónde viven REALMENTE los <c>.cac</c>: <c>{CacheDirectory}\{Juego}\{ExtSetTag}\</c>.
     '''
-    ''' <para>Sin la subcarpeta POR JUEGO los dos juegos compartían carpeta, y eso NO era sólo desprolijo:
-    ''' <see cref="CleanupOrphanCacheFiles"/> borra todo <c>.cac</c> que no esté en la lista de archives
-    ''' del juego ACTIVO — así que cada vez que se cambiaba de juego se DESTRUÍA el cache del otro, y el
-    ''' siguiente arranque re-indexaba todos los archives desde cero. Con la subcarpeta, el barrido de un
-    ''' juego no puede ni ver los <c>.cac</c> del otro (EnumerateFiles no recursa), y los dos sobreviven.</para>
+    ''' <para>⛔ Las DOS subcarpetas son necesarias y arreglan el mismo bug en dos capas. La de JUEGO: la
+    ''' limpieza de huérfanos borra todo <c>.cac</c> que no esté en los archives del juego ACTIVO, así que
+    ''' con carpeta compartida cambiar de juego DESTRUÍA el cache del otro. La de SET DE EXTENSIONES: un
+    ''' <c>.cac</c> sólo vale para el set con el que se generó, y las apps no comparten set — con una sola
+    ''' carpeta cada app rechazaba y REESCRIBÍA los de la otra, y la siguiente corrida re-indexaba todo desde
+    ''' cero. Separados, coexisten en vez de pisarse.</para>
     '''
-    ''' <para>⛔ La subcarpeta POR SET DE EXTENSIONES arregla exactamente el MISMO bug una capa más abajo. Un
-    ''' <c>.cac</c> sólo es válido para el set de extensiones con el que se generó (<see cref="TryLoadArchiveIndex"/>
-    ''' compara la lista y rechaza si difiere), y las apps NO comparten set: el CLI hace
-    ''' <c>RegisterExtensions(".ssf",".sclp",".hkx",".hkt")</c> y NPC_Manager no registra nada. Con una sola
-    ''' carpeta, cada app rechazaba los <c>.cac</c> de la otra, los REESCRIBÍA con su set, y la próxima
-    ''' corrida de la otra volvía a re-indexar TODOS los archives desde cero — un scan frío eterno, cada vez,
-    ''' para cualquiera que use las dos. Separados por tag, coexisten en vez de pisarse.</para>
-    '''
-    ''' <para>Devuelve "" cuando el cache está deshabilitado, para que los callers puedan seguir usando el
-    ''' mismo guard de siempre.</para></summary>
+    ''' <para>Devuelve "" con el cache deshabilitado, para que los callers usen el guard de siempre.</para></summary>
     Private Shared Function EffectiveCacheDirectory() As String
         If Not IsCacheEnabled() Then Return ""
         Return Path.Combine(_cacheDirectory, GameCacheFolderName(), ExtensionSetTag())
@@ -1037,17 +948,11 @@ Public Class FilesDictionary_class
         End Try
     End Sub
 
-    ''' <summary>Migración de una sola vez: barre los <c>.cac</c> que quedaron en la RAÍZ del cache, de
-    ''' cuando los dos juegos compartían carpeta.
-    '''
-    ''' <para>Son inalcanzables desde el momento en que los <c>.cac</c> pasaron a vivir en la subcarpeta
-    ''' del juego: nadie los lee, y el barrido por-juego no los ve. Sin esto quedarían de basura para
-    ''' siempre.</para>
-    '''
-    ''' <para>Borrar es seguro: un <c>.cac</c> es cache PURO derivado del archive (índice de entradas), y
-    ''' se regenera solo. El peor caso es un re-index una única vez por juego. Además NO se puede saber a
-    ''' qué juego pertenece cada uno (justamente el bug que arreglamos), así que conservarlos tampoco
-    ''' serviría de nada. <c>EnumerateFiles</c> no recursa ⇒ las subcarpetas por juego quedan intactas.</para></summary>
+    ''' <summary>Migracion de una sola vez: barre los <c>.cac</c> que quedaron en la RAIZ del cache, de cuando
+    ''' los dos juegos compartian carpeta. Son inalcanzables desde que pasaron a la subcarpeta por juego, y el
+    ''' barrido por-juego no los ve. Borrar es seguro: un <c>.cac</c> es cache puro derivado del archive y se
+    ''' regenera solo; ademas no hay forma de saber a que juego pertenece cada uno (justo el bug que arregla).
+    ''' <c>EnumerateFiles</c> no recursa, asi que las subcarpetas por juego quedan intactas.</summary>
     Private Shared Sub PurgeLegacyRootCaches()
         If Not IsCacheEnabled() Then Return
 
@@ -1178,41 +1083,16 @@ Public Class FilesDictionary_class
         IndexNormalizedKey(NormalizeDictionaryKey(fullKey))
     End Sub
 
-    ''' <summary>Index a key that is ALREADY normalized (dictionary keys always are — every insert path
-    ''' goes through <see cref="NormalizeDictionaryKey"/> or stores a <see cref="PoolPath"/>'d
-    ''' Correct_Path_Separator'd path). Splitting this out of <see cref="IndexDictionaryKey"/> is what lets
-    ''' the rebuild skip re-normalizing millions of keys that are normalized by construction.
-    '''
-    ''' <para>The directory and extension keys are each computed ONCE. The old code derived them, then
-    ''' handed them to BuildDirectoryExtensionBucketKey, which normalized BOTH AGAIN (a second
-    ''' Correct_Path_Separator + Trim + trailing-slash strip, and a second ToLowerInvariant allocation) —
-    ''' four normalization passes per key where one does. Same normalizers, same resulting bucket strings;
-    ''' only the redundant work is gone, so the lookup side (which still calls the normalizers on the
-    ''' caller's argument) keeps matching exactly.</para></summary>
-    ''' <para>⛔⛔ CORRE BAJO <see cref="_keysByDirectoryLock"/>, y eso NO es decoración: es lo que hace
-    ''' correcta la construcción diferida frente a un alta concurrente. Sin el candado hay una ventana que
-    ''' PIERDE claves en silencio:
-    ''' <code>
-    ''' T1 (build):  toma el lock, empieza a enumerar _dictionary …
-    ''' T2 (alta):   _dictionary.TryAdd(k) ✔  →  IndexNormalizedKey(k) lee built=False (T1 todavía no
-    '''              publicó el flag) → SALTEA
-    ''' T1:          su enumeración ya pasó por ese bucket ⇒ NO vio k → publica built=True
-    ''' resultado:   k está en el diccionario y NO está en el índice. El picker no lo muestra. Nunca.
-    ''' </code>
-    ''' El enumerador de ConcurrentDictionary es lock-free y NO garantiza observar los elementos agregados
-    ''' después de empezar, así que el argumento "el build lo va a levantar del diccionario igual" no se
-    ''' sostiene. Con el candado, un alta que llegue durante el build queda BLOQUEADA hasta que el build
-    ''' publica, y entonces ve built=True y se indexa. Las dos ventanas quedan cerradas.</para>
-    '''
-    ''' <para>Costo: un SyncLock sin contención (~decenas de ns) por clave indexada. Es despreciable porque
-    ''' este método YA NO corre durante el scan — sus únicos callers son las altas puntuales
-    ''' (<see cref="TryAddDictionaryEntry"/>, <see cref="AddOrUpdateDictionaryEntry"/>) y el loop de
-    ''' <see cref="RegisterArchive"/>. Los builds NO lo llaman: usan <c>AddKeyToSearchIndex</c> directo, así
-    ''' que no hay reentrada del candado desde sus hilos worker.</para>
-    '''
-    ''' <para>⚠️ Esto además TAPA un agujero preexistente del mismo tipo en <see cref="_KeysByDirectory"/>,
-    ''' cuyo comentario afirmaba que el build "lo va a levantar del diccionario igual". No era cierto por lo
-    ''' de arriba; sólo que ese índice se consulta poco y el síntoma no había aparecido.</para>
+    ''' <summary>Indexa una clave YA normalizada (las del diccionario siempre lo estan por construccion). Estar
+    ''' separado de <see cref="IndexDictionaryKey"/> es lo que permite que el rebuild no re-normalice millones
+    ''' de claves.
+    ''' <para>CORRE BAJO <see cref="_keysByDirectoryLock"/> y eso NO es decoracion: sin el candado hay una
+    ''' ventana que PIERDE claves en silencio. Un alta que entra mientras el build enumera lee built=False y
+    ''' saltea el indexado, pero el enumerado del build ya paso por ese bucket y no la ve, asi que la clave
+    ''' queda en el diccionario y fuera del indice. El enumerador de ConcurrentDictionary es lock-free y NO
+    ''' garantiza ver lo agregado despues de empezar: "el build la levanta igual" es falso.</para>
+    ''' <para>Costo: un SyncLock sin contencion por clave, despreciable porque esto NO corre durante el scan.
+    ''' Los builds usan AddKeyToSearchIndex directo, asi que no hay reentrada desde sus workers.</para></summary>
     Private Shared Sub IndexNormalizedKey(fullKey As String)
         If String.IsNullOrEmpty(fullKey) Then Exit Sub
 
@@ -1257,22 +1137,15 @@ Public Class FilesDictionary_class
         End SyncLock
     End Sub
 
-    ''' <summary>Build <see cref="_KeysByDirectoryExtension"/> on demand. Gemelo exacto de
-    ''' <see cref="EnsureKeysByDirectoryBuilt"/> (mismo candado, misma publicación del flag DENTRO del lock y
-    ''' sólo después de poblar), con una diferencia: la pasada va en PARALELO, porque es la que antes corría
-    ''' dentro del scan y la que motivó el comentario de <see cref="RebuildSearchIndexesFromDictionary"/> —
-    ''' millones de claves, cada una con GetDirectoryName + GetExtension + ToLowerInvariant + un insert
-    ''' hasheado. Es seguro paralelizarla por lo mismo que allá: el índice y sus buckets son ConcurrentDictionary
-    ''' y los inserts son independientes del orden (un set de claves por bucket).
-    '''
-    ''' <para>El Parallel.ForEach corre DENTRO del SyncLock a propósito: su cuerpo no toma este candado (sólo
-    ''' normaliza strings e inserta en ConcurrentDictionary), así que no hay reentrada posible; y otro hilo que
-    ''' entre acá mientras tanto queda bloqueado, que es exactamente lo que se quiere (espera la construcción
-    ''' en vez de duplicarla).</para>
-    '''
-    ''' <para>Itera el diccionario directamente, no <c>.Keys</c> — esa propiedad toma todos los locks internos
-    ''' y materializa un array snapshot de todas las claves (decenas de MB de basura pura). Mismo motivo que
-    ''' documentaba el rebuild original.</para></summary>
+    ''' <summary>Construye <see cref="_KeysByDirectoryExtension"/> on demand. Gemelo de
+    ''' <see cref="EnsureKeysByDirectoryBuilt"/> - mismo candado, flag publicado DENTRO del lock y solo despues
+    ''' de poblar - pero en PARALELO, porque es la pasada que antes corria dentro del scan: millones de claves
+    ''' con GetDirectoryName + GetExtension + ToLowerInvariant + un insert hasheado cada una. Es seguro porque
+    ''' los buckets son ConcurrentDictionary y los inserts son independientes del orden.
+    ''' <para>El Parallel.ForEach corre DENTRO del SyncLock a proposito: su cuerpo no toma este candado, asi que
+    ''' no hay reentrada, y otro hilo que entre queda bloqueado esperando la construccion en vez de duplicarla.</para>
+    ''' <para>Itera el diccionario directamente y no <c>.Keys</c>: esa propiedad toma todos los locks internos y
+    ''' materializa un array snapshot de todas las claves (decenas de MB de basura pura).</para></summary>
     Private Shared Sub EnsureKeysByDirectoryExtensionBuilt()
         If Volatile.Read(_keysByDirectoryExtensionBuilt) Then Exit Sub
         SyncLock _keysByDirectoryLock
@@ -1306,19 +1179,10 @@ Public Class FilesDictionary_class
         End SyncLock
     End Sub
 
-    ''' <summary>Invalida los índices de búsqueda: el diccionario cambió de arriba abajo y lo que hubiera
-    ''' indexado ya no le corresponde.
-    '''
-    ''' <para>⛔ Ya NO reconstruye nada, y por eso conserva el nombre sólo para no tocar sus dos call sites
-    ''' (el setter de <see cref="Dictionary"/> y el final de <see cref="Fill_DictionaryAsync"/>). Los DOS
-    ''' índices son lazy, así que la reconstrucción es justamente lo que no hay que hacer acá: se difiere a
-    ''' <see cref="EnsureKeysByDirectoryBuilt"/> / <see cref="EnsureKeysByDirectoryExtensionBuilt"/>, que
-    ''' corren cuando —y sólo si— alguien consulta. La pasada paralela que vivía acá era el grueso de la fase
-    ''' "Building search index…" del arranque.</para>
-    '''
-    ''' <para>El resultado observable es el mismo: antes quedaban índices poblados y coherentes con el
-    ''' diccionario; ahora quedan vacíos y marcados "sin construir", y el primer lector los puebla desde ese
-    ''' MISMO diccionario. Lo único que cambia es CUÁNDO.</para></summary>
+    ''' <summary>Invalida los indices de busqueda: el diccionario cambio de arriba abajo y lo indexado ya no le
+    ''' corresponde. Ya NO reconstruye nada (conserva el nombre por sus dos call sites); los dos indices son
+    ''' lazy y la reconstruccion se difiere a los Ensure*, que corren cuando -y solo si- alguien consulta. La
+    ''' pasada paralela que vivia aca era el grueso de la fase "Building search index..." del arranque.</summary>
     Private Shared Sub RebuildSearchIndexesFromDictionary()
         ClearSearchIndexes()
     End Sub
@@ -1335,19 +1199,14 @@ Public Class FilesDictionary_class
         Return False
     End Function
 
-    ''' <summary>Adds a new entry or updates an existing one (e.g. a BA2 entry replaced by a loose file
-    ''' that WM or the material cloner just wrote). Only BA2 entries are pushed to the override stack
-    ''' (loose-over-loose is the same file overwritten, so there is nothing to restore).
-    '''
-    ''' <para>⛔ Explicit CAS, not ConcurrentDictionary.AddOrUpdate — same reason as
-    ''' <see cref="AddEntryResolvingConflict"/>: AddOrUpdate's updateValueFactory may run MORE THAN ONCE
-    ''' when its CAS loses a race, and this factory has a SIDE EFFECT (PushOverriddenEntry), so a losing
-    ''' attempt would push the same loser twice. The exposure here is far smaller than in the scan (callers
-    ''' write one distinct key per file they produced, and the factory only retries on same-key contention),
-    ''' but the trap is identical, so it does not get to stay.</para>
-    '''
-    ''' <para>NOTE the semantics differ from the scan path: this does NOT consult Resolve_Conflict. The
-    ''' caller's entry always wins — it just wrote the file — so there is no winner to compute.</para></summary>
+    ''' <summary>Alta o actualizacion de una entrada (p.ej. una del BA2 reemplazada por un suelto que acaba de
+    ''' escribir WM o el cloner de materiales). Solo las entradas de BA2 van al stack de overrides: loose sobre
+    ''' loose es el mismo archivo sobreescrito y no hay nada que restaurar.
+    ''' <para>CAS explicito y no AddOrUpdate, misma razon que <see cref="AddEntryResolvingConflict"/>: el
+    ''' updateValueFactory puede correr MAS DE UNA VEZ si pierde la carrera, y esta factory tiene efecto
+    ''' colateral (PushOverriddenEntry), asi que un intento perdedor apilaria el mismo loser dos veces.</para>
+    ''' <para>Semantica distinta a la del scan: NO consulta Resolve_Conflict. La entrada del caller siempre
+    ''' gana porque acaba de escribir el archivo.</para></summary>
     Public Shared Sub AddOrUpdateDictionaryEntry(fullPath As String, location As File_Location)
         Dim normalized = NormalizeDictionaryKey(fullPath)
 
@@ -1497,6 +1356,14 @@ Public Class FilesDictionary_class
     End Function
 
     Public Shared Function GetFilesInDirectory(directoryPath As String, allowedExtensions As IEnumerable(Of String)) As List(Of String)
+        Return CollectFilesInDirectory(directoryPath, allowedExtensions).
+        OrderBy(Function(k) k, StringComparer.OrdinalIgnoreCase).
+        ToList()
+    End Function
+
+    ''' <summary>Cuerpo de <see cref="GetFilesInDirectory"/> SIN ordenar, para
+    ''' <see cref="GetFileNamesInDirectory"/>, que re-ordena por nombre de archivo después de mapear.</summary>
+    Private Shared Function CollectFilesInDirectory(directoryPath As String, allowedExtensions As IEnumerable(Of String)) As HashSet(Of String)
         Dim directoryKey = NormalizeDirectoryKey(directoryPath)
         Dim results As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
 
@@ -1534,11 +1401,11 @@ Public Class FilesDictionary_class
             Next
         End If
 
-        Return results.OrderBy(Function(k) k, StringComparer.OrdinalIgnoreCase).ToList()
+        Return results
     End Function
 
     Public Shared Function GetFileNamesInDirectory(directoryPath As String, allowedExtensions As IEnumerable(Of String)) As String()
-        Return GetFilesInDirectory(directoryPath, allowedExtensions).
+        Return CollectFilesInDirectory(directoryPath, allowedExtensions).
         Select(Function(k) IO.Path.GetFileName(k)).
         OrderBy(Function(k) k, StringComparer.OrdinalIgnoreCase).
         ToArray()
@@ -1587,19 +1454,14 @@ Public Class FilesDictionary_class
         Return results.OrderBy(Function(k) k, StringComparer.OrdinalIgnoreCase).ToList()
     End Function
 
-    ''' <param name="includeInactiveArchives">When True, archives belonging to plugins that are
-    ''' NOT loaded are still indexed in the Dictionary, but ordered with the LOWEST SourceOrder so any
-    ''' loaded plugin's archive (and loose files) wins on conflict. WM uses this so the user can
-    ''' inspect/clone material from inactive mods. NPC_Manager uses False (default): only archives of
-    ''' loaded plugins are indexed. False matches the engine; True is a WM-specific extension.</param>
-    ''' <param name="loadedPlugins">The plugin set this session considers LOADED, in load order — the
-    ''' single answer to "what is loaded", shared by records and assets. NPC_Manager passes the
-    ''' Preflight selection (default-checked = the active load order, then the user's edits), so
-    ''' unticking a plugin drops its records AND its archives together. Nothing (default) = read the
-    ''' active load order from Plugins.txt, which is what the engine loads; WM and the CLI use that.
-    ''' Before this existed, records came from the ticks while archives always came from Plugins.txt:
-    ''' two different notions of "loaded", which let an unticked plugin's assets still be indexed while
-    ''' its config (e.g. RaceMenu's races.ini) was skipped.</param>
+    ''' <param name="includeInactiveArchives">True: los archives de plugins NO cargados se indexan igual, pero
+    ''' con el SourceOrder MAS BAJO, asi que cualquier archive de plugin cargado (y los sueltos) le gana. WM lo
+    ''' usa para inspeccionar/clonar material de mods inactivos; NPC_Manager usa False, que es lo que hace el
+    ''' motor.</param>
+    ''' <param name="loadedPlugins">El set de plugins que la sesion considera CARGADOS, en load order: una sola
+    ''' respuesta a "que esta cargado", compartida por records y assets. Destildar un plugin baja sus records Y
+    ''' sus archives juntos. Nothing = leer el load order activo de Plugins.txt. Antes los records salian de los
+    ''' ticks y los archives siempre de Plugins.txt: dos nociones distintas de "cargado".</param>
     Public Shared Async Function Fill_DictionaryAsync(Fo4DataPath As String,
                                                       progress As IProgress(Of (Stepn As String, Value As Integer, Max As Integer)),
                                                       Optional includeInactiveArchives As Boolean = False,
@@ -1820,20 +1682,15 @@ Public Class FilesDictionary_class
         Return False
     End Function
 
-    ''' <summary>Inverts <see cref="ArchiveBelongsToPlugin"/> into a lookup: plugin base name → the archives
-    ''' that belong to it, pre-sorted OrdinalIgnoreCase (the order the priority groups assign in).
-    '''
-    ''' <para>⛔ Why: the priority groups used to ask, for EVERY plugin in the load order, "which of the
-    ''' still-unassigned archives belong to you?" — a LINQ scan of the whole pending set per plugin, with
-    ''' ArchiveBelongsToPlugin allocating two substrings per comparison. A heavily modded load order is
-    ''' thousands of plugins against hundreds of archives, so that is millions of comparisons and millions
-    ''' of throwaway strings, and it runs BEFORE the first progress report — inside the window where the
-    ''' user is already staring at a motionless bar.</para>
-    '''
-    ''' <para>The predicate is: archiveBase == pluginBase, OR archiveBase starts with pluginBase + " - ".
-    ''' So the set of plugin bases that can claim a given archive is exactly {the full archive base} ∪ {every
-    ''' prefix of it that ends right before a " - "}. There are one to three of those, so we enumerate them
-    ''' once per ARCHIVE and index by them. Same matches, same order, no per-plugin scan.</para></summary>
+    ''' <summary>Invierte <see cref="ArchiveBelongsToPlugin"/> en un lookup: nombre base de plugin -> archives
+    ''' que le pertenecen, pre-ordenados OrdinalIgnoreCase.
+    ''' <para>Por que: los grupos de prioridad preguntaban, por CADA plugin del load order, cuales de los
+    ''' archives pendientes le pertenecian - un scan LINQ del set entero por plugin, con dos substrings por
+    ''' comparacion. Miles de plugins contra cientos de archives son millones de comparaciones y de strings
+    ''' descartables, y corre ANTES del primer reporte de progreso, con la barra ya inmovil.</para>
+    ''' <para>El predicado es: base del archive == base del plugin, o empieza con base + " - ". O sea el
+    ''' conjunto de bases que pueden reclamar un archive es el propio mas cada prefijo que termina justo antes
+    ''' de un " - ": entre uno y tres, asi que se enumeran una vez por ARCHIVE. Mismos matches, mismo orden.</para></summary>
     Private Shared Function BuildPluginBaseToArchives(archiveNames As IEnumerable(Of String)) As Dictionary(Of String, List(Of String))
         Const Sep As String = " - "
         Dim map As New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase)
@@ -1885,20 +1742,13 @@ Public Class FilesDictionary_class
         Next
     End Sub
 
-    ''' <summary>Build the SourceOrder priority map for archives. Higher value = wins on conflict
-    ''' (see Resolve_Conflict at line 1304). Priority, LOWEST → HIGHEST:
-    '''   0. Orphan archives (BA2/BSA no plugin claims) — negative orders, below everything. The engine
-    '''      would not load them at all (nothing mounts them short of an sResourceArchiveList entry), so
-    '''      they must never shadow a real mod. They used to be assigned LAST, i.e. ABOVE every active
-    '''      plugin: one stray leftover .ba2 in Data\ silently outranked vanilla and every active mod.
-    '''      Kept in the map (when <paramref name="includeInactive"/>) so WM can still browse them; ordered
-    '''      among themselves by mtime.
-    '''   1. Inactive plugin archives (only when <paramref name="includeInactive"/> is True; WM uses this so
-    '''      inspect can see inactive mod content but actives never lose).
-    '''   2. Implicit base + DLC archives.
-    '''   3. Loaded plugin archives, in load order (see loadedPlugins) — these win.
-    ''' Archives whose plugin is not loaded AND <paramref name="includeInactive"/> is False are excluded
-    ''' from the result entirely; the caller skips indexing them.</summary>
+    ''' <summary>Mapa de prioridad SourceOrder de los archives. Valor mas alto gana el conflicto. De MENOR a
+    ''' MAYOR: (0) archives huerfanos, que ningun plugin reclama - ordenes negativos, por debajo de todo: el
+    ''' motor no los montaria, asi que no pueden tapar a un mod real (antes se asignaban ULTIMOS, o sea por
+    ''' ENCIMA de todo plugin activo, y un .ba2 olvidado en Data\ le ganaba a vanilla); (1) archives de plugins
+    ''' inactivos, solo con <paramref name="includeInactive"/>; (2) base + DLC; (3) plugins cargados, en load
+    ''' order, que son los que ganan. Con includeInactive=False los de plugins no cargados quedan fuera del
+    ''' resultado y el caller ni los indexa.</summary>
     Private Shared Function BuildArchivePriority(ba2Files As List(Of String),
                                                  includeInactive As Boolean,
                                                  dataPath As String,

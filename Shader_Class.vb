@@ -71,21 +71,22 @@ layout(std430, binding = 0) buffer BoneMatrices {
 };
 uniform bool bGPUSkinning;
 uniform int uBoneCount;
-// GPU SKINNING - SYNC CONTRACT
-// The blend formula here MUST match SkinningHelper.BlendBoneMatrices()
-// (CPU double-precision) and RecomputeGPUBoneMatrices() (bone matrix
-// composition). Any change to weights, fallback, or matrix composition
-// must be mirrored in all three locations:
-//   1. This shader (Shader_Class_FO4 vertex + Shader_Class_SSE vertex)
-//   2. SkinningHelper.BlendBoneMatrices()
-//   3. SkinningHelper.RecomputeGPUBoneMatrices()
-//   4. SkinningHelper.ExtractSkinnedGeometry() (GPU arrays extraction)
-// Differences by design:
-//   - GPU: float precision, pre-normalized weights (sum=1 at extract)
-//   - CPU: double precision, runtime normalization (1/sumW)
-//   - GPU applies transpose(inverse(mat3)) for N/T/B; CPU stores
-//     N/T/B in local space and lets the shader transform them.
-// This block is DUPLICATED in Shader_Class_FO4 and Shader_Class_SSE.
+// SYNC: CPU/GPU skinning. The blend here has FIVE twin sites; changing weights,
+// fallback or matrix composition in one of them WITHOUT the others is a silent bug
+// (it compiles, throws nothing, and only the other path renders wrong):
+//   1. This shader block - DUPLICATED in the FO4 and the SSE vertex shader.
+//   2. SkinningHelper.BlendBoneMatrices        (CPU blend, double precision)
+//   3. SkinningHelper.RecomputeGPUBoneMatrices (bone matrix composition -> SSBO)
+//   4. SkinningHelper.ExtractSkinnedGeometry   (GPU arrays: idx/weights, sum=1)
+//   5. Render.UpdateSkinBuffers_GL             (CPU pre-skin path)
+//   + SkinBakeMath / FaceGenBuildPipeline      (the bake, same formula)
+// Differences BY DESIGN (not drift):
+//   - GPU: float precision, weights pre-normalized at extract (sum=1).
+//   - CPU: double precision, normalized at runtime (1/sumW).
+//   - GPU applies transpose(inverse(mat3)) to N/T/B; CPU keeps them in local
+//     space and lets the shader transform them.
+// Parity test: flip Setting_GPUSkinning on a posed/morphed shape - must look identical.
+// See memory 00-reglas-ui-y-vb.md (section 10) and 00-reglas-comentarios.md.
 
 struct DirectionalLight
 {
@@ -1508,21 +1509,22 @@ layout(std430, binding = 0) buffer BoneMatrices {
 };
 uniform bool bGPUSkinning;
 uniform int uBoneCount;
-// GPU SKINNING - SYNC CONTRACT
-// The blend formula here MUST match SkinningHelper.BlendBoneMatrices()
-// (CPU double-precision) and RecomputeGPUBoneMatrices() (bone matrix
-// composition). Any change to weights, fallback, or matrix composition
-// must be mirrored in all three locations:
-//   1. This shader (Shader_Class_FO4 vertex + Shader_Class_SSE vertex)
-//   2. SkinningHelper.BlendBoneMatrices()
-//   3. SkinningHelper.RecomputeGPUBoneMatrices()
-//   4. SkinningHelper.ExtractSkinnedGeometry() (GPU arrays extraction)
-// Differences by design:
-//   - GPU: float precision, pre-normalized weights (sum=1 at extract)
-//   - CPU: double precision, runtime normalization (1/sumW)
-//   - GPU applies transpose(inverse(mat3)) for N/T/B; CPU stores
-//     N/T/B in local space and lets the shader transform them.
-// This block is DUPLICATED in Shader_Class_FO4 and Shader_Class_SSE.
+// SYNC: CPU/GPU skinning. The blend here has FIVE twin sites; changing weights,
+// fallback or matrix composition in one of them WITHOUT the others is a silent bug
+// (it compiles, throws nothing, and only the other path renders wrong):
+//   1. This shader block - DUPLICATED in the FO4 and the SSE vertex shader.
+//   2. SkinningHelper.BlendBoneMatrices        (CPU blend, double precision)
+//   3. SkinningHelper.RecomputeGPUBoneMatrices (bone matrix composition -> SSBO)
+//   4. SkinningHelper.ExtractSkinnedGeometry   (GPU arrays: idx/weights, sum=1)
+//   5. Render.UpdateSkinBuffers_GL             (CPU pre-skin path)
+//   + SkinBakeMath / FaceGenBuildPipeline      (the bake, same formula)
+// Differences BY DESIGN (not drift):
+//   - GPU: float precision, weights pre-normalized at extract (sum=1).
+//   - CPU: double precision, normalized at runtime (1/sumW).
+//   - GPU applies transpose(inverse(mat3)) to N/T/B; CPU keeps them in local
+//     space and lets the shader transform them.
+// Parity test: flip Setting_GPUSkinning on a posed/morphed shape - must look identical.
+// See memory 00-reglas-ui-y-vb.md (section 10) and 00-reglas-comentarios.md.
 
 struct DirectionalLight
 {

@@ -1,63 +1,26 @@
 ﻿Imports System.IO
 
 ' ============================================================================
-' VMAD (Virtual Machine Adapter) sub-parser — FormID position scanner
+' VMAD (Virtual Machine Adapter) - scanner de posiciones de FormID.
 '
-' Strategy: keep the full VMAD subrecord as raw bytes for round-trip equivalence,
-' and emit a sorted list of FormID byte offsets so the writer can rewrite the
-' high byte at each position when MAST list reordering produces a new master
-' index. This matches the approach xEdit uses internally (FindUsedMasters +
-' MastersUpdated), without forcing a full type-safe VMAD object model.
+' Estrategia: conservar el subrecord VMAD entero como bytes crudos para el round-trip, y emitir una lista
+' ordenada de offsets de FormID para que el writer reescriba el byte alto de cada uno cuando el reorden de la
+' MAST cambia el indice de master. Es el mismo enfoque que usa xEdit internamente (FindUsedMasters +
+' MastersUpdated), sin forzar un modelo de objetos type-safe del VMAD.
 '
-' Spec source: TES5Edit/Core/wbDefinitionsFO4.pas:4087-4216 (wbScriptProperty,
-' wbScriptEntry, wbVMADScripts) + wbScriptPropertyObject (4115-4137).
+' Layout (spec de xEdit, wbVMAD / wbScriptEntry / wbScriptProperty / wbScriptPropertyObject):
+'   VMAD          : s16 Version Â· s16 ObjectFormat Â· u16 ScriptCount Â· N x ScriptEntry
+'   ScriptEntry   : u16+name Â· u8 Flags Â· u16 PropertyCount Â· N x ScriptProperty
+'   ScriptProperty: u16+name Â· u8 Type Â· u8 Flags Â· Value segun Type
+'   Object (8 by) : el ObjectFormat del header decide el layout GLOBALMENTE -
+'                   v2 (FO4 vanilla) u16 Unused + s16 Alias + FormID (FormID en +4);
+'                   v1 (legacy)      FormID + s16 Alias + u16 Unused (FormID en +0).
+'   Types: 0 Null Â· 1 Object Â· 2 String (u16+bytes) Â· 3 Int32 Â· 4 Float Â· 5 Bool Â· 6 reservado Â·
+'          7 Struct (u32 count + miembros, recursivo) Â· 11..15 arrays de Object/String/Int32/Float/Bool
+'          (u32 count + elementos) Â· 16 Array of Variable (solo el count, centinela) Â· 17 Array of Struct.
 '
-' Property types (wbPropTypeEnum @ wbDefinitionsFO4.pas:4087+):
-'   0  Null          — no value bytes
-'   1  Object        — 8 bytes; FormID at +0 (objFmt=1) or +4 (objFmt=2)
-'   2  String        — u16 length + bytes
-'   3  Int32         — 4 bytes
-'   4  Float         — 4 bytes
-'   5  Bool          — 1 byte
-'   6  reserved/null — 0 bytes (matches wbNull at idx 6 in some tables)
-'   7  Struct        — wbScriptPropertyStruct: array of Member, count u32.
-'                       Each Member = u16 nameLen + name + u8 type + u8 flags + Value
-'                       (recursive — but recursion depth limited to 3 in spec).
-'   11 Array of Object — u32 count + count × Object (8 bytes each)
-'   12 Array of String — u32 count + count × (u16 len + bytes)
-'   13 Array of Int32  — u32 count + count × 4 bytes
-'   14 Array of Float  — u32 count + count × 4 bytes
-'   15 Array of Bool   — u32 count + count × 1 byte
-'   16 Array of Variable — u32 count only (rare; effectively a sentinel)
-'   17 Array of Struct  — u32 count + count × Struct
-'
-' Object union (wbScriptPropertyObject @ 4115-4137):
-'   v2 (FO4 vanilla): u16 Unused + s16 Alias + formid (8 bytes, FormID @ +4)
-'   v1 (legacy):      formid + s16 Alias + u16 Unused (8 bytes, FormID @ +0)
-'   The header VMAD ObjectFormat field decides which layout applies globally.
-'
-' VMAD top-level layout (wbVMAD @ 4383-4388):
-'   s16 Version (default 6)
-'   s16 ObjectFormat (default 2 vanilla FO4)
-'   u16 ScriptCount
-'   ScriptCount × ScriptEntry
-'
-' ScriptEntry (wbScriptEntry @ 4207-4216):
-'   u16 nameLen + name (LenString[u16])
-'   u8 ScriptFlags (Local/Inherited/Removed/InheritedRemoved)
-'   u16 PropertyCount
-'   PropertyCount × ScriptProperty
-'
-' ScriptProperty (wbScriptProperty @ 4168-4200):
-'   u16 nameLen + name
-'   u8 Type
-'   u8 Flags
-'   Value (depends on Type — see table above)
-'
-' This scanner is FormID-only: it walks the full structure and records the
-' byte offset of every FormID it finds, but does NOT build a structured tree.
-' Round-trip preservation comes from the raw bytes; cleanup MAST equivalence
-' comes from the position list.
+' Es FormID-ONLY: recorre toda la estructura y anota el offset de cada FormID, pero no arma un arbol. El
+' round-trip lo da el buffer crudo y la equivalencia de MAST del cleanup la da la lista de posiciones.
 ' ============================================================================
 
 Public Module NpcVmadScanner

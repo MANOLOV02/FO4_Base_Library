@@ -2,25 +2,18 @@
 Imports OpenTK.Mathematics
 
 ' ============================================================================
-' FaceTintCompositor — GPU ping-pong compositor that bakes NPC tint layers onto
-' a copy of the face diffuse texture.
+' FaceTintCompositor - compositor GPU (ping-pong) que hornea las capas de tint del NPC sobre una copia del
+' diffuse de la cara.
 '
-' How it works:
-'  1. Caller passes the existing face diffuse GL texture ID + dimensions and a
-'     list of layers in application order.
-'  2. We allocate two ping-pong FBO textures sized to the diffuse.
-'  3. Iteration 0: read from the original face diffuse, write blended result to ping0.
-'  4. Iteration N: read from ping(N-1 mod 2), write to ping(N mod 2).
-'  5. After all layers, the last-written texture is returned. Caller is responsible
-'     for binding it (typically by mutating the model's Textures_Dictionary entry
-'     so the existing render path picks it up automatically).
+' El caller pasa el texture-id del diffuse + dimensiones + las capas en orden de aplicacion; se alocan dos
+' texturas de ping-pong, la iteracion 0 lee del diffuse original y cada iteracion N lee de ping(N-1) y escribe
+' en ping(N). Al final se devuelve la ultima escrita y el caller la bindea (normalmente mutando la entrada del
+' Textures_Dictionary del modelo).
 '
-' Each layer carries its own blend op (Default / Multiply / Overlay / SoftLight /
-' HardLight) and a "kind":
-'   PaletteMask  — uLayer is a greyscale mask in .r, the tint comes from uColor.
-'   TextureSetDiffuse — uLayer is a pre-coloured RGBA detail texture; .a is coverage.
+' Cada capa lleva su blend op y su "kind": PaletteMask (mascara greyscale en .r, el tinte viene de uColor) o
+' TextureSetDiffuse (RGBA ya coloreada, .a es cobertura).
 '
-' MUST be called on the GL thread (current context). Returns 0 on failure.
+' DEBE llamarse en el hilo GL, con el contexto actual. Devuelve 0 si falla.
 ' ============================================================================
 
 Public Enum FaceTintLayerKind
@@ -50,18 +43,14 @@ Public Enum FaceTintBlendConvention
     SrgbOpacity = 1  ' coverage = sRGB(mask) * opacity (mask shaped by the sRGB transfer)
 End Enum
 
-''' <summary>One per-region face texture swap from a RACE Morph Group preset (MPPT TXST).
-''' Bethesda's "Arrugado", "Con textura", "Curtido", etc. presets work by swapping the
-''' base diffuse/normal/spec inside a single face region (Forehead, Eyes, Nose, Ears,
-''' Cheeks, Mouth, Neck) defined by an alpha mask in face UV space. The swap textures
-''' come from the preset's MPPT TXST (TX00/TX01/TX07). The mask comes from the Morph
-''' Group's MPPK enum, which resolves to a TintTemplateOption in slot 0..6 whose TTET[0]
-''' is a 1024x1024 BC1_UNORM grayscale mask.
-'''
-''' This is a hard replace gated by the mask: inside the white region of the mask the
-''' swap texture fully overrides the base; outside it the base is preserved. Applied as
-''' a pre-pass before any tint layers so the TTET layers below blend on top of the
-''' region-swapped base.</summary>
+''' <summary>Un swap de textura de cara por region, de un preset MPPT TXST de un Morph Group. Los presets tipo
+''' "Arrugado" o "Curtido" cambian el diffuse/normal/spec base DENTRO de una region de la cara (frente, ojos,
+''' nariz, orejas, mejillas, boca, cuello) definida por una mascara alpha en UV de cara: las texturas salen del
+''' MPPT TXST del preset y la mascara del enum MPPK del grupo, que resuelve a un TintTemplateOption cuyo TTET[0]
+''' es la mascara greyscale.
+''' <para>Es un reemplazo duro gateado por la mascara: dentro del blanco el swap pisa la base, fuera se
+''' conserva. Se aplica como pre-pase antes de las capas de tint, para que estas mezclen sobre la base ya
+''' cambiada.</para></summary>
 Public Class FaceRegionSwapInput
     ''' <summary>Region mask DDS bytes. Grayscale weight in .r (BC1 in vanilla, all three
     ''' channels are equal).</summary>
@@ -380,36 +369,6 @@ End Class
 
 Public Module FaceTintCompositor
 
-    ''' <summary>⭐⭐ ¿El GL recibe las texturas COMPRIMIDAS (BCn, las decodifica el HARDWARE) o ya decodificadas
-    ''' por DirectXTex (RGBA8, el MISMO decode que usa el CPU)?
-    ''' <para>⛔ POR QUE IMPORTA PARA LA PARIDAD: el compositor CPU llama
-    ''' <c>Loader.LoadTextures(useCompress:=False)</c> ⇒ decodifica los BCn con DirectXTex. El GL llamaba con
-    ''' <c>True</c> ⇒ subia el bloque comprimido y lo decodificaba el GPU. **El decode de BCn por hardware NO es
-    ''' bit-identico al de software**: el spec deja libertad en el redondeo de los interpolantes (1/3, 2/3) y
-    ''' cada vendor elige. O sea que los dos compositores estaban leyendo PIXELES DISTINTOS de la misma textura,
-    ''' antes de componer nada — con lo cual la paridad ±1 era inalcanzable POR CONSTRUCCION, y ninguna cantidad
-    ''' de trabajo sobre la ley del compose la hubiera logrado.</para>
-    ''' <para>Con <c>False</c> los dos lados consumen EXACTAMENTE los mismos bytes. Cuesta memoria de GPU y ancho
-    ''' de banda de subida (una 1024² pasa de 0,7-1,4 MB a 4 MB), que es justamente lo que compraba el
-    ''' <c>True</c>. Es un intercambio declarado: exactitud contra VRAM.</para>
-    ''' <para>Override por entorno para poder medir el A/B sin recompilar:
-    ''' <c>FGBAKE_GL_DECODE_HW=1</c> vuelve al decode por hardware.</para></summary>
-    ''' <summary>⭐⭐ DEFAULT = True (decode por HARDWARE) — decidido CON la medicion, no antes de ella.
-    ''' <para>El orden importa: primero se alineo TODO lo demas con decode por software en los dos lados, y
-    ''' recien con eso probado se midio cuanto cuesta el hardware. Resultados sobre la misma muestra de 60
-    ''' NPCs de FO4 (peor |delta| sobre los tres canales):</para>
-    ''' <list type="bullet">
-    ''' <item>software en los dos lados, comparando SOLO el seed: 100,000 % identico, peor 0.</item>
-    ''' <item>software en los dos lados, compose completo: peor 1 (float32 GPU vs float64 CPU).</item>
-    ''' <item>hardware en GPU: peor 8, 6.797 px de 96,7 M (0,0070 %).</item>
-    ''' </list>
-    ''' <para>Como lo unico que cambia entre la segunda y la tercera fila es el decoder, ese +-8 es
-    ''' atribuible AL DECODE Y A NADA MAS, y esta acotado: el spec de BCn deja libertad en el redondeo de
-    ''' los interpolantes (1/3, 2/3) y cada vendor elige, asi que el error vive en los LSB del bloque.</para>
-    ''' <para>A cambio, subir el bloque comprimido ahorra VRAM y ancho de banda (una 1024^2 pasa de 4 MB a
-    ''' 0,7-1,4 MB). Con el resto probado, se elige lo eficiente.</para>
-    ''' <para><c>FGBAKE_GL_DECODE_HW=0</c> fuerza el decode por software: es lo que hay que poner para
-    ''' MEDIR paridad CPU/GPU, porque con hardware el +-8 del decoder tapa cualquier otra divergencia.</para></summary>
     ''' <summary>Setter para que la app empuje el valor persistido (NPC_Config.UseHardwareBcDecode). La
     ''' variable de entorno <c>FGBAKE_GL_DECODE_HW</c> tiene PRIORIDAD sobre el config: existe para medir el
     ''' A/B de paridad sin tocar el archivo del usuario ni recompilar.</summary>
@@ -1013,20 +972,15 @@ void main() {
     ' equivocada. El reemplazo es `ComposeOntoFaceTexture(..., FaceTintChannel.Diffuse, cpuMirror)`.
 
 
-    ''' <summary>Compose all layers that contribute to the requested channel onto a copy of the
-    ''' supplied face texture (diffuse / normal / specular) and return the new GL texture ID.
-    ''' The original is left untouched. Returns 0 on failure or when no layer contributes data
-    ''' for the requested channel.
-    ''' MUST run on the GL thread.
-    ''' <paramref name="skinTint"/> is the NPC's skin tint colour (0..1 vec3). When supplied on
-    ''' the Diffuse channel, the compositor tints the base texture by this value on the first
-    ''' iteration and multiplies TakesSkinTone layer colours by it. The caller is responsible
-    ''' for setting materialBase.SkinTint = False on the face mesh after composing so the
-    ''' render shader's own tint uniform becomes a no-op -- otherwise skin tone is applied twice.
-    ''' Pass Nothing (default) to skip skin-tone handling entirely and rely on the legacy render
-    ''' uniform. No-op on Normal/Specular channels regardless of the value.
-    ''' </summary>
-    ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja este camino — decide si el acumulador
+    ''' <summary>Compone todas las capas que aportan al canal pedido (diffuse/normal/specular) sobre una copia
+    ''' de la textura de cara y devuelve el nuevo texture-id; el original queda intacto. Devuelve 0 si falla o
+    ''' si ninguna capa aporta datos a ese canal. DEBE correr en el hilo GL.
+    ''' <para><paramref name="skinTint"/> es el color de tono de piel del NPC (vec3 0..1). En el canal Diffuse
+    ''' el compositor tinta la base con ese valor en la primera iteracion y multiplica por el los colores de las
+    ''' capas TakesSkinTone; el caller debe apagar el SkinTint del material de la cara despues de componer para
+    ''' que el uniform del shader quede no-op, si no el tono se aplica dos veces. Nothing = saltear el manejo de
+    ''' tono. Inerte en Normal y Specular.</para></summary>
+    ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja este camino: decide si el acumulador
     ''' puede vivir fuera de OutputSpace. Ver <see cref="FaceTintConvention.AccumSpaceForChannel"/>.</param>
     Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel,
                                            cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
@@ -1366,7 +1320,7 @@ void main() {
                 ' (comportamiento original). El CK aplana el alpha del _d salvo cuando el head material lo testea.
                 ' Valentine (flag SET) → passthrough (transparencia); DiMA (CLEAR) → opaco, como el CK. Antes:
                 ' passthrough incondicional inventaba el alpha de DiMA (medición: DLC03DiMA _d ALPHA varía). Espejo
-                ' del CPU compositor (keepBaseAlpha = flag AndAlso isD). Ver reference_acbs_diffuse_alpha_test_flag.
+                ' del CPU compositor (keepBaseAlpha = flag AndAlso isD). Ver 40-bake-leyes-fo4.
                 GL.Uniform1(state._uForceOpaqueAlphaLoc, If(headDiffuseAlphaTest AndAlso channel = FaceTintChannel.Diffuse, 0, If(isLast, 1, 0)))
                 GL.Uniform1(state._uPaletteRowLoc, Math.Max(0.0F, Math.Min(1.0F, layer.HairPaletteRow)))
                 ' Flat HCLF-RGB tint for TextureSet brow layers. Mutually exclusive with the LUT
@@ -1563,33 +1517,24 @@ void main() {
         End Select
     End Function
 
-    ' Region-swap fragment shader. Replace gated by the BC1 mask AND the morph intensity:
-    '   weight = convMask(mask.r) * uSwapIntensity
-    '   result = mix(prev, swap, weight)
-    ' The mask is a TintTemplateOption TTET[0] -- the SAME mask type the tint compositor reads --
-    ' so it shares THE single coverage convention (convMask, FaceTintBlendConvention): the spatial
-    ' mask is shaped (sRGB by default), intensity stays the linear scalar. uSwapIntensity = the
-    ' NPC's MSDV morph value for this preset (0..1): the engine blends the region variant
-    ' proportionally to the slider, NOT on/off (verified vs CK on 001A679C, ear/cheek morphs ~0.56;
-    ' applying at full mask over-applied ~4 levels). mask = WHERE, intensity = HOW MUCH; weight 0
-    ' leaves the base untouched. The blend stays REPLACE (mix) -- a region swap substitutes the
-    ' whole region's variant texture, it is not an additive feature delta like the tint layers.
-    '
-    ' Alpha contract: input alpha (from uPrev) is PRESERVED into the output. The swap and
-    ' mask textures contribute only RGB / weight respectively; the accumulator alpha rides
-    ' along untouched so callers passing alpha-tested diffuses do not lose their cutout.
+    ' Fragment shader del region-swap. Reemplazo gateado por la mascara BC1 Y por la intensidad del morph:
+    '   weight = convMask(mask.r) * uSwapIntensity ; result = mix(prev, swap, weight)
+    ' La mascara es un TTET[0], el MISMO tipo que lee el compositor de tints, asi que comparte LA convencion de
+    ' cobertura (convMask): la mascara espacial se moldea, la intensidad queda como escalar lineal.
+    ' uSwapIntensity es el valor MSDV del preset (0..1): el motor mezcla la variante proporcionalmente al
+    ' slider, NO on/off (verificado contra el CK; aplicar a mascara completa sobre-aplicaba ~4 niveles).
+    ' mask = DONDE, intensity = CUANTO; weight 0 deja la base intacta. El blend es REPLACE (mix): un region swap
+    ' sustituye la variante entera de la region, no es un delta aditivo como las capas de tint.
+    ' Contrato de alpha: el alpha de entrada (uPrev) se PRESERVA en la salida - swap y mascara aportan solo RGB
+    ' y peso -, asi que un diffuse con alpha-test no pierde su recorte.
 
-    ''' <summary>Apply a list of per-region MPPT TXST swaps onto the supplied face texture
-    ''' for the requested channel and return the new GL texture ID. The original is left
-    ''' untouched. Returns 0 on failure or when no swap actually contributes data for the
-    ''' requested channel. MUST run on the GL thread.
-    '''
-    ''' Each swap mixes its swap texture into the previous accumulator using the region
-    ''' mask's red channel as the per-pixel weight (hard replace inside the mask, leave
-    ''' base outside). Swaps are applied in list order; if multiple swaps overlap on the
-    ''' same region (shouldn't happen in vanilla — one preset per group at a time) the
-    ''' last one wins inside the overlap.</summary>
-    ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja este camino — decide si el acumulador
+    ''' <summary>Aplica una lista de swaps MPPT TXST por region sobre la textura de cara del canal pedido y
+    ''' devuelve el nuevo texture-id; el original queda intacto. Devuelve 0 si falla o si ningun swap aporta a
+    ''' ese canal. DEBE correr en el hilo GL.
+    ''' <para>Cada swap mezcla su textura sobre el acumulador previo usando el canal rojo de la mascara de
+    ''' region como peso por pixel. Se aplican en orden de lista; si dos se solaparan (no pasa en vanilla: un
+    ''' preset por grupo a la vez) gana el ultimo dentro del solape.</para></summary>
+    ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja este camino: decide si el acumulador
     ''' puede vivir fuera de OutputSpace. Ver <see cref="FaceTintConvention.AccumSpaceForChannel"/>.</param>
     Public Function ApplyRegionSwapsOntoFaceTexture(state As FaceTintCompositorState,
                                                      originalTexId As Integer,
@@ -2239,32 +2184,22 @@ void main() {
         Public Property SpaceConversionFailed As Boolean
     End Class
 
-    ''' <summary>Apply the face-tint pipeline (region-swap → tint compose) to a triplet of
-    ''' source GL textures and return the per-channel result.
-    '''
-    ''' Single source of truth for both the live render path and the offline bake. Neither
-    ''' caller replicates the orchestration; the difference between them is purely how they
-    ''' consume the output:
-    '''   • Render: swap result IDs into <c>Textures_Dictionary</c>, GL.DeleteTexture the IDs
-    '''     the dictionary previously held.
-    '''   • Bake: GL.GetTexImage from result IDs, encode to DDS on disk, GL.DeleteTexture the
-    '''     fresh result IDs (and any temporaries the bake itself uploaded as inputs).
-    '''
-    ''' The face QNAM/skin-tone is composited HERE as the synthetic slot-12 SkinTone layer
-    ''' (InjectSyntheticSkinToneLayer), sequenced in engine rank order with the other tint layers —
-    ''' NOT as a separate post-pass. The BODY skin tone is handled elsewhere and never baked: the
-    ''' SkinTint shader soft-lights it at render from material SkinTintColor/SkinTintAlpha
-    ''' (uEffectiveType==4).
-    '''
-    ''' This function does NOT touch any dictionary, model, or NIF — it is pure GL on the
-    ''' supplied state + cache. <paramref name="state"/> + <paramref name="cache"/> must be
-    ''' valid for the current GL context.
-    '''
-    ''' Returns IsFresh=True for channels where swap/compose produced a new texture (caller
-    ''' owns it); IsFresh=False when no contribution touched that channel (the input ID is
-    ''' returned verbatim — caller MUST NOT delete it on the fresh-cleanup path).
-    '''
-    ''' MUST run on the GL thread with the owning context current.</summary>
+    ''' <summary>Aplica el pipeline de facetint (region-swap -> compose de tints) sobre un triplete de texturas
+    ''' GL y devuelve el resultado por canal. Es la fuente unica del render en vivo y del bake offline: ninguno
+    ''' replica la orquestacion, solo difieren en como consumen la salida (el render intercambia los ids en el
+    ''' Textures_Dictionary; el bake hace GetTexImage, encodea a DDS y borra los ids frescos).
+    ''' <para>El QNAM/skin-tone de la cara se compone ACA como capa sintetica slot-12, secuenciada en el rango
+    ''' del motor junto a las demas, NO como post-pase. El tono del CUERPO se maneja aparte y no se hornea
+    ''' nunca: el shader lo softlightea en render desde el material.</para>
+    ''' <para>No toca ningun diccionario, modelo ni NIF: es GL puro sobre el state + cache provistos, que deben
+    ''' ser validos para el contexto actual. IsFresh=True en los canales donde swap/compose produjo textura
+    ''' nueva (el caller la posee); False cuando nada aporto y se devuelve el id de entrada verbatim, que el
+    ''' caller NO debe borrar. DEBE correr en el hilo GL con el contexto duenio actual.</para>
+    ''' <para>â›” SYNC: CPU/GPU compositor - este es el camino GL y su espejo es
+    ''' <c>FaceTintCpuCompositor.ComposeChannelCpu</c> / <c>ComposeOne</c>. Los dos leen sus parametros del
+    ''' MISMO <c>FaceTintConvention.ResolveConvention</c>, por eso la paridad es por construccion. Duele si
+    ''' diverge porque el BAKE corre 100 % CPU y el RENDER por aca, asi que un barrido validaria un camino que
+    ''' el usuario nunca ve. Ver 50-facetint-leyes-y-compositor.</para></summary>
     Public Function ApplyFaceTintPipeline(state As FaceTintCompositorState,
                                           cache As FaceTintTextureCache,
                                           srcDiffuseId As Integer,
@@ -2280,28 +2215,15 @@ void main() {
                                           Optional headDiffuseAlphaTest As Boolean = False) As FaceTintPipelineResult
         ArgumentNullException.ThrowIfNull(state)
 
-        ' Target de resolución POR CANAL (Inherit -> nativo = width/height del source). El acumulador GL
-        ' trabaja a ESTE tamaño; los samplers GL resizean source/capas/swaps por UV (bilineal) igual que
-        ' el CPU (FaceTintCpuCompositor.SampleChannelAt) -> GL==CPU para cualquier resolución. Bodyparts:
-        ' el caller pasa resolution=Nothing (fuerzan heredar; el enum es solo para la cara).
-        ' ⭐⭐ EL NATIVO ES POR CANAL, NO EL DEL DIFFUSE. `width/height` es UN solo par —el del diffuse— y se
-        ' usaba como "nativo" para los TRES canales. Pero el `_msn` y el `_s` de una cabeza NO tienen por que
-        ' medir lo mismo que el `_d` (el caso comun: `_d` 1024² y `_s` 512²).
-        ' ⛔ QUE ROMPIA (medido): el CPU compone cada canal a SU tamaño de origen, el GL los componia todos al
-        ' del diffuse ⇒ (a) los buffers CPU y GPU salian de distinto largo y el instrumento de paridad tenia
-        ' que DESCARTAR esos slots (26 de 52 en la muestra: el canal `_s` entero quedaba sin medir), y (b) con
-        ' el GPU encendido el plan de slots tomaba la dimension del GL y encodeaba el buffer del CPU con ella
-        ' ⇒ "The BGRA buffer must be 4194304 bytes but got 1048576" y el `_s` NO SE ESCRIBIA. Estaba invisible
-        ' mientras el batch corria needGl=False, porque ahi el plan caia siempre a la dimension del CPU.
-        ' ✅ Se consulta el tamaño REAL de cada textura fuente al GL. Property-driven: no agrega parametros ni
-        ' supone nada; si la textura no existe (0) se cae al par del caller, que es el comportamiento previo.
-        ' ⭐⭐ MIP 0 TAMBIEN EN LAS TEXTURAS FUENTE. `ForceMip0Sampling` se estaba aplicando SOLO a las
-        ' texturas que carga el compositor (capas, mascaras, swaps) — pero las FUENTE (el _d/_msn/_s de la
-        ' cabeza) las carga el caller via DirectXDDSLoader, que con mips presentes setea LinearMipmapLinear.
-        ' El acumulador ARRANCA siendo una de esas texturas, y el region swap la lee como `prev`
-        ' (readTexId = originalTexId) ⇒ el GPU podia mezclar MIP 1 donde el CPU siempre usa mip 0.
-        ' MEDIDO: era la unica cola que quedaba en `_msn` con 0 capas de tint (7 px), y materializar el seed
-        ' en float la subia a 1.147 justamente porque ese pase tambien sampleaba con mips.
+        ' ⛔ SYNC: CPU/GPU compositor — el target de resolución es POR CANAL, no el del diffuse. El `_msn` y
+        ' el `_s` de una cabeza no tienen por qué medir lo mismo que el `_d` (caso común: 1024² y 512²), y el
+        ' CPU compone cada canal a SU tamaño. Usar el del diffuse para los tres dejaba buffers de distinto
+        ' largo ⇒ el instrumento de paridad descartaba esos slots y, con GPU encendido, el `_s` ni se
+        ' escribía. Se consulta al GL el tamaño real de cada textura fuente; si no existe, se cae al par del
+        ' caller.
+        ' ⛔ SYNC: y mip 0 TAMBIÉN en las texturas fuente. Las carga el caller por el loader compartido, que
+        ' con mips presentes activa LinearMipmapLinear; como el acumulador ARRANCA siendo una de ellas, el
+        ' GPU podía mezclar MIP 1 donde el CPU siempre usa mip 0. Ver ForceMip0Sampling.
         ForceMip0Sampling(srcDiffuseId)
         ForceMip0Sampling(srcNormalId)
         ForceMip0Sampling(srcSpecId)
@@ -2321,25 +2243,16 @@ void main() {
 
         If width <= 0 OrElse height <= 0 Then Return result
 
-        ' --- SEED/RESIZE del PATH UNICO al target por canal ---
-        ' El acumulador del DIFFUSE vive en G22. El seed lleva el base a G22 según el ESPACIO REAL del base GL:
-        '  - baseDiffuseIsLinearOnGpu=True (el base es un SRV sRGB del render → el sample YA es lineal):
-        '    encode-only Linear→G22 (0→2). NO srgbToLin (si no, DOBLE DECODE: el render ya decodeó). Es el caso
-        '    LIVE (la cara reusa diffuseEntry, cargada sRGB; MainForm pasa diffuseEntry.IsSRGB).
-        '  - base crudo (bake/CLI: cargado UNORM) + SeedDiffuseG22: Srgb→G22 (1→2) = decode+encode (correcto, el
-        '    byte ES sRGB). Es el camino byte-exact del bake, INTACTO (el caller pasa False).
-        '  - base crudo + SeedDiffuseG22=False: sin conversión de espacio (legacy).
-        ' N/S = lineal raw (sin conversión). GL==CPU: el CPU siempre tiene base crudo (DecodeDds raw) → su seed
-        ' equivale al caso "crudo" de acá; el caso linear-on-gpu es exclusivo del GL live.
-        ' Seed config-driven (ya no literales): la base es textura de color → src = SeedDiffuseSrcSpaceValue
-        ' (=DiffuseTextureSrcSpace, Srgb).
-        ' ⭐⭐ TARGET DEL SEED = AccumSpace, NO OutputSpace. El acumulador tiene que NACER en el espacio en el
-        ' que el compose lo va a leer: el shader interpreta `prev` (y `uBase`) como uAccumSpace en TODAS sus
-        ' ramas. Sembrar en OutputSpace y componer como si fuera AccumSpace es componer un buffer MAL
-        ' ETIQUETADO — con el flag prendido salia cara lavada/quemada en el viewport.
-        ' Paridad exacta con el CPU: FaceTintCpuCompositor siembra `Cvt1(r0, seedSrc, accSp)` — al ACUMULADOR,
-        ' no al OutputSpace.
-        ' ⛔ Con el default AccumSpace == OutputSpace ⇒ estas 3 lineas valen EXACTAMENTE lo que valian antes.
+        ' SEED del acumulador. El del DIFFUSE vive en G22, y la conversión depende del espacio REAL en que
+        ' llega la base al GL:
+        '  - base ya lineal en GPU (SRV sRGB del render): encode-only Linear→G22. ⛔ NO aplicar srgbToLin acá
+        '    o se hace DOBLE DECODE, porque el render ya decodeó. Es el caso LIVE.
+        '  - base cruda (bake/CLI, cargada UNORM): Srgb→G22, o sea decode + encode. Es el camino byte-exact.
+        ' N/S van lineales, sin conversión.
+        ' ⛔ SYNC: CPU/GPU compositor — el target del seed es AccumSpace, NO OutputSpace: el shader interpreta
+        ' `prev` y `uBase` como AccumSpace en TODAS sus ramas, así que sembrar en OutputSpace produce un
+        ' buffer MAL ETIQUETADO (cara lavada). El CPU siembra al acumulador igual. Con el default los dos
+        ' espacios coinciden, así que esto es un no-op salvo que se separen.
         Dim accSpD As Integer = CInt(FaceTintConvention.AccumSpaceForChannel(FaceTintChannel.Diffuse, cpuMirror))
         Dim outSpD As Integer = CInt(FaceTintConvention.OutputSpaceForChannel(FaceTintChannel.Diffuse))
         ' Caso live (baseDiffuseIsLinearOnGpu): el GPU ya decodeó el SRV sRGB → la base entra LINEAL (0).
@@ -2375,21 +2288,16 @@ void main() {
             ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing, cpuMirror)
         End If
 
-        ' --- ⭐⭐ PASE FINAL AccumSpace -> OutputSpace: UNA SOLA VEZ, ACA, PARA LOS TRES CANALES ---
-        ' El compose deja el acumulador en AccumSpace; el consumidor —el storage del DDS del bake y el render—
-        ' espera OutputSpace. El CPU hace exactamente esta conversion UNA vez por canal, en el pack
-        ' (FaceTintCpuCompositor, justo antes de empaquetar a BGRA).
-        ' ⛔ POR QUE ACA Y NO EN ProcessChannel: `ProcessChannel` se llama DOS VECES por canal — una para los
-        ' region swaps y otra para los tints. Si el pase viviera adentro, toda cara CON swaps se comeria DOS
-        ' conversiones de gamma (la segunda sobre un buffer ya convertido) mientras el CPU hace una sola.
-        ' El acumulador es UNO y cruza las dos fases: su conversion de salida es del PIPELINE, no de la fase.
-        ' (Esto NO describe al codigo commiteado: en HEAD no existe ningun pase final. Fue un bug de un borrador
-        '  intermedio de esta misma tanda, y queda anotado como la razon de la ubicacion, no como historia.)
-        ' ⛔ TAMBIEN CORRE SIN CAPAS NI SWAPS: el seed ya dejo el diffuse en AccumSpace, asi que si esto se
-        ' saltara cuando no hay contribuciones, el canal saldria en el espacio equivocado. El CPU tampoco lo
-        ' condiciona a que haya capas.
-        ' ⛔ CON EL DEFAULT ES UN NO-OP EXACTO (AccumSpace == OutputSpace en los 3 canales): el guard de
-        ' ConvertChannelIfNeeded ve mismo tamaño y mismo espacio y no dibuja NADA.
+        ' --- PASE FINAL AccumSpace -> OutputSpace: UNA SOLA VEZ, ACA, PARA LOS TRES CANALES ---
+        ' El compose deja el acumulador en AccumSpace y el consumidor (el DDS del bake y el render) espera
+        ' OutputSpace. El CPU hace exactamente esta conversion una vez por canal, en el pack.
+        ' â›” POR QUE ACA Y NO EN ProcessChannel: ese se llama DOS VECES por canal (region swaps y tints), asi que
+        ' adentro toda cara CON swaps se comeria DOS conversiones de gamma, la segunda sobre un buffer ya
+        ' convertido. El acumulador es UNO y cruza las dos fases: su conversion de salida es del PIPELINE.
+        ' â›” TAMBIEN CORRE SIN CAPAS NI SWAPS: el seed ya dejo el diffuse en AccumSpace, asi que saltearlo cuando
+        ' no hay contribuciones sacaria el canal en el espacio equivocado. El CPU tampoco lo condiciona.
+        ' Con el default (AccumSpace == OutputSpace en los 3 canales) es un no-op exacto: el guard de
+        ' ConvertChannelIfNeeded ve mismo tamano y mismo espacio y no dibuja nada.
         ConvertAccumToOutputSpace(result, FaceTintChannel.Diffuse, result.Diffuse, state, dT.W, dT.H, cpuMirror)
         ConvertAccumToOutputSpace(result, FaceTintChannel.Normal, result.Normal, state, nT.W, nT.H, cpuMirror)
         ConvertAccumToOutputSpace(result, FaceTintChannel.Specular, result.Specular, state, sT.W, sT.H, cpuMirror)
@@ -2444,18 +2352,14 @@ void main() {
     End Sub
 
     ''' <summary>Fuerza filtrado SIN MIPMAP en una textura que el compositor va a muestrear.
-    ''' <para>⛔ POR QUE: <c>DirectXDDSLoader</c> es un loader COMPARTIDO con el render 3D y, cuando el DDS
-    ''' trae mips, setea <c>LinearMipmapLinear</c> + anisotropia (correcto para una superficie en
-    ''' perspectiva). Pero el compositor de facetint resamplea en ESPACIO DE IMAGEN y su espejo CPU
-    ''' (<c>FaceTintCpuCompositor.SampleBilinear</c>) muestrea SIEMPRE el <b>mip 0</b>. Con mipmapping, en
-    ''' cuanto un canal MINIFICA (el caso real: el <c>_s</c> compone a 512 con mascaras de 1024) el GPU lee
-    ''' el MIP 1 y el CPU el mip 0 — y los mips de Bethesda NO son un box del mip 0, son su propio filtro.</para>
-    ''' <para>MEDIDO: con mipmap el canal <c>_s</c> daba <b>14.000 px</b> de divergencia CPU-vs-GPU y peor
-    ''' delta <b>32</b>; es el UNICO canal que minifica y el UNICO con esa cola. NO era precision de los pesos
-    ''' del sampler (en un 2:1 exacto las fracciones son 0,5 y los pesos salen exactos de los dos lados): era
-    ''' una CONVENCION distinta entre los dos compositores.</para>
-    ''' <para>Se cambia SOLO en las texturas del compositor (su cache y sus cargas por-llamada), NO en el
-    ''' loader: bajarle el mipmap al render 3D lo degradaria.</para></summary>
+    ''' <para>⛔ SYNC: CPU/GPU compositor — el loader es COMPARTIDO con el render 3D y, con mips presentes,
+    ''' activa <c>LinearMipmapLinear</c> (correcto para una superficie en perspectiva). Pero el compositor
+    ''' resamplea en espacio de IMAGEN y su espejo CPU muestrea siempre el <b>mip 0</b>: en cuanto un canal
+    ''' MINIFICA (el <c>_s</c>, que compone a 512 con máscaras de 1024) el GPU lee el mip 1 y el CPU el 0 — y
+    ''' los mips de Bethesda no son un box del mip 0. Medido: era una divergencia de 14.000 px con peor delta
+    ''' 32, y no era precisión del sampler sino una CONVENCIÓN distinta entre los dos compositores.</para>
+    ''' <para>⛔ Se cambia SÓLO en las texturas del compositor, NO en el loader: bajarle el mipmap al render
+    ''' 3D lo degradaría.</para></summary>
     Friend Sub ForceMip0Sampling(texId As Integer)
         If texId = 0 Then Return
         Try
@@ -2553,25 +2457,15 @@ void main() {
 
 End Module
 
-''' <summary>Process-lifetime cache of decoded DDS → GL textures, keyed by an opaque string
-''' the caller supplies (typically the normalized texture path). Allows the compositor to
-''' reuse GPU texture objects across calls instead of decoding + uploading + deleting on every
-''' invocation.
-'''
-''' Lifecycle:
-'''  - The caller owns one cache instance for the lifetime of the GL context.
-'''  - The compositor reads from / writes into it through <see cref="GetOrLoadBatch"/> on every
-'''    call when a cache is supplied.
-'''  - Cache entries are NOT deleted by the compositor's per-call Finally block — they survive
-'''    for reuse. Pingpong / FBO textures and ad-hoc allocations (no cache key) follow the
-'''    original allocate-and-delete path unchanged.
-'''  - The caller MUST call <see cref="Clear"/> when the underlying byte sources change
-'''    (FilesDictionary rebuild, BA2 mount/unmount, plugin reload) and BEFORE GL context
-'''    teardown. Failing to clear before context teardown leaks GL texture handles owned by
-'''    the cache.
-'''
-''' Thread safety: callers must invoke from the GL thread (same as the compositor itself).
-''' No internal locking.</summary>
+''' <summary>Cache de proceso de DDS decodificadas a texturas GL, indexada por una string opaca que provee el
+''' caller (normalmente el path normalizado), para reusar los objetos de textura entre llamadas en vez de
+''' decodificar + subir + borrar en cada invocacion.
+''' <para>Ciclo de vida: el caller tiene UNA instancia por vida del contexto GL; el compositor lee y escribe por
+''' <see cref="GetOrLoadBatch"/>; las entradas NO las borra el Finally por llamada del compositor, sobreviven
+''' para reuso (las de ping-pong/FBO y las ad-hoc siguen el camino alocar-y-borrar de siempre). El caller DEBE
+''' llamar <see cref="Clear"/> cuando cambian los bytes de origen (rebuild del FilesDictionary, mount/unmount de
+''' BA2, recarga de plugins) y ANTES del teardown del contexto: si no, se filtran handles de textura GL.</para>
+''' <para>Thread safety: solo desde el hilo GL, igual que el compositor. Sin locking interno.</para></summary>
 Public NotInheritable Class FaceTintTextureCache
 
     ''' <summary>Backing dictionary. Keys are opaque caller-supplied strings (we just compare
@@ -2586,20 +2480,13 @@ Public NotInheritable Class FaceTintTextureCache
         End Get
     End Property
 
-    ''' <summary>Resolve a batch of (key → bytes) requests, splitting into hits and misses.
-    ''' Misses go through <c>DirectXDDSLoader.Load_And_GenerateOpenGLTextures_Memory</c> in a
-    ''' single native call (matching the original compositor batch behaviour) and the resulting
-    ''' entries are stored. Hits are returned from cache untouched.
-    '''
-    ''' Returns a brand-new dictionary keyed by the caller's request keys, containing every
-    ''' resolved entry. Entries marked with <paramref name="isCacheable"/>=False are *not* added
-    ''' to the persistent cache and the caller is expected to delete them after use, matching
-    ''' the legacy per-call lifecycle. Entries marked True remain in the cache and outlive the
-    ''' call.
-    '''
-    ''' The compositor uses isCacheable=True for entries whose request key was supplied by the
-    ''' caller (texture path) and False for synthetic per-call keys. This lets the same batch
-    ''' loader call serve both lifetimes uniformly.</summary>
+    ''' <summary>Resuelve un lote de pedidos (key -> bytes) separando hits de misses. Los misses van por
+    ''' DirectXDDSLoader en UNA sola llamada nativa y se guardan; los hits salen del cache intactos. Devuelve un
+    ''' diccionario nuevo indexado por las keys del caller.
+    ''' <para>Las entradas con <paramref name="isCacheable"/>=False NO entran al cache persistente y el caller
+    ''' debe borrarlas despues de usarlas; las True sobreviven a la llamada. El compositor usa True para las
+    ''' keys que provee el caller (path de textura) y False para keys sinteticas por llamada, asi el mismo
+    ''' batch loader sirve a los dos ciclos de vida.</para></summary>
     Public Function GetOrLoadBatch(keys As IList(Of String), bytes As IList(Of Byte()), isCacheable As IList(Of Boolean), wrapClampToEdge As Boolean) As Dictionary(Of String, PreviewModel.Texture_Loaded_Class)
         Dim result As New Dictionary(Of String, PreviewModel.Texture_Loaded_Class)(StringComparer.OrdinalIgnoreCase)
         If keys Is Nothing OrElse keys.Count = 0 Then Return result

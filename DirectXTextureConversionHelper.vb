@@ -46,7 +46,7 @@ Public Module DirectXTextureConversionHelper
         ArgumentNullException.ThrowIfNull(sourceBitmap)
         If sourceBitmap.Width <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(sourceBitmap), "Width debe ser > 0.")
         If sourceBitmap.Height <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(sourceBitmap), "Height debe ser > 0.")
-        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
+        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "The output DXGI format is not valid.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
         If generateMipMaps AndAlso mipmaps IsNot Nothing Then Throw New ArgumentException("Do not combine explicit mipmaps with generateMipMaps=True.", NameOf(mipmaps))
 
@@ -54,7 +54,7 @@ Public Module DirectXTextureConversionHelper
         If mipmaps IsNot Nothing Then
             For Each mipBitmap In mipmaps
                 If mipBitmap Is Nothing Then
-                    Throw New ArgumentException("Hay un mipmap Nothing en la coleccion.", NameOf(mipmaps))
+                    Throw New ArgumentException("There is a Nothing mipmap in the collection.", NameOf(mipmaps))
                 End If
 
                 mipChain.Add(mipBitmap)
@@ -111,7 +111,7 @@ Public Module DirectXTextureConversionHelper
         Optional compressFlags As Integer = 0,
         Optional alphaThreshold As Single = 0.5F)
 
-        If String.IsNullOrWhiteSpace(outputFilePath) Then Throw New ArgumentException("La ruta de salida es obligatoria.", NameOf(outputFilePath))
+        If String.IsNullOrWhiteSpace(outputFilePath) Then Throw New ArgumentException("The output path is required.", NameOf(outputFilePath))
 
         Dim ddsBytes = BitmapToDdsBytes(sourceBitmap, outputDxgiFormat, mipmaps, generateMipMaps, generatedMipLevels, filterFlags, compressFlags, alphaThreshold)
         Dim directoryPath = Path.GetDirectoryName(outputFilePath)
@@ -138,9 +138,9 @@ Public Module DirectXTextureConversionHelper
         If height <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(height), "Height debe ser > 0.")
         ArgumentNullException.ThrowIfNull(bgraPixels)
         Dim expectedLength = Math.BigMul(width, height) * 4L
-        If expectedLength > Integer.MaxValue Then Throw New ArgumentOutOfRangeException(NameOf(bgraPixels), "El buffer BGRA excede el maximo soportado.")
+        If expectedLength > Integer.MaxValue Then Throw New ArgumentOutOfRangeException(NameOf(bgraPixels), "The BGRA buffer exceeds the maximum supported size.")
         If bgraPixels.Length <> CInt(expectedLength) Then Throw New ArgumentException($"The BGRA buffer must be {expectedLength} bytes but got {bgraPixels.Length}.", NameOf(bgraPixels))
-        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
+        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "The output DXGI format is not valid.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
 
         ' TEX_COMPRESS_PARALLEL (0x10000000) SIEMPRE: multi-thread CPU. MEDIDO byte-IDÉNTICO al serial (probe
@@ -187,7 +187,7 @@ Public Module DirectXTextureConversionHelper
         Optional compressFlags As Integer = 0,
         Optional alphaThreshold As Single = 0.5F)
 
-        If String.IsNullOrWhiteSpace(outputFilePath) Then Throw New ArgumentException("La ruta de salida es obligatoria.", NameOf(outputFilePath))
+        If String.IsNullOrWhiteSpace(outputFilePath) Then Throw New ArgumentException("The output path is required.", NameOf(outputFilePath))
 
         Dim ddsBytes = Bgra32BytesToDdsBytes(width, height, bgraPixels, outputDxgiFormat, generateMipMaps, generatedMipLevels, filterFlags, compressFlags, alphaThreshold)
         Dim directoryPath = Path.GetDirectoryName(outputFilePath)
@@ -207,8 +207,8 @@ Public Module DirectXTextureConversionHelper
         Optional compressFlags As Integer = 0,
         Optional alphaThreshold As Single = 0.5F) As Byte()
 
-        If sourceDdsBytes Is Nothing OrElse sourceDdsBytes.Length = 0 Then Throw New ArgumentException("Los bytes DDS de entrada son obligatorios.", NameOf(sourceDdsBytes))
-        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
+        If sourceDdsBytes Is Nothing OrElse sourceDdsBytes.Length = 0 Then Throw New ArgumentException("The input DDS bytes are required.", NameOf(sourceDdsBytes))
+        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "The output DXGI format is not valid.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
 
         Dim loadedTextures = Loader.LoadTextures({sourceDdsBytes}, useCompress:=True, forceOpenGL:=False)
@@ -229,7 +229,7 @@ Public Module DirectXTextureConversionHelper
         Optional compressFlags As Integer = 0,
         Optional alphaThreshold As Single = 0.5F)
 
-        If String.IsNullOrWhiteSpace(outputFilePath) Then Throw New ArgumentException("La ruta de salida es obligatoria.", NameOf(outputFilePath))
+        If String.IsNullOrWhiteSpace(outputFilePath) Then Throw New ArgumentException("The output path is required.", NameOf(outputFilePath))
 
         Dim ddsBytes = DdsBytesToDdsBytes(sourceDdsBytes, outputDxgiFormat, generateMipMaps, generatedMipLevels, filterFlags, compressFlags, alphaThreshold)
         Dim directoryPath = Path.GetDirectoryName(outputFilePath)
@@ -251,7 +251,7 @@ Public Module DirectXTextureConversionHelper
         Optional compressFlags As Integer = 0,
         Optional alphaThreshold As Single = 0.5F)
 
-        If String.IsNullOrWhiteSpace(inputFilePath) Then Throw New ArgumentException("La ruta DDS de entrada es obligatoria.", NameOf(inputFilePath))
+        If String.IsNullOrWhiteSpace(inputFilePath) Then Throw New ArgumentException("The input DDS path is required.", NameOf(inputFilePath))
         If Not File.Exists(inputFilePath) Then Throw New FileNotFoundException("The input DDS was not found.", inputFilePath)
 
         SaveDdsBytesAsDds(File.ReadAllBytes(inputFilePath), outputFilePath, outputDxgiFormat, generateMipMaps, generatedMipLevels, filterFlags, compressFlags, alphaThreshold)
@@ -286,7 +286,7 @@ Public Module DirectXTextureConversionHelper
         If loadedTexture.DxgiCodeFinal <= 0 Then
             Throw New ArgumentException("DxgiCodeFinal is not valid for conversion.", NameOf(loadedTexture))
         End If
-        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "El DXGI de salida debe ser valido.")
+        If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "The output DXGI format is not valid.")
 
         Dim mipLevels = Math.Max(1, loadedTexture.Miplevels)
         Dim arraySize = Math.Max(1, loadedTexture.Faces)
@@ -302,7 +302,7 @@ Public Module DirectXTextureConversionHelper
         End If
 
         Dim level0 = loadedTexture.Levels(0)
-        If level0 Is Nothing Then Throw New ArgumentException("Levels(0) es Nothing.", NameOf(loadedTexture))
+        If level0 Is Nothing Then Throw New ArgumentException("Levels(0) is Nothing.", NameOf(loadedTexture))
 
         Dim request As New DxTextureConversionRequest With {
             .Width = level0.Width,
@@ -323,10 +323,10 @@ Public Module DirectXTextureConversionHelper
         For i As Integer = 0 To inputSubresourceCount - 1
             Dim level = loadedTexture.Levels(i)
             If level Is Nothing Then
-                Throw New ArgumentException($"Levels({i}) es Nothing.", NameOf(loadedTexture))
+                Throw New ArgumentException($"Levels({i}) is Nothing.", NameOf(loadedTexture))
             End If
             If level.Data Is Nothing Then
-                Throw New ArgumentException($"Levels({i}).Data es Nothing.", NameOf(loadedTexture))
+                Throw New ArgumentException($"Levels({i}).Data is Nothing.", NameOf(loadedTexture))
             End If
 
             Dim mipLevel = If(generateMipMaps, 0, i \ arraySize)
@@ -346,7 +346,7 @@ Public Module DirectXTextureConversionHelper
         Return CreateDdsBytesFromConversion(conversion)
     End Function
     Private Function CreateDdsBytesFromConversion(conversion As DxTextureConversionResult) As Byte()
-        If conversion Is Nothing Then Throw New InvalidOperationException("La conversion DDS devolvio Nothing.")
+        If conversion Is Nothing Then Throw New InvalidOperationException("The DDS conversion returned Nothing.")
 
         Dim headerBytes = Loader.EncodeDDSHeader(
             conversion.DxgiFormat,
@@ -531,7 +531,7 @@ Public Module DirectXTextureConversionHelper
         Next
 
         If index <> expectedCount Then
-            Throw New ArgumentException($"Faltan subrecursos. Esperados={expectedCount}, recibidos={index}.", NameOf(subresourceData))
+            Throw New ArgumentException($"Missing subresources. Expected={expectedCount}, received={index}.", NameOf(subresourceData))
         End If
 
         Return request
@@ -631,7 +631,7 @@ Public Module DirectXTextureConversionHelper
 
         If total = 0 Then Return Array.Empty(Of Byte)()
         If total > Integer.MaxValue Then
-            Throw New InvalidDataException("El blob concatenado excede Int32.MaxValue.")
+            Throw New InvalidDataException("The concatenated blob exceeds Int32.MaxValue.")
         End If
 
         Dim output(CInt(total) - 1) As Byte
@@ -651,7 +651,7 @@ Public Module DirectXTextureConversionHelper
 
         Dim total = CLng(mipLevels) * CLng(arraySize)
         If total > Integer.MaxValue Then
-            Throw New ArgumentOutOfRangeException(NameOf(arraySize), "La cantidad de subrecursos excede Int32.MaxValue.")
+            Throw New ArgumentOutOfRangeException(NameOf(arraySize), "The subresource count exceeds Int32.MaxValue.")
         End If
 
         Return CInt(total)
@@ -659,7 +659,7 @@ Public Module DirectXTextureConversionHelper
 
     Private Function ConvertNativeResult(nativeResult As Object) As DxTextureConversionResult
         If nativeResult Is Nothing Then
-            Throw New InvalidOperationException("El wrapper devolvio un resultado nulo.")
+            Throw New InvalidOperationException("The wrapper returned a null result.")
         End If
 
         Dim result As New DxTextureConversionResult With {
@@ -714,7 +714,7 @@ Public Module DirectXTextureConversionHelper
         For i As Integer = 0 To request.Subresources.Count - 1
             Dim subresource = request.Subresources(i)
             If subresource Is Nothing Then
-                Throw New ArgumentException($"Subresources({i}) es Nothing.", NameOf(request))
+                Throw New ArgumentException($"Subresources({i}) is Nothing.", NameOf(request))
             End If
 
             Dim nativeSubresource = Activator.CreateInstance(subresourceType)
@@ -734,7 +734,7 @@ Public Module DirectXTextureConversionHelper
 
     Private Function GetRequiredMemberValue(instance As Object, memberName As String) As Object
         ArgumentNullException.ThrowIfNull(instance)
-        If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("El nombre de miembro es obligatorio.", NameOf(memberName))
+        If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("The member name is required.", NameOf(memberName))
 
         Dim instanceType = instance.GetType()
         Dim propertyInfo = instanceType.GetProperty(memberName, BindingFlags.Public Or BindingFlags.Instance Or BindingFlags.Static)
@@ -752,7 +752,7 @@ Public Module DirectXTextureConversionHelper
 
     Private Sub SetRequiredMemberValue(instance As Object, memberName As String, value As Object)
         ArgumentNullException.ThrowIfNull(instance)
-        If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("El nombre de miembro es obligatorio.", NameOf(memberName))
+        If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("The member name is required.", NameOf(memberName))
 
         Dim instanceType = instance.GetType()
         Dim propertyInfo = instanceType.GetProperty(memberName, BindingFlags.Public Or BindingFlags.Instance Or BindingFlags.Static)
@@ -794,9 +794,9 @@ Public Module DirectXTextureConversionHelper
         If request.ArraySize <= 0 Then Throw New ArgumentOutOfRangeException("ArraySize", "ArraySize debe ser > 0.")
 
         If request.AutoGenerateMipMaps Then
-            If request.MipLevels < 0 Then Throw New ArgumentOutOfRangeException("MipLevels", "MipLevels debe ser >= 0 cuando AutoGenerateMipMaps = True.")
+            If request.MipLevels < 0 Then Throw New ArgumentOutOfRangeException("MipLevels", "MipLevels must be >= 0 when AutoGenerateMipMaps = True.")
         Else
-            If request.MipLevels <= 0 Then Throw New ArgumentOutOfRangeException("MipLevels", "MipLevels debe ser > 0.")
+            If request.MipLevels <= 0 Then Throw New ArgumentOutOfRangeException("MipLevels", "MipLevels must be > 0.")
         End If
 
         If request.IsCubemap AndAlso (request.ArraySize Mod 6 <> 0) Then
@@ -811,10 +811,10 @@ Public Module DirectXTextureConversionHelper
         For i As Integer = 0 To request.Subresources.Count - 1
             Dim subresource = request.Subresources(i)
             If subresource Is Nothing Then
-                Throw New ArgumentException($"Subresources({i}) es Nothing.", NameOf(request))
+                Throw New ArgumentException($"Subresources({i}) is Nothing.", NameOf(request))
             End If
             If subresource.Data Is Nothing Then
-                Throw New ArgumentException($"Subresources({i}).Data es Nothing.", NameOf(request))
+                Throw New ArgumentException($"Subresources({i}).Data is Nothing.", NameOf(request))
             End If
 
             Dim expectedMip = If(request.AutoGenerateMipMaps, 0, i \ request.ArraySize)
@@ -823,10 +823,10 @@ Public Module DirectXTextureConversionHelper
             Dim expectedHeight = CalculateMipExtent(request.Height, expectedMip)
 
             If subresource.Width <> expectedWidth Then
-                Throw New ArgumentException($"Subresources({i}).Width={subresource.Width} pero el mip esperado mide {expectedWidth}.", NameOf(request))
+                Throw New ArgumentException($"Subresources({i}).Width={subresource.Width} but the expected mip is {expectedWidth} px wide.", NameOf(request))
             End If
             If subresource.Height <> expectedHeight Then
-                Throw New ArgumentException($"Subresources({i}).Height={subresource.Height} pero el mip esperado mide {expectedHeight}.", NameOf(request))
+                Throw New ArgumentException($"Subresources({i}).Height={subresource.Height} but the expected mip is {expectedHeight} px tall.", NameOf(request))
             End If
 
             If subresource.MipLevel >= 0 AndAlso subresource.MipLevel <> expectedMip Then

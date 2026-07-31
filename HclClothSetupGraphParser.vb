@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 ' =============================================================================
@@ -9,7 +9,7 @@ Option Explicit On
 ' el hclClothData runtime embebido. Contienen el BINDING que determina DÓNDE se
 ' coloca el cloth: a qué huesos se ata el mesh de simulación, el transform-set raíz,
 ' y el nombre del mesh — lo que hoy se resuelve con un parche (inyección de cloth
-' bones desde BSClothExtraData del NIF, ver [[arch_cloth_bones_inject]]).
+' bones desde BSClothExtraData del NIF, ver [[25-cloth-inyeccion-de-huesos]]).
 '
 ' DECODE SÓLIDO (no especulado): cada setup object es un nodo NOMBRADO. Se extrae:
 '   - Strings: todos los strings referenciados por local-fixup (nombre + nombres de

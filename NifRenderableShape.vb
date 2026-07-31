@@ -180,11 +180,6 @@ Public Class NifRenderableShape
         End Get
     End Property
 
-    ''' <summary>REBIND directo del skin del chunk (opción B): reemplaza los binds autorados por
-    ''' <c>newBind_b = inv(rigFK_rest_b) ∘ (W_B_b ∘ bind_b)</c>, de modo que la malla cuelgue del
-    ''' esqueleto compartido (en rigFK) en vez de necesitar el mount. El reposo queda idéntico
-    ''' (probado álgebra + numérico, 3 robots) y la animación sigue al clip. Idempotente: se aplica
-    ''' UNA vez por shape (el reskin corre por render). Ver NpcMountingResolver.CollectV2PlanForShape.</summary>
     ''' <summary>Bind AUTORADO original del NIF (capturado en el ctor; NUNCA se muta). El rebind computa
     ''' newBind SIEMPRE desde acá ⇒ agnóstico/idempotente: recomputar N veces da lo mismo.</summary>
     Private _boneTransformsOriginal As IReadOnlyList(Of Transform_Class)

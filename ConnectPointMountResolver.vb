@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' Implementación de <see cref="IMountResolver"/> que matchea via convención observada
 ''' en NIFs vanilla FO4: sockets parent con prefix "P-" matchean children con prefix "C-"
 ''' cuando comparten el suffix tras el prefix de 2 chars (ambos case-insensitive).
@@ -20,7 +20,7 @@
 '''
 '''   Fuente canónica NO encontrada en xEdit, F4SE source ni nif.xml docs. Si aparece
 '''   evidencia que contradiga el patrón, esta clase debe revisarse ANTES de hardcodear
-'''   más excepciones (ver feedback_no_workarounds.md).
+'''   más excepciones (ver 00-reglas-scope-y-libreria.md).
 '''
 ''' OMOD.AttachPoint KYWD (e.g. "ap_Bot_BotCore") NO interviene en el match — es metadata
 ''' del CK para validar compatibilidad chunk↔slot al armar la combination, pero el runtime

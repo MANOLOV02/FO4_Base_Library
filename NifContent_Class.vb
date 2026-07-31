@@ -51,7 +51,9 @@ Public Class Nifcontent_Class_Manolo
         Read_MaterialsDictionary()
 
         If HasUnknownBlocks Then
+#If DEBUG Then
             Debugger.Break()
+#End If
             Throw New Exception("Unknown blocks")
         End If
     End Sub
@@ -74,7 +76,9 @@ Public Class Nifcontent_Class_Manolo
             Case Config_App.Game_Enum.Skyrim
                 opt = New NifFileOptimizeOptions With {.TargetVersion = NiVersion.GetSSE, .HeadPartsOnly = headPartsOnly}
             Case Else
+#If DEBUG Then
                 Debugger.Break()
+#End If
                 Throw New Exception
         End Select
         Dim result = Me.OptimizeFor(opt)
@@ -117,7 +121,9 @@ Public Class Nifcontent_Class_Manolo
             Case GetType(NiTriStrips)
                 Return True
             Case Else
+#If DEBUG Then
                 Debugger.Break()
+#End If
                 Throw New Exception
         End Select
         Return False
@@ -211,7 +217,9 @@ Public Class Nifcontent_Class_Manolo
                 matType = GetType(BGEM)
                 createFromShader = Sub(m) m.Create_From_Shader(Me, shap, typed)
             Case Else
+#If DEBUG Then
                 Debugger.Break()
+#End If
                 Throw New Exception
         End Select
 
@@ -250,7 +258,9 @@ Public Class Nifcontent_Class_Manolo
                     Case GetType(BSEffectShaderProperty)
                         DirectCast(shad, BSEffectShaderProperty).Name.String = MatPath
                     Case Else
+#If DEBUG Then
                         Debugger.Break()
+#End If
                         Throw New Exception
                 End Select
                 ' FO4 path does not rewrite the full inline shader (the BGSM file owns it),
@@ -269,7 +279,9 @@ Public Class Nifcontent_Class_Manolo
                         Dim typed = CType(shad, BSEffectShaderProperty)
                         saveAction = Sub() mat.Save_To_Shader(Me, shap, typed)
                     Case Else
+#If DEBUG Then
                         Debugger.Break()
+#End If
                         Throw New Exception
                 End Select
                 saveAction()
@@ -547,7 +559,7 @@ Public Class Nifcontent_Class_Manolo
     ''' CloneShape no transfiere el extradata de la shape; CK SÍ lo preserva (el iris MaleEyes.nif trae
     ''' un ECED con Data constante; FemaleEyes.nif NO → female no recibe = CK). Idempotente: si la
     ''' dest-shape ya tiene un ECED no duplica. Source-driven → gender/parte correctos solos.
-    ''' Ver reference_facegen_ck_must_come_from_ba2 (#c ECED).</summary>
+    ''' Ver 10-stack-arnes-de-medicion (#c ECED).</summary>
     Public Sub TransferShapeEyeCenterExtraData(srcNif As Nifcontent_Class_Manolo, srcShape As INiShape, destShape As INiShape)
         If srcNif Is Nothing OrElse srcShape Is Nothing OrElse destShape Is Nothing Then Exit Sub
         Dim srcAv = TryCast(srcShape, NiAVObject)
@@ -848,7 +860,7 @@ Public Class Nifcontent_Class_Manolo
     ''' <summary>SSE per-partition skin occlusion — the engine-faithful analog of FO4's per-segment
     ''' <see cref="BSTriShapeGeometry.ComputeHiddenTriangles"/>. Byte-level RE of SkyrimSE.exe
     ''' (ApplyOcclusionToGeometry 0x1403C56B0 → SetPartitionVisible 0x14021A530, see
-    ''' reference_sse_engine_occlusion_re): Skyrim hides a skinned shape PER-PARTITION — the
+    ''' 23-armor-oclusion-sse-re): Skyrim hides a skinned shape PER-PARTITION — the
     ''' BSDismemberSkinInstance partition whose body-part biped slot is covered by a worn item is
     ''' hidden, its siblings stay visible. Returns a per-triangle "hidden" array aligned with the
     ''' shape's GetTriangles() order (same order geom.Indices / EnsureZapIndexBuffer consume), or

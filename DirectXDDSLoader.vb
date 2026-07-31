@@ -442,7 +442,7 @@ Public Module DirectXDDSLoader
                     Dim lvl = tex.Levels(idx)
 
                     If lvl Is Nothing OrElse lvl.Data Is Nothing Then
-                        Throw New InvalidOperationException("Nivel de textura invalido en idx=" & idx.ToString())
+                        Throw New InvalidOperationException("Invalid texture level at idx=" & idx.ToString())
                     End If
 
                     offsets(idx) = totalBytes
@@ -568,7 +568,12 @@ Public Module DirectXDDSLoader
             result = Load_And_GenerateOpenGLTextures_Memory(fullpaths, ddsFiles, useCompress, forceOpenGL, srgb)
         End If
 
-        If result.Count <> fullpaths.Length Then Debugger.Break() : Throw New Exception("the loader is not returning the same count as the number sent")
+        If result.Count <> fullpaths.Length Then
+#If DEBUG Then
+            Debugger.Break()
+#End If
+            Throw New Exception("the loader is not returning the same count as the number sent")
+        End If
         Return result
     End Function
 

@@ -1,7 +1,5 @@
 ﻿' Version Uploaded of Fo4Library 3.2.0
 Imports System.IO
-Imports System.Net
-Imports NiflySharp.Blocks
 
 Public Class DictionaryPicker_Control
     ' Entradas (ya normalizadas/filtradas antes de crear el form)
@@ -49,7 +47,6 @@ Public Class DictionaryPicker_Control
         AddHandler lvFiles.SelectedIndexChanged, AddressOf LvFiles_SelectedIndexChanged
         AddHandler lvFiles.DoubleClick, AddressOf LvFiles_DoubleClick
         AddHandler btnOk.Click, AddressOf BtnOk_Click
-        AddHandler panelBottom.Resize, AddressOf PanelBottom_Resize
         AddHandler chkShowOverrides.CheckedChanged, AddressOf ChkShowOverrides_CheckedChanged
         If Me.ParentForm IsNot Nothing Then AddHandler Me.ParentForm.Shown, AddressOf DictionaryFilePickerForm_Shown
 
@@ -109,8 +106,8 @@ Public Class DictionaryPicker_Control
         Dim node = FindOrExpandNodeByPath(dirPath)
         If node Is Nothing Then Return False
 
-        tvDirs.SelectedNode = node
-        PopulateFilesForNode(node)
+        ' Setear SelectedNode dispara AfterSelect → PopulateFilesForNode: el guard evita el repoblado doble.
+        ' No agregar un Populate suelto afuera del Try.
         Try
             _suspendPopulate = True
             tvDirs.SelectedNode = node
@@ -298,13 +295,6 @@ Public Class DictionaryPicker_Control
         Return String.Join("\", parts.ToArray())
     End Function
 
-    Private Shared Function GetExtension(fileName As String) As String
-        If String.IsNullOrEmpty(fileName) Then Return ""
-        Dim i = fileName.LastIndexOf("."c)
-        If i < 0 Then Return ""
-        Return fileName.Substring(i)
-    End Function
-
     ' ----------------- Eventos UI -----------------
 
     Private Sub TvDirs_AfterSelect(sender As Object, e As TreeViewEventArgs)
@@ -346,9 +336,6 @@ Public Class DictionaryPicker_Control
             RaiseEvent OkClicked()
         End If
     End Sub
-    Private Sub PanelBottom_Resize(sender As Object, e As EventArgs)
-    End Sub
-
     Private Sub ChkShowOverrides_CheckedChanged(sender As Object, e As EventArgs)
         If tvDirs.SelectedNode IsNot Nothing Then PopulateFilesForNode(tvDirs.SelectedNode)
     End Sub

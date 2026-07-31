@@ -14,7 +14,7 @@
 '''    NPC's FTST complexion in [0,1,2,3,7] plus the facetint in [6].
 '''
 ''' SSE-ONLY. Callers gate on <c>Config_App.Current.Game = Config_App.Game_Enum.Skyrim</c>; the FO4 path stays
-''' byte-identical. See project_sse_facetint_spec / project_sse_nam9_morph_map.
+''' byte-identical. See 31-sse-facetint-spec / 22-morphs-sse-nam9-map.
 ''' </summary>
 Public Module SseFaceGenBaker
 
@@ -44,9 +44,6 @@ Public Module SseFaceGenBaker
         Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function
 
-    ''' <summary>Compose the SSE facetint linear RGBA accumulator (tint + RaceMenu overlays), the buffer both the
-    ''' DDS encode and the TGA dump derive from. Same inputs as <see cref="BakeFaceTintDds"/>. Nothing on fail.
-    ''' Public so the bake can dump a lossless TGA (via <see cref="LinearRgbaToBgra"/>) without a second compose.</summary>
     ''' <summary>⛔ El facetint es TINT-ONLY por construcción: NO lleva overlays ni skee-masks. Los overlays de
     ''' RaceMenu y las máscaras skee (MASKT) se componen sobre el DIFFUSE (en el fold, ver
     ''' <c>FaceGenBuilder.WriteSseFaceDiffuseWithOverlays</c>), no acá — porque el engine las aplica sobre el ALBEDO
@@ -251,7 +248,7 @@ Public Module SseFaceGenBaker
     ''' <para><b>Por qué hace falta.</b> El fold deja en el slot 0 la base ya amplificada CON los overlays encima
     ''' (orden RaceMenu: el overlay NO lleva tint ni detail). Para que el motor no re-aplicara nada, el bake
     ''' neutralizaba los slots 3 y 6. El 6 funciona (el motor arma su path canónico y ahí escribimos el gris).
-    ''' El 3 NO: la nota de RE del repo (<c>arch_sse_face_txst_layered_law</c>) registra que
+    ''' El 3 NO: la nota de RE del repo (<c>50-facetint-leyes-y-compositor</c>) registra que
     ''' <c>RegenerateHead 0x14042BD90</c> empuja <c>_sk</c>/detail al material (<c>+0xB0</c>/<c>+0xA8</c>) desde el
     ''' TXST RESUELTO al attachear la cabeza ⇒ el neutro del NIF se descarta y el amplify se aplica DOS VECES.
     ''' Con el detail medido de un NPC real (0,256/0,241/0,245) el amplify es (1,036, 0,960, 0,992); al cuadrado

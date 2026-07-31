@@ -1,46 +1,30 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 ' =============================================================================
-' hkaLosslessCompressedAnimation decoder.
+' Decoder de hkaLosslessCompressedAnimation - la 2da variante de compresion de animacion de FO4 (la 1ra,
+' hkaSplineCompressedAnimation, esta en HkxAnimationGraphParser.vb). Produce el mismo contenedor de animacion
+' decodificada, con TrackTransforms = TRS local por (frame, track).
 '
-' Decodifica la 2da variante de compresión de animación de FO4 (la 1ra,
-' hkaSplineCompressedAnimation, está en HkxAnimationGraphParser.vb). Produce el
-' mismo HkaSplineCompressedAnimationGraph_Class (contenedor de animación decodificada)
-' con TrackTransforms = TRS local por (frame, track).
+' PORTADO de HavokLib (Copyright (C) 2020-2022 Lukas Cone), archivos
+' hka_losslesscompressedanimation.cpp (algoritmo) y hka_animation_lossless_compressed.inl (layout).
+' HavokLib esta bajo GNU GPL v3 (or later); este port es trabajo derivado y queda bajo la misma GPL-3.0 que el
+' resto de FO4_Base_Library (ver LICENSE_CREDITS.txt).
 '
-' PORTADO de HavokLib (PredatorCZ / Lukas Cone), archivos:
-'   source/packfile/custom/hka_losslesscompressedanimation.cpp  (algoritmo GetFrame)
-'   source/packfile/custom/hka_animation_lossless_compressed.inl (layout de miembros)
-' HavokLib está licenciado GNU GPL v3 (or later); este port es trabajo derivado y
-' queda bajo la misma GPL-3.0 que el resto de FO4_Base_Library (ver LICENSE_CREDITS.txt).
-' Copyright(C) 2020-2022 Lukas Cone (HavokLib).
+' Layout (FO4 64-bit, HK2014, ptr=8, size 224), verificado con el modo --dump de HkxLoadOrderAudit sobre
+' archivos reales y contra la tabla LAYOUTS del .inl. Tras la base hkaAnimation (l = +0x38) van 10 hkArray
+' contiguos de 16 bytes y despues numFrames:
+'   l+0   dynamicTranslations (float[])      l+16  staticTranslations (float[])
+'   l+32  translationTypeAndOffsets (u16[4]) l+48  dynamicRotations (quaternion 16B)
+'   l+64  staticRotations                    l+80  rotationTypeAndOffsets (u16[])
+'   l+96  dynamicScales                      l+112 staticScales
+'   l+128 scaleTypeAndOffsets                l+144 floats            l+160 numFrames (u32)
 '
-' Layout (FO4 64-bit, HK2014, ptr=8, reusePadding=0; size 224) verificado
-' empíricamente con el modo --dump del HkxLoadOrderAudit sobre archivos reales y
-' contra la tabla LAYOUTS del .inl de HavokLib:
-'   base hkaAnimation: +0x10 type, +0x14 duration, +0x18 numTransformTracks,
-'                      +0x1C numFloatTracks, +0x20 extractedMotion ptr, +0x28 annotationTracks(hkArray)
-'   tras la base (l = +0x38), 10 slots hkArray contiguos (ptr+count+pad = 16B c/u), luego numFrames(u32):
-'     l+0   dynamicTranslations  (float[])
-'     l+16  staticTranslations   (float[])
-'     l+32  translationTypeAndOffsets (USVector4[] = 4×uint16)
-'     l+48  dynamicRotations     (Vector4A16[] = quaternion 16B)
-'     l+64  staticRotations      (Vector4A16[])
-'     l+80  rotationTypeAndOffsets (uint16[])
-'     l+96  dynamicScales        (float[])
-'     l+112 staticScales         (float[])
-'     l+128 scaleTypeAndOffsets  (USVector4[])
-'     l+144 floats               (float[])
-'     l+160 numFrames            (uint32)
-'
-' Algoritmo por valor (hka_losslesscompressedanimation.cpp): cada componente lleva
-' un uint16 type+offset → ttype = type AND 3 (0=Identity, 1=Static, 2=Dynamic),
-' index = type >> 2. Static => pool[index]; Dynamic => pool[index + frame*stride],
-' donde stride = nº total de componentes dinámicos sumados sobre TODOS los tracks
-' (por eso el pool dinámico es [frame0:slots][frame1:slots]...). Translations/scales
-' son pools de FLOAT por-componente; rotations son pools de QUATERNION (16B).
-' Identity: translation=(0,0,0), scale=(1,1,1), rotation=(0,0,0,1).
+' Algoritmo por valor: cada componente lleva un u16 type+offset. ttype = type AND 3 (0 Identity, 1 Static,
+' 2 Dynamic) e index = type >> 2. Static toma pool[index]; Dynamic toma pool[index + frame*stride], donde
+' stride es el total de componentes dinamicos sumado sobre TODOS los tracks (de ahi que el pool dinamico sea
+' [frame0:slots][frame1:slots]...). Translations y scales son pools de FLOAT por componente; rotations son
+' pools de QUATERNION. Identity: translation (0,0,0), scale (1,1,1), rotation (0,0,0,1).
 ' =============================================================================
 
 Imports System.Collections.Generic
@@ -151,10 +135,10 @@ Public Partial Class HkxObjectGraph_Class
         Dim numFrames = ReadInt32(rel + l + 10 * ahs)
 
         If numFrames < 0 OrElse numTransformTracks < 0 Then
-            Throw New InvalidDataException($"hkaLosslessCompressedAnimation @0x{rel:X} tiene counts negativos (numFrames={numFrames}, tracks={numTransformTracks}).")
+            Throw New InvalidDataException($"hkaLosslessCompressedAnimation @0x{rel:X} has negative counts (numFrames={numFrames}, tracks={numTransformTracks}).")
         End If
         If CLng(numFrames) * CLng(numTransformTracks) > Integer.MaxValue Then
-            Throw New InvalidDataException($"hkaLosslessCompressedAnimation @0x{rel:X} tabla de transforms demasiado grande.")
+            Throw New InvalidDataException($"hkaLosslessCompressedAnimation @0x{rel:X} transform table is too large.")
         End If
 
         Dim result As New HkaSplineCompressedAnimationGraph_Class With {

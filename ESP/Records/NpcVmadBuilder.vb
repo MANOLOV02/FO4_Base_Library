@@ -1,67 +1,31 @@
-Imports System.IO
+﻿Imports System.IO
 
 ' ============================================================================
-' VMAD builder — the inverse of NpcVmadScanner.
+' VMAD builder - el inverso de NpcVmadScanner. Produce un NPC_VmadData (bytes crudos + lista de posiciones
+' de FormID) que NpcSubrecordWriter.EmitVmad emite tal cual, remapeando cada posicion por la MAST: por eso
+' aca se escriben FormID GLOBALES y la cuenta de indices de master la hace el writer.
 '
-' Produces an NPC_VmadData (raw payload bytes + FormID position list) that
-' NpcSubrecordWriter.EmitVmad can emit as-is: EmitVmad copies RawBytes and
-' patches each FormIdPositions entry through the MAST remapper, so a FormID we
-' write here is automatically re-mastered for the target plugin. We therefore
-' write GLOBAL (resolved) FormIDs and let the writer do the master-index math.
+' â›” UPSERT, NUNCA APPEND CIEGO, Y NUNCA TOCAR UN SCRIPT AJENO. Dos restricciones, las dos de datos reales:
+'   1. 805 de 5118 NPC_ de Skyrim.esm y 382 de 3015 de Fallout4.esm YA traen VMAD con scripts vanilla
+'      (workshopnpcscript, WIDeadBodyCleanupScript, masterambushscript). Pisar uno rompe la logica de
+'      asentamientos, la limpieza de cadaveres o el scripting de quests de ese actor. Se copian verbatim.
+'   2. Guardar el mismo NPC dos veces tiene que converger a UNA sola copia de nuestro script con los valores
+'      actuales; un append creceria una entrada por guardado y la VM las correria todas.
+' Por eso UpsertScript reconstruye el array como [todo script que NO lleva nuestro prefijo, verbatim] +
+' [el nuestro, actual]. Se borra por PREFIJO y no por nombre exacto, asi tambien limpia lo que dejo una
+' version anterior de la app con otro nombre de script.
 '
-' ---------------------------------------------------------------------------
-' UPSERT, NEVER BLIND-APPEND — and NEVER touch a script that is not ours.
+' El splice es seguro porque el array de Scripts es el ULTIMO elemento de un wbVMAD plano, y el NPC_ usa el
+' plano y no las variantes fragmentadas (PERK/PACK/QUST/INFO/SCEN, que llevan cola despues de los scripts).
+' Verificado: los 1333 VMAD de NPC_ vanilla terminan exactamente donde termina el array, con cero bytes de cola.
 '
-' Two hard constraints, both from real data:
+' GAME-AWARE: lo unico que cambia por juego es la Version del header (Skyrim 5, FO4 6; medido 951/951 y
+' 382/382). ObjectFormat es 2 en los dos (1333/1333). Al APPENDear se preservan la Version y el ObjectFormat
+' del propio record en vez de forzar el default: el record manda sobre el default.
 '
-'  1. NEVER clobber somebody else's script. 805 of 5118 NPC_ in Skyrim.esm and
-'     382 of 3015 in Fallout4.esm already ship a VMAD with vanilla scripts
-'     (workshopnpcscript, WIDeadBodyCleanupScript, masterambushscript, ...).
-'     Overwriting one breaks workshop settlement logic / corpse cleanup / quest
-'     scripting on that actor. Other mods add their own on top. Those entries are
-'     copied through byte-for-byte, always.
-'
-'  2. NEVER duplicate our own. Saving the same NPC twice, re-editing it later, or
-'     stacking incremental mod versions must converge to exactly ONE copy of our
-'     script with the CURRENT values — not N stale copies. A plain append would
-'     grow one entry per save and the VM would run all of them.
-'
-' So UpsertScript rebuilds the scripts array as:
-'       [every script NOT under our reserved prefix, verbatim] + [ours, current]
-' Removing by PREFIX (not by exact name) also cleans up entries left behind by an
-' older version of the app that used a different script name — otherwise those
-' would linger forever as orphans.
-'
-' Splicing (rather than appending in place) is safe because the Scripts array is
-' the LAST element of a plain wbVMAD (Version, ObjectFormat, Scripts —
-' wbDefinitionsFO4.pas:4383-4388; wbDefinitionsTES5.pas:3178-3182). NPC_ uses the
-' plain wbVMAD, not one of the wbVMADFragmented* variants (PERK/PACK/QUST/INFO/
-' SCEN, which DO carry a fragment tail after the scripts). Verified empirically:
-' all 1333 vanilla NPC_ VMAD payloads end exactly where the scripts array ends,
-' with zero trailing bytes.
-'
-' ---------------------------------------------------------------------------
-' GAME-AWARE: the header Version differs by game. Everything else does not.
-'
-'   Version      Skyrim = 5, FO4 = 6
-'                xEdit: wbVMADVersion .SetDefaultNativeValue(5) TES5 :3174
-'                                     .SetDefaultNativeValue(6) FO4  :4373
-'                Measured: 951/951 Skyrim+Dawnguard = 5, 382/382 FO4 = 6.
-'   ObjectFormat 2 in BOTH (xEdit default 2 for both; measured 1333/1333 = 2).
-'
-' When APPENDING we preserve the record's own Version/ObjectFormat rather than
-' forcing the game default — the record is authoritative over the default.
-'
-' ---------------------------------------------------------------------------
-' Constant byte values below are MEASURED across all 1333 vanilla NPC_ VMADs
-' (Skyrim.esm 805 + Dawnguard.esm 146 + Fallout4.esm 382), not assumed:
-'
-'   script Flags   (u8)  = 0 (Local)     — 1628/1628 script entries
-'   property Flags (u8)  = 1 (Edited)    — 5341/5341 properties, every type
-'   Object 'Unused' (u16) = 0            — 5846/5846 objects
-'   Object 'Alias'  (s16) = -1           — 5840/5846 (the 6 others are quest
-'                                          aliases, which cannot apply to a
-'                                          base-form script like ours)
+' Los valores constantes de mas abajo estan MEDIDOS sobre los 1333 VMAD vanilla, no asumidos: Flags de script
+' = 0 (Local) en 1628/1628; Flags de property = 1 (Edited) en 5341/5341; 'Unused' del Object = 0 en 5846/5846;
+' 'Alias' = -1 en 5840/5846 (los otros 6 son alias de quest, que no aplican a un script de base form).
 ' ============================================================================
 
 Public Module NpcVmadBuilder

@@ -39,7 +39,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         Dim animSet = BuildAnimExistenceSet()
         ' Filtro TYPE-DRIVEN (KYWD.TNAM): se EXCLUYE un subgraph solo si requiere una keyword de IDENTIDAD de OTRA
         ' raza (None-typed ∧ ∈ KWDA de alguna raza ∧ ∉ esta raza). Los ejes de estado (Anim Injured/Archetype/
-        ' Gender/…) NUNCA excluyen. [[arch_race_behavior_resolution]]
+        ' Gender/…) NUNCA excluyen. [[24-anim-behavior-por-raza]]
         Dim kwSet As New HashSet(Of UInteger)(rb.ActorKeywords)
         Dim byClip As New Dictionary(Of String, ResolvedAnimationClip)(StringComparer.OrdinalIgnoreCase)
         Dim graphCache As New Dictionary(Of String, HkxObjectGraph_Class)(StringComparer.OrdinalIgnoreCase)
@@ -215,7 +215,7 @@ Public NotInheritable Class BehaviorClipEnumerator
         Dim behRoot = ActorRootOfAnim(behFile)
         For Each refObj In graph.GetObjectsByClassName("hkbBehaviorReferenceGenerator")
             ' m_behaviorName version-robust (FO4 +0x88 / SSE +0x48) — sin esto el walk NO seguía las sub-behaviors
-            ' de SSE (Weap/Magic/Locomotion/…) y la lista de SSE salía corta. [[arch_race_behavior_resolution]]
+            ' de SSE (Weap/Magic/Locomotion/…) y la lista de SSE salía corta. [[24-anim-behavior-por-raza]]
             Dim refName = graph.ResolveGeneratorTargetString(refObj, graph.HkbLayout.BehaviorRefName)
             If String.IsNullOrWhiteSpace(refName) Then Continue For
             EnumBehaviorClips(NormHkx(CombineActor(behRoot, refName)), saptFolders, role, stateAxis, reqFemale, perspective, loadBehaviorHkx,

@@ -2,60 +2,40 @@
 Imports System.Runtime.CompilerServices
 Imports System.Linq
 
-''' <summary>
-''' SSE (Skyrim Special Edition) face-tint compositor — the engine-faithful reproduction of what the
-''' CreationKit bakes into <c>FaceGenData\FaceTint\&lt;plugin&gt;\&lt;fid&gt;.dds</c> (512×512 DXT5, _d only).
-'''
-''' ENGINE MODEL (verified in CreationKit.exe, re_sseck — NOT curve-fit):
-'''  - BSFaceGenUtils (bsfacegenutils.cpp) builds a float4[16] of {color×1/255, interp} per tint mask and
-'''    hands it to an image-space pixel shader. It NEVER reads a "type"/TINP field: EVERY layer is the same
-'''    coverage-gated lerp — there is NO per-type blend-op. Setter @0x142ce73e0 (imagespaceshaderparam.cpp)
-'''    is a pure store into the pixel-constant buffer. Color unpack constant = 1/255 (0.00392156) confirmed.
-'''  - Per layer: coverage = maskR × TINV, then acc = lerp(acc, color, coverage). Uniform for all layers.
-'''  - Base = the NPC skin colour (QNAM) FLAT. Measured: CK's baked _d skin region is flat = QNAM (Dremora
-'''    QNAM=0 → CK black exact). The diffuse skin DETAIL is added at RENDER by the shader, so it is NOT in the
-'''    baked _d (using the head diffuse as the base gives ~52/255 — wrong). The DXT5 target has a ~3-5/255
-'''    compression floor.
-'''
-''' ⚠️ SOBRE LA PALABRA "LINEAR" EN ESTE MODULO (anotado, NO renombrado): ni
-''' <see cref="FaceTintCpuCompositor.DecodeDds"/> ni <see cref="DecodeTextureRgba"/> aplican la curva
-''' sRGB→lineal. Devuelven <c>byte/255</c> CRUDO (ver el bucle de conversion de DecodeDds:
-''' <c>outArr(o) = CSng(r / 255.0)</c>, sin curva). O sea que "linear RGBA" en las firmas y summaries de este
-''' modulo, de SseOverlayCompositor y de SseSkeeMaskReader significa "valor de ALMACENAMIENTO normalizado a
-''' [0,1]" — que para una textura de color es sRGB, no luz lineal. Es correcto para lo que hace el compose del
-''' facetint (las mascaras son datos, no color, y el seed 0.5 es un valor de almacenamiento), pero NO hay que
-''' leerlo como "aca se trabaja en lineal". El UNICO lugar que de verdad linealiza es el fold
-''' (<see cref="SseFaceGenBaker.FoldFacetintIntoDiffuse"/>, que llama Srgb2Lin/Lin2Srgb explicitamente).
-'''
-''' Measured mean 4.68/255 over 2032 Skyrim.esm NPCs (median 2.36, 98.4% ≤20/255). Tattoo masks (TINI 65-74)
-''' carry TINT but no TINP — they must still register (flush-on-new-TINI), else war-paint NPCs go to ~74/255.
-'''
-''' This is the SSE analogue of <see cref="FaceTintInputBuilder"/> (FO4). It is SSE-only; callers gate on
-''' <c>Config_App.Current.Game = Config_App.Game_Enum.Skyrim</c>. See project_sse_facetint_spec.
-''' </summary>
+''' <summary>Compositor de face-tint de SSE: la reproduccion engine-faithful de lo que el CreationKit hornea
+''' en <c>FaceGenData\FaceTint\&lt;plugin&gt;\&lt;fid&gt;.dds</c>.
+''' <para>MODELO DEL MOTOR (verificado en CreationKit.exe, no curve-fit): BSFaceGenUtils arma un float4[16] de
+''' {color x 1/255, interp} por mascara de tint y se lo pasa a un pixel shader de image-space. NUNCA lee un
+''' campo de "tipo": TODA capa es el mismo lerp gateado por cobertura, no hay blend-op por tipo. Por capa,
+''' <c>coverage = maskR x TINV</c> y <c>acc = lerp(acc, color, coverage)</c>.</para>
+''' <para>La base es el color de piel del NPC (QNAM) PLANO: medido, la region de piel del _d que hornea el CK
+''' es plana e igual al QNAM. El DETALLE del diffuse lo agrega el shader en RENDER, asi que no esta en el _d
+''' horneado (usar el head diffuse como base da ~52/255, mal).</para>
+''' <para>âš ï¸ SOBRE LA PALABRA "LINEAR" EN ESTE MODULO (anotado, NO renombrado): ni DecodeDds ni
+''' DecodeTextureRgba aplican la curva sRGB a lineal, devuelven <c>byte/255</c> CRUDO. "linear RGBA" en las
+''' firmas de este modulo, de SseOverlayCompositor y de SseSkeeMaskReader significa "valor de ALMACENAMIENTO
+''' normalizado a [0,1]", no "en espacio lineal". El unico lugar que de verdad linealiza es el fold
+''' (<see cref="SseFaceGenBaker.FoldFacetintIntoDiffuse"/>, que llama Srgb2Lin/Lin2Srgb explicitamente).</para>
+''' <para>Las mascaras de tatuaje (TINI 65-74) traen TINT pero no TINP: igual tienen que registrarse
+''' (flush-on-new-TINI) o los NPC con war-paint se van a ~74/255.</para>
+''' <para>Es el analogo SSE de <see cref="FaceTintInputBuilder"/> (FO4) y es SSE-only: los callers gatean por
+''' juego. Ver 31-sse-facetint-spec.</para></summary>
 Public Module SseFaceTintComposer
 
-    ''' <summary>CAPACIDAD DECLARADA de este compositor, para los caminos GL que lo tienen de ESPEJO.
-    ''' Este modulo SI implementa la ley de los cuatro espacios: compone con
+    ''' <summary>CAPACIDAD DECLARADA de este compositor, para los caminos GL que lo tienen de ESPEJO. Este
+    ''' modulo SI implementa la ley de los cuatro espacios: compone con
     ''' <see cref="FaceTintCpuCompositor.ComposePixel"/> (el MISMO ComposeOne del loop FO4) y mantiene su
-    ''' acumulador en <c>conv.AccumSpace</c> — siembra en AccumSpace y hace UNA sola conversion a OutputSpace
-    ''' al final. Por eso declara <c>FourSpaceAccumulator</c> y <c>AccumInCompositeSpace</c> vale acá igual
-    ''' que en FO4.
-    ''' <para>ANTES declaraba <c>OutputSpaceOnly</c> y el flag quedaba INERTE en SSE. Eso NO era un diseño:
-    ''' era una compensacion. El GL comparte <c>FaceTintCompositor.ApplyFaceTintPipeline</c> con FO4
-    ''' (SseFoldLayerStack lo llama en 7 sitios), asi que con el CPU sin implementarlo habia que SUPRIMIR el
-    ''' flag del lado GL para que los dos no divergieran — se apagaba el sintoma en un lado en vez de cerrar
-    ''' el hueco en el otro. El argumento de que "SSE es all-linear asi que da igual" tampoco servia: eso es
-    ''' una COINCIDENCIA de configuracion (alcanza con poner os=G22 desde CharGen Options para romperla), y
-    ''' ademas dejaba abierto un hueco MAYOR — con espacios separados el GL honraba la ley y el CPU no.</para>
-    ''' <para>REGRESION: nula por construccion en vanilla. Con los defaults de SSE (all-linear)
-    ''' CompositeSpace == OutputSpace ⇒ AccumSpace == OutputSpace prendido o apagado ⇒ las dos conversiones
-    ''' nuevas son no-op y la salida es byte-identica al modelo previo.</para></summary>
+    ''' acumulador en <c>conv.AccumSpace</c>, sembrando en AccumSpace y convirtiendo UNA sola vez al final.
+    ''' <para>Antes declaraba OutputSpaceOnly y el flag quedaba INERTE en SSE. Eso no era diseno sino
+    ''' compensacion: el GL comparte ApplyFaceTintPipeline con FO4, asi que con el CPU sin implementarlo habia
+    ''' que SUPRIMIR el flag del lado GL para que no divergieran - se apagaba el sintoma en un lado en vez de
+    ''' cerrar el hueco en el otro. "SSE es all-linear asi que da igual" tampoco servia: es una COINCIDENCIA de
+    ''' configuracion (alcanza con poner os=G22 en CharGen Options para romperla).</para>
+    ''' <para>Regresion nula por construccion en vanilla: con los defaults de SSE, AccumSpace == OutputSpace,
+    ''' asi que las dos conversiones nuevas son no-op y la salida es byte-identica.</para></summary>
     Public Const AccumSpaceCapability As FaceTintConvention.FaceTintCpuMirrorCapability =
         FaceTintConvention.FaceTintCpuMirrorCapability.FourSpaceAccumulator
 
-    ''' <summary>One RACE tint mask: the greyscale mask texture path + its TINP mask type (-1 when the layer
-    ''' omits TINP, e.g. tattoos). Type is retained for tooling/diagnostics only — the blend is uniform.</summary>
     ''' <summary>One RACE tint-layer preset: a named colour swatch the CK's tinting dropdown offers for this layer.
     ''' The NPC record selects one by its <see cref="Tirs"/> value stored in the layer's TIAS field (TIAS = TIRS →
     ''' the preset's CLFM colour; TIAS = -1 → the layer uses a custom RGB, not a preset). Verified against vanilla
@@ -109,21 +89,16 @@ Public Module SseFaceTintComposer
     '  para reemplazar los limites accidentales que se estaban sacando —el gate de 512² y el literal de 4 MB—
     '  y quedo mal encajada apenas la vida paso a ser per-NPC. No re-proponerla.)
 
-    ''' <summary>⭐ Suelta el caché de TEXTURA — el que pesa: el resultado decodificado+resampleado
-    ''' (<see cref="_texCache"/>).
-    ''' <para><b>VIDA PER-NPC, igual que <c>ClearFaceTintCaches</c> del lado FO4</b>: se conservan entre
-    ''' recargas del MISMO NPC —para que la edicion viva siga siendo rapida al segundo click— y se sueltan al
-    ''' cambiar de NPC raiz. Las mascaras del RACE son compartidas entre NPCs de esa raza, asi que soltarlas
-    ''' cuesta re-decode+re-resample en el proximo cambio; se paga a proposito para que la app no acumule
-    ''' memoria navegando (decision explicita: la app corre SIN techo de presupuesto).</para>
-    ''' <para>⛔ NO toca <see cref="_layersCache"/> ni <see cref="_clfmCache"/>: son datos de RECORD (lista
-    ''' ordenada de capas por raza+genero, CLFM→RGB), no pesan y re-parsearlos en cada cambio de NPC seria
-    ''' churn puro. Su vida es la del LOAD ORDER y la maneja <see cref="ClearCaches"/>. Es el mismo reparto que
-    ''' del lado FO4, donde <c>ClearFaceTintCaches</c> suelta bytes/GL/decodes y los caches de PARSE los suelta
-    ''' <c>InvalidateParseCaches</c>.</para>
-    ''' <para>⛔ El BARRIDO del bake NO pasa por aca (llama a <c>BuildCharGen</c> directo, no al camino de load
-    ''' del render), asi que ahi la reutilizacion entre NPCs de la misma raza se conserva — que es justo donde
-    ''' mas rinde.</para></summary>
+    ''' <summary>Suelta el cache de TEXTURA, el que pesa: el resultado decodificado y resampleado.
+    ''' <para>VIDA PER-NPC, igual que del lado FO4: se conserva entre recargas del MISMO NPC -para que la
+    ''' edicion viva siga rapida al segundo click- y se suelta al cambiar de NPC raiz. Las mascaras del RACE se
+    ''' comparten entre NPCs de esa raza, asi que soltarlas cuesta re-decode y re-resample en el proximo cambio;
+    ''' se paga a proposito para que la app no acumule memoria navegando.</para>
+    ''' <para>â›” NO toca <see cref="_layersCache"/> ni <see cref="_clfmCache"/>: son datos de RECORD (lista
+    ''' ordenada de capas por raza+genero, CLFM a RGB), no pesan y re-parsearlos en cada cambio de NPC seria
+    ''' churn puro. Su vida es la del LOAD ORDER y la maneja <see cref="ClearCaches"/>.</para>
+    ''' <para>El BARRIDO del bake no pasa por aca (llama a BuildCharGen directo), asi que ahi la reutilizacion
+    ''' entre NPCs de la misma raza se conserva, que es donde mas rinde.</para></summary>
     Public Sub ClearTextureCaches()
         _texCache.Clear()
     End Sub
@@ -260,21 +235,18 @@ Public Module SseFaceTintComposer
         Return acc
     End Function
 
-    ''' <summary>Mapa de tints AUTORADOS del NPC: índice de capa → {R, G, B (TINC/255), interp (TINV/100)}.
-    ''' Subrecords por capa: TINI, TINC, TINV, TIAS (TIAS cierra la capa → commit).
-    ''' ⭐⭐ FUENTE ÚNICA de las DOS réplicas: la CPU (<see cref="ComposeLinearRgba"/>) y la GPU
-    ''' (<see cref="BuildLayerInputs"/>) llaman ACÁ. ⛔ Estaba DUPLICADO literalmente en ambas: editar una sola
-    ''' habría hecho divergir CPU y GPU en el VALOR (no en los últimos bits), en silencio, sin que nadie se
-    ''' equivocara en la matemática — el modo de fallo más barato de introducir y el más caro de diagnosticar.
-    ''' ⛔ NO volver a inlinearlo en ninguna de las dos.
-    ''' <paramref name="npcTintOverride"/> = capas editadas en el editor; Nothing ⇒ el record crudo. Se normaliza
-    ''' a (sig, data) para que el PluginRecord y la lista de NPC_RawSubrecord se parseen idénticamente.
-    ''' ⚠️ TINV NO se acota A PROPÓSITO. En spec vale 0-100 ⇒ tvv ∈ [0,1] y las dos réplicas coinciden. Fuera de
-    ''' spec divergen: el GPU acota la cobertura (uOpacity, Math.Max/Min en FaceTintCompositor) y el CPU no. NO se
-    ''' unifica: no está RE-ado qué hace el motor con TINV > 100 (la RE sólo confirma `interp = value × 0.01`, sin
-    ''' clamp), y este valor alimenta el BAKE (ComposeFacetintAcc → BakeFaceTintDds), validado byte-exacto contra
-    ''' el CK ⇒ un clamp inventado sería regresión, no fix. El RESULTADO sí queda acotado aguas abajo en ambos
-    ''' caminos. Se loguea para tener un NPC concreto contra el que hacer RE si alguna vez aparece.</summary>
+    ''' <summary>Mapa de tints AUTORADOS del NPC: indice de capa -> {R, G, B (TINC/255), interp (TINV/100)}.
+    ''' Subrecords por capa: TINI, TINC, TINV, TIAS (el TIAS cierra la capa y la commitea).
+    ''' <para>FUENTE UNICA de las DOS replicas: la CPU (<see cref="ComposeLinearRgba"/>) y la GPU
+    ''' (<see cref="BuildLayerInputs"/>) llaman ACA. â›” Estaba DUPLICADO literalmente en las dos: editar una
+    ''' sola habria hecho divergir CPU y GPU en el VALOR, en silencio y sin que nadie se equivocara en la
+    ''' matematica. No volver a inlinearlo.</para>
+    ''' <para><paramref name="npcTintOverride"/> = capas editadas en el editor; Nothing = el record crudo. Se
+    ''' normaliza a (sig, data) para que el PluginRecord y la lista de subrecords crudos se parseen igual.</para>
+    ''' <para>âš ï¸ TINV NO se acota A PROPOSITO. En spec vale 0-100 y las dos replicas coinciden; fuera de spec
+    ''' divergen (el GPU acota la cobertura y el CPU no). No se unifica porque no esta RE-ado que hace el motor
+    ''' con TINV &gt; 100 y este valor alimenta el BAKE, validado byte-exacto contra el CK: un clamp inventado
+    ''' seria regresion, no fix. El RESULTADO si queda acotado aguas abajo en los dos caminos.</para></summary>
     Private Function BuildNpcAuthoredTintMap(npcRec As PluginRecord,
                                              npcTintOverride As IList(Of NPC_RawSubrecord)) As Dictionary(Of Integer, Double())
         Dim npcMap As New Dictionary(Of Integer, Double())
@@ -461,8 +433,6 @@ Public Module SseFaceTintComposer
         Return CInt(Math.Round(q * 255.0))
     End Function
 
-    ''' <summary>Resolve a CLFM (Color Form) formID to linear RGB [0,1] from its CNAM (byte RGBA). Cached.
-    ''' Returns white when the formID is 0 or unresolved.</summary>
     ''' <summary>Color de una CLFM (CNAM). ⛔ EL FALLO NO PUEDE SER SILENCIOSO.
     ''' Un CLFM que no resuelve devolvia BLANCO sin decir nada, y BLANCO es un color perfectamente valido:
     ''' un fallo de RESOLUCION se disfrazaba de resultado. Asi es como el bug de remapeo de TIND
@@ -529,10 +499,6 @@ Public Module SseFaceTintComposer
             End Sub)
     End Sub
 
-    ''' <summary>Parse the RACE's per-gender tint layers IN ORDER (Male/Female Head Data, tracked by
-    ''' MNAM/FNAM). Each Tint Layer: TINI index, TINT mask path, TINP mask type (optional), TIND default CLFM.
-    ''' Returns the ordered list (= the cb2 slot order the engine composes). Cached per race+gender. TINP/TIND
-    ''' are OPTIONAL (tattoo masks omit TINP) → flush on each new TINI so no-TINP masks still register.</summary>
     ''' <summary>Aplica el orden configurable SSE (<c>Setting_FaceTintSort_SSE.TintRules</c>, claves
     ''' <see cref="FaceTintSseTintSortKey"/>) sobre las capas del RACE que devuelve <see cref="GetRaceLayersOrdered"/>.
     ''' DEFAULT = <c>[Race_Order asc]</c> = IDENTIDAD ⇒ orden RaceMenu (posición en el RACE) ⇒ compose byte-idéntico.
@@ -609,18 +575,14 @@ Public Module SseFaceTintComposer
                     Case "TINI" : flush() : ci = BitConverter.ToUInt16(sr.Data, 0) : cp = "" : ct = -1 : cd = 0 : presets.Clear()
                     Case "TINT" : cp = sr.AsStringGeneral
                     Case "TINP" : ct = BitConverter.ToUInt16(sr.Data, 0)
-                    ' ⛔ REMAPEO DE MASTERS OBLIGATORIO. TIND y el TINC de la RACE son FormIDs, y el FormID
-                    ' guardado en el archivo usa el indice LOCAL de masters del plugin que lo escribio. Leerlo
-                    ' con BitConverter a secas devuelve un FormID de OTRO plugin.
-                    ' MEDIDO (2026-07-21): RACE 0x06000817 (Mazken, ccBGSSSE025-AdvDSGS.esm) capa idx=24
-                    ' (SkinTone, cobertura 1,000) tiene TIND local 0x050010DD = AUTO-REFERENCIA (indice local
-                    ' == cantidad de masters ⇒ el plugin se apunta a si mismo). Sin remapear buscabamos
-                    ' 0x050010DD (otro plugin) ⇒ no existe ⇒ ResolveClfmColor degradaba a BLANCO ⇒ la unica
-                    ' capa con cobertura completa pintaba la cara entera de blanco. El correcto es 0x060010DD
-                    ' = CLFM con CNAM=(75,55,64), y el CK hornea (74,57,66). 5 NPCs vanilla afectados
-                    ' (Aureales/Mazken), con 99,3% de los pixeles en 255 contra el tono oscuro del CK.
-                    ' ⛔ Ojo con la ambiguedad de TINC: a nivel RACE es un FormID de CLFM (esto), a nivel NPC
-                    ' son 3 bytes RGB (BuildNpcAuthoredTintMap). Los del NPC NO se remapean: no son FormIDs.
+                    ' â›” REMAPEO DE MASTERS OBLIGATORIO. El TIND y el TINC de la RACE son FormIDs, y el FormID
+                    ' guardado usa el indice LOCAL de masters del plugin que lo escribio: leerlo con
+                    ' BitConverter a secas devuelve un FormID de OTRO plugin.
+                    ' Medido: una RACE con TIND local que es AUTO-REFERENCIA (indice local == cantidad de
+                    ' masters) resolvia a un plugin ajeno, no existia, y ResolveClfmColor degradaba a BLANCO -
+                    ' la unica capa con cobertura completa pintaba la cara entera de blanco.
+                    ' â›” Ojo con la ambiguedad de TINC: a nivel RACE es un FormID de CLFM (esto), a nivel NPC son
+                    ' 3 bytes RGB (BuildNpcAuthoredTintMap). Los del NPC NO se remapean, no son FormIDs.
                     Case "TIND" : If sr.Data.Length >= 4 Then cd = pm.ResolveReferencedFormID(rr.SourcePluginName, BitConverter.ToUInt32(sr.Data, 0))
                     Case "TINC" : If sr.Data.Length >= 4 Then lastClfm = pm.ResolveReferencedFormID(rr.SourcePluginName, BitConverter.ToUInt32(sr.Data, 0))  ' RACE preset: CLFM formID
                     Case "TINV" : If sr.Data.Length >= 4 Then lastVal = BitConverter.ToSingle(sr.Data, 0)   ' RACE TINV = FLOAT 0-1
@@ -633,18 +595,13 @@ Public Module SseFaceTintComposer
         Return layers
     End Function
 
-    ''' <summary>⭐ LA normalización de una ruta de textura a clave del FilesDictionary, para TODO el SSE.
-    ''' Delega en <see cref="FO4UnifiedMaterial_Class.CorrectTexturePath"/>, que es la MISMA que ya usaba el
-    ''' camino GPU (<c>SseFoldLayerStack.BuildFaceOverlayGpuLayers</c> / <c>BuildSkeeGpuLayers</c>).
-    '''
-    ''' <para>⛔ POR QUÉ EXISTE: acá había una normalización propia — <c>Replace("/","\").ToLowerInvariant()</c>
-    ''' + anteponer <c>textures\</c> si faltaba — mientras el GPU usaba <c>CorrectTexturePath</c>. Dos leyes
-    ''' distintas para el MISMO path ⇒ una podía resolver y la otra no, y eso se manifiesta como "el overlay
-    ''' aparece en un camino y desaparece en el otro" (rompe la paridad CPU==GPU en el ORIGEN, antes de componer
-    ''' un solo píxel). El caso concreto que sólo fallaba en CPU: un path que ya trae el prefijo <c>data\</c> —
-    ''' el que <c>FaceGenBuilder.EmbeddedEngineTexPath</c> escribe en el slot 6 — daba
-    ''' <c>textures\data\textures\…</c> ⇒ no existe. CorrectTexturePath lo resuelve (busca <c>\textures</c> en
-    ''' cualquier posición), y además cubre rutas absolutas y con <c>\</c> inicial.</para></summary>
+    ''' <summary>LA normalizacion de una ruta de textura a clave del FilesDictionary, para TODO el SSE. Delega
+    ''' en <see cref="FO4UnifiedMaterial_Class.CorrectTexturePath"/>, la MISMA que ya usaba el camino GPU.
+    ''' <para>â›” Existe porque aca habia una normalizacion propia mientras el GPU usaba CorrectTexturePath: dos
+    ''' leyes para el MISMO path, o sea que una podia resolver y la otra no, y eso se manifiesta como "el
+    ''' overlay aparece en un camino y desaparece en el otro" - rompe la paridad CPU==GPU en el ORIGEN, antes de
+    ''' componer un pixel. El caso concreto que solo fallaba en CPU: un path que ya trae el prefijo
+    ''' <c>data\</c> daba <c>textures\data\textures\...</c>.</para></summary>
     Public Function NormalizeTextureKey(texPath As String) As String
         Return FO4UnifiedMaterial_Class.CorrectTexturePath(texPath)
     End Function
@@ -656,19 +613,15 @@ Public Module SseFaceTintComposer
         Return DecodeMask(texPath, w, h)
     End Function
 
-    ''' <summary>⭐ Decode de un NORMAL MAP (FilesDictionary key) a RGBA[0,1] en exactamente W×H — el MISMO
-    ''' camino de decode + resize + caché que <see cref="DecodeTextureRgba"/>, y encima la reconstrucción del eje Z
-    ''' cuando la fuente trae 2 canales (BC5/R8G8), vía <see cref="FaceTintCpuCompositor.ReconstructNormalZ"/>.
-    '''
-    ''' <para>⛔ POR QUÉ EXISTE Y POR QUÉ NO ALCANZA CON EL DE COLOR: <c>DecodeDds</c> empaqueta las fuentes de 2
-    ''' canales como <c>B=0, A=1</c>. Leído como color eso es inocuo; leído como VECTOR da <c>z = −1</c> — la
-    ''' normal del tatuaje apuntando hacia adentro, con el lighting invertido en toda la zona cubierta. Y BC5 es
-    ''' justamente el formato estándar de los normales tangent-space de SSE, que es lo que traen los face-paint de
-    ''' RaceMenu. La compresión que el usuario elige en CharGen Options es la de SALIDA y no cubre nada de esto:
-    ''' el defecto está en la ENTRADA, en una textura que la app no controla.</para>
-    '''
-    ''' <para>La caché usa un NAMESPACE PROPIO (sufijo <c>|nrm</c>): la misma ruta puede pedirse como color
-    ''' (cobertura) y como normal, y servir una por la otra devolvería un buffer con el B equivocado.</para></summary>
+    ''' <summary>Decode de un NORMAL MAP a RGBA[0,1] en exactamente W x H: el MISMO camino de decode + resize +
+    ''' cache que <see cref="DecodeTextureRgba"/>, mas la reconstruccion del eje Z cuando la fuente trae 2
+    ''' canales (BC5/R8G8).
+    ''' <para>â›” Por que no alcanza con el de color: <c>DecodeDds</c> empaqueta las fuentes de 2 canales como
+    ''' B=0, A=1. Leido como color es inocuo; leido como VECTOR da z = -1, o sea la normal del tatuaje apuntando
+    ''' hacia adentro y el lighting invertido en toda la zona cubierta. Y BC5 es justamente el formato estandar
+    ''' de los normales tangent-space de SSE, que es lo que traen los face-paint de RaceMenu.</para>
+    ''' <para>El cache usa un NAMESPACE PROPIO (sufijo |nrm): la misma ruta puede pedirse como color y como
+    ''' normal, y servir una por la otra devolveria un buffer con el B equivocado.</para></summary>
     Public Function DecodeNormalRgba(texPath As String, w As Integer, h As Integer) As Single()
         Return DecodeMask(texPath, w, h, asNormalMap:=True)
     End Function
@@ -684,20 +637,13 @@ Public Module SseFaceTintComposer
                                 Optional asNormalMap As Boolean = False) As Single()
         Dim key = NormalizeTextureKey(texPath)   ' ⭐ MISMA normalización que el camino GPU (ver NormalizeTextureKey)
         If String.IsNullOrEmpty(key) Then Return Nothing
-        ' ⭐⭐ LA CLAVE ES LA IDENTIDAD COMPLETA DEL VALOR: path + TAMAÑO DESTINO + namespace color/normal.
-        ' ⛔ ANTES la clave era solo (path[, |nrm]) — le FALTABA el tamaño, aunque el valor devuelto depende de
-        ' el. Para no servir un buffer del tamaño equivocado con una clave incompleta, el codigo restringia el
-        ' dominio a UN solo tamaño con cuatro guardas `w = 512 AndAlso h = 512`, y 512 se eligio por ser el del
-        ' facetint vanilla. O sea: el 512 no era un dato del motor, era un PARCHE de la clave incompleta.
-        ' Consecuencias, las dos SILENCIOSAS:
-        '   · el camino PLEGADO (que compone a la resolucion nativa del complexion) no podia pegarle al cache
-        '     NUNCA, por construccion;
-        '   · el camino NO plegado perdia el cache apenas el usuario elegia en CharGen Options cualquier
-        '     resolucion que no diera 512 (ResolveResolutionSize devuelve `512 << (n-1)`).
-        ' Con el tamaño en la clave las cuatro guardas DESAPARECEN — no se reemplazan por otro umbral — y el
-        ' cache funciona a cualquier resolucion. Es el esquema que la caché de fuentes de esta misma funcion
-        ' (`_texSrcCache`, ya eliminada) usaba desde el principio; lo unico que se hizo fue dejar de tener dos
-        ' esquemas de clave distintos conviviendo.
+        ' LA CLAVE ES LA IDENTIDAD COMPLETA DEL VALOR: path + TAMANO DESTINO + namespace color/normal.
+        ' â›” Antes era solo (path[, |nrm]) y le FALTABA el tamano, aunque el valor depende de el. Para no servir
+        ' un buffer del tamano equivocado, el codigo restringia el dominio a UN solo tamano con cuatro guardas
+        ' `w = 512 AndAlso h = 512`: ese 512 no era un dato del motor sino un PARCHE de la clave incompleta.
+        ' Dos consecuencias silenciosas: el camino PLEGADO (que compone a la resolucion nativa) no podia pegarle
+        ' al cache NUNCA, y el no plegado lo perdia apenas el usuario elegia otra resolucion en CharGen Options.
+        ' Con el tamano en la clave las cuatro guardas DESAPARECEN y el cache funciona a cualquier resolucion.
         Dim ckey = $"{key}|{w}x{h}" & If(asNormalMap, "|nrm", "")
         Dim cached As Single() = Nothing
         ' Incluye el NEGATIVO (entrada Nothing = archivo ausente/indecodificable a este tamaño): cuesta 0 bytes

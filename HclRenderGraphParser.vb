@@ -277,7 +277,7 @@ Public NotInheritable Class HclRenderGraphParser_Class
     ' bit 7 del 4º int16 ('w' tag) del propio vector: w=0x3380 (bit7=1) -> 256, w=0x3300 (bit7=0) -> 512.
     ' Derivado bit-exacto del dato vanilla (reproduce DefaultClothPose a ~0.001u; antes /256 fijo daba
     ' ~2× para el 85% de los vértices). Solo aplica a posiciones; las normales usan 32767 fijo.
-    ' Ver memoria arch_cloth_objectspaceskin.
+    ' Ver memoria 25-cloth-objectspaceskin.
     Private Shared Function PositionScaleFromW(values As IReadOnlyList(Of Short)) As Double
         If values Is Nothing OrElse values.Count < 4 Then Return 256.0R
         Return If((values(3) And &H80) <> 0, 256.0R, 512.0R)

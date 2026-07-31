@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.Collections.Generic
@@ -220,7 +220,7 @@ Public Class ResolvedRaceBehavior
     Public ReadOnly Property Subgraphs As New List(Of RACE_SubgraphData)
     ''' <summary>Keywords del RACE EFECTIVO (no del SRAC template). Contienen el 'Anims&lt;X&gt;Race' que
     ''' discrimina qué subgraph (SAKD) aplica a este robot. Robots comparten subgraphs vía SRAC pero cada race
-    ''' tiene su keyword propio → se filtran los clips por SAKD ∩ ActorKeywords. [[arch_race_behavior_resolution]]</summary>
+    ''' tiene su keyword propio → se filtran los clips por SAKD ∩ ActorKeywords. [[24-anim-behavior-por-raza]]</summary>
     Public ReadOnly Property ActorKeywords As New List(Of UInteger)
     ''' <summary>Diagnóstico: "own" / "SRAC:0x… +SADD:0x…" — de dónde salieron los subgraphs.</summary>
     Public Property SubgraphSource As String = ""

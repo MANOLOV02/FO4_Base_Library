@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Linq
 Imports System.Text
 Imports System.Threading
@@ -631,20 +631,6 @@ Public Class PluginManager
         Return result
     End Function
 
-    ''' <summary>Read the ordered list of ACTIVE plugins for the current game (FO4 or SSE).
-    ''' Replicates engine load order: (1) implicit base masters always loaded by the engine
-    ''' (game .esm + DLCs); these never appear in Plugins.txt but the engine always loads them.
-    ''' (2) Creation Club entries from Fallout4.ccc (FO4 only) — engine treats these as
-    ''' force-active, same as DLCs (xEdit Core/wbLoadOrder.pas:495-501; the .ccc file lives next
-    ''' to the .exe, not in LocalAppData). (3) entries from Plugins.txt marked with `*` (active
-    ''' flag). Plugins NOT in Plugins.txt or without `*` are skipped — un .esp suelto en Data
-    ''' sin estar activado no se carga in-game; no debe cargarse acá.
-    '''
-    ''' Note on loadorder.txt: archivo opcional generado por LOOT/Vortex con todos los plugins
-    ''' (activos e inactivos) en orden completo. NO indica activación, así que NO podemos usarlo
-    ''' como única fuente. Plugins.txt + .ccc + implicits son las fuentes autoritativas de
-    ''' activación. Si loadorder.txt existe, lo usamos como ORDEN para los actives; si no,
-    ''' usamos el orden canónico (implicits → CC → Plugins.txt).</summary>
     ''' <summary>Cuando True, ReadActiveLoadOrder devuelve SOLO los plugins OFICIALES de Bethesda
     ''' (vanilla + DLCs + Creation Club), excluyendo los mods del usuario del Plugins.txt. Lo usan TANTO
     ''' el load de plugins COMO el mount de archivos (FilesDictionary llama a ReadActiveLoadOrder), así que

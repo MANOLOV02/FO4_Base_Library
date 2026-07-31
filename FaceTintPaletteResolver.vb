@@ -1,4 +1,4 @@
-Imports System.Collections.Generic
+﻿Imports System.Collections.Generic
 Imports System.Drawing
 Imports System.Linq
 Imports System.Text
@@ -15,17 +15,6 @@ Imports System.Text
 ''' </summary>
 Public Module FaceTintPaletteResolver
 
-    ''' <summary>TIE-BREAK por OPACITY (UMBRAL en 0): una capa ACTIVA (opacity&gt;0) usa una entrada Alpha&gt;0
-    ''' ("encendida"); SOLO opacity==0 usa la entrada Alpha=0 ("apagado/default"). Filtra el pool a la clase de
-    ''' Alpha correcta; si esa clase queda vacia, usa el pool completo (no romper). Dentro de la clase, desempate
-    ''' por Alpha mas cercano a npcOpacity, luego TemplateIndex menor. Usada por (a) FindTemplateColorByColor
-    ''' (2+ presets comparten color) y (b) la moda empatada de ResolveFallbackBlendOp. Nothing si no hay candidatos.
-    ''' 2026-06-03: el "primera opcion (min TemplateIndex)" ROMPIA la capa topmost custom (-1) del dirt (Polvo
-    ''' radiactivo, rojo): elegia la entrada Alpha=0/default (bop3/SoftLight) y la libreria renderea SoftLight de
-    ''' un rojo custom como TRANSPARENTE. El umbral garantiza que una capa activa NUNCA tome la entrada Alpha=0
-    ''' (off): Polvo (op=1.0) -> Alpha=1 -> bop0/Replace (opaco). Mas robusto que "Alpha mas cercano" (que para
-    ''' op&lt;0.5 tomaria Alpha=0 y re-rompe). El bake es per-capa; el "primera opcion" matcheaba el DISPLAY
-    ''' per-grupo del editor de CK, no el bake.</summary>
     ''' <summary>Filtro de clase activo/off: una capa ACTIVA (op&gt;0) usa entradas Alpha&gt;0 ("encendida");
     ''' SOLO op==0 usa Alpha=0 ("apagado/default"). Si la clase queda vacia, devuelve el pool completo
     ''' (no romper). Es el discriminante robusto del 2026-06-03 (dirt rojo custom op&gt;0 -&gt; Alpha&gt;0 -&gt;
@@ -48,7 +37,7 @@ Public Module FaceTintPaletteResolver
     ''' <summary>TemplateColor default de la opcion segun TTED = index POSICIONAL en TemplateColors (raw
     ''' bits del float = el int). Nothing si no hay TTED o el indice cae fuera de rango. MISMO index que
     ''' MergeTintLayersWithRaceDefaults usa para los defaults heredados. Ver
-    ''' [[arch_facetint_race_default_inheritance]].</summary>
+    ''' [[50-facetint-leyes-y-compositor]].</summary>
     Public Function TtedDefaultColor(opt As RACE_TintTemplateOption) As RACE_TintTemplateColor
         If opt Is Nothing OrElse Not opt.HasDefaultValue Then Return Nothing
         If opt.TemplateColors Is Nothing OrElse opt.TemplateColors.Count = 0 Then Return Nothing

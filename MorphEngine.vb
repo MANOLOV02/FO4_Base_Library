@@ -1,4 +1,4 @@
-Imports OpenTK.Mathematics
+﻿Imports OpenTK.Mathematics
 
 ''' <summary>
 ''' A single morph channel: a named set of vertex deltas with a weight.
@@ -80,38 +80,25 @@ Public Interface IMorphResolver
     Function ResolveMorphPlan(shape As IRenderableShape, geom As SkinnedGeometry) As MorphPlan
 End Interface
 
-''' <summary>
-''' Proveedor de la <b>geometría BASE pre-skin</b> de un shape — el array del que
-''' <see cref="MorphEngine.ApplyMorphPlan"/> parte para aplicar los canales de morph.
-'''
-''' <para><b>Para qué existe.</b> Normalmente la base es lo que trae el NIF, y la establece
-''' <c>SkinningHelper.ExtractSkinnedGeometry</c> al cargar. Pero hay casos donde la base correcta
-''' NO es la del archivo: en Fallout 4 el motor y el CK no dibujan la malla `_faceBones` de una
-''' head part — la usan como INSUMO para calcular las posiciones de la malla PLANA (el FaceGeom), y
-''' dibujan ésa. Para replicar eso, la app necesita entregar la geometría horneada como base del
-''' shape plano. Esto NO es parchear un buffer aguas abajo: es proveer el valor correcto en el punto
-''' donde el pipeline define "la base pre-skin de esta malla".</para>
-'''
-''' <para><b>Por qué NO se hace con un <see cref="IMorphResolver"/>.</b> Un canal de morph pasa por
-''' el gate de bloques del CK de <see cref="MorphEngine.ApplyChannelsToVertexArray"/>, que descarta
-''' bloques de 4 con delta crudo &lt; 0,01. Ese gate existe para <b>decodificar un `.tri` comprimido</b>
-''' (mapa RLE precomputado); geometría calculada no es data de `.tri` y someterla a esa regla es
-''' aplicarla fuera de su dominio — además de dejar la malla a medio hornear.</para>
-'''
-''' <para><b>Contrato.</b> Invocado <b>en serie</b> al principio de <c>PipelineStep_Morphs</c>, ANTES
-''' del <c>Parallel.ForEach</c> de los resolvers, y sólo para los shapes marcados dirty. La
-''' implementación debe:</para>
-''' <list type="bullet">
-''' <item><description>escribir <b>IN PLACE</b> en <c>geom.NifLocalVertices</c> (p.ej. <c>Array.Copy</c>).
-''' <see cref="SkinnedGeometry"/> es una <c>Structure</c>; el array es referencia, así que mutar sus
-''' elementos propaga, pero reasignar el array sólo funciona por la cadena de campos del caller.</description></item>
-''' <item><description><b>NUNCA</b> leer <c>geom.Vertices</c> (lo reescribe <c>ApplyMorphPlan</c> en
-''' cada pasada ⇒ se realimenta) ni <c>geom.PerVertexSkinMatrix</c> (queda stale dentro de este paso).</description></item>
-''' <item><description>ser <b>absoluta, no incremental</b>: partir siempre de una copia pristina propia,
-''' nunca del valor actual de <c>NifLocalVertices</c>.</description></item>
-''' </list>
-''' <para>Devuelve True si reescribió la base de ese shape (sólo informativo / diagnóstico).</para>
-''' </summary>
+''' <summary>Proveedor de la <b>geometria BASE pre-skin</b> de un shape: el array del que parte
+''' <see cref="MorphEngine.ApplyMorphPlan"/> para aplicar los canales de morph.
+''' <para><b>Para que existe.</b> Normalmente la base es la del NIF y la establece
+''' <c>SkinningHelper.ExtractSkinnedGeometry</c> al cargar, pero hay casos donde la base correcta NO es la del
+''' archivo: en FO4 el motor y el CK no dibujan la malla <c>_faceBones</c> de una head part, la usan como INSUMO
+''' para calcular las posiciones de la malla PLANA y dibujan esa. Para replicarlo hay que entregar la geometria
+''' horneada como base del shape plano - no es parchear un buffer aguas abajo, es proveer el valor correcto en
+''' el punto donde el pipeline define la base pre-skin.</para>
+''' <para><b>Por que NO con un <see cref="IMorphResolver"/>.</b> Un canal de morph pasa por el gate de bloques
+''' del CK, que descarta bloques de 4 con delta crudo &lt; 0,01. Ese gate existe para DECODIFICAR un <c>.tri</c>
+''' comprimido; geometria calculada no es data de <c>.tri</c> y someterla a esa regla es aplicarla fuera de su
+''' dominio, ademas de dejar la malla a medio hornear.</para>
+''' <para><b>Contrato.</b> Se invoca EN SERIE al principio de <c>PipelineStep_Morphs</c>, antes del
+''' <c>Parallel.ForEach</c> de los resolvers y solo para los shapes dirty. La implementacion tiene que escribir
+''' IN PLACE en <c>geom.NifLocalVertices</c> (<see cref="SkinnedGeometry"/> es Structure: mutar los elementos
+''' propaga, reasignar el array no); â›” NUNCA leer <c>geom.Vertices</c> -lo reescribe ApplyMorphPlan en cada
+''' pasada, o sea que se REALIMENTA- ni <c>geom.PerVertexSkinMatrix</c>, que queda stale dentro de este paso; y
+''' ser ABSOLUTA, no incremental, partiendo siempre de una copia pristina propia.</para>
+''' <para>Devuelve True si reescribio la base de ese shape (solo informativo).</para></summary>
 Public Interface IBaseGeometryProvider
     Function TryProvideBaseGeometry(shape As IRenderableShape, ByRef geom As SkinnedGeometry) As Boolean
 End Interface

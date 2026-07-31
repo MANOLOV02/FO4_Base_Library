@@ -1,14 +1,4 @@
-﻿''' <summary>
-''' Orden de composición configurable de tints y swaps de FaceTint. Reglas multi-clave (clave +
-''' dirección) que el builder (FaceTintLayerBuilder) aplica como sort estable. El orden producido es el
-''' orden de COMPOSICIÓN: el 1º compone = fondo; el último = encima (over-running).
-''' Vive en la librería (no en la app) sólo para que Config_App lo serialice; el mapeo clave→valor y el
-''' sort viven en el builder de FO4_NPC_Manager (las claves son conceptos de RACE/NPC).
-''' Default (constructor de FaceTintSortSettings) = el comportamiento previo (tints PhysIndex desc,
-''' swaps orden de build/forward), así no cambia nada salvo que el usuario edite las reglas.
-''' </summary>
-
-''' <summary>Claves de orden para TINTS. El valor numérico es el id serializado (apéndice: no reordenar).</summary>
+﻿''' <summary>Claves de orden para TINTS. El valor numérico es el id serializado (apéndice: no reordenar).</summary>
 Public Enum FaceTintSortKey
     ' (valor 0 = PhysIndex, ELIMINADO: era redundante = GroupIndex + OptionInGroup. Hueco a propósito
     '  para no renumerar y no romper configs guardados. Una regla vieja con Key=0 queda inerte.)

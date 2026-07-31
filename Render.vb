@@ -343,10 +343,6 @@ Public Class PreviewControl
     Public Property InvertMasking As Boolean = False
 
 
-    ''' <summary>
-    ''' Crea una textura 2D de w×h píxeles con el color indicado.
-    ''' </summary>
-    ''' 
     ''' <summary>Textura 2D uniforme de w×h con el color dado. <paramref name="mipped"/>=False (default):
     ''' Nearest + ClampToEdge, sin mips (comportamiento histórico de defaultWhiteTex/defaultNormalTex).
     ''' <paramref name="mipped"/>=True: mipmaps generados + LINEAR_MIPMAP_LINEAR + REPEAT — igual que una
@@ -354,11 +350,11 @@ Public Class PreviewControl
     ''' defaults facegen: detail 0.251 / subsurface negro).</summary>
     Private Shared Function CreateColorTexture(w As Integer, h As Integer, r As Byte, g As Byte, b As Byte, a As Byte,
                                                Optional mipped As Boolean = False) As Integer
-        If w <= 0 OrElse h <= 0 Then Throw New ArgumentOutOfRangeException("w/h deben ser > 0")
+        If w <= 0 OrElse h <= 0 Then Throw New ArgumentOutOfRangeException("w/h must be > 0")
 
         ' Evita overflow en el tamaño del array
         Dim total As Long = CLng(w) * CLng(h) * 4L
-        If total > Integer.MaxValue Then Throw New OutOfMemoryException("Textura demasiado grande.")
+        If total > Integer.MaxValue Then Throw New OutOfMemoryException("Texture too large.")
 
         ' Rellena RGBA
         Dim pixelData(CInt(total) - 1) As Byte
@@ -731,17 +727,15 @@ Public Class PreviewControl
 
         ElseIf needsPoseUpdate Then
             ' -- Pose change (incremental) ----------------------------
-            ' Candidato #2: solo re-preparar el skeleton (clear+reinject cloth bones) si CAMBIÓ el shape
-            ' set. En pose-only durante animación el set es estable → los bones inyectados del último
-            ' prepare siguen vivos (ApplyPose no los toca) → se saltea el churn per-frame (caro en WM
-            ' con física; PrepareForShapes. NPC: resolver no-op, así que esto es no-op para NPC).
-            ' [RENDER-MS] INSTRUMENTACION DE FASES — TODA gateada por Logger.Enabled.
-            ' ⛔ La nota vieja decia "gateados por LogLazy; el Stopwatch es ~ns, despreciable" y las DOS
-            ' mitades eran falsas: `LogLazy` hace lazy el STRING, no el CALCULO, asi que esto corria ENTERO
-            ' en release; y no son "unos ns" sino DOS `Stopwatch.StartNew()` nuevos POR MALLA POR FRAME
-            ' (`_swM` de mas abajo y los dos de `UpdateSkinBuffers_GL`) mas ~9 lecturas de `.Elapsed` por
-            ' malla. Su UNICO consumidor es el `[RENDER-MS]` del final de este bloque — nada mas lee ni un
-            ' `_ms*` ni un `_skin*Ms`. Se toma el flag UNA vez por frame para que el gate no cambie a mitad.
+            ' Solo se re-prepara el skeleton (clear + reinject de cloth bones) si CAMBIO el shape set: en
+            ' pose-only durante animacion el set es estable, asi que los bones inyectados del ultimo prepare
+            ' siguen vivos (ApplyPose no los toca) y se saltea el churn por frame, caro en WM con fisica.
+            ' [RENDER-MS] INSTRUMENTACION DE FASES - TODA gateada por Logger.Enabled.
+            ' â›” La nota vieja decia "gateados por LogLazy; el Stopwatch es ~ns": las dos mitades eran falsas.
+            ' LogLazy hace lazy el STRING, no el CALCULO, asi que esto corria ENTERO en release, y no son unos
+            ' ns sino DOS Stopwatch nuevos POR MALLA POR FRAME mas ~9 lecturas de .Elapsed. Su unico consumidor
+            ' es el [RENDER-MS] del final de este bloque. El flag se toma UNA vez por frame para que el gate no
+            ' cambie a mitad.
             Dim _instr As Boolean = Logger.Enabled
             ' [RENDER-MS] período REAL entre pose-updates (= 1000/fps efectivo). vs total = trabajo.
             Dim _periodMs As Double = 0
@@ -1576,18 +1570,13 @@ Public Class PreviewControl
         Dim texturesPending As Boolean = (Model IsNot Nothing AndAlso Not Model.TexturesReady)
         Dim onDemand As Boolean = UpdateRequired OrElse texturesPending
 
-        ' Safety net: if no frame has been presented for ~1s, force one. Covers
-        ' loss of the front buffer (hide/show, handle recreation, DWM compositor)
-        ' without paying the cost of redrawing every tick.
-        '
-        ' GUARD: only fire the safety repaint if we currently own the GL context. Multiple
-        ' PreviewControls coexist across MainForm + modal editors (EditFace_Form,
-        ' EditBody_Form, etc.), each with its own GL context. OpenTK's "current context" is
-        ' per-thread, process-wide — Invalidate→OnPaint→MakeCurrent on a non-current control
-        ' steals the context from whichever sibling owns it right now (typically mid-frame),
-        ' corrupting both renders. If we are not current, hold the counter at the threshold so
-        ' we re-fire on the very next tick once the context returns to us, rather than waiting
-        ' another full second.
+        ' Red de seguridad: si no se presento un frame en ~1 s, forzar uno. Cubre la perdida del front buffer
+        ' (hide/show, recreacion de handle, compositor DWM) sin pagar un redraw en cada tick.
+        ' GUARD: solo dispara si ESTE control tiene el contexto GL. Varios PreviewControl conviven entre el
+        ' MainForm y los editores modales, cada uno con su contexto, y el "contexto actual" de OpenTK es por
+        ' hilo y global al proceso: un Invalidate -> OnPaint -> MakeCurrent desde un control que no es el actual
+        ' le roba el contexto al hermano que lo tiene (tipicamente a mitad de frame) y corrompe los dos renders.
+        ' Si no somos los actuales, el contador se mantiene en el umbral para re-disparar en el proximo tick.
         _ticksSinceLastPresent += 1
         Dim safetyDue As Boolean = (_ticksSinceLastPresent >= SafetyRepaintTicks)
         If safetyDue Then
@@ -1923,40 +1912,31 @@ Public Class PreviewModel
             ''' survives material cloning, same as <see cref="SkinToneColor"/> / <see cref="FaceTintOverlay_ID"/>.</summary>
             Public Property SkinToneBaked As Boolean = False
 
-            ''' <summary>⭐⭐ SSE, camino PLEGADO: clave del diccionario de texturas donde vive el diffuse plegado
-            ''' de ESTE NPC. Vacía (default) = camino normal, y entonces <see cref="DiffuseTexture_ID"/> se resuelve
-            ''' exactamente como siempre ⇒ FO4, Wardrobe y el SSE no plegado quedan byte-idénticos.
-            '''
-            ''' <para>⛔ EL PROBLEMA QUE RESUELVE (contaminación entre NPCs): el fold instalaba su resultado bajo la
-            ''' clave del COMPLEXION (<c>…\female\femalehead.dds</c>), que es COMPARTIDA entre shapes y entre NPCs de
-            ''' la misma raza. Dos cabezas que resuelven al mismo complexion en un mismo PreviewModel ⇒ la segunda
-            ''' hereda el face-paint de la primera. El facetint no tiene el problema porque su clave YA es per-NPC
-            ''' (<c>facetint\&lt;plugin&gt;\&lt;formid&gt;.dds</c>); esto le aplica la MISMA ley al diffuse.</para>
-            '''
-            ''' <para>⚠️ ES UNA CLAVE (String), NO UN Texture_ID. A propósito: guardar el id crudo lo dejaría COLGADO
-            ''' si alguien limpia el diccionario sin reconstruir este MaterialData (CleanTextures borra las texturas
-            ''' pero el MaterialData puede sobrevivir), y samplear una textura ya borrada da basura. Resolviendo por
-            ''' clave, un diccionario limpio devuelve 0 y se cae solo al complexion real — el MISMO comportamiento
-            ''' que hoy, sin ventana de dangling.</para>
-            '''
-            ''' <para>⛔ Y NO se toca <c>MaterialBase.Diffuse_or_Base_Texture</c>: el material sigue apuntando al
-            ''' complexion REAL. Es lo que impide la cara blanca — <c>Process_Textures_GL</c> pide al loader los
-            ''' paths de <see cref="Textures_Path_List"/> y sólo los que NO están ya en el diccionario; si el material
-            ''' apuntara a una ruta sintética, tras un CleanTextures el loader la pediría, no existiría en disco, y la
-            ''' shape saldría BLANCA (que es exactamente lo que pasó cuando se intentó por ese lado).</para></summary>
+            ''' <summary>SSE, camino PLEGADO: clave del diccionario de texturas donde vive el diffuse plegado de
+            ''' ESTE NPC. Vacia (default) = camino normal, y entonces <see cref="DiffuseTexture_ID"/> se resuelve
+            ''' como siempre, asi que FO4, Wardrobe y el SSE no plegado quedan byte-identicos.
+            ''' <para>â›” Resuelve la contaminacion entre NPCs: el fold instalaba su resultado bajo la clave del
+            ''' COMPLEXION, que es COMPARTIDA entre shapes y entre NPCs de la misma raza, asi que dos cabezas con
+            ''' el mismo complexion en un PreviewModel hacian que la segunda heredara el face-paint de la
+            ''' primera. El facetint no tiene el problema porque su clave ya es per-NPC; esto le aplica la MISMA
+            ''' ley al diffuse.</para>
+            ''' <para>âš ï¸ ES UNA CLAVE (String), NO un Texture_ID, a proposito: guardar el id crudo lo dejaria
+            ''' COLGADO si alguien limpia el diccionario sin reconstruir este MaterialData, y samplear una
+            ''' textura ya borrada da basura. Por clave, un diccionario limpio devuelve 0 y se cae solo al
+            ''' complexion real.</para>
+            ''' <para>â›” Y NO se toca <c>MaterialBase.Diffuse_or_Base_Texture</c>: el material sigue apuntando al
+            ''' complexion REAL. Es lo que impide la cara blanca - el loader pide los paths de
+            ''' <see cref="Textures_Path_List"/> que no esten ya en el diccionario, asi que una ruta sintetica
+            ''' tras un CleanTextures no existiria en disco y la shape saldria BLANCA.</para></summary>
             Public Property SseFoldedDiffuseKey As String = ""
 
-            ''' <summary>⭐ GEMELO de <see cref="SseFoldedDiffuseKey"/> para el NORMAL (<c>_msn</c>) de la cabeza en
-            ''' SSE: clave PER-NPC bajo la que vive el <c>_msn</c> con los normales de los overlays de cara ya
-            ''' plegados. "" = no hay pliegue de normal (todo FO4, Wardrobe, y el SSE sin overlays-con-normal) ⇒ el
-            ''' bind cae al <c>_msn</c> real, byte-idéntico al comportamiento previo.
-            '''
-            ''' <para>Existe para que el PREVIEW muestre lo que el bake hornea: el bake ya plegaba el normal
-            ''' (<c>FaceGenBuilder.WriteSseFaceDiffuseWithOverlays</c>, bloque de NORMALES) y el render no lo hacía
-            ''' NUNCA, así que un face-paint con relieve se horneaba pero no se veía. Mismas razones de diseño que
-            ''' el diffuse: clave y no id (un diccionario limpio devuelve 0 y se cae solo al real, sin dangling), y
-            ''' el material sigue apuntando al <c>_msn</c> REAL para que el loader nunca pida una ruta
-            ''' sintética.</para></summary>
+            ''' <summary>Gemelo de <see cref="SseFoldedDiffuseKey"/> para el NORMAL (<c>_msn</c>) de la cabeza en
+            ''' SSE: clave per-NPC bajo la que vive el <c>_msn</c> con los normales de los overlays de cara ya
+            ''' plegados. "" = sin pliegue de normal (todo FO4, Wardrobe y el SSE sin overlays con normal) y el
+            ''' bind cae al <c>_msn</c> real.
+            ''' <para>Existe para que el PREVIEW muestre lo que el bake hornea: el bake ya plegaba el normal y el
+            ''' render no lo hacia NUNCA, asi que un face-paint con relieve se horneaba pero no se veia. Mismas
+            ''' razones de diseno que el diffuse: clave y no id, y el material sigue apuntando al real.</para></summary>
             Public Property SseFoldedNormalKey As String = ""
 
             ' (ELIMINADA `SseFoldDetailNeutralized`.) Era el flag "el amplify del detail ya está plegado en el
@@ -2234,11 +2214,17 @@ Public Class PreviewModel
             MeshData.ParentMesh = Me
         End Sub
 
-        ''' <param name="recomputeBounds">True (default) = recomputa bounds tras el full upload (full-reload
-        ''' y morph, que no tienen ComputeBounds aparte). El pose path pasa False porque sus bounds los
-        ''' maneja la línea gateada del pass 1 (computeBoundsThisFrame); incondicional acá bypasseaba ese
-        ''' gate Y Option B en CPU (8.9ms/frame de pasada per-vértice a mundo, medido). Nombre ≠ ComputeBounds
-        ''' a propósito: VB es case-insensitive y un param 'computeBounds' sombrearía el método.</param>
+        ''' <summary>Sube al GL los buffers del shape ya skineados en CPU (lee <c>PerVertexSkinMatrix</c> y
+        ''' transforma local a world antes del upload). Es el camino que corre con GPU-skinning APAGADO.
+        ''' <para>â›” SYNC: CPU/GPU skinning - es el gemelo del bloque de skinning del vertex shader. Con el
+        ''' toggle en GPU este codigo no corre, asi que una formula cambiada de un solo lado no falla: solo se ve
+        ''' mal en el otro modo. Lista completa de sitios gemelos en <c>SkinningHelper.BlendBoneMatrices</c> y en
+        ''' 00-reglas-ui-y-vb.</para></summary>
+        ''' <param name="recomputeBounds">True (default) = recomputa bounds tras el upload completo (full-reload
+        ''' y morph, que no tienen ComputeBounds aparte). El camino de pose pasa False porque sus bounds los
+        ''' maneja la linea gateada del pass 1; incondicional aca bypasseaba ese gate (8,9 ms/frame medidos).
+        ''' El nombre difiere de ComputeBounds a proposito: VB es case-insensitive y un parametro homonimo
+        ''' sombrearia al metodo.</param>
         Public Sub UpdateSkinBuffers_GL(Optional recomputeBounds As Boolean = True)
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
             ' Detect skinning mode change: if the toggle changed since last upload, force ALL dirty
@@ -2611,19 +2597,16 @@ Public Class PreviewModel
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0)
         End Sub
 
-        ' Clean CPU-side zap: when ApplyZaps is on, exclude every triangle that has ANY vertex with
-        ' VertexMask = -1 (the same rule the NIF export uses). This replaces the ragged 'flat ZappedVert'
-        ' shader discard, which dropped triangles by provoking-vertex only and left boundary slivers.
-        ' Vertices are NOT compacted (render keeps the full VBO); only the index buffer is filtered, so
-        ' zapped verts simply stop being referenced. Dirty-gated: rebuilds only when ApplyMorphPlan
-        ' re-touched the zap mask (geom.ZapTopologyDirty) or the ApplyZaps toggle flipped — no per-frame
-        ' signature scan. ApplyMorphPlan is the single writer of VertexMask=-1, so the flag can't go stale.
-        ' VertexMask is a Single() array whose zapped sentinel is -1.0F (= -1 here), matching the
-        ' existing '= -1' comparisons used elsewhere in this file and the export's RemoveZaps.
-        '
-        ' NOTE: SkinnedGeometry is a Structure (value type); 'geom' below is a COPY of the field, so the
-        ' ZapTopologyDirty clear must be written back to MeshData.Meshgeometry.ZapTopologyDirty (the field),
-        ' not to the local copy. Reads through 'geom' are fine — Indices/VertexMask are reference arrays.
+        ' Zap limpio del lado CPU: con ApplyZaps prendido se excluye todo triangulo que tenga ALGUN vertice con
+        ' VertexMask = -1 (la misma regla que usa el export a NIF). Reemplaza al discard por 'flat ZappedVert'
+        ' del shader, que descartaba por vertice provocador y dejaba astillas en el borde.
+        ' Los vertices NO se compactan (el VBO queda completo); solo se filtra el index buffer, asi que los
+        ' zapeados dejan de estar referenciados. Se reconstruye solo cuando ApplyMorphPlan re-toco la mascara o
+        ' cambio el toggle: ApplyMorphPlan es el unico escritor de VertexMask=-1, asi que el flag no puede
+        ' quedar rancio.
+        ' âš ï¸ SkinnedGeometry es Structure: 'geom' es una COPIA del campo, asi que el clear de ZapTopologyDirty
+        ' hay que escribirlo al campo, no a la copia local. Leer por 'geom' esta bien (los arrays son
+        ' referencias).
         Private Sub EnsureZapIndexBuffer()
             Dim geom = MeshData.Meshgeometry
             Dim full = geom.Indices
@@ -2921,21 +2904,16 @@ Public Class PreviewModel
         Private Const DecalDepthBiasPolygonOffsetFactor As Single = 0.0F
         Private Const DecalDepthBiasPolygonOffsetUnits As Single = 0.0F
 
-        ' T11: engine decal depth-bias. Fallout4.exe selects rasterizer preset 1 (FUN_141855cb0)
-        ' for the Decal flag (SF1 bit 26) via the global ToggleDepthBias (console 'tdb', default on),
-        ' NOT the material DepthBias field (that field is N/A in FO4 v2). Preset 1 = D3D11
-        ' DepthBias=-3, SlopeScaledDepthBias=-0.4 under reversed-Z.
-        '
-        ' SIGN: derived from THIS app's convention (standard-Z, DepthFunc Lequal, near=0, decals drawn
-        '   after the opaque base) -- pulling the decal toward the viewer (smaller depth) to win Lequal
-        '   = NEGATIVE GL offset. (Correct independently of the engine's reversed-Z sign.)
-        ' factor <- D3D SlopeScaledDepthBias = -0.4: a TRUE 1:1 map (both scale max-slope, which is
-        '   format-independent).
-        ' units  <- D3D DepthBias = -3: NOT a faithful cross-API translation -- the engine measured -3
-        '   on a reversed-Z D32_FLOAT buffer (per-primitive r), this app uses a standard-Z D24_UNORM
-        '   buffer (constant r ~ 2^-24). -3.0 is kept only as a sane in-range GL starting value
-        '   (typical GL decals use -1..-8); TUNE if z-fighting/peter-panning appears.
-        ' DepthBiasClamp=-100 has no GL 4.3-core equivalent (no glPolygonOffsetClamp) -> dropped.
+        ' T11: depth-bias de decals del motor. Fallout4.exe elige el preset 1 de rasterizer para el flag Decal
+        ' (SF1 bit 26) via el global ToggleDepthBias, NO por el campo DepthBias del material (que es N/A en FO4
+        ' v2). El preset 1 es D3D11 DepthBias=-3 y SlopeScaledDepthBias=-0.4 bajo reversed-Z.
+        ' SIGNO: sale de la convencion de ESTA app (standard-Z, DepthFunc Lequal, near=0, decals dibujados
+        '   despues de la base): acercar el decal al ojo para ganar el Lequal = offset GL NEGATIVO.
+        ' factor <- SlopeScaledDepthBias -0.4: mapeo 1:1 real (los dos escalan la pendiente maxima).
+        ' units  <- DepthBias -3: NO es una traduccion fiel entre APIs. El motor lo midio sobre un buffer
+        '   reversed-Z D32_FLOAT y esta app usa standard-Z D24_UNORM; -3.0 queda solo como valor GL razonable
+        '   (los decals GL tipicos van -1..-8). AJUSTAR si aparece z-fighting o peter-panning.
+        ' DepthBiasClamp no tiene equivalente en GL 4.3 core, asi que se descarta.
         Private Const DecalEnginePolygonOffsetFactor As Single = -0.4F
         Private Const DecalEnginePolygonOffsetUnits As Single = -3.0F
 
@@ -3108,18 +3086,14 @@ Public Class PreviewModel
             Return paths
         End Function
 
-        ''' <summary>
-        ''' Draws ONE overlay material layer over this mesh's ALREADY-deformed (morphed + skinned)
-        ''' geometry as a coplanar decal — the LooksMenu overlay/tattoo model. REUSES the existing
-        ''' VAO / SSBO / EBO / indexCount (no re-skin, no re-morph): same vertices, same skinning,
-        ''' only the bound material differs. Modeled on <see cref="Render"/> (~2695).
-        '''
-        ''' Coplanar-decal GL state: depth-test Lequal so the coplanar fragment passes against the
-        ''' base's own depth, DepthMask(False) so the overlay NEVER writes depth, blend as configured
-        ''' by ApplyMaterial for the (alpha-blended BGEM) material. Back-face culling uses the same
-        ''' effective face mode as the base draw. Restored at the end exactly like Render; DepthFunc is
-        ''' left at Lequal (the frame-wide default this code uses — see the restore block).
-        ''' </summary>
+        ''' <summary>Dibuja UNA capa de material de overlay sobre la geometria YA deformada (morph + skin) de
+        ''' esta malla, como decal coplanar: es el modelo de overlays/tatuajes de LooksMenu. REUSA el VAO/SSBO/
+        ''' EBO/indexCount existentes (sin re-skin ni re-morph): mismos vertices, mismo skinning, solo cambia el
+        ''' material bindeado.
+        ''' <para>Estado GL del decal coplanar: depth-test Lequal para que el fragmento coplanar pase contra la
+        ''' profundidad de la base, DepthMask(False) para que el overlay NUNCA escriba depth, y el blend que
+        ''' configure ApplyMaterial. El culling usa el mismo modo efectivo que el draw base. Todo se restaura al
+        ''' final igual que en <see cref="Render"/>.</para></summary>
         Public Sub RenderOverlayLayer(projection As Matrix4, ByRef camera As OrbitCamera, layer As OverlayMaterialLayer)
             If layer Is Nothing OrElse layer.Material Is Nothing Then Exit Sub
             If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide = True Then Exit Sub
@@ -3216,7 +3190,6 @@ Public Class PreviewModel
             If shape Is Nothing Then Return False
             If shape.NifShape Is Nothing Then Return False
             If shape.NifContent Is Nothing Then Return False
-            If shape.NifShape Is Nothing Then Return False
             If shape.NifShape.Properties Is Nothing Then Return False
             Dim stencil = shape.NifContent.GetPropertyOfType(Of NiflySharp.Blocks.NiStencilProperty)(shape.NifShape)
             If stencil Is Nothing Then Return False
@@ -3300,30 +3273,16 @@ Public Class PreviewModel
             ' The shader instance is the single source of truth for which game we are rendering.
             Dim isSSE As Boolean = TypeOf shader Is Shader_Class_SSE
 
-            ' ⭐ SSE: la MASCARA DE ENVIRONMENT es el texture-set slot 5, y en SSE ese slot se guarda en
-            ' FlowTexture (ReadBgsmTexturesFromTextureSet), NO en EnvmapMaskTexture: `_EnvmapMaskPath` solo se
-            ' puebla en la rama FO4 ⇒ en SSE EnvmapMaskTexture_ID daba 0 SIEMPRE y bEnvMask quedaba False, o sea
-            ' la reflexion salia SIN enmascarar (metal/armadura sobre-reflectiva).
-            ' Motor (RE, medido). ⚠️ El offset +0xA8 significa COSAS DISTINTAS segun la SUBCLASE de material
-            ' (cada una tiene su propio OnLoadTextureSet): en Envmap/Eye/MultiLayerParallax es el slot 5
-            ' (env mask -> t5); en Facegen es el slot 3 (detail -> t4, ver el bloque del detail mas abajo).
-            ' Aca hablamos de las reflectivas: slot5 -> material+0xA8 -> PS t5, y t5 multiplica la reflexion:
-            '   r0.w = sample(t5) ; r0.w = lerp(base, r0.w, cb1[2].y) * (cb1[2].x*cb2[3].x)
-            '   r0.xyz = sampleCube(t4, reflect) ; r0.xyz = r0.w * r0.xyz
-            ' Identico en las TRES tecnicas reflectivas: Envmap (0x14DC4DD/0x14DC4F0), Eye (0x14DC42B/0x14DC43E)
-            ' y MultilayerParallax (0x14DCA45/0x14DCA58). Se consume aca FlowTexture_ID (que estaba declarado y
-            ' sin usar); no se toca la ingesta ni el write-back, asi que el round-trip del NIF queda intacto.
-            ' FO4 sigue por EnvmapMaskTexture_ID (su `_EnvmapMaskPath` si se puebla). Va ANTES de la heuristica
-            ' de ojos de abajo para que esa vea el valor ya corregido y solo actue como fallback real.
-            ' ⛔ ESTRICTAMENTE ADITIVO (gate por VALOR, no por tipo): solo pisa si el slot 5 resolvio a algo.
-            ' Hay DOS caminos que si dejan un EnvmapMaskTexture valido y que un override incondicional borraba:
-            '   · BGEM (effect shader): tiene el campo nativo, Create_From_Shader lo llena desde
-            '     `shad.EnvMaskTexture` sin gate de juego (FO4UnifiedMaterial_Class:3391) y su FlowTexture
-            '     devuelve "" siempre (:706).
-            '   · BGSM desde disco: ResolveSidecarJson puebla `_EnvmapMaskPath` desde la clave
-            '     `envmapMaskTexture` del `.bgsm.json` (:4112) — un gate por `Not IsBGEM` NO cubria esto.
-            ' Con el gate por valor la regla queda: "si el slot 5 trae mascara, usala; si no, no toques nada".
-            ' El "SIEMPRE 0" de arriba vale para el BGSM que sale de un NIF, no para esos dos casos.
+            ' ⭐ SSE: la máscara de environment es el slot 5 del texture-set, y en SSE ese slot se guarda en
+            ' FlowTexture, NO en EnvmapMaskTexture (ese campo sólo se puebla en la rama FO4) ⇒ sin esto la
+            ' reflexión salía SIN enmascarar y el metal quedaba sobre-reflectivo.
+            ' ⚠️ El mismo offset del material significa COSAS DISTINTAS según la subclase: en las reflectivas
+            ' (Envmap/Eye/MultiLayerParallax) es el slot 5 = máscara de env; en Facegen es el slot 3 = detail.
+            ' No confundirlos: cada subclase tiene su propio OnLoadTextureSet.
+            ' ⛔ El gate es POR VALOR y no por tipo, y tiene que seguir siéndolo: hay dos caminos que SÍ dejan
+            ' un EnvmapMaskTexture válido (un BGEM, que tiene el campo nativo, y un BGSM leído de disco con su
+            ' sidecar JSON) y un override incondicional los borraba. La regla queda: si el slot 5 trae
+            ' máscara, se usa; si no, no se toca nada.
             If isSSE Then
                 Dim sseEnvMaskId = material.FlowTexture_ID
                 If sseEnvMaskId <> 0 Then envmapMaskTextureId = sseEnvMaskId
@@ -3342,31 +3301,25 @@ Public Class PreviewModel
                 smoothSpecTextureId = 0
             End If
 
-            ' ⛔ ELIMINADAS DOS HEURISTICAS que existian SOLO para tapar la mascara de environment faltante en
+            ' â›” ELIMINADAS DOS HEURISTICAS que existian SOLO para tapar la mascara de environment faltante en
             ' SSE (el slot 5 nunca llegaba al shader). Con el slot 5 ya ruteado arriba, las dos son daninas:
-            '  1) "eye": si EyeEnvironmentMapping y no habia envmask, movia el SLOT 7 a la envmask y ADEMAS lo
-            '     ponia en 0. El slot 7 es el mask ESPECULAR (t2, mallas MSN) o el BACKLIGHT (t9) -- medido en
-            '     OnLoadTextureSet 0x1414B7920 (TXST slot 7 -> mat+0x68) y en SetupMaterial (0x14DCB65 bajo
-            '     MODELSPACENORMALS, 0x14DCD22 bajo BACK_LIGHTING). Robarlo rompia esos dos. Y para la tecnica
-            '     Eye la envmask del motor es el slot 5 (0x14DC43E), que ya se rutea bien.
-            '  2) "wrinkles": mandaba el wrinkle map de facegen a la mascara de reflexion -- el propio comentario
-            '     admitia que NO es una mascara de reflexion. Ademas BSLightingShader de SSE no tiene sampler de
-            '     wrinkles: sus OnLoadTextureSet solo leen los slots 0,1,2,7 (base) y 2,3,6 (facegen).
-            ' `EyeEnvironmentMapping` es ademas un campo BGSM v<7, o sea FO4 (gate bgsmMaxExcl:=7).
-            ' WrinklesTextureId queda sin consumidor (ya no lo tenia fuera de esta heuristica).
+            '  1) "eye": movia el SLOT 7 a la envmask y ademas lo ponia en 0. El slot 7 es el mask ESPECULAR
+            '     (t2, mallas MSN) o el BACKLIGHT (t9), medido en OnLoadTextureSet y en SetupMaterial: robarlo
+            '     rompia esos dos. Y para la tecnica Eye la envmask del motor es el slot 5, que ya se rutea bien.
+            '  2) "wrinkles": mandaba el wrinkle map de facegen a la mascara de reflexion, y el propio comentario
+            '     admitia que no es una mascara de reflexion. Ademas el BSLightingShader de SSE no tiene sampler
+            '     de wrinkles.
+            ' EyeEnvironmentMapping es ademas un campo BGSM v<7, o sea FO4.
 
-            ' ⭐ QUE TEXTURA APORTA EL MASK ESPECULAR — la eligen leyes DISTINTAS en cada juego (RE byte-level):
-            '  · FO4: el normal es BC5 (SIN alpha) y el `_s` (SmoothSpecTexture) es UNIVERSAL. Medido en los 18
-            '    b06_BSLighting_PS dumpeados: t1 se samplea `.xyz` y t2 (`_s`) se samplea `.xy` en 18/18, SIN
-            '    depender de MODELSPACENORMALS. ⇒ el gate correcto es "hay _s" (lo de siempre).
-            '  · SSE: el gate es MODELSPACENORMALS, NO la presencia del slot 7. Medido sobre la poblacion
-            '    COMPLETA de BSLightingShader — 6924 PS, idx 4029..10952, contigua y monotona por tecnica —
-            '    excluyendo terreno/LOD (donde t2 es una capa de blend del landscape) quedan 6864:
-            '    MSN → samplea t2 (=slot 7) en 768/768 ; no-MSN → NUNCA lo samplea (0/6096) y toma el mask del
-            '    ALPHA del normal (t1.w). Las variantes MSN viven en Default (408), Facegen (192) y
-            '    FacegenRGBTint (168) ⇒ afecta cabeza, cuerpo Y objetos genericos con _msn.
-            '    Ver SetupMaterial 0x1414DC310 (gate
-            '    `test byte ptr [rbp+0x94], 4` = bit2 = MODELSPACENORMALS ⇒ SetPSTexture(2, mat+0x68=slot7)).
+            ' QUE TEXTURA APORTA EL MASK ESPECULAR: leyes DISTINTAS por juego, medidas a nivel byte.
+            '  Â· FO4: el normal es BC5 (sin alpha) y el `_s` es UNIVERSAL. En los 18 b06_BSLighting_PS
+            '    dumpeados, t2 (el `_s`) se samplea en 18/18 sin depender de MODELSPACENORMALS, asi que el gate
+            '    correcto es "hay _s".
+            '  Â· SSE: el gate es MODELSPACENORMALS, NO la presencia del slot 7. Medido sobre la poblacion
+            '    COMPLETA de BSLightingShader (6924 PS; 6864 excluyendo terreno/LOD, donde t2 es una capa de
+            '    blend del landscape): MSN samplea t2 en 768/768 y no-MSN NUNCA lo samplea (0/6096), tomando el
+            '    mask del ALPHA del normal. Las variantes MSN viven en Default, Facegen y FacegenRGBTint, asi
+            '    que afecta cabeza, cuerpo y objetos genericos con _msn.
             Dim hasSpecMap As Boolean
             If isSSE Then
                 hasSpecMap = materialBase.ModelSpaceNormals
@@ -3446,42 +3399,33 @@ Public Class PreviewModel
             '===============================
             ' ?? ILUMINACIÓN PRINCIPAL
 
-            ' main “frontal” light
-            Dim cam = ParentModel.ParentControl.camera
-
             shader.SetBool("bLightEnabled", True)
-            ' Light rig: authored in perceptual (sRGB) space, decoded to linear (pow 2.2) AT UPLOAD so
-            ' the rig config stays untouched and one rig serves both games. Both FO4 and SSE run the
-            ' engine's linear pipeline (verified: the LightingShader PS samples diffuse via sRGB SRV and
-            ' lights/outputs in linear, with tonemap + sRGB-encode in a separate ImageSpace pass; the app
-            ' folds that tonemap + encode into the fragment tail). Directions are geometric, never converted.
-            ' Ambient HEMISFÉRICO (engine-faithful: FO4/SSE iluminan el ambient dependiente de la normal,
-            ' no plano). Dos colores -- cielo (normal hacia world +Z) y suelo (-Z) -- que el shader mezcla
-            ' por la componente up de la normal. Config legacy (sin hemisferio) -> derivar uno neutro del
-            ' escalar Ambient (cielo=Ambient, suelo=Ambient/2). Se linealizan (pow 2.2) como el resto del rig.
-            ' Ambient = 3 perillas independientes: intensidad global (AmbientIntensity), hemisferio
-            ' (AmbientGroundLevel = brillo del suelo respecto del cielo) y tinte (Sky/Ground, blanco =
-            ' neutro). sky = skyTint*intensity ; ground = groundTint*intensity*groundLevel.
-            ' Linealizado (pow 2.2) como el resto del rig.
-            ' El rig sale de ActiveLights() = el set del JUEGO activo (FO4/SSE tienen el suyo). Se lee UNA
-            ' vez por shape: es un value-type, copiarlo sale gratis y evita 8 lecturas del singleton.
-            Dim rig = Config_App.Current.ActiveLights()
-            shader.SetVector3("ambientSky", Shader_Base_Class.Vector_to_Linear(rig.AmbientSkyDiffuse()))
-            shader.SetVector3("ambientGround", Shader_Base_Class.Vector_to_Linear(rig.AmbientGroundDiffuse()))
+            ' El rig de luces se autora en espacio PERCEPTUAL (sRGB) y se decodea a lineal AL SUBIR, así la
+            ' config queda intacta y un mismo rig sirve a los dos juegos, que corren el pipeline lineal del
+            ' motor. Las direcciones son geométricas y nunca se convierten.
+            ' Ambient HEMISFÉRICO (engine-faithful: el ambient del motor depende de la normal, no es plano):
+            ' dos colores —cielo y suelo— que el shader mezcla por la componente up. Una config vieja sin
+            ' hemisferio deriva uno neutro del escalar. Son 3 perillas independientes: intensidad global,
+            ' nivel del suelo respecto del cielo, y tinte.
+            ' El rig ya viene resuelto para este frame: depende sólo del rig activo y la cámara, constantes
+            ' durante el frame.
+            Dim lights = Me.ParentModel.FrameLights
+            shader.SetVector3("ambientSky", lights.AmbientSky)
+            shader.SetVector3("ambientGround", lights.AmbientGround)
 
-            shader.SetVector3("frontal.diffuse", Shader_Base_Class.Vector_to_Linear(rig.KeyLight.Diffuse()))
-            shader.SetVector3("frontal.direction", rig.KeyLight.Direction(cam))
+            shader.SetVector3("frontal.diffuse", lights.KeyDiffuse)
+            shader.SetVector3("frontal.direction", lights.KeyDir)
             ' Luz direccional 0
-            shader.SetVector3("directional0.diffuse", Shader_Base_Class.Vector_to_Linear(rig.FillLeft.Diffuse()))
-            shader.SetVector3("directional0.direction", rig.FillLeft.Direction(cam))
+            shader.SetVector3("directional0.diffuse", lights.Fill0Diffuse)
+            shader.SetVector3("directional0.direction", lights.Fill0Dir)
 
             ' Luz direccional 1
-            shader.SetVector3("directional1.diffuse", Shader_Base_Class.Vector_to_Linear(rig.FillRight.Diffuse()))
-            shader.SetVector3("directional1.direction", rig.FillRight.Direction(cam))
+            shader.SetVector3("directional1.diffuse", lights.Fill1Diffuse)
+            shader.SetVector3("directional1.direction", lights.Fill1Dir)
 
             ' Luz direccional 2
-            shader.SetVector3("directional2.diffuse", Shader_Base_Class.Vector_to_Linear(rig.BackLight.Diffuse()))
-            shader.SetVector3("directional2.direction", rig.BackLight.Direction(cam))
+            shader.SetVector3("directional2.diffuse", lights.BackDiffuse)
+            shader.SetVector3("directional2.direction", lights.BackDir)
 
             '===============================
             ' ?? TEXTURAS (Sample BINDs)
@@ -3511,18 +3455,14 @@ Public Class PreviewModel
             End If
 
             ' texSpecular = TXST slot 7. El motor lo lee DOS veces desde material+0x68: t2 (mask especular, bajo
-            ' MODELSPACENORMALS) y t9 (backlight, bajo BACK_LIGHTING). Si el slot esta VACIO no lo saltea:
-            ' el default-fill del material (0x1414B7B00) lo rellena, y el ORDEN de sus ramas manda:
-            '     1) +0x68 <- default GENERICO (BSShader_DefNormalMap, fill 0xffff8080 = RGBA 128,128,255,255)
-            '        si backLighting          <-- corre PRIMERO, con UNA sola condicion
-            '     2) +0x68 <- BSShader_DefHeightMap (NEGRO, fill 0xff000000) si (skinned && MSN)
-            '        <-- solo rellena si la 1a no lo hizo
-            ' Semantica de los 5 booleanos, MEDIDA (no supuesta): la 1a rama del mismo default-fill hace
-            ' `+0x60 <- default si (a3||a4)`, y +0x60 es el slot 2, cuyos DOS unicos consumidores en
-            ' SetupMaterial son SOFT_LIGHTING (0x14DCC28, `bt eax,0xa` = bit10) y RIM_LIGHTING (0x14DCCA2,
-            ' `test 0x800` = bit11) => {a3,a4} = {rim, soft} por medicion. Eso fija las posiciones 3-4, que es
-            ' donde ReceiveValuesFromRootMaterial(skinned, rim, soft, backLighting, MSN) las pone
-            ' => a2=skinned, a5=backLighting, a6=MSN.
+            ' MODELSPACENORMALS) y t9 (backlight, bajo BACK_LIGHTING). Si el slot esta VACIO no lo saltea: el
+            ' default-fill del material lo rellena y el ORDEN de sus ramas manda - primero el default GENERICO
+            ' (normal map plano) si hay backLighting, con UNA sola condicion, y solo si esa no corrio, el
+            ' default de height map (NEGRO) si (skinned && MSN).
+            ' La semantica de los 5 booleanos esta MEDIDA, no supuesta: la primera rama del mismo default-fill
+            ' llena el slot 2 con (a3||a4), y los dos unicos consumidores del slot 2 en SetupMaterial son
+            ' SOFT_LIGHTING y RIM_LIGHTING, o sea {a3,a4} = {rim, soft}. Eso fija las posiciones 3-4, que es
+            ' donde ReceiveValuesFromRootMaterial(skinned, rim, soft, backLighting, MSN) las pone.
             If smoothSpecTextureId <> 0 Then
                 shader.BindTexture("texSpecular", smoothSpecTextureId, TextureUnit.Texture4)
             ElseIf isSSE AndAlso materialBase.BackLighting Then
@@ -3661,23 +3601,14 @@ Public Class PreviewModel
             shader.SetFloat("paletteScale", materialBase.GrayscaleToPaletteScale)
             shader.SetFloat("envReflection", materialBase.EnvironmentMappingMaskScale)
             shader.SetBool("bBacklight", materialBase.BackLighting)
-            ' GATE SOLO EN SKYRIM. Historia corta: el gate estuvo puesto, lo saque midiendo sobre los 191
-            ' BGSM SUELTOS de Data\Materials, me lo revirtieron con razon porque ese corpus esta SESGADO
-            ' (son todos overrides de mod), y quedo con la nota "lo que el motor hace con el bool NO quedo
-            ' verificado en el binario". YA ESTA VERIFICADO, y el bool NO gatea nada:
-            ' en la transferencia BGSM -> material hay EXACTAMENTE DOS compuertas booleanas, iguales en
-            ' Fallout4.exe (0x142163BE0) y en CreationKit.exe (0x142BB7E40):
-            '     cmp byte [rbx+0xa8], 0   -> gatea fSubsurfaceLightingRolloff (+0xac)
-            '     cmp byte [rbx+0x54], 1   -> bWetnessControl_ScreenSpaceReflections
-            ' fBackLightPower (+0xb4) se copia con un `mov` pelado. Offsets sacados POR NOMBRE del
-            ' deserializador del .bgsm (juego 0x14216794E / CK 0x142BBAE10, mismo layout).
-            ' Corpus vanilla (BA2, 6616 con offset final == EOF exacto): 41 con el flag en True, 171 con
-            ' flag False y power > 0 -- a esos 171 el motor les aplica la transmision igual. 21 son de
-            ' personaje (cuerpos/manos SkinTint power 0.05 y TODO el pelo vanilla power 2.0); ninguno es
-            ' Facegen, asi que la cabeza no cambia.
-            ' RENDER == BAKE se mantiene: la ruta de escritura lleva el MISMO gate por juego
-            ' (FO4UnifiedMaterial_Class, shad.BacklightPower). En Skyrim el gate se conserva porque alli
-            ' HasBacklight es un flag REAL del NIF; en FO4 se sintetiza con `power > 0` al leer.
+            ' ⛔ GATE SÓLO EN SKYRIM. En FO4 el bool de backlight NO gatea nada: en la transferencia
+            ' BGSM → material hay exactamente DOS compuertas booleanas (el rolloff del subsurface y el de
+            ' wetness/SSR), y el power de backlight se copia con un `mov` pelado. Verificado en el binario del
+            ' juego y en el del CK, mismo layout. Sobre el corpus vanilla hay 171 materiales con el flag en
+            ' False y power > 0, y el motor les aplica la transmisión igual.
+            ' ⛔ SYNC: RENDER == BAKE — la ruta de ESCRITURA lleva el MISMO gate por juego
+            ' (FO4UnifiedMaterial_Class). En Skyrim el gate se conserva porque allá HasBacklight es un flag
+            ' REAL del NIF; en FO4 se sintetiza con `power > 0` al leer.
             shader.SetFloat("backlightPower",
                             If(isSSE AndAlso Not materialBase.BackLighting, 0.0F, materialBase.BackLightPower))
             shader.SetBool("bRimlight", materialBase.RimLighting)
@@ -4005,7 +3936,9 @@ Public Class PreviewModel
             Return Renderable
         Catch ex As Exception
             Logger.LogLazy(Function() "[Render] BuildRenderable EXCEPTION: " & ex.Message)
+#If DEBUG Then
             Debugger.Break()
+#End If
             Return Nothing
         End Try
     End Function
@@ -4452,7 +4385,9 @@ Public Class PreviewModel
             Last_Loaded_Textures.Remove(Cual)
             _uploadFailureCount.Remove(Cual)
         Catch ex As Exception
+#If DEBUG Then
             Debugger.Break()
+#End If
         End Try
     End Sub
     Public Sub Clean(ShowText As Boolean)
@@ -4479,7 +4414,12 @@ Public Class PreviewModel
         Dim i = 0
         While GL.GetError() <> ErrorCode.NoError
             i += 1
-            If i > 10 Then Debugger.Break() : Exit While
+            If i > 10 Then
+#If DEBUG Then
+                Debugger.Break()
+#End If
+                Exit While
+            End If
         End While
     End Sub
 
@@ -4487,6 +4427,46 @@ Public Class PreviewModel
         Public Mesh As RenderableMesh
         Public Depth As Single
     End Structure
+
+    ''' <summary>El rig de luces ya resuelto a uniforms: 4 colores linealizados (pow 2.2) + el ambient
+    ''' hemisférico + las 4 direcciones derivadas de la cámara. Es lo que ApplyMaterial sube tal cual.</summary>
+    Friend Structure LightRigUniforms
+        Public AmbientSky As Vector3
+        Public AmbientGround As Vector3
+        Public KeyDiffuse As Vector3, KeyDir As Vector3
+        Public Fill0Diffuse As Vector3, Fill0Dir As Vector3
+        Public Fill1Diffuse As Vector3, Fill1Dir As Vector3
+        Public BackDiffuse As Vector3, BackDir As Vector3
+    End Structure
+
+    ''' <summary>Rig resuelto para el frame en curso. Lo llena <see cref="RenderAll"/> antes de dibujar y lo
+    ''' consume ApplyMaterial. Depende SÓLO de (rig activo, cámara), constantes durante el frame: el rig es un
+    ''' setting de UI y la cámara es un parámetro de RenderAll. Antes esto se recalculaba POR MALLA — 18
+    ''' Math.Pow + 4 Direction() idénticos, y otra vuelta por cada overlay layer.</summary>
+    Private _frameLights As LightRigUniforms
+
+    Friend ReadOnly Property FrameLights As LightRigUniforms
+        Get
+            Return _frameLights
+        End Get
+    End Property
+
+    Private Sub ResolveFrameLights(camera As OrbitCamera)
+        ' El rig sale de ActiveLights() = el set del JUEGO activo (FO4/SSE tienen el suyo).
+        Dim rig = Config_App.Current.ActiveLights()
+        _frameLights = New LightRigUniforms With {
+            .AmbientSky = Shader_Base_Class.Vector_to_Linear(rig.AmbientSkyDiffuse()),
+            .AmbientGround = Shader_Base_Class.Vector_to_Linear(rig.AmbientGroundDiffuse()),
+            .KeyDiffuse = Shader_Base_Class.Vector_to_Linear(rig.KeyLight.Diffuse()),
+            .KeyDir = rig.KeyLight.Direction(camera),
+            .Fill0Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillLeft.Diffuse()),
+            .Fill0Dir = rig.FillLeft.Direction(camera),
+            .Fill1Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillRight.Diffuse()),
+            .Fill1Dir = rig.FillRight.Direction(camera),
+            .BackDiffuse = Shader_Base_Class.Vector_to_Linear(rig.BackLight.Diffuse()),
+            .BackDir = rig.BackLight.Direction(camera)
+        }
+    End Sub
 
     Public Property FloorOffset As Double = -0.00F
     Public Sub RenderAll(projection As Matrix4, camera As OrbitCamera)
@@ -4503,6 +4483,11 @@ Public Class PreviewModel
 
         If Floor IsNot Nothing AndAlso Floor.Enabled = True Then Floor.Render(projection, camera, FloorOffset)
         If meshes.Count = 0 Then Exit Sub
+
+        ' Resolver el rig UNA vez por frame, antes de cualquier draw. Los dos consumidores de ApplyMaterial
+        ' (Render y RenderOverlayLayer) sólo se alcanzan desde los loops de abajo, así que nunca lo leen stale.
+        ResolveFrameLights(camera)
+
         ' Note: ShapeDataLoaded is intentionally NOT checked here. Each mesh.Render() guards
         ' against null RelatedNifShape internally. Checking ShapeDataLoaded at this level would
         ' stop rendering all meshes whose VBOs are still valid just because the CPU-side shapedata

@@ -739,8 +739,6 @@ Public Partial Class HkxObjectGraph_Class
     ' global-fixup. Un parser genérico de nodo (nombre + clases referenciadas) deja TODO hkb*
     ' estructuralmente accesible sin RE per-campo de cada uno de los ~30 modifiers.
 
-    ''' <summary>Cualquier hkb*/BS* modifier → nombre + clases de sus objetos referenciados
-    ''' (bone arrays, driver-info, sub-modifiers…). Sirve para IK (Foot/Hand), twist, ragdoll-controls, etc.</summary>
     ''' <summary>hkbBlendingTransitionEffect: el efecto de blend de una transicion (nombre + duracion).
     ''' <para>m_duration MEDIDO POR VALOR en los dos juegos, usando instancias cuyo NOMBRE codifica la
     ''' duracion: SSE +0x50 ('0.5secondBlend'=0.5, '1secondBlend'=1, '2secondBlend'=2 - 12 instancias);

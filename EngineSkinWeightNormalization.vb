@@ -1,127 +1,48 @@
-﻿''' <summary>
-''' Replica la normalizacion de pesos de skin que ejecuta el <b>MOTOR</b> — <b>default ON</b> (gateado a FO4).
+''' <summary>
+''' Replica la normalizacion de pesos de skin que ejecuta el MOTOR. Gateado a FO4.
 '''
-''' <para><b>Esto NO es "el bug del CK".</b> Lo era en la hipotesis inicial; el RE lo refuto. <c>SkinBlend</c>
-''' es la <b>MISMA funcion, instruccion por instruccion</b>, en <c>CreationKit.exe</c> y en <c>Fallout4.exe</c>
-''' (mismo prologo, mismo unroll, mismos offsets relativos; la constante <c>1.0f</c> resuelve a 1.0 en los dos
-''' binarios). No es una peculiaridad del editor al hornear: <b>es el comportamiento del motor</b>, el mismo
-''' codigo corre en el juego.</para>
+''' <para><b>La ley.</b> Al mezclar las matrices de skin el motor <b>no renormaliza</b>: el 4o peso no se
+''' lee del buffer, se calcula como <c>w3 = 1.0f - (w0+w1+w2)</c>, y si sale <c>&lt;= 0</c> ese slot se
+''' descarta <b>sin renormalizar</b> el resto. Como w0..w2 vienen cuantizados a <c>half</c>, la suma
+''' efectiva queda en <c>s = 1+d</c> (d hasta 3,66e-4) y la matriz mezclada sale escalada por s.</para>
 '''
-''' <para><b>Si hay un bug, pero es del motor y lo ejecutan los dos binarios.</b> Calcular <c>w3 = 1 - Sum(w)</c>
-''' solo tiene sentido si la intencion es que los pesos sumen exactamente 1; descartar ese slot cuando sale
-''' <c>&lt;= 0</c> <b>sin renormalizar el resto</b> contradice esa misma intencion y deja la matriz escalada.
-''' Es incoherente — pero es lo que ambos binarios ejecutan, y por eso se replica: la version
-''' "matematicamente correcta" (renormalizada) <b>no la corre nadie</b>, ni el CK al hornear ni el juego en
-''' runtime, asi que replicarla nos acerca a lo que el jugador ve en pantalla.</para>
+''' <para><b>No es un bug del CK.</b> <c>SkinBlend</c> es la misma funcion instruccion por instruccion en
+''' <c>CreationKit.exe 0x142B73230</c> y en <c>Fallout4.exe 0x141837390</c>: es el comportamiento del
+''' motor, y por eso se replica. La version renormalizada "matematicamente correcta" no la corre nadie.</para>
 '''
-''' <para><b>Que es.</b> Al mezclar las matrices de skin, el motor <b>no
-''' renormaliza</b> los pesos: el 4º peso del vértice <b>no se lee</b> del buffer, se <b>calcula</b> como
-''' <c>w3 = 1.0f − (w0+w1+w2)</c>, y si el resultado es <c>≤ 0</c> ese slot se <b>descarta sin
-''' renormalizar</b> el resto. Como w0..w2 vienen cuantizados a <c>half</c>, su suma queda a menudo apenas
-''' por encima de 1 ⇒ el peso efectivo del vértice es <c>s = 1+δ</c> (δ medido hasta 3,66e-4) y la matriz
-''' mezclada sale escalada por <c>s</c>. En el bake de FaceGen eso produce un residuo
-''' <c>drift ≈ ε·(p+T)</c> con <c>ε = s_src/s_dst − 1</c>; como la traslación de los huesos base está
-''' dominada por <c>T_z ≈ 120,84</c>, el drift es estructuralmente <b>Z-only</b>.</para>
-'''
-''' <para><b>FUENTE (RE, VAs exactos).</b> Función <c>SkinBlend</c>:</para>
-''' <list type="bullet">
-''' <item><description><c>CreationKit.exe</c> (FO4) <b>0x142B73230</b></description></item>
-''' <item><description><c>Fallout4.exe</c> (runtime) <b>0x141837390</b> — <b>instrucción por
-''' instrucción idéntica</b> a la del CK (mismo prólogo, mismo unroll, mismos offsets relativos;
-''' la constante <c>1.0f</c> resuelve a 1.0 en ambos binarios)</description></item>
-''' </list>
-''' <para>Instrucciones clave (VAs del CK / del runtime):</para>
-''' <list type="bullet">
-''' <item><description><c>142B732E8</c> / <c>141837448</c> — <c>xor ecx, ecx</c>: el índice de arranque es
-''' siempre 0 ⇒ el slot <b>calculado</b> es siempre el 3.</description></item>
-''' <item><description><c>142B732F0,73347,7339E,733F5</c> / <c>141837450,…</c> — <c>cmp ecx,3 / 2 / 1 /
-''' test ecx,ecx</c>: selecciona qué slot se calcula en vez de leerse.</description></item>
-''' <item><description><c>142B73307-7330A</c> / <c>141837467-14183746A</c> — <c>movaps xmm0, xmm7 (=1.0f) ;
-''' subss xmm0, xmm4 (=Σw)</c>: <b>w3 = 1.0 − Σ(w0..w2)</b>, en <b>precisión simple</b>.</description></item>
-''' <item><description><c>142B7330E</c> / <c>14183746E</c> — <c>comiss xmm0, xmm8 (=0) ; jbe skip</c>:
-''' si el peso es <b>≤ 0 se descarta</b>, y <b>no hay renormalización</b> en ninguna parte de la función
-''' (ver el epílogo <c>142B73454-73529</c>: sale directo al store, sin dividir por Σw).</description></item>
-''' <item><description><c>142B73327/7332E/73339</c> / <c>141837487/14183748E/141837499</c> —
-''' <c>mulps/addps</c> sobre 64 B por hueso: el blend es sobre las <b>matrices</b>, no sobre el vértice.
-''' </description></item>
-''' </list>
-''' <para>Ruta de uso en el bake del CK: <c>ApplyCustomizationRemap 0x142B6F740</c> llama a SkinBlend dos
-''' veces (<c>142B6F8CA</c> invert=0 → mundo con los pesos del <c>_faceBones</c>; <c>142B6F91E</c> invert=1
-''' → local con <c>CustomizationRemapData</c> y la paleta del mesh destino). El runtime tiene el
-''' equivalente exacto en <c>0x141834ED0</c> (mismas dos llamadas, mismo delta 0x54).</para>
-'''
-''' <para><b>Por que esta ON por defecto, y por que la rama OFF sigue existiendo.</b> Esta ON porque es lo
-''' que ejecuta el motor (ver arriba) y la medicion lo respalda: sobre el corpus FO4 completo (1507 NPCs /
-''' 17.121 shapes vs la referencia del CK del BA2) la categoria <c>positions</c> baja de 330 NPCs / 367 shapes
-''' a 301 / 334, los shapes byte-exactos suben de 1.473 a 1.482, y <b>ninguna categoria sube</b>.
-''' La rama OFF (<c>Enabled = False</c>) se mantiene a proposito: es el <b>control de regresion</b> y la via
-''' de escape si aparece un caso donde convenga. <b>No eliminarla.</b></para>
-'''
-''' <para>⛔ <b>La rama OFF ya NO es bit-identica al historico</b> (lo fue hasta 2026-07-21: reproducia
-''' 1.473/17.121 byte-exactos y 330/367). <see cref="ReanchorAffine"/> se aplica en TODAS las ramas, asi que
-''' tambien limpia el residuo de coma flotante que dejaba el <c>Mtot × (1/sumW)</c> de la rama normalizada
-''' (M44 = 0,999999999421803 en vez de 1). Es el mismo defecto, seis ordenes mas chico; el historico tambien
-''' estaba mal. Cambia del orden de 0,01 % de las coordenadas.</para>
-'''
-''' <para><b>Ojo con la metrica.</b> "Shape byte-exacto" NO es el criterio de exito de esta ley: es un AND
-''' sobre todos los vertices del shape, satura, y la simulacion IDEAL tampoco produce shapes byte-exactos
-''' nuevos (queda ~2,7 % de vertices a ~1 ULP de half, que es irreducible). Las metricas que discriminan son
-''' <b>vertices exactos</b>, el <b>histograma en ULP de half</b> y la <b>banda 0,02</b>.</para>
-'''
-''' <para><b>⛔ Gate por juego.</b> El mecanismo está verificado por RE <b>sólo en FO4</b>
-''' (CreationKit.exe + Fallout4.exe). En Skyrim <b>NO está verificado</b>: la firma de bytes de SkinBlend
-''' no aparece en <c>SkyrimSE.exe</c> ni en su <c>CreationKit.exe</c>, y ninguno de los strings ancla del
-''' bake de FaceGen de FO4 existe en el CK de Skyrim ⇒ codegen y/o ruta distintas. <b>Ausencia de patrón
-''' no prueba ausencia de comportamiento</b>, así que SSE queda <b>fuera</b> hasta que se verifique por RE
-''' propio. El único punto que enciende <see cref="Enabled"/> debe gatear por
+''' <para><b>Gate por juego.</b> Verificado por RE <b>solo en FO4</b>. En Skyrim NO esta verificado (la
+''' firma de <c>SkinBlend</c> no aparece en sus binarios), y ausencia de patron no prueba ausencia de
+''' comportamiento ⇒ SSE queda fuera. Quien encienda <see cref="Enabled"/> debe gatear por
 ''' <c>Config_App.Game_Enum.Fallout4</c>.</para>
 '''
-''' <para><b>Contrato de sincronía.</b> Esta ley está cableada en los mismos puntos que el blend normal:
-''' render CPU (<c>SkinningHelper.BlendBoneMatrices</c> + el loop de <c>ExtractSkinnedGeometry</c>),
-''' render GPU (los pesos que se suben en <c>GPUBoneWeights</c> — el shader ya suma sin dividir, así que
-''' basta con escribir ahí los pesos de la ley), y bake (<c>SkinBakeMath</c> + el loop inverso de
-''' <c>FaceGenBuildPipeline</c>). RENDER == BAKE.</para>
+''' <para><b>Contrato de sincronia (RENDER == BAKE).</b> Cableada en render CPU
+''' (<c>SkinningHelper.BlendBoneMatrices</c> + <c>ExtractSkinnedGeometry</c>), render GPU (los pesos que
+''' se suben en <c>GPUBoneWeights</c>; el shader ya suma sin dividir) y bake (<c>SkinBakeMath</c> + el
+''' loop inverso de <c>FaceGenBuildPipeline</c>).</para>
 '''
-''' <para>⚠️ <b>Pero en el render CPU la ley es matemáticamente INERTE</b> (medido 2026-07-21, no leído):
-''' <c>SkinningHelper</c> arma <c>MposeBlend · inv(MbindBlend)</c>, un <b>cociente</b> de dos mezclas con
-''' los MISMOS pesos ⇒ el <c>Σw</c> aparece arriba y abajo y se cancela (M44 del producto =
-''' 1,000000000000; diferencia con/sin la ley = 1,4e-14, ruido de double). El texto anterior decía que la
-''' ley "se aplica" ahí, y eso es cierto sólo en el sentido de que el código corre: <b>no puede cambiar el
-''' resultado</b>. Donde SÍ tiene efecto es en el bake, porque el forward y el inverso usan pesos
-''' DISTINTOS (los del <c>_faceBones</c> vs los del destino) ⇒ <c>ε = s_src/s_dst − 1</c> no se cancela.</para>
+''' <para>⚠️ <b>En el render CPU la ley es matematicamente INERTE</b> (medido): <c>SkinningHelper</c> arma
+''' <c>MposeBlend · inv(MbindBlend)</c>, un cociente de dos mezclas con los MISMOS pesos, asi que el
+''' <c>Sw</c> se cancela solo. Donde SI tiene efecto es en el bake, porque forward e inverso usan pesos
+''' distintos (<c>_faceBones</c> vs destino) y <c>e = s_src/s_dst - 1</c> no se cancela.</para>
 '''
-''' <para>⚠️ <b>ABIERTO, no medido:</b> el motor en GPU skinnea <c>Σ wₖ·Mₖ·v</c> directo, sin cociente
-''' pose/bind — ahí el <c>Σw</c> NO se cancelaría. Si es así, nuestro render CPU y el motor divergen. No
-''' está verificado; no afirmarlo en ninguna dirección hasta medirlo.</para>
+''' <para>⛔ <b>ABIERTO, no medido:</b> si el motor en GPU skinnea <c>S wk·Mk·v</c> directo (sin cociente
+''' pose/bind) el <c>Sw</c> no se cancelaria y nuestro render CPU divergiria. No afirmarlo en ninguna
+''' direccion hasta medirlo.</para>
 ''' </summary>
 Public Module EngineSkinWeightNormalization
 
-    ''' <summary>Gate global. <b>False por defecto</b> = comportamiento normalizado de siempre, bit-idéntico.
-    ''' Sólo debe encenderse para FO4 (ver el ⛔ del resumen de la clase).</summary>
+    ''' <summary>Gate global. <c>False</c> = comportamiento normalizado de siempre.
+    ''' Solo debe encenderse para FO4 (ver el gate por juego en el resumen de la clase).</summary>
     Public Property Enabled As Boolean = False
 
-    ''' <summary>Cuántos slots de peso maneja la ley. El <c>SkinBlend</c> del RE lee/computa exactamente 4
-    ''' (unroll de 4 con <c>add ecx,4 / cmp ecx,4</c> en <c>142B73448-7344E</c>).</summary>
+    ''' <summary>Slots de peso que maneja la ley. El <c>SkinBlend</c> del RE lee/computa exactamente 4.</summary>
     Public Const Slots As Integer = 4
 
-    ''' <summary>Índice del slot que el CK <b>calcula</b> en vez de leer (<c>xor ecx,ecx</c> ⇒ siempre 3).</summary>
+    ''' <summary>Indice del slot que el motor CALCULA en vez de leer (<c>xor ecx,ecx</c> ⇒ siempre 3).</summary>
     Public Const ComputedSlot As Integer = 3
 
-    ''' <summary>
-    ''' Calcula los 4 pesos según la ley del CK y los deja en <paramref name="w"/>.
-    ''' Devuelve <c>False</c> (sin tocar <paramref name="w"/>) cuando la ley NO aplica — el llamador debe
-    ''' entonces seguir por su camino normalizado de siempre. No aplica si:
-    ''' el gate está apagado; el layout no es de exactamente 4 pesos por vértice (el RE es 4-slot); o el
-    ''' rango pedido se sale del array.
-    ''' </summary>
-    ''' <param name="flatWgt">Array plano de pesos en <c>half</c> (el mismo que sube al GPU / lee el bake).</param>
-    ''' <param name="baseSlot">Offset del vértice dentro de <paramref name="flatWgt"/>.</param>
-    ''' <param name="wpv">Pesos por vértice del shape.</param>
-    ''' <param name="w">Buffer de salida de longitud ≥ 4 (lo provee el llamador para no allocar por vértice).</param>
-    ''' <summary>DIAGNÓSTICO (no afecta el resultado): cuántos vértices tomaron la rama de la ley,
-    ''' cuántos rechazos hubo por layout ≠ 4 slots, y en cuántos el 4º peso salió ≤ 0 (= los únicos donde
-    ''' la ley DIVERGE del blend normalizado). Sin esto, "no cambió nada" es ambiguo entre "la ley no
-    ''' aplica" y "la ley aplica y no mueve la aguja".</summary>
+    ' Diagnostico: distingue "la ley no aplica" de "la ley aplica y no mueve la aguja".
+    ' DiscardedW3 cuenta los unicos vertices donde la ley DIVERGE del blend normalizado.
     Public Applied As Long = 0
     Public RejectedWpv As Long = 0
     Public DiscardedW3 As Long = 0
@@ -134,6 +55,16 @@ Public Module EngineSkinWeightNormalization
         Return $"[engineskinnorm] enabled={Enabled} appliedVerts={Applied} rejectedByWpv={RejectedWpv} w3<=0 (divergentes)={DiscardedW3}"
     End Function
 
+    ''' <summary>
+    ''' Calcula los 4 pesos segun la ley del motor y los deja en <paramref name="w"/>.
+    ''' Devuelve <c>False</c> (sin tocar <paramref name="w"/>) cuando la ley NO aplica y el llamador debe
+    ''' seguir por su camino normalizado: gate apagado, layout distinto de 4 pesos por vertice, o rango
+    ''' fuera del array.
+    ''' </summary>
+    ''' <param name="flatWgt">Array plano de pesos en <c>half</c> (el mismo que sube al GPU / lee el bake).</param>
+    ''' <param name="baseSlot">Offset del vertice dentro de <paramref name="flatWgt"/>.</param>
+    ''' <param name="wpv">Pesos por vertice del shape.</param>
+    ''' <param name="w">Buffer de salida de longitud >= 4 (lo provee el llamador para no allocar por vertice).</param>
     Public Function TryComputeWeights(flatWgt As System.Half(), baseSlot As Integer, wpv As Integer, w() As Single) As Boolean
         If Not Enabled Then Return False
         If flatWgt Is Nothing OrElse w Is Nothing OrElse w.Length < Slots Then Return False
@@ -144,9 +75,8 @@ Public Module EngineSkinWeightNormalization
         End If
         If baseSlot < 0 OrElse baseSlot + Slots > flatWgt.Length Then Return False
 
-        ' 142B732F0-7330A: los slots 0..2 se LEEN y se acumulan; el 3 se CALCULA como 1 − Σ.
-        ' Aritmética en precisión SIMPLE a propósito: el RE usa addss/subss, y es justamente el
-        ' redondeo a float el que decide el signo de w3 (y por lo tanto si el slot se descarta).
+        ' Aritmetica en precision SIMPLE a proposito: el RE usa addss/subss, y es el redondeo a float
+        ' el que decide el signo de w3 (y por lo tanto si el slot se descarta).
         Dim acc As Single = 0.0F
         For j = 0 To ComputedSlot - 1
             w(j) = CSng(flatWgt(baseSlot + j))
@@ -159,43 +89,23 @@ Public Module EngineSkinWeightNormalization
     End Function
 
     ''' <summary>
-    ''' Restituye el <b>ancla homogénea</b> (<c>M44 = 1</c>) de una matriz que salió de una mezcla
-    ''' ponderada. <b>Llamar SIEMPRE antes de invertir un <c>Mtot</c> de skinning.</b>
+    ''' Restituye el ancla homogenea (<c>M44 = 1</c>) de una matriz que salio de una mezcla ponderada.
+    ''' <b>Llamar SIEMPRE antes de invertir un <c>Mtot</c> de skinning.</b>
     '''
-    ''' <para><b>Por qué hace falta.</b> El idioma <c>Mtot += mat * peso</c> usa
-    ''' <c>Matrix4d</c>×escalar, que multiplica los <b>16</b> elementos. Pero sólo <b>12</b> describen
-    ''' la transformación (la 3×3 y la traslación): <c>M44</c> es el ancla que mantiene <c>w = 1</c> en
-    ''' el punto, no geometría. Tras la mezcla queda <c>M44 = Σ pesos</c>.</para>
+    ''' <para><b>Por que.</b> El idioma <c>Mtot += mat * peso</c> escala los 16 elementos, pero solo 12
+    ''' describen la transformacion: <c>M44</c> es el ancla, no geometria, y tras la mezcla queda
+    ''' <c>M44 = S pesos</c>. <c>Vector3d.TransformPosition</c> nunca divide por w ⇒ el forward sale bien;
+    ''' <c>Matrix4d.Invert</c> hace algebra homogenea completa ⇒ mete un <c>1/Sw</c> que cancela
+    ''' exactamente el <c>e</c> que esta ley existe para producir. El motor mezcla un 3x4 y su fila 3
+    ''' queda <c>[0,0,0,1]</c>: no puede contaminar <c>M44</c> ni queriendo.</para>
     '''
-    ''' <para><b>Por qué sólo rompe al invertir.</b> Las dos operaciones que consumen la matriz no
-    ''' tratan <c>M44</c> igual: <c>Vector3d.TransformPosition</c> devuelve <c>xyz</c> crudo y
-    ''' <b>nunca</b> divide por <c>w</c> ⇒ la contaminación le es invisible y el <b>forward sale
-    ''' correcto</b>. <c>Matrix4d.Invert</c> en cambio hace álgebra homogénea completa ⇒ mete un
-    ''' <c>1/Σw</c> que <b>cancela exactamente</b> el <c>Σw</c> que el forward había aplicado — y ese
-    ''' <c>Σw</c> ES el <c>ε</c> que esta ley existe para producir. Verificado contra el binario de
-    ''' OpenTK 4.0.2: el operador escala <c>M44</c>, <c>Invert</c> lo honra, <c>TransformPosition</c>
-    ''' no, y la diferencia resultante es exactamente <c>t·(1 − 1/Σw)·A⁻¹</c>.</para>
+    ''' <para>Se aplica en <b>todas</b> las ramas, tambien con la ley apagada: ahi el
+    ''' <c>Mtot x (1/sumW)</c> deja un residuo de coma flotante (<c>M44 = 0,999999999421803</c>), el mismo
+    ''' defecto seis ordenes mas chico. Eso rompe a proposito la bit-identidad historica de la rama OFF.</para>
     '''
-    ''' <para><b>FUENTE (RE).</b> El CK mezcla un <b>3×4</b>, no un 4×4: en <c>SkinBlend</c>
-    ''' (<c>CreationKit.exe 0x142B73230</c>) los <c>mulps/addps</c> de
-    ''' <c>0x142B73327 / 0x142B7332E / 0x142B73339</c> recorren las filas 0-2 de los 64 B por hueso;
-    ''' <b>la fila 3 nunca entra al bucle</b> y queda <c>[0,0,0,1]</c>. El motor no puede contaminar
-    ''' <c>M44</c> ni queriendo.</para>
-    '''
-    ''' <para><b>Se aplica en TODAS las ramas, no sólo con la ley encendida.</b> Con la ley
-    ''' (<c>Enabled = True</c>) el daño es <c>Σw − 1 ≈ 3e-4</c> ⇒ ~0,036 en Z = 1 ULP de half. Con la
-    ''' rama normalizada el <c>Mtot × (1/sumW)</c> final casi lo tapa pero deja un residuo de coma
-    ''' flotante (medido: <c>M44 = 0,999999999421803</c>, desvío 5,8e-10 ⇒ ~7e-8 en Z). Es el
-    ''' <b>mismo defecto</b>, seis órdenes más chico. ⛔ Esto <b>rompe la bit-identidad histórica de la
-    ''' rama OFF</b> en el orden de 0,01 % de las coordenadas — a propósito: el histórico también
-    ''' estaba mal.</para>
-    '''
-    ''' <para><b>Dónde NO hace falta.</b> <c>SkinningHelper.BlendBoneMatrices</c> arma
-    ''' <c>MposeBlend · inv(MbindBlend)</c> — un <b>cociente</b> de dos mezclas con los MISMOS pesos ⇒
-    ''' el <c>Σw</c> aparece arriba y abajo y se cancela solo. Verificado numéricamente: <c>M44</c> del
-    ''' producto = 1,000000000000 y la diferencia con/sin re-anclaje es 1,4e-14 (ruido de double).
-    ''' <b>No lo "arregles" ahí</b>: no hay nada que arreglar y tocarlo es riesgo sin beneficio.
-    ''' Corolario: en esa formulación de cociente esta ley es <b>matemáticamente inerte</b>.</para>
+    ''' <para>⛔ <b>No lo "arregles" en <c>SkinningHelper.BlendBoneMatrices</c></b>: ahi el cociente
+    ''' <c>MposeBlend · inv(MbindBlend)</c> cancela el <c>Sw</c> solo (M44 = 1,000000000000; diferencia
+    ''' con/sin re-anclaje = 1,4e-14). No hay nada que arreglar y tocarlo es riesgo sin beneficio.</para>
     ''' </summary>
     Public Function ReanchorAffine(m As OpenTK.Mathematics.Matrix4d) As OpenTK.Mathematics.Matrix4d
         m.M44 = 1.0

@@ -536,7 +536,7 @@ Public Class SkeletonInstance
     ''' presentes los huesos solo-HKX para que la importación de pose los bindee nativamente.</para>
     ''' hkxBytes Nothing/vacío → no-op (fallback NIF puro). El skeleton de animación se elige porque su root
     ''' existe en el NIF base (el de ragdoll, 'Ragdoll_*', nunca).
-    ''' Ver [[arch_race_behavior_resolution]] / [[arch_mountdelta]].</summary>
+    ''' Ver 24-anim-behavior-por-raza / 24-robots-mounting.</summary>
     ''' <returns>Cantidad de huesos re-posicionados (Pass A) más agregados (Pass B); 0 si no hay HKX/anim skel.</returns>
     Public Function MergeHkxSkeleton(hkxBytes As Byte()) As Integer
         If hkxBytes Is Nothing OrElse hkxBytes.Length = 0 Then Return 0
@@ -638,7 +638,9 @@ Public Class SkeletonInstance
                     SkeletonClothOverlayHelper_Class.InjectMissingBonesIntoLiveSkeleton(shape, Me)
                 Next
             Catch ex As Exception
+#If DEBUG Then
                 Debugger.Break()
+#End If
                 ClearInjectedBones()
             End Try
 

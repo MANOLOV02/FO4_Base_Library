@@ -1,42 +1,25 @@
-''' <summary>Reconstructs, statically, the FormList mutation that RaceCompatibility performs AT RUNTIME so a
-''' custom race can wear vanilla head parts.
-'''
-''' THE PROBLEM. A vanilla head part (a hair, a pair of brows) carries <c>HDPT.RNAM</c> = a FormList of the races
-''' allowed to use it, and the chargen catalog (the game's RaceSex menu — and therefore our head-part pickers)
-''' filters on membership in that list. A race invented by a mod years later obviously is NOT in those vanilla
-''' lists, and CANNOT be: the FormLists live in Skyrim.esm.
-'''
-''' WHAT THE GAME DOES. RaceCompatibility ships <c>GenericRaceController</c>. A race mod attaches it to one of its
-''' quests, fills its properties with the vanilla FormLists, and declares its own races in per-slot FormLists
-''' ("my races occupy the NORD slot"). On <c>OnInit</c> — ONCE, when the mod first enters a save — the script
-''' walks the 10 vanilla race slots and INSERTS each new race into the matching vanilla FormLists
-''' (<c>addIfNeeded</c> = HasForm check + AddForm). From then on the menu offers vanilla hair for that race.
-''' The mutation lives in memory (and in the save); NOTHING is ever written to a plugin. So a records-only reader
-''' cannot see it — not because we fail to parse something, but because the data does not exist until the game
-''' fabricates it. Reconstructing it is the only option.
-'''
-''' WHY THAT IS SAFE TO REPLICATE. The operation is one-shot, purely ADDITIVE and IDEMPOTENT (it never removes or
-''' reorders), and it depends on nothing but records + scripts. So it is a PURE FUNCTION of the load order: no
-''' state machine, no ordering, no timing (the <c>RaceDispatcherScript</c> "Busy" state is just a mutex between the
-''' mod's controllers, with no effect on the result). We compute it once per load and cache it in memory only — so
-''' it always reflects the CURRENT load order (a mod update / added / removed race mod is picked up on reload).
-'''
-''' DETECTION IS BY SHAPE, NOT BY NAME. We do not look for COtR, nor for any EDID: we look for any QUST whose VMAD
-''' attaches a script named <c>GenericRaceController</c>. Every mod that uses RaceCompatibility matches, whoever
-''' wrote it.
-'''
-''' THE THREE INPUTS (all authoritative, none guessed):
-'''   1. The QUST's VMAD (<see cref="VmadPropertyReader"/>) → what each script property is BOUND to: the vanilla
-'''      FormLists (on GenericRaceController) and the mod's own race FormLists (on its controller script).
-'''   2. The mod's compiled script (<see cref="PapyrusPexParser.ExtractPropertyBindings"/>) → WHICH slot each of the
-'''      mod's FormLists occupies (<c>raceController.NewNord = HeadPartsNord_DZ</c>). The record cannot express this;
-'''      only the script can. We read the <c>.pex</c>, not the <c>.psc</c> (COtR ships 8 .pex but only 7 .psc — the
-'''      Breton source is missing, and the game loads .pex anyway).
-'''   3. The rules below, transcribed from RaceCompatibility's <c>GenericRaceController.psc</c>
-'''      (<c>internalProxyRaces</c> / <c>updateStandardRaces</c> / <c>updateVampireRaces</c>).
-'''
-''' SKYRIM-ONLY: RaceCompatibility is a Skyrim mod; there is no Fallout 4 counterpart. <see cref="Load"/> no-ops
-''' for FO4.</summary>
+﻿''' <summary>Reconstruye ESTATICAMENTE la mutacion de FormLists que RaceCompatibility hace EN RUNTIME, para que
+''' una raza custom pueda usar head parts vanilla.
+''' <para>EL PROBLEMA: un head part vanilla lleva en <c>HDPT.RNAM</c> la FormList de razas permitidas, y el
+''' catalogo de chargen filtra por pertenencia a esa lista. Una raza inventada por un mod anos despues NO esta
+''' -ni puede estar- en esas listas: viven en Skyrim.esm.</para>
+''' <para>QUE HACE EL JUEGO: el mod de raza engancha <c>GenericRaceController</c> a una quest, le pasa las
+''' FormLists vanilla y declara las suyas por slot. En <c>OnInit</c>, UNA vez, el script recorre los 10 slots e
+''' INSERTA cada raza nueva en las FormLists vanilla. La mutacion vive en memoria y en el savegame: NUNCA se
+''' escribe a un plugin, asi que un lector de records no puede verla - no porque falle el parseo, sino porque el
+''' dato no existe hasta que el juego lo fabrica. Reconstruirlo es la unica opcion.</para>
+''' <para>POR QUE ES SEGURO REPLICARLO: la operacion es one-shot, puramente ADITIVA e IDEMPOTENTE (nunca quita ni
+''' reordena) y no depende de mas nada que records + scripts, o sea que es una FUNCION PURA del load order, sin
+''' maquina de estados ni timing. Se computa una vez por carga y se cachea solo en memoria, asi que siempre
+''' refleja el load order ACTUAL.</para>
+''' <para>LA DETECCION ES POR FORMA, NO POR NOMBRE: no se busca COtR ni ningun EDID, se busca cualquier QUST cuyo
+''' VMAD enganche un script llamado <c>GenericRaceController</c>. Todo mod que use RaceCompatibility matchea.</para>
+''' <para>Tres entradas, todas autoritativas: el VMAD de la QUST dice a que esta BINDEADA cada property (las
+''' FormLists vanilla y las del mod); el <c>.pex</c> compilado del mod dice QUE SLOT ocupa cada FormList suya -el
+''' record no puede expresarlo, solo el script, y se lee el .pex y no el .psc porque los mods no siempre shipean
+''' todas las fuentes-; y las reglas transcriptas de <c>GenericRaceController.psc</c>.</para>
+''' <para>SOLO SKYRIM: RaceCompatibility es un mod de Skyrim y no tiene contraparte en FO4, donde
+''' <see cref="Load"/> es no-op.</para></summary>
 Public Class RaceCompatibilityCatalog
 
     ''' <summary>The 10 vanilla race slots, in the exact order of <c>internalProxyRaces</c>'s RaceList[] — the index

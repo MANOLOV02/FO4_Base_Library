@@ -1,34 +1,22 @@
 ﻿Imports FO4_Base_Library.FaceTintConvention
 Imports System.Runtime.CompilerServices
 
-' ============================================================================
-' FaceTintCpuCompositor — espejo CPU EXACTO del compositor GL (FaceTintCompositor).
+' FaceTintCpuCompositor - espejo CPU EXACTO del compositor GL.
 '
-' ============================ CONTRATO DE SYNC (LEER) ========================
-' Hay DOS implementaciones de la MISMA ley de composición FaceTint:
-'   1. GL  : FaceTintCompositor (shader FragmentShaderSource + ApplyFaceTintPipeline). DEFAULT.
-'   2. CPU : ESTE módulo. Referencia byte de gen3 (Tools/FaceTintDerive), float64.
-' AMBOS deben producir el MISMO resultado por canal (igual que el skinning GPU/CPU). Cualquier cambio
-' en la ley (espacios, blend, coverage, mask/src por kind, region-swap, seed) DEBE reflejarse en LOS
-' DOS. La ley NO se hardcodea acá: sale de FaceTintConvention.ResolveConvention (compositor AGNÓSTICO),
-' idéntico a como el shader la lee por uniforms. Las funciones de espacio/blend/maskconv de abajo son
-' la transcripción 1:1 de las del shader (cvt / convMaskFull / blendDispatch). Si tocás una, tocá la otra.
+' SYNC: CPU/GPU compositor. Hay DOS implementaciones de la MISMA ley de composicion de FaceTint:
+'   1. GL  : FaceTintCompositor (shader + ApplyFaceTintPipeline). Es el DEFAULT del render.
+'   2. CPU : este modulo, en float64. Es el que usa el BAKE, y la referencia byte.
+' Los dos tienen que dar el MISMO resultado por canal: todo cambio en la ley -espacios, blend, coverage,
+' mask/src por kind, region-swap, seed- va en LOS DOS. La ley no se hardcodea aca, sale de
+' FaceTintConvention.ResolveConvention igual que el shader la lee por uniforms, y las funciones de
+' espacio/blend/maskconv de abajo son transcripcion 1:1 de las del shader. Ver 50-facetint-leyes-y-compositor.
 '
-' PRECISIÓN / PARIDAD GL vs CPU (caveat, leer):
-'  - El CPU corre en float64 con el mismo pow() que np.power -> CPU == gen3 (`_3`) BYTE-EXACTO. Es la
-'    referencia. El bake GPU (default) corre en float32 (FBO Rgba32f) -> puede diferir +-1 byte en píxeles
-'    cuyo valor cae cerca de x.5 (redondeo). Es inherente al GPU (no es bug); no se puede bit-matchear
-'    float32 con float64. Para output EXACTO a gen3, usar el path CPU.
-'  - GL == CPU es exacto SOLO en resolución Inherit (nativo, sin resize ni mip). En resoluciones override
-'    (enum != Inherit) cada path resamplea distinto (GL: bilineal/decode-BC del GPU ; CPU: mip-stored o
-'    bilineal/decode-DirectXTex) -> NO son byte-idénticos entre sí; ambos son aproximaciones de CALIDAD.
-'    El byte-test (vs gen3) se corre en Inherit.
+' Caveats de PARIDAD, para no perseguir fantasmas:
+'  - CPU en float64 y GPU en float32: pueden diferir +-1 byte en pixeles cerca de x.5. Es inherente.
+'  - GL == CPU es exacto SOLO en resolucion Inherit; con override cada camino resamplea distinto.
 '
-' Trabaja sobre las DDS YA LEÍDAS (mismos FaceTintLayerInput/FaceRegionSwapInput que el GL): decodifica
-' cada DDS por CPU/DirectXTex (wrapper, useCompress:=False — igual que WritePristineTga), cachea por
-' cache-key para reusar, y compone en float. El producto es BGRA byte por canal (D en sRGB = storage de
-' build_3 / formato de CK en disco, N/S lineales raw), listo para el encode DDS del bake.
-' ============================================================================
+' Trabaja sobre las DDS ya leidas, decodifica por CPU, cachea por clave y compone en float. El producto es
+' BGRA byte por canal, listo para el encode del bake.
 
 Public Module FaceTintCpuCompositor
 
@@ -46,20 +34,12 @@ Public Module FaceTintCpuCompositor
     ' Era diagnostico puro y corria POR CAPA con un SyncLock dentro del camino caliente del compose.
     ' Ya cumplio su funcion: REFUTO la hipotesis de que el bilineal explicara la divergencia CPU/GPU
     ' (`_msn` = 0/320 bindings resampleados y aun asi 148 px de cola). El dato quedo en memoria
-    ' (reference_cpu_gpu_parity_bc_decode); el codigo no tiene por que pagarlo en cada bake.
+    ' (40-bake-estado-cerrado); el codigo no tiene por que pagarlo en cada bake.
 
-    ' ---- Conversiones de espacio (transcripción 1:1 del shader; ws: 0=linear 1=srgb 2=g22) ----
-    ' ⭐ AggressiveInlining: estos helpers se invocan MILLONES de veces por capa desde los loops
-    ' per-pixel y el costo de la LLAMADA domina sobre su cuerpo (3-6 lineas). Es una HINT de
-    ' compilacion: no cambia ni una operacion ni el orden, y .NET usa SSE sin precision excedente
-    ' (no hay x87), asi que la salida es BIT-IDENTICA. Ver el izado de invariantes de los 3 loops.
-    ' ⛔ SACADO (2026-07-30): las variantes de diagnostico `FGBAKE_COMPOSE_F32` (angostar cada intermedio
-    ' de ComposeOne a Single) y `FGBAKE_MASK_POW_F32` (emular el pow float32 del GLSL en la mascara).
-    ' Las DOS quedaron REFUTADAS con datos: la primera dio un histograma BIT-IDENTICO en aislamiento
-    ' (1 swap, 0 capas) y la segunda no movio un pixel. La causa real era otra —el GPU mezclaba MIPMAPS
-    ' donde este modulo siempre muestrea mip 0— y esta arreglada en FaceTintCompositor.ForceMip0Sampling.
-    ' Se sacan porque cambiaban (o podian cambiar) el artefacto horneado sin comprar nada.
-    ' El detalle de las mediciones queda en memoria: reference_cpu_gpu_parity_bc_decode.
+    ' ---- Conversiones de espacio (transcripcion 1:1 del shader; ws: 0=linear 1=srgb 2=g22) ----
+    ' AggressiveInlining: estos helpers se invocan millones de veces por capa desde los loops per-pixel y el
+    ' costo de la LLAMADA domina sobre su cuerpo. Es una hint de compilacion: no cambia ninguna operacion ni
+    ' el orden, y .NET usa SSE sin precision excedente, asi que la salida es BIT-IDENTICA.
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function Clamp01(c As Double) As Double
@@ -85,10 +65,6 @@ Public Module FaceTintCpuCompositor
         Return Math.Pow(Clamp01(c), 2.2)
     End Function
 
-    ''' <summary>Convierte los canales RGB (g22) de un BGRA byte-array a LINEAL, in place (deja A). El compose
-    ''' CPU del DIFFUSE saca g22 (para el DDS del bake); el RENDER GL deja el output en linear (G22→Linear final).
-    ''' Para que el render en modo CPU-skinning se vea IGUAL que en GPU, el diffuse compuesto por CPU se convierte
-    ''' a linear antes de subir a GL. N/S ya son lineales (no llamar esto sobre ellos).</summary>
     ''' <summary>⭐ LUT byte→byte de <see cref="G22DiffuseBgraToLinearInPlace"/>. BIT-IDENTICA a calcularlo,
     ''' no una aproximacion: la entrada de esa conversion es SIEMPRE <c>unByte / 255.0</c>, o sea EXACTAMENTE
     ''' 256 valores posibles, y la salida es un byte. Tabular el dominio ENTERO con la MISMA expresion y el
@@ -308,18 +284,15 @@ Public Module FaceTintCpuCompositor
     Public Class DecodedTex
         Public Width As Integer
         Public Height As Integer
-        ' ⭐ STORAGE en Byte: el ancho NATIVO del dato. TODO lo que produce DecodeDds es de 8 bits (BC1/3/7 y
-        ' RGBA8/BGRA8 → RGBA8; BC5 → R8G8; BC4 → R8: no hay UN formato de más de 8 bits en la tabla de abajo),
-        ' así que guardarlo en Single desperdiciaba 4× (16 B/px para 4 B/px de información). Antes fue
-        ' Double→Single ("536 MB→268 MB @4K"); esto lo lleva a 67 MB. Se lee vía ByteToUnit ⇒ el Single que sale
-        ' es EL MISMO que se guardaba antes, bit a bit, y la MATEMÁTICA sigue en Double (los escalares widen).
-        ' ⛔ INVARIANTE: este buffer es READ-ONLY después del decode. Nadie escribe en él — ReconstructNormalZ
-        ' y el compose trabajan sobre ACUMULADORES aparte (outp/macc/acc), que siguen en Single y sin cuantizar.
-        ' Si alguna vez hiciera falta escribir un valor arbitrario acá, esto deja de ser lossless.
-        ' ⛔ El campo se llama Rgba8 y NO Rgba A PROPOSITO: al angostar el storage, TODO consumidor que siguiera
-        ' escribiendo `t.Unit(i)` habria COMPILADO igual (VB widenea Byte→Double en silencio) y leido 255 donde
-        ' esperaba 1,0 — corrupcion muda en ~80 sitios. Con el nombre nuevo el compilador los marca a todos y la
-        ' migracion es exhaustiva por construccion. Leer SIEMPRE por Unit()/CopyUnitTo(), nunca el byte crudo.
+        ' STORAGE en Byte: es el ancho NATIVO del dato, porque todo lo que produce DecodeDds es de 8 bits.
+        ' Se lee via ByteToUnit, asi que el Single que sale es bit a bit el que se guardaba antes y la
+        ' matematica sigue en Double (los escalares widenean).
+        ' INVARIANTE: este buffer es READ-ONLY despues del decode. ReconstructNormalZ y el compose trabajan
+        ' sobre acumuladores aparte. Si alguna vez hiciera falta escribir un valor arbitrario aca, deja de ser
+        ' lossless.
+        ' El campo se llama Rgba8 y NO Rgba A PROPOSITO: al angostar el storage, todo consumidor que siguiera
+        ' escribiendo t.Unit(i) habria COMPILADO igual (VB widenea Byte->Double en silencio) y leido 255 donde
+        ' esperaba 1,0 - corrupcion muda en ~80 sitios. Leer SIEMPRE por Unit()/CopyUnitTo().
         Public Rgba8 As Byte()   ' length W*H*4, orden R,G,B,A crudos 0..255 (unidad = ByteToUnit(v))
 
         ''' <summary>Elemento <paramref name="i"/> en unidad [0,1]. Devuelve EXACTAMENTE el Single que este
@@ -359,19 +332,15 @@ Public Module FaceTintCpuCompositor
         Public Channels As Integer = 4
     End Class
 
-    ''' <summary>⭐ LA ley de reconstrucción del eje Z de un normal map de 2 canales (BC5/R8G8), in-place sobre un
-    ''' buffer RGBA [0,1]. UNA sola implementación: la usan el decode de las texturas de overlay
-    ''' (<c>SseFaceTintComposer.DecodeNormalRgba</c>) y el decode del <c>_msn</c> de la cabeza en el bake y en el
-    ''' render — si divergieran, el mismo tatuaje se hornearía distinto de como se ve.
-    '''
-    ''' <para>Fórmula: se decodifica x,y a [−1,1] y se despeja <c>z = sqrt(max(0, 1 − x² − y²))</c>, que es la
-    ''' inversa EXACTA (no una heurística) del encode de un normal unitario. El signo no es ambiguo: una fuente de
-    ''' 2 canales no puede ser model-space —es justo lo que valida CharGen Options para el <c>_msn</c>— así que es
-    ''' tangent-space autorada y ahí <c>z ≥ 0</c> SIEMPRE.</para>
-    '''
-    ''' <para>Se aplica DESPUÉS del resample, no sobre los texels de origen: es lo que hace el hardware (se
-    ''' samplea el BC5 ya FILTRADO y recién ahí el shader despeja z), así que este orden es el que matchea al
-    ''' GPU. El alpha no se toca (una fuente de 2 canales no tiene alpha; vale la constante 1 del pack).</para></summary>
+    ''' <summary>Ley de reconstruccion del eje Z de un normal map de 2 canales (BC5/R8G8), in-place sobre un
+    ''' buffer RGBA [0,1]. UNA sola implementacion: la usan el decode de las texturas de overlay y el del
+    ''' <c>_msn</c> de la cabeza en bake y render - si divergieran, el mismo tatuaje se horneria distinto de
+    ''' como se ve.
+    ''' <para>Se decodifica x,y a [-1,1] y se despeja <c>z = sqrt(max(0, 1 - x^2 - y^2))</c>, la inversa EXACTA
+    ''' del encode de un normal unitario. El signo no es ambiguo: una fuente de 2 canales no puede ser
+    ''' model-space, asi que es tangent-space autorada y ahi z >= 0 siempre.</para>
+    ''' <para>Se aplica DESPUES del resample, que es lo que hace el hardware (samplea el BC5 ya filtrado y
+    ''' recien ahi despeja z). El alpha no se toca.</para></summary>
     Public Sub ReconstructNormalZ(rgba As Single(), npix As Integer)
         If rgba Is Nothing OrElse npix <= 0 OrElse rgba.Length < npix * 4 Then Return
         ' Por-píxel puro, escrituras disjuntas ⇒ bit-idéntico al serial (misma justificación que el resto del
@@ -495,24 +464,14 @@ Public Module FaceTintCpuCompositor
         Return c00 * (1 - tx) * (1 - ty) + c10 * tx * (1 - ty) + c01 * (1 - tx) * ty + c11 * tx * ty
     End Function
 
-    ''' <summary>Resample un BGRA (byte, sw*sh*4) a (dw,dh) con EL MISMO filtro que el compositor FO4:
-    ''' GL_LINEAR + CLAMP_TO_EDGE, texel = uv*size-0.5, pixel-center u=(x+0.5)/dw (idéntico a <see cref="SampleBilinear"/>
-    ''' / <c>SampleChannelAt</c>). Para que el resize del bake SSE (diffuse/normal plegados a una resolución != Inherit)
-    ''' matchee el resample per-layer de FO4. sw==dw AndAlso sh==dh ⇒ devuelve el mismo array (no-op, byte-inerte).</summary>
-    ''' <summary>⭐ Gemelo FLOAT de <see cref="ResampleBgra"/>: MISMO filtro (GL_LINEAR + CLAMP_TO_EDGE,
-    ''' texel = uv*size-0.5, pixel-center u=(x+0.5)/dw) sobre un acumulador <c>Single()</c> RGBA, SIN pasar por
-    ''' bytes.
-    '''
-    ''' <para>Existe para que el RENDER pueda honrar la resolución de CharGen Options igual que el bake. El bake
-    ''' resamplea el buffer ya convertido a BGRA (es lo que va a un DDS de 8 bits); el render trabaja en float de
-    ''' punta a punta y NO debe cuantizar en el medio — es la misma regla que ya rige acá: la pérdida de 8 bits y
-    ''' de BCn es del ARCHIVO, no del COMPOSE. Con el filtro idéntico, render y bake dan el mismo píxel salvo esa
-    ''' cuantización final que sólo paga el archivo.</para>
-    '''
-    ''' <para>⚠️ Se resamplea SOBRE LOS MISMOS VALORES que el bake, o sea en el espacio en que esté el buffer
-    ''' (para el fold SSE: sRGB, ANTES del sRGB→lineal final). Bilinear en sRGB ≠ bilinear en lineal, así que el
-    ''' punto de la cadena donde se llama es parte del contrato — ver el call site del fold.</para>
-    ''' <para>sw==dw AndAlso sh==dh ⇒ devuelve el MISMO array (no-op, bit-inerte).</para></summary>
+    ''' <summary>Gemelo FLOAT de <see cref="ResampleBgra"/>: MISMO filtro (GL_LINEAR + CLAMP_TO_EDGE, texel =
+    ''' uv*size-0.5, centro de pixel u=(x+0.5)/dw) sobre un acumulador <c>Single()</c> RGBA, sin pasar por bytes.
+    ''' <para>Existe para que el RENDER honre la resolucion de CharGen Options igual que el bake: el bake
+    ''' resamplea el buffer ya convertido a BGRA, el render trabaja en float de punta a punta y no debe
+    ''' cuantizar en el medio - la perdida de 8 bits y de BCn es del ARCHIVO, no del COMPOSE.</para>
+    ''' <para>âš ï¸ Se resamplea en el espacio en que este el buffer (para el fold SSE: sRGB, ANTES del paso a
+    ''' lineal). Bilinear en sRGB no es bilinear en lineal, asi que el punto de la cadena donde se llama es
+    ''' parte del contrato. Con sw==dw y sh==dh devuelve el MISMO array (no-op bit-inerte).</para></summary>
     Public Function ResampleRgbaFloat(src As Single(), sw As Integer, sh As Integer, dw As Integer, dh As Integer) As Single()
         If src Is Nothing OrElse sw <= 0 OrElse sh <= 0 OrElse dw <= 0 OrElse dh <= 0 Then Return src
         If sw = dw AndAlso sh = dh Then Return src
@@ -593,20 +552,14 @@ Public Module FaceTintCpuCompositor
         Public Specular As CpuChannelResult
     End Class
 
-    ''' <summary>Cache de decode PERSISTENTE entre bakes — para el BATCH. Cuando esta activo (Begin/End
-    ''' alrededor del loop de clones), ComposeCpuPipeline lo usa en vez del dict per-call: las texturas
-    ''' source (face d/_n/_s) + tint + swap se REPITEN entre clones, asi que cada DDS se decodifica UNA
-    ''' sola vez en todo el batch (el path GPU ya hacia esto via TintGpuCache). Sin esto, cada clon
-    ''' re-decodifica las ~49 texturas via DirectXTex. Nothing = comportamiento per-cara (1 bake aislado).
-    ''' ⭐ CONCURRENTDICTIONARY. La nota vieja decia "los bakes del batch son SECUENCIALES (un await a la vez)
-    ''' -> Dictionary plano alcanza; si se paraleliza el loop de clones, cambiar a ConcurrentDictionary". Es cierto
-    ''' ENTRE BAKES, pero el segundo hilo no es otro bake: es el RENDER. El batch corre cada bake con
-    ''' `Await Task.Run(...)` (release, WriteGPUSandboxOutput=False) y durante ese await la bomba de mensajes de
-    ''' WinForms SIGUE VIVA -> un WM_PAINT entra al render EN EL HILO UI y llega a este mismo cache mientras el
-    ''' bake escribe desde el ThreadPool. Un Dictionary en escritura concurrente no da "un valor raro": puede
-    ''' colgar el proceso en un bucle infinito dentro de Insert() al rehashear. El patron de uso (TryGetValue +
-    ''' indexer set) es identico, asi que no cambia ni la logica ni el resultado. Mismo motivo que los caches de
-    ''' SseFaceTintComposer.</summary>
+    ''' <summary>Cache de decode PERSISTENTE entre bakes, para el BATCH: las texturas source (face d/_n/_s) +
+    ''' tint + swap se repiten entre clones, asi que cada DDS se decodifica UNA vez en todo el batch (el camino
+    ''' GPU ya lo hacia via TintGpuCache). Nothing = comportamiento per-cara.
+    ''' <para>ConcurrentDictionary y no Dictionary: los bakes del batch son secuenciales, pero el segundo hilo
+    ''' no es otro bake sino el RENDER - cada bake corre con Await Task.Run y durante ese await la bomba de
+    ''' mensajes de WinForms sigue viva, asi que un WM_PAINT entra al render EN EL HILO UI y llega a este mismo
+    ''' cache mientras el bake escribe desde el ThreadPool. Un Dictionary en escritura concurrente no da "un
+    ''' valor raro": puede colgar el proceso en un bucle infinito dentro de Insert() al rehashear.</para></summary>
     Public Property BatchDecodeCache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)
 
     ''' <summary>Saltea el trabajo de PIXELES del compose (seed + region swaps + tint layers) devolviendo el
@@ -620,22 +573,14 @@ Public Module FaceTintCpuCompositor
     Public Property SkipPixelCompose As Boolean = False
 
     ''' <summary>Techo de memoria del <see cref="BatchDecodeCache"/>, en bytes. <b>0 = sin tope</b> = el
-    ''' comportamiento historico, asi que este agregado no cambia nada si nadie lo setea.
-    '''
-    ''' <para><b>Por que hace falta.</b> El cache no tenia NINGUN limite: crecia durante todo el bake
-    ''' (`BeginBatchDecodeCache` … `EndBatchDecodeCache`, o sea miles de NPCs). Medido en el barrido FO4
-    ''' completo: working set pico ~9,5 GB. En una maquina con menos RAM eso es paginacion o muerte por
-    ''' agotamiento — que ya paso antes en este arnes.</para>
-    '''
-    ''' <para><b>Por que ADMISION y no evicción.</b> Evictar una entrada GARANTIZA que se re-decodifique
-    ''' cuando el proximo NPC la pida; no admitirla solo lo ARRIESGA. Con claves que son rutas de textura
-    ''' SOURCE compartidas entre NPCs, las primeras que entran son justamente las mas reusadas (las bases
-    ''' de cabeza), asi que quedarse con las primeras es mejor politica que LRU.</para>
-    '''
-    ''' <para><b>Por que no puede cambiar la salida.</b> El valor cacheado es funcion PURA de
-    ''' (bytes de la textura, tamaño destino) — es lo que devuelve <c>DecodeDds</c>. No cachear no altera
-    ''' el valor, solo lo recalcula. La salida es byte-identica por construccion; lo unico que se mueve es
-    ''' el tiempo.</para></summary>
+    ''' comportamiento historico.
+    ''' <para>Hace falta porque el cache no tenia NINGUN limite y crecia durante todo el bake: medido en el
+    ''' barrido FO4 completo, working set pico ~9,5 GB.</para>
+    ''' <para>Es ADMISION y no eviccion: evictar GARANTIZA re-decodificar cuando el proximo NPC lo pida, no
+    ''' admitir solo lo arriesga. Con claves que son rutas de textura source compartidas, las primeras que
+    ''' entran son las mas reusadas (las bases de cabeza), asi que quedarse con las primeras le gana a LRU.</para>
+    ''' <para>No puede cambiar la salida: el valor cacheado es funcion PURA de (bytes, tamano destino), asi que
+    ''' no cachear no altera el valor, solo lo recalcula.</para></summary>
     Public Property BatchDecodeCacheBudgetBytes As Long = 0
 
     ''' <summary>Bytes vivos en el <see cref="BatchDecodeCache"/> (solo se contabiliza si hay presupuesto).</summary>
@@ -687,20 +632,17 @@ Public Module FaceTintCpuCompositor
         If c IsNot Nothing Then c.Clear()
     End Sub
 
-    ''' <summary>Compone los 3 canales por CPU (espejo de FaceTintCompositor.ApplyFaceTintPipeline).
-    ''' Trabaja sobre las DDS YA LEÍDAS de los inputs. Devuelve BGRA byte por canal (D g22 / N/S lineal).
-    ''' MISMA ley que el GL (resolver + math de arriba). Sin GL: pura CPU.</summary>
-    ''' <param name="resolution">Resolución por canal (A/B/C). Nothing/default = Inherit (nativo) en los 3
-    ''' = comportamiento gen3. Bodyparts: pasar Nothing (fuerzan heredar; el enum es solo para la cara).</param>
-    ''' <param name="diffuseKey">Keys de las texturas source (path estable) para cachear su decode entre
-    ''' clones cuando BatchDecodeCache esta activo. Nothing = no cachear el source (se decodifica directo).</param>
-    ''' <param name="decodeCache">⭐ Cache de decode PROPIEDAD DEL CALLER, con la vida que el caller decida.
-    ''' Es el equivalente CPU del <c>TintGpuCache</c> per-host del camino GL: el RENDER en modo CPU recompone la
-    ''' cara entera en cada refresh de edicion viva, y sin esto cada refresh vuelve a decodificar por DirectXTex
-    ''' TODAS las DDS (source D/N/S + cada capa + cada mascara de swap) que el camino GPU ya tenia residentes.
-    ''' Tiene PRIORIDAD sobre <see cref="BatchDecodeCache"/> — se pasa explicito justamente para no pisar el
-    ''' global del batch, que puede estar corriendo en otro hilo. Nothing = comportamiento previo.
-    ''' No puede cambiar la salida: el valor cacheado es funcion PURA de (bytes, tamaño destino).</param>
+    ''' <summary>Compone los 3 canales por CPU (espejo de FaceTintCompositor.ApplyFaceTintPipeline) sobre las
+    ''' DDS ya leidas. Devuelve BGRA byte por canal (D en g22, N/S lineal). MISMA ley que el GL.</summary>
+    ''' <param name="resolution">Resolucion por canal (A/B/C). Nothing = Inherit (nativo) en los tres. Los
+    ''' bodyparts pasan Nothing: el enum es solo para la cara.</param>
+    ''' <param name="diffuseKey">Keys de las texturas source para cachear su decode entre clones cuando
+    ''' BatchDecodeCache esta activo. Nothing = no cachear el source.</param>
+    ''' <param name="decodeCache">Cache de decode PROPIEDAD DEL CALLER, con la vida que el caller decida:
+    ''' equivalente CPU del TintGpuCache per-host del camino GL, para que el render en modo CPU no re-decodifique
+    ''' todas las DDS en cada refresh de edicion viva. Tiene PRIORIDAD sobre <see cref="BatchDecodeCache"/>,
+    ''' justamente para no pisar el global del batch, que puede estar corriendo en otro hilo. No puede cambiar
+    ''' la salida: el valor cacheado es funcion pura de (bytes, tamano destino).</param>
     Public Function ComposeCpuPipeline(diffuseBytes As Byte(), normalBytes As Byte(), specBytes As Byte(),
                                        layers As IList(Of FaceTintLayerInput),
                                        swaps As IList(Of FaceRegionSwapInput),
@@ -761,9 +703,13 @@ Public Module FaceTintCpuCompositor
         Return t
     End Function
 
-    ''' <summary>Compone UN canal. seed (D=g22(src), N/S=src) -> region swaps (crossfade en linear) ->
-    ''' tint layers (over-running, ley del resolver). Espejo de ComposeOntoFaceTexture + el seed +
-    ''' ApplyRegionSwapsOntoFaceTexture del GL.</summary>
+    ''' <summary>Compone UN canal: seed (D = g22(src), N/S = src) → region swaps (crossfade en linear) →
+    ''' capas de tint (over-running, ley del resolver).
+    ''' <para>⛔ SYNC: CPU/GPU compositor — es el espejo EXACTO del seed + <c>ApplyRegionSwapsOntoFaceTexture</c>
+    ''' + <c>ComposeOntoFaceTexture</c> del camino GL (FaceTintCompositor). Los dos leen sus parámetros del
+    ''' MISMO <c>FaceTintConvention.ResolveConvention</c>, que es lo que hace que la paridad sea por
+    ''' construcción y no por coincidencia. Duele si diverge porque el BAKE corre 100 % CPU y el RENDER por
+    ''' GL: un barrido validaría un camino que el usuario nunca ve. Ver 50-facetint-leyes-y-compositor.md.</para></summary>
     Private Function ComposeChannelCpu(srcBytes As Byte(), channel As FaceTintChannel,
                                        layers As IList(Of FaceTintLayerInput),
                                        swaps As IList(Of FaceRegionSwapInput),
@@ -803,18 +749,13 @@ Public Module FaceTintCpuCompositor
         ' Seed via SampleChannelAt (índice directo si tamaños iguales; bilineal si difieren = resize).
         ' Acumuladores en Single (storage): el math por-píxel abajo corre en Double y se guarda con CSng.
         Dim accR(n - 1) As Single, accG(n - 1) As Single, accB(n - 1) As Single
-        ' Acumulador ALPHA: PASSTHROUGH del base, nunca compuesto. Las blend-ops son RGB-only por
-        ' definicion (mismo contrato que documenta el shader GL), asi que el alpha del base viaja
-        ' intacto hasta el pack. MEDIDO sobre el corpus: el _d que hornea el CK lleva EXACTAMENTE el
-        ' alpha del head diffuse de origen (Valentine 0x00002F24 vs gen2skinheadvalentine_d.dds:
-        ' RMS 0,229/255, 99,59% byte-exact, maxD 18 en 0,02% de px = ruido de bloque BC3). Antes esta
+        ' Acumulador ALPHA: PASSTHROUGH del base, nunca compuesto. Las blend-ops son RGB-only por definicion
+        ' (mismo contrato que documenta el shader GL), asi que el alpha del base viaja intacto hasta el pack.
+        ' Medido: el _d que hornea el CK lleva exactamente el alpha del head diffuse de origen. Antes esta
         ' funcion escribia alpha=255 fija y el canal se perdia. Inerte para N/S (BC5 no tiene alpha).
-        ' ⭐ El acumulador ALPHA sólo se consume en el pack de más abajo, y SÓLO bajo `keepBaseAlpha`
-        ' (= headDiffuseAlphaTest AndAlso isD); si no, ese pack escribe 255 fijo. Los dos términos son
-        ' parámetros de esta función, así que la condición se conoce ACÁ, antes de reservar nada. Para N/S
-        ' es muerto SIEMPRE (isD=False), y para un diffuse sin el flag ACBS también. Antes se reservaba el
-        ' array y se sampleaba el canal 3 por píxel en los tres canales, pasara lo que pasara: a 4096² son
-        ' 67 MB y una pasada completa por canal tirados. Mismo valor empaquetado, mismo byte de salida.
+        ' El acumulador solo se consume en el pack de mas abajo y SOLO bajo keepBaseAlpha, cuyos dos terminos
+        ' son parametros de esta funcion: se decide ACA, antes de reservar nada. Antes se reservaba el array y
+        ' se sampleaba el canal 3 por pixel en los tres canales pasara lo que pasara (67 MB a 4096^2).
         Dim keepBaseAlpha As Boolean = headDiffuseAlphaTest AndAlso isD
         Dim accA As Single() = Nothing
         If keepBaseAlpha Then ReDim accA(n - 1)
@@ -890,19 +831,15 @@ Public Module FaceTintCpuCompositor
                 ' byte-idéntico al closed-form previo (cov=srgbenc(mask), D lerp linear-desde-srgb, N/S raw).
                 Dim cv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
                 Dim sws = CInt(cv.WorkingSpace), scs = CInt(cv.CompositeSpace), sss = CInt(cv.SrcSpace), sos = CInt(cv.OutputSpace)
-                ' ⛔⛔ `sos` (Swap.OutputSpace) ES UN ARGUMENTO MUERTO ACA, a proposito y declarado.
-                ' `ComposeOne` lo usa SOLO para derivar `asp` (`asp = If(accSpace < 0, os, accSpace)`); como abajo
-                ' se pasa `accSpace:=accSp` explicito, `os` no se lee en NINGUNA de las 4 ramas de framework.
-                ' Se sigue pasando por simetria con los otros call sites, no porque haga algo.
-                ' CAMBIO DE COMPORTAMIENTO DECLARADO: antes (sin accSpace) el acumulador del swap se trataba como
-                ' si viviera en `sos`, y el de los tints en el del CANAL — dos etiquetas para EL MISMO buffer.
-                ' Ahora manda el canal. Con los defaults de fabrica de los dos juegos es byte-identico
-                ' (FO4 Swap.OutputSpace = Diffuse.OutputSpace = G22; SSE todo Linear), pero NO si el usuario
-                ' separa esos combos en CharGen Options. El GL hace lo MISMO (ver el guard gemelo alla), asi que
-                ' la paridad CPU/GPU se mantiene; lo que cambia es la salida respecto de la version previa.
-                ' ⛔ La advertencia va por FaceTintConvention (latcheada + always-on), NO por Logger: `Logger`
-                ' esta APAGADO en release, asi que un aviso por ahi no existiria justo para el usuario que
-                ' necesita verlo. El runner lo imprime en el resumen. Latcheado ⇒ no spamea por swap ni por NPC.
+                ' â›” `sos` (Swap.OutputSpace) ES UN ARGUMENTO MUERTO ACA, a proposito: ComposeOne solo lo usa
+                ' para derivar asp, y como abajo se pasa accSpace explicito, no se lee en ninguna rama. Se
+                ' sigue pasando por simetria con los otros call sites.
+                ' CAMBIO DE COMPORTAMIENTO DECLARADO: antes el acumulador del swap se trataba como si viviera
+                ' en sos y el de los tints en el del CANAL - dos etiquetas para EL MISMO buffer. Ahora manda el
+                ' canal. Con los defaults de fabrica de los dos juegos es byte-identico, pero no si el usuario
+                ' separa esos combos en CharGen Options. El GL hace lo mismo (guard gemelo alla).
+                ' La advertencia va por FaceTintConvention (latcheada y always-on) y NO por Logger, que esta
+                ' APAGADO en release: un aviso por ahi no existiria justo para el usuario que necesita verlo.
                 If channel = FaceTintChannel.Diffuse AndAlso sos <> accSp Then
                     FaceTintConvention.NoteSwapAccumMismatch(channel, sos, accSp)
                 End If
@@ -942,28 +879,16 @@ Public Module FaceTintCpuCompositor
             Next
         End If
 
-        ' base = SNAPSHOT del acc POST-swaps. Paridad con el GL: el pase de tints (ComposeOntoFaceTexture,
-        ' línea ~2168) recibe como input la textura YA swapeada del pre-pass (FaceTintCompositor:2160-2170), y
-        ' su uBase = ese input -> uBase del GL es post-swap. Se captura acá (después de los region swaps) para
-        ' que los frameworks base-relativos (OverBase/AddBase) compongan sobre el baseline young-morpheado, NO
-        ' sobre el seed Hero pre-swap. OverPrev (default) NO usa base -> byte-idéntico al modelo previo.
-        ' ⭐ ¿HACE FALTA el snapshot? SÓLO lo leen los frameworks OverBase(1) y AddBase(2) dentro de
-        ' ComposeOne; OverPrev(0 — el DEFAULT) y ModSrc(3) no tocan `base` en ninguna de sus ramas. Con la
-        ' config default esto era trabajo puro perdido en CADA canal de CADA NPC: tres arrays + tres
-        ' Array.Copy de n elementos (a 4096², 201 MB de LOH y tres pasadas completas de memoria por canal).
-        ' Tampoco lo usan los region-swaps ni el pre-tono TakesSkinTone: sus ComposeOne no pasan
-        ' base/framework, así que caen a los Optional (0.0, OverPrev).
-        '
-        ' ⛔ El pre-scan enumera el ESPACIO DE PARÁMETROS COMPLETO que el loop de capas puede pasarle a
-        ' ResolveConvention: los (IsTextureSet, Slot, BlendOp) reales de cada capa × LOS DOS valores de
-        ' useHairPalette (que ahí depende del decode de la LUT, no resuelto todavía acá). Con eso el guard
-        ' sigue siendo correcto aunque alguien haga que Framework dependa de cualquiera de esas entradas.
-        ' Hoy no depende de ninguna (ResolveConvention: Framework = bucket.Framework, y el bucket se elige
-        ' sólo por (canal, forSwap)), así que en la práctica el barrido converge en la primera capa.
-        '
-        ' ⛔ Es CONSERVADOR a propósito: NO replica los `Continue For` del loop real (capa sin bytes para
-        ' este canal, o cuya textura no decodifica). Como mucho reserva el snapshot de más — nunca de menos,
-        ' que es el único error que cambiaría un byte.
+        ' ⛔ SYNC: `base` es un SNAPSHOT del acumulador POST-swaps, igual que el GL — allá el pase de tints
+        ' recibe como input la textura YA swapeada, así que su uBase también es post-swap. Se captura acá
+        ' para que los frameworks base-relativos compongan sobre el baseline morpheado y no sobre el seed.
+        ' El snapshot sólo lo leen esos frameworks; con la config default nadie lo usa y copiarlo siempre era
+        ' trabajo perdido por canal y por NPC (a 4096², cientos de MB de LOH).
+        ' ⛔ El pre-scan que decide si hace falta enumera el ESPACIO DE PARÁMETROS COMPLETO que el loop puede
+        ' pasarle a ResolveConvention, no sólo el caso actual: así el guard sigue siendo correcto aunque
+        ' alguien haga que el Framework dependa de alguna de esas entradas. Y es CONSERVADOR a propósito (no
+        ' replica los `Continue For` del loop real): como mucho reserva de más, nunca de menos, que es el
+        ' único error que cambiaría un byte.
         Dim needsBase As Boolean = False
         If layers IsNot Nothing Then
             For Each pLayer In layers
@@ -1067,17 +992,14 @@ Public Module FaceTintCpuCompositor
                 ' (OverBase/AddBase -> el skintone NO llega por el base, hay que pre-tonar TODA flagged).
                 Dim preToneSkin As Boolean = (isD AndAlso layer.TakesSkinTone AndAlso skintoneFound AndAlso (stSeen OrElse nonAccum))
 
-                ' Paralelo POR RANGOS — ver la nota del seed. Es el loop MAS PESADO de los tres (corre una
-                ' vez por CAPA, y su cuerpo hace varios Math.Pow por canal via ComposeOne), y era el que
-                ' pagaba un delegate por pixel. Cuerpo per-pixel con escrituras disjuntas ⇒ bit-idéntico.
-                ' ⭐ INVARIANTE IZADO (ver SampleChannelAt): "¿el tex mide lo mismo que el acumulador?" NO
-                ' depende del pixel, pero se evaluaba DENTRO de SampleChannelAt, o sea 4 veces por pixel y
-                ' por CAPA — a 1024² con ~18 capas son >70M ramas + llamadas anidadas de puro overhead. Se
-                ' resuelve una vez por capa y el caso directo lee los 4 canales desde UN indice base.
-                ' ⛔ BIT-IDENTICO por construccion: es el MISMO valor por el MISMO camino (ByteToUnit sobre
-                ' el byte crudo, widening a Double al asignar) — lo unico que desaparece es la re-decision.
-                ' Los tipos van EXPLICITOS en Double: si quedaran inferidos como Single, la aritmetica de
-                ' abajo cambiaria de precision y la salida dejaria de ser identica.
+                ' Paralelo POR RANGOS - ver la nota del seed. Es el loop MAS PESADO de los tres (uno por CAPA,
+                ' con varios Math.Pow por canal) y era el que pagaba un delegate por pixel. Escrituras disjuntas
+                ' por pixel, asi que es bit-identico.
+                ' INVARIANTE IZADO: "el tex mide lo mismo que el acumulador?" no depende del pixel, pero se
+                ' evaluaba DENTRO de SampleChannelAt, o sea 4 veces por pixel y por capa. Se resuelve una vez
+                ' por capa y el caso directo lee los 4 canales desde UN indice base.
+                ' Los tipos van EXPLICITOS en Double: inferidos como Single, la aritmetica de abajo cambiaria
+                ' de precision y la salida dejaria de ser identica.
                 Dim layerDirect As Boolean = (layerTex.Width = w AndAlso layerTex.Height = h)
                 Dim layerPx As Byte() = If(layerDirect, layerTex.Rgba8, Nothing)
                 Dim lut = ByteToUnit
@@ -1165,17 +1087,13 @@ Public Module FaceTintCpuCompositor
             Next
         End If
 
-        ' --- Pack a BGRA byte (clamp+round). D ya está en g22, N/S lineal. ---
-        ' ALPHA del _d (corregido 2026-07-20): passthrough del alpha del base SÓLO si la cabeza usa Diffuse Alpha
-        ' Test (flag ACBS 0x01000000); si no, OPACO (255). El CK aplana el alpha del _d salvo cuando el head
-        ' material lo testea. Valentine (flag SET) → passthrough (transparencia); DiMA (CLEAR, RACE.DFTM apunta a
-        ' SkinHeadValentine con alpha en la textura, pero su material NO la testea) → opaco, como el CK.
-        ' Antes: passthrough incondicional inventaba el alpha de DiMA (medición: DLC03DiMA _d ALPHA varía=True vs
-        ' CK=False). Inerte para N/S (BC5 sin alpha). Ver reference_acbs_diffuse_alpha_test_flag.
-        ' ⭐ CONVERSION FINAL accSp -> OutputSpace, UNA sola vez para todo el canal. Con el default
-        ' (accSp == OutputSpace) `Cvt1` cortocircuita y esto es un no-op exacto: el pack ve los MISMOS doubles
-        ' que antes. Con el acumulador en CompositeSpace, este es el UNICO lugar donde se paga la conversion de
-        ' salida, en vez de pagarla ida-y-vuelta en CADA capa (que es de donde salen los Math.Pow del 94,9 %).
+        ' --- Pack a BGRA byte (clamp+round). D ya esta en g22, N/S lineal. ---
+        ' ALPHA del _d: passthrough del alpha del base SOLO si la cabeza usa Diffuse Alpha Test (flag ACBS
+        ' 0x01000000); si no, opaco. El CK aplana el alpha del _d salvo cuando el material de la cabeza lo
+        ' testea; el passthrough incondicional le inventaba alpha a DiMA. Inerte para N/S. Ver 40-bake-leyes-fo4.
+        ' CONVERSION FINAL accSp -> OutputSpace, UNA vez para todo el canal: con el default (accSp == outSp)
+        ' Cvt1 cortocircuita y es un no-op exacto. Con el acumulador en CompositeSpace, este es el UNICO lugar
+        ' donde se paga la conversion de salida, en vez de pagarla ida-y-vuelta en CADA capa.
         If accSp <> outSp Then
             System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, n),
@@ -1209,17 +1127,12 @@ Public Module FaceTintCpuCompositor
     End Function
 
     ''' <summary>Compositor por-pixel COMPARTIDO, ley-driven: aplica UN color de capa sobre el acumulador con
-    ''' la cobertura <paramref name="cov"/> ya resuelta (mask x opacidad), usando la convencion
-    ''' <paramref name="conv"/> (working/composite/src/output/ACCUM spaces, blend op, softlight, framework). Es
-    ''' el MISMO <see cref="ComposeOne"/> que usa el loop FO4 — expuesto para que otros compositores (SSE)
-    ''' compongan por la ley del config en vez de hardcodear el algebra. GL == CPU == este por construccion.
+    ''' la cobertura <paramref name="cov"/> ya resuelta (mask x opacidad), segun la convencion
+    ''' <paramref name="conv"/>. Es el MISMO <see cref="ComposeOne"/> que usa el loop FO4, expuesto para que
+    ''' otros compositores (SSE) compongan por la ley del config en vez de hardcodear el algebra.
     ''' <para>Honra <c>conv.AccumSpace</c>: el acumulador que recibe y devuelve vive en AccumSpace, no en
-    ''' OutputSpace. Antes no lo pasaba, asi que el acumulador se trataba SIEMPRE como OutputSpace y cada capa
-    ''' pagaba el ida-y-vuelta — es decir, el unico caller (SSE) no podia honrar AccumInCompositeSpace ni
-    ''' aunque el config lo prendiera, y habia que suprimir el flag del lado GL para que los dos no
-    ''' divergieran. El caller es responsable de sembrar EN AccumSpace y de hacer la unica conversion final a
-    ''' OutputSpace.</para>
-    ''' <paramref name="base"/> solo lo usan los frameworks OverBase/AddBase; en OverPrev (default) es inerte.</summary>
+    ''' OutputSpace. El caller siembra EN AccumSpace y hace la unica conversion final.</para>
+    ''' <paramref name="base"/> solo lo usan los frameworks OverBase/AddBase; en OverPrev es inerte.</summary>
     Public Function ComposePixel(prev As Double, src As Double, cov As Double,
                                  conv As FaceTintConvention.FaceTintConventionSet,
                                  Optional base As Double = 0.0) As Double

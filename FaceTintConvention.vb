@@ -7,7 +7,7 @@
 '''
 ''' Modelo ENGINE-FAITHFUL (re-derivado del b12 BSFaceCustomizationShader, V2 DXBC + V1 CK builder
 ''' FUN_140ED0E40 — ck_bake_facetint_RULE_verified; reemplaza el modelo empírico "ws=entry_type" que
-''' arch_facetint_mask_src_conventions describía y que el shader REFUTÓ):
+''' 50-facetint-leyes-y-compositor describía y que el shader REFUTÓ):
 '''   - mask conv = G22Encode (= shader pow(maskSample,1/2.2)·opacity), universal D y N/S.
 '''   - DIFFUSE: el ENGINE acumula en LINEAL y lerpea por cobertura en LINEAL (cs). El BLEND OP corre en su
 '''     espacio intrínseco: SoftLight encodea base+src a G22 (pow 1/2.2), GIMP/sqrt, y vuelve a LINEAL (pow
@@ -577,7 +577,11 @@ Public Module FaceTintConvention
     End Function
 
     ''' <summary>Resuelve la convención de composición para una capa+canal según la tabla derivada.
-    ''' Es el ÚNICO lugar donde vive la tabla — cambiar acá unifica/ajusta el compositor entero.</summary>
+    ''' <para>⛔ SYNC: CPU/GPU compositor — ÉSTE es el punto que hace que el contrato se cumpla por
+    ''' construcción: es el ÚNICO lugar donde vive la tabla, y la leen los DOS caminos (el GL de
+    ''' <c>FaceTintCompositor.ApplyFaceTintPipeline</c> y el CPU de <c>FaceTintCpuCompositor</c>).
+    ''' Cualquier ajuste va acá; hardcodear un valor en un compositor rompe la paridad en silencio, y el
+    ''' bake (que es 100 % CPU) validaría un camino distinto del que ve el usuario.</para></summary>
     ''' <param name="isTextureSet">True = TextureSet (disc=2); False = Palette/Mask (disc=1).</param>
     ''' <param name="slot">RACE TintTemplateOption.Slot (12 = SkinTone).</param>
     ''' <param name="blendOp">BlendOp efectivo del resolver (0..4).</param>

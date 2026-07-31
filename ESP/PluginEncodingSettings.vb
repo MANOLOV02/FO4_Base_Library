@@ -1,42 +1,16 @@
 ﻿Imports System.IO
 Imports System.Text
 
-''' <summary>
-''' Central encoding settings for ESP/ESM/ESL plugin I/O. LITERAL mirror of xEdit's encoding
-''' subsystem. Read this file alongside the cited xEdit source — every value, every map entry,
-''' every default has a file:line reference. Any divergence from xEdit is a bug.
-'''
-''' Globals (TES5Edit/Core/wbInterface.pas:24295-24310):
-'''   wbEncoding         := wbMBCSEncoding(1252)              — non-translatable, cp1252
-'''   wbEncodingTrans    := wbEncoding                        — translatable, cp1252 initially
-'''   wbEncodingVMAD     := TEncoding.UTF8                    — VMAD scripts always UTF-8
-'''   wbLEncodingDefault[False] := TEncoding.UTF8             — primary default for STRINGS
-'''   wbLEncodingDefault[True]  := wbMBCSEncoding(1252)       — fallback default for STRINGS
-'''   wbLEncoding[False] := TStringList ...                   — primary map (game-specific contents)
-'''   wbLEncoding[True]  := TStringList ...                   — fallback map (full map for all games)
-'''
-''' Game init (TES5Edit/xEdit/xeInit.pas:1118-1131):
-'''   if wbGameMode &lt;= gmEnderal then
-'''     wbAddDefaultLEncodingsIfMissing(False)               ' primary = full map (TES4/FO3/FNV/TES5/Enderal)
-'''   else begin
-'''     wbLEncodingDefault[False] := TEncoding.UTF8           ' redundant — already UTF-8
-'''     case wbGameMode of
-'''       gmSSE/TES5VR/EnderalSE: wbAddLEncodingIfMissing('english', '1252', False)
-'''     else {FO4, FO76}:        wbAddLEncodingIfMissing('en',      '1252', False)
-'''   end;
-'''   wbAddDefaultLEncodingsIfMissing(True)                  ' fallback = full map (unconditional)
-'''
-''' sLanguage propagation (TES5Edit/xEdit/xeInit.pas:1274-1329):
-'''   wbLanguage := Trim(ReadString('General', 'sLanguage', '')).ToLower   ' from game INI + custom INI
-'''   wbEncodingTrans := wbEncodingForLanguage(wbLanguage, False)           ' primary map lookup
-'''   -cp-trans param overrides wbEncodingTrans
-'''   -cp-general param overrides wbEncoding
-'''
-''' Per-file precedence (bsdGetEncoding, wbInterface.pas:23519-23535):
-'''   bsdEncodingOverride (def-level)
-'''     → aElement._File.Encoding[translatable]                 ' per-file flEncodingTrans
-'''     → wbEncodingTrans (translatable) or wbEncoding (non-translatable)  ' global
-''' </summary>
+''' <summary>Configuracion central de encoding para la E/S de plugins ESP/ESM/ESL. Es un espejo LITERAL del
+''' subsistema de encoding de xEdit: cualquier divergencia contra xEdit es un bug, y el detalle con las
+''' citas file:line vive en la memoria 20-app-encoding-xedit.
+''' <para>Globales: general no traducible = cp1252; traducible = cp1252 hasta que sLanguage lo cambie; VMAD
+''' siempre UTF-8; para STRINGS el default primario es UTF-8 y el de fallback cp1252, cada uno con su mapa por
+''' idioma (FO4 y SSE solo siembran su idioma en el primario, el fallback siempre lleva el mapa completo).</para>
+''' <para>sLanguage sale del INI del juego y del custom, y fija el encoding traducible; los parametros de linea
+''' de comando -cp-trans y -cp-general lo pisan.</para>
+''' <para>Precedencia por archivo: override a nivel de definicion, despues el encoding del propio archivo
+''' segun sea traducible o no, y por ultimo el global correspondiente.</para></summary>
 Public Module PluginEncodingSettings
 
     Private ReadOnly _syncRoot As New Object()
