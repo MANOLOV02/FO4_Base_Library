@@ -735,15 +735,34 @@ Public Class PreviewControl
             ' set. En pose-only durante animación el set es estable → los bones inyectados del último
             ' prepare siguen vivos (ApplyPose no los toca) → se saltea el churn per-frame (caro en WM
             ' con física; PrepareForShapes. NPC: resolver no-op, así que esto es no-op para NPC).
+            ' [RENDER-MS] INSTRUMENTACION DE FASES — TODA gateada por Logger.Enabled.
+            ' ⛔ La nota vieja decia "gateados por LogLazy; el Stopwatch es ~ns, despreciable" y las DOS
+            ' mitades eran falsas: `LogLazy` hace lazy el STRING, no el CALCULO, asi que esto corria ENTERO
+            ' en release; y no son "unos ns" sino DOS `Stopwatch.StartNew()` nuevos POR MALLA POR FRAME
+            ' (`_swM` de mas abajo y los dos de `UpdateSkinBuffers_GL`) mas ~9 lecturas de `.Elapsed` por
+            ' malla. Su UNICO consumidor es el `[RENDER-MS]` del final de este bloque — nada mas lee ni un
+            ' `_ms*` ni un `_skin*Ms`. Se toma el flag UNA vez por frame para que el gate no cambie a mitad.
+            Dim _instr As Boolean = Logger.Enabled
             ' [RENDER-MS] período REAL entre pose-updates (= 1000/fps efectivo). vs total = trabajo.
-            Dim _periodMs = _posePeriodSw.Elapsed.TotalMilliseconds : _posePeriodSw.Restart()
-            ' [RENDER-MS] timers por fase (gateados por LogLazy; el Stopwatch es ~ns, despreciable).
-            Dim _sw = System.Diagnostics.Stopwatch.StartNew()
+            Dim _periodMs As Double = 0
+            If _instr Then
+                _periodMs = _posePeriodSw.Elapsed.TotalMilliseconds
+                _posePeriodSw.Restart()
+            End If
+            Dim _sw As System.Diagnostics.Stopwatch = If(_instr, System.Diagnostics.Stopwatch.StartNew(), Nothing)
             If Not ReferenceEquals(_skeletonPreparedForShapes, intent.Shapes) Then
                 PipelineStep_Skeleton(intent)
                 _skeletonPreparedForShapes = intent.Shapes
             End If
-            Dim _msSkel = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
+            ' ⛔ If MULTILINEA a proposito en todos los laps: con `If _instr Then a : b` el `:` deja las dos
+            ' sentencias dentro del Then (semantica correcta de VB), pero si alguna vez alguien reformatea
+            ' eso mal, `_sw.Restart()` corre con `_sw = Nothing` ⇒ NullReference en CADA frame de release.
+            ' No vale la pena ahorrar dos lineas a cambio de ese riesgo.
+            Dim _msSkel As Double = 0
+            If _instr Then
+                _msSkel = _sw.Elapsed.TotalMilliseconds
+                _sw.Restart()
+            End If
 
             ' Dirty-mesh list — only for shapes the caller marked dirty.
             ' Empty DirtyShapes (default) means "all shapes" (back-compat single-actor flow).
@@ -755,7 +774,11 @@ Public Class PreviewControl
             If needsMorphUpdate Then
                 PipelineStep_Morphs(intent, dirtyMeshes)
             End If
-            Dim _msMorph = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
+            Dim _msMorph As Double = 0
+            If _instr Then
+                _msMorph = _sw.Elapsed.TotalMilliseconds
+                _sw.Restart()
+            End If
 
             ' Recompute bone matrices + GPU upload.
             ' Two-pass split (mismo patrón que LoadShapesParallel → Setup_GL):
@@ -786,7 +809,11 @@ Public Class PreviewControl
                     globalCaches(inst) = inst.BuildGlobalTransformCacheForRenderPass()
                 End If
             Next
-            Dim _msCache = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
+            Dim _msCache As Double = 0
+            If _instr Then
+                _msCache = _sw.Elapsed.TotalMilliseconds
+                _sw.Restart()
+            End If
 
             ' --- Pasada 1: CPU (paralela) -------------------------------------------------
             ' RecomputeGPUBoneMatrices + ComputeBounds escriben SOLO el geo de su propio mesh
@@ -831,27 +858,51 @@ Public Class PreviewControl
 
                     If computeBoundsThisFrame Then mesh.ComputeBounds()
                 End Sub)
-            Dim _msPass1 = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
+            Dim _msPass1 As Double = 0
+            If _instr Then
+                _msPass1 = _sw.Elapsed.TotalMilliseconds
+                _sw.Restart()
+            End If
 
             ' --- Pasada 2: GL (serial) ----------------------------------------------------
             ' Timer separado en 3: skinCompute (world-transform + invert 3×3/vértice) + skinUpload (4
             ' BufferSubData/mesh) los acumula UpdateSkinBuffers_GL en _skinComputeMs/_skinUploadMs; ssbo
             ' (matrices de hueso — desperdicio en CPU-skin) es el segundo loop. Loops separados = mismo
             ' resultado (cada uno escribe buffers independientes por mesh).
-            _skinComputeMs = 0 : _skinUploadMs = 0 : _skinDirtyMs = 0 : _skinCtxMs = 0 : _skinBoundsMs = 0 : _skinMaskMs = 0
-            Dim _gc0Before = GC.CollectionCount(0)   ' Gen0 GCs durante el loop skin (los arrays alocan ~28MB/frame)
+            Dim _gc0Before As Integer = 0
+            If _instr Then
+                _skinComputeMs = 0 : _skinUploadMs = 0 : _skinDirtyMs = 0 : _skinCtxMs = 0 : _skinBoundsMs = 0 : _skinMaskMs = 0
+                _gc0Before = GC.CollectionCount(0)   ' Gen0 GCs durante el loop skin (los arrays alocan ~28MB/frame)
+            End If
             Dim _skinFuncMs As Double = 0            ' tiempo de la función entera (vs el wall del loop = overhead/GC entre meshes)
-            For Each mesh In dirtyMeshes
-                Dim _swM = System.Diagnostics.Stopwatch.StartNew()
-                mesh.UpdateSkinBuffers_GL(recomputeBounds:=False)   ' pose path: bounds los maneja la línea gateada del pass 1
-                _skinFuncMs += _swM.Elapsed.TotalMilliseconds
-            Next
-            Dim _msSkin = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
-            Dim _gc0 = GC.CollectionCount(0) - _gc0Before
+            ' ⛔ EL LOOP TENIA UN `Stopwatch.StartNew()` POR MALLA, sin gate, y `_skinFuncMs` no lo lee nadie
+            ' salvo el [RENDER-MS]. Con el flag apagado ahora el loop es el loop pelado.
+            If _instr Then
+                For Each mesh In dirtyMeshes
+                    Dim _swM = System.Diagnostics.Stopwatch.StartNew()
+                    mesh.UpdateSkinBuffers_GL(recomputeBounds:=False)   ' pose path: bounds los maneja la línea gateada del pass 1
+                    _skinFuncMs += _swM.Elapsed.TotalMilliseconds
+                Next
+            Else
+                For Each mesh In dirtyMeshes
+                    mesh.UpdateSkinBuffers_GL(recomputeBounds:=False)
+                Next
+            End If
+            Dim _msSkin As Double = 0
+            Dim _gc0 As Integer = 0
+            If _instr Then
+                _msSkin = _sw.Elapsed.TotalMilliseconds
+                _sw.Restart()
+                _gc0 = GC.CollectionCount(0) - _gc0Before
+            End If
             For Each mesh In dirtyMeshes
                 mesh.UpdateBoneMatricesSSBO()
             Next
-            Dim _msSsbo = _sw.Elapsed.TotalMilliseconds : _sw.Restart()
+            Dim _msSsbo As Double = 0
+            If _instr Then
+                _msSsbo = _sw.Elapsed.TotalMilliseconds
+                _sw.Restart()
+            End If
 
             If needsMorphUpdate Then
                 Model.MarkRenderBucketsDirty()
@@ -860,11 +911,12 @@ Public Class PreviewControl
             RefreshRender()
             ' present solo es síncrono (y por lo tanto medible aquí) en PlayingAnimation; en scrub
             ' RefreshRender solo hace Invalidate (el draw real es diferido a OnPaint) → ~0 acá.
-            Dim _msPresent = _sw.Elapsed.TotalMilliseconds
+            Dim _msPresent As Double = 0
+            If _instr Then _msPresent = _sw.Elapsed.TotalMilliseconds
             Dim _scMs As Double = _skinComputeMs : Dim _suMs As Double = _skinUploadMs : Dim _sdMs As Double = _skinDirtyMs   ' snapshot p/ el closure
             Dim _sfMs As Double = _skinFuncMs : Dim _gc0n As Integer = _gc0 : Dim _sctxMs As Double = _skinCtxMs
             Dim _sbMs As Double = _skinBoundsMs : Dim _smMs As Double = _skinMaskMs
-            If Logger.Enabled Then
+            If _instr Then
                 Logger.LogLazy(Function() $"[RENDER-MS] period={_periodMs:F2} meshes={dirtyMeshes.Count} skel={_msSkel:F2} morph={_msMorph:F2} cache={_msCache:F2} pass1={_msPass1:F2} ctx={_sctxMs:F2} skinCompute={_scMs:F2} skinUpload={_suMs:F2} skinDirty={_sdMs:F2} skinBounds={_sbMs:F2} skinMask={_smMs:F2} skinFunc={_sfMs:F2} skin={_msSkin:F2} gc0={_gc0n} ssbo={_msSsbo:F2} present={_msPresent:F2} total={(_msSkel + _msMorph + _msCache + _msPass1 + _msSkin + _msSsbo + _msPresent):F2} play={playingNow} cpuSkin={cpuSkinMode}")
             End If
 
@@ -2190,9 +2242,14 @@ Public Class PreviewModel
         Public Sub UpdateSkinBuffers_GL(Optional recomputeBounds As Boolean = True)
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
             ' Detect skinning mode change: if the toggle changed since last upload, force ALL dirty
-            Dim _swCtx = System.Diagnostics.Stopwatch.StartNew()
+            ' [RENDER-MS] instrumentacion — gateada por Logger.Enabled. Esta funcion corre POR MALLA POR
+            ' FRAME, asi que los dos `Stopwatch.StartNew()` que tenia (este y `_swSkinPhase`) eran DOS
+            ' allocations por malla por frame, incondicionales, y sus acumuladores (`_skin*Ms`) no los lee
+            ' nadie salvo el `[RENDER-MS]` de RenderShapes. Se toma el flag UNA vez por llamada.
+            Dim _instr As Boolean = Logger.Enabled
+            Dim _swCtx As System.Diagnostics.Stopwatch = If(_instr, System.Diagnostics.Stopwatch.StartNew(), Nothing)
             Me.ParentModel.ParentControl.EnsureContextCurrent()
-            ParentModel.ParentControl._skinCtxMs += _swCtx.Elapsed.TotalMilliseconds
+            If _instr Then ParentModel.ParentControl._skinCtxMs += _swCtx.Elapsed.TotalMilliseconds
             Dim gpuMode As Boolean = Config_App.Current.Setting_GPUSkinning
             If gpuMode <> _lastUploadWasGPU Then
                 _lastUploadWasGPU = gpuMode
@@ -2210,7 +2267,8 @@ Public Class PreviewModel
 
                 ' O3.1: Smart threshold — full BufferSubData upload when >60% vertices are dirty
                 If MeshData.Meshgeometry.dirtyVertexIndices.Count > vertexCount * 0.6 Then
-                    Dim _swSkinPhase = System.Diagnostics.Stopwatch.StartNew()   ' [RENDER-MS] compute vs upload
+                    ' [RENDER-MS] compute vs upload — gateado (ver la nota del tope de la funcion).
+                    Dim _swSkinPhase As System.Diagnostics.Stopwatch = If(_instr, System.Diagnostics.Stopwatch.StartNew(), Nothing)
                     Dim posF(vertexCount - 1) As Vector3
                     Dim nrmF(vertexCount - 1) As Vector3
                     Dim tanF(vertexCount - 1) As Vector3
@@ -2290,7 +2348,10 @@ Public Class PreviewModel
                                                             End Sub
                         If vertexCount >= 2000 Then Parallel.For(0, vertexCount, gpuBody) Else For i = 0 To vertexCount - 1 : gpuBody(i) : Next
                     End If
-                    ParentModel.ParentControl._skinComputeMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
+                    If _instr Then
+                        ParentModel.ParentControl._skinComputeMs += _swSkinPhase.Elapsed.TotalMilliseconds
+                        _swSkinPhase.Restart()
+                    End If
 
                     GL.BindBuffer(BufferTarget.ArrayBuffer, vboPosition)
                     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, totalBytes, posF)
@@ -2305,24 +2366,33 @@ Public Class PreviewModel
                     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, totalBytes, bitanF)
 
                     GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
-                    ParentModel.ParentControl._skinUploadMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
+                    If _instr Then
+                        ParentModel.ParentControl._skinUploadMs += _swSkinPhase.Elapsed.TotalMilliseconds
+                        _swSkinPhase.Restart()
+                    End If
 
                     ' Clear all dirty flags since everything was updated
                     For Each i As Integer In MeshData.Meshgeometry.dirtyVertexIndices
                         MeshData.Meshgeometry.dirtyVertexFlags(i) = False
                     Next
                     MeshData.Meshgeometry.dirtyVertexIndices.Clear()
-                    ParentModel.ParentControl._skinDirtyMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
+                    If _instr Then
+                        ParentModel.ParentControl._skinDirtyMs += _swSkinPhase.Elapsed.TotalMilliseconds
+                        _swSkinPhase.Restart()
+                    End If
 
                     ' Also recompute bounds after full update — SALVO cuando el caller ya los maneja.
                     ' En el pose path los computa la línea gateada del pass 1 ('If computeBoundsThisFrame
                     ' Then mesh.ComputeBounds()'); incondicional acá bypasseaba ese gate Y Option B en CPU
                     ' (ComputeBounds→GetWorldVertices = pasada per-vértice a mundo, 8.9ms/frame medido).
                     If recomputeBounds Then Me.ComputeBounds()
-                    ParentModel.ParentControl._skinBoundsMs += _swSkinPhase.Elapsed.TotalMilliseconds : _swSkinPhase.Restart()
+                    If _instr Then
+                        ParentModel.ParentControl._skinBoundsMs += _swSkinPhase.Elapsed.TotalMilliseconds
+                        _swSkinPhase.Restart()
+                    End If
 
                     UpdateUpdateSkinBuffersMask_GL()
-                    ParentModel.ParentControl._skinMaskMs += _swSkinPhase.Elapsed.TotalMilliseconds
+                    If _instr Then ParentModel.ParentControl._skinMaskMs += _swSkinPhase.Elapsed.TotalMilliseconds
                     Return
                 End If
 

@@ -15,7 +15,46 @@ Imports System.Threading
 ''' los call sites en hot paths ya no serializan ni esperan I/O.
 ''' </summary>
 Public NotInheritable Class Logger
-    Public Shared Property Enabled As Boolean = False
+    ''' <summary>⭐ EN RELEASE ESTO NO SE PUEDE PRENDER. El setter DESCARTA cualquier <c>True</c> en un build
+    ''' Release, asi que el logging (y todo lo que se gatea por <c>Logger.Enabled</c>) queda apagado por
+    ''' CONSTRUCCION y no por que nadie se haya acordado de poner un <c>#If DEBUG</c> en el arranque.
+    ''' <para>Motivo: <c>Logger.Enabled</c> no gobierna solo la escritura del archivo — es la compuerta de todos
+    ''' los CALCULOS de diagnostico del codigo (censos por malla, histogramas, dumps por vertice). Un solo
+    ''' <c>Logger.Enabled = True</c> perdido en un camino de release los enciende TODOS.</para>
+    ''' <para>La UNICA forma de tener logging en Release es <see cref="AllowInReleaseBuilds"/>, que es explicita,
+    ''' esta documentada y solo la usan las HERRAMIENTAS de linea de comandos. Ninguna de las tres apps
+    ''' (NPC Manager, Wardrobe Manager, la libreria) la toca.</para></summary>
+    Public Shared Property Enabled As Boolean
+        Get
+            Return _enabled
+        End Get
+        Set(value As Boolean)
+#If DEBUG Then
+            _enabled = value
+#Else
+            _enabled = value AndAlso _allowInRelease
+#End If
+        End Set
+    End Property
+    Private Shared _enabled As Boolean = False
+
+    ''' <summary>⛔ ESCAPE HATCH SOLO PARA HERRAMIENTAS CLI, no para las apps. Habilita que
+    ''' <see cref="Enabled"/> acepte <c>True</c> en un build Release.
+    ''' <para>Existe porque el CLI (<c>FO4_FaceTint_CLI --buildfacegen</c>) usa <c>Logger.Enabled</c> como
+    ''' interruptor SEMANTICO y no solo de log: <c>FaceGenBuilder.DebugMode</c> lo lee y de el sale el sufijo
+    ''' <c>_2</c> del sandbox. Con el logger forzado a False en Release, ese barrido escribiria los nombres
+    ''' CANONICOS y PISARIA el bake del CK — que es justamente la referencia contra la que compara. Apagarlo sin
+    ''' esta valvula seria un cambio destructivo, no una optimizacion.</para>
+    ''' Se setea ANTES de tocar <see cref="Enabled"/> (si no, el setter ya descarto el valor).</summary>
+    Public Shared Property AllowInReleaseBuilds As Boolean
+        Get
+            Return _allowInRelease
+        End Get
+        Set(value As Boolean)
+            _allowInRelease = value
+        End Set
+    End Property
+    Private Shared _allowInRelease As Boolean = False
 
     Private Shared _writer As StreamWriter
     Private Shared ReadOnly _queue As New ConcurrentQueue(Of String)

@@ -644,6 +644,29 @@ Public Module FaceTintCpuCompositor
     ''' techo esta costando re-decodes, y eso hay que poder verlo en vez de deducirlo del reloj.</summary>
     Private _batchCacheRejected As Integer = 0
 
+    ''' <summary>⭐ POLITICA UNICA del techo de los caches de decode del compositor CPU, resuelta desde el
+    ''' ENTORNO. Estaba INLINE en <c>BakeAllRunner</c> y ahora vive acá porque hay MAS DE UN cache que
+    ''' obedece el mismo techo (el batch de acá y los de <c>SseFaceTintComposer</c>): con la derivacion
+    ''' duplicada, los numeros se habrian separado en silencio.
+    ''' <para>Contrato (idéntico al que ya tenía el runner, sin cambiar un valor):
+    ''' env ausente ⇒ 25 % de la memoria disponible acotado a [512 MB, 4 GB]; env = "0" (o no numérica)
+    ''' ⇒ SIN techo (comportamiento histórico, sirve de baseline); env > 0 ⇒ ese valor en MB
+    ''' (reproducible entre máquinas, para comparar corridas).</para>
+    ''' <para>⛔ Los tres números viven ACA Y SOLO ACA. No re-derivarlos en ningún call site.</para></summary>
+    Public Function ResolveDecodeCacheBudgetFromEnvironment() As (Bytes As Long, Reason As String)
+        Dim raw = If(Environment.GetEnvironmentVariable("FGBAKE_DECODE_CACHE_MB"), "").Trim()
+        If raw = "" Then
+            Dim avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes
+            Dim b = CLng(avail * 0.25)
+            b = Math.Max(512L * 1024L * 1024L, Math.Min(4096L * 1024L * 1024L, b))
+            Return (b, $"Decode cache: techo {b \ (1024L * 1024L)} MB = 25% de {avail \ (1024L * 1024L)} MB disponibles")
+        End If
+        Dim mb As Integer = -1
+        If Not Integer.TryParse(raw, mb) Then mb = -1
+        If mb > 0 Then Return (CLng(mb) * 1024L * 1024L, $"Decode cache: {mb} MB ceiling (set by FGBAKE_DECODE_CACHE_MB)")
+        Return (0L, "Decode cache: NO ceiling (FGBAKE_DECODE_CACHE_MB=0, historical behaviour)")
+    End Function
+
     ''' <summary>Bytes vivos y rechazos del cache batch, para el log del runner.</summary>
     Public Function BatchDecodeCacheStats() As (Bytes As Long, Rejected As Integer)
         Return (Threading.Interlocked.Read(_batchCacheBytes), Threading.Volatile.Read(_batchCacheRejected))
@@ -671,6 +694,13 @@ Public Module FaceTintCpuCompositor
     ''' = comportamiento gen3. Bodyparts: pasar Nothing (fuerzan heredar; el enum es solo para la cara).</param>
     ''' <param name="diffuseKey">Keys de las texturas source (path estable) para cachear su decode entre
     ''' clones cuando BatchDecodeCache esta activo. Nothing = no cachear el source (se decodifica directo).</param>
+    ''' <param name="decodeCache">⭐ Cache de decode PROPIEDAD DEL CALLER, con la vida que el caller decida.
+    ''' Es el equivalente CPU del <c>TintGpuCache</c> per-host del camino GL: el RENDER en modo CPU recompone la
+    ''' cara entera en cada refresh de edicion viva, y sin esto cada refresh vuelve a decodificar por DirectXTex
+    ''' TODAS las DDS (source D/N/S + cada capa + cada mascara de swap) que el camino GPU ya tenia residentes.
+    ''' Tiene PRIORIDAD sobre <see cref="BatchDecodeCache"/> — se pasa explicito justamente para no pisar el
+    ''' global del batch, que puede estar corriendo en otro hilo. Nothing = comportamiento previo.
+    ''' No puede cambiar la salida: el valor cacheado es funcion PURA de (bytes, tamaño destino).</param>
     Public Function ComposeCpuPipeline(diffuseBytes As Byte(), normalBytes As Byte(), specBytes As Byte(),
                                        layers As IList(Of FaceTintLayerInput),
                                        swaps As IList(Of FaceRegionSwapInput),
@@ -678,14 +708,27 @@ Public Module FaceTintCpuCompositor
                                        Optional diffuseKey As String = Nothing,
                                        Optional normalKey As String = Nothing,
                                        Optional specKey As String = Nothing,
-                                       Optional headDiffuseAlphaTest As Boolean = False) As CpuPipelineResult
+                                       Optional headDiffuseAlphaTest As Boolean = False,
+                                       Optional decodeCache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex) = Nothing) As CpuPipelineResult
         Dim res As New CpuPipelineResult()
-        ' BatchDecodeCache (si activo) reusa decodes entre clones; si no, dict per-call (1 cara).
-        Dim cache = If(BatchDecodeCache, New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase))
+        ' Prioridad: cache del caller (render) -> BatchDecodeCache (batch de bakes) -> dict per-call (1 cara).
+        Dim cache = If(decodeCache, If(BatchDecodeCache, New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)))
         res.Diffuse = ComposeChannelCpu(diffuseBytes, FaceTintChannel.Diffuse, layers, swaps, cache, resolution, diffuseKey, headDiffuseAlphaTest)
         res.Normal = ComposeChannelCpu(normalBytes, FaceTintChannel.Normal, layers, swaps, cache, resolution, normalKey)
         res.Specular = ComposeChannelCpu(specBytes, FaceTintChannel.Specular, layers, swaps, cache, resolution, specKey)
         Return res
+    End Function
+
+    ''' <summary>Decode cacheado contra un cache PROPIEDAD DEL CALLER (mismo contrato que el parametro
+    ''' <c>decodeCache</c> de <see cref="ComposeCpuPipeline"/>). <paramref name="cache"/> Nothing o
+    ''' <paramref name="key"/> vacio ⇒ decode directo, sin retener nada. Existe para que los caminos que
+    ''' decodifican UNA textura suelta (el complexion del fold SSE, p.ej.) puedan compartir el MISMO cache
+    ''' per-NPC que el compose, en vez de re-decodificar la textura mas grande de la cara en cada refresh.</summary>
+    Public Function DecodeDdsCached(cache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex),
+                                    key As String, bytes As Byte(),
+                                    Optional preferW As Integer = 0, Optional preferH As Integer = 0) As DecodedTex
+        If cache Is Nothing OrElse String.IsNullOrEmpty(key) Then Return DecodeDds(bytes, preferW, preferH)
+        Return CachedDecode(cache, key, bytes, preferW, preferH)
     End Function
 
     ''' <summary>Decode cacheado. preferW/H>0 -> usa el MIP de ese tamaño (key suffix @WxH para no chocar

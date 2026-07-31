@@ -89,22 +89,49 @@ Public Module SseFaceTintComposer
     ' Per-race+gender ORDERED tint-layer list cache (identical across NPCs of the same race). The engine
     ' composes cb2[0..15] in this RACE order (builder @0x18C9F40). Keyed "<raceFid><F|M>".
     Private ReadOnly _layersCache As New ConcurrentDictionary(Of String, List(Of SseTintMask))
-    ' Decoded+resized mask cache at 512² (race-shared masks decode once across a batch). Keyed by dict path.
+    ' RESULTADO (decode + resize) cacheado por (path, TAMAÑO DESTINO, color/normal) — las máscaras compartidas
+    ' del RACE se decodifican y resamplean UNA vez por tamaño. ⛔ La key llevaba SOLO el path, y para no servir
+    ' un buffer del tamaño equivocado el código restringía el caché a 512² con cuatro guardas: o sea que el fold
+    ' (que compone a la resolución NATIVA del complexion) no podía cachear NUNCA, y el camino no-plegado perdía
+    ' el caché apenas el usuario elegía otra resolución en CharGen Options. Ver DecodeMask.
     Private ReadOnly _texCache As New ConcurrentDictionary(Of String, Single())(StringComparer.OrdinalIgnoreCase)
-    ' FUENTE decodificada por (path, target) — para targets != 512² (el fold SSE compone a la resolución NATIVA
-    ' del complexion, p.ej. 4096² con COtR) cada fold re-leía (GetBytes) y re-decodeaba (DirectXTex) TODAS las
-    ' máscaras del RACE. Acá se cachea el DECODE de la fuente (al mip que DecodeDds elige para ese target — por
-    ' eso el target integra la key); el RESAMPLE al target NO se cachea (4096² ≈ 537 MB de Double por máscara,
-    ' inviable retenerlo) pero corre paralelo en DecodeMask. Nothing cacheado = archivo ausente/indecodificable.
-    Private ReadOnly _texSrcCache As New ConcurrentDictionary(Of String, FaceTintCpuCompositor.DecodedTex)(StringComparer.OrdinalIgnoreCase)
     ' Resolved CLFM formID -> linear RGB [0,1] (race-default colours), cached.
     Private ReadOnly _clfmCache As New ConcurrentDictionary(Of UInteger, Double())
+
+    ' ⛔ ESTOS CACHES **NO** CONSULTAN EL TECHO (`BatchDecodeCacheBudgetBytes`), A PROPOSITO — misma decision
+    ' que del lado FO4, donde `CachedDecode` saltea el presupuesto con `Not ReferenceEquals(cache,
+    ' BatchDecodeCache)` para todo cache que no sea el del batch.
+    ' POR QUE: su vida es PER-NPC (ver ClearTextureCaches). Rechazar una entrada en un cache per-NPC no ahorra
+    ' nada duradero — garantiza el re-decode/re-resample DENTRO DEL MISMO NPC, o sea exactamente durante la
+    ' edicion viva, que es el caso para el que el cache existe. Lo que acota la memoria aca es la VIDA, no un
+    ' presupuesto.
+    ' (Hubo una version intermedia con admision por presupuesto: se escribio ANTES de fijar la vida per-NPC,
+    '  para reemplazar los limites accidentales que se estaban sacando —el gate de 512² y el literal de 4 MB—
+    '  y quedo mal encajada apenas la vida paso a ser per-NPC. No re-proponerla.)
+
+    ''' <summary>⭐ Suelta el caché de TEXTURA — el que pesa: el resultado decodificado+resampleado
+    ''' (<see cref="_texCache"/>).
+    ''' <para><b>VIDA PER-NPC, igual que <c>ClearFaceTintCaches</c> del lado FO4</b>: se conservan entre
+    ''' recargas del MISMO NPC —para que la edicion viva siga siendo rapida al segundo click— y se sueltan al
+    ''' cambiar de NPC raiz. Las mascaras del RACE son compartidas entre NPCs de esa raza, asi que soltarlas
+    ''' cuesta re-decode+re-resample en el proximo cambio; se paga a proposito para que la app no acumule
+    ''' memoria navegando (decision explicita: la app corre SIN techo de presupuesto).</para>
+    ''' <para>⛔ NO toca <see cref="_layersCache"/> ni <see cref="_clfmCache"/>: son datos de RECORD (lista
+    ''' ordenada de capas por raza+genero, CLFM→RGB), no pesan y re-parsearlos en cada cambio de NPC seria
+    ''' churn puro. Su vida es la del LOAD ORDER y la maneja <see cref="ClearCaches"/>. Es el mismo reparto que
+    ''' del lado FO4, donde <c>ClearFaceTintCaches</c> suelta bytes/GL/decodes y los caches de PARSE los suelta
+    ''' <c>InvalidateParseCaches</c>.</para>
+    ''' <para>⛔ El BARRIDO del bake NO pasa por aca (llama a <c>BuildCharGen</c> directo, no al camino de load
+    ''' del render), asi que ahi la reutilizacion entre NPCs de la misma raza se conserva — que es justo donde
+    ''' mas rinde.</para></summary>
+    Public Sub ClearTextureCaches()
+        _texCache.Clear()
+    End Sub
 
     ''' <summary>Drop the per-race layer + decoded-texture + CLFM caches (call on FilesDictionary rebuild).</summary>
     Public Sub ClearCaches()
         _layersCache.Clear()
-        _texCache.Clear()
-        _texSrcCache.Clear()
+        ClearTextureCaches()
         _clfmCache.Clear()
     End Sub
 
@@ -647,7 +674,9 @@ Public Module SseFaceTintComposer
     End Function
 
     ''' <summary>Decode a mask texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear).
-    ''' Cached at 512². Nothing when the file is missing/undecodable.</summary>
+    ''' Cached at ANY size — la clave lleva el tamaño destino, así que no hay ningún tamaño hardcodeado; lo que
+    ''' acota la memoria es la VIDA del caché (per-NPC, ver <see cref="ClearTextureCaches"/>), no un
+    ''' presupuesto. Nothing when the file is missing/undecodable.</summary>
     ''' <param name="asNormalMap">True ⇒ la fuente se interpreta como VECTOR: si trae 2 canales se despeja el eje
     ''' Z tras el resample (ver <see cref="DecodeNormalRgba"/>). False (default) = comportamiento previo, sin tocar
     ''' un solo byte de ningún caller existente.</param>
@@ -655,38 +684,40 @@ Public Module SseFaceTintComposer
                                 Optional asNormalMap As Boolean = False) As Single()
         Dim key = NormalizeTextureKey(texPath)   ' ⭐ MISMA normalización que el camino GPU (ver NormalizeTextureKey)
         If String.IsNullOrEmpty(key) Then Return Nothing
-        ' Namespace de caché separado para el decode vectorial (ver DecodeNormalRgba): mismo path, otro contenido.
-        Dim ckey = If(asNormalMap, key & "|nrm", key)
+        ' ⭐⭐ LA CLAVE ES LA IDENTIDAD COMPLETA DEL VALOR: path + TAMAÑO DESTINO + namespace color/normal.
+        ' ⛔ ANTES la clave era solo (path[, |nrm]) — le FALTABA el tamaño, aunque el valor devuelto depende de
+        ' el. Para no servir un buffer del tamaño equivocado con una clave incompleta, el codigo restringia el
+        ' dominio a UN solo tamaño con cuatro guardas `w = 512 AndAlso h = 512`, y 512 se eligio por ser el del
+        ' facetint vanilla. O sea: el 512 no era un dato del motor, era un PARCHE de la clave incompleta.
+        ' Consecuencias, las dos SILENCIOSAS:
+        '   · el camino PLEGADO (que compone a la resolucion nativa del complexion) no podia pegarle al cache
+        '     NUNCA, por construccion;
+        '   · el camino NO plegado perdia el cache apenas el usuario elegia en CharGen Options cualquier
+        '     resolucion que no diera 512 (ResolveResolutionSize devuelve `512 << (n-1)`).
+        ' Con el tamaño en la clave las cuatro guardas DESAPARECEN — no se reemplazan por otro umbral — y el
+        ' cache funciona a cualquier resolucion. Es el esquema que la caché de fuentes de esta misma funcion
+        ' (`_texSrcCache`, ya eliminada) usaba desde el principio; lo unico que se hizo fue dejar de tener dos
+        ' esquemas de clave distintos conviviendo.
+        Dim ckey = $"{key}|{w}x{h}" & If(asNormalMap, "|nrm", "")
         Dim cached As Single() = Nothing
-        If w = 512 AndAlso h = 512 AndAlso _texCache.TryGetValue(ckey, cached) Then Return cached
-        ' Fuente decodificada, cacheada por (path, target) — ver _texSrcCache. La elección de mip de DecodeDds
-        ' depende del target ⇒ el target integra la key. El miss (Nothing) también se cachea (archivo ausente).
-        ' Fuentes grandes (> 1024² tras elegir mip) no se retienen. El techo se expresa en ELEMENTOS (W·H·4), así
-        ' que el criterio no cambió al angostar el storage a Byte; lo que bajó es lo que cuesta cada entrada
-        ' retenida: 4 MB en vez de los 16 MB de Single (32 MB cuando esto era Double).
-        Dim srcKey = $"{key}|{w}x{h}"
-        Dim t As FaceTintCpuCompositor.DecodedTex = Nothing
-        If Not _texSrcCache.TryGetValue(srcKey, t) Then
-            Dim b = FilesDictionary_class.GetBytes(key)
-            t = If(b Is Nothing, Nothing, FaceTintCpuCompositor.DecodeDds(b, w, h))
-            If t IsNot Nothing AndAlso t.Rgba8 Is Nothing Then t = Nothing
-            ' A 512² la entrada de _texSrcCache es INALCANZABLE como hit, por construcción: toda llamada 512²
-            ' o pega en _texCache y retorna arriba (sin llegar acá), o falla — y como ambas cachés se pueblan
-            ' SIEMPRE juntas en este camino (:524 y :543 cubren miss y éxito), un miss de _texCache implica un
-            ' miss de _texSrcCache. Retenerla sólo duplicaba lo que ya guarda _texCache (medido: 0 hits/156
-            ' misses, 108/108 entradas byte-idénticas ⇒ 864 MB de duplicación exacta). Para targets != 512²
-            ' (fold a resolución nativa del complexion, p.ej. 4096²) _texCache no participa y ésta es la ÚNICA
-            ' caché: ahí sí se retiene, que es el caso para el que se creó.
-            Dim isRedundantAt512 = (w = 512 AndAlso h = 512)
-            If Not isRedundantAt512 AndAlso (t Is Nothing OrElse t.Rgba8.Length <= 1024 * 1024 * 4) Then _texSrcCache(srcKey) = t
-        End If
+        ' Incluye el NEGATIVO (entrada Nothing = archivo ausente/indecodificable a este tamaño): cuesta 0 bytes
+        ' y evita re-pedirle el archivo al FilesDictionary en cada capa de cada cara.
+        If _texCache.TryGetValue(ckey, cached) Then Return cached
+        ' ⛔ SACADO: `_texSrcCache`, la caché del DECODE de la fuente por (path, target). Existía porque
+        ' `_texCache` sólo retenía a 512², así que a cualquier otro tamaño era la ÚNICA caché. Con `_texCache`
+        ' funcionando a todo tamaño quedó INALCANZABLE como hit: las dos se poblaban y se limpiaban juntas y no
+        ' hay evicción, así que un miss de `_texCache` implica siempre un miss del source. Es el mismo argumento
+        ' que el código ya hacía para el caso 512² (`isRedundantAt512`, medido: 0 hits/156 misses, 864 MB de
+        ' duplicación exacta) — ahora vale para todos los tamaños. Era código muerto, no una capa de respaldo.
+        Dim b = FilesDictionary_class.GetBytes(key)
+        Dim t As FaceTintCpuCompositor.DecodedTex = If(b Is Nothing, Nothing, FaceTintCpuCompositor.DecodeDds(b, w, h))
+        If t IsNot Nothing AndAlso t.Rgba8 Is Nothing Then t = Nothing
         If t Is Nothing Then
-            If w = 512 AndAlso h = 512 Then _texCache(ckey) = Nothing
+            ' NEGATIVO: no vuelve a pedirle el archivo al FilesDictionary ni a intentar el decode para esta
+            ' terna. Cuesta 0 bytes.
+            _texCache(ckey) = Nothing
             Return Nothing
         End If
-        ' ⭐ `_texSrcCache` SE COMPARTE entre el decode de color y el vectorial a propósito: la DecodedTex es la
-        ' fuente CRUDA y ahora lleva su propio `Channels`, así que las dos interpretaciones salen del MISMO decode
-        ' (el caro). Lo que se separa es sólo la caché del buffer YA empaquetado (`ckey`), que sí difiere.
         Dim needsZ As Boolean = asNormalMap AndAlso t.Channels < 3
         Dim outp(w * h * 4 - 1) As Single
         ' ⭐ IDENTIDAD: si la fuente ya está en el tamaño pedido, el bilineal de abajo devuelve exactamente el
@@ -695,9 +726,9 @@ Public Module SseFaceTintComposer
         ' así que x0=x, tx=0 y la fórmula colapsa a (p00·1 + p10·0)·1 + (…)·0 = p00. Ídem en y. Es la misma
         ' salida bit a bit, sin la pasada. Sus dos gemelos del compositor FO4 (ResampleBgra /
         ' ResampleRgbaFloat) ya traían este corto; éste no lo tenía, y 512²→512² es el caso NORMAL en SSE.
-        ' ⛔ Se COPIA, no se aliasea t.Rgba8: el array devuelto puede terminar en _texCache y en manos de
-        ' varios consumidores, mientras que t vive en _texSrcCache con otro ciclo de vida. Aliasarlos dejaría
-        ' que una mutación río abajo corrompiera la caché de fuentes. (Contrato idéntico al de hoy: el
+        ' ⛔ Se COPIA (expande), no se aliasea t.Rgba8: `outp` es Single en unidad [0,1] y `t.Rgba8` es Byte
+        ' crudo, o sea que ni siquiera son el mismo tipo — pero además el array devuelto termina en _texCache y
+        ' en manos de varios consumidores, así que tiene que ser suyo. (Contrato idéntico al de siempre: el
         ' bilineal también devolvía un array fresco.)
         If t.Width = w AndAlso t.Height = h AndAlso t.Rgba8.Length = outp.Length Then
             ' ⛔ NO Array.Copy: la fuente es Byte() crudo (0..255) y el destino es la unidad [0,1]. Array.Copy
@@ -709,7 +740,7 @@ Public Module SseFaceTintComposer
                 outp(i) = lut(srcArr(i))
             Next
             If needsZ Then FaceTintCpuCompositor.ReconstructNormalZ(outp, w * h)
-            If w = 512 AndAlso h = 512 Then _texCache(ckey) = outp
+            _texCache(ckey) = outp
             Return outp
         End If
         ' Resample bilineal PARALELO por filas (misma fórmula, cada fila escribe sólo sus índices ⇒ bit-idéntico).
@@ -729,7 +760,7 @@ Public Module SseFaceTintComposer
                                                   End Sub)
         ' DESPUÉS del resample, igual que el hardware (se samplea el BC5 filtrado y recién ahí se despeja z).
         If needsZ Then FaceTintCpuCompositor.ReconstructNormalZ(outp, w * h)
-        If w = 512 AndAlso h = 512 Then _texCache(ckey) = outp
+        _texCache(ckey) = outp
         Return outp
     End Function
 
