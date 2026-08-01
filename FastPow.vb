@@ -484,6 +484,75 @@ Public Module FastPow
         Return Vector.ConditionalSelect(Vector.Equals(y, y), res, y)
     End Function
 
+    ' =====================================================================================================
+    ' RAIZ CUBICA — el primitivo que faltaba para vectorizar la inversa del soft-light W3C.
+    ' =====================================================================================================
+    ' POR QUE ESTA ACA Y NO SE USA MathF.Cbrt: la inversa de W3C con s >= 0,5 y d < 0,25 es una CUBICA, y su
+    ' unica raiz real sale por Cardano, que pide cbrt. `MathF.Cbrt` no tiene contraparte en `Vector(Of T)` ⇒
+    ' el espejo vectorial no podria ser BIT-IDENTICO al escalar, que es el contrato de este modulo.
+    '
+    ' ⛔ NO se puede resolver con PowVar(x, 1/3): PowVar ACOTA la base a [0,1] (devuelve 0 por debajo y 1 por
+    ' encima) y el argumento de Cardano es de signo cualquiera y modulo arbitrario.
+    '
+    ' LA LEY: estimacion inicial por el truco de bits + CUATRO pasos de Newton sobre y³ = a. La estimacion NO
+    ' necesita ser precisa —solo IDENTICA en los dos caminos—, asi que el `bits/3` se aproxima con SHIFTS
+    ' (1/4 + 1/16 + 1/64 + 1/256 = 0,33203), que es lo unico que `Vector(Of Integer)` sabe hacer sin division.
+    ' Con un error inicial peor que 30 % los cuatro pasos de Newton (convergencia cuadratica) llegan al ULP.
+    ' Escalar y vectorial ejecutan LA MISMA secuencia de operaciones en el MISMO orden ⇒ bit-identicos por
+    ' construccion, no por aproximacion. Lo verifica FaceTintCpuCompositor.SoftLightInverseSelfTest a traves
+    ' de la inversa de W3C, y el gate `baker` a traves del espejo escalar-vs-vectorial del unfold.
+
+    ''' <summary>Sesgo del truco de bits: <c>(127 − 127/3)·2^23</c>, o sea el ancla del exponente cuando la
+    ''' mantisa se divide por 3. Con la aproximacion por shifts el valor exacto no es critico (lo absorbe
+    ''' Newton); se deja el analitico para que la estimacion arranque centrada.</summary>
+    Private Const CBRT_MAGIC As Integer = 710235477
+    Private Const ONE_THIRD As Single = 1.0F / 3.0F
+
+    ''' <summary>Raiz cubica escalar. Espejo exacto de <see cref="CbrtV"/>. Preserva el signo (y el signo del
+    ''' cero), propaga NaN e infinitos sin tocarlos.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Public Function Cbrt1(x As Single) As Single
+        If Single.IsNaN(x) Then Return x
+        If Single.IsInfinity(x) Then Return x
+        Dim a As Single = MathF.Abs(x)
+        If a = 0.0F Then Return x
+        Dim bits As Integer = BitConverter.SingleToInt32Bits(a)
+        Dim est As Integer = (bits >> 2) + (bits >> 4) + (bits >> 6) + (bits >> 8) + CBRT_MAGIC
+        Dim y As Single = BitConverter.Int32BitsToSingle(est)
+        ' Newton sobre y³ = a: y <- (2y + a/y²)/3. CUATRO pasos, sin early-out (un early-out por lane no
+        ' existe en el vectorial ⇒ el escalar tampoco puede tenerlo o dejan de ser el mismo calculo).
+        y = (2.0F * y + a / (y * y)) * ONE_THIRD
+        y = (2.0F * y + a / (y * y)) * ONE_THIRD
+        y = (2.0F * y + a / (y * y)) * ONE_THIRD
+        y = (2.0F * y + a / (y * y)) * ONE_THIRD
+        Return If(x < 0.0F, -y, y)
+    End Function
+
+    ''' <summary>Raiz cubica de ancho variable. MISMA secuencia que <see cref="Cbrt1"/>, en el MISMO orden.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Public Function CbrtV(x As Vector(Of Single)) As Vector(Of Single)
+        Dim zero = Vector(Of Single).Zero
+        Dim two = New Vector(Of Single)(2.0F)
+        Dim third = New Vector(Of Single)(ONE_THIRD)
+        Dim a = Vector.Abs(x)
+        Dim bits = Vector.As(Of Single, Integer)(a)
+        Dim est = Vector.Add(
+            Vector.Add(Vector.ShiftRightArithmetic(bits, 2), Vector.ShiftRightArithmetic(bits, 4)),
+            Vector.Add(Vector.Add(Vector.ShiftRightArithmetic(bits, 6), Vector.ShiftRightArithmetic(bits, 8)),
+                       New Vector(Of Integer)(CBRT_MAGIC)))
+        Dim y = Vector.As(Of Integer, Single)(est)
+        y = Vector.Multiply(Vector.Add(Vector.Multiply(two, y), Vector.Divide(a, Vector.Multiply(y, y))), third)
+        y = Vector.Multiply(Vector.Add(Vector.Multiply(two, y), Vector.Divide(a, Vector.Multiply(y, y))), third)
+        y = Vector.Multiply(Vector.Add(Vector.Multiply(two, y), Vector.Divide(a, Vector.Multiply(y, y))), third)
+        y = Vector.Multiply(Vector.Add(Vector.Multiply(two, y), Vector.Divide(a, Vector.Multiply(y, y))), third)
+        y = Vector.ConditionalSelect(Vector.LessThan(x, zero), Vector.Negate(y), y)
+        ' Casos que el escalar resuelve con returns tempranos, en el MISMO orden de prioridad: cero (devuelve
+        ' x, que preserva el signo del cero), infinito y NaN.
+        y = Vector.ConditionalSelect(Vector.Equals(a, zero), x, y)
+        y = Vector.ConditionalSelect(Vector.Equals(a, New Vector(Of Single)(Single.PositiveInfinity)), x, y)
+        Return Vector.ConditionalSelect(Vector.Equals(x, x), y, x)
+    End Function
+
     ''' <summary><c>x^y</c> con exponente VARIABLE por lane (el soft-light Illusions). Split de Dekker en
     ''' runtime. Espejo de <see cref="PowVar1"/>, incluido el guard de NaN del exponente y su ORDEN.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>

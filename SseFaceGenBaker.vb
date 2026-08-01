@@ -256,8 +256,14 @@ Public Module SseFaceGenBaker
     ''' RGB; alpha intacto. Buffers [0,1] w*h*4, mismo tamaño.
     ''' ⭐ RÉPLICA EXACTA de la rama <c>uFgTintFold</c> del shader del compositor (fold GPU) — si tocás una, tocá la
     ''' otra: el sandbox _2c-vs-_2d mide esa paridad.</summary>
+    ''' <param name="softLightModelOverride">-1 (default) = el modelo sale de la CONVENCIÓN
+    ''' (<see cref="FoldSoftLightModel"/>). Un valor explícito la pisa. ⛔ Existe para los GOLDEN ABSOLUTOS,
+    ''' que miden la LEY DEL MOTOR y por lo tanto NO pueden depender de lo que el usuario elija en el bucket
+    ''' Fold: con el modelo leído del config, mover ese bucket hacía fallar <c>fold-golden</c> y ABORTABA el
+    ''' bake — MEDIDO 2026-08-01. Un golden que se mueve con una opción no es un golden.</param>
     Public Sub FoldFacetintIntoDiffuse(complexionRgba As Single(), facetintRgba As Single(), npix As Integer,
-                                       Optional detailRgba As Single() = Nothing)
+                                       Optional detailRgba As Single() = Nothing,
+                                       Optional softLightModelOverride As Integer = -1)
         If complexionRgba Is Nothing OrElse facetintRgba Is Nothing Then Return
         ' Engine EXACTO: albedo = softlight(sRGBtoLin(complexion), facetint) × amplify(detail).
         ' ⛔ CORREGIDO: antes esto estaba INVERTIDO (softlight con el detail y amplify sobre el facetint). El
@@ -274,6 +280,10 @@ Public Module SseFaceGenBaker
         ' sin acumulación cruzada) ⇒ resultado BIT-IDÉNTICO al loop serial (el mismo double-math por píxel; sólo
         ' cambia qué thread lo ejecuta). Por qué: la op lleva 2 Math.Pow por canal (Srgb2Lin+Lin2Srgb) y el fold
         ' corre a la resolución NATIVA del complexion — a 4096² (caras COtR) el serial costaba segundos por fold.
+        ' ⭐ EL MODELO DE SOFT-LIGHT, RESUELTO UNA VEZ Y ACA (no por píxel): sale del bucket Fold de la
+        ' convención. Estaba CABLEADO en 3 (pegtop) dentro de FoldOne. Default = pegtop = la ley del motor,
+        ' así que esto es byte-inerte; lo verifica el self-test `fold-golden`, cuyos golden NO se movieron.
+        Dim slModel As Integer = If(softLightModelOverride >= 0, softLightModelOverride, FoldSoftLightModel())
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, npix),
             Sub(range)
@@ -291,17 +301,20 @@ Public Module SseFaceGenBaker
                 ' ⭐ UN SOLO camino: el ancho lo elige el runtime (8 lanes con AVX2, 4 con SSE2). Antes habia
                 ' dos cuerpos DUPLICADOS a mano (V256 y V128) que habia que mantener en sincronia — y este era
                 ' el unico modulo con esa duplicacion Y sin self-test que la verificara.
+                ' ⭐ LOS CUATRO MODELOS VAN ACELERADOS. El cuerpo vectorial no tiene gate por modelo: el
+                ' dispatch compartido (BlendDispatchV → SoftLightV) los cubre a todos, Illusions incluido
+                ' (exponente variable por lane vía FastPow.PowVarV).
                 If FastPow.AcceleratedV Then
                     While (i And (lanes - 1)) <> 0 AndAlso i < hi
-                        FoldOne(complexionRgba, facetintRgba, detailRgba, i)
+                        FoldOne(complexionRgba, facetintRgba, detailRgba, i, slModel)
                         i += 1
                     End While
-                    i = FoldRangeV(complexionRgba, facetintRgba, detailRgba, i, hi)
+                    i = FoldRangeV(complexionRgba, facetintRgba, detailRgba, i, hi, slModel)
                 End If
 
                 ' COLA. Omitirla dejaba pixeles SIN PLEGAR y eso se midio: |byte delta| = 124.
                 While i < hi
-                    FoldOne(complexionRgba, facetintRgba, detailRgba, i)
+                    FoldOne(complexionRgba, facetintRgba, detailRgba, i, slModel)
                     i += 1
                 End While
             End Sub)
@@ -309,17 +322,34 @@ Public Module SseFaceGenBaker
 
     ''' <summary>El fold de UN elemento. Es la LEY ESCALAR, y la usan el prologo y la cola de cada rango;
     ''' el cuerpo vectorial de abajo es su espejo exacto. Una sola definicion ⇒ no puede haber deriva.</summary>
+    ''' <summary>Modelo de soft-light del PLIEGUE (índice de <see cref="FaceTintConvention.FaceTintSoftLight"/>),
+    ''' leído del bucket <c>Fold</c> de la convención. Default = pegtop = la ley del motor (DXBC).
+    ''' <para>⛔ Se resuelve UNA vez por llamada, fuera del loop de píxeles: <c>ResolveConvention</c> lee el
+    ''' config y no es gratis. Y va acá, no en <see cref="FoldOne"/>, para que el fold y su INVERSA
+    ''' (<see cref="PreCompensateEngineChain"/>) no puedan resolver modelos distintos — si divergen, la cadena
+    ''' del motor deja de cancelar y el render muestra algo que el juego no dibuja.</para></summary>
+    Public Function FoldSoftLightModel() As Integer
+        Return CInt(FaceTintConvention.ResolveConvention(FaceTintConvention.FaceTintStage.Fold,
+                                                         FaceTintChannel.Diffuse,
+                                                         isTextureSet:=False, blendOp:=0).SoftLight)
+    End Function
+
+    ''' <summary>El modelo del MOTOR. Es el default del bucket Fold y el único con espejo vectorial.</summary>
+    Friend Const PEGTOP_MODEL As Integer = 3
+
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Sub FoldOne(comp As Single(), tint As Single(), detail As Single(), i As Integer)
+    Private Sub FoldOne(comp As Single(), tint As Single(), detail As Single(), i As Integer, slModel As Integer)
         Dim ch = i And 3
         If ch = 3 Then Return                                        ' el alpha no se toca
         Dim clin = Srgb2Lin(comp(i))
         Dim tv = tint(i)                                             ' slot 6 -> t3
         Dim det = If(detail IsNot Nothing, detail(i), EngineDefaultDetail)   ' slot 3 -> t4
         ' ⭐ EL DISPATCH COMPARTIDO, no una expresion propia (decision 4). Es la MISMA cuenta —la forma del
-        ' motor es ahora la del modelo 3— pero escrita en UN solo lugar. Hereda ademas los Clamp01 de entrada
+        ' motor es la del modelo 3— pero escrita en UN solo lugar. Hereda ademas los Clamp01 de entrada
         ' del dispatch: inerte en la practica (complexion y tint vienen de bytes, o sea [0,1]), se DECLARA.
-        Dim sl = FaceTintCpuCompositor.BlendChannel(3, 3, clin, tv)  ' softlight(complexion_lin, tint)
+        ' ⭐ El MODELO ya no es el literal 3: viene del bucket Fold (ver FoldSoftLightModel). Su inversa
+        ' analitica esta en FaceTintCpuCompositor.BlendSoftLightModelInverse y la verifica `softlight-inv`.
+        Dim sl = FaceTintCpuCompositor.BlendChannel(3, slModel, clin, tv)  ' softlight(complexion_lin, tint)
         ' ⛔ SIN PISO: la DIRECTA multiplica por el amp REAL (decision 1 — el motor no acota). Ver FgAmpInverse.
         comp(i) = Lin2Srgb(sl * FgTintChannel(det, ch))
     End Sub
@@ -342,7 +372,7 @@ Public Module SseFaceGenBaker
     ''' <para>Los patrones por canal (offsets del engine, y la mascara 'no toques el alpha') son de PERIODO 4,
     ''' asi que se generan para el ancho de la maquina en vez de ser literales de 8 lanes.</para></summary>
     Private Function FoldRangeV(comp As Single(), tint As Single(), detail As Single(),
-                                lo As Integer, hi As Integer) As Integer
+                                lo As Integer, hi As Integer, slModel As Integer) As Integer
         Dim i = lo
         ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
         ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
@@ -359,7 +389,7 @@ Public Module SseFaceGenBaker
             Dim t = New Vector(Of Single)(tint, i)
             Dim d = If(detail Is Nothing, defDet, New Vector(Of Single)(detail, i))
             ' El MISMO dispatch que el escalar, en su espejo vectorial. Ver FoldOne.
-            Dim sl = FaceTintCpuCompositor.BlendDispatchV(3, 3, clin, t)
+            Dim sl = FaceTintCpuCompositor.BlendDispatchV(3, slModel, clin, t)
             ' FgTintChannel(d, ch) = (d + FgOff(ch)) * FgTintAmp. SIN piso: espejo exacto de FoldOne.
             Dim amp = Vector.Multiply(Vector.Add(d, offV), ampV)
             Dim res = Lin2SrgbV(Vector.Multiply(sl, amp))
@@ -416,6 +446,10 @@ Public Module SseFaceGenBaker
     Public Sub PreCompensateEngineChain(bufferSrgb As Single(), facetintRgba As Single(), detailRgba As Single(),
                                         npix As Integer)
         If bufferSrgb Is Nothing Then Return
+        ' ⭐ MISMO modelo que la DIRECTA, resuelto por la MISMA función y una sola vez: si el fold y su inversa
+        ' resolvieran modelos distintos, la cadena del motor no cancelaría y el render mostraría algo que el
+        ' juego no dibuja. Ver FoldSoftLightModel.
+        Dim slModel As Integer = FoldSoftLightModel()
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, npix),
             Sub(range)
@@ -426,15 +460,17 @@ Public Module SseFaceGenBaker
         Dim lanes = Vector(Of Single).Count
                 ' Prologo / cuerpo vectorial / cola — misma estructura y mismo motivo que el fold: los
                 ' rangos del Partitioner no vienen alineados y las tres partes corren la MISMA ley.
+                ' ⭐ LOS CUATRO MODELOS ACELERADOS, igual que la directa: BlendSoftLightModelInverseV cubre
+                ' pegtop, GIMP, Illusions y la cúbica de W3C (Cardano con FastPow.CbrtV).
                 If FastPow.AcceleratedV Then
                     While (i And (lanes - 1)) <> 0 AndAlso i < hi
-                        PreCompOne(bufferSrgb, facetintRgba, detailRgba, i)
+                        PreCompOne(bufferSrgb, facetintRgba, detailRgba, i, slModel)
                         i += 1
                     End While
-                    i = PreCompRangeV(bufferSrgb, facetintRgba, detailRgba, i, hi)
+                    i = PreCompRangeV(bufferSrgb, facetintRgba, detailRgba, i, hi, slModel)
                 End If
                 While i < hi
-                    PreCompOne(bufferSrgb, facetintRgba, detailRgba, i)
+                    PreCompOne(bufferSrgb, facetintRgba, detailRgba, i, slModel)
                     i += 1
                 End While
             End Sub)
@@ -443,7 +479,7 @@ Public Module SseFaceGenBaker
     ''' <summary>La pre-compensacion de UN elemento: la LEY ESCALAR, usada por el prologo y la cola. El
     ''' cuerpo vectorial es su espejo exacto.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Private Sub PreCompOne(buf As Single(), tint As Single(), detail As Single(), i As Integer)
+    Private Sub PreCompOne(buf As Single(), tint As Single(), detail As Single(), i As Integer, slModel As Integer)
         Dim ch = i And 3
         If ch = 3 Then Return                                        ' el alpha no se toca
         Dim y = Srgb2Lin(buf(i))
@@ -457,19 +493,15 @@ Public Module SseFaceGenBaker
         Dim det = If(detail IsNot Nothing, detail(i), EngineDefaultDetail)
         y = FgAmpInverse(y, det, ch)
 
-        ' 2) invertir el SOFT-LIGHT del facetint (slot 6).
-        '    softlight(x,b) = x²(1−2b) + 2bx = y  ⇒  x = (−b + √(b² + k·y)) / k,  k = 1−2b.
-        '    k→0 (b=0,5) es la identidad: el límite es x = y (la fórmula daría 0/0).
+        ' 2) invertir el SOFT-LIGHT del facetint (slot 6) — POR MODELO, con la inversa ANALITICA compartida.
+        '    ⭐ FUENTE UNICA: FaceTintCpuCompositor.BlendSoftLightModelInverse, con la derivacion cerrada de
+        '    los cuatro modelos y su gate (`softlight-inv`, que exige Inv(Fwd(d,s),s) = d a menos de 1 byte).
+        '    ⛔ Aca estaba escrita A MANO y SOLO la de pegtop: era correcta mientras el modelo estaba cableado,
+        '    y dejaba de cancelar apenas el bucket Fold eligiera otro. Ahora la directa (FoldOne) y la inversa
+        '    resuelven el MISMO `slModel` por la MISMA funcion.
         If tint IsNot Nothing Then
             Dim b = tint(i)
-            Dim k = 1.0F - 2.0F * b
-            If MathF.Abs(k) > 0.000001F Then
-                Dim disc = b * b + k * y
-                ' GUARD: la inversa es MAL CONDICIONADA cerca de k=0; en float32 `disc` puede
-                ' dar negativo donde en float64 daba ~0. Sin esto, NaN.
-                If disc < 0.0F OrElse Single.IsNaN(disc) Then disc = 0.0F
-                y = (-b + MathF.Sqrt(disc)) / k
-            End If
+            y = FaceTintCpuCompositor.BlendSoftLightModelInverse(slModel, y, b)
         End If
 
         If Single.IsNaN(y) Then y = 0.0F
@@ -485,7 +517,7 @@ Public Module SseFaceGenBaker
     '     comparacion es falsa, con lo que cae en 0 igual que el escalar. Es equivalencia exacta, no
     '     aproximada — por eso el test de paridad exige 0 diferencias contra la cola escalar.
     Private Function PreCompRangeV(buf As Single(), tint As Single(), detail As Single(),
-                                      lo As Integer, hi As Integer) As Integer
+                                      lo As Integer, hi As Integer, slModel As Integer) As Integer
         Dim i = lo
         ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
         ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
@@ -508,14 +540,11 @@ Public Module SseFaceGenBaker
             Dim amp = Vector.Multiply(Vector.Add(dv, offV), ampV)
             y = Vector.ConditionalSelect(Vector.GreaterThan(amp, zero), Vector.Divide(y, amp), y)
 
+            ' ⭐ La inversa POR MODELO, espejo exacto de PreCompOne. Acá estaba escrita a mano y sólo la de
+            ' pegtop — la MISMA duplicación que tenía el escalar. Ahora las dos leen la única definición.
             If tint IsNot Nothing Then
                 Dim b = FastPow.VBroadcastS(tint, i)
-                Dim k = Vector.Subtract(one, Vector.Multiply(two, b))
-                Dim disc = Vector.Add(Vector.Multiply(b, b), Vector.Multiply(k, y))
-                disc = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(disc, zero), disc, zero)
-                Dim inv = Vector.Divide(Vector.Add(Vector.Negate(b), Vector.SquareRoot(disc)), k)
-                Dim useInv = Vector.GreaterThan(Vector.Abs(k), eps)
-                y = Vector.ConditionalSelect(useInv, inv, y)
+                y = FaceTintCpuCompositor.BlendSoftLightModelInverseV(slModel, y, b)
             End If
 
             y = Vector.ConditionalSelect(Vector.Equals(Of Single)(y, y), y, zero)      ' NaN -> 0
@@ -616,6 +645,57 @@ Public Module SseFaceGenBaker
     ''' <summary>Corre el fold REAL (la entrada pública, con su prólogo/cuerpo/cola) sobre un caso y devuelve
     ''' los tres canales. La usan el self-test y el volcado de <c>--paritygate --dump-golden</c>, que es como
     ''' se re-congelan los literales cuando un cambio de ley los mueve a propósito.</summary>
+    ''' <summary>⭐ GATE del espejo escalar-vs-vectorial del fold Y del unfold PARA LOS CUATRO MODELOS de
+    ''' soft-light. El self-test `baker` sólo cubre el modelo que diga el config (en la práctica, el default
+    ''' pegtop), así que los otros tres espejos vectoriales quedarían SIN GATE — y una divergencia ahí no se
+    ''' ve: sale una cara levemente distinta, no un fallo.
+    ''' <para>Compara <c>FoldRangeV</c> vs <c>FoldOne</c> y <c>PreCompRangeV</c> vs <c>PreCompOne</c> BIT A BIT.
+    ''' Sin SIMD devuelve "" (no hay espejo que comparar; el gate lo reporta por eje).</para>
+    ''' <para>El buffer es múltiplo exacto de <c>lanes</c> a propósito: acá se mide el CUERPO vectorial contra
+    ''' la ley escalar, no el prólogo/cola (eso ya lo cubre `baker` con tamaños impares).</para></summary>
+    Public Function FoldSoftLightModelsVectorSelfTest() As String
+        If Not FastPow.AcceleratedV Then Return ""
+        Dim lanes = Vector(Of Single).Count
+        Dim n = lanes * 8 * 4
+        Dim comp(n - 1) As Single, tint(n - 1) As Single, det(n - 1) As Single
+        ' Relleno DETERMINISTA y con periodos coprimos entre sí y con 4 (el ancho del píxel), para que cada
+        ' canal vea combinaciones distintas y se crucen las ramas de los cuatro modelos (s por encima y por
+        ' debajo de 0,5, d por encima y por debajo de 0,25).
+        For i = 0 To n - 1
+            comp(i) = CSng((i * 7 Mod 251) / 250.0)
+            tint(i) = CSng((i * 13 Mod 257) / 256.0)
+            det(i) = CSng((i * 5 Mod 241) / 240.0)
+        Next
+        For model = 0 To 3
+            Dim fv(n - 1) As Single, fs(n - 1) As Single
+            Array.Copy(comp, fv, n) : Array.Copy(comp, fs, n)
+            FoldRangeV(fv, tint, det, 0, n, model)
+            For i = 0 To n - 1
+                FoldOne(fs, tint, det, i, model)
+            Next
+            For i = 0 To n - 1
+                If BitConverter.SingleToInt32Bits(fv(i)) <> BitConverter.SingleToInt32Bits(fs(i)) Then
+                    Return $"Fold model={model} vector MISMATCH i={i} " &
+                           $"escalar=0x{BitConverter.SingleToInt32Bits(fs(i)):X8} vector=0x{BitConverter.SingleToInt32Bits(fv(i)):X8}"
+                End If
+            Next
+
+            Dim uv(n - 1) As Single, us(n - 1) As Single
+            Array.Copy(comp, uv, n) : Array.Copy(comp, us, n)
+            PreCompRangeV(uv, tint, det, 0, n, model)
+            For i = 0 To n - 1
+                PreCompOne(us, tint, det, i, model)
+            Next
+            For i = 0 To n - 1
+                If BitConverter.SingleToInt32Bits(uv(i)) <> BitConverter.SingleToInt32Bits(us(i)) Then
+                    Return $"Unfold model={model} vector MISMATCH i={i} " &
+                           $"escalar=0x{BitConverter.SingleToInt32Bits(us(i)):X8} vector=0x{BitConverter.SingleToInt32Bits(uv(i)):X8}"
+                End If
+            Next
+        Next
+        Return ""
+    End Function
+
     Public Function FoldGoldenActual(caseIndex As Integer) As Single()
         Const NPIX As Integer = 37                     ' impar y no múltiplo del ancho: fuerza las tres partes
         Dim k = FoldGoldenCases(caseIndex)
@@ -624,7 +704,11 @@ Public Module SseFaceGenBaker
         For i = 0 To n - 1
             comp(i) = k.Comp : tint(i) = k.Tint : det(i) = k.Detail
         Next
-        FoldFacetintIntoDiffuse(comp, tint, NPIX, det)
+        ' ⛔ MODELO PINEADO EN PEGTOP, no el de la convención: este golden mide la LEY DEL MOTOR, y una ley no
+        ' puede moverse porque el usuario elija otra cosa en el bucket Fold. Con el modelo leído del config,
+        ' poner `Fold.SoftLight` en W3C/GIMP/Illusions hacía fallar este test y el gate ABORTABA el bake
+        ' entero — culpando además al SIMD, que no tenía nada que ver (MEDIDO 2026-08-01).
+        FoldFacetintIntoDiffuse(comp, tint, NPIX, det, softLightModelOverride:=PEGTOP_MODEL)
         ' Todos los píxeles llevan la misma terna ⇒ si prólogo, cuerpo y cola no coinciden, esto lo delata.
         For p = 1 To NPIX - 1
             For c = 0 To 2
@@ -694,8 +778,11 @@ Public Module SseFaceGenBaker
                 Dim got(n - 1) As Single, want(n - 1) As Single
                 Array.Copy(comp, got, n) : Array.Copy(comp, want, n)
                 FoldFacetintIntoDiffuse(got, tint, npix, dv)   ' npix va TERCERO; detail es el opcional
+                ' El espejo escalar se corre con EL MISMO modelo que resolvió la entrada pública, no con un
+                ' literal: si el config trajera otro, el test compararía dos leyes distintas y daría rojo por
+                ' el motivo equivocado.
                 For i = 0 To n - 1
-                    FoldOne(want, tint, dv, i)
+                    FoldOne(want, tint, dv, i, FoldSoftLightModel())
                 Next
                 For i = 0 To n - 1
                     If BitConverter.SingleToInt32Bits(got(i)) <> BitConverter.SingleToInt32Bits(want(i)) Then
@@ -721,7 +808,7 @@ Public Module SseFaceGenBaker
                 Array.Copy(buf, got2, n) : Array.Copy(buf, want2, n)
                 PreCompensateEngineChain(got2, tint, dv, npix)
                 For i = 0 To n - 1
-                    PreCompOne(want2, tint, dv, i)
+                    PreCompOne(want2, tint, dv, i, FoldSoftLightModel())
                 Next
                 For i = 0 To n - 1
                     If BitConverter.SingleToInt32Bits(got2(i)) <> BitConverter.SingleToInt32Bits(want2(i)) Then

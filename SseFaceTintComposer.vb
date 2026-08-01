@@ -181,6 +181,25 @@ Public Module SseFaceTintComposer
         Return FaceTintCpuCompositor.FaceTintSeedSpec.FromConstant(k(0), k(1), k(2))
     End Function
 
+    ''' <summary>⭐ El seed del facetint SSE como TERNA RGB [0,1], para los caminos que lo siembran como
+    ''' TEXTURA PLANA (los cuatro de GPU: el facetint del render plegado y del NO plegado, y los sandboxes
+    ''' <c>_2b</c>/<c>_2d</c> del bake). Sale de <see cref="BuildSeedSpec"/> — la MISMA ley que consumen el
+    ''' compose CPU y el QNAM del cuerpo —, no de un literal.
+    ''' <para>⛔ POR QUE EXISTE: los cuatro sitios tenían el 0,5 CABLEADO (tres como <c>0.5F</c> y el del
+    ''' <c>_2b</c> como el byte <c>128</c> = 0,50196), así que el seed de CharGen Options entraba por el
+    ''' camino CPU y NO por el GPU — que es el que corre por default (<c>Setting_GPUSkinning</c>). Síntomas:
+    ''' mover el seed no cambiaba el render, y CPU y GPU componían desde números distintos sin que ningún
+    ''' instrumento lo viera.</para>
+    ''' <para>⛔ DEVUELVE Nothing —y NO 0,5— cuando la ley no pide seed constante. El facetint del CK es
+    ''' TINT-ONLY: no hay textura base de donde sembrar, así que el caller tiene que ABORTAR con log, que es
+    ''' exactamente lo que hace el camino CPU (<see cref="ComposeLinearRgba"/> devuelve Nothing). Taparlo con
+    ''' un constante reintroduciría el literal que escondía el bug.</para></summary>
+    Public Function TryGetFlatSeedRgb() As Single()
+        Dim spec = BuildSeedSpec()
+        If spec.Kind <> FaceTintCpuCompositor.FaceTintSeedKind.Constant Then Return Nothing
+        Return New Single() {spec.R, spec.G, spec.B}
+    End Function
+
     ''' <summary>Mapa de tints AUTORADOS del NPC: indice de capa -> {R, G, B (TINC/255), interp (TINV/100)}.
     ''' Subrecords por capa: TINI, TINC, TINV, TIAS (el TIAS cierra la capa y la commitea).
     ''' <para>FUENTE UNICA de las DOS replicas: la CPU (<see cref="ComposeLinearRgba"/>) y la GPU
@@ -471,17 +490,34 @@ Public Module SseFaceTintComposer
         If layers Is Nothing OrElse layers.Count <= 1 Then Return layers
         Dim cfg = Config_App.Current?.Setting_FaceTintSort_SSE
         Dim rules = If(cfg IsNot Nothing, cfg.TintRules, Nothing)
-        If rules Is Nothing OrElse rules.Count = 0 Then Return layers
+        Dim placement = If(cfg IsNot Nothing, cfg.SkinTonePlacement, CInt(FaceTintSkinTonePlacement.Positional))
+        Dim hasRules = (rules IsNot Nothing AndAlso rules.Count > 0)
+        ' Sin reglas Y con el placement en su default no hay nada que reordenar ⇒ lista tal cual (orden RACE).
+        If Not hasRules AndAlso placement = CInt(FaceTintSkinTonePlacement.Positional) Then Return layers
         Dim items As New List(Of (Layer As SseTintMask, Pos As Integer))
         For i = 0 To layers.Count - 1 : items.Add((layers(i), i)) : Next
-        items.Sort(Function(a, b)
-                       For Each r In rules
-                           Dim c = SseTintKey(a.Layer, a.Pos, npcMap, r.Key).CompareTo(SseTintKey(b.Layer, b.Pos, npcMap, r.Key))
-                           If r.Descending Then c = -c
-                           If c <> 0 Then Return c
-                       Next
-                       Return a.Pos.CompareTo(b.Pos)   ' tiebreak estable = orden RACE (RaceMenu)
-                   End Function)
+        If hasRules Then
+            items.Sort(Function(a, b)
+                           For Each r In rules
+                               Dim c = SseTintKey(a.Layer, a.Pos, npcMap, r.Key).CompareTo(SseTintKey(b.Layer, b.Pos, npcMap, r.Key))
+                               If r.Descending Then c = -c
+                               If c <> 0 Then Return c
+                           Next
+                           Return a.Pos.CompareTo(b.Pos)   ' tiebreak estable = orden RACE (RaceMenu)
+                       End Function)
+        End If
+        ' ⭐ SkinTonePlacement — la MISMA ley que FO4 (FaceTintInputBuilder.OrderMergedLayers): GANA sobre las
+        ' reglas y saca la capa de SKIN-TONE del orden para forzarla al frente (queda al fondo) o al final
+        ' (queda encima). En SSE la capa de piel es la de TINP MaskType == 6 — no hay slot 12 —, la MISMA que
+        ' identifica ResolveSkinToneQnam, así que la cara y el QNAM del cuerpo hablan de la misma capa.
+        ' ⛔ ESTA OPCION NO SE LEIA ACA: existía en la UI del tab "Tint Order", se persistía en
+        ' Setting_FaceTintSort_SSE, y su ÚNICO consumidor era el builder de FO4 ⇒ en Skyrim era un control
+        ' editable que no movía un byte. Default = Positional ⇒ byte-inerte mientras no se toque.
+        If placement = CInt(FaceTintSkinTonePlacement.FirstOfAll) Then
+            items = items.Where(Function(x) x.Layer.MaskType = 6).Concat(items.Where(Function(x) x.Layer.MaskType <> 6)).ToList()
+        ElseIf placement = CInt(FaceTintSkinTonePlacement.LastOfAll) Then
+            items = items.Where(Function(x) x.Layer.MaskType <> 6).Concat(items.Where(Function(x) x.Layer.MaskType = 6)).ToList()
+        End If
         Return items.Select(Function(x) x.Layer).ToList()
     End Function
 

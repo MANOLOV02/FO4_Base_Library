@@ -683,6 +683,61 @@ vec3 blendSoftLightModel(vec3 d, vec3 s) {
     if (uSoftLight==3) return blendSoftLightPegtop(d, s);
     return blendSoftLightW3C(d, s);
 }
+// ---- INVERSA del soft-light POR MODELO (= CPU BlendSoftLightModelInverse; paridad CPU/GL) ----
+// Resuelve d dado (y, s). Las cuatro son ANALITICAS, ninguna itera:
+//   pegtop  : k*d^2 + 2*s*d - y = 0  =>  d = (-s + sqrt(s*s + k*y))/k,  k = 1-2s. k->0 = identidad.
+//   GIMP    : s<=0.5 ES pegtop; s>0.5 es cuadratica en t=sqrt(d): 2(1-s)t^2 + (2s-1)t - y = 0.
+//   Illusion: p(1-s) = 1/p(s)  =>  la inversa ES el forward con el source reflejado.
+//   W3C     : s<0.5 ES pegtop; s>=0.5 se parte POR EL VALOR de y (las ramas se tocan en d=0.25, donde
+//             y0 = 0.25 + 0.25b): arriba, cuadratica en sqrt(d); abajo, CUBICA por Cardano
+//             (u^3 + p*u + q = 0 con p = 1/(16b) > 0 => discriminante siempre positivo => UNA raiz real).
+// ATENCION: `y` NO se acota (es un lineal que puede pasarse de 1 tras dividir por el amplify). `s` si.
+// Sin ramas por lane: se calculan las dos y se elige con step/mix, igual que el espejo vectorial del CPU.
+vec3 cbrtV3(vec3 v) { return sign(v) * pow(abs(v), vec3(1.0/3.0)); }
+vec3 softLightInvPegtop(vec3 y, vec3 s) {
+    vec3 k = vec3(1.0) - 2.0*s;
+    vec3 isId = step(abs(k), vec3(0.000001));
+    vec3 ksafe = mix(k, vec3(1.0), isId);
+    vec3 xr = (-s + sqrt(max(s*s + k*y, vec3(0.0)))) / ksafe;
+    return mix(xr, y, isId);
+}
+vec3 softLightInvGimp(vec3 y, vec3 s) {
+    vec3 a = 2.0*(vec3(1.0) - s);
+    vec3 b = 2.0*s - vec3(1.0);
+    vec3 asafe = max(a, vec3(0.000001));
+    vec3 t = (-b + sqrt(max(b*b + 4.0*a*y, vec3(0.0)))) / (2.0*asafe);
+    vec3 hi = mix(t*t, y*y, step(a, vec3(0.000001)));
+    return mix(hi, softLightInvPegtop(y, s), step(s, vec3(0.5)));
+}
+vec3 softLightInvIllusions(vec3 y, vec3 s) {
+    return blendSoftLightIllusions(y, vec3(1.0) - s);
+}
+vec3 softLightInvW3C(vec3 y, vec3 s) {
+    vec3 b = 2.0*s - vec3(1.0);
+    vec3 y0 = vec3(0.25) + 0.25*b;
+    vec3 a = vec3(1.0) - b;
+    vec3 asafe = max(a, vec3(0.000001));
+    vec3 t = (-b + sqrt(max(b*b + 4.0*a*y, vec3(0.0)))) / (2.0*asafe);
+    vec3 hiSqrt = mix(t*t, y*y, step(a, vec3(0.000001)));
+    vec3 bsafe = max(b, vec3(0.000001));
+    vec3 p = vec3(1.0) / (16.0*bsafe);
+    vec3 q = (b + vec3(1.0) - 4.0*y) / (64.0*bsafe);
+    vec3 mq2 = -0.5*q;
+    vec3 p3 = p / 3.0;
+    vec3 delta = max(mq2*mq2 + p3*p3*p3, vec3(0.0));
+    vec3 sq = sqrt(delta);
+    vec3 hiCubic = cbrtV3(mq2 + sq) + cbrtV3(mq2 - sq) + vec3(0.25);
+    vec3 hi = mix(hiCubic, hiSqrt, step(y0, y));
+    hi = mix(hi, y, step(b, vec3(0.000001)));
+    return mix(hi, softLightInvPegtop(y, s), step(s, vec3(0.5)));
+}
+vec3 softLightModelInverseSl(vec3 y, vec3 s, int sl) {
+    vec3 sc = clamp(s, 0.0, 1.0);
+    if (sl==1) return softLightInvGimp(y, sc);
+    if (sl==2) return softLightInvIllusions(y, sc);
+    if (sl==3) return softLightInvPegtop(y, sc);
+    return softLightInvW3C(y, sc);
+}
 vec3 blendHardLight(vec3 d, vec3 s) { return blendOverlay(s, d); }
 // Modos separables estandar adicionales (5..19). Transcripcion 1:1 del CPU (BlendDispatch1).
 vec3 blendScreen(vec3 d, vec3 s){ return d + s - d*s; }
@@ -939,12 +994,11 @@ void main() {
         vec3 fg = (dt + uFgTintOff) * uFgTintAmp;
         vec3 fgSafe = mix(vec3(1.0), fg, greaterThan(fg, vec3(0.0)));
         y = y / fgSafe;
+        // EL DISPATCH COMPARTIDO POR MODELO, no la inversa de pegtop escrita a mano. Espejo de
+        // SseFaceGenBaker.PreCompOne, que llama a BlendSoftLightModelInverse con el MISMO uSoftLight
+        // (el caller resuelve la convencion con stage=Fold en los dos caminos).
         vec3 b = layerSample.rgb;
-        vec3 k = vec3(1.0) - 2.0 * b;
-        vec3 isId = step(abs(k), vec3(0.000001));
-        vec3 ksafe = mix(k, vec3(1.0), isId);
-        vec3 xr = (-b + sqrt(max(b * b + k * y, vec3(0.0)))) / ksafe;
-        vec3 x = clamp(mix(xr, y, isId), 0.0, 1.0);
+        vec3 x = clamp(softLightModelInverseSl(y, b, uSoftLight), 0.0, 1.0);
         vec3 outc = vec3(linearToSrgb1(x.r), linearToSrgb1(x.g), linearToSrgb1(x.b));
         fragColor = vec4(outc, prevRgba.a);
         return;
@@ -962,7 +1016,7 @@ void main() {
         // EL DISPATCH COMPARTIDO (modelo 3), no una expresion propia: `softLightModelSl` con sl=3 ES la
         // forma del motor `d*d + 2*d*s*(1-d)` desde la decision 4. Escribirla aca de nuevo era la quinta
         // copia de la misma cuenta. Espejo de SseFaceGenBaker.FoldOne, que llama al MISMO dispatch.
-        vec3 sl = softLightModelSl(cl, layerSample.rgb, 3);   // softlight(complexion_lin, TINT = facetint)
+        vec3 sl = softLightModelSl(cl, layerSample.rgb, uSoftLight);   // softlight(complexion_lin, TINT = facetint)
         // SIN PISO: la DIRECTA multiplica por el amp REAL (decision 1). Espejo de FgTintChannel.
         vec3 fg = (dt + uFgTintOff) * uFgTintAmp;   // amplify del DETAIL, sin acotar
         vec3 lin = sl * fg;
@@ -1128,9 +1182,18 @@ void main() {
     ''' tono. Inerte en Normal y Specular.</para></summary>
     ''' <param name="cpuMirror">Capacidad del compositor CPU que espeja este camino: decide si el acumulador
     ''' puede vivir fuera de OutputSpace. Ver <see cref="FaceTintConvention.AccumSpaceForChannel"/>.</param>
+    ''' <param name="stage">FASE que pide la convención. Nothing (default) = la etapa de TINT del canal, o sea
+    ''' EXACTAMENTE lo que hacía antes de que el eje existiera. Un valor explícito (Fold/Overlay) elige el
+    ''' bucket de esa etapa — y sólo en Diffuse, que es donde esas etapas existen (lo gatea ResolveConvention).</param>
     Public Function ComposeOntoFaceTexture(state As FaceTintCompositorState, originalTexId As Integer, width As Integer, height As Integer, layers As IList(Of FaceTintLayerInput), channel As FaceTintChannel,
                                            cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
-                                           Optional cache As FaceTintTextureCache = Nothing, Optional headDiffuseAlphaTest As Boolean = False) As Integer
+                                           Optional cache As FaceTintTextureCache = Nothing, Optional headDiffuseAlphaTest As Boolean = False,
+                                           Optional stage As FaceTintConvention.FaceTintStage? = Nothing) As Integer
+        ' ⭐ LA ETAPA EFECTIVA, resuelta UNA vez. ⛔ No se puede usar `stage` a secas con un default fijo: la
+        ' pipeline llama a los TRES canales, y para N/S la etapa correcta es TintNormalSpecular. Nullable ⇒
+        ' "no me lo dijeron" es distinguible de "me dijeron TintDiffuse".
+        Dim effStage As FaceTintConvention.FaceTintStage =
+            If(stage.HasValue, stage.Value, FaceTintConvention.TintStageFor(channel))
         ArgumentNullException.ThrowIfNull(state)
         If originalTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
         If layers Is Nothing OrElse layers.Count = 0 Then Return 0
@@ -1333,7 +1396,7 @@ void main() {
                     Dim sEntry As PreviewModel.Texture_Loaded_Class = Nothing
                     If batchLoaded Is Nothing OrElse Not batchLoaded.TryGetValue(sKey, sEntry) _
                        OrElse sEntry Is Nothing OrElse sEntry.Texture_ID = 0 Then Continue For
-                    Dim sConv = FaceTintConvention.ResolveConvention(FaceTintConvention.TintStageFor(channel), channel, sLayer.IsTextureSet, sLayer.BlendOp)
+                    Dim sConv = FaceTintConvention.ResolveConvention(effStage, channel, sLayer.IsTextureSet, sLayer.BlendOp)
                     stMaskTexId = sEntry.Texture_ID
                     stColR = CSng(sLayer.R) / 255.0F : stColG = CSng(sLayer.G) / 255.0F : stColB = CSng(sLayer.B) / 255.0F
                     stOpac = Math.Max(0.0F, Math.Min(1.0F, sLayer.Opacity))
@@ -1449,8 +1512,12 @@ void main() {
                 ' ws/maskconv/blend salen de (etapa + canal + entry_type + blendOp). ⛔ Decía que también
                 ' salían de `slot` y `useHairPalette`: el resolver no leía ninguno de los dos.
                 ' SIN occlusion footprint (descartado empiricamente B07-B09).
+                ' ⭐ `effStage`, NO `TintStageFor(channel)` cableado: el eje de etapa llega del caller y ES el que
+                ' elige el bucket (Fold/Overlay tienen el suyo). Acá estaba fijo en la etapa de tint, así que el
+                ' parámetro `stage` de ApplyFaceTintPipeline se ACEPTABA Y SE DESCARTABA — ningún bucket que no
+                ' fuera el del canal podía llegar nunca al shader.
                 Dim conv = FaceTintConvention.ResolveConvention(
-                    FaceTintConvention.TintStageFor(channel), channel, layer.IsTextureSet, layer.BlendOp)
+                    effStage, channel, layer.IsTextureSet, layer.BlendOp)
                 GL.Uniform1(state._uModeLoc, 0)   ' tint = additive-over-base
                 GL.Uniform1(state._uWorkingSpaceLoc, CInt(conv.WorkingSpace))
                 GL.Uniform1(state._uSrcSpaceLoc, CInt(conv.SrcSpace))
@@ -2393,10 +2460,15 @@ void main() {
                                           Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing,
                                           Optional baseDiffuseIsLinearOnGpu As Boolean = False,
                                           Optional headDiffuseAlphaTest As Boolean = False,
-                                          Optional stage As FaceTintConvention.FaceTintStage = FaceTintConvention.FaceTintStage.TintDiffuse) As FaceTintPipelineResult
+                                          Optional stage As FaceTintConvention.FaceTintStage? = Nothing) As FaceTintPipelineResult
         ' `stage` va OPCIONAL Y AL FINAL a propósito: así los call sites del otro repositorio (que es un repo
-        ' git independiente, sin commit atómico cruzado) no necesitan una sola edición. El default reproduce
+        ' git independiente, sin commit atómico cruzado) no necesitan una sola edición. Sin valor reproduce
         ' exactamente lo que hacía antes de existir el eje.
+        ' ⛔ ES NULLABLE Y NO `= TintDiffuse`. El default fijo era ADEMÁS incorrecto para N/S: esta función
+        ' compone los TRES canales, y en Normal/Specular la etapa correcta es TintNormalSpecular. Con el default
+        ' fijo, el día que alguien empezara a honrar el parámetro, el `_msn` habría resuelto el bucket del
+        ' diffuse. Nothing = "el caller no opina" ⇒ cada canal resuelve SU etapa de tint.
+        ' ⛔ Y hasta este cambio el parámetro se ACEPTABA Y SE DESCARTABA: no llegaba a ningún ResolveConvention.
         ArgumentNullException.ThrowIfNull(state)
 
         ' ⛔ SYNC: CPU/GPU compositor — el target de resolución es POR CANAL, no el del diffuse. El `_msn` y
@@ -2467,10 +2539,14 @@ void main() {
         End If
 
         ' --- Tint compose ---
+        ' ⭐ `stage` VIAJA HASTA EL LOOP DE CAPAS. Antes moría acá: la firma lo aceptaba y ningún ProcessChannel
+        ' lo recibía, así que el bucket lo elegía siempre la etapa de tint del canal. Nullable ⇒ cuando el caller
+        ' no lo pasa el comportamiento es EXACTAMENTE el previo (byte-idéntico), y N/S siguen resolviendo su
+        ' propia etapa aunque el caller haya pedido Fold/Overlay (lo gatea ResolveConvention por canal).
         If layers IsNot Nothing AndAlso layers.Count > 0 Then
-            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing, cpuMirror, headDiffuseAlphaTest)
-            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, layers, Nothing, cpuMirror)
-            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing, cpuMirror)
+            ProcessChannel(result.Diffuse, FaceTintChannel.Diffuse, state, cache, dT.W, dT.H, layers, Nothing, cpuMirror, headDiffuseAlphaTest, stage)
+            ProcessChannel(result.Normal, FaceTintChannel.Normal, state, cache, nT.W, nT.H, layers, Nothing, cpuMirror, False, stage)
+            ProcessChannel(result.Specular, FaceTintChannel.Specular, state, cache, sT.W, sT.H, layers, Nothing, cpuMirror, False, stage)
         End If
 
         ' --- PASE FINAL AccumSpace -> OutputSpace: UNA SOLA VEZ, ACA, PARA LOS TRES CANALES ---
@@ -2595,15 +2671,18 @@ void main() {
                                layers As IList(Of FaceTintLayerInput),
                                swaps As IList(Of FaceRegionSwapInput),
                                cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
-                               Optional headDiffuseAlphaTest As Boolean = False)
+                               Optional headDiffuseAlphaTest As Boolean = False,
+                               Optional stage As FaceTintConvention.FaceTintStage? = Nothing)
         If ch.TextureId = 0 Then
             Return
         End If
         Dim newId As Integer
         If swaps IsNot Nothing Then
+            ' El pre-pass de swaps NO recibe `stage`: su etapa es RegionSwap por definición y la resuelve
+            ' ApplyRegionSwapsOntoFaceTexture. Pasarle la del caller le daría el bucket equivocado.
             newId = ApplyRegionSwapsOntoFaceTexture(state, ch.TextureId, width, height, swaps, channel, cpuMirror, cache)
         Else
-            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, cpuMirror, cache, headDiffuseAlphaTest)
+            newId = ComposeOntoFaceTexture(state, ch.TextureId, width, height, layers, channel, cpuMirror, cache, headDiffuseAlphaTest, stage)
         End If
         If newId = 0 OrElse newId = ch.TextureId Then Return
 

@@ -126,6 +126,20 @@ Public Module SseOverlayCompositor
             ' blend de normales, los tres If de la tinta son selects, y el Mod 6 resulta EXACTO por el rango
             ' de sus argumentos. Ver ColorModeBlockV.
             Dim isColor = (ov.BlendMode = SseBlendMode.ColorMode)
+            ' ⭐ LA CONVENCION DE LA ETAPA `Overlay`, resuelta POR CAPA (el blendOp es de la capa) y FUERA del
+            ' loop de pixeles. Es lo que hace que el bucket Overlay de CharGen Options IMPACTE: hasta acá este
+            ' composite no leía la convención y el bucket era un control muerto. `isTextureSet` sigue el mismo
+            ' criterio que el builder GPU (BuildSkeeGpuLayers): las capas Mask (type 1) son PaletteMask, el
+            ' resto TextureSet — así el resolver elige el MISMO SrcSpace en los dos caminos.
+            ' El espacio del ACUMULADOR sale de AccumSpaceForChannel con la capacidad del espejo CPU de ESTE
+            ' camino, que es la MISMA que declara el GPU en sus ApplyFaceTintPipeline ⇒ no pueden discrepar.
+            Dim ovConv = FaceTintConvention.ResolveConvention(FaceTintConvention.FaceTintStage.Overlay,
+                                                              FaceTintChannel.Diffuse,
+                                                              isTextureSet:=(ov.LayerType <> 1),
+                                                              blendOp:=m.BlendOp)
+            Dim ss = CInt(ovConv.SrcSpace), ws = CInt(ovConv.WorkingSpace), cs = CInt(ovConv.CompositeSpace)
+            Dim asp = CInt(FaceTintConvention.AccumSpaceForChannel(FaceTintChannel.Diffuse,
+                                                                   SseFaceTintComposer.AccumSpaceCapability))
             Dim vecOk = FastPow.AcceleratedV AndAlso
                         (isNormal OrElse isGray OrElse isColor OrElse FaceTintCpuCompositor.VecComposeSupported(0, m.BlendOp, m.SoftLight))
             System.Threading.Tasks.Parallel.ForEach(
@@ -139,12 +153,12 @@ Public Module SseOverlayCompositor
                     If vecOk Then
                         ' POR PIXEL ENTERO: Grayscale lee ar,ag,ab y escribe los tres ⇒ read-after-write.
                         While (e And (lanes - 1)) <> 0 AndAlso e < hi
-                            ApplyOverlayPixel(acc, ov, m, c0, c1, c2, c3, e >> 2) : e += 4
+                            ApplyOverlayPixel(acc, ov, m, c0, c1, c2, c3, e >> 2, ss, ws, cs, asp) : e += 4
                         End While
-                        e = ApplyOverlayRangeV(acc, ov, m, c0, c1, c2, c3, isNormal, isGray, isColor, e, hi)
+                        e = ApplyOverlayRangeV(acc, ov, m, c0, c1, c2, c3, isNormal, isGray, isColor, e, hi, ss, ws, cs, asp)
                     End If
                     While e < hi
-                        ApplyOverlayPixel(acc, ov, m, c0, c1, c2, c3, e >> 2) : e += 4
+                        ApplyOverlayPixel(acc, ov, m, c0, c1, c2, c3, e >> 2, ss, ws, cs, asp) : e += 4
                     End While
                 End Sub)
         Next
@@ -154,7 +168,8 @@ Public Module SseOverlayCompositor
     ''' espejo vectorial). Por pixel y no por elemento: Grayscale lee los tres canales y escribe los tres.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Sub ApplyOverlayPixel(acc As Single(), ov As SseOverlay, m As (BlendOp As Integer, SoftLight As Integer),
-                                  c0 As Single, c1 As Single, c2 As Single, c3 As Single, px As Integer)
+                                  c0 As Single, c1 As Single, c2 As Single, c3 As Single, px As Integer,
+                                  ss As Integer, ws As Integer, cs As Integer, asp As Integer)
             ' (1) TYPE: combine the overlay texture with the layer colour → premultiplied layer {rgb, a}
             Dim lr As Single, lg As Single, lb As Single, la As Single
             Dim tr = 1.0F, tg = 1.0F, tb = 1.0F, ta = 1.0F
@@ -167,36 +182,61 @@ Public Module SseOverlayCompositor
             If la <= 0.0F Then Return
 
             Dim ar = acc(px * 4), ag = acc(px * 4 + 1), ab = acc(px * 4 + 2)
+            ' ⭐ CONVERSIONES DE ESPACIO DE LA ETAPA OVERLAY (bucket `Overlay` de CharGen Options).
+            ' ⛔ Antes este composite corría SIN NINGUNA conversión, así que el bucket Overlay era un control
+            ' que no movía un byte — y coincidía con el GPU sólo porque la ley SSE es all-Linear y las
+            ' conversiones del compositor compartido quedaban en no-op. Era una COINCIDENCIA de los defaults,
+            ' no una propiedad del diseño.
+            ' ⛔ Las expresiones NO se reescribieron como un ComposeOne genérico: `mix(a,l,la)` y
+            ' `l*la + a*(1−la)` son iguales en álgebra y DISTINTAS en redondeo. Se ENVUELVEN las de siempre,
+            ' así que con ss=ws=cs=asp cada Cvt devuelve su entrada y la cuenta colapsa LITERALMENTE a la
+            ' previa ⇒ byte-inerte hasta que el usuario mueva el bucket.
+            Dim ac_r = Cvt(ar, asp, cs), ac_g = Cvt(ag, asp, cs), ac_b = Cvt(ab, asp, cs)
             If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
-                ' normal.fx: over with PREMULTIPLIED layer.rgb (no un-premultiply)
-                acc(px * 4) = CSng(lr * la + ar * (1 - la))
-                acc(px * 4 + 1) = CSng(lg * la + ag * (1 - la))
-                acc(px * 4 + 2) = CSng(lb * la + ab * (1 - la))
+                ' normal.fx: over con el color de capa. No hay función de blend ⇒ no hay working space que
+                ' aplicar; lo único definido es EN QUÉ ESPACIO se mezcla (CompositeSpace).
+                Dim lc_r = Cvt(lr, ss, cs), lc_g = Cvt(lg, ss, cs), lc_b = Cvt(lb, ss, cs)
+                acc(px * 4) = Cvt(CSng(lc_r * la + ac_r * (1 - la)), cs, asp)
+                acc(px * 4 + 1) = Cvt(CSng(lc_g * la + ac_g * (1 - la)), cs, asp)
+                acc(px * 4 + 2) = Cvt(CSng(lc_b * la + ac_b * (1 - la)), cs, asp)
             Else
                 ' all other modes un-premultiply the layer colour, blend, then alpha-over
                 Dim br = Clamp01(lr / la), bg = Clamp01(lg / la), bbl = Clamp01(lb / la)
+                ' Source y destino AL WORKING SPACE antes del blend — mismo orden que ComposeOne y que el GLSL.
+                Dim bw_r = Cvt(br, ss, ws), bw_g = Cvt(bg, ss, ws), bw_b = Cvt(bbl, ss, ws)
+                Dim aw_r = Cvt(ar, asp, ws), aw_g = Cvt(ag, asp, ws), aw_b = Cvt(ab, asp, ws)
                 Dim rr As Single, rg As Single, rb As Single
                 If ov.BlendMode = SseBlendMode.Grayscale Then
-                    Dim lum = 0.299F * ar + 0.587F * ag + 0.114F * ab
-                    rr = lum * br : rg = lum * bg : rb = lum * bbl
+                    Dim lum = 0.299F * aw_r + 0.587F * aw_g + 0.114F * aw_b
+                    rr = lum * bw_r : rg = lum * bw_g : rb = lum * bw_b
                 ElseIf ov.BlendMode = SseBlendMode.ColorMode Then
-                    Dim hsvBlend = RgbToHsv(br, bg, bbl)
-                    Dim vSrc = MathF.Max(ar, MathF.Max(ag, ab))
+                    Dim hsvBlend = RgbToHsv(bw_r, bw_g, bw_b)
+                    Dim vSrc = MathF.Max(aw_r, MathF.Max(aw_g, aw_b))
                     Dim outc = HsvToRgb(hsvBlend(0), hsvBlend(1), vSrc)
                     rr = outc(0) : rg = outc(1) : rb = outc(2)
                 Else
                     ' Reuse the SHARED FO4 blend dispatch (CPU/GL parity). El mapeo modo→(blendOp, softLight)
                     ' sale de BlendOpFromSseMode = la MISMA fuente que usa el path GPU (uBlendOp del compositor),
                     ' así CPU y GL no pueden desincronizarse.
-                    rr = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ar, br)
-                    rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ag, bg)
-                    rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ab, bbl)
+                    rr = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, aw_r, bw_r)
+                    rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, aw_g, bw_g)
+                    rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, aw_b, bw_b)
                 End If
-                acc(px * 4) = CSng((1 - la) * ar + rr * la)
-                acc(px * 4 + 1) = CSng((1 - la) * ag + rg * la)
-                acc(px * 4 + 2) = CSng((1 - la) * ab + rb * la)
+                Dim rc_r = Cvt(rr, ws, cs), rc_g = Cvt(rg, ws, cs), rc_b = Cvt(rb, ws, cs)
+                acc(px * 4) = Cvt(CSng((1 - la) * ac_r + rc_r * la), cs, asp)
+                acc(px * 4 + 1) = Cvt(CSng((1 - la) * ac_g + rc_g * la), cs, asp)
+                acc(px * 4 + 2) = Cvt(CSng((1 - la) * ac_b + rc_b * la), cs, asp)
             End If
     End Sub
+
+    ''' <summary>Conversión de espacio de UN canal — la MISMA función que usa el compositor compartido
+    ''' (<c>FaceTintCpuCompositor.ConvertSpaceShared</c> = su <c>Cvt1</c>), con el mismo cortocircuito cuando
+    ''' origen y destino coinciden. ⛔ No re-implementarla acá: si el overlay convirtiera con otra curva, CPU
+    ''' y GL divergirían en el VALOR sin que nadie se equivoque en la matemática del blend.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function Cvt(v As Single, fromS As Integer, toS As Integer) As Single
+        Return FaceTintCpuCompositor.ConvertSpaceShared(v, fromS, toS)
+    End Function
 
     ''' <summary>Cuerpo vectorial del composite de overlay: 8 floats = 2 pixeles.
     ''' <para>El alpha de capa sale de un lane DIFUNDIDO (type 1 → lane 0, type 0 → lane 3) con un permute de
@@ -204,7 +244,8 @@ Public Module SseOverlayCompositor
     ''' con el lane 3 en cero el arbol da <c>((0.299ar + 0.587ag) + 0.114ab)</c>, que es como asocia VB.</para></summary>
     Private Function ApplyOverlayRangeV(acc As Single(), ov As SseOverlay, m As (BlendOp As Integer, SoftLight As Integer),
                                         c0 As Single, c1 As Single, c2 As Single, c3 As Single,
-                                        isNormal As Boolean, isGray As Boolean, isColor As Boolean, lo As Integer, hi As Integer) As Integer
+                                        isNormal As Boolean, isGray As Boolean, isColor As Boolean, lo As Integer, hi As Integer,
+                                        ss As Integer, ws As Integer, cs As Integer, asp As Integer) As Integer
         Dim e = lo
         ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
         ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
@@ -235,23 +276,33 @@ Public Module SseOverlayCompositor
                 Continue While
             End If
             Dim a = VBroadcastS(acc, e)
+            ' ⭐ Espejo EXACTO de las conversiones del escalar (ver ApplyOverlayPixel), en el mismo orden y con
+            ' la MISMA función (CvtV es el espejo de ConvertSpaceShared, cortocircuito incluido). El lane del
+            ' ALPHA también se convierte y da igual: lo descarta el `rgbMask` del select final.
+            Dim ac = FaceTintCpuCompositor.CvtV(a, asp, cs)
             Dim res As Vector(Of Single)
             If isNormal Then
-                res = Vector.Add(Vector.Multiply(lv, la), Vector.Multiply(a, Vector.Subtract(one, la)))
+                Dim lc = FaceTintCpuCompositor.CvtV(lv, ss, cs)
+                res = FaceTintCpuCompositor.CvtV(
+                    Vector.Add(Vector.Multiply(lc, la), Vector.Multiply(ac, Vector.Subtract(one, la))), cs, asp)
             Else
                 Dim b = FaceTintCpuCompositor.Clamp01V(Vector.Divide(lv, la))
+                Dim bw = FaceTintCpuCompositor.CvtV(b, ss, ws)
+                Dim aw = FaceTintCpuCompositor.CvtV(a, asp, ws)
                 Dim r As Vector(Of Single)
                 If isGray Then
-                    Dim wv = Vector.ConditionalSelect(rgbMask, Vector.Multiply(a, grayW), zero)
+                    Dim wv = Vector.ConditionalSelect(rgbMask, Vector.Multiply(aw, grayW), zero)
                     Dim s1 = Vector.Add(wv, FastPow.VSwapWithinPixel(wv, 1, shTmp))
                     Dim lum = Vector.Add(s1, FastPow.VSwapWithinPixel(s1, 2, shTmp))
-                    r = Vector.Multiply(lum, b)
+                    r = Vector.Multiply(lum, bw)
                 ElseIf isColor Then
-                    r = ColorModeBlockV(a, b, shTmp)
+                    r = ColorModeBlockV(aw, bw, shTmp)
                 Else
-                    r = FaceTintCpuCompositor.BlendDispatchV(m.BlendOp, m.SoftLight, a, b)
+                    r = FaceTintCpuCompositor.BlendDispatchV(m.BlendOp, m.SoftLight, aw, bw)
                 End If
-                res = Vector.Add(Vector.Multiply(Vector.Subtract(one, la), a), Vector.Multiply(r, la))
+                Dim rc = FaceTintCpuCompositor.CvtV(r, ws, cs)
+                res = FaceTintCpuCompositor.CvtV(
+                    Vector.Add(Vector.Multiply(Vector.Subtract(one, la), ac), Vector.Multiply(rc, la)), cs, asp)
             End If
             Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(la, zero))
             Vector.ConditionalSelect(keep, res, a).CopyTo(acc, e)
@@ -593,8 +644,18 @@ Public Module SseOverlayCompositor
                     Next
                     ApplyOverlays(aVec, New SseOverlay() {ovT}, np, 1)
                     Dim mm = BlendOpFromSseMode(mode)
+                    ' La referencia escalar resuelve la MISMA convención que la entrada pública (misma etapa,
+                    ' mismo isTextureSet, mismo blendOp): si tomara otra, el test compararía dos leyes y daría
+                    ' rojo por el motivo equivocado.
+                    Dim refConv = FaceTintConvention.ResolveConvention(FaceTintConvention.FaceTintStage.Overlay,
+                                                                       FaceTintChannel.Diffuse,
+                                                                       isTextureSet:=(lt <> 1), blendOp:=mm.BlendOp)
+                    Dim refAsp = CInt(FaceTintConvention.AccumSpaceForChannel(FaceTintChannel.Diffuse,
+                                                                              SseFaceTintComposer.AccumSpaceCapability))
                     For px = 0 To np - 1
-                        ApplyOverlayPixel(aRef, ovT, mm, 0.4F, 0.55F, 0.7F, 0.8F, px)
+                        ApplyOverlayPixel(aRef, ovT, mm, 0.4F, 0.55F, 0.7F, 0.8F, px,
+                                          CInt(refConv.SrcSpace), CInt(refConv.WorkingSpace),
+                                          CInt(refConv.CompositeSpace), refAsp)
                     Next
                     For i = 0 To np * 4 - 1
                         If BitConverter.SingleToInt32Bits(aVec(i)) <> BitConverter.SingleToInt32Bits(aRef(i)) Then

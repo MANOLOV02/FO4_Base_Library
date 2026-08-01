@@ -341,7 +341,7 @@ Public Module FaceTintConvention
         ''' de que el seed fuera ley". <see cref="DefaultsFor"/> escribe la versión corriente, y
         ''' <see cref="UpgradeInPlace"/> lleva un set de la 0 a la corriente aplicándole los defaults DEL
         ''' JUEGO a los campos que la 0 no tenía. Es idempotente.</para></summary>
-        Public Const CurrentVersion As Integer = 2
+        Public Const CurrentVersion As Integer = 4
         Public Property Version As Integer = 0
 
         Public Sub New()
@@ -391,8 +391,13 @@ Public Module FaceTintConvention
             SeedMode = FaceTintSeedMode.BaseTexture
             SeedConstant = New Double() {0.5, 0.5, 0.5}
             ' Fold y Overlay: CLON del bucket del canal ⇒ byte-inerte mientras el usuario no los toque.
-            Fold = CloneBucket(Diffuse)
             Overlay = CloneBucket(Diffuse)
+            ' ⭐ EL FOLD ARRANCA EN PEGTOP, no en el SoftLight del bucket del canal. El pliegue del albedo
+            ' facegen es una ley del MOTOR y su soft-light es pegtop (DXBC verificado: a² + 2ab(1−a) = el
+            ' modelo 3). Clonar el bucket del canal le habría puesto GIMP y el fold habría cambiado de fórmula
+            ' el día que dejara de estar cableado. El default de un bucket tiene que ser la ley del motor.
+            Fold = CloneBucket(Diffuse)
+            Fold.SoftLight = FaceTintSoftLight.Pegtop
         End Sub
 
         ''' <summary>Copia de un bucket. Los dos buckets nuevos arrancan como clon del bucket del canal, y
@@ -446,8 +451,10 @@ Public Module FaceTintConvention
             s.SeedDiffuseG22 = False
             s.SeedMode = FaceTintSeedMode.Constant
             s.SeedConstant = New Double() {0.5, 0.5, 0.5}
-            s.Fold = CloneBucket(sseDiffuse)
             s.Overlay = CloneBucket(sseDiffuse)
+            ' Fold: clon del bucket del canal PERO con el soft-light del MOTOR (pegtop). Ver el constructor.
+            s.Fold = CloneBucket(sseDiffuse)
+            s.Fold.SoftLight = FaceTintSoftLight.Pegtop
             Return s
         End Function
 
@@ -472,6 +479,23 @@ Public Module FaceTintConvention
             ' materializan para que la UI y el JSON tengan valores concretos (y sean editables).
             If s.Fold Is Nothing Then s.Fold = d.Fold
             If s.Overlay Is Nothing Then s.Overlay = d.Overlay
+            ' ⭐⭐ -> 4: `Fold` y `Overlay` se RESETEAN ENTEROS al default DEL JUEGO.
+            ' ⛔ MEDIDO en los config del arnés (2026-08-01): en el slot de SKYRIM los dos buckets traían la
+            ' forma de FALLOUT — ws=G22, src=G22, out=G22, mask=G22Encode, accum=True — mientras el Diffuse de
+            ' SSE es all-Linear/Raw/accum=False. Salieron del CONSTRUCTOR (que es el de FO4) cuando el slot se
+            ' creó, y nadie los corrigió porque hasta ahora NINGÚN compositor los leía: el eje `stage` se
+            ' aceptaba y se descartaba, así que las dos etapas caían al bucket del canal.
+            ' Al volverlas alcanzables, esos valores heredados cambiarían EN SILENCIO el pliegue y los
+            ' overlays de Skyrim. Resetearlos no pierde ninguna elección del usuario POR CONSTRUCCIÓN: un
+            ' campo sin consumidor no pudo haber sido elegido — la UI los mostraba, pero lo que mostraba no
+            ' movía un byte.
+            ' ⛔ Por eso la versión sube a 4 y no alcanzaba con la 3: los sets ya migrados a la 3 (que sólo
+            ' corregía Fold.SoftLight) salen por el `Return` de arriba y se habrían quedado con el resto de la
+            ' forma equivocada.
+            If s.Version < 4 Then
+                s.Fold = d.Fold
+                s.Overlay = d.Overlay
+            End If
             s.Version = CurrentVersion
         End Sub
     End Class
@@ -718,8 +742,13 @@ Public Module FaceTintConvention
         ' porque ningún compositor lee `ResolveConvention(RegionSwap, ...).AccumSpace`. Lo que sí se vigila de
         ' esa etapa es que su OutputSpace coincida con el acumulador, y eso ya lo latchea NoteSwapAccumMismatch.
         ' Incluirla acá hacía fallar el gate y ABORTABA el bake de FO4 — el test estaba mal, no el código.
+        ' ⭐ RegionSwap YA ENTRA. La nota de arriba describía el estado ANTERIOR: el AccumSpace salía del
+        ' bucket de la ETAPA, así que el swap resolvía G22 donde el tint resolvía Linear y meter el swap acá
+        ' hacía fallar el gate y abortaba el bake de FO4. Desde que `AccumSpace` se resuelve con el bucket del
+        ' CANAL (ver ResolveConvention) esa divergencia NO PUEDE existir, y la etapa entra al barrido como
+        ' cualquier otra. Que este test pase con RegionSwap adentro ES la prueba de que la ley es estructural.
         Dim stages = New FaceTintStage() {FaceTintStage.TintDiffuse, FaceTintStage.TintNormalSpecular,
-                                          FaceTintStage.Overlay, FaceTintStage.Fold}
+                                          FaceTintStage.Overlay, FaceTintStage.Fold, FaceTintStage.RegionSwap}
         For Each ch In New FaceTintChannel() {FaceTintChannel.Diffuse, FaceTintChannel.Normal, FaceTintChannel.Specular}
             ' La referencia es la etapa de TINT del canal: es la que gobierna el storage (ver AccumSpaceForChannel).
             Dim want = ResolveConvention(TintStageFor(ch), ch, isTextureSet:=False, blendOp:=0).AccumSpace
@@ -805,8 +834,13 @@ Public Module FaceTintConvention
         Dim bucket As FaceTintBucketConvention =
             If(channel = FaceTintChannel.Diffuse, s.Diffuse, s.NormalSpecular)
         If forSwap AndAlso channel = FaceTintChannel.Diffuse Then bucket = s.Swap
-        If stage = FaceTintStage.Fold AndAlso s.Fold IsNot Nothing Then bucket = s.Fold
-        If stage = FaceTintStage.Overlay AndAlso s.Overlay IsNot Nothing Then bucket = s.Overlay
+        ' ⭐ Fold y Overlay: bucket propio y SOLO en el canal DIFFUSE — la MISMA gating que el swap, y por la
+        ' misma razón. Los dos son etapas del `_d` de SSE (el pliegue del facetint y las capas de RaceMenu);
+        ' no existen en Normal/Specular, así que aplicarles su bucket en esos canales devolvería una convención
+        ' con forma de Diffuse para un canal que acumula lineal. Sin el gate, un caller que pase stage=Fold a la
+        ' pipeline de 3 canales se llevaba el bucket del fold también en el `_msn`.
+        If stage = FaceTintStage.Fold AndAlso channel = FaceTintChannel.Diffuse AndAlso s.Fold IsNot Nothing Then bucket = s.Fold
+        If stage = FaceTintStage.Overlay AndAlso channel = FaceTintChannel.Diffuse AndAlso s.Overlay IsNot Nothing Then bucket = s.Overlay
 
         Dim c As FaceTintConventionSet
         c.WorkingSpace = bucket.WorkingSpace
@@ -855,8 +889,20 @@ Public Module FaceTintConvention
         ' vez, `= bucket.CompositeSpace`, y nada mas en este cuerpo lo toca; `forBake` no se lee NUNCA (ver el
         ' <param> de arriba). Esa frase estuvo escrita aca 60 lineas debajo del comentario que la declara falsa.
         ' El compositor —CPU y GL— NO ve el booleano: ve un espacio CONCRETO.
-        ' Default (AccumInCompositeSpace=False) => OutputSpace.
-        c.AccumSpace = If(bucket.AccumInCompositeSpace, c.CompositeSpace, c.OutputSpace)
+        ' ⛔⛔ EL ACUMULADOR ES STORAGE DEL CANAL, NO DE LA ETAPA. `AccumSpace` sale SIEMPRE del bucket del
+        ' CANAL — flag, CompositeSpace y OutputSpace —, nunca del bucket de la etapa. Es la misma ley que ya
+        ' regía para el bucket Swap (ver AccumSpaceForChannel), pero ahora es ESTRUCTURAL en vez de vigilada.
+        ' ⭐ POR QUE SE CAMBIO: con Fold y Overlay ya alcanzables, sus buckets traían
+        ' `AccumInCompositeSpace = True` (el default del inicializador, que se llevó CloneBucket) mientras el
+        ' Diffuse de SSE persistido tiene False — MEDIDO en los config del arnés, no supuesto. Hoy no se nota
+        ' porque la ley SSE es all-Linear y las dos fórmulas dan Linear; el día que un espacio deje de serlo,
+        ' las etapas escribirían EL MISMO buffer en dos espacios distintos y la salida sería basura sin que
+        ' falle nada. Era exactamente el escenario que AccumSpaceConsistencySelfTest declara vigilar.
+        ' ⛔ Con stage = la etapa de tint del canal (el caso de TODOS los callers previos) `storage` ES
+        ' `bucket` ⇒ byte-idéntico. Sólo cambia para las etapas con bucket propio, que es la corrección.
+        Dim storage As FaceTintBucketConvention =
+            If(channel = FaceTintChannel.Diffuse, s.Diffuse, s.NormalSpecular)
+        c.AccumSpace = If(storage.AccumInCompositeSpace, storage.CompositeSpace, storage.OutputSpace)
 
         Return c
     End Function

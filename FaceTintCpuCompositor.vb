@@ -246,6 +246,161 @@ Public Module FaceTintCpuCompositor
         End Select
     End Function
 
+    ' =====================================================================================================
+    ' INVERSA ANALITICA DEL SOFT-LIGHT — la contraparte exacta de BlendSoftLightModel.
+    ' =====================================================================================================
+    ' POR QUE EXISTE: el UNFOLD de SSE tiene que CANCELAR el fold. El motor vuelve a aplicar
+    ' softlight(., TINT) x amplify(DETAIL) sobre lo que escribimos, asi que el bake guarda la PREIMAGEN.
+    ' ⛔ Hasta aca la inversa era SOLO la de pegtop, escrita a mano en DOS sitios (la rama uFgTintFold==2 del
+    ' shader y SseFaceGenBaker.PreCompensateEngineChain). Con el modelo cableado en pegtop alcanzaba; en
+    ' cuanto el modelo sale de la convencion, invertir con pegtop lo que se plego con GIMP deja de cancelar
+    ' y el RENDER deja de mostrar lo que el juego dibuja.
+    ' ⛔ ANALITICA EN LOS CUATRO MODELOS — NADA de Newton. Una inversa iterativa mete tolerancia y conteo de
+    ' pasos en un camino que tiene que dar EL MISMO BYTE en el escalar, en el espejo vectorial y en el GLSL.
+    '
+    ' Notacion: d = destino (base), s = source, y = resultado. Se resuelve d dado (y, s).
+    '
+    ' ⭐ LOS TRES MODELOS NO-PEGTOP COMPARTEN LA RAMA BAJA CON PEGTOP, y no por casualidad:
+    '     W3C  con s < 0,5 : y = d − (1−2s)d(1−d) = 2sd + (1−2s)d²   <- pegtop
+    '     GIMP con s ≤ 0,5 : y = 2ds + d²(1−2s)                       <- pegtop
+    '   asi que la mitad del dominio de cada uno reusa LA MISMA inversa. Se llama, no se copia.
+
+    ''' <summary>Inversa de PEGTOP (modelo 3): <c>y = (1−2s)d² + 2sd</c>. Con <c>k = 1−2s</c> queda
+    ''' <c>k d² + 2s d − y = 0</c> ⇒ <c>d = (−s + √(s² + k y)) / k</c>.
+    ''' <para>La rama <c>+√</c> es la correcta para los DOS signos de k: el forward es monotono creciente en
+    ''' [0,1] (con k &lt; 0 el vertice cae en <c>s/(2s−1) ≥ 1</c>, fuera del dominio), asi que hay una sola
+    ''' preimagen valida.</para>
+    ''' <para><c>k → 0</c> (s = 0,5) es la IDENTIDAD <c>y = d</c>: la formula daria 0/0. El umbral no es "por
+    ''' las dudas" — con |k| chico la division amplifica el error de la raiz.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SoftLightInvPegtop(y As Single, s As Single) As Single
+        Dim k As Single = 1.0F - 2.0F * s
+        If MathF.Abs(k) < 0.000001F Then Return y
+        Dim disc As Single = s * s + k * y
+        ' GUARD: la inversa es MAL CONDICIONADA cerca de k=0; en float32 `disc` puede dar negativo donde en
+        ' float64 daba ~0. Sin esto, NaN. (Se preserva VERBATIM del sitio del que se izó esta ley.)
+        If disc < 0.0F OrElse Single.IsNaN(disc) Then disc = 0.0F
+        Return (-s + MathF.Sqrt(disc)) / k
+    End Function
+
+    ''' <summary>Inversa de GIMP/Photoshop (modelo 1). <c>s ≤ 0,5</c> ⇒ la rama ES pegtop.
+    ''' <para><c>s &gt; 0,5</c>: <c>y = 2(1−s)d + (2s−1)√d</c> es una CUADRATICA en <c>t = √d</c>:
+    ''' <c>a t² + b t − y = 0</c> con <c>a = 2(1−s)</c>, <c>b = 2s−1</c> ⇒ <c>t = (−b + √(b² + 4a y))/(2a)</c>
+    ''' y <c>d = t²</c>. <c>a = 0</c> (s = 1) degenera a <c>y = t</c> ⇒ <c>d = y²</c>.</para></summary>
+    Private Function SoftLightInvGimp(y As Single, s As Single) As Single
+        If s <= 0.5F Then Return SoftLightInvPegtop(y, s)
+        Dim a As Single = 2.0F * (1.0F - s)
+        Dim b As Single = 2.0F * s - 1.0F
+        If a < 0.000001F Then Return y * y
+        Dim disc As Single = b * b + 4.0F * a * y
+        If disc < 0.0F OrElse Single.IsNaN(disc) Then disc = 0.0F
+        Dim t As Single = (-b + MathF.Sqrt(disc)) / (2.0F * a)
+        Return t * t
+    End Function
+
+    ''' <summary>Inversa de Illusions.hu (modelo 2): <c>y = d^p</c> con <c>p = 2^(2(0,5−s))</c>.
+    ''' <para>⭐ SIN FORMULA NUEVA: el exponente cumple <c>p(1−s) = 1/p(s)</c>, asi que la inversa es EL MISMO
+    ''' forward con el source reflejado — <c>Inv(y,s) = Fwd(y, 1−s)</c>. Exacta, sin casos especiales, y
+    ''' hereda el mismo piso de base (1e-6) que el forward ⇒ no puede desincronizarse de el.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SoftLightInvIllusions(y As Single, s As Single) As Single
+        Return Clamp01(BlendSoftLightModel(2, y, 1.0F - s))
+    End Function
+
+    ''' <summary>Inversa de W3C SVG (modelo 0). <c>s &lt; 0,5</c> ⇒ la rama ES pegtop.
+    ''' <para><c>s ≥ 0,5</c>: <c>y = (1−b)d + b·g(d)</c> con <c>b = 2s−1</c> y <c>g</c> partida en d = 0,25.
+    ''' La rama se elige POR EL VALOR de y, no por d (que es justo lo que no se conoce): el forward es
+    ''' monotono creciente y las dos ramas COINCIDEN en d = 0,25, donde <c>y₀ = 0,25 + 0,25b</c>
+    ''' (g(0,25) = √0,25 = 0,5 = el polinomio evaluado ahi). Entonces <c>y &gt; y₀ ⇔ d &gt; 0,25</c>.</para>
+    ''' <para><b>y &gt; y₀</b> (g = √d): cuadratica en <c>t = √d</c>, <c>(1−b)t² + b t − y = 0</c>.
+    ''' <c>b = 1</c> (s = 1) degenera a <c>y = √d</c> ⇒ <c>d = y²</c>.</para>
+    ''' <para><b>y ≤ y₀</b> (g = 16d³−12d²+4d): CUBICA <c>16b d³ − 12b d² + (3b+1)d − y = 0</c>. Con la
+    ''' sustitucion <c>d = u + 1/4</c> el termino cuadratico se cancela y queda deprimida:
+    ''' <c>u³ + p u + q = 0</c> con <c>p = 1/(16b)</c> y <c>q = (b + 1 − 4y)/(64b)</c>.
+    ''' Como <c>p &gt; 0</c>, el discriminante <c>(q/2)² + (p/3)³</c> es SIEMPRE positivo ⇒ hay UNA sola raiz
+    ''' real y Cardano la da cerrada: <c>u = ∛(−q/2 + √Δ) + ∛(−q/2 − √Δ)</c>. Sin ambiguedad de rama, sin
+    ''' trigonometria y sin iterar.</para>
+    ''' <para><c>b = 0</c> (s = 0,5) es la identidad.</para></summary>
+    Private Function SoftLightInvW3C(y As Single, s As Single) As Single
+        If s < 0.5F Then Return SoftLightInvPegtop(y, s)
+        Dim b As Single = 2.0F * s - 1.0F
+        If b < 0.000001F Then Return y
+        Dim y0 As Single = 0.25F + 0.25F * b
+        If y > y0 Then
+            Dim a As Single = 1.0F - b
+            If a < 0.000001F Then Return y * y
+            Dim disc As Single = b * b + 4.0F * a * y
+            If disc < 0.0F OrElse Single.IsNaN(disc) Then disc = 0.0F
+            Dim t As Single = (-b + MathF.Sqrt(disc)) / (2.0F * a)
+            Return t * t
+        End If
+        Dim p As Single = 1.0F / (16.0F * b)
+        Dim q As Single = (b + 1.0F - 4.0F * y) / (64.0F * b)
+        Dim mq2 As Single = -0.5F * q
+        Dim p3 As Single = p / 3.0F
+        Dim delta As Single = mq2 * mq2 + p3 * p3 * p3
+        If delta < 0.0F Then delta = 0.0F          ' p > 0 ⇒ no alcanzable; guard de redondeo, no de ley
+        Dim sq As Single = MathF.Sqrt(delta)
+        ' ⛔ FastPow.Cbrt1 y NO MathF.Cbrt: `MathF.Cbrt` no tiene contraparte en Vector(Of T), asi que el
+        ' espejo vectorial no podria ser BIT-IDENTICO — que es el contrato del modulo. Ver FastPow.Cbrt1.
+        Dim u As Single = FastPow.Cbrt1(mq2 + sq) + FastPow.Cbrt1(mq2 - sq)
+        ' Esta rama solo se alcanza con y <= y0 <= 0,5 ⇒ d <= 0,25: el clamp es inerte y queda como declaracion
+        ' de dominio, no como correccion. (La rama de la raiz cuadrada SI puede salirse y no se acota: ver la
+        ' nota de BlendSoftLightModelInverse sobre por que `y` no se acota.)
+        Return u + 0.25F
+    End Function
+
+    ''' <summary>⭐ Dispatch de la INVERSA del soft-light por modelo — la contraparte de
+    ''' <see cref="BlendSoftLightModel"/>, con el MISMO orden de modelos (0=W3C 1=GIMP 2=Illusions 3=pegtop).
+    ''' <para>⛔ SYNC: es la FUENTE UNICA de la inversa. La tienen que espejar el <c>PreCompensateEngineChain</c>
+    ''' (escalar y vectorial) y la rama <c>uFgTintFold==2</c> del GLSL. Lo verifica
+    ''' <see cref="SoftLightInverseSelfTest"/>, que es el gate: sin ese test, una inversa mal derivada NO se
+    ''' ve en el bake (sale una cara levemente distinta, no un fallo).</para></summary>
+    Public Function BlendSoftLightModelInverse(model As Integer, y As Single, s As Single) As Single
+        ' ⛔⛔ `y` NO SE ACOTA, y no es un olvido: su consumidor es el UNFOLD, donde `y` es un valor LINEAL que
+        ' YA fue dividido por el amplify del detail y puede pasarse de 1 con total legitimidad (amp < 1). La
+        ' saturación es del PACK, al final de la cadena, no de esta función.
+        ' ⭐ ESTO LO CAZÓ EL GATE, no una revisión: con `y = Clamp01(y)` el self-test `baker` dio
+        ' `PreComp vector MISMATCH ... escalar=0x3F7FFFFF vector=0x3F800000` — o sea la ley acotada contra el
+        ' espejo vectorial sin acotar. Media unidad de LSB que ninguna lectura del diff habría mostrado.
+        ' `s` SÍ se acota: es un sample de textura ([0,1] por construcción) y las cuatro derivaciones asumen
+        ' ese dominio para elegir rama. Acotarlo es inerte y deja las ramas bien definidas.
+        s = Clamp01(s)
+        Select Case model
+            Case 1 : Return SoftLightInvGimp(y, s)
+            Case 2 : Return SoftLightInvIllusions(y, s)
+            Case 3 : Return SoftLightInvPegtop(y, s)
+            Case Else : Return SoftLightInvW3C(y, s)
+        End Select
+    End Function
+
+    ''' <summary>GATE de la inversa: para los CUATRO modelos barre (d, s) y verifica que
+    ''' <c>Inv(model, Fwd(model, d, s), s) ≈ d</c>. Devuelve "" si pasa.
+    ''' <para>El criterio es en unidades de BYTE (lo que se hornea), no en epsilon de float: la cadena termina
+    ''' en un DDS de 8 bits. Tolerancia 1 byte = 1/255.</para>
+    ''' <para>⛔ Se saltean los puntos donde el forward DESTRUYE informacion y ninguna inversa los recupera:
+    ''' Illusions con d por debajo de su piso (1e-6) — misma politica declarada que el amplify con amp ≤ 0 en
+    ''' <c>SseFaceGenBaker.FgAmpInverse</c>. No se maquilla la tolerancia para taparlos.</para></summary>
+    Public Function SoftLightInverseSelfTest() As String
+        Const TOL As Single = 1.0F / 255.0F
+        For model As Integer = 0 To 3
+            For si As Integer = 0 To 64
+                Dim s As Single = si / 64.0F
+                For di As Integer = 0 To 64
+                    Dim d As Single = di / 64.0F
+                    If model = 2 AndAlso d < 0.001F Then Continue For   ' piso del forward: no es invertible
+                    Dim y As Single = BlendSoftLightModel(model, d, s)
+                    Dim back As Single = BlendSoftLightModelInverse(model, y, s)
+                    Dim err As Single = MathF.Abs(back - d)
+                    If err > TOL Then
+                        Return $"soft-light inverse MISMATCH: model={model} s={s:F4} d={d:F4} fwd={y:F6} inv={back:F6} err={err * 255.0F:F3} bytes (tol=1)"
+                    End If
+                Next
+            Next
+        Next
+        Return ""
+    End Function
+
     ' ---- Modos separables estandar adicionales (5..19). Transcripcion 1:1 del shader. ----
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function BlendColorDodge1(d As Single, s As Single) As Single
@@ -1485,8 +1640,15 @@ Public Module FaceTintCpuCompositor
                                         layers As IList(Of FaceTintLayerInput),
                                         swaps As IList(Of FaceRegionSwapInput),
                                         cache As System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex),
-                                        alphaPolicy As FaceTintAlphaPolicy) As CpuAccumResult
+                                        alphaPolicy As FaceTintAlphaPolicy,
+                                        Optional stage As FaceTintConvention.FaceTintStage? = Nothing) As CpuAccumResult
         If seed Is Nothing OrElse w <= 0 OrElse h <= 0 Then Return Nothing
+        ' ⭐ ETAPA EFECTIVA — el MISMO contrato que el GL (FaceTintCompositor.ComposeOntoFaceTexture): Nothing =
+        ' la etapa de tint del canal (comportamiento previo, byte-idéntico); explícita = el bucket de esa etapa.
+        ' ⛔ SYNC: CPU/GPU compositor — si un camino pasa `stage` y el otro no, los dos compositores resuelven
+        ' buckets distintos para la MISMA pasada y la paridad se rompe en silencio. Los callers van de a pares.
+        Dim effStage As FaceTintConvention.FaceTintStage =
+            If(stage.HasValue, stage.Value, FaceTintConvention.TintStageFor(channel))
         Dim src As DecodedTex = seed.Texture
         If seed.Kind = FaceTintSeedKind.FromTexture AndAlso src Is Nothing Then Return Nothing
         cache = ResolveDecodeCache(cache)
@@ -1761,7 +1923,7 @@ Public Module FaceTintCpuCompositor
             For Each pLayer In layers
                 If pLayer Is Nothing Then Continue For
                 Dim pfw = FaceTintConvention.ResolveConvention(
-                    FaceTintConvention.TintStageFor(channel), channel, pLayer.IsTextureSet, pLayer.BlendOp).Framework
+                    effStage, channel, pLayer.IsTextureSet, pLayer.BlendOp).Framework
                 If pfw = FaceTintFramework.OverBase OrElse pfw = FaceTintFramework.AddBase Then
                     needsBase = True
                     Exit For
@@ -1798,7 +1960,7 @@ Public Module FaceTintCpuCompositor
                     If sBytes Is Nothing OrElse sBytes.Length = 0 Then Continue For
                     Dim sTex = CachedDecode(cache, sLayer.GetChannelCacheKey(channel), sBytes, w, h)
                     If sTex Is Nothing Then Continue For
-                    Dim sConv = FaceTintConvention.ResolveConvention(FaceTintConvention.TintStageFor(channel), channel, sLayer.IsTextureSet, sLayer.BlendOp)
+                    Dim sConv = FaceTintConvention.ResolveConvention(effStage, channel, sLayer.IsTextureSet, sLayer.BlendOp)
                     stColR = sLayer.R / 255.0F : stColG = sLayer.G / 255.0F : stColB = sLayer.B / 255.0F
                     stOpac = MathF.Max(0.0F, MathF.Min(1.0F, sLayer.Opacity))
                     stMaskTex = sTex : stMc = CInt(sConv.MaskConv)
@@ -1841,8 +2003,10 @@ Public Module FaceTintCpuCompositor
                     diffMaskTex = CachedDecode(cache, layer.LayerCacheKey, layer.LayerDdsBytes, w, h)
                 End If
 
+                ' ⭐ `effStage` — espejo EXACTO del GL (ComposeOntoFaceTexture). Acá estaba cableado en la etapa
+                ' de tint del canal, igual que allá, así que ningún bucket de etapa podía llegar al compose.
                 Dim conv = FaceTintConvention.ResolveConvention(
-                    FaceTintConvention.TintStageFor(channel), channel, layer.IsTextureSet, layer.BlendOp)
+                    effStage, channel, layer.IsTextureSet, layer.BlendOp)
                 Dim ws = CInt(conv.WorkingSpace), cs = CInt(conv.CompositeSpace)
                 Dim ss = CInt(conv.SrcSpace), os = CInt(conv.OutputSpace)
                 Dim mc = CInt(conv.MaskConv), bop = CInt(conv.Blend)
@@ -2519,6 +2683,96 @@ Public Module FaceTintCpuCompositor
                 Dim hiB = Vector.Add(d, Vector.Multiply(Vector.Subtract(Vector.Multiply(two, s), one), Vector.Subtract(g, d)))
                 Dim loB = Vector.Subtract(d, Vector.Multiply(Vector.Multiply(Vector.Subtract(one, Vector.Multiply(two, s)), d), Vector.Subtract(one, d)))
                 Return Vector.ConditionalSelect(Vector.GreaterThanOrEqual(s, half), hiB, loB)
+        End Select
+    End Function
+
+    ' =====================================================================================================
+    ' ESPEJO VECTORIAL DE LA INVERSA DEL SOFT-LIGHT — los CUATRO modelos.
+    ' =====================================================================================================
+    ' ⛔ Transcripcion 1:1 del escalar, incluida LA ASOCIATIVIDAD de cada expresion: `4.0F * a * y` es
+    ' `(4*a)*y` en VB, y escribirlo como `4*(a*y)` en el vector cambia el ULP y el gate `baker` sale rojo.
+    ' Las condiciones del escalar (returns tempranos) se vuelven selects aplicados EN ORDEN DE PRIORIDAD: el
+    ' ultimo select gana, asi que va el de mayor prioridad.
+    ' ⛔ El vector NO puede hacer early-out por lane: calcula las dos ramas y selecciona. Las ramas descartadas
+    ' pueden dar Inf/NaN (division por k→0) y eso es INOCUO — ConditionalSelect las tira sin excepcion.
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SoftLightInvPegtopV(y As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Dim one = VBroadcast(1.0F), two = VBroadcast(2.0F), zero = Vector(Of Single).Zero
+        Dim eps = VBroadcast(0.000001F)
+        Dim k = Vector.Subtract(one, Vector.Multiply(two, s))
+        Dim disc = Vector.Add(Vector.Multiply(s, s), Vector.Multiply(k, y))
+        ' `disc < 0 OrElse IsNaN(disc)` -> 0. GreaterThanOrEqual da falso para NaN ⇒ un select cubre los dos.
+        disc = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(disc, zero), disc, zero)
+        Dim inv = Vector.Divide(Vector.Add(Vector.Negate(s), Vector.SquareRoot(disc)), k)
+        Return Vector.ConditionalSelect(Vector.LessThan(Vector.Abs(k), eps), y, inv)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SoftLightInvGimpV(y As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Dim one = VBroadcast(1.0F), two = VBroadcast(2.0F), half = VBroadcast(0.5F)
+        Dim four = VBroadcast(4.0F), zero = Vector(Of Single).Zero, eps = VBroadcast(0.000001F)
+        Dim a = Vector.Multiply(two, Vector.Subtract(one, s))
+        Dim b = Vector.Subtract(Vector.Multiply(two, s), one)
+        Dim disc = Vector.Add(Vector.Multiply(b, b), Vector.Multiply(Vector.Multiply(four, a), y))
+        disc = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(disc, zero), disc, zero)
+        Dim t = Vector.Divide(Vector.Add(Vector.Negate(b), Vector.SquareRoot(disc)), Vector.Multiply(two, a))
+        Dim hi = Vector.Multiply(t, t)
+        hi = Vector.ConditionalSelect(Vector.LessThan(a, eps), Vector.Multiply(y, y), hi)   ' s = 1
+        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(s, half), SoftLightInvPegtopV(y, s), hi)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SoftLightInvIllusionsV(y As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        ' Mismo argumento que el escalar: p(1−s) = 1/p(s) ⇒ la inversa ES el forward con el source reflejado.
+        Return SoftLightV(2, y, Vector.Subtract(VBroadcast(1.0F), s))
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SoftLightInvW3CV(y As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Dim one = VBroadcast(1.0F), two = VBroadcast(2.0F), half = VBroadcast(0.5F)
+        Dim four = VBroadcast(4.0F), zero = Vector(Of Single).Zero, eps = VBroadcast(0.000001F)
+        Dim quarter = VBroadcast(0.25F)
+        Dim b = Vector.Subtract(Vector.Multiply(two, s), one)
+        Dim y0 = Vector.Add(quarter, Vector.Multiply(quarter, b))
+
+        ' Rama d >= 0,25 (g = √d): cuadratica en t = √d.
+        Dim a = Vector.Subtract(one, b)
+        Dim discQ = Vector.Add(Vector.Multiply(b, b), Vector.Multiply(Vector.Multiply(four, a), y))
+        discQ = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(discQ, zero), discQ, zero)
+        Dim t = Vector.Divide(Vector.Add(Vector.Negate(b), Vector.SquareRoot(discQ)), Vector.Multiply(two, a))
+        Dim hiSqrt = Vector.Multiply(t, t)
+        hiSqrt = Vector.ConditionalSelect(Vector.LessThan(a, eps), Vector.Multiply(y, y), hiSqrt)   ' s = 1
+
+        ' Rama d < 0,25: cubica deprimida + Cardano. p > 0 ⇒ una sola raiz real.
+        Dim p = Vector.Divide(one, Vector.Multiply(VBroadcast(16.0F), b))
+        Dim q = Vector.Divide(Vector.Subtract(Vector.Add(b, one), Vector.Multiply(four, y)),
+                              Vector.Multiply(VBroadcast(64.0F), b))
+        Dim mq2 = Vector.Multiply(VBroadcast(-0.5F), q)
+        Dim p3 = Vector.Divide(p, VBroadcast(3.0F))
+        ' `mq2*mq2 + p3*p3*p3` con la asociatividad de VB: (p3*p3)*p3.
+        Dim delta = Vector.Add(Vector.Multiply(mq2, mq2), Vector.Multiply(Vector.Multiply(p3, p3), p3))
+        delta = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(delta, zero), delta, zero)
+        Dim sq = Vector.SquareRoot(delta)
+        Dim u = Vector.Add(FastPow.CbrtV(Vector.Add(mq2, sq)), FastPow.CbrtV(Vector.Subtract(mq2, sq)))
+        Dim hiCubic = Vector.Add(u, quarter)
+
+        Dim hi = Vector.ConditionalSelect(Vector.GreaterThan(y, y0), hiSqrt, hiCubic)
+        hi = Vector.ConditionalSelect(Vector.LessThan(b, eps), y, hi)                      ' s = 0,5 ⇒ identidad
+        Return Vector.ConditionalSelect(Vector.LessThan(s, half), SoftLightInvPegtopV(y, s), hi)
+    End Function
+
+    ''' <summary>Espejo vectorial de <see cref="BlendSoftLightModelInverse"/> — los CUATRO modelos, incluida la
+    ''' cubica de W3C (Cardano con <see cref="FastPow.CbrtV"/>). Mismo criterio de acotado que el escalar:
+    ''' <c>s</c> se acota, <c>y</c> NO (ver la nota larga alla).</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function BlendSoftLightModelInverseV(model As Integer, y As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        s = Clamp01V(s)
+        Select Case model
+            Case 1 : Return SoftLightInvGimpV(y, s)
+            Case 2 : Return SoftLightInvIllusionsV(y, s)
+            Case 3 : Return SoftLightInvPegtopV(y, s)
+            Case Else : Return SoftLightInvW3CV(y, s)
         End Select
     End Function
 
