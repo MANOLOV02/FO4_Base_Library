@@ -133,6 +133,9 @@ Public Module SseOverlayCompositor
                 Sub(range)
                     Dim lo = range.Item1 * 4, hi = range.Item2 * 4
                     Dim e = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
                     If vecOk Then
                         ' POR PIXEL ENTERO: Grayscale lee ar,ag,ab y escribe los tres ⇒ read-after-write.
                         While (e And (lanes - 1)) <> 0 AndAlso e < hi
@@ -203,6 +206,9 @@ Public Module SseOverlayCompositor
                                         c0 As Single, c1 As Single, c2 As Single, c3 As Single,
                                         isNormal As Boolean, isGray As Boolean, isColor As Boolean, lo As Integer, hi As Integer) As Integer
         Dim e = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
         ' scratch DEL HILO para las permutaciones dentro del pixel (reemplazan a Vector256.Shuffle,
         ' que no existe en la API de ancho variable). ⛔ Local: compartirlo entre hilos lo corrompe.
         Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
@@ -224,7 +230,7 @@ Public Module SseOverlayCompositor
                 lv = Vector.Multiply(t, colV) : la = Vector.Multiply(FastPow.VBroadcastChannelV(t, 3, shTmp), c3V)
             End If
             ' early-out de bloque: restituye el `If la <= 0 Then Continue For` del escalar (ver la trampa 1)
-            If Vector.LessThanOrEqualAll(la, zero) Then
+            If Vector.LessThanOrEqualAll(Of Single)(la, zero) Then
                 e += lanes
                 Continue While
             End If
@@ -247,7 +253,7 @@ Public Module SseOverlayCompositor
                 End If
                 res = Vector.Add(Vector.Multiply(Vector.Subtract(one, la), a), Vector.Multiply(r, la))
             End If
-            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(la, zero))
+            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(la, zero))
             Vector.ConditionalSelect(keep, res, a).CopyTo(acc, e)
             e += lanes
         End While
@@ -295,17 +301,17 @@ Public Module SseOverlayCompositor
         Dim hR = ModSixV(Vector.Divide(Vector.Subtract(bg, bb), d), six)          ' identidad: |x| <= 1
         Dim hG = Vector.Add(Vector.Divide(Vector.Subtract(bb, br), d), VBroadcastS(2.0F))
         Dim hB = Vector.Add(Vector.Divide(Vector.Subtract(br, bg), d), VBroadcastS(4.0F))
-        Dim h = Vector.ConditionalSelect(Vector.Equals(Of Single)(mx, br), hR,
-                    Vector.ConditionalSelect(Vector.Equals(Of Single)(mx, bg), hG, hB))
+        Dim h = Vector.ConditionalSelect(Vector.Equals(mx, br), hR,
+                    Vector.ConditionalSelect(Vector.Equals(mx, bg), hG, hB))
         h = Vector.Divide(h, six)
-        h = Vector.ConditionalSelect(Vector.LessThan(Of Single)(h, zero), Vector.Add(h, one), h)
+        h = Vector.ConditionalSelect(Vector.LessThan(h, zero), Vector.Add(h, one), h)
         ' d <= 1e-7 => h = 0 (el `If d > 0.0000001F` del escalar; con d = 0 las divisiones dan NaN/Inf y este
         ' select las descarta, igual que el escalar nunca las evalua)
-        h = Vector.ConditionalSelect(Vector.GreaterThan(Of Single)(d, VBroadcastS(0.0000001F)), h, zero)
+        h = Vector.ConditionalSelect(Vector.GreaterThan(d, VBroadcastS(0.0000001F)), h, zero)
         ' s = If(mx <= 0, 0, d/mx)
         ' ⛔ La condicion es `mx <= 0`, NO `mx > 0`: con mx = NaN el escalar (If(mx <= 0, 0, d/mx)) evalua
         ' la rama FALSA y devuelve d/mx = NaN, mientras que `mx > 0` tambien es falsa y daba 0.
-        Dim s = Vector.ConditionalSelect(Vector.LessThanOrEqual(Of Single)(mx, zero), zero, Vector.Divide(d, mx))
+        Dim s = Vector.ConditionalSelect(Vector.LessThanOrEqual(mx, zero), zero, Vector.Divide(d, mx))
 
         ' --- V del SOURCE: MathF.Max(ar, MathF.Max(ag, ab)) ---
         Dim ar = FastPow.VBroadcastChannelV(a, 0, shTmp)
@@ -324,8 +330,8 @@ Public Module SseOverlayCompositor
     ''' operación no redondea. ⛔ NO usar <c>x − 6·trunc(x/6)</c>: eso sí redondearía.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function ModSixV(x As Vector(Of Single), six As Vector(Of Single)) As Vector(Of Single)
-        Dim r = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(Of Single)(x, six), Vector.Subtract(x, six), x)
-        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(Of Single)(r, Vector.Negate(six)), Vector.Add(r, six), r)
+        Dim r = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(x, six), Vector.Subtract(x, six), x)
+        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(r, Vector.Negate(six)), Vector.Add(r, six), r)
     End Function
 
     ''' <summary>Orden configurable de los overlays Face[Ovl] (= análogo SSE de los SWAPS de FO4:
@@ -410,6 +416,9 @@ Public Module SseOverlayCompositor
                 Sub(range)
                     Dim lo = range.Item1 * 4, hi = range.Item2 * 4
                     Dim e = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
                     If FastPow.AcceleratedV Then
                         While (e And (lanes - 1)) <> 0 AndAlso e < hi
                             SkeeMaskOne(acc, tex, tr, tg, tb, opa, e) : e += 1
@@ -428,7 +437,7 @@ Public Module SseOverlayCompositor
                             Dim a = VBroadcastS(acc, e)
                             Dim la = Clamp01V(Vector.Multiply(FastPow.VBroadcastChannelV(t, 3, shTmp), opaV))
                             ' early-out de bloque: restituye el `If la <= 0 Then Continue For` del escalar
-                            If Vector.LessThanOrEqualAll(la, zero) Then
+                            If Vector.LessThanOrEqualAll(Of Single)(la, zero) Then
                                 e += lanes
                                 Continue While
                             End If
@@ -436,7 +445,7 @@ Public Module SseOverlayCompositor
                             Dim res = Vector.Add(Vector.Multiply(Vector.Multiply(t, tintV), la),
                                                     Vector.Multiply(a, Vector.Subtract(one, la)))
                             ' replica los dos guards a la vez: alpha intacto, y `If la <= 0 Then Continue For`
-                            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(la, zero))
+                            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(la, zero))
                             Vector.ConditionalSelect(keep, res, a).CopyTo(acc, e)
                             e += lanes
                         End While
@@ -458,6 +467,9 @@ Public Module SseOverlayCompositor
                 Sub(range)
                     Dim lo = range.Item1 * 4, hi = range.Item2 * 4
                     Dim e = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
                     If FastPow.AcceleratedV Then
                         ' de a PIXEL ENTERO (4 elementos), no de a elemento: ver MsnBlendPixel
                         While (e And (lanes - 1)) <> 0 AndAlso e < hi
@@ -494,7 +506,7 @@ Public Module SseOverlayCompositor
                                                                    Vector.Divide(nv, lenV), nv)
                             Dim res = Vector.Multiply(Vector.Add(norm, one), half)
                             ' guards del escalar: alpha intacto y `If cov <= 0 Then Continue For`
-                            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(covV, zero))
+                            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(covV, zero))
                             Vector.ConditionalSelect(keep, res, accV).CopyTo(msnAcc, e)
                             e += lanes
                         End While

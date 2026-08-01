@@ -281,6 +281,9 @@ Public Module SseFaceGenBaker
             Sub(range)
                 Dim lo = range.Item1 * 4, hi = range.Item2 * 4      ' indices de ELEMENTO, no de pixel
                 Dim i = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
 
                 ' ⛔ LOS RANGOS DEL PARTITIONER NO VIENEN ALINEADOS. `lo` es multiplo de 4 (4 elementos por
                 ' pixel) pero es multiplo de 8 solo si el pixel inicial es PAR, o sea la MITAD de las veces.
@@ -341,6 +344,9 @@ Public Module SseFaceGenBaker
     Private Function FoldRangeV(comp As Single(), tint As Single(), detail As Single(),
                                 lo As Integer, hi As Integer) As Integer
         Dim i = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
         Dim offV = FastPow.VPerChannel(FgTintOffR, FgTintOffG, FgTintOffB, 0.0F)
         Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
         Dim ampV = New Vector(Of Single)(FgTintAmp)
@@ -431,6 +437,9 @@ Public Module SseFaceGenBaker
             Sub(range)
                 Dim lo = range.Item1 * 4, hi = range.Item2 * 4      ' indices de ELEMENTO, no de pixel
                 Dim i = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
                 ' Prologo / cuerpo vectorial / cola — misma estructura y mismo motivo que el fold: los
                 ' rangos del Partitioner no vienen alineados y las tres partes corren la MISMA ley.
                 If FastPow.AcceleratedV Then
@@ -491,6 +500,9 @@ Public Module SseFaceGenBaker
     Private Function PreCompRangeV(buf As Single(), tint As Single(), detail As Single(),
                                       lo As Integer, hi As Integer) As Integer
         Dim i = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
         Dim offV = FastPow.VPerChannel(FgTintOffR, FgTintOffG, FgTintOffB, 0.0F)
         Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
         Dim ampV = FastPow.VBroadcastS(FgTintAmp)

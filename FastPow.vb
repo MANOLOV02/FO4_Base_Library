@@ -262,7 +262,13 @@ Public Module FastPow
 
     ''' <summary>Idem pero como MÁSCARA de bits (se arma en Integer y se reinterpreta): el uso típico es
     ''' (−1,−1,−1,0) = "toca RGB, no toques el alpha".</summary>
-    Public Function VPerChannelMask(m0 As Integer, m1 As Integer, m2 As Integer, m3 As Integer) As Vector(Of Single)
+    ''' <summary>⛔ Devuelve la máscara en <c>Vector(Of Integer)</c>, NO en Single. Las comparaciones
+    ''' vectoriales NO genéricas devuelven <c>Vector(Of Integer)</c>, y
+    ''' <c>ConditionalSelect(Vector(Of Integer), Vector(Of Single), Vector(Of Single))</c> las consume
+    ''' directamente. Tener la máscara en Single obligaba a usar la sobrecarga GENÉRICA de las
+    ''' comparaciones — MEDIDO: 118,8 % más lenta (38 ms vs 17 ms / 40M iter), porque no está
+    ''' intrinsificada igual. Fue la causa de una regresión real de ~8,8 % en el compose de SSE.</summary>
+    Public Function VPerChannelMask(m0 As Integer, m1 As Integer, m2 As Integer, m3 As Integer) As Vector(Of Integer)
         Dim n = Vector(Of Integer).Count
         Dim v(n - 1) As Integer
         For i = 0 To n - 1
@@ -273,7 +279,7 @@ Public Module FastPow
                 Case Else : v(i) = m3
             End Select
         Next
-        Return Vector.As(Of Integer, Single)(New Vector(Of Integer)(v))
+        Return New Vector(Of Integer)(v)
     End Function
 
     ''' <summary>Difunde el canal <paramref name="ch"/> de CADA píxel a los 4 lanes de ese píxel. Era
@@ -287,9 +293,75 @@ Public Module FastPow
     ''' de los loops calientes y encima ANTES del early-out. En net8.0 no hay stack-allocation de arrays, así
     ''' que era basura garantizada. Reemplazar UNA instrucción <c>Shuffle</c> por eso hacía más lenta justo a
     ''' la máquina con AVX2 — la trampa nº 1 del proyecto (optimizar un ancho rompiendo el otro).</para></summary>
+    ' ============================ INDICES DE SHUFFLE, PRECALCULADOS ============================
+    ' ⭐ `Vector.Shuffle` NO existe en la API de ancho variable, pero `Vector256.Shuffle` y
+    ' `Vector128.Shuffle` SI. Y usarlos NO rompe el contrato de "una sola ley": un shuffle es MOVIMIENTO DE
+    ' DATOS, no aritmetica — mueve los mismos bits que el fallback escalar, igual que un gather. Lo que la
+    ' regla prohibe es lo que cambia el REDONDEO (FMA), no lo que reordena.
+    '
+    ' ⛔ POR QUE IMPORTA, MEDIDO: la primera version reemplazaba el shuffle por un viaje a memoria (CopyTo a
+    ' un scratch + loop escalar + carga). Eso costo **SSE Textures 46,4 -> 52,4 s (+12,9 %)** entre dos
+    ' corridas del corpus completo. Los 10 self-tests daban VERDE igual: la paridad NO ve regresiones de
+    ' velocidad (es la trampa nº 1 de 61-perf-simd-trampas, y ya habia pasado antes en este repo).
+    '
+    ' Los indices se calculan UNA vez: armar un Vector256 de 8 enteros por llamada costaria lo mismo que el
+    ' scratch que se quiere evitar. Todos los patrones son LANE-LOCAL (dentro de cada grupo de 4 = un pixel
+    ' RGBA), asi que el JIT puede emitir un solo vpermilps/vshufps.
+    Private ReadOnly BcastIdx256 As Vector256(Of Integer)() = BuildBcastIdx256()
+    Private ReadOnly BcastIdx128 As Vector128(Of Integer)() = BuildBcastIdx128()
+    Private ReadOnly SwapIdx256 As Vector256(Of Integer)() = BuildSwapIdx256()
+    Private ReadOnly SwapIdx128 As Vector128(Of Integer)() = BuildSwapIdx128()
+
+    Private Function BuildBcastIdx256() As Vector256(Of Integer)()
+        Dim r(3) As Vector256(Of Integer)
+        For ch = 0 To 3
+            Dim ix(7) As Integer
+            For j = 0 To 7 : ix(j) = (j And Not 3) + ch : Next
+            r(ch) = Vector256.Create(ix, 0)
+        Next
+        Return r
+    End Function
+
+    Private Function BuildBcastIdx128() As Vector128(Of Integer)()
+        Dim r(3) As Vector128(Of Integer)
+        For ch = 0 To 3
+            Dim ix(3) As Integer
+            For j = 0 To 3 : ix(j) = (j And Not 3) + ch : Next
+            r(ch) = Vector128.Create(ix, 0)
+        Next
+        Return r
+    End Function
+
+    Private Function BuildSwapIdx256() As Vector256(Of Integer)()
+        Dim r(3) As Vector256(Of Integer)
+        For m = 0 To 3
+            Dim ix(7) As Integer
+            For j = 0 To 7 : ix(j) = j Xor m : Next
+            r(m) = Vector256.Create(ix, 0)
+        Next
+        Return r
+    End Function
+
+    Private Function BuildSwapIdx128() As Vector128(Of Integer)()
+        Dim r(3) As Vector128(Of Integer)
+        For m = 0 To 3
+            Dim ix(3) As Integer
+            For j = 0 To 3 : ix(j) = j Xor m : Next
+            r(m) = Vector128.Create(ix, 0)
+        Next
+        Return r
+    End Function
+
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Public Function VBroadcastChannelV(v As Vector(Of Single), ch As Integer, scratch As Single()) As Vector(Of Single)
         Dim n = Vector(Of Single).Count
+        ' Shuffle NATIVO cuando el ancho coincide: una instruccion en vez de un viaje a memoria.
+        If n = Vector256(Of Single).Count AndAlso Vector256.IsHardwareAccelerated Then
+            Return Vector256.Shuffle(v.AsVector256(), BcastIdx256(ch)).AsVector()
+        ElseIf n = Vector128(Of Single).Count AndAlso Vector128.IsHardwareAccelerated Then
+            Return Vector128.Shuffle(v.AsVector128(), BcastIdx128(ch)).AsVector()
+        End If
+        ' Fallback por scratch: cualquier otro ancho (incl. 512) y el caso sin SIMD. MISMO movimiento de datos.
         v.CopyTo(scratch, 0)
         For j = 0 To n - 1
             scratch(n + j) = scratch((j And Not 3) + ch)  ' (j And Not 3) = inicio del pixel de ese lane
@@ -303,6 +375,12 @@ Public Module FastPow
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Public Function VSwapWithinPixel(v As Vector(Of Single), xorMask As Integer, scratch As Single()) As Vector(Of Single)
         Dim n = Vector(Of Single).Count
+        ' Shuffle NATIVO cuando el ancho coincide — ver la nota de los indices precalculados.
+        If n = Vector256(Of Single).Count AndAlso Vector256.IsHardwareAccelerated Then
+            Return Vector256.Shuffle(v.AsVector256(), SwapIdx256(xorMask)).AsVector()
+        ElseIf n = Vector128(Of Single).Count AndAlso Vector128.IsHardwareAccelerated Then
+            Return Vector128.Shuffle(v.AsVector128(), SwapIdx128(xorMask)).AsVector()
+        End If
         v.CopyTo(scratch, 0)
         For j = 0 To n - 1
             scratch(n + j) = scratch(j Xor xorMask)
@@ -363,7 +441,7 @@ Public Module FastPow
         res = Vector.ConditionalSelect(Vector.LessThan(n, New Vector(Of Single)(-126.0F)), zero, res)
         res = Vector.ConditionalSelect(Vector.GreaterThan(xin, zero), res, zero)
         res = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(xin, one), one, res)
-        res = Vector.ConditionalSelect(Vector.Equals(Of Single)(xin, xin), res, xin)
+        res = Vector.ConditionalSelect(Vector.Equals(xin, xin), res, xin)
         Return res
     End Function
 
@@ -403,7 +481,7 @@ Public Module FastPow
         res = Vector.ConditionalSelect(Vector.LessThan(n, New Vector(Of Single)(-126.0F)), Vector(Of Single).Zero, res)
         res = Vector.ConditionalSelect(Vector.GreaterThan(n, New Vector(Of Single)(127.0F)),
                                        New Vector(Of Single)(Single.PositiveInfinity), res)
-        Return Vector.ConditionalSelect(Vector.Equals(Of Single)(y, y), res, y)
+        Return Vector.ConditionalSelect(Vector.Equals(y, y), res, y)
     End Function
 
     ''' <summary><c>x^y</c> con exponente VARIABLE por lane (el soft-light Illusions). Split de Dekker en
@@ -461,14 +539,14 @@ Public Module FastPow
         res = Vector.ConditionalSelect(Vector.LessThan(n, New Vector(Of Single)(-126.0F)), zero, res)
         ' ⛔ Exponente NaN -> NaN, y VA ANTES de los cortes por `x`: en una cadena de selects el ULTIMO gana, y
         ' el escalar corta por `x` primero (PowVar(0,NaN)=0, PowVar(1,NaN)=1). Ver la nota gemela en PowVarV256.
-        res = Vector.ConditionalSelect(Vector.Equals(Of Single)(y, y), res, y)
+        res = Vector.ConditionalSelect(Vector.Equals(y, y), res, y)
         ' Infinitos del exponente: mismo problema y mismo limite que en el escalar (ver alli).
         Dim infP = New Vector(Of Single)(Single.PositiveInfinity)
-        res = Vector.ConditionalSelect(Vector.Equals(Of Single)(y, infP), zero, res)
-        res = Vector.ConditionalSelect(Vector.Equals(Of Single)(y, New Vector(Of Single)(Single.NegativeInfinity)), infP, res)
+        res = Vector.ConditionalSelect(Vector.Equals(y, infP), zero, res)
+        res = Vector.ConditionalSelect(Vector.Equals(y, New Vector(Of Single)(Single.NegativeInfinity)), infP, res)
         res = Vector.ConditionalSelect(Vector.GreaterThan(xin, zero), res, zero)
         res = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(xin, one), one, res)
-        res = Vector.ConditionalSelect(Vector.Equals(Of Single)(xin, xin), res, xin)
+        res = Vector.ConditionalSelect(Vector.Equals(xin, xin), res, xin)
         Return res
     End Function
 

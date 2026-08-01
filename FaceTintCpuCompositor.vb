@@ -1176,7 +1176,7 @@ Public Module FaceTintCpuCompositor
                                                  colRV, colGV, colBV, sRV, sGV, sBV, mV)
                               ' Cobertura: mismas ops y mismo orden que CovBlockV (convertir, multiplicar, clampear).
                               Dim covV = Clamp01V(Vector.Multiply(ConvMaskV(mV, mc), opV))
-                              If Not Vector.LessThanOrEqualAll(covV, zeroV) Then
+                              If Not Vector.LessThanOrEqualAll(Of Single)(covV, zeroV) Then
                                   ComposeBlockV(accR, iStart, sRV, covV, ws, cs, ss, aspEff, bop, sl)
                                   ComposeBlockV(accG, iStart, sGV, covV, ws, cs, ss, aspEff, bop, sl)
                                   ComposeBlockV(accB, iStart, sBV, covV, ws, cs, ss, aspEff, bop, sl)
@@ -1244,7 +1244,7 @@ Public Module FaceTintCpuCompositor
                                 ' SseFaceTintComposer.ComposeLayer / SkeeMaskApply / MsnBlendApply.
                                 ' ⛔ VA TAMBIEN EN EL GLSL (FaceTintCompositor, rama de composeOne): los dos
                                 ' compositores tienen que hacer LO MISMO o se rompe la paridad CPU/GPU.
-                                If Not Vector.LessThanOrEqualAll(covV, Vector(Of Single).Zero) Then
+                                If Not Vector.LessThanOrEqualAll(Of Single)(covV, Vector(Of Single).Zero) Then
                                     ComposeBlockV(accR, blkAt, bSrcR, covV, ws, cs, ss, aspEff, bop, sl)
                                     ComposeBlockV(accG, blkAt, bSrcG, covV, ws, cs, ss, aspEff, bop, sl)
                                     ComposeBlockV(accB, blkAt, bSrcB, covV, ws, cs, ss, aspEff, bop, sl)
@@ -1622,21 +1622,21 @@ Public Module FaceTintCpuCompositor
     ' este espejo promete, y el self-test no podia verlo porque usaba `Single.NaN` como unico NaN de entrada.
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function MinV(a As Vector(Of Single), b As Vector(Of Single)) As Vector(Of Single)
-        Dim eq = Vector.Equals(Of Single)(a, b)
+        Dim eq = Vector.Equals(a, b)
         Dim r = Vector.ConditionalSelect(eq, Vector.BitwiseOr(a, b),
                                             Vector.ConditionalSelect(Vector.LessThan(a, b), a, b))
         ' `b` NaN primero y `a` NaN despues: en una cadena de selects gana el ULTIMO, y en Math.Min/Max gana `a`.
-        r = Vector.ConditionalSelect(Vector.Equals(Of Single)(b, b), r, b)
-        Return Vector.ConditionalSelect(Vector.Equals(Of Single)(a, a), r, a)
+        r = Vector.ConditionalSelect(Vector.Equals(b, b), r, b)
+        Return Vector.ConditionalSelect(Vector.Equals(a, a), r, a)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function MaxV(a As Vector(Of Single), b As Vector(Of Single)) As Vector(Of Single)
-        Dim eq = Vector.Equals(Of Single)(a, b)
+        Dim eq = Vector.Equals(a, b)
         Dim r = Vector.ConditionalSelect(eq, Vector.BitwiseAnd(a, b),
                                             Vector.ConditionalSelect(Vector.GreaterThan(a, b), a, b))
-        r = Vector.ConditionalSelect(Vector.Equals(Of Single)(b, b), r, b)
-        Return Vector.ConditionalSelect(Vector.Equals(Of Single)(a, a), r, a)
+        r = Vector.ConditionalSelect(Vector.Equals(b, b), r, b)
+        Return Vector.ConditionalSelect(Vector.Equals(a, a), r, a)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
@@ -1911,7 +1911,7 @@ Public Module FaceTintCpuCompositor
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function ToByteBlockV(a As Single(), at As Integer) As Vector(Of Single)
         Dim c = VBroadcast(a, at)
-        c = Vector.ConditionalSelect(Vector.Equals(Of Single)(c, c), c, Vector(Of Single).Zero)   ' NaN -> 0
+        c = Vector.ConditionalSelect(Vector.Equals(c, c), c, Vector(Of Single).Zero)   ' NaN -> 0
         c = Vector.Multiply(Clamp01V(c), VBroadcast(255.0F))
         Dim mg = VBroadcast(12582912.0F)
         Dim v = Vector.Subtract(Vector.Add(c, mg), mg)
@@ -2058,7 +2058,7 @@ Public Module FaceTintCpuCompositor
                         ' Se replica el early-out de bloque del loop real, no sólo ComposeBlockV: así el test
                         ' cubre las DOS ramas (bloque entero sin cobertura y bloque mixto).
                         Dim covV = CovBlockV(bm, mc, opv)
-                        If Not Vector.LessThanOrEqualAll(covV, Vector(Of Single).Zero) Then
+                        If Not Vector.LessThanOrEqualAll(Of Single)(covV, Vector(Of Single).Zero) Then
                             ComposeBlockV(got, at, blk, covV, ws, cs, ss, asp, bop, slm)
                         End If
                         at = i + 1 : k = 0

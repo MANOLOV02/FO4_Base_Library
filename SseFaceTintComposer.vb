@@ -503,6 +503,9 @@ Public Module SseFaceTintComposer
                 ' con la MISMA ley, igual que el fold (los rangos del Partitioner no vienen alineados).
                 Dim lo = range.Item1 * 4, hi = range.Item2 * 4
                 Dim e = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
                 While (e And (lanes - 1)) <> 0 AndAlso e < hi
                     ComposeLayerOne(acc, mask, cR, cG, cB, tinv, conv, maskConv, maskCh, e)
                     e += 1
@@ -606,6 +609,9 @@ Public Module SseFaceTintComposer
                                         ws As Integer, cs As Integer, ss As Integer, asp As Integer, bop As Integer,
                                         sl As Integer, lo As Integer, hi As Integer) As Integer
         Dim e = lo
+        ' lanes LOCAL: `Vector(Of Single).Count` es constante para el JIT y deja plegar los limites
+        ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
+        Dim lanes = Vector(Of Single).Count
         ' scratch DEL HILO para las permutaciones dentro del pixel (reemplazan a Vector256.Shuffle,
         ' que no existe en la API de ancho variable). ⛔ Local: compartirlo entre hilos lo corrompe.
         Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
@@ -626,7 +632,7 @@ Public Module SseFaceTintComposer
             ' Textures de SSE subio 10,6 % contra ~4,5 % de deriva de maquina. Con el bloque salteado cuando
             ' ningun lane tiene cobertura, el skip vuelve — y sigue siendo exacto, porque donde no se compone
             ' queda el valor PREVIO, que es lo que dejaba el Continue For.
-            If Vector.LessThanOrEqualAll(av, zero) Then
+            If Vector.LessThanOrEqualAll(Of Single)(av, zero) Then
                 e += lanes
                 Continue While
             End If
@@ -634,7 +640,7 @@ Public Module SseFaceTintComposer
             ' `keep` replica los DOS guards del escalar a la vez: el alpha no se toca (rgbMask) y el
             ' `If a <= 0.0 Then Continue For` (a > 0). Donde no se compone queda el valor PREVIO, que es
             ' exactamente lo que dejaba el Continue — no un compose con cov=0, que con cs<>asp no es lo mismo.
-            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(av, zero))
+            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(av, zero))
             Vector.ConditionalSelect(keep, composed, prev).CopyTo(acc, e)
             e += lanes
         End While
