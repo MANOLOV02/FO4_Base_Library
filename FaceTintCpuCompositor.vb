@@ -627,6 +627,116 @@ Public Module FaceTintCpuCompositor
         Return outp
     End Function
 
+    ''' <summary>⭐ GATE DEL IZADO: los planos materializados tienen que ser EXACTAMENTE lo que devolvía el
+    ''' muestreo por texel, elemento por elemento y bit por bit. Devuelve "" si coinciden.
+    ''' <para><b>Por qué hace falta si ya está <see cref="BilinearLawSelfTest"/>.</b> Aquél fija la LEY (que
+    ''' materializar y muestrear coinciden); éste fija el IZADO CONCRETO que consume el compose: el orden de
+    ''' los canales en los planos, el índice (plano(i) ↔ píxel i) y el <c>chMask</c>. Un plano de G escrito en
+    ''' el de B pasaría el primero y fallaría éste.</para>
+    ''' <para>⛔ El corpus NO puede cubrirlo: vanilla trae las máscaras ya al tamaño del acumulador, así que
+    ''' el camino izado no se ejecuta ni una vez y un A/B en 0 bytes no dice nada de él. Ver
+    ''' <c>_unitResampled</c> y la memoria 00-reglas-epistemica §9.</para>
+    ''' <para>Barre upsize, downsize y tamaños que NO son múltiplo del ancho SIMD (31×19, 37×23, 11×11): el
+    ''' cuerpo vectorial consume bloques de <c>lanes</c> y la cola escalar tiene que leer los MISMOS planos.</para></summary>
+    Public Function ResampleHoistSelfTest() As String
+        Dim seed As UInteger = 2246822519UI
+        For Each dims In New(TW As Integer, TH As Integer, W As Integer, H As Integer)() {
+            (8, 8, 32, 32), (32, 32, 8, 8), (13, 7, 31, 19), (31, 19, 13, 7), (5, 5, 11, 11), (64, 64, 37, 23)}
+            Dim tw = dims.TW, th = dims.TH, w = dims.W, h = dims.H
+            Dim px(tw * th * 4 - 1) As Byte
+            For i = 0 To px.Length - 1
+                seed = seed Xor (seed << 13) : seed = seed Xor (seed >> 17) : seed = seed Xor (seed << 5)
+                px(i) = CByte(seed And 255UI)
+            Next
+            Dim tex As New DecodedTex With {.Width = tw, .Height = th, .Rgba8 = px, .Channels = 4}
+            Dim pR As Single() = Nothing, pG As Single() = Nothing, pB As Single() = Nothing, pA As Single() = Nothing
+            ResampleToUnitPlanes(tex, w, h, 15, pR, pG, pB, pA)
+            If pR Is Nothing OrElse pG Is Nothing OrElse pB Is Nothing OrElse pA Is Nothing Then
+                Return $"izado: chMask=15 tiene que devolver los CUATRO planos y alguno vino Nothing ({tw}x{th}->{w}x{h})"
+            End If
+            Dim planes = New Single()() {pR, pG, pB, pA}
+            For i = 0 To w * h - 1
+                For c = 0 To 3
+                    Dim want = SampleChannelAt(tex, i, w, h, c)
+                    Dim got = planes(c)(i)
+                    If BitConverter.SingleToInt32Bits(want) <> BitConverter.SingleToInt32Bits(got) Then
+                        Return $"izado: el plano NO es el muestreo por texel. {tw}x{th}->{w}x{h} " &
+                               $"px={i} (x={i Mod w},y={i \ w}) ch={c} porTexel={want} plano={got} " &
+                               $"[bits 0x{BitConverter.SingleToInt32Bits(want):X8} vs 0x{BitConverter.SingleToInt32Bits(got):X8}]"
+                    End If
+                Next
+            Next
+            ' chMask: pedir UN canal tiene que dar ese MISMO plano y Nothing en los otros tres. Es lo que usan
+            ' la máscara del swap (sólo R) y la diffMask (sólo A); un mask mal armado devolvería Nothing y el
+            ' consumidor leería una referencia nula recién con una textura no-directa, o sea nunca en vanilla.
+            For c = 0 To 3
+                Dim qR As Single() = Nothing, qG As Single() = Nothing, qB As Single() = Nothing, qA As Single() = Nothing
+                ResampleToUnitPlanes(tex, w, h, 1 << c, qR, qG, qB, qA)
+                Dim q = New Single()() {qR, qG, qB, qA}
+                For k = 0 To 3
+                    If k = c Then
+                        If q(k) Is Nothing Then Return $"izado: chMask={1 << c} no devolvió el plano {k} ({tw}x{th}->{w}x{h})"
+                        For i = 0 To w * h - 1
+                            If BitConverter.SingleToInt32Bits(q(k)(i)) <> BitConverter.SingleToInt32Bits(planes(k)(i)) Then
+                                Return $"izado: chMask={1 << c} dio OTRO valor que chMask=15 en ch={k} px={i} ({tw}x{th}->{w}x{h})"
+                            End If
+                        Next
+                    ElseIf q(k) IsNot Nothing Then
+                        Return $"izado: chMask={1 << c} materializó de más el plano {k} ({tw}x{th}->{w}x{h})"
+                    End If
+                Next
+            Next
+        Next
+        Return ""
+    End Function
+
+    ''' <summary>⭐ IZA EL RESAMPLE fuera del loop de píxeles: materializa <paramref name="t"/> a
+    ''' <paramref name="w"/>×<paramref name="h"/> en unidad [0,1] sobre PLANOS SoA (un array por canal).
+    ''' <para><b>Por qué planos y no AoS.</b> El cuerpo vectorial necesita 8 R contiguos. Con planos eso es una
+    ''' carga vectorial directa; con AoS habría que de-interleavear con stride 4 (gather manual). Los planos
+    ''' cuestan lo mismo en memoria (16 B/px) y ahorran el de-interleave por bloque.</para>
+    ''' <para><b>Por qué NO es una ley nueva.</b> Llama a <see cref="SampleChannelAt"/>, la MISMA función que
+    ''' usa el muestreo por texel: no hay una transcripción que pueda divergir — es la misma cuenta, movida de
+    ''' lugar. Lo único que cambia es DÓNDE se evalúa, no QUÉ.</para>
+    ''' <para><paramref name="chMask"/> es un bitmask (1=R 2=G 4=B 8=A): tres de las texturas del compose usan
+    ''' UN SOLO canal, y materializar los cuatro cuadruplicaría el costo del izado para nada. El plano de un
+    ''' canal no pedido vuelve <c>Nothing</c>.</para>
+    ''' <para>⛔ NO tiene atajo de identidad a propósito: el caller que YA es directo no debe llamar acá — se
+    ''' queda en su camino de bytes, que es más barato (1 B/px y sin materializar nada).</para></summary>
+    Friend Sub ResampleToUnitPlanes(t As DecodedTex, w As Integer, h As Integer, chMask As Integer,
+                                    ByRef pR As Single(), ByRef pG As Single(), ByRef pB As Single(), ByRef pA As Single())
+        pR = Nothing : pG = Nothing : pB = Nothing : pA = Nothing
+        If t Is Nothing OrElse w <= 0 OrElse h <= 0 Then Return
+        Dim n = w * h
+        If (chMask And 1) <> 0 Then ReDim pR(n - 1)
+        If (chMask And 2) <> 0 Then ReDim pG(n - 1)
+        If (chMask And 4) <> 0 Then ReDim pB(n - 1)
+        If (chMask And 8) <> 0 Then ReDim pA(n - 1)
+        ' ⛔ CONTADOR OBLIGATORIO. Sin esto no hay forma de saber si el camino izado se ejecuta: el corpus
+        ' vanilla sale casi todo por el atajo de directness y un A/B en 0 bytes NO dice nada sobre un camino
+        ' que no se piso. Es el mismo motivo por el que existe `_unitResampled` en el nivel 2 — que NO sirve
+        ' para esto, porque el izado no pasa por el nivel 2.
+        Threading.Interlocked.Increment(_hoistCount)
+        Threading.Interlocked.Add(_hoistPixels, CLng(n))
+        ' ⛔ SERIAL A PROPOSITO — NO reponer un Parallel.For aca. Esta funcion se llama POR CAPA, dentro del
+        ' loop de capas, que ya corre dentro del Parallel.ForEach POR NPC del runner: seria un TERCER nivel de
+        ' anidamiento sobre el mismo scheduler global. MEDIDO en el barrido de SSE: pasar de 1 a 8 NPCs en
+        ' vuelo infla `NifWrite` y `other` x7,4 mientras el compose sube solo x1,6 — o sea que el cuello ya es
+        ' contencion, no CPU ociosa, y sumar niveles la empeora. Ademas el trabajo de aca es CHICO (medido:
+        ' 30 texturas / 13.700 px en un barrido entero), muy por debajo de lo que amortiza un fork/join.
+        ' Las dos formas son bit-identicas (filas disjuntas, sin reduccion): esto es scheduling, no aritmetica.
+        For y As Integer = 0 To h - 1
+            Dim row = y * w
+            For x As Integer = 0 To w - 1
+                Dim i = row + x
+                If pR IsNot Nothing Then pR(i) = SampleChannelAt(t, i, w, h, 0)
+                If pG IsNot Nothing Then pG(i) = SampleChannelAt(t, i, w, h, 1)
+                If pB IsNot Nothing Then pB(i) = SampleChannelAt(t, i, w, h, 2)
+                If pA IsNot Nothing Then pA(i) = SampleChannelAt(t, i, w, h, 3)
+            Next
+        Next
+    End Sub
+
     ''' <summary>LUT lookup ENGINE-EXACT del brow grayscale->palette (BSFaceCustomizationShader PS, `ld` t4):
     ''' U = Cvt(green, <paramref name="srcSpace"/>, <paramref name="coordSpace"/>) — el verde (textura diffuse)
     ''' se decodea de srcSpace (=conv.SrcSpace=DiffuseTextureSrcSpace, Srgb) al espacio del coord (=conv.
@@ -687,11 +797,44 @@ Public Module FaceTintCpuCompositor
     ''' no cachear no altera el valor, solo lo recalcula.</para></summary>
     Public Property BatchDecodeCacheBudgetBytes As Long = 0
 
-    ''' <summary>Bytes vivos en el <see cref="BatchDecodeCache"/> (solo se contabiliza si hay presupuesto).</summary>
+    ''' <summary>Bytes vivos en los DOS niveles del cache de LOTE. Es el contador de ADMISION: el techo es UNO
+    ''' SOLO sobre los dos niveles, asi que la comparacion contra el presupuesto tiene que salir de un UNICO
+    ''' Interlocked.Add — con un contador por nivel la suma no seria atomica y dos hilos podrian pasar juntos.
+    ''' <para>⛔ Se contabiliza SIEMPRE, haya techo o no. Antes solo se sumaba con presupuesto activo, o sea que
+    ''' la corrida baseline (FGBAKE_DECODE_CACHE_MB=0) reportaba 0 MB retenidos y no habia contra que comparar.
+    ''' Contabilizar no admite ni rechaza nada: el enforcement sigue gateado por el presupuesto.</para></summary>
     Private _batchCacheBytes As Long = 0
-    ''' <summary>Cuantas entradas se rechazaron por presupuesto. Se reporta: un rechazo alto significa que el
-    ''' techo esta costando re-decodes, y eso hay que poder verlo en vez de deducirlo del reloj.</summary>
-    Private _batchCacheRejected As Integer = 0
+
+    ''' <summary>Los mismos bytes DESGLOSADOS por nivel. Puramente observacionales: no deciden admision.
+    ''' Existen porque el nivel 2 cuesta 4 B por elemento contra 1 B del nivel 1, y sin el desglose no se puede
+    ''' contestar si ese 4x se paga — el total solo dice cuanto pesa el conjunto.</summary>
+    Private _batchDecodeBytes As Long = 0   ' nivel 1 (DecodedTex, Byte())
+    Private _batchUnitBytes As Long = 0     ' nivel 2 (Single() ya resampleado)
+
+    ''' <summary>Aciertos/fallos del NIVEL 1, hermanos de <see cref="_unitHits"/>/<see cref="_unitMisses"/>.
+    ''' Sin ellos el nivel 1 era el unico cache sin instrumentar: se podia ver cuanto pesaba pero no cuanto
+    ''' acertaba, que es la mitad que decide si conviene.</summary>
+    Private _decodeHits As Long = 0
+    Private _decodeMisses As Long = 0
+
+    ''' <summary>Entradas rechazadas por el techo, POR NIVEL. Un rechazo alto significa que el techo esta
+    ''' costando re-decodes, y eso hay que poder verlo en vez de deducirlo del reloj.
+    ''' <para>⛔ NO se resetean en <see cref="BeginBatchDecodeCache"/>: el runner reabre el cache en cada borde
+    ''' de (raza,sexo), asi que resetearlos dejaba el total describiendo solo al ULTIMO grupo.</para></summary>
+    Private _decodeRejected As Integer = 0
+    Private _unitRejected As Integer = 0
+
+    ''' <summary>Cuántas texturas se IZARON (resample materializado a planos) y cuántos píxeles costó.
+    ''' <para>⛔ Es el gate de observabilidad del izado: dice si ese camino se EJECUTA. Un A/B de bytes en 0
+    ''' con este contador en 0 significa "no se probó", no "está bien". ⚠️ NO confundir con
+    ''' <see cref="_unitResampled"/>, que es del NIVEL 2 del caché y NO pasa por acá.</para></summary>
+    Private _hoistCount As Long = 0
+    Private _hoistPixels As Long = 0
+
+    ''' <summary>Texturas izadas y píxeles materializados. Ver <see cref="_hoistCount"/>.</summary>
+    Public Function HoistStats() As (Textures As Long, Pixels As Long)
+        Return (Threading.Interlocked.Read(_hoistCount), Threading.Interlocked.Read(_hoistPixels))
+    End Function
 
     ''' <summary>⭐ POLITICA UNICA del techo de los caches de decode del compositor CPU, resuelta desde el
     ''' ENTORNO. Estaba INLINE en <c>BakeAllRunner</c> y ahora vive acá porque hay MAS DE UN cache que
@@ -704,21 +847,33 @@ Public Module FaceTintCpuCompositor
     ''' <para>⛔ Los tres números viven ACA Y SOLO ACA. No re-derivarlos en ningún call site.</para></summary>
     Public Function ResolveDecodeCacheBudgetFromEnvironment() As (Bytes As Long, Reason As String)
         Dim raw = If(Environment.GetEnvironmentVariable("FGBAKE_DECODE_CACHE_MB"), "").Trim()
-        If raw = "" Then
-            Dim avail = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes
-            Dim b = CLng(avail * 0.25)
-            b = Math.Max(512L * 1024L * 1024L, Math.Min(4096L * 1024L * 1024L, b))
-            Return (b, $"Decode cache: techo {b \ (1024L * 1024L)} MB = 25% de {avail \ (1024L * 1024L)} MB disponibles")
-        End If
+        ' ⛔ SIN TECHO POR DEFAULT — es OPT-IN. Antes el default derivaba "25 % de la memoria disponible,
+        ' acotado a [512 MB, 4 GB]", y esos tres números son ARBITRARIOS: nadie midió que 25 % sea el punto
+        ' correcto ni que 4 GB tenga sentido en un equipo de 128 GB. Un techo inventado que fuerza re-decodes
+        ' es peor que no tener techo, porque el costo es invisible (se paga en tiempo, no en un error).
+        ' Quien quiera acotarlo lo pide explícitamente y elige el número para SU máquina.
+        ' (El comentario viejo del runner decía "OPT-IN y APAGADO por default" mientras el código hacía lo
+        '  contrario; ahora el código dice la verdad.)
+        If raw = "" Then Return (0L, "Decode cache: NO ceiling (default) — set FGBAKE_DECODE_CACHE_MB=<MB> to cap it")
         Dim mb As Integer = -1
         If Not Integer.TryParse(raw, mb) Then mb = -1
         If mb > 0 Then Return (CLng(mb) * 1024L * 1024L, $"Decode cache: {mb} MB ceiling (set by FGBAKE_DECODE_CACHE_MB)")
         Return (0L, "Decode cache: NO ceiling (FGBAKE_DECODE_CACHE_MB=0, historical behaviour)")
     End Function
 
-    ''' <summary>Bytes vivos y rechazos del cache batch, para el log del runner.</summary>
+    ''' <summary>Bytes vivos y rechazos del cache batch, TOTAL de los dos niveles — el techo es uno solo, asi
+    ''' que este es el numero que se compara contra el presupuesto. El desglose por nivel va en
+    ''' <see cref="DecodeCacheStats"/> y <see cref="UnitCacheStats"/>.</summary>
     Public Function BatchDecodeCacheStats() As (Bytes As Long, Rejected As Integer)
-        Return (Threading.Interlocked.Read(_batchCacheBytes), Threading.Volatile.Read(_batchCacheRejected))
+        Return (Threading.Interlocked.Read(_batchCacheBytes),
+                Threading.Volatile.Read(_decodeRejected) + Threading.Volatile.Read(_unitRejected))
+    End Function
+
+    ''' <summary>NIVEL 1: aciertos, fallos, bytes vivos y rechazos. Gemelo de <see cref="UnitCacheStats"/>;
+    ''' juntos son lo que contesta si el nivel 2 paga su 4x por elemento o no.</summary>
+    Public Function DecodeCacheStats() As (Hits As Long, Misses As Long, Bytes As Long, Rejected As Integer)
+        Return (Threading.Interlocked.Read(_decodeHits), Threading.Interlocked.Read(_decodeMisses),
+                Threading.Interlocked.Read(_batchDecodeBytes), Threading.Volatile.Read(_decodeRejected))
     End Function
 
     ''' <summary>⛔⭐ EJE QUE FALTABA EN TODAS LAS CLAVES DE DECODE. <see cref="DownsizeFromMip0"/> es estado
@@ -761,11 +916,13 @@ Public Module FaceTintCpuCompositor
     ''' dice nada sobre él — hay que validarlo con self-test. Sin el contador eso es una suposición.</summary>
     Private _unitResampled As Long = 0
 
-    ''' <summary>Aciertos/fallos del nivel 2 y cuántos de los fallos resamplearon. Un ratio malo significa que
-    ''' la clave se está fragmentando (p.ej. un eje de más) y eso hay que poder VERLO, no deducirlo del reloj.</summary>
-    Public Function UnitCacheStats() As (Hits As Long, Misses As Long, Resampled As Long)
+    ''' <summary>Aciertos/fallos del nivel 2, cuántos de los fallos resamplearon, y sus bytes y rechazos. Un
+    ''' ratio malo significa que la clave se está fragmentando (p.ej. un eje de más) y eso hay que poder VERLO,
+    ''' no deducirlo del reloj.</summary>
+    Public Function UnitCacheStats() As (Hits As Long, Misses As Long, Resampled As Long, Bytes As Long, Rejected As Integer)
         Return (Threading.Interlocked.Read(_unitHits), Threading.Interlocked.Read(_unitMisses),
-                Threading.Interlocked.Read(_unitResampled))
+                Threading.Interlocked.Read(_unitResampled),
+                Threading.Interlocked.Read(_batchUnitBytes), Threading.Volatile.Read(_unitRejected))
     End Function
 
     ''' <summary>⭐ Los EJES de las claves de decode tienen que ser DISJUNTOS: dos peticiones que difieran en
@@ -781,7 +938,7 @@ Public Module FaceTintCpuCompositor
             For Each policy In New Boolean() {False, True}
                 DownsizeFromMip0 = policy
                 For Each path In New String() {"a\b.dds", "a\c.dds"}
-                    For Each wh In New (W As Integer, H As Integer)() {(512, 512), (1024, 1024), (512, 1024)}
+                    For Each wh In New(W As Integer, H As Integer)() {(512, 512), (1024, 1024), (512, 1024)}
                         For Each nrm In New Boolean() {False, True}
                             Dim id = $"{path}|{wh.W}x{wh.H}|{nrm}|{policy}"
                             Dim key = $"{path}|{wh.W}x{wh.H}|{If(nrm, "nrm", "col")}|{MipPolicyTag()}"
@@ -818,7 +975,7 @@ Public Module FaceTintCpuCompositor
     ''' <para>⛔ No hace early-return: es aritmética escalar, corre en toda máquina.</para></summary>
     Public Function BilinearLawSelfTest() As String
         Dim seed As UInteger = 1234567891UI
-        For Each dims In New (SW As Integer, SH As Integer, DW As Integer, DH As Integer)() {
+        For Each dims In New(SW As Integer, SH As Integer, DW As Integer, DH As Integer)() {
             (8, 8, 32, 32), (32, 32, 8, 8), (8, 8, 8, 8), (13, 7, 31, 19), (31, 19, 13, 7),
             (4, 16, 16, 4), (512, 512, 1024, 1024)}
             Dim sw = dims.SW, sh = dims.SH, dw = dims.DW, dh = dims.DH
@@ -970,8 +1127,12 @@ Public Module FaceTintCpuCompositor
     Public Sub BeginBatchDecodeCache()
         BatchDecodeCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)
         BatchUnitCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, Single())(StringComparer.OrdinalIgnoreCase)
+        ' Solo los BYTES: describen el cache VIVO, que acaba de nacer. Los hits/misses/rechazos son ACUMULADOS
+        ' de la corrida — el runner reabre el cache en cada borde de (raza,sexo), asi que resetearlos dejaria
+        ' el resumen final describiendo un solo grupo.
         Threading.Interlocked.Exchange(_batchCacheBytes, 0L)
-        Threading.Volatile.Write(_batchCacheRejected, 0)
+        Threading.Interlocked.Exchange(_batchDecodeBytes, 0L)
+        Threading.Interlocked.Exchange(_batchUnitBytes, 0L)
     End Sub
 
     ''' <summary>Cierra y libera el cache de decode batch (llamar en Finally despues del loop). Los
@@ -998,7 +1159,13 @@ Public Module FaceTintCpuCompositor
         If String.IsNullOrEmpty(texKey) OrElse w <= 0 OrElse h <= 0 Then Return Nothing
         ' La clave es la IDENTIDAD COMPLETA del valor: path + tamaño destino + variante + política de mip.
         Dim ckey = $"{texKey}|{w}x{h}|{If(asNormalMap, "nrm", "col")}|{MipPolicyTag()}"
-        Dim cache = If(BatchUnitCache, _sessionUnitCache)
+        ' ⛔ LA PROPIEDAD GLOBAL SE LEE UNA SOLA VEZ. Antes se capturaba `cache` acá y MAS ABAJO se volvia a
+        ' leer `BatchUnitCache` para decidir si aplicaba el presupuesto. Entre las dos lecturas, un
+        ' EndBatchDecodeCache de otro hilo (el render corre en el hilo UI durante el await del bake) la pone
+        ' en Nothing ⇒ el ReferenceEquals daba False ⇒ la entrada se cacheaba SALTEANDOSE EL TECHO.
+        Dim batch = BatchUnitCache
+        Dim cache = If(batch, _sessionUnitCache)
+        Dim isBatch As Boolean = (batch IsNot Nothing)
         Dim hit As Single() = Nothing
         If cache.TryGetValue(ckey, hit) Then
             Threading.Interlocked.Increment(_unitHits)
@@ -1030,28 +1197,37 @@ Public Module FaceTintCpuCompositor
             ' materialización y el muestreo de UNA.
             Threading.Interlocked.Increment(_unitResampled)
             System.Threading.Tasks.Parallel.For(0, h, Sub(y)
-                                                         For x = 0 To w - 1
-                                                             Dim i = y * w + x
-                                                             For c = 0 To 3
-                                                                 outp(i * 4 + c) = SampleChannelAt(t, i, w, h, c)
-                                                             Next
-                                                         Next
-                                                     End Sub)
+                                                          For x = 0 To w - 1
+                                                              Dim i = y * w + x
+                                                              For c = 0 To 3
+                                                                  outp(i * 4 + c) = SampleChannelAt(t, i, w, h, c)
+                                                              Next
+                                                          Next
+                                                      End Sub)
         End If
         ' DESPUÉS del resample, igual que el hardware (se samplea el BC5 filtrado y recién ahí se despeja z).
         If needsZ Then ReconstructNormalZ(outp, w * h)
         ' PRESUPUESTO, y sólo sobre el caché de LOTE. ⛔ El nivel 2 es Single(): 4 B por elemento. Contabilizarlo
         ' como bytes subcontaba ×4 y el techo se rompía en silencio.
-        Dim budget = BatchDecodeCacheBudgetBytes
-        If budget <= 0L OrElse Not ReferenceEquals(cache, BatchUnitCache) Then
-            cache(ckey) = outp
+        If Not isBatch Then
+            cache(ckey) = outp                       ' sesión / per-call: los acota su VIDA, no el techo
         Else
+            ' Se CONTABILIZA siempre y se ENFORZA sólo con techo (ver _batchCacheBytes).
+            Dim budget = BatchDecodeCacheBudgetBytes
             Dim sz As Long = CLng(outp.Length) * 4L
-            If Threading.Interlocked.Add(_batchCacheBytes, sz) <= budget Then
-                cache(ckey) = outp
+            Dim tot = Threading.Interlocked.Add(_batchCacheBytes, sz)
+            Threading.Interlocked.Add(_batchUnitBytes, sz)
+            ' ⛔ TryAdd, NO el indexador. N hilos pueden fallar el TryGetValue de arriba sobre la MISMA clave
+            ' y llegar todos acá: con `cache(k)=v` los N cobraban bytes y el diccionario retenia UNO, dejando
+            ' N-1 cargos FANTASMA que no se devuelven nunca. Esos cargos siguen decidiendo admisiones el
+            ' resto de la corrida ⇒ rechazos prematuros y re-decodes. Con TryAdd cobra el que publica.
+            ' No cambia la salida: el valor es funcion pura de la clave y todos devuelven el suyo, igual que antes.
+            If (budget <= 0L OrElse tot <= budget) AndAlso cache.TryAdd(ckey, outp) Then
+                ' publicado y cobrado
             Else
                 Threading.Interlocked.Add(_batchCacheBytes, -sz)
-                Threading.Interlocked.Increment(_batchCacheRejected)
+                Threading.Interlocked.Add(_batchUnitBytes, -sz)
+                If budget > 0L AndAlso tot > budget Then Threading.Interlocked.Increment(_unitRejected)
             End If
         End If
         Return outp
@@ -1106,24 +1282,39 @@ Public Module FaceTintCpuCompositor
         ' ⛔ La política de mip entra en la clave: decide de qué mip sale el decode, así que es parte de la
         ' identidad del valor. Sin ella, cambiar la opción sin recargar servía el mip equivocado para siempre.
         Dim ck = If(preferW > 0 OrElse preferH > 0, $"{key}@{preferW}x{preferH}|{MipPolicyTag()}", $"{key}|{MipPolicyTag()}")
+        ' ⛔ UNA sola lectura de la propiedad global — ver la nota gemela en CachedUnitDecode: releerla mas
+        ' abajo permitia que un End...Cache concurrente hiciera saltear el techo.
+        Dim isBatch As Boolean = Object.ReferenceEquals(cache, BatchDecodeCache)
         Dim t As DecodedTex = Nothing
-        If Not String.IsNullOrEmpty(key) AndAlso cache.TryGetValue(ck, t) Then Return t
+        If Not String.IsNullOrEmpty(key) AndAlso cache.TryGetValue(ck, t) Then
+            Threading.Interlocked.Increment(_decodeHits)
+            Return t
+        End If
+        Threading.Interlocked.Increment(_decodeMisses)
         t = DecodeDds(bytes, preferW, preferH)
         If Not String.IsNullOrEmpty(key) AndAlso t IsNot Nothing Then
             ' El presupuesto SOLO aplica al cache de batch (el compartido entre NPCs). Cuando `cache` es el
             ' diccionario per-call de una sola cara, no cachear no ahorraria nada y solo agregaria re-decodes
             ' dentro del mismo compose.
-            Dim budget = BatchDecodeCacheBudgetBytes
-            If budget <= 0L OrElse Not Object.ReferenceEquals(cache, BatchDecodeCache) Then
+            If Not isBatch Then
                 cache(ck) = t
             Else
+                ' Se CONTABILIZA siempre y se ENFORZA solo con techo (ver _batchCacheBytes).
+                Dim budget = BatchDecodeCacheBudgetBytes
                 Dim sz As Long = If(t.Rgba8 Is Nothing, 0L, CLng(t.Rgba8.Length))   ' Byte() ⇒ 1 B por elemento
-                If Threading.Interlocked.Add(_batchCacheBytes, sz) <= budget Then
-                    cache(ck) = t
+                Dim tot = Threading.Interlocked.Add(_batchCacheBytes, sz)
+                Threading.Interlocked.Add(_batchDecodeBytes, sz)
+                ' TryAdd y no el indexador: cobra el que PUBLICA. Ver la nota extensa en CachedUnitDecode
+                ' (cargos fantasma de N misses concurrentes sobre la misma clave).
+                If (budget <= 0L OrElse tot <= budget) AndAlso cache.TryAdd(ck, t) Then
+                    ' publicado y cobrado
                 Else
                     ' No entra: se devuelve el decode igual (correcto), simplemente no se retiene.
                     Threading.Interlocked.Add(_batchCacheBytes, -sz)
-                    Threading.Interlocked.Increment(_batchCacheRejected)
+                    Threading.Interlocked.Add(_batchDecodeBytes, -sz)
+                    ' Sólo cuenta como RECHAZO si lo rechazó el techo. Perder la carrera del TryAdd no es un
+                    ' rechazo: la entrada quedó igual, la publicó otro.
+                    If budget > 0L AndAlso tot > budget Then Threading.Interlocked.Increment(_decodeRejected)
                 End If
             End If
         End If
@@ -1339,9 +1530,19 @@ Public Module FaceTintCpuCompositor
         ' `outSp`(G22) DIFIEREN, así que `Cvt1` NO cortocircuita y esto es UN POW POR PÍXEL Y POR CANAL a
         ' resolución nativa, una vez por canal. Con el config viejo (accSp == outSp) era identidad y por eso
         ' nunca figuró como resto escalar.
-        ' Sólo el camino `srcDirect`: el otro es SampleChannelAt = bilineal por UV = gather.
         Dim seedFromSp As Integer = If(SeedConventionIs_G22 AndAlso isD, seedSrc, outSp)
-        Dim seedVecOk As Boolean = FastPow.AcceleratedV AndAlso srcDirect
+        ' ⭐ IZADO DEL RESAMPLE. Antes `seedVecOk` EXIGIA `srcDirect`: una fuente que no venia al tamaño del
+        ' acumulador mandaba el canal ENTERO al camino escalar. Ahora se resamplea UNA vez a planos SoA —los
+        ' MISMOS 4 taps por pixel que hacia SampleChannelAt dentro del loop, no uno mas— y el cuerpo vectorial
+        ' cubre tambien ese caso. Bit-identico por construccion: los planos los llena SampleChannelAt.
+        ' Solo en el camino de textura; Constant/Provided no leen `src`. `src` no puede ser Nothing aca: lo
+        ' garantiza la guarda de FromTexture de mas arriba.
+        Dim hoSeedR As Single() = Nothing, hoSeedG As Single() = Nothing, hoSeedB As Single() = Nothing, hoSeedA As Single() = Nothing
+        If seed.Kind = FaceTintSeedKind.FromTexture AndAlso Not srcDirect Then
+            ResampleToUnitPlanes(src, w, h, If(keepBaseAlpha, 15, 7), hoSeedR, hoSeedG, hoSeedB, hoSeedA)
+        End If
+        Dim srcHoisted As Boolean = (hoSeedR IsNot Nothing)
+        Dim seedVecOk As Boolean = FastPow.AcceleratedV AndAlso (srcDirect OrElse srcHoisted)
         If seed.Kind = FaceTintSeedKind.Constant Then
             ' ⭐ SEED CONSTANTE (la ley de SSE). El color plano se expresa en OutputSpace —igual que el seed
             ' CRUDO de una textura— y se lleva a AccumSpace con la MISMA `Cvt1`, una sola vez para todo el
@@ -1380,14 +1581,22 @@ Public Module FaceTintCpuCompositor
             ConvertSpaceSoaInPlace(accG, n, outSp, accSp)
             ConvertSpaceSoaInPlace(accB, n, outSp, accSp)
         Else
-        System.Threading.Tasks.Parallel.ForEach(
+            System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, n),
             Sub(range)
                 Dim iv = range.Item1
                 If seedVecOk Then
                     While iv + lanes <= range.Item2
                         Dim rV, gV, bV, aV As Vector(Of Single)
-                        LoadRgba8BlockV(srcPx, iv * 4, rV, gV, bV, aV)
+                        If srcDirect Then
+                            LoadRgba8BlockV(srcPx, iv * 4, rV, gV, bV, aV)
+                        Else
+                            ' Planos SoA: la carga es CONTIGUA, sin de-interleave ni gather.
+                            rV = New Vector(Of Single)(hoSeedR, iv)
+                            gV = New Vector(Of Single)(hoSeedG, iv)
+                            bV = New Vector(Of Single)(hoSeedB, iv)
+                            If keepBaseAlpha Then aV = New Vector(Of Single)(hoSeedA, iv)
+                        End If
                         CvtV(rV, seedFromSp, accSp).CopyTo(accR, iv)
                         CvtV(gV, seedFromSp, accSp).CopyTo(accG, iv)
                         CvtV(bV, seedFromSp, accSp).CopyTo(accB, iv)
@@ -1404,10 +1613,9 @@ Public Module FaceTintCpuCompositor
                         ' Alpha RAW: no es color ⇒ NO pasa por Cvt1 (ninguna conversion de espacio).
                         If keepBaseAlpha Then accA(i) = seedLut(srcPx(pb + 3))
                     Else
-                        r0 = SampleChannelAt(src, i, w, h, 0)
-                        g0 = SampleChannelAt(src, i, w, h, 1)
-                        b0 = SampleChannelAt(src, i, w, h, 2)
-                        If keepBaseAlpha Then accA(i) = CSng(SampleChannelAt(src, i, w, h, 3))
+                        ' Los planos YA son SampleChannelAt evaluado en este mismo (i,w,h) ⇒ mismos bits.
+                        r0 = hoSeedR(i) : g0 = hoSeedG(i) : b0 = hoSeedB(i)
+                        If keepBaseAlpha Then accA(i) = hoSeedA(i)
                     End If
                     If SeedConventionIs_G22 AndAlso isD Then
                         accR(i) = CSng(Cvt1(r0, seedSrc, accSp)) : accG(i) = CSng(Cvt1(g0, seedSrc, accSp)) : accB(i) = CSng(Cvt1(b0, seedSrc, accSp))
@@ -1475,7 +1683,14 @@ Public Module FaceTintCpuCompositor
                 ' (si no, es SampleChannelAt = gather).
                 ' ⛔ SIN skip de cov<=0: el escalar de acá NO lo tiene y el GLSL (uMode==1) TAMPOCO ⇒ meterlo
                 ' sólo del lado CPU rompería la paridad con el GPU. Si algún día se agrega, va en los dos.
-                Dim swVecOk As Boolean = swDirect AndAlso mkDirect AndAlso VecComposeSupported(0, sbop, ssl)
+                ' ⭐ IZADO DEL RESAMPLE (misma ley y misma justificacion que el seed). El swap usa R,G,B de su
+                ' textura y SOLO R de la mascara: materializar los cuatro canales de la mascara seria
+                ' cuadruplicar el izado para tirar tres. Con esto `swVecOk` deja de exigir las dos directness.
+                Dim hoSwR As Single() = Nothing, hoSwG As Single() = Nothing, hoSwB As Single() = Nothing, hoSwA As Single() = Nothing
+                Dim hoMkR As Single() = Nothing, hoMkG As Single() = Nothing, hoMkB As Single() = Nothing, hoMkA As Single() = Nothing
+                If Not swDirect Then ResampleToUnitPlanes(swTex, w, h, 7, hoSwR, hoSwG, hoSwB, hoSwA)
+                If Not mkDirect Then ResampleToUnitPlanes(mkTex, w, h, 1, hoMkR, hoMkG, hoMkB, hoMkA)
+                Dim swVecOk As Boolean = VecComposeSupported(0, sbop, ssl)
                 System.Threading.Tasks.Parallel.ForEach(
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
@@ -1484,10 +1699,21 @@ Public Module FaceTintCpuCompositor
                             Dim msdvV = VBroadcast(msdv)
                             While iv + lanes <= range.Item2
                                 Dim srV, sgV, sbV, saV As Vector(Of Single)
-                                LoadRgba8BlockV(swPx, iv * 4, srV, sgV, sbV, saV)
+                                If swDirect Then
+                                    LoadRgba8BlockV(swPx, iv * 4, srV, sgV, sbV, saV)
+                                Else
+                                    srV = New Vector(Of Single)(hoSwR, iv)
+                                    sgV = New Vector(Of Single)(hoSwG, iv)
+                                    sbV = New Vector(Of Single)(hoSwB, iv)
+                                End If
                                 ' la máscara del swap es el canal R (igual que el escalar: mkPx(i*4))
-                                Dim mkR, mkG, mkB, mkA As Vector(Of Single)
-                                LoadRgba8BlockV(mkPx, iv * 4, mkR, mkG, mkB, mkA)
+                                Dim mkR As Vector(Of Single)
+                                If mkDirect Then
+                                    Dim mkG, mkB, mkA As Vector(Of Single)
+                                    LoadRgba8BlockV(mkPx, iv * 4, mkR, mkG, mkB, mkA)
+                                Else
+                                    mkR = New Vector(Of Single)(hoMkR, iv)
+                                End If
                                 ' MISMO orden que el escalar: convertir, multiplicar, recién ahí clampear.
                                 Dim covV = Clamp01V(Vector.Multiply(ConvMaskV(mkR, smc), msdvV))
                                 ComposeSwapBlockV(accR, iv, srV, covV, sws, scs, sss, accSp, sbop, ssl)
@@ -1502,14 +1728,13 @@ Public Module FaceTintCpuCompositor
                                 Dim pb = i * 4
                                 sr = swLut(swPx(pb)) : sg = swLut(swPx(pb + 1)) : sb = swLut(swPx(pb + 2))
                             Else
-                                sr = SampleChannelAt(swTex, i, w, h, 0)
-                                sg = SampleChannelAt(swTex, i, w, h, 1)
-                                sb = SampleChannelAt(swTex, i, w, h, 2)
+                                ' Los planos YA son SampleChannelAt en este mismo (i,w,h) ⇒ mismos bits.
+                                sr = hoSwR(i) : sg = hoSwG(i) : sb = hoSwB(i)
                             End If
                             If mkDirect Then
                                 mask = swLut(mkPx(i * 4))
                             Else
-                                mask = SampleChannelAt(mkTex, i, w, h, 0)
+                                mask = hoMkR(i)
                             End If
                             Dim cov = Clamp01(ConvMask1(mask, smc) * msdv)
                             accR(i) = CSng(ComposeOne(accR(i), sr, cov, sws, scs, sss, sos, sbop, ssl, accSpace:=accSp))
@@ -1676,83 +1901,108 @@ Public Module FaceTintCpuCompositor
                 ' ademas se paga a si misma dos veces: al armar los 8 sources EN REGISTRO desaparecen los 4
                 ' stores + 4 loads por pixel que el split Fase A/B habia AGREGADO (bSrcR/G/B + bMask).
                 ' El gate excluye, y cada exclusion es por una razon distinta:
-                '   - Not layerDirect  -> el sampleo es bilineal por UV = GATHER. Es LA barrera real de todo
-                '     este trabajo: la API cross-platform Vector(Of T) no tiene gather y Avx2.GatherVector256
-                '     es x86-only, o sea que usarlo reintroduciria DOS leyes segun la CPU.
-                '   - useHairPalette   -> SampleLutEngine es un fetch NEAREST indexado por el valor del pixel:
-                '     otro gather, y ademas engine-exact (no se toca).
+                '   - useHairPalette   -> SampleLutEngine es un fetch NEAREST indexado por el VALOR del pixel.
+                '     Ese indice NO depende de la posicion ⇒ no hay nada que izar: es el OTRO gather del
+                '     compose y sigue afuera. Ademas es engine-exact (no se toca).
                 '   - preToneSkin      -> muestrea la mascara del skintone y corre 3 ComposeOne mas por pixel;
                 '     es un camino raro (flagged-after-skintone) y no vale duplicarlo.
-                '   - diffMask no directa -> idem layerDirect, para la textura de la mascara.
-                ' Lo que queda cubierto es el caso NORMAL y el 100 % de la data vanilla: PaletteMask con color
-                ' plano y TextureSet con la textura de la capa.
+                ' ⭐ YA NO EXCLUYE la directness de la capa ni la de la diffMask: el resample se IZA a planos
+                ' SoA (ver ResampleToUnitPlanes) y el cuerpo vectorial cubre tambien ese caso, con los MISMOS
+                ' 4 taps por pixel que hacia el muestreo escalar — no se agrega ni un tap.
+                ' ⛔ Aca decia que ese gather era "LA barrera real" porque Vector(Of T) no lo tiene y
+                ' Avx2.GatherVector256 es x86-only ⇒ "dos leyes segun la CPU". ERA FALSO y no hay que
+                ' reponerlo: un gather es MOVIMIENTO DE DATOS —carga los mismos bytes que N loads escalares y
+                ' no puede mover un bit—; lo que la regla de una sola ley prohibe es cambiar la ARITMETICA
+                ' (p.ej. que FMA fusione y redondee distinto). Ver memoria 61-perf-simd-trampas.
                 Dim diffMaskDirect As Boolean = (diffMaskTex IsNot Nothing AndAlso diffMaskTex.Width = w AndAlso diffMaskTex.Height = h)
                 Dim diffMaskPx As Byte() = If(diffMaskDirect, diffMaskTex.Rgba8, Nothing)
-                Dim fastA As Boolean = vecOk AndAlso layerDirect AndAlso Not useHairPalette AndAlso Not preToneSkin _
-                                       AndAlso (diffMaskTex Is Nothing OrElse diffMaskDirect)
+                ' IZADO: la capa usa los CUATRO canales; la diffMask SOLO el alpha.
+                Dim hoLayR As Single() = Nothing, hoLayG As Single() = Nothing, hoLayB As Single() = Nothing, hoLayA As Single() = Nothing
+                Dim hoDmR As Single() = Nothing, hoDmG As Single() = Nothing, hoDmB As Single() = Nothing, hoDmA As Single() = Nothing
+                If Not layerDirect Then ResampleToUnitPlanes(layerTex, w, h, 15, hoLayR, hoLayG, hoLayB, hoLayA)
+                If diffMaskTex IsNot Nothing AndAlso Not diffMaskDirect Then ResampleToUnitPlanes(diffMaskTex, w, h, 8, hoDmR, hoDmG, hoDmB, hoDmA)
+                Dim fastA As Boolean = vecOk AndAlso Not useHairPalette AndAlso Not preToneSkin
                 Dim isPalette As Boolean = (kind = FaceTintLayerKind.PaletteMask)
                 System.Threading.Tasks.Parallel.ForEach(
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
-                      ' Buffers del bloque POR RANGO (no por pixel): cada tarea del Partitioner tiene los
-                      ' suyos. ⛔ NO subirlos fuera del lambda: los comparten los hilos y se corrompen.
-                      Dim bSrcR(lanes - 1) As Single, bSrcG(lanes - 1) As Single, bSrcB(lanes - 1) As Single, bMask(lanes - 1) As Single
-                      ' Los bloques de 8 que entran por la Fase A vectorial se consumen ACA, desde el principio
-                      ' del rango; el loop escalar de abajo arranca donde este termino y se hace cargo del
-                      ' resto (y del rango ENTERO cuando fastA es False, o sea el comportamiento de siempre).
-                      Dim iStart As Integer = range.Item1
-                      If fastA Then
-                          Dim colRV = VBroadcast(uColR), colGV = VBroadcast(uColG), colBV = VBroadcast(uColB)
-                          Dim opV = VBroadcast(op)
-                          Dim zeroV = Vector(Of Single).Zero
-                          While iStart + lanes <= range.Item2
-                              Dim lrV, lgV, lbV, laV As Vector(Of Single)
-                              LoadRgba8BlockV(layerPx, iStart * 4, lrV, lgV, lbV, laV)
-                              Dim sRV, sGV, sBV, mV As Vector(Of Single)
-                              ' ⭐ El ESPEJO de LayerSrcMaskPixel: la MISMA funcion que el loop escalar
-                              ' llama, y la misma que el self-test contrasta. Tenerla extraida es lo que
-                              ' hace que el test valga: inline, el test tendria que re-implementar la
-                              ' cadena y podria coincidir con el bug en vez de detectarlo.
-                              Dim dmAV = If(diffMaskPx Is Nothing, Vector(Of Single).Zero,
-                                            LoadAlpha8BlockV(diffMaskPx, iStart * 4))
-                              LayerSrcMaskBlockV(lrV, lgV, lbV, laV, dmAV,
+                        ' Buffers del bloque POR RANGO (no por pixel): cada tarea del Partitioner tiene los
+                        ' suyos. ⛔ NO subirlos fuera del lambda: los comparten los hilos y se corrompen.
+                        Dim bSrcR(lanes - 1) As Single, bSrcG(lanes - 1) As Single, bSrcB(lanes - 1) As Single, bMask(lanes - 1) As Single
+                        ' Los bloques de 8 que entran por la Fase A vectorial se consumen ACA, desde el principio
+                        ' del rango; el loop escalar de abajo arranca donde este termino y se hace cargo del
+                        ' resto (y del rango ENTERO cuando fastA es False, o sea el comportamiento de siempre).
+                        Dim iStart As Integer = range.Item1
+                        If fastA Then
+                            Dim colRV = VBroadcast(uColR), colGV = VBroadcast(uColG), colBV = VBroadcast(uColB)
+                            Dim opV = VBroadcast(op)
+                            Dim zeroV = Vector(Of Single).Zero
+                            While iStart + lanes <= range.Item2
+                                Dim lrV, lgV, lbV, laV As Vector(Of Single)
+                                If layerDirect Then
+                                    LoadRgba8BlockV(layerPx, iStart * 4, lrV, lgV, lbV, laV)
+                                Else
+                                    ' Planos SoA: carga CONTIGUA, sin de-interleave ni gather.
+                                    lrV = New Vector(Of Single)(hoLayR, iStart)
+                                    lgV = New Vector(Of Single)(hoLayG, iStart)
+                                    lbV = New Vector(Of Single)(hoLayB, iStart)
+                                    laV = New Vector(Of Single)(hoLayA, iStart)
+                                End If
+                                Dim sRV, sGV, sBV, mV As Vector(Of Single)
+                                ' ⭐ El ESPEJO de LayerSrcMaskPixel: la MISMA funcion que el loop escalar
+                                ' llama, y la misma que el self-test contrasta. Tenerla extraida es lo que
+                                ' hace que el test valga: inline, el test tendria que re-implementar la
+                                ' cadena y podria coincidir con el bug en vez de detectarlo.
+                                ' ⛔ El flag `hasDm` sale de la TEXTURA, no del buffer de bytes. Cuando `fastA`
+                                ' exigia diffMaskDirect los dos coincidian; ahora la diffMask puede venir izada
+                                ' (diffMaskPx = Nothing y aun asi HAY mascara), y mirar el buffer diria que no.
+                                Dim hasDmV As Boolean = (diffMaskTex IsNot Nothing)
+                                Dim dmAV As Vector(Of Single)
+                                If Not hasDmV Then
+                                    dmAV = Vector(Of Single).Zero
+                                ElseIf diffMaskDirect Then
+                                    dmAV = LoadAlpha8BlockV(diffMaskPx, iStart * 4)
+                                Else
+                                    dmAV = New Vector(Of Single)(hoDmA, iStart)
+                                End If
+                                LayerSrcMaskBlockV(lrV, lgV, lbV, laV, dmAV,
                                                  isPalette, isD, forceUniform, texTimesColor,
-                                                 diffMaskPx IsNot Nothing,
+                                                 hasDmV,
                                                  colRV, colGV, colBV, layer.PaletteMaskChannel, sRV, sGV, sBV, mV)
-                              ' Cobertura: mismas ops y mismo orden que CovBlockV (convertir, multiplicar, clampear).
-                              Dim covV = Clamp01V(Vector.Multiply(ConvMaskV(mV, mc), opV))
-                              If Not Vector.LessThanOrEqualAll(Of Single)(covV, zeroV) Then
-                                  ComposeBlockV(accR, iStart, sRV, covV, ws, cs, ss, aspEff, bop, sl)
-                                  ComposeBlockV(accG, iStart, sGV, covV, ws, cs, ss, aspEff, bop, sl)
-                                  ComposeBlockV(accB, iStart, sBV, covV, ws, cs, ss, aspEff, bop, sl)
-                              End If
-                              iStart += lanes
-                          End While
-                      End If
-                      Dim blkAt As Integer = iStart, blkN As Integer = 0
-                        For i As Integer = iStart To range.Item2 - 1
-                        Dim lr As Single, lg As Single, lb As Single, la As Single
-                        If layerDirect Then
-                            Dim pb = i * 4
-                            lr = lut(layerPx(pb)) : lg = lut(layerPx(pb + 1)) : lb = lut(layerPx(pb + 2)) : la = lut(layerPx(pb + 3))
-                        Else
-                            lr = SampleChannelAt(layerTex, i, w, h, 0)
-                            lg = SampleChannelAt(layerTex, i, w, h, 1)
-                            lb = SampleChannelAt(layerTex, i, w, h, 2)
-                            la = SampleChannelAt(layerTex, i, w, h, 3)
+                                ' Cobertura: mismas ops y mismo orden que CovBlockV (convertir, multiplicar, clampear).
+                                Dim covV = Clamp01V(Vector.Multiply(ConvMaskV(mV, mc), opV))
+                                If Not Vector.LessThanOrEqualAll(Of Single)(covV, zeroV) Then
+                                    ComposeBlockV(accR, iStart, sRV, covV, ws, cs, ss, aspEff, bop, sl)
+                                    ComposeBlockV(accG, iStart, sGV, covV, ws, cs, ss, aspEff, bop, sl)
+                                    ComposeBlockV(accB, iStart, sBV, covV, ws, cs, ss, aspEff, bop, sl)
+                                End If
+                                iStart += lanes
+                            End While
                         End If
+                        Dim blkAt As Integer = iStart, blkN As Integer = 0
+                        For i As Integer = iStart To range.Item2 - 1
+                            Dim lr As Single, lg As Single, lb As Single, la As Single
+                            If layerDirect Then
+                                Dim pb = i * 4
+                                lr = lut(layerPx(pb)) : lg = lut(layerPx(pb + 1)) : lb = lut(layerPx(pb + 2)) : la = lut(layerPx(pb + 3))
+                            Else
+                                ' Los planos YA son SampleChannelAt en este mismo (i,w,h) ⇒ mismos bits.
+                                lr = hoLayR(i) : lg = hoLayG(i) : lb = hoLayB(i) : la = hoLayA(i)
+                            End If
 
-                        ' mask + src por kind (= rama uLayerKind del shader)
-                        Dim maskV As Single
-                        Dim srcR As Single, srcG As Single, srcB As Single
-                        Dim isPal As Boolean = (kind = FaceTintLayerKind.PaletteMask)
-                        Dim hasDm As Boolean = (diffMaskTex IsNot Nothing)
-                        Dim dmA As Single = 0.0F
-                        If hasDm AndAlso Not isPal AndAlso Not isD Then dmA = SampleChannelAt(diffMaskTex, i, w, h, 3)
-                        ' ⭐ LA MISMA funcion que el bloque vectorial (via LayerSrcMaskBlockV) y que el
-                        ' self-test contrastan. Extraida a proposito: inline, el test tendria que
-                        ' re-implementar la cadena y podria coincidir con el bug en vez de detectarlo.
-                        LayerSrcMaskPixel(lr, lg, lb, la, dmA, isPal, isD, forceUniform, texTimesColor, hasDm,
+                            ' mask + src por kind (= rama uLayerKind del shader)
+                            Dim maskV As Single
+                            Dim srcR As Single, srcG As Single, srcB As Single
+                            Dim isPal As Boolean = (kind = FaceTintLayerKind.PaletteMask)
+                            Dim hasDm As Boolean = (diffMaskTex IsNot Nothing)
+                            Dim dmA As Single = 0.0F
+                            ' Directo: `SampleChannelAt` con tex del mismo tamaño devuelve `t.Unit(i*4+ch)`, que ES
+                            ' este LUT sobre ese mismo byte (verificado). Izado: el plano ya es esa evaluación.
+                            If hasDm AndAlso Not isPal AndAlso Not isD Then dmA = If(diffMaskDirect, lut(diffMaskPx(i * 4 + 3)), hoDmA(i))
+                            ' ⭐ LA MISMA funcion que el bloque vectorial (via LayerSrcMaskBlockV) y que el
+                            ' self-test contrastan. Extraida a proposito: inline, el test tendria que
+                            ' re-implementar la cadena y podria coincidir con el bug en vez de detectarlo.
+                            LayerSrcMaskPixel(lr, lg, lb, la, dmA, isPal, isD, forceUniform, texTimesColor, hasDm,
                                           uColR, uColG, uColB, layer.PaletteMaskChannel, srcR, srcG, srcB, maskV)
                         If useHairPalette Then
                             ' PALETA DE PELO: fetch NEAREST indexado por el VALOR del pixel = gather, y

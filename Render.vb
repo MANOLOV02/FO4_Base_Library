@@ -3254,6 +3254,21 @@ Public Class PreviewModel
 
 
 
+        ''' <summary>⚠️ DIAGNOSTICO (sólo bajo <c>Logger.Enabled</c>): un parámetro de sampleo de una textura
+        ''' por su NOMBRE, sin bindearla — <c>glGetTextureParameteriv</c> (DSA, GL 4.5). Devuelve -1 si el
+        ''' contexto no lo soporta o el id es 0, en vez de tirar: es una sonda, no un camino.</summary>
+        Private Shared Function TexParamOrMinus1(texId As Integer, pname As GetTextureParameter) As Integer
+            If texId <= 0 Then Return -1
+            Try
+                Dim v As Integer = -1
+                GL.GetTextureParameter(texId, pname, v)
+                If GL.GetError() <> ErrorCode.NoError Then Return -1
+                Return v
+            Catch
+                Return -1
+            End Try
+        End Function
+
         Public Sub ApplyMaterial(material As PreviewModel.RenderableMesh.MaterialData)
 
             Dim shader = Me.ParentModel.ParentControl.CurrentShader
@@ -3379,15 +3394,25 @@ Public Class PreviewModel
                     Dim mxR = Single.MinValue, mxG = Single.MinValue, mxB = Single.MinValue
                     Dim sR As Double = 0, sG As Double = 0, sB As Double = 0
                     Dim whiteN = 0
+                    ' ⭐ CANAL ALPHA. Faltaba, y es el que importa para una shape alpha-blend: el shader arranca
+                    ' con `color = vColor` y hace `color.a *= texDiffuse.a`, así que el alpha POR VÉRTICE es un
+                    ' factor de primera clase del alpha del fragmento — no una curiosidad del color. Sin esto no
+                    ' se puede distinguir "cambió la textura" de "cambió el dato de vértice".
+                    Dim mnA = Single.MaxValue, mxA = Single.MinValue
+                    Dim sA As Double = 0
+                    Dim opaqueN = 0
                     For Each c In vcs
-                        sR += c.X : sG += c.Y : sB += c.Z
+                        sR += c.X : sG += c.Y : sB += c.Z : sA += c.W
                         mnR = Math.Min(mnR, c.X) : mnG = Math.Min(mnG, c.Y) : mnB = Math.Min(mnB, c.Z)
                         mxR = Math.Max(mxR, c.X) : mxG = Math.Max(mxG, c.Y) : mxB = Math.Max(mxB, c.Z)
+                        mnA = Math.Min(mnA, c.W) : mxA = Math.Max(mxA, c.W)
+                        If c.W >= 0.996F Then opaqueN += 1
                         If c.X >= 0.996F AndAlso c.Y >= 0.996F AndAlso c.Z >= 0.996F Then whiteN += 1
                     Next
                     Dim shpVc = MeshData.Shape?.ShapeName
                     Logger.LogLazy(Function() $"[VCOLOR-DBG] shape='{shpVc}' isSSE={isSSE} type={materialBase.NifShaderType} facegen={materialBase.Facegen} skinTint={materialBase.SkinTint} hair={materialBase.Hair} nVerts={n} " &
-                                              $"mean=({sR / n:F3},{sG / n:F3},{sB / n:F3}) min=({mnR:F3},{mnG:F3},{mnB:F3}) max=({mxR:F3},{mxG:F3},{mxB:F3}) whiteFrac={whiteN / CSng(n):F3}")
+                                              $"mean=({sR / n:F3},{sG / n:F3},{sB / n:F3}) min=({mnR:F3},{mnG:F3},{mnB:F3}) max=({mxR:F3},{mxG:F3},{mxB:F3}) whiteFrac={whiteN / CSng(n):F3} " &
+                                              $"| ALPHA mean={sA / n:F4} min={mnA:F4} max={mxA:F4} opaqueFrac={opaqueN / CSng(n):F3}")
                 End If
             End If
             shader.SetBool("bApplyZap", shape.ApplyZaps)
@@ -3784,6 +3809,26 @@ Public Class PreviewModel
             ' === Culling ===
             ' Se resuelve en la etapa de draw según el face mode efectivo del shape.
 
+            ' ⚠️ DIAGNOSTICO (Logger.Enabled): el estado REAL con el que sale cada shape a dibujarse. Existe
+            ' para DIFFEAR fold vs unfold: el fold de SSE no toca el material de las shapes que no son
+            ' FaceTint, asi que si una de ellas (los bigotes, '_Beard') sale distinta, la diferencia tiene
+            ' que estar ACA — en el bucket/orden, en el depth, en el blend o en que textura se bindeo.
+            If Logger.Enabled Then
+                Dim shpD = MeshData.Shape?.ShapeName
+                Dim blendPair = If(hasAlphaBlend, material.Calculate_Blending(), New Integer() {0, 0})
+                ' Los TRES factores del alpha del fragmento (`fragColor.a = vColor.a * texDiffuse.a * alpha`),
+                ' cada uno con lo que realmente se envio, mas el estado REAL del sampler del diffuse leido del
+                ' driver. Es lo unico que discrimina cual de los tres cambia entre plegado y no plegado.
+                ' ⛔ El sampler se lee por DSA (GetTextureParameter con el NOMBRE de textura): bindear para
+                ' consultarlo alteraria el estado del propio draw que se esta midiendo.
+                Dim vcShow = shape.ShowVertexColor
+                Dim vcData = hasVertexColorData
+                Dim vcTree = isTreeAnim
+                Dim dId = CInt(material.DiffuseTexture_ID)
+                Dim dMin = TexParamOrMinus1(dId, GetTextureParameter.TextureMinFilter)
+                Dim dMax = TexParamOrMinus1(dId, GetTextureParameter.TextureMaxLevel)
+                Logger.LogLazy(Function() $"[DRAW-STATE] shape='{shpD}' idx={MeshData.Idx} blend={hasAlphaBlend}({blendPair(0)},{blendPair(1)}) test={hasAlphaTest} thr={materialBase.AlphaTestRef} matAlpha={materialBase.Alpha:F3} depthWrite={writeDepth} | tex D={dId} N={material.NormalTexture_ID} inner={material.InnerLayerTexture_ID} | vColor: show={vcShow} data={vcData} tree={vcTree} ⇒ bShowVertexColor={vcShow AndAlso vcData} bShowVertexAlpha={vcShow AndAlso vcData AndAlso Not vcTree} | sampler D: minFilter={dMin} maxLevel={dMax} | hair={materialBase.Hair} spec={materialBase.SpecularEnabled}x{materialBase.SpecularMult:F2} gloss={materialBase.NifGlossiness:F2} foldedKey='{material.SseFoldedDiffuseKey}'")
+            End If
         End Sub
 
         ''' <summary>Tint del material en espacio sRGB 0..1 con el <see cref="FO4UnifiedMaterial_Class.TintColorScale"/>
@@ -4190,6 +4235,24 @@ Public Class PreviewModel
                                old.Texture_ID > 0 AndAlso old.Texture_ID <> result.Texture_ID Then
                                 GL.DeleteTexture(old.Texture_ID)
                             End If
+                            ' ⚠️ DIAGNOSTICO (Logger.Enabled): QUE ARCHIVO quedo detras de CADA nombre de textura GL.
+                            ' Los nombres se RECICLAN: GenTexture devuelve el menor libre, y cualquier DeleteTexture
+                            ' previo (el compose del pliegue borra sus intermedios) libera nombres bajos. Sin este
+                            ' mapeo no se puede distinguir "otro id" de "otra imagen", que son dos bugs distintos.
+                            If Logger.Enabled Then
+                                Dim pth = path, nid = result.Texture_ID
+                                Dim oid = If(old Is Nothing, 0UI, old.Texture_ID)
+                                Dim sz = result.Size, srgb = result.IsSRGB
+                                Dim mx As Integer = -1
+                                Try
+                                    GL.GetTextureParameter(CInt(nid), GetTextureParameter.TextureMaxLevel, mx)
+                                    If GL.GetError() <> ErrorCode.NoError Then mx = -1
+                                Catch
+                                    mx = -1
+                                End Try
+                                Dim mxv = mx
+                                Logger.LogLazy(Function() $"[TEX-UPLOAD] id={nid} (prev={oid}) {sz.Width}x{sz.Height} maxLevel={mxv} sRGB={srgb} '{pth}'")
+                            End If
                             Textures_Dictionary(path) = result
                             Last_Loaded_Textures.Add(path)
                             _uploadFailureCount.Remove(path)
@@ -4500,6 +4563,26 @@ Public Class PreviewModel
             ' Texture binds are expensive; grouping meshes with the same textures reduces bind calls.
             OpaqueMeshes.Sort(Function(a, b) a.MeshData.Material.DiffuseTexture_ID.CompareTo(b.MeshData.Material.DiffuseTexture_ID))
             CutoutMeshes.Sort(Function(a, b) a.MeshData.Material.DiffuseTexture_ID.CompareTo(b.MeshData.Material.DiffuseTexture_ID))
+            ' ⚠️ DIAGNOSTICO (Logger.Enabled): el ORDEN DE DIBUJO de estos dos buckets depende de
+            ' DiffuseTexture_ID, y el fold de SSE CAMBIA ese id para la cabeza (pasa a la textura plegada
+            ' per-NPC, ver MaterialData.SseFoldedDiffuseKey). O sea que forzar el fold puede reordenar el
+            ' bucket CUTOUT, donde conviven la cabeza (AT=True) y la barba. Con DepthFunc=Lequal el ultimo
+            ' que dibuja GANA los empates de profundidad ⇒ dos superficies coincidentes pueden intercambiar
+            ' cual se ve, sin que ningun material haya cambiado. Se loguea para poder DIFFEAR fold vs unfold
+            ' en vez de suponerlo.
+            If Logger.Enabled Then
+                Dim dump = Function(name As String, bucket As List(Of RenderableMesh)) As String
+                               Dim sb As New Text.StringBuilder($"[BUCKET-ORDER] {name} n={bucket.Count}: ")
+                               For i = 0 To bucket.Count - 1
+                                   Dim m = bucket(i)
+                                   sb.Append($"{i}:'{m.MeshData.Shape?.ShapeName}'(idx={m.MeshData.Idx},dif={m.MeshData.Material.DiffuseTexture_ID}) ")
+                               Next
+                               Return sb.ToString()
+                           End Function
+                Logger.LogLazy(Function() dump("OPAQUE", OpaqueMeshes))
+                Logger.LogLazy(Function() dump("CUTOUT", CutoutMeshes))
+                Logger.LogLazy(Function() dump("BLENDED", BlendedMeshes))
+            End If
         End If
 
         ' O3.3: Compute view-projection matrix for frustum culling

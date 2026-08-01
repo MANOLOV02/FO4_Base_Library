@@ -73,26 +73,16 @@ Public Module SseFaceTintComposer
     ' Per-race+gender ORDERED tint-layer list cache (identical across NPCs of the same race). The engine
     ' composes cb2[0..15] in this RACE order (builder @0x18C9F40). Keyed "<raceFid><F|M>".
     Private ReadOnly _layersCache As New ConcurrentDictionary(Of String, List(Of SseTintMask))
-    ' RESULTADO (decode + resize) cacheado por (path, TAMAÑO DESTINO, color/normal) — las máscaras compartidas
-    ' del RACE se decodifican y resamplean UNA vez por tamaño. ⛔ La key llevaba SOLO el path, y para no servir
-    ' un buffer del tamaño equivocado el código restringía el caché a 512² con cuatro guardas: o sea que el fold
-    ' (que compone a la resolución NATIVA del complexion) no podía cachear NUNCA, y el camino no-plegado perdía
-    ' el caché apenas el usuario elegía otra resolución en CharGen Options. Ver DecodeMask.
-    ' _texCache SE BORRO: era la segunda implementacion de la cache de decode, con estado de modulo, clave
-    ' propia y criterio de negativos propio. Su reemplazo es el NIVEL 2 de FaceTintCpuCompositor.
+    ' _texCache SE BORRO: era la segunda implementacion de la cache de decode+resample, con estado de modulo,
+    ' clave propia (SIN el tamaño destino, parcheada restringiendo el dominio a 512²) y criterio de negativos
+    ' propio. Su reemplazo es el NIVEL 2 de FaceTintCpuCompositor (CachedUnitDecode), que SI consulta el techo
+    ' `BatchDecodeCacheBudgetBytes` mientras hay lote activo. Ver DecodeMask.
     ' Resolved CLFM formID -> linear RGB [0,1] (race-default colours), cached.
     Private ReadOnly _clfmCache As New ConcurrentDictionary(Of UInteger, Double())
 
-    ' ⛔ ESTOS CACHES **NO** CONSULTAN EL TECHO (`BatchDecodeCacheBudgetBytes`), A PROPOSITO — misma decision
-    ' que del lado FO4, donde `CachedDecode` saltea el presupuesto con `Not ReferenceEquals(cache,
-    ' BatchDecodeCache)` para todo cache que no sea el del batch.
-    ' POR QUE: su vida es PER-NPC (ver ClearTextureCaches). Rechazar una entrada en un cache per-NPC no ahorra
-    ' nada duradero — garantiza el re-decode/re-resample DENTRO DEL MISMO NPC, o sea exactamente durante la
-    ' edicion viva, que es el caso para el que el cache existe. Lo que acota la memoria aca es la VIDA, no un
-    ' presupuesto.
-    ' (Hubo una version intermedia con admision por presupuesto: se escribio ANTES de fijar la vida per-NPC,
-    '  para reemplazar los limites accidentales que se estaban sacando —el gate de 512² y el literal de 4 MB—
-    '  y quedo mal encajada apenas la vida paso a ser per-NPC. No re-proponerla.)
+    ' LOS DOS CACHES QUE QUEDAN ACA son datos de RECORD, no texturas: no consultan techo porque no pesan, y su
+    ' vida es la del LOAD ORDER (ClearCaches). El que pesa —y el que el techo gobierna— ya no vive en este
+    ' modulo.
 
     ''' <summary>Suelta el cache de TEXTURA, el que pesa: el resultado decodificado y resampleado.
     ''' <para>VIDA PER-NPC, igual que del lado FO4: se conserva entre recargas del MISMO NPC -para que la
@@ -102,11 +92,11 @@ Public Module SseFaceTintComposer
     ''' <para>â›” NO toca <see cref="_layersCache"/> ni <see cref="_clfmCache"/>: son datos de RECORD (lista
     ''' ordenada de capas por raza+genero, CLFM a RGB), no pesan y re-parsearlos en cada cambio de NPC seria
     ''' churn puro. Su vida es la del LOAD ORDER y la maneja <see cref="ClearCaches"/>.</para>
-    ''' <para>El BARRIDO del bake no pasa por aca (llama a BuildCharGen directo), asi que ahi la reutilizacion
-    ''' entre NPCs de la misma raza se conserva, que es donde mas rinde.</para></summary>
-    ''' <summary>Limpia la cache de decode de SESION (la que sobrevive entre refrescos de la edicion viva).
-    ''' Vive en FaceTintCpuCompositor desde el colapso de la cache; aca queda el nombre que ya llamaban los
-    ''' callers del otro repositorio, para no tener que editarlos.</summary>
+    ''' <para>Suelta SOLO el cache de SESION (el que sobrevive entre refrescos de la edicion viva). El BARRIDO
+    ''' del bake no pasa por aca: usa el cache de LOTE, que abren y cierran Begin/EndBatchDecodeCache, asi que
+    ''' ahi la reutilizacion entre NPCs de la misma raza se conserva, que es donde mas rinde.</para>
+    ''' <para>El cache vive en FaceTintCpuCompositor desde el colapso de `_texCache`; aca queda el nombre que
+    ''' ya llamaban los callers del otro repositorio, para no tener que editarlos.</para></summary>
     Public Sub ClearTextureCaches()
         FaceTintCpuCompositor.ClearSessionUnitCache()
     End Sub
@@ -600,9 +590,10 @@ Public Module SseFaceTintComposer
     End Function
 
     ''' <summary>Decode a mask texture (FilesDictionary key) to linear RGBA[0,1] at exactly W×H (bilinear).
-    ''' Cached at ANY size — la clave lleva el tamaño destino, así que no hay ningún tamaño hardcodeado; lo que
-    ''' acota la memoria es la VIDA del caché (per-NPC, ver <see cref="ClearTextureCaches"/>), no un
-    ''' presupuesto. Nothing when the file is missing/undecodable.</summary>
+    ''' Cached at ANY size — la clave lleva el tamaño destino, así que no hay ningún tamaño hardcodeado. La
+    ''' memoria la acotan DOS cosas: la VIDA del caché (per-NPC fuera del lote, ver
+    ''' <see cref="ClearTextureCaches"/>) y, con lote activo, el techo que aplica
+    ''' <c>FaceTintCpuCompositor.CachedUnitDecode</c>. Nothing when the file is missing/undecodable.</summary>
     ''' <param name="asNormalMap">True ⇒ la fuente se interpreta como VECTOR: si trae 2 canales se despeja el eje
     ''' Z tras el resample (ver <see cref="DecodeNormalRgba"/>). False (default) = comportamiento previo, sin tocar
     ''' un solo byte de ningún caller existente.</param>

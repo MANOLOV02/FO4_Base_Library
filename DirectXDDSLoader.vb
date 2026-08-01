@@ -87,6 +87,55 @@ Public Module DirectXDDSLoader
         Return list
     End Function
 
+    ''' <summary>⭐ LA ÚNICA LEY DE SAMPLEO de las texturas del render: niveles, filtros, anisotropía y wrap.
+    ''' <para>⛔ SYNC — NO TRANSCRIBIRLA EN OTRO LADO. La consumen DOS caminos: el upload del DDS (acá abajo) y
+    ''' la instalación de las texturas COMPUESTAS del pliegue de SSE (<c>NpcFaceTintResolver.InstallTexture</c>),
+    ''' que reemplazan a un DDS en el bind y por lo tanto tienen que samplearse IGUAL que el DDS al que
+    ''' reemplazan. Estaba escrita sólo acá y la textura del pliegue se subía con <c>MinFilter=Linear</c> y un
+    ''' solo nivel: era la única del render sin minificación. Copiarla en el otro sitio habría dejado dos
+    ''' transcripciones que se separan en el primer cambio (LodBias, wrap, el gate de la anisotropía).</para>
+    ''' <para><paramref name="mipLevels"/> = niveles REALES que tiene la textura (1 = sin cadena). El llamador
+    ''' que compone en GL tiene que haber corrido <c>GenerateMipmap</c> ANTES y pasar los niveles que generó,
+    ''' o el filtro con mips leería niveles que no existen.</para></summary>
+    Public Sub ApplySamplingState(target As TextureTarget, mipLevels As Integer,
+                                  useNearest As Boolean, isCubemap As Boolean)
+        GL.TexParameter(target, TextureParameterName.TextureBaseLevel, 0)
+        GL.TexParameter(target, TextureParameterName.TextureMaxLevel, mipLevels - 1)
+
+        If useNearest Then
+            Dim minFilter = If(mipLevels > 1, TextureMinFilter.NearestMipmapNearest, TextureMinFilter.Nearest)
+            GL.TexParameter(target, TextureParameterName.TextureMinFilter, CInt(minFilter))
+            GL.TexParameter(target, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
+        Else
+            Dim minFilter = If(mipLevels > 1, TextureMinFilter.LinearMipmapLinear, TextureMinFilter.Linear)
+            GL.TexParameter(target, TextureParameterName.TextureMinFilter, CInt(minFilter))
+            GL.TexParameter(target, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+
+            ' Si quieres volver al comportamiento anterior, re-agrega:
+            ' GL.TexParameter(target, TextureParameterName.TextureLodBias, -0.5F)
+
+            ' ⚠️ Sin la extensión de anisotropía este GetFloat deja `maxAniso` en 0 y encola un
+            ' GL_INVALID_ENUM. El gate `>= 1` hace que no se aplique nada, y el drenaje evita que ese error
+            ' quede en la cola y lo cobre un chequeo posterior ajeno.
+            Dim maxAniso As Single = 0
+            GL.GetFloat(CType(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, GetPName), maxAniso)
+            If maxAniso >= 1.0F Then
+                GL.TexParameter(target, CType(GL_TEXTURE_MAX_ANISOTROPY_EXT, TextureParameterName), maxAniso)
+            Else
+                DrainGlErrors()
+            End If
+        End If
+
+        If isCubemap Then
+            GL.TexParameter(target, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
+            GL.TexParameter(target, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
+            GL.TexParameter(target, TextureParameterName.TextureWrapR, CInt(TextureWrapMode.ClampToEdge))
+        Else
+            GL.TexParameter(target, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.Repeat))
+            GL.TexParameter(target, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.Repeat))
+        End If
+    End Sub
+
     Const GL_UNPACK_ALIGNMENT As Integer = &HCF5
     Const GL_TEXTURE_MAX_ANISOTROPY_EXT As Integer = &H84FE
     Const GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT As Integer = &H84FF
@@ -380,9 +429,6 @@ Public Module DirectXDDSLoader
             texID = GL.GenTexture()
             GL.BindTexture(target, texID)
 
-            GL.TexParameter(target, TextureParameterName.TextureBaseLevel, 0)
-            GL.TexParameter(target, TextureParameterName.TextureMaxLevel, mipLevels - 1)
-
             Dim isIntegerUpload As Boolean =
             (glFormat = &H8D94) OrElse ' GL_RED_INTEGER
             (glFormat = &H8228) OrElse ' GL_RG_INTEGER
@@ -392,33 +438,7 @@ Public Module DirectXDDSLoader
             Dim isDepthStencilUpload As Boolean = (glFormat = &H84F9) ' GL_DEPTH_STENCIL
             Dim useNearest As Boolean = isIntegerUpload OrElse isDepthStencilUpload
 
-            If useNearest Then
-                Dim minFilter = If(mipLevels > 1, TextureMinFilter.NearestMipmapNearest, TextureMinFilter.Nearest)
-                GL.TexParameter(target, TextureParameterName.TextureMinFilter, CInt(minFilter))
-                GL.TexParameter(target, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Nearest))
-            Else
-                Dim minFilter = If(mipLevels > 1, TextureMinFilter.LinearMipmapLinear, TextureMinFilter.Linear)
-                GL.TexParameter(target, TextureParameterName.TextureMinFilter, CInt(minFilter))
-                GL.TexParameter(target, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
-
-                ' Si quieres volver al comportamiento anterior, re-agrega:
-                ' GL.TexParameter(target, TextureParameterName.TextureLodBias, -0.5F)
-
-                Dim maxAniso As Single = 0
-                GL.GetFloat(CType(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, GetPName), maxAniso)
-                If maxAniso >= 1.0F Then
-                    GL.TexParameter(target, CType(GL_TEXTURE_MAX_ANISOTROPY_EXT, TextureParameterName), maxAniso)
-                End If
-            End If
-
-            If tex.IsCubemap Then
-                GL.TexParameter(target, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToEdge))
-                GL.TexParameter(target, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
-                GL.TexParameter(target, TextureParameterName.TextureWrapR, CInt(TextureWrapMode.ClampToEdge))
-            Else
-                GL.TexParameter(target, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.Repeat))
-                GL.TexParameter(target, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.Repeat))
-            End If
+            ApplySamplingState(target, mipLevels, useNearest, tex.IsCubemap)
 
             GL.GetInteger(CType(GL_UNPACK_ALIGNMENT, GetPName), prevUnpackAlignment)
             GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
