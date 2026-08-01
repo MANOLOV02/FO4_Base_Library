@@ -1679,6 +1679,7 @@ Public Class PreviewModel
     Public Can_Render As Boolean = False
     Public Property TexturesReady As Boolean = True
 
+
     ''' <summary>UTC deadline for the post-texture-upload watchdog. Set when a background
     ''' upload begins (TexturesReady False→pending). When <see cref="ProcessPendingTextureUploads"/>
     ''' detects this deadline has passed without all uploads completing, it fires
@@ -4559,17 +4560,34 @@ Public Class PreviewModel
         If RenderBucketsDirty OrElse (OpaqueMeshes.Count + CutoutMeshes.Count + DecalMeshes.Count + BlendedMeshes.Count) <> meshes.Count Then
             RebuildRenderBuckets()
 
-            ' O3.5: Sort opaque and cutout meshes by diffuse texture ID to minimize GL state changes.
-            ' Texture binds are expensive; grouping meshes with the same textures reduces bind calls.
-            OpaqueMeshes.Sort(Function(a, b) a.MeshData.Material.DiffuseTexture_ID.CompareTo(b.MeshData.Material.DiffuseTexture_ID))
-            CutoutMeshes.Sort(Function(a, b) a.MeshData.Material.DiffuseTexture_ID.CompareTo(b.MeshData.Material.DiffuseTexture_ID))
-            ' ⚠️ DIAGNOSTICO (Logger.Enabled): el ORDEN DE DIBUJO de estos dos buckets depende de
-            ' DiffuseTexture_ID, y el fold de SSE CAMBIA ese id para la cabeza (pasa a la textura plegada
-            ' per-NPC, ver MaterialData.SseFoldedDiffuseKey). O sea que forzar el fold puede reordenar el
-            ' bucket CUTOUT, donde conviven la cabeza (AT=True) y la barba. Con DepthFunc=Lequal el ultimo
-            ' que dibuja GANA los empates de profundidad ⇒ dos superficies coincidentes pueden intercambiar
-            ' cual se ve, sin que ningun material haya cambiado. Se loguea para poder DIFFEAR fold vs unfold
-            ' en vez de suponerlo.
+            ' ⛔⛔ SACADO: el re-orden de OPAQUE y CUTOUT por `DiffuseTexture_ID` (era la optimizacion "O3.5",
+            ' "sort by diffuse texture ID to minimize GL state changes"). NO VOLVER A PONERLO ASI.
+            '
+            ' 1) EL ORDEN DE ESTOS DOS BUCKETS ES SEMANTICO, no cosmetico. Los dos escriben depth con
+            '    DepthFunc=Lequal ⇒ en un EMPATE de profundidad gana el ULTIMO dibujado. Con superficies
+            '    coincidentes (head parts pegados a la cara: pelo facial, cejas, pestañas) el orden decide
+            '    cual se ve.
+            ' 2) LA CLAVE ERA UN VALOR DE RUNTIME QUE VARIOS CAMINOS LEGITIMOS REEMPLAZAN:
+            '      · SSE plegado  -> MaterialData.SseFoldedDiffuseKey hace que DiffuseTexture_ID devuelva la
+            '        textura per-NPC en vez del complexion (otro id).
+            '      · FO4 facetint -> NpcFaceTintResolver.ApplyPipelineResultToDict pisa entry.Texture_ID con
+            '        el id fresco del compositor, BAJO LA MISMA RUTA (otro id, sin tocar el path).
+            '    O sea que componer la cara reordenaba el bucket y cambiaba lo que se veia en OTRAS shapes.
+            '    MEDIDO (Khajiit, toggle del render plegado): CUTOUT pasaba de [head(11), Beard(18)] a
+            '    [Beard(15), head(34)], y el diff de framebuffer POR PASE daba 0 px de diferencia tras
+            '    OPAQUE y 1411 px tras CUTOUT — la diferencia entera nacia en este pase.
+            ' 3) Y NO AHORRABA NADA: Shader_Base_Class.BindTexture no tiene chequeo de redundancia (siempre
+            '    ActiveTexture + BindTexture + uniform), asi que agrupar por textura no elimina UNA sola
+            '    llamada GL. El beneficio prometido no existia mientras ese metodo no saltee lo ya bindeado.
+            '
+            ' El orden que queda es el de RebuildRenderBuckets: CompareMeshIdx = Shape.ShapeIndex. Determinista
+            ' y ajeno a que texturas tenga cada malla.
+            ' ⭐ Si algun dia se quiere el batching de verdad: PRIMERO hacer que BindTexture saltee redundantes,
+            ' y recien ahi ordenar por la RUTA DECLARADA del material (Diffuse_or_Base_Texture), que ningun
+            ' camino de composicion muta — NUNCA por el id resuelto.
+            '
+            ' ⚠️ DIAGNOSTICO (Logger.Enabled): se conserva el volcado del orden para poder verificar que ahora
+            ' es el MISMO con y sin composicion de cara, en vez de suponerlo.
             If Logger.Enabled Then
                 Dim dump = Function(name As String, bucket As List(Of RenderableMesh)) As String
                                Dim sb As New Text.StringBuilder($"[BUCKET-ORDER] {name} n={bucket.Count}: ")

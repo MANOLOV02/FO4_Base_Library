@@ -2004,7 +2004,7 @@ Public Module FaceTintCpuCompositor
                             ' re-implementar la cadena y podria coincidir con el bug en vez de detectarlo.
                             LayerSrcMaskPixel(lr, lg, lb, la, dmA, isPal, isD, forceUniform, texTimesColor, hasDm,
                                           uColR, uColG, uColB, layer.PaletteMaskChannel, srcR, srcG, srcB, maskV)
-                        If useHairPalette Then
+                            If useHairPalette Then
                             ' PALETA DE PELO: fetch NEAREST indexado por el VALOR del pixel = gather, y
                             ' engine-exact. Pisa solo el `src`; el `mask` ya lo resolvio la cadena comun, que
                             ' es exactamente lo que hacia el codigo anterior. `fastA` excluye este camino.
