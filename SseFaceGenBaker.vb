@@ -192,27 +192,25 @@ Public Module SseFaceGenBaker
         Return (dChannel + FgOff(ch)) * FgTintAmp
     End Function
 
-    ''' <summary>⭐⭐ PISO del multiplicador del amplify, COMPARTIDO por el fold y por su inversa.
+    ''' <summary>⭐⭐ DOMINIO LEGAL DEL AMPLIFY — la política para <c>amp ≤ 0</c>, escrita UNA vez acá y
+    ''' replicada LITERAL en el GLSL (decisión 1 del plan).
     '''
-    ''' <para>⛔ EL BUG QUE ESTO ARREGLA: el piso existía SÓLO en la inversa
-    ''' (<see cref="PreCompensateEngineChain"/> acotaba con <c>MinAmp = 0.25</c> "para que un detail
-    ''' patológicamente oscuro no dispare el brillo") y NO en <see cref="FoldFacetintIntoDiffuse"/>. Con un detail
-    ''' oscuro —<c>detail &lt; 0,0587</c> ⇒ <c>amp &lt; 0,25</c>— el fold MULTIPLICABA por el amp real y la inversa
-    ''' DIVIDÍA por 0,25: la cadena dejaba de cancelar y el diffuse horneado quedaba mal en esos píxeles. Una
-    ''' inversa que no usa el mismo número que la directa no es una inversa. El mismo desbalance estaba en el
-    ''' shader (rama <c>uFgTintFold==2</c> con <c>max(..., 0.25)</c> y la <c>==1</c> sin piso).</para>
+    ''' <para>⛔ EL PISO SE SACÓ. Había un <c>max(amp, 0.25)</c> en los seis sitios (fold escalar, fold
+    ''' vectorial, inversa escalar, inversa vectorial, y las dos ramas del shader). <b>El motor NO acota</b>:
+    ''' el desensamblado no tiene <c>_sat</c> en ningún paso de la cadena, y el shader del preview tampoco.
+    ''' Un piso inventado hace que la cadena deje de reproducir al motor justo donde el detail es oscuro.</para>
     '''
-    ''' <para>⚠️ Poner el piso en LOS DOS lados cambia el resultado SÓLO donde antes la cadena ya estaba rota
-    ''' (amp &lt; 0,25). Donde amp ≥ 0,25 —todo el corpus normal, incluido el default del engine 0,251 ⇒ amp ≈ 1,0156—
-    ''' es byte-inerte.</para></summary>
-    Public Const FgAmpFloor As Single = 0.25F
-
-    ''' <summary>El multiplicador del amplify de un canal, YA ACOTADO por <see cref="FgAmpFloor"/>. Es la ÚNICA
-    ''' función que deben usar el fold y la inversa, para que no puedan volver a divergir.</summary>
+    ''' <para><b>La DIRECTA no acota</b>: multiplica por el amp real, sea el que sea.</para>
+    ''' <para><b>La INVERSA, con <c>amp ≤ 0</c>, NO divide y devuelve el valor tal cual.</b> Justificación: con
+    ''' <c>amp = 0</c> la directa multiplica por 0 y DESTRUYE la información — ninguna política la recupera,
+    ''' así que la única definida y no explosiva es la identidad. Y es la misma en los dos lenguajes, a
+    ''' diferencia de dividir por 0 (±Inf) o de <c>clamp(NaN)</c>, que en GLSL es implementation-defined.
+    ''' <c>amp = 0</c> es ALCANZABLE exacto en el canal verde, porque su offset es 0.</para></summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
-    Public Function FgTintChannelClamped(dChannel As Single, ch As Integer) As Single
+    Public Function FgAmpInverse(y As Single, dChannel As Single, ch As Integer) As Single
         Dim a = FgTintChannel(dChannel, ch)
-        Return If(a < FgAmpFloor, FgAmpFloor, a)
+        If a <= 0.0F Then Return y      ' dominio ilegal: la inversa NO divide (ver arriba)
+        Return y / a
     End Function
 
     ''' <summary>Valor crudo del DETAIL que hace el amplify IDENTIDAD (multiplicador = 1) por canal — para dejar el
@@ -318,10 +316,12 @@ Public Module SseFaceGenBaker
         Dim clin = Srgb2Lin(comp(i))
         Dim tv = tint(i)                                             ' slot 6 -> t3
         Dim det = If(detail IsNot Nothing, detail(i), EngineDefaultDetail)   ' slot 3 -> t4
-        Dim sl = clin * clin + 2.0F * clin * tv * (1.0F - clin)      ' softlight(complexion_lin, tint)
-        ' ⭐ FgTintChannelClamped, NO FgTintChannel: el MISMO piso que aplica la inversa
-        ' (PreCompensateEngineChain). Ver FgAmpFloor — tenerlo en un solo lado rompia la cancelacion.
-        comp(i) = Lin2Srgb(sl * FgTintChannelClamped(det, ch))
+        ' ⭐ EL DISPATCH COMPARTIDO, no una expresion propia (decision 4). Es la MISMA cuenta —la forma del
+        ' motor es ahora la del modelo 3— pero escrita en UN solo lugar. Hereda ademas los Clamp01 de entrada
+        ' del dispatch: inerte en la practica (complexion y tint vienen de bytes, o sea [0,1]), se DECLARA.
+        Dim sl = FaceTintCpuCompositor.BlendChannel(3, 3, clin, tv)  ' softlight(complexion_lin, tint)
+        ' ⛔ SIN PISO: la DIRECTA multiplica por el amp REAL (decision 1 — el motor no acota). Ver FgAmpInverse.
+        comp(i) = Lin2Srgb(sl * FgTintChannel(det, ch))
     End Sub
 
     ' ---------------------------------------------------------------------------------------------
@@ -350,7 +350,6 @@ Public Module SseFaceGenBaker
         Dim offV = FastPow.VPerChannel(FgTintOffR, FgTintOffG, FgTintOffB, 0.0F)
         Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
         Dim ampV = New Vector(Of Single)(FgTintAmp)
-        Dim floorV = New Vector(Of Single)(FgAmpFloor)
         Dim oneV = New Vector(Of Single)(1.0F)
         Dim twoV = New Vector(Of Single)(2.0F)
         Dim defDet = New Vector(Of Single)(EngineDefaultDetail)
@@ -359,13 +358,10 @@ Public Module SseFaceGenBaker
             Dim clin = Srgb2LinV(c)
             Dim t = New Vector(Of Single)(tint, i)
             Dim d = If(detail Is Nothing, defDet, New Vector(Of Single)(detail, i))
-            ' softlight(clin, t) = clin*clin + 2*clin*t*(1-clin) - MISMO orden de operaciones que FoldOne
-            Dim sl = Vector.Add(Vector.Multiply(clin, clin),
-                     Vector.Multiply(Vector.Multiply(Vector.Multiply(twoV, clin), t),
-                                     Vector.Subtract(oneV, clin)))
-            ' FgTintChannelClamped(d, ch) = max((d + FgOff(ch)) * FgTintAmp, FgAmpFloor)
+            ' El MISMO dispatch que el escalar, en su espejo vectorial. Ver FoldOne.
+            Dim sl = FaceTintCpuCompositor.BlendDispatchV(3, 3, clin, t)
+            ' FgTintChannel(d, ch) = (d + FgOff(ch)) * FgTintAmp. SIN piso: espejo exacto de FoldOne.
             Dim amp = Vector.Multiply(Vector.Add(d, offV), ampV)
-            amp = Vector.ConditionalSelect(Vector.LessThan(amp, floorV), floorV, amp)
             Dim res = Lin2SrgbV(Vector.Multiply(sl, amp))
             Vector.ConditionalSelect(rgbMask, res, c).CopyTo(comp, i)
             i += lanes
@@ -376,10 +372,7 @@ Public Module SseFaceGenBaker
     ''' <summary>Espejo vectorial EXACTO de <see cref="Srgb2Lin"/> (misma rama, mismo pow).</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Friend Function Srgb2LinV(c As Vector(Of Single)) As Vector(Of Single)
-        Dim loB = Vector.Divide(c, FastPow.VBroadcastS(12.92F))
-        Dim hiB = FastPow.PowV(Vector.Divide(Vector.Add(c, FastPow.VBroadcastS(0.055F)),
-                                                   FastPow.VBroadcastS(1.055F)), FastPow.G24)
-        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(c, FastPow.VBroadcastS(0.04045F)), loB, hiB)
+        Return FaceTintCpuCompositor.SrgbToLinV(c)
     End Function
 
     ''' <summary>Espejo vectorial EXACTO de <see cref="Lin2Srgb"/>. El orden de los selects replica el orden
@@ -387,16 +380,7 @@ Public Module SseFaceGenBaker
     ''' en el escalar son returns tempranos y por lo tanto ganan.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Friend Function Lin2SrgbV(c As Vector(Of Single)) As Vector(Of Single)
-        Dim zero = Vector(Of Single).Zero
-        Dim one = FastPow.VBroadcastS(1.0F)
-        Dim loB = Vector.Multiply(c, FastPow.VBroadcastS(12.92F))
-        Dim hiB = Vector.Subtract(Vector.Multiply(FastPow.VBroadcastS(1.055F),
-                                                        FastPow.PowV(c, FastPow.InvG24)),
-                                     FastPow.VBroadcastS(0.055F))
-        Dim r = Vector.ConditionalSelect(Vector.LessThanOrEqual(c, FastPow.VBroadcastS(0.0031308F)), loB, hiB)
-        r = Vector.ConditionalSelect(Vector.LessThanOrEqual(c, zero), zero, r)
-        r = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(c, one), one, r)
-        Return r
+        Return FaceTintCpuCompositor.LinToSrgbV(c)
     End Function
 
 
@@ -465,10 +449,13 @@ Public Module SseFaceGenBaker
         Dim y = Srgb2Lin(buf(i))
 
         ' 1) invertir el AMPLIFY del detail (slot 3): y /= amp
-        If detail IsNot Nothing Then
-            ' MISMO piso que el fold (FgTintChannelClamped). Ver FgAmpFloor.
-            y /= FgTintChannelClamped(detail(i), ch)
-        End If
+        ' ⭐ DECISION 2 — DETAIL AUSENTE. Antes esto era `If detail IsNot Nothing`, o sea que sin slot 3 la
+        ' inversa NO dividia. El comentario decia "ya esta balanceado" y era FALSO: la que tiene que cancelar
+        ' es la del MOTOR, y el motor con el slot 3 vacio usa su propio default (EngineDefaultDetail, 0.251 ⇒
+        ' amp = 1,015625/1,0/1,015625, que NO es 1). O sea que el amplify se aplicaba DOS veces en esos NPCs.
+        ' Ahora la inversa usa EL MISMO default que la directa (FoldOne) y que el GLSL ⇒ la cadena cancela.
+        Dim det = If(detail IsNot Nothing, detail(i), EngineDefaultDetail)
+        y = FgAmpInverse(y, det, ch)
 
         ' 2) invertir el SOFT-LIGHT del facetint (slot 6).
         '    softlight(x,b) = x²(1−2b) + 2bx = y  ⇒  x = (−b + √(b² + k·y)) / k,  k = 1−2b.
@@ -506,7 +493,7 @@ Public Module SseFaceGenBaker
         Dim offV = FastPow.VPerChannel(FgTintOffR, FgTintOffG, FgTintOffB, 0.0F)
         Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
         Dim ampV = FastPow.VBroadcastS(FgTintAmp)
-        Dim floorV = FastPow.VBroadcastS(FgAmpFloor)
+        Dim defDetV = FastPow.VBroadcastS(EngineDefaultDetail)
         Dim zero = Vector(Of Single).Zero
         Dim one = FastPow.VBroadcastS(1.0F)
         Dim two = FastPow.VBroadcastS(2.0F)
@@ -515,11 +502,11 @@ Public Module SseFaceGenBaker
             Dim orig = FastPow.VBroadcastS(buf, i)
             Dim y = Srgb2LinV(orig)
 
-            If detail IsNot Nothing Then
-                Dim amp = Vector.Multiply(Vector.Add(FastPow.VBroadcastS(detail, i), offV), ampV)
-                amp = Vector.ConditionalSelect(Vector.LessThan(amp, floorV), floorV, amp)
-                y = Vector.Divide(y, amp)
-            End If
+            ' Espejo EXACTO de FgAmpInverse: default del motor cuando falta el detail (decision 2) y, con
+            ' amp <= 0, NO se divide — se deja el valor (decision 1). El select replica ese `If`.
+            Dim dv = If(detail Is Nothing, defDetV, FastPow.VBroadcastS(detail, i))
+            Dim amp = Vector.Multiply(Vector.Add(dv, offV), ampV)
+            y = Vector.ConditionalSelect(Vector.GreaterThan(amp, zero), Vector.Divide(y, amp), y)
 
             If tint IsNot Nothing Then
                 Dim b = FastPow.VBroadcastS(tint, i)
@@ -546,17 +533,13 @@ Public Module SseFaceGenBaker
     ''' partición da EXACTAMENTE lo mismo que el cuerpo vectorial. Tenerlas distintas era el bug.</para></summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Public Function Srgb2Lin(c As Single) As Single
-        If c <= 0.04045F Then Return c / 12.92F
-        Return FastPow.Pow1((c + 0.055F) / 1.055F, FastPow.G24)
+        Return FaceTintCpuCompositor.SrgbToLinShared(c)
     End Function
 
     ''' <summary>linear→sRGB por canal (curva estándar), clamp [0,1]. Ver la nota de <see cref="Srgb2Lin"/>.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Public Function Lin2Srgb(c As Single) As Single
-        If c <= 0.0F Then Return 0.0F
-        If c >= 1.0F Then Return 1.0F
-        If c <= 0.0031308F Then Return c * 12.92F
-        Return 1.055F * FastPow.Pow1(c, FastPow.InvG24) - 0.055F
+        Return FaceTintCpuCompositor.LinToSrgbShared(c)
     End Function
 
     ''' <summary>⭐ SELF-TEST de los tres caminos vectorizados de ESTE módulo: el fold, la pre-compensación de
@@ -575,6 +558,121 @@ Public Module SseFaceGenBaker
     ''' engine) y los bordes: 0, 1, fuera de rango, y el <c>k → 0</c> de la inversa, que es su singularidad.</para>
     ''' <para>⚠️ NaN NO se barre en el byte-pack a propósito: ahí el contrato es que TIRE
     ''' <c>OverflowException</c>, y eso se verifica aparte al final.</para></summary>
+    ' =================================================================================================
+    ' GOLDEN VECTORS del fold — la salida ABSOLUTA, congelada.
+    '
+    ' ⛔ POR QUE HACIA FALTA: todos los tests del fold que ya existian son RELATIVOS (escalar-vs-vector,
+    ' fold-vs-inversa). Un cambio de ley que entre en las DOS ramas los deja verdes a los dos. Estos
+    ' vectores fijan el numero, no la coincidencia entre dos copias del mismo numero.
+    '
+    ' ⛔ NO hace early-return sin SIMD: ejercita la ley ESCALAR, que corre en toda maquina. Los siete tests
+    ' de espejo vectorial si salen vacios sin SIMD, y por eso el gate reporta cobertura POR EJE.
+    '
+    ' El buffer es de 37 pixeles (impar y no multiplo del ancho) para que el MISMO caso pase por prologo
+    ' escalar, cuerpo vectorial y cola escalar, y las tres partes tengan que dar lo mismo.
+    '
+    ' ✅ YA PASO lo que este comentario anunciaba: la decision 1 saco el piso del amplify, el test FALLO en
+    ' golden[5] (el caso det=0) y los literales se re-congelaron con `--dump-golden`. Funciono exactamente
+    ' como se esperaba: de los 11 casos se movieron los TRES que el piso levantaba y ni uno mas.
+    ' =================================================================================================
+
+    ''' <summary>Las ternas (complexion, tint, detail) del golden. Incluye las esquinas: amp=0 exacto (sólo
+    ''' alcanzable en VERDE, cuyo offset es 0), los dos lados del piso, tint 0 y 1, complexion 0 y 1, el codo
+    ''' de la curva sRGB, los defaults del engine, y un caso que satura por arriba antes del Lin2Srgb.</summary>
+    Public ReadOnly FoldGoldenCases As (Comp As Single, Tint As Single, Detail As Single)() = {
+        (0.5F, EngineDefaultTint, EngineDefaultDetail),   ' el caso neutro del engine
+        (0.0F, 0.0F, 0.0F),                               ' amp=0 exacto en VERDE -> hoy lo levanta el piso
+        (1.0F, 1.0F, 1.0F),
+        (0.5F, 0.0F, EngineDefaultDetail),                ' tint=0
+        (0.5F, 1.0F, EngineDefaultDetail),                ' tint=1
+        (0.5F, 0.5F, 0.0F),                               ' amp=0 en verde, con complexion medio
+        (0.5F, 0.5F, 0.06F),                              ' amp por DEBAJO del piso (0.2391)
+        (0.5F, 0.5F, 0.07F),                              ' amp por ENCIMA del piso (0.2789) — el par del borde
+        (0.04045F, 0.5F, EngineDefaultDetail),            ' codo de la curva sRGB
+        (0.25F, 0.75F, 0.5F),                             ' interior generico
+        (0.9F, 0.1F, 0.9F)                                ' satura por arriba antes de Lin2Srgb
+    }
+
+    ''' <summary>Salida congelada, como PATRONES DE BITS de Single (no decimales: un literal decimal no
+    ''' round-trippea garantizado y el test se volveria aproximado justo donde tiene que ser exacto).
+    ''' Una fila por caso, tres columnas = canales R, G, B.</summary>
+    ' ⚠️ RE-CONGELADOS 2026-08-01 con `--paritygate --dump-golden`, A PROPOSITO: la fase 6 SACO el piso del
+    ' amplify (decision 1). Los que se movieron son los tres casos que el piso levantaba; el resto no cambio,
+    ' que es justo lo que confirma que el cambio fue el buscado y no una deriva de arriba.
+    Private ReadOnly FoldGoldenBits As Integer(,) = {
+        {&H3F011AB4I, &H3F002EACI, &H3F011AB4I},   ' 0,5043137 0,50071216 0,5043137
+        {&H00000000I, &H00000000I, &H00000000I},   ' 0 0 0  — comp=0 anula el amplify
+        {&H3F800000I, &H3F800000I, &H3F800000I},   ' 1 1 1
+        {&H3E749778I, &H3E72A76EI, &H3E749778I},   ' 0,23885906 0,23696682 0,23885906
+        {&H3F280270I, &H3F26D646I, &H3F280270I},   ' 0,6562872 0,65170705 0,6562872
+        {&H3D309538I, &H00000000I, &H3D309538I},   ' ⭐ det=0: amp=0 EXACTO en verde ⇒ 0. R/B con amp=1/64. SIN piso
+        {&H3E848F00I, &H3E805FCFI, &H3E848F00I},   ' det=0,06: amp real (0,2547 / 0,2391) — el piso ya no interviene
+        {&H3E8E97BEI, &H3E8AC21EI, &H3E8E97BEI},   ' det=0,07: no cambio (ya estaba por encima del viejo piso)
+        {&H3D283786I, &H3D25AEDCI, &H3D283786I},   ' 0,041068576 0,040449962 0,041068576
+        {&H3ED94CCCI, &H3ED88094I, &H3ED94CCCI},   ' 0,42441404 0,42285597 0,42441404
+        {&H3F800000I, &H3F800000I, &H3F800000I}    ' 1 1 1 — satura
+    }
+
+    ''' <summary>Corre el fold REAL (la entrada pública, con su prólogo/cuerpo/cola) sobre un caso y devuelve
+    ''' los tres canales. La usan el self-test y el volcado de <c>--paritygate --dump-golden</c>, que es como
+    ''' se re-congelan los literales cuando un cambio de ley los mueve a propósito.</summary>
+    Public Function FoldGoldenActual(caseIndex As Integer) As Single()
+        Const NPIX As Integer = 37                     ' impar y no múltiplo del ancho: fuerza las tres partes
+        Dim k = FoldGoldenCases(caseIndex)
+        Dim n = NPIX * 4
+        Dim comp(n - 1) As Single, tint(n - 1) As Single, det(n - 1) As Single
+        For i = 0 To n - 1
+            comp(i) = k.Comp : tint(i) = k.Tint : det(i) = k.Detail
+        Next
+        FoldFacetintIntoDiffuse(comp, tint, NPIX, det)
+        ' Todos los píxeles llevan la misma terna ⇒ si prólogo, cuerpo y cola no coinciden, esto lo delata.
+        For p = 1 To NPIX - 1
+            For c = 0 To 2
+                If BitConverter.SingleToInt32Bits(comp(p * 4 + c)) <> BitConverter.SingleToInt32Bits(comp(c)) Then
+                    Return Nothing                     ' Nothing = las tres partes del loop NO coinciden
+                End If
+            Next
+        Next
+        Return New Single() {comp(0), comp(1), comp(2)}
+    End Function
+
+    ''' <summary>Compara el fold contra los golden vectors congelados. "" si pasa.</summary>
+    Public Function FoldGoldenSelfTest() As String
+        For ci = 0 To FoldGoldenCases.Length - 1
+            Dim got = FoldGoldenActual(ci)
+            Dim k = FoldGoldenCases(ci)
+            If got Is Nothing Then
+                Return $"golden[{ci}] (comp={k.Comp}, tint={k.Tint}, det={k.Detail}): prólogo/cuerpo/cola del fold NO coinciden entre sí"
+            End If
+            For c = 0 To 2
+                Dim gotBits = BitConverter.SingleToInt32Bits(got(c))
+                If gotBits <> FoldGoldenBits(ci, c) Then
+                    Return $"golden[{ci}] ch{c} (comp={k.Comp}, tint={k.Tint}, det={k.Detail}): " &
+                           $"got 0x{gotBits:X8} ({got(c):R}), want 0x{FoldGoldenBits(ci, c):X8} " &
+                           $"({BitConverter.Int32BitsToSingle(FoldGoldenBits(ci, c)):R})"
+                End If
+            Next
+        Next
+        Return ""
+    End Function
+
+    ''' <summary>Vuelca los golden en el formato exacto de <c>FoldGoldenBits</c>, para re-congelarlos cuando
+    ''' un cambio de ley los mueva A PROPÓSITO. Es un volcado, no un gate.</summary>
+    Public Function FoldGoldenDump() As String
+        Dim sb As New Text.StringBuilder()
+        For ci = 0 To FoldGoldenCases.Length - 1
+            Dim got = FoldGoldenActual(ci)
+            If got Is Nothing Then
+                sb.AppendLine($"        {{ *** caso {ci}: prólogo/cuerpo/cola divergen *** }},")
+            Else
+                sb.AppendLine($"        {{&H{BitConverter.SingleToInt32Bits(got(0)):X8}I, " &
+                              $"&H{BitConverter.SingleToInt32Bits(got(1)):X8}I, " &
+                              $"&H{BitConverter.SingleToInt32Bits(got(2)):X8}I}},   ' {got(0):R} {got(1):R} {got(2):R}")
+            End If
+        Next
+        Return sb.ToString()
+    End Function
+
     Public Function BakerVectorSelfTest() As String
         If Not FastPow.AcceleratedV Then Return ""
         Dim seed As UInteger = 1357911UI

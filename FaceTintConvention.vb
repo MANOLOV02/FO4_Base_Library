@@ -299,6 +299,16 @@ Public Module FaceTintConvention
         Public Property Diffuse As FaceTintBucketConvention
         Public Property NormalSpecular As FaceTintBucketConvention
         Public Property Swap As FaceTintBucketConvention
+        ''' <summary>Bucket del PLIEGUE del facetint en el diffuse (SSE). Hasta la fase 7 la etapa Fold
+        ''' caia en el bucket del CANAL y eso estaba declarado como PROVISIONAL. Ahora tiene el suyo.
+        ''' <para>El default es un CLON del bucket del canal ⇒ byte-inerte: separar la etapa no cambia un
+        ''' byte hasta que el usuario mueva ESTE bucket. ⛔ Su <c>AccumInCompositeSpace</c> tiene que seguir
+        ''' coincidiendo con el del tint o el acumulador viviria en dos espacios: lo vigila
+        ''' <see cref="AccumSpaceConsistencySelfTest"/>, que SI incluye Fold y Overlay.</para></summary>
+        Public Property Fold As FaceTintBucketConvention
+        ''' <summary>Bucket de los OVERLAYS de RaceMenu. Misma historia y mismo criterio que
+        ''' <see cref="Fold"/>: default = clon del bucket del canal ⇒ byte-inerte.</summary>
+        Public Property Overlay As FaceTintBucketConvention
         ''' <summary>Working space del blend op POR op del record en el DIFFUSE (parametrizable). Default
         ''' engine-faithful: SoftLight=G22, resto=Linear. Reemplaza el uso plano de Diffuse.WorkingSpace
         ''' para el tint diffuse (Diffuse.WorkingSpace queda de fallback de los modos extendidos 5..19).</summary>
@@ -320,6 +330,19 @@ Public Module FaceTintConvention
         ''' <summary>Color del seed cuando SeedMode=Constant (RGB [0,1], long 3). SSE engine-verificado = 0.5
         ''' plano. Inerte cuando SeedMode=BaseTexture. Serializado como array plano; null/short → 0.5.</summary>
         Public Property SeedConstant As Double() = New Double() {0.5, 0.5, 0.5}
+
+        ''' <summary>⭐ VERSION DE ESTE SET, para que un config viejo no aplique la ley de OTRO juego.
+        ''' <para>El problema concreto (plan §5.5): <see cref="SeedMode"/> y <see cref="SeedConstant"/> no
+        ''' existían en los configs anteriores, así que un config.json de Skyrim sin esas claves deserializa
+        ''' al default del CONSTRUCTOR, que es el de Fallout (<c>BaseTexture</c>). Mientras el compositor de
+        ''' SSE tapaba eso con un literal 0,5 daba igual; con el seed estrictamente property-driven, ese
+        ''' config pediría sembrar desde una textura base que el facetint de Skyrim NO TIENE.</para>
+        ''' <para>Por eso el CONSTRUCTOR deja 0: la versión 0 es exactamente "la forma que tenía el set antes
+        ''' de que el seed fuera ley". <see cref="DefaultsFor"/> escribe la versión corriente, y
+        ''' <see cref="UpgradeInPlace"/> lleva un set de la 0 a la corriente aplicándole los defaults DEL
+        ''' JUEGO a los campos que la 0 no tenía. Es idempotente.</para></summary>
+        Public Const CurrentVersion As Integer = 2
+        Public Property Version As Integer = 0
 
         Public Sub New()
             ' Defaults = ley derivada actual. Diffuse: blend tonal en G22. N·S: datos lineales (raw).
@@ -367,7 +390,22 @@ Public Module FaceTintConvention
             ' FO4: seed = head diffuse (textura), canal de máscara por kind. Comportamiento previo intacto.
             SeedMode = FaceTintSeedMode.BaseTexture
             SeedConstant = New Double() {0.5, 0.5, 0.5}
+            ' Fold y Overlay: CLON del bucket del canal ⇒ byte-inerte mientras el usuario no los toque.
+            Fold = CloneBucket(Diffuse)
+            Overlay = CloneBucket(Diffuse)
         End Sub
+
+        ''' <summary>Copia de un bucket. Los dos buckets nuevos arrancan como clon del bucket del canal, y
+        ''' tiene que ser una COPIA y no la misma referencia: compartirla haria que editar el fold moviera
+        ''' tambien el tint, en silencio.</summary>
+        Private Shared Function CloneBucket(b As FaceTintBucketConvention) As FaceTintBucketConvention
+            If b Is Nothing Then Return New FaceTintBucketConvention()
+            Return New FaceTintBucketConvention With {
+                .WorkingSpace = b.WorkingSpace, .CompositeSpace = b.CompositeSpace,
+                .SrcSpace = b.SrcSpace, .OutputSpace = b.OutputSpace,
+                .MaskConv = b.MaskConv, .Framework = b.Framework, .SoftLight = b.SoftLight,
+                .MaskChannel = b.MaskChannel, .AccumInCompositeSpace = b.AccumInCompositeSpace}
+        End Function
 
         ''' <summary>Ley por DEFAULT para un juego. FO4 = el constructor (ley derivada byte-exacta vs CK).
         ''' SSE = el modelo facegen-tint del CreationKit (re_sseck, bsfacegenutils.cpp + ps DXBC): seed CONSTANTE
@@ -376,6 +414,9 @@ Public Module FaceTintConvention
         ''' tint-only); se dejan como el diffuse para que la UI/serialización tengan valores concretos.</summary>
         Public Shared Function DefaultsFor(game As Config_App.Game_Enum) As FaceTintConventionSettings
             Dim s As New FaceTintConventionSettings()
+            ' Un set recién fabricado ES de la versión corriente por definición (tiene todos los campos con el
+            ' default de su juego). El 0 del constructor describe un set DESERIALIZADO de un config viejo.
+            s.Version = CurrentVersion
             If game <> Config_App.Game_Enum.Skyrim Then Return s   ' FO4 = defaults del constructor
             ' --- SSE ---
             Dim sseDiffuse = New FaceTintBucketConvention With {
@@ -405,8 +446,34 @@ Public Module FaceTintConvention
             s.SeedDiffuseG22 = False
             s.SeedMode = FaceTintSeedMode.Constant
             s.SeedConstant = New Double() {0.5, 0.5, 0.5}
+            s.Fold = CloneBucket(sseDiffuse)
+            s.Overlay = CloneBucket(sseDiffuse)
             Return s
         End Function
+
+        ''' <summary>Lleva un set deserializado a <see cref="CurrentVersion"/>, en sitio. Idempotente: un set
+        ''' que ya está en la versión corriente (o más nueva) no se toca.
+        ''' <para><b>0 → 1</b>: <see cref="SeedMode"/>/<see cref="SeedConstant"/> no existían como ley, así que
+        ''' un config de esa época los trae con el default del constructor (= el de Fallout) sin importar el
+        ''' juego. Se les aplica el default DEL JUEGO. No se pierde ninguna elección del usuario: en la
+        ''' versión 0 esos campos no tenían interfaz y el compositor de Skyrim los ignoraba.</para>
+        ''' <para>⛔ Se aplica donde el set ENTRA al sistema —los setters de los dos slots de
+        ''' <c>Config_App</c>— y no en cada lectura: es el único punto por el que pasan la deserialización del
+        ''' config.json, los <c>--config</c> del CLI y <see cref="SetActiveSettings"/>.</para></summary>
+        Public Shared Sub UpgradeInPlace(s As FaceTintConventionSettings, game As Config_App.Game_Enum)
+            If s Is Nothing OrElse s.Version >= CurrentVersion Then Return
+            Dim d = DefaultsFor(game)
+            If s.Version < 1 Then
+                s.SeedMode = d.SeedMode
+                s.SeedConstant = d.SeedConstant
+            End If
+            ' 1 -> 2: Fold y Overlay dejaron de caer al bucket del canal y tienen el suyo. Un config de la
+            ' v1 no los trae ⇒ deserializan Nothing y el resolver caeria al del canal igual, pero se
+            ' materializan para que la UI y el JSON tengan valores concretos (y sean editables).
+            If s.Fold Is Nothing Then s.Fold = d.Fold
+            If s.Overlay Is Nothing Then s.Overlay = d.Overlay
+            s.Version = CurrentVersion
+        End Sub
     End Class
 
     ''' <summary>La ley del JUEGO ACTIVO (Config_App.Current.Game). FO4 → Setting_FaceTintConvention (persistido,
@@ -420,6 +487,48 @@ Public Module FaceTintConvention
             Return If(c.Setting_FaceTintConvention_SSE, FaceTintConventionSettings.DefaultsFor(Config_App.Game_Enum.Skyrim))
         End If
         Return If(c.Setting_FaceTintConvention, FaceTintConventionSettings.DefaultsFor(Config_App.Game_Enum.Fallout4))
+    End Function
+
+    ''' <summary>El set del JUEGO ACTIVO como objeto PERSISTIBLE: si el slot está vacío lo crea con el
+    ''' <see cref="FaceTintConventionSettings.DefaultsFor"/> del juego y lo GUARDA en el config.
+    ''' Difiere de <see cref="ActiveSettings"/> en que ésa devuelve una copia transitoria cuando el set
+    ''' falta — editarla no persistiría nada, que es lo que necesita la UI.</summary>
+    Public Function EnsureActiveSettings(c As Config_App) As FaceTintConventionSettings
+        If c.Game = Config_App.Game_Enum.Skyrim Then
+            If c.Setting_FaceTintConvention_SSE Is Nothing Then
+                c.Setting_FaceTintConvention_SSE = FaceTintConventionSettings.DefaultsFor(Config_App.Game_Enum.Skyrim)
+            End If
+            Return c.Setting_FaceTintConvention_SSE
+        End If
+        If c.Setting_FaceTintConvention Is Nothing Then
+            c.Setting_FaceTintConvention = FaceTintConventionSettings.DefaultsFor(Config_App.Game_Enum.Fallout4)
+        End If
+        Return c.Setting_FaceTintConvention
+    End Function
+
+    ''' <summary>Nombre de la propiedad de <see cref="Config_App"/> que guarda la ley del juego activo —
+    ''' y, por lo tanto, también el nombre de la CLAVE JSON en un config.json serializado. Único lugar
+    ''' donde vive el mapeo juego→slot; <see cref="ActiveSettings"/>, <see cref="EnsureActiveSettings"/>
+    ''' y <see cref="SetActiveSettings"/> se apoyan en él.</summary>
+    ''' <remarks>NameOf no evalúa la expresión (es de compilación), así que <paramref name="c"/> sólo
+    ''' aporta el tipo: no se dereferencia y un Nothing no explota.</remarks>
+    Public Function ActiveSettingsSlotName(c As Config_App) As String
+        If c IsNot Nothing AndAlso c.Game = Config_App.Game_Enum.Skyrim Then Return NameOf(c.Setting_FaceTintConvention_SSE)
+        Return NameOf(c.Setting_FaceTintConvention)
+    End Function
+
+    ''' <summary>Escribe el set en el slot DEL JUEGO ACTIVO y devuelve el nombre del slot escrito.
+    ''' ⛔ Existe porque el slot lo elige el juego: escribir el de FO4 con SSE activo deja el valor
+    ''' INVISIBLE para <see cref="ActiveSettings"/> y un barrido de N convenciones mide N veces la misma
+    ''' sin fallar. El nombre devuelto es para que el caller lo imprima: un barrido que no dice en qué
+    ''' slot escribió no se puede auditar.</summary>
+    Public Function SetActiveSettings(c As Config_App, s As FaceTintConventionSettings) As String
+        If c.Game = Config_App.Game_Enum.Skyrim Then
+            c.Setting_FaceTintConvention_SSE = s
+        Else
+            c.Setting_FaceTintConvention = s
+        End If
+        Return ActiveSettingsSlotName(c)
     End Function
 
     ''' <summary>¿El seed del diffuse aplica la conversion de espacio? Lo leen ambos compositores (GL y CPU).
@@ -445,6 +554,29 @@ Public Module FaceTintConvention
         End Get
     End Property
 
+    ''' <summary>⭐ MODO del seed del acumulador DIFFUSE, de la ley del juego activo. Es la propiedad que
+    ''' decide si el acumulador arranca de la textura base (FO4) o de un color plano (SSE) — los DOS
+    ''' compositores CPU la leen de acá y arman su <c>FaceTintSeedSpec</c> con ella, en vez de que cada camino
+    ''' tenga cableado el modo de su juego. Null-safe.
+    ''' <para>⛔ Es DIFFUSE-only por construcción: N/S no tienen "base de color", su seed es el src crudo. El
+    ''' nombre lo dice y los compositores lo gatean por canal.</para></summary>
+    Public ReadOnly Property SeedModeValue As FaceTintSeedMode
+        Get
+            Dim s = ActiveSettings()
+            Return If(s Is Nothing, FaceTintSeedMode.BaseTexture, s.SeedMode)
+        End Get
+    End Property
+
+    ''' <summary>Color del seed constante como terna <c>Single</c> (el tipo del acumulador), de la ley del
+    ''' juego activo. Con el array ausente o corto cae al default DOCUMENTADO del campo — que se lee del
+    ''' inicializador de <see cref="FaceTintConventionSettings.SeedConstant"/> y NO se re-literaliza acá.</summary>
+    Public Function SeedConstantValue() As Single()
+        Dim s = ActiveSettings()
+        Dim k As Double() = If(s Is Nothing, Nothing, s.SeedConstant)
+        If k Is Nothing OrElse k.Length < 3 Then k = New FaceTintConventionSettings().SeedConstant
+        Return New Single() {CSng(k(0)), CSng(k(1)), CSng(k(2))}
+    End Function
+
     ' ⛔ ELIMINADA `SeedDiffuseOutputSpaceValue` (2026-07-30). Devolvia `Diffuse.OutputSpace` y su doc decia
     ' "el seed lleva la base a ESE espacio, lo leen ambos compositores". Las DOS cosas dejaron de ser ciertas:
     ' el seed ahora lleva la base a AccumSpace (ver AccumSpaceForChannel) y no quedaba UN solo lector en el
@@ -452,8 +584,9 @@ Public Module FaceTintConvention
     ' es el MISMO resolver que usa el pase final — asi el par (origen, destino) no se puede desalinear.
     ' Se borra en vez de dejarla: dos formas de pedir lo mismo es como se elige la equivocada.
 
-    ''' <summary>Slot SkinTone (RACE TintTemplateOption.Slot). Centralizado para no hardcodear 12.</summary>
-    Private Const SLOT_SKINTONE As UShort = 12US
+    ' SLOT_SKINTONE (= 12) se borró en la higiene previa a la unificación: era Private y NO le quedaba UN
+    ' solo lector. Una constante "centralizada para no hardcodear" que nadie lee no centraliza nada — sólo
+    ' sugiere que el 12 sale de acá cuando en realidad sale de donde sea que esté escrito.
 
     ''' <summary>CAPACIDAD DECLARADA del compositor CPU que hace de ESPEJO de un camino de compose. Es la
     ''' condicion REAL que gatea <see cref="FaceTintBucketConvention.AccumInCompositeSpace"/>: el acumulador solo
@@ -495,7 +628,7 @@ Public Module FaceTintConvention
     ''' el unico que sabe con quien tiene que mantener paridad, y asumirlo es justamente como se rompio antes.</param>
     Public Function AccumSpaceForChannel(channel As FaceTintChannel,
                                          cpuMirror As FaceTintCpuMirrorCapability) As FaceTintWorkingSpace
-        Dim c = ResolveConvention(False, 0US, 0, channel, False, forSwap:=False)
+        Dim c = ResolveConvention(TintStageFor(channel), channel, isTextureSet:=False, blendOp:=0)
         If cpuMirror = FaceTintCpuMirrorCapability.OutputSpaceOnly Then Return c.OutputSpace
         Return c.AccumSpace
     End Function
@@ -569,11 +702,68 @@ Public Module FaceTintConvention
         Return Math.Max(0.0F, Math.Min(1.0F, intensity))
     End Function
 
+    ''' <summary>⭐ El acumulador de un canal es UN SOLO buffer que cruza todas las etapas, así que todas
+    ''' tienen que resolver el MISMO espacio de acumulador. Este test lo verifica para las 5 etapas × 3
+    ''' canales en vez de confiar en que el resolver siga eligiendo el bucket del canal.
+    ''' <para>⛔ NO hace early-return: no usa SIMD ni GL, así que corre en toda máquina. Es el tipo de test
+    ''' que el gate necesitaba — los siete de espejo vectorial se saltean solos donde no hay SIMD.</para>
+    ''' <para>Qué atraparía: que alguien le dé bucket propio a Overlay o a Fold (fases 7 y 8) y ese bucket
+    ''' traiga su propio <c>AccumInCompositeSpace</c>. Ahí las etapas escribirían el mismo buffer en dos
+    ''' espacios distintos y la salida sería basura sin que falle nada.</para></summary>
+    Public Function AccumSpaceConsistencySelfTest() As String
+        ' ⛔ RegionSwap QUEDA FUERA, y no por comodidad: es la única etapa con bucket propio, y su
+        ' `AccumInCompositeSpace` NO participa del storage POR DISEÑO (ver AccumSpaceForChannel, que resuelve
+        ' siempre con la etapa de tint). Medido en FO4 Release: el tint resuelve Linear (AccumInCompositeSpace
+        ' del bucket Diffuse = True) y el swap resolvería G22 — divergencia REAL y esperada, que nadie consume
+        ' porque ningún compositor lee `ResolveConvention(RegionSwap, ...).AccumSpace`. Lo que sí se vigila de
+        ' esa etapa es que su OutputSpace coincida con el acumulador, y eso ya lo latchea NoteSwapAccumMismatch.
+        ' Incluirla acá hacía fallar el gate y ABORTABA el bake de FO4 — el test estaba mal, no el código.
+        Dim stages = New FaceTintStage() {FaceTintStage.TintDiffuse, FaceTintStage.TintNormalSpecular,
+                                          FaceTintStage.Overlay, FaceTintStage.Fold}
+        For Each ch In New FaceTintChannel() {FaceTintChannel.Diffuse, FaceTintChannel.Normal, FaceTintChannel.Specular}
+            ' La referencia es la etapa de TINT del canal: es la que gobierna el storage (ver AccumSpaceForChannel).
+            Dim want = ResolveConvention(TintStageFor(ch), ch, isTextureSet:=False, blendOp:=0).AccumSpace
+            For Each st In stages
+                Dim got = ResolveConvention(st, ch, isTextureSet:=False, blendOp:=0).AccumSpace
+                If got <> want Then
+                    Return $"canal {ch}: la etapa {st} resuelve AccumSpace={got} pero la etapa de tint resuelve {want}. " &
+                           "El acumulador es UN buffer compartido por todas las etapas: no puede vivir en dos espacios."
+                End If
+            Next
+        Next
+        Return ""
+    End Function
+
     ''' <summary>OutputSpace del acumulador de un canal — el espacio en el que el compose tiene que DEJAR el
     ''' resultado, y el destino del unico pase final. Mismo resolver y mismos argumentos que
     ''' <see cref="AccumSpaceForChannel"/> para que el par (origen, destino) de ese pase no se pueda desalinear.</summary>
     Public Function OutputSpaceForChannel(channel As FaceTintChannel) As FaceTintWorkingSpace
-        Return ResolveConvention(False, 0US, 0, channel, False, forSwap:=False).OutputSpace
+        Return ResolveConvention(TintStageFor(channel), channel, isTextureSet:=False, blendOp:=0).OutputSpace
+    End Function
+
+    ''' <summary>La FASE del pipeline que pide la convención. Segundo eje del resolver, junto al canal.
+    ''' <para>Existe porque "qué bucket manda" no es función del canal: RegionSwap, Overlay y Fold escriben
+    ''' el acumulador del canal Diffuse igual que el tint, y sin nombrarlas el resolver sólo podía
+    ''' distinguirlas con un booleano por caso (era <c>forSwap</c>) que no escalaba a las otras dos.</para>
+    ''' <para>⚠️ <see cref="Overlay"/> y <see cref="Fold"/> se mapean HOY al bucket del canal: todavía no
+    ''' tienen el suyo. El mapeo es provisional y declarado, no un olvido.</para></summary>
+    Public Enum FaceTintStage
+        ''' <summary>Capas de tint sobre el canal Diffuse. Bucket <c>Diffuse</c>.</summary>
+        TintDiffuse = 0
+        ''' <summary>Capas de tint sobre Normal/Specular. Bucket <c>NormalSpecular</c>.</summary>
+        TintNormalSpecular = 1
+        ''' <summary>Region swap. Único con bucket propio hoy (<c>Swap</c>), y sólo en Diffuse.</summary>
+        RegionSwap = 2
+        ''' <summary>Overlays de RaceMenu. Sin bucket propio todavía (fase 8).</summary>
+        Overlay = 3
+        ''' <summary>Pliegue del facetint en el diffuse (SSE). Sin bucket propio todavía (fase 7).</summary>
+        Fold = 4
+    End Enum
+
+    ''' <summary>La etapa de TINT que le corresponde a un canal. Se usa donde el caller compone tints y no
+    ''' tiene por qué repetir el mapeo canal→etapa en cada sitio.</summary>
+    Public Function TintStageFor(channel As FaceTintChannel) As FaceTintStage
+        Return If(channel = FaceTintChannel.Diffuse, FaceTintStage.TintDiffuse, FaceTintStage.TintNormalSpecular)
     End Function
 
     ''' <summary>Resuelve la convención de composición para una capa+canal según la tabla derivada.
@@ -582,36 +772,41 @@ Public Module FaceTintConvention
     ''' <c>FaceTintCompositor.ApplyFaceTintPipeline</c> y el CPU de <c>FaceTintCpuCompositor</c>).
     ''' Cualquier ajuste va acá; hardcodear un valor en un compositor rompe la paridad en silencio, y el
     ''' bake (que es 100 % CPU) validaría un camino distinto del que ve el usuario.</para></summary>
-    ''' <param name="isTextureSet">True = TextureSet (disc=2); False = Palette/Mask (disc=1).</param>
-    ''' <param name="slot">RACE TintTemplateOption.Slot (12 = SkinTone).</param>
-    ''' <param name="blendOp">BlendOp efectivo del resolver (0..4).</param>
+    ''' <param name="stage">Qué FASE del pipeline pide la convención. Es un eje propio y no se deduce del
+    ''' canal: el region swap, los overlays y el fold escriben el canal Diffuse igual que el tint, y hoy la
+    ''' única que tiene bucket separado es <see cref="FaceTintStage.RegionSwap"/>.</param>
     ''' <param name="channel">0=Diffuse, 1=Normal, 2=Specular.</param>
-    ''' <param name="useHairPalette">True para Brow LUT (afecta mask conv del D channel).</param>
-    ''' <param name="forBake">Mantenido por compat de API (el bake lo pasa True). YA NO forkea: la
-    ''' ley es ÚNICA para render Y bake (WYSIWYG, el render replica el bake) — decisión del usuario
-    ''' 2026-05-31 ("implementación completa, el render también"). Tanto render como bake acumulan D en
-    ''' G22 y lerpean en LINEAR; el único punto abierto es si el RENDER FINAL se muestra en g22 o se
-    ''' reconvierte a sRGB, lo cual NO cambia esta tabla (es consumo) y se confirma visualmente.
-    ''' ⛔ VERIFICADO 2026-07-30: el cuerpo de esta función NO lo referencia ni una vez. Cualquier doc que
-    ''' afirme que la ley forkea con este flag es falsa (pasó en AccumSpaceForChannel) — o se implementa el
-    ''' fork acá, o no se afirma.</param>
-    Public Function ResolveConvention(isTextureSet As Boolean,
-                                      slot As UShort,
-                                      blendOp As Integer,
+    ''' <param name="isTextureSet">True = TextureSet (disc=2); False = Palette/Mask (disc=1).</param>
+    ''' <param name="blendOp">BlendOp efectivo del resolver (0..4).</param>
+    ''' <remarks>⛔ SE PODARON TRES PARÁMETROS MUERTOS —<c>slot</c>, <c>useHairPalette</c> y <c>forBake</c>—
+    ''' verificados uno por uno: el cuerpo no referenciaba ninguno. <c>forBake</c> ya lo declaraba su propio
+    ''' doc ("la ley es ÚNICA para render y bake"); los otros dos sobrevivían por inercia y le daban al caller
+    ''' la impresión falsa de que la ley depende de ellos — tanto que un caller barría
+    ''' <c>useHairPalette ∈ {False, True}</c> "por las dudas", pagando dos resoluciones idénticas por capa.
+    ''' Un parámetro obligatorio que no acopla nada es falsa seguridad.</remarks>
+    Public Function ResolveConvention(stage As FaceTintStage,
                                       channel As FaceTintChannel,
-                                      useHairPalette As Boolean,
-                                      Optional forBake As Boolean = True,
-                                      Optional forSwap As Boolean = False) As FaceTintConventionSet
+                                      isTextureSet As Boolean,
+                                      blendOp As Integer) As FaceTintConventionSet
         ' La ley vive en Config_App.Setting_FaceTintConvention (los defaults los pone el constructor =
         ' ley derivada; si el usuario los cambia ESOS pasan a ser la ley). Se elige el bucket por
         ' (forSwap / canal) y se copia tal cual. Null-safe: si el config no está cargado, usa los defaults.
         Dim s = ActiveSettings()
         If s Is Nothing Then s = New FaceTintConventionSettings()
+        Dim forSwap As Boolean = (stage = FaceTintStage.RegionSwap)
         ' Swaps: sólo el DIFFUSE swap tiene bucket propio (s.Swap). Los swaps de Normal/Specular usan la
         ' MISMA convención que su tint (s.NormalSpecular). Sólo el diffuse cambia.
+        ' ⚠️ Overlay y Fold caen al bucket del CANAL (Diffuse) A PROPÓSITO y de forma PROVISIONAL: todavía no
+        ' tienen bucket propio (lo reciben en las fases 6-8 del plan de unificación). Sin este mapeo el
+        ' resolver no tendría qué devolverles. Mientras tanto se comportan exactamente como el tint, que es
+        ' lo que hacían antes de existir el eje ⇒ byte-idéntico.
+        ' El bucket del CANAL es el default; las etapas con bucket propio lo pisan. Fold y Overlay ya NO
+        ' caen al del canal: tienen el suyo desde la fase 7 (su default es un clon, asi que es byte-inerte).
         Dim bucket As FaceTintBucketConvention =
-            If(forSwap AndAlso channel = FaceTintChannel.Diffuse, s.Swap,
-               If(channel = FaceTintChannel.Diffuse, s.Diffuse, s.NormalSpecular))
+            If(channel = FaceTintChannel.Diffuse, s.Diffuse, s.NormalSpecular)
+        If forSwap AndAlso channel = FaceTintChannel.Diffuse Then bucket = s.Swap
+        If stage = FaceTintStage.Fold AndAlso s.Fold IsNot Nothing Then bucket = s.Fold
+        If stage = FaceTintStage.Overlay AndAlso s.Overlay IsNot Nothing Then bucket = s.Overlay
 
         Dim c As FaceTintConventionSet
         c.WorkingSpace = bucket.WorkingSpace

@@ -117,6 +117,12 @@ Public Class FaceTintLayerInput
     ''' Rgba32f ya subida, el transporte deja de limitar la paridad. El caller es dueño de la textura (la libera él).
     ''' Tiene PRIORIDAD sobre LayerDdsBytes; el cache de texturas no se toca (no hay bytes que cachear).</summary>
     Public Property LayerTextureId As Integer = 0
+    ' ⛔ NO AGREGAR una "fuente ya decodificada" para la capa. Existió (`LayerUnitRgba`, fase 5) y se BORRÓ:
+    ' nació para que SSE conservara su propio resample cuando el bilineal estaba escrito cuatro veces, y en
+    ' cuanto la ley quedó UNA (BilinearAxis/BilinearMix) dejó de aportar nada — materializar el resample y
+    ' muestrearlo por píxel dan los MISMOS BITS, y eso lo fija el self-test `bilinear`. La regla es la de
+    ' Fallout: la capa viaja como BYTES y el compositor la decodifica y muestrea. Un segundo origen para el
+    ' mismo dato es como vuelven las dos leyes.
     ''' <summary>TextureSet only — pre-coloured RGBA normal map (TTET[1]). Optional, may be empty.</summary>
     Public Property NormalDdsBytes As Byte()
     Public Property NormalCacheKey As String = Nothing
@@ -140,7 +146,10 @@ Public Class FaceTintLayerInput
     ''' <summary>True for the slot-12 skin-tone Palette layer itself (the QNAM/TEND softlight that
     ''' tones the base skin). Classed with TakesSkinTone=True layers for the occlusion dispatch:
     ''' it is masked OUT of TakesSkinTone=False feature footprints (brows/tattoos) so it does not
-    ''' light them. See <see cref="TakesSkinToneOcclusion"/>.</summary>
+    ''' light them.
+    ''' <para>The dispatch is not a member: it is the <c>occlusionActive</c> branch inside
+    ''' <see cref="ApplyFaceTintPipeline"/>. This used to point at a <c>TakesSkinToneOcclusion</c>
+    ''' property that no longer exists anywhere in the tree.</para></summary>
     Public Property IsSkinTone As Boolean = False
 
     ''' <summary>Opt-in for the per-pixel grayscale-to-palette path on the Diffuse channel. When
@@ -922,8 +931,14 @@ void main() {
         vec3 cs = clamp(prev, 0.0, 1.0);
         vec3 y  = vec3(srgbToLin1(cs.r), srgbToLin1(cs.g), srgbToLin1(cs.b));
         vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(0.2509803922);
-        vec3 fg = max((dt + uFgTintOff) * uFgTintAmp, vec3(0.25));
-        y = y / fg;
+        // SIN PISO (decision 1: el motor no acota, no hay _sat en ningun paso del desensamblado).
+        // POLITICA DE DOMINIO, replicada LITERAL de SseFaceGenBaker.FgAmpInverse: con amp <= 0 la inversa
+        // NO divide y devuelve el valor tal cual. Con amp = 0 la directa multiplico por 0 y destruyo la
+        // informacion; ninguna politica la recupera, asi que la unica definida y no explosiva es la
+        // identidad -- y es la MISMA en los dos lenguajes, a diferencia de dividir por 0 (+-Inf).
+        vec3 fg = (dt + uFgTintOff) * uFgTintAmp;
+        vec3 fgSafe = mix(vec3(1.0), fg, greaterThan(fg, vec3(0.0)));
+        y = y / fgSafe;
         vec3 b = layerSample.rgb;
         vec3 k = vec3(1.0) - 2.0 * b;
         vec3 isId = step(abs(k), vec3(0.000001));
@@ -944,11 +959,12 @@ void main() {
         // (SseFaceGenBaker.EngineDefaultDetail) o el fold GPU se desvia del bake para NPCs sin detail
         // (caso Enhanced Khajiit, TX04 borrado).
         vec3 dt = (uHasFoldDetail == 1) ? fetchAt(uFoldDetail).rgb : vec3(0.2509803922);
-        vec3 sl = cl*cl + 2.0*cl*layerSample.rgb*(1.0 - cl);   // softlight(complexion_lin, TINT = facetint)
-        // PISO 0.25 = EL MISMO que aplica la rama de UNFOLD (uFgTintFold==2). Tenerlo solo alla hacia que la
-        // inversa dividiera por 0.25 mientras el fold multiplicaba por el amp real => la cadena no cancelaba
-        // con un detail oscuro (detail < 0.0587). Espejo de SseFaceGenBaker.FgAmpFloor / FgTintChannelClamped.
-        vec3 fg = max((dt + uFgTintOff) * uFgTintAmp, vec3(0.25));   // amplify del DETAIL, acotado
+        // EL DISPATCH COMPARTIDO (modelo 3), no una expresion propia: `softLightModelSl` con sl=3 ES la
+        // forma del motor `d*d + 2*d*s*(1-d)` desde la decision 4. Escribirla aca de nuevo era la quinta
+        // copia de la misma cuenta. Espejo de SseFaceGenBaker.FoldOne, que llama al MISMO dispatch.
+        vec3 sl = softLightModelSl(cl, layerSample.rgb, 3);   // softlight(complexion_lin, TINT = facetint)
+        // SIN PISO: la DIRECTA multiplica por el amp REAL (decision 1). Espejo de FgTintChannel.
+        vec3 fg = (dt + uFgTintOff) * uFgTintAmp;   // amplify del DETAIL, sin acotar
         vec3 lin = sl * fg;
         vec3 outc = vec3(linearToSrgb1(lin.r), linearToSrgb1(lin.g), linearToSrgb1(lin.b));
         fragColor = vec4(outc, prevRgba.a);
@@ -1317,7 +1333,7 @@ void main() {
                     Dim sEntry As PreviewModel.Texture_Loaded_Class = Nothing
                     If batchLoaded Is Nothing OrElse Not batchLoaded.TryGetValue(sKey, sEntry) _
                        OrElse sEntry Is Nothing OrElse sEntry.Texture_ID = 0 Then Continue For
-                    Dim sConv = FaceTintConvention.ResolveConvention(sLayer.IsTextureSet, sLayer.Slot, sLayer.BlendOp, channel, False)
+                    Dim sConv = FaceTintConvention.ResolveConvention(FaceTintConvention.TintStageFor(channel), channel, sLayer.IsTextureSet, sLayer.BlendOp)
                     stMaskTexId = sEntry.Texture_ID
                     stColR = CSng(sLayer.R) / 255.0F : stColG = CSng(sLayer.G) / 255.0F : stColB = CSng(sLayer.B) / 255.0F
                     stOpac = Math.Max(0.0F, Math.Min(1.0F, sLayer.Opacity))
@@ -1430,10 +1446,11 @@ void main() {
                                                            AndAlso channel = FaceTintChannel.Diffuse)
                 GL.Uniform1(state._uUseHairPaletteLoc, If(useHairPaletteEffective, 1, 0))
                 ' Derived model: resolver de convencion centralizado (FaceTintConvention).
-                ' ws/maskconv/blend salen de (entry_type + slot + blendOp + channel + useHairPalette).
+                ' ws/maskconv/blend salen de (etapa + canal + entry_type + blendOp). ⛔ Decía que también
+                ' salían de `slot` y `useHairPalette`: el resolver no leía ninguno de los dos.
                 ' SIN occlusion footprint (descartado empiricamente B07-B09).
                 Dim conv = FaceTintConvention.ResolveConvention(
-                    layer.IsTextureSet, layer.Slot, layer.BlendOp, channel, useHairPaletteEffective)
+                    FaceTintConvention.TintStageFor(channel), channel, layer.IsTextureSet, layer.BlendOp)
                 GL.Uniform1(state._uModeLoc, 0)   ' tint = additive-over-base
                 GL.Uniform1(state._uWorkingSpaceLoc, CInt(conv.WorkingSpace))
                 GL.Uniform1(state._uSrcSpaceLoc, CInt(conv.SrcSpace))
@@ -1762,7 +1779,7 @@ void main() {
             GL.Uniform1(state._uModeLoc, 1)
             ' Swap = replace resuelto por la MISMA tabla que los tints (forSwap:=True) -> el override de convención
             ' (incl. #If DEBUG full-linear) alcanza también los swaps. NON-DEBUG byte-idéntico (paridad con CPU).
-            Dim swConv = FaceTintConvention.ResolveConvention(False, 0US, 0, channel, False, forBake:=True, forSwap:=True)
+            Dim swConv = FaceTintConvention.ResolveConvention(FaceTintConvention.FaceTintStage.RegionSwap, channel, isTextureSet:=False, blendOp:=0)
             ' FT-002 guard: the uMode==1 swap branch of the shader hardcodes blended = src_w (Replace)
             ' and carries no blend-op uniform. ResolveConvention currently pins swap.Blend = Replace
             ' (FaceTintConvention.vb), so this is inert. If a future config ever resolves a non-Replace
@@ -2077,6 +2094,39 @@ void main() {
         Return True
     End Function
 
+    ''' <summary>Resuelve UNA location y registra el nombre si el driver devuelve -1. Existe para que la
+    ''' guarda tenga la lista SIN repetir los 45 nombres en una segunda tabla, que es como esa tabla se
+    ''' desincroniza del bloque real.</summary>
+    Private Function UniLoc(program As Integer, name As String, missing As List(Of String)) As Integer
+        Dim l = GL.GetUniformLocation(program, name)
+        If l < 0 Then missing.Add(name)
+        Return l
+    End Function
+
+    Private ReadOnly _uniMissing As New List(Of String)
+    Private ReadOnly _uniWarnLock As New Object()
+    Private _uniformsMissingWarning As String = Nothing
+
+    ''' <summary>Primer link cuyo shader no expuso alguna de las 45 locations, o Nothing. Latcheado y
+    ''' always-on (NO por Logger, que esta apagado en release): mismo criterio que
+    ''' <c>FaceTintConvention.SwapAccumWarning</c>.</summary>
+    Public ReadOnly Property UniformsMissingWarning As String
+        Get
+            SyncLock _uniWarnLock
+                Return _uniformsMissingWarning
+            End SyncLock
+        End Get
+    End Property
+
+    Private Sub NoteUniformsMissing(names As String)
+        SyncLock _uniWarnLock
+            If _uniformsMissingWarning IsNot Nothing Then Return
+            _uniformsMissingWarning = "uniforms sin location (-1) en el link del compositor: " & names &
+                ". Escribir en -1 es un no-op MUDO: si alguno de estos lo escribe el codigo esperando efecto, " &
+                "el shader corre con el default. Un -1 es legitimo solo si NINGUN camino del GLSL lo lee."
+        End SyncLock
+    End Sub
+
     Private Sub EnsureCompositorInitialized(state As FaceTintCompositorState)
         If state._program <> 0 AndAlso state._quadVao <> 0 Then Return
 
@@ -2125,51 +2175,70 @@ void main() {
         End If
         Logger.LogLazy(Function() $"[FACETINT-SHADER] program linked OK id={state._program}")
 
-        state._uPrevLoc = GL.GetUniformLocation(state._program, "uPrev")
-        state._uLayerLoc = GL.GetUniformLocation(state._program, "uLayer")
-        state._uBaseLoc = GL.GetUniformLocation(state._program, "uBase")
-        state._uLayerDiffuseAlphaLoc = GL.GetUniformLocation(state._program, "uLayerDiffuseAlpha")
-        state._uHasDiffuseMaskLoc = GL.GetUniformLocation(state._program, "uHasDiffuseMask")
-        state._uColorLoc = GL.GetUniformLocation(state._program, "uColor")
-        state._uOpacityLoc = GL.GetUniformLocation(state._program, "uOpacity")
-        state._uBlendOpLoc = GL.GetUniformLocation(state._program, "uBlendOp")
-        state._uLayerKindLoc = GL.GetUniformLocation(state._program, "uLayerKind")
-        state._uChannelLoc = GL.GetUniformLocation(state._program, "uChannel")
-        state._uHairLutLoc = GL.GetUniformLocation(state._program, "uHairLut")
-        state._uPaletteRowLoc = GL.GetUniformLocation(state._program, "uPaletteRow")
-        state._uUseHairPaletteLoc = GL.GetUniformLocation(state._program, "uUseHairPalette")
-        state._uForceOpaqueAlphaLoc = GL.GetUniformLocation(state._program, "uForceOpaqueAlpha")
-        state._uForceUniformColorLoc = GL.GetUniformLocation(state._program, "uForceUniformColor")
-        state._uTexTimesColorLoc = GL.GetUniformLocation(state._program, "uTexTimesColor")
-        state._uFgTintFoldLoc = GL.GetUniformLocation(state._program, "uFgTintFold")
-        state._uFgTintOffLoc = GL.GetUniformLocation(state._program, "uFgTintOff")
-        state._uFgTintAmpLoc = GL.GetUniformLocation(state._program, "uFgTintAmp")
-        state._uFoldDetailLoc = GL.GetUniformLocation(state._program, "uFoldDetail")
-        state._uHasFoldDetailLoc = GL.GetUniformLocation(state._program, "uHasFoldDetail")
-        state._uPaletteMaskChannelLoc = GL.GetUniformLocation(state._program, "uPaletteMaskChannel")
-        state._uWorkingSpaceLoc = GL.GetUniformLocation(state._program, "uWorkingSpace")
-        state._uSrcSpaceLoc = GL.GetUniformLocation(state._program, "uSrcSpace")
-        state._uOutputSpaceLoc = GL.GetUniformLocation(state._program, "uOutputSpace")
-        state._uAccumSpaceLoc = GL.GetUniformLocation(state._program, "uAccumSpace")
-        state._uCompositeSpaceLoc = GL.GetUniformLocation(state._program, "uCompositeSpace")
-        state._uMaskConvFullLoc = GL.GetUniformLocation(state._program, "uMaskConvFull")
-        state._uModeLoc = GL.GetUniformLocation(state._program, "uMode")
-        state._uSoftLightLoc = GL.GetUniformLocation(state._program, "uSoftLight")
-        state._uFrameworkLoc = GL.GetUniformLocation(state._program, "uFramework")
-        state._uPreToneSkinLoc = GL.GetUniformLocation(state._program, "uPreToneSkin")
-        state._uSkinMaskLoc = GL.GetUniformLocation(state._program, "uSkinMask")
-        state._uSkinColorLoc = GL.GetUniformLocation(state._program, "uSkinColor")
-        state._uSkinOpacityLoc = GL.GetUniformLocation(state._program, "uSkinOpacity")
-        state._uSkinWsLoc = GL.GetUniformLocation(state._program, "uSkinWs")
-        state._uSkinCsLoc = GL.GetUniformLocation(state._program, "uSkinCs")
-        state._uSkinSsLoc = GL.GetUniformLocation(state._program, "uSkinSs")
-        state._uSkinOsLoc = GL.GetUniformLocation(state._program, "uSkinOs")
-        state._uSkinBopLoc = GL.GetUniformLocation(state._program, "uSkinBop")
-        state._uSkinSlLoc = GL.GetUniformLocation(state._program, "uSkinSl")
-        state._uSkinMcLoc = GL.GetUniformLocation(state._program, "uSkinMc")
-        state._uSkinMaskChLoc = GL.GetUniformLocation(state._program, "uSkinMaskCh")
-        state._uTargetSizeLoc = GL.GetUniformLocation(state._program, "uTargetSize")
-        state._uDownsizeFromMip0Loc = GL.GetUniformLocation(state._program, "uDownsizeFromMip0")
+        state._uPrevLoc = UniLoc(state._program, "uPrev", _uniMissing)
+        state._uLayerLoc = UniLoc(state._program, "uLayer", _uniMissing)
+        state._uBaseLoc = UniLoc(state._program, "uBase", _uniMissing)
+        state._uLayerDiffuseAlphaLoc = UniLoc(state._program, "uLayerDiffuseAlpha", _uniMissing)
+        state._uHasDiffuseMaskLoc = UniLoc(state._program, "uHasDiffuseMask", _uniMissing)
+        state._uColorLoc = UniLoc(state._program, "uColor", _uniMissing)
+        state._uOpacityLoc = UniLoc(state._program, "uOpacity", _uniMissing)
+        state._uBlendOpLoc = UniLoc(state._program, "uBlendOp", _uniMissing)
+        state._uLayerKindLoc = UniLoc(state._program, "uLayerKind", _uniMissing)
+        state._uChannelLoc = UniLoc(state._program, "uChannel", _uniMissing)
+        state._uHairLutLoc = UniLoc(state._program, "uHairLut", _uniMissing)
+        state._uPaletteRowLoc = UniLoc(state._program, "uPaletteRow", _uniMissing)
+        state._uUseHairPaletteLoc = UniLoc(state._program, "uUseHairPalette", _uniMissing)
+        state._uForceOpaqueAlphaLoc = UniLoc(state._program, "uForceOpaqueAlpha", _uniMissing)
+        state._uForceUniformColorLoc = UniLoc(state._program, "uForceUniformColor", _uniMissing)
+        state._uTexTimesColorLoc = UniLoc(state._program, "uTexTimesColor", _uniMissing)
+        state._uFgTintFoldLoc = UniLoc(state._program, "uFgTintFold", _uniMissing)
+        state._uFgTintOffLoc = UniLoc(state._program, "uFgTintOff", _uniMissing)
+        state._uFgTintAmpLoc = UniLoc(state._program, "uFgTintAmp", _uniMissing)
+        state._uFoldDetailLoc = UniLoc(state._program, "uFoldDetail", _uniMissing)
+        state._uHasFoldDetailLoc = UniLoc(state._program, "uHasFoldDetail", _uniMissing)
+        state._uPaletteMaskChannelLoc = UniLoc(state._program, "uPaletteMaskChannel", _uniMissing)
+        state._uWorkingSpaceLoc = UniLoc(state._program, "uWorkingSpace", _uniMissing)
+        state._uSrcSpaceLoc = UniLoc(state._program, "uSrcSpace", _uniMissing)
+        state._uOutputSpaceLoc = UniLoc(state._program, "uOutputSpace", _uniMissing)
+        state._uAccumSpaceLoc = UniLoc(state._program, "uAccumSpace", _uniMissing)
+        state._uCompositeSpaceLoc = UniLoc(state._program, "uCompositeSpace", _uniMissing)
+        state._uMaskConvFullLoc = UniLoc(state._program, "uMaskConvFull", _uniMissing)
+        state._uModeLoc = UniLoc(state._program, "uMode", _uniMissing)
+        state._uSoftLightLoc = UniLoc(state._program, "uSoftLight", _uniMissing)
+        state._uFrameworkLoc = UniLoc(state._program, "uFramework", _uniMissing)
+        state._uPreToneSkinLoc = UniLoc(state._program, "uPreToneSkin", _uniMissing)
+        state._uSkinMaskLoc = UniLoc(state._program, "uSkinMask", _uniMissing)
+        state._uSkinColorLoc = UniLoc(state._program, "uSkinColor", _uniMissing)
+        state._uSkinOpacityLoc = UniLoc(state._program, "uSkinOpacity", _uniMissing)
+        state._uSkinWsLoc = UniLoc(state._program, "uSkinWs", _uniMissing)
+        state._uSkinCsLoc = UniLoc(state._program, "uSkinCs", _uniMissing)
+        state._uSkinSsLoc = UniLoc(state._program, "uSkinSs", _uniMissing)
+        state._uSkinOsLoc = UniLoc(state._program, "uSkinOs", _uniMissing)
+        state._uSkinBopLoc = UniLoc(state._program, "uSkinBop", _uniMissing)
+        state._uSkinSlLoc = UniLoc(state._program, "uSkinSl", _uniMissing)
+        state._uSkinMcLoc = UniLoc(state._program, "uSkinMc", _uniMissing)
+        state._uSkinMaskChLoc = UniLoc(state._program, "uSkinMaskCh", _uniMissing)
+        state._uTargetSizeLoc = UniLoc(state._program, "uTargetSize", _uniMissing)
+        state._uDownsizeFromMip0Loc = UniLoc(state._program, "uDownsizeFromMip0", _uniMissing)
+
+        ' =========================================================================================
+        ' GUARDA DE UNIFORMS -- UNA VEZ POR LINK, aca, donde el bloque de locations esta completo.
+        ' =========================================================================================
+        ' ⛔ POR QUE HACE FALTA: `GL.Uniform*(-1, ...)` es un NO-OP MUDO. Si un uniform se renombra en el
+        ' GLSL, o el compilador lo elimina porque su rama quedo muerta, el codigo lo sigue "escribiendo" y
+        ' el shader corre con el valor por defecto. No falla nada: sale una imagen, DISTINTA. Hasta hoy no
+        ' habia NI UNA guarda sobre las 45 locations.
+        ' ⚠️ Un -1 NO es necesariamente un bug: el compilador GLSL elimina los uniforms que ningun camino
+        ' lee, y eso es legitimo. Por eso esto REPORTA (latcheado, una vez) en vez de abortar.
+        ' ⭐ MEDIDO 2026-08-01 sobre un link REAL (corrida -GpuParity, 23 NPCs, 21 imagenes comparadas):
+        ' NINGUNA de las 45 quedo en -1. O sea que hoy la lista de "requeridos" son las 45, y CUALQUIER -1
+        ' que aparezca es una regresion — un uniform renombrado en el GLSL o una rama que quedo muerta.
+        ' Se reporta en vez de abortar por el mismo criterio que SwapAccumWarning: el bake sigue y el aviso
+        ' sale SIEMPRE (por `log()`, no por Logger, que en release esta apagado).
+        If _uniMissing.Count > 0 Then
+            NoteUniformsMissing(String.Join(", ", _uniMissing))
+        End If
+        _uniMissing.Clear()
 
         Dim quadVerts() As Single = {
             -1.0F, -1.0F,
@@ -2323,7 +2392,11 @@ void main() {
                                           cpuMirror As FaceTintConvention.FaceTintCpuMirrorCapability,
                                           Optional resolution As FaceTintConvention.FaceTintResolutionSettings = Nothing,
                                           Optional baseDiffuseIsLinearOnGpu As Boolean = False,
-                                          Optional headDiffuseAlphaTest As Boolean = False) As FaceTintPipelineResult
+                                          Optional headDiffuseAlphaTest As Boolean = False,
+                                          Optional stage As FaceTintConvention.FaceTintStage = FaceTintConvention.FaceTintStage.TintDiffuse) As FaceTintPipelineResult
+        ' `stage` va OPCIONAL Y AL FINAL a propósito: así los call sites del otro repositorio (que es un repo
+        ' git independiente, sin commit atómico cruzado) no necesitan una sola edición. El default reproduce
+        ' exactamente lo que hacía antes de existir el eje.
         ArgumentNullException.ThrowIfNull(state)
 
         ' ⛔ SYNC: CPU/GPU compositor — el target de resolución es POR CANAL, no el del diffuse. El `_msn` y

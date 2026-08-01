@@ -139,14 +139,40 @@ Public Class Config_App
     ' (byte-match con CK si no se tocan). El usuario los edita acá o desde la UI y ESOS pasan a ser la ley:
     ' FaceTintConvention.ResolveConvention los lee SIEMPRE. Blend NO está (record-driven / Replace, read-only).
     ' Un config.json viejo sin la key deserializa al default del constructor.
-    Public Property Setting_FaceTintConvention As New FaceTintConvention.FaceTintConventionSettings()
+    ' ⭐ El SETTER es el punto por el que el set ENTRA al sistema: la deserialización de System.Text.Json
+    ' escribe por acá, y también los `--config` del CLI y FaceTintConvention.SetActiveSettings. Por eso el
+    ' upgrade de versión va acá y no en cada lectura (ver FaceTintConventionSettings.UpgradeInPlace): un set
+    ' de la versión 0 trae SeedMode/SeedConstant con el default del CONSTRUCTOR, que es el de Fallout.
+    Private _faceTintConvention As FaceTintConvention.FaceTintConventionSettings =
+        FaceTintConvention.FaceTintConventionSettings.DefaultsFor(Game_Enum.Fallout4)
+    Public Property Setting_FaceTintConvention As FaceTintConvention.FaceTintConventionSettings
+        Get
+            Return _faceTintConvention
+        End Get
+        Set(value As FaceTintConvention.FaceTintConventionSettings)
+            FaceTintConvention.FaceTintConventionSettings.UpgradeInPlace(value, Game_Enum.Fallout4)
+            _faceTintConvention = value
+        End Set
+    End Property
 
     ' La ley SSE (facegen-tint del CreationKit): seed constante 0.5, lerp uniforme por cobertura (sin blend-op
     ' por tipo), todo LINEAR, máscara por canal ROJO. Set SEPARADO del de FO4 para no tocar sus valores byte-
     ' exactos. Default = FaceTintConventionSettings.DefaultsFor(Skyrim). FaceTintConvention.ActiveSettings elige
     ' este cuando Game=Skyrim. Un config.json viejo sin la key deserializa a la ley SSE por default (abajo).
-    Public Property Setting_FaceTintConvention_SSE As FaceTintConvention.FaceTintConventionSettings =
+    ' Mismo upgrade que el slot de FO4, con el juego de ESTE slot (ver el comentario de arriba). Es el caso
+    ' que lo motiva: un config de Skyrim de la versión 0 pide sembrar desde una textura base que el facetint
+    ' de Skyrim no tiene.
+    Private _faceTintConventionSse As FaceTintConvention.FaceTintConventionSettings =
         FaceTintConvention.FaceTintConventionSettings.DefaultsFor(Game_Enum.Skyrim)
+    Public Property Setting_FaceTintConvention_SSE As FaceTintConvention.FaceTintConventionSettings
+        Get
+            Return _faceTintConventionSse
+        End Get
+        Set(value As FaceTintConvention.FaceTintConventionSettings)
+            FaceTintConvention.FaceTintConventionSettings.UpgradeInPlace(value, Game_Enum.Skyrim)
+            _faceTintConventionSse = value
+        End Set
+    End Property
 
     ' === FaceTint sort order (botón "CharGen Options" → tab "Tint Order") ===
     ' Orden de composición configurable (multi-clave asc/desc) de tints y swaps + placement del SkinTone.
