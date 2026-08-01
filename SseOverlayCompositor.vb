@@ -1,5 +1,8 @@
 ﻿Option Strict On
 
+Imports System.Numerics
+Imports System.Runtime.CompilerServices
+
 Imports System.Linq
 
 ''' <summary>
@@ -13,6 +16,16 @@ Imports System.Linq
 ''' commutative). SSE-only; the FO4 facetint path is untouched.
 ''' </summary>
 Public Module SseOverlayCompositor
+    ''' <summary>Lanes de un Vector(Of Single) en ESTA maquina: 8 con AVX2, 4 con SSE2. Es el tamano de
+    ''' bloque de TODOS los loops vectoriales de este modulo. ⛔ Es constante durante todo el proceso
+    ''' (Vector(Of T).Count lo es), asi que vive aca y no se recalcula por pixel. Hardcodear 8 en su lugar
+    ''' corrompe silenciosamente una maquina de 4 lanes: leeria y escribiria fuera del bloque.</summary>
+    Private ReadOnly lanes As Integer = FastPow.LaneCount
+
+    ''' <summary>Offsets por canal de HsvToRgb (r=0, g=4, b=2). CONSTANTE: se calcula UNA vez y no por
+    ''' bloque — VPerChannel asigna un array, y adentro del loop caliente eso es basura por bloque.</summary>
+    Private ReadOnly HsvChannelOffsetsV As Vector(Of Single) = FastPow.VPerChannel(0.0F, 4.0F, 2.0F, 0.0F)
+
 
     ''' <summary>NiOverride blend modes (technique name → this enum). Math is per 60-racemenu-blend-de-overlays.</summary>
     Public Enum SseBlendMode
@@ -106,55 +119,214 @@ Public Module SseOverlayCompositor
             ' Color de capa: invariante del loop. Se iza a Single una vez por capa (antes se releia
             ' del Double() en cada pixel).
             Dim c0 = CSng(ov.Color(0)), c1 = CSng(ov.Color(1)), c2 = CSng(ov.Color(2)), c3 = CSng(ov.Color(3))
+            Dim isNormal = (ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode)
+            Dim isGray = (ov.BlendMode = SseBlendMode.Grayscale)
+            ' ⭐ ColorMode (HSV) YA NO se queda escalar. Estuvo excluido por "ramoso", que era comodidad y no
+            ' una barrera: las reducciones ENTRE canales son la misma horizontal que ya usaban Grayscale y el
+            ' blend de normales, los tres If de la tinta son selects, y el Mod 6 resulta EXACTO por el rango
+            ' de sus argumentos. Ver ColorModeBlockV.
+            Dim isColor = (ov.BlendMode = SseBlendMode.ColorMode)
+            Dim vecOk = FastPow.AcceleratedV AndAlso
+                        (isNormal OrElse isGray OrElse isColor OrElse FaceTintCpuCompositor.VecComposeSupported(0, m.BlendOp, m.SoftLight))
             System.Threading.Tasks.Parallel.ForEach(
                 System.Collections.Concurrent.Partitioner.Create(0, npix),
                 Sub(range)
-                    For i = range.Item1 To range.Item2 - 1
-                        ' (1) TYPE: combine the overlay texture with the layer colour → premultiplied layer {rgb, a}
-                        Dim lr As Single, lg As Single, lb As Single, la As Single
-                        Dim tr = 1.0F, tg = 1.0F, tb = 1.0F, ta = 1.0F
-                        If ov.Texture IsNot Nothing Then tr = ov.Texture(i * 4) : tg = ov.Texture(i * 4 + 1) : tb = ov.Texture(i * 4 + 2) : ta = ov.Texture(i * 4 + 3)
-                        Select Case ov.LayerType
-                            Case 1 : lr = c0 : lg = c1 : lb = c2 : la = tr * c3          ' colour.rgb, alpha = mask.r × colour.a
-                            Case 2 : lr = c0 : lg = c1 : lb = c2 : la = c3               ' solid colour
-                            Case Else : lr = tr * c0 : lg = tg * c1 : lb = tb * c2 : la = ta * c3 ' texture × colour
-                        End Select
-                        If la <= 0.0F Then Continue For
-
-                        Dim ar = acc(i * 4), ag = acc(i * 4 + 1), ab = acc(i * 4 + 2)
-                        If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
-                            ' normal.fx: over with PREMULTIPLIED layer.rgb (no un-premultiply)
-                            acc(i * 4) = CSng(lr * la + ar * (1 - la))
-                            acc(i * 4 + 1) = CSng(lg * la + ag * (1 - la))
-                            acc(i * 4 + 2) = CSng(lb * la + ab * (1 - la))
-                        Else
-                            ' all other modes un-premultiply the layer colour, blend, then alpha-over
-                            Dim br = Clamp01(lr / la), bg = Clamp01(lg / la), bbl = Clamp01(lb / la)
-                            Dim rr As Single, rg As Single, rb As Single
-                            If ov.BlendMode = SseBlendMode.Grayscale Then
-                                Dim lum = 0.299F * ar + 0.587F * ag + 0.114F * ab
-                                rr = lum * br : rg = lum * bg : rb = lum * bbl
-                            ElseIf ov.BlendMode = SseBlendMode.ColorMode Then
-                                Dim hsvBlend = RgbToHsv(br, bg, bbl)
-                                Dim vSrc = MathF.Max(ar, MathF.Max(ag, ab))
-                                Dim outc = HsvToRgb(hsvBlend(0), hsvBlend(1), vSrc)
-                                rr = outc(0) : rg = outc(1) : rb = outc(2)
-                            Else
-                                ' Reuse the SHARED FO4 blend dispatch (CPU/GL parity). El mapeo modo→(blendOp, softLight)
-                                ' sale de BlendOpFromSseMode = la MISMA fuente que usa el path GPU (uBlendOp del compositor),
-                                ' así CPU y GL no pueden desincronizarse.
-                                rr = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ar, br)
-                                rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ag, bg)
-                                rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ab, bbl)
-                            End If
-                            acc(i * 4) = CSng((1 - la) * ar + rr * la)
-                            acc(i * 4 + 1) = CSng((1 - la) * ag + rg * la)
-                            acc(i * 4 + 2) = CSng((1 - la) * ab + rb * la)
-                        End If
-                    Next
+                    Dim lo = range.Item1 * 4, hi = range.Item2 * 4
+                    Dim e = lo
+                    If vecOk Then
+                        ' POR PIXEL ENTERO: Grayscale lee ar,ag,ab y escribe los tres ⇒ read-after-write.
+                        While (e And (lanes - 1)) <> 0 AndAlso e < hi
+                            ApplyOverlayPixel(acc, ov, m, c0, c1, c2, c3, e >> 2) : e += 4
+                        End While
+                        e = ApplyOverlayRangeV(acc, ov, m, c0, c1, c2, c3, isNormal, isGray, isColor, e, hi)
+                    End If
+                    While e < hi
+                        ApplyOverlayPixel(acc, ov, m, c0, c1, c2, c3, e >> 2) : e += 4
+                    End While
                 End Sub)
         Next
     End Sub
+
+    ''' <summary>Un PIXEL del composite de overlay — la ley escalar VERBATIM (prologo, cola y los modos sin
+    ''' espejo vectorial). Por pixel y no por elemento: Grayscale lee los tres canales y escribe los tres.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub ApplyOverlayPixel(acc As Single(), ov As SseOverlay, m As (BlendOp As Integer, SoftLight As Integer),
+                                  c0 As Single, c1 As Single, c2 As Single, c3 As Single, px As Integer)
+            ' (1) TYPE: combine the overlay texture with the layer colour → premultiplied layer {rgb, a}
+            Dim lr As Single, lg As Single, lb As Single, la As Single
+            Dim tr = 1.0F, tg = 1.0F, tb = 1.0F, ta = 1.0F
+            If ov.Texture IsNot Nothing Then tr = ov.Texture(px * 4) : tg = ov.Texture(px * 4 + 1) : tb = ov.Texture(px * 4 + 2) : ta = ov.Texture(px * 4 + 3)
+            Select Case ov.LayerType
+                Case 1 : lr = c0 : lg = c1 : lb = c2 : la = tr * c3          ' colour.rgb, alpha = mask.r × colour.a
+                Case 2 : lr = c0 : lg = c1 : lb = c2 : la = c3               ' solid colour
+                Case Else : lr = tr * c0 : lg = tg * c1 : lb = tb * c2 : la = ta * c3 ' texture × colour
+            End Select
+            If la <= 0.0F Then Return
+
+            Dim ar = acc(px * 4), ag = acc(px * 4 + 1), ab = acc(px * 4 + 2)
+            If ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode Then
+                ' normal.fx: over with PREMULTIPLIED layer.rgb (no un-premultiply)
+                acc(px * 4) = CSng(lr * la + ar * (1 - la))
+                acc(px * 4 + 1) = CSng(lg * la + ag * (1 - la))
+                acc(px * 4 + 2) = CSng(lb * la + ab * (1 - la))
+            Else
+                ' all other modes un-premultiply the layer colour, blend, then alpha-over
+                Dim br = Clamp01(lr / la), bg = Clamp01(lg / la), bbl = Clamp01(lb / la)
+                Dim rr As Single, rg As Single, rb As Single
+                If ov.BlendMode = SseBlendMode.Grayscale Then
+                    Dim lum = 0.299F * ar + 0.587F * ag + 0.114F * ab
+                    rr = lum * br : rg = lum * bg : rb = lum * bbl
+                ElseIf ov.BlendMode = SseBlendMode.ColorMode Then
+                    Dim hsvBlend = RgbToHsv(br, bg, bbl)
+                    Dim vSrc = MathF.Max(ar, MathF.Max(ag, ab))
+                    Dim outc = HsvToRgb(hsvBlend(0), hsvBlend(1), vSrc)
+                    rr = outc(0) : rg = outc(1) : rb = outc(2)
+                Else
+                    ' Reuse the SHARED FO4 blend dispatch (CPU/GL parity). El mapeo modo→(blendOp, softLight)
+                    ' sale de BlendOpFromSseMode = la MISMA fuente que usa el path GPU (uBlendOp del compositor),
+                    ' así CPU y GL no pueden desincronizarse.
+                    rr = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ar, br)
+                    rg = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ag, bg)
+                    rb = FaceTintCpuCompositor.BlendChannel(m.BlendOp, m.SoftLight, ab, bbl)
+                End If
+                acc(px * 4) = CSng((1 - la) * ar + rr * la)
+                acc(px * 4 + 1) = CSng((1 - la) * ag + rg * la)
+                acc(px * 4 + 2) = CSng((1 - la) * ab + rb * la)
+            End If
+    End Sub
+
+    ''' <summary>Cuerpo vectorial del composite de overlay: 8 floats = 2 pixeles.
+    ''' <para>El alpha de capa sale de un lane DIFUNDIDO (type 1 → lane 0, type 0 → lane 3) con un permute de
+    ''' indices constantes. Grayscale usa la MISMA reduccion horizontal bit-exacta que el blend de normales:
+    ''' con el lane 3 en cero el arbol da <c>((0.299ar + 0.587ag) + 0.114ab)</c>, que es como asocia VB.</para></summary>
+    Private Function ApplyOverlayRangeV(acc As Single(), ov As SseOverlay, m As (BlendOp As Integer, SoftLight As Integer),
+                                        c0 As Single, c1 As Single, c2 As Single, c3 As Single,
+                                        isNormal As Boolean, isGray As Boolean, isColor As Boolean, lo As Integer, hi As Integer) As Integer
+        Dim e = lo
+        ' scratch DEL HILO para las permutaciones dentro del pixel (reemplazan a Vector256.Shuffle,
+        ' que no existe en la API de ancho variable). ⛔ Local: compartirlo entre hilos lo corrompe.
+        Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
+        Dim tex = ov.Texture
+        Dim lt = ov.LayerType
+        Dim zero = Vector(Of Single).Zero, one = VBroadcastS(1.0F)
+        Dim colV = FastPow.VPerChannel(c0, c1, c2, 0.0F)
+        Dim c3V = VBroadcastS(c3)
+        Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
+        Dim grayW = FastPow.VPerChannel(0.299F, 0.587F, 0.114F, 0.0F)
+        While e + lanes <= hi
+            Dim t = If(tex Is Nothing, one, VBroadcastS(tex, e))
+            Dim lv As Vector(Of Single), la As Vector(Of Single)
+            If lt = 1 Then
+                lv = colV : la = Vector.Multiply(FastPow.VBroadcastChannelV(t, 0, shTmp), c3V)
+            ElseIf lt = 2 Then
+                lv = colV : la = c3V
+            Else
+                lv = Vector.Multiply(t, colV) : la = Vector.Multiply(FastPow.VBroadcastChannelV(t, 3, shTmp), c3V)
+            End If
+            ' early-out de bloque: restituye el `If la <= 0 Then Continue For` del escalar (ver la trampa 1)
+            If Vector.LessThanOrEqualAll(la, zero) Then
+                e += lanes
+                Continue While
+            End If
+            Dim a = VBroadcastS(acc, e)
+            Dim res As Vector(Of Single)
+            If isNormal Then
+                res = Vector.Add(Vector.Multiply(lv, la), Vector.Multiply(a, Vector.Subtract(one, la)))
+            Else
+                Dim b = FaceTintCpuCompositor.Clamp01V(Vector.Divide(lv, la))
+                Dim r As Vector(Of Single)
+                If isGray Then
+                    Dim wv = Vector.ConditionalSelect(rgbMask, Vector.Multiply(a, grayW), zero)
+                    Dim s1 = Vector.Add(wv, FastPow.VSwapWithinPixel(wv, 1, shTmp))
+                    Dim lum = Vector.Add(s1, FastPow.VSwapWithinPixel(s1, 2, shTmp))
+                    r = Vector.Multiply(lum, b)
+                ElseIf isColor Then
+                    r = ColorModeBlockV(a, b, shTmp)
+                Else
+                    r = FaceTintCpuCompositor.BlendDispatchV(m.BlendOp, m.SoftLight, a, b)
+                End If
+                res = Vector.Add(Vector.Multiply(Vector.Subtract(one, la), a), Vector.Multiply(r, la))
+            End If
+            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(la, zero))
+            Vector.ConditionalSelect(keep, res, a).CopyTo(acc, e)
+            e += lanes
+        End While
+        Return e
+    End Function
+
+    ''' <summary>⭐ ColorMode (HSV) VECTORIZADO: <c>HsvToRgb(H,S del blend, V del source)</c>. Espejo exacto de
+    ''' la rama <c>ElseIf ov.BlendMode = ColorMode</c> del escalar (<see cref="ApplyOverlayPixel"/>), que usa
+    ''' <see cref="RgbToHsv"/> + <see cref="HsvToRgb"/>.
+    '''
+    ''' <para><b>Por qué SÍ se puede, después de estar declarado "no vectorizable".</b> Lo ramoso de HSV son
+    ''' dos cosas y ninguna es una barrera: (1) las reducciones ENTRE canales (max/min de R,G,B) son la MISMA
+    ''' reducción horizontal dentro del píxel que ya usa Grayscale y el blend de normales; (2) los tres `If`
+    ''' de la tinta se vuelven selects. Lo único que parecía irreducible era el <c>Mod 6</c>.</para>
+    '''
+    ''' <para>⛔⭐ <b>EL <c>Mod 6</c> ES EXACTO SIN fmod GENERAL, POR EL RANGO DE SUS ARGUMENTOS</b>, y esto es
+    ''' lo que hace que el espejo sea bit-idéntico y no una aproximación:
+    ''' <list type="bullet">
+    ''' <item>En RgbToHsv el argumento es <c>(g−b)/d</c> con <c>mx = r</c>, o sea <c>g,b ≤ r</c> y
+    '''   <c>d = r − mn</c> ⇒ <c>|(g−b)/d| ≤ 1</c>. Con |x| &lt; 6, <c>fmod(x,6) = x</c>: el Mod es IDENTIDAD.</item>
+    ''' <item>En HsvToRgb es <c>h·6 + k</c> con <c>h ∈ [0,1]</c> y <c>k ∈ {0,2,4}</c> ⇒ <c>x ∈ [0,10]</c>. Ahí
+    '''   <c>fmod(x,6)</c> es <c>x</c> si <c>x &lt; 6</c> y <c>x − 6</c> si no — y esa resta es EXACTA (Sterbenz:
+    '''   x y 6 están dentro de un factor 2 para x ∈ [6,12]).</item>
+    ''' </list>
+    ''' Por eso NO hace falta emular fmod con <c>x − 6·trunc(x/6)</c>, que sí introduciría redondeo en la
+    ''' división y en el producto y podría mover un bit. El self-test lo verifica; no se asume.</para>
+    '''
+    ''' <para>El vector viene en AoS: cada píxel son 4 lanes (R,G,B,A). Los offsets por canal (0,4,2) de
+    ''' HsvToRgb son un vector CONSTANTE en ese layout.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function ColorModeBlockV(a As Vector(Of Single), b As Vector(Of Single), shTmp As Single()) As Vector(Of Single)
+        Dim one = VBroadcastS(1.0F), zero = Vector(Of Single).Zero
+        Dim six = VBroadcastS(6.0F), three = VBroadcastS(3.0F)
+
+        ' --- RgbToHsv(b) --- cada canal difundido a los 4 lanes de su pixel
+        Dim br = FastPow.VBroadcastChannelV(b, 0, shTmp)
+        Dim bg = FastPow.VBroadcastChannelV(b, 1, shTmp)
+        Dim bb = FastPow.VBroadcastChannelV(b, 2, shTmp)
+        ' MISMO anidado que el escalar: MathF.Max(r, MathF.Max(g, b)).
+        Dim mx = FaceTintCpuCompositor.MaxVShared(br, FaceTintCpuCompositor.MaxVShared(bg, bb))
+        Dim mn = FaceTintCpuCompositor.MinVShared(br, FaceTintCpuCompositor.MinVShared(bg, bb))
+        Dim d = Vector.Subtract(mx, mn)
+
+        ' h por la rama del canal que es el maximo (los tres If del escalar, vueltos selects y en el MISMO orden)
+        Dim hR = ModSixV(Vector.Divide(Vector.Subtract(bg, bb), d), six)          ' identidad: |x| <= 1
+        Dim hG = Vector.Add(Vector.Divide(Vector.Subtract(bb, br), d), VBroadcastS(2.0F))
+        Dim hB = Vector.Add(Vector.Divide(Vector.Subtract(br, bg), d), VBroadcastS(4.0F))
+        Dim h = Vector.ConditionalSelect(Vector.Equals(Of Single)(mx, br), hR,
+                    Vector.ConditionalSelect(Vector.Equals(Of Single)(mx, bg), hG, hB))
+        h = Vector.Divide(h, six)
+        h = Vector.ConditionalSelect(Vector.LessThan(Of Single)(h, zero), Vector.Add(h, one), h)
+        ' d <= 1e-7 => h = 0 (el `If d > 0.0000001F` del escalar; con d = 0 las divisiones dan NaN/Inf y este
+        ' select las descarta, igual que el escalar nunca las evalua)
+        h = Vector.ConditionalSelect(Vector.GreaterThan(Of Single)(d, VBroadcastS(0.0000001F)), h, zero)
+        ' s = If(mx <= 0, 0, d/mx)
+        ' ⛔ La condicion es `mx <= 0`, NO `mx > 0`: con mx = NaN el escalar (If(mx <= 0, 0, d/mx)) evalua
+        ' la rama FALSA y devuelve d/mx = NaN, mientras que `mx > 0` tambien es falsa y daba 0.
+        Dim s = Vector.ConditionalSelect(Vector.LessThanOrEqual(Of Single)(mx, zero), zero, Vector.Divide(d, mx))
+
+        ' --- V del SOURCE: MathF.Max(ar, MathF.Max(ag, ab)) ---
+        Dim ar = FastPow.VBroadcastChannelV(a, 0, shTmp)
+        Dim ag = FastPow.VBroadcastChannelV(a, 1, shTmp)
+        Dim ab = FastPow.VBroadcastChannelV(a, 2, shTmp)
+        Dim v = FaceTintCpuCompositor.MaxVShared(ar, FaceTintCpuCompositor.MaxVShared(ag, ab))
+
+        ' --- HsvToRgb(h, s, v) --- los offsets por canal son constantes en el layout AoS
+        Dim x = ModSixV(Vector.Add(Vector.Multiply(h, six), HsvChannelOffsetsV), six)
+        Dim c = FaceTintCpuCompositor.Clamp01V(Vector.Subtract(Vector.Abs(Vector.Subtract(x, three)), one))
+        Return Vector.Multiply(v, Vector.Add(one, Vector.Multiply(s, Vector.Subtract(c, one))))
+    End Function
+
+    ''' <summary><c>x Mod 6</c> para <c>|x| &lt; 12</c>, que es TODO el dominio real de HSV (ver la nota de
+    ''' <see cref="ColorModeBlockV"/>). Exacto: en ese rango fmod sólo puede restar o sumar 6 una vez, y esa
+    ''' operación no redondea. ⛔ NO usar <c>x − 6·trunc(x/6)</c>: eso sí redondearía.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function ModSixV(x As Vector(Of Single), six As Vector(Of Single)) As Vector(Of Single)
+        Dim r = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(Of Single)(x, six), Vector.Subtract(x, six), x)
+        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(Of Single)(r, Vector.Negate(six)), Vector.Add(r, six), r)
+    End Function
 
     ''' <summary>Orden configurable de los overlays Face[Ovl] (= análogo SSE de los SWAPS de FO4:
     ''' <c>Setting_FaceTintSort_SSE.SwapRules</c>, claves <see cref="FaceTintSseOverlaySortKey"/>). DEFAULT =
@@ -221,21 +393,247 @@ Public Module SseOverlayCompositor
             ' (color.a *= baseMap.a). type 0 de skee: color = tex.rgb × tint.
             ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); el orden ENTRE overlays lo da el
             ' For Each de afuera, que sigue serial (alpha-over no conmutativo).
-            System.Threading.Tasks.Parallel.ForEach(
-                System.Collections.Concurrent.Partitioner.Create(0, npix),
-                Sub(range)
-                    For i = range.Item1 To range.Item2 - 1
-                        Dim la = Clamp01(tex(i * 4 + 3) * opa)
-                        If la <= 0.0F Then Continue For
-                        acc(i * 4) = CSng((tex(i * 4) * tr) * la + acc(i * 4) * (1 - la))
-                        acc(i * 4 + 1) = CSng((tex(i * 4 + 1) * tg) * la + acc(i * 4 + 1) * (1 - la))
-                        acc(i * 4 + 2) = CSng((tex(i * 4 + 2) * tb) * la + acc(i * 4 + 2) * (1 - la))
-                    Next
-                End Sub)
+            SkeeMaskApply(acc, tex, tr, tg, tb, opa, npix)
             any = True
         Next
         Return any
     End Function
+
+
+    ''' <summary>Alpha-over de skee sobre el acumulador (prologo escalar / cuerpo vectorial / cola).
+    ''' Extraida del lambda para que <see cref="OverlayVectorSelfTest"/> pueda contrastarla contra
+    ''' <see cref="SkeeMaskOne"/>; el codigo es el mismo.</summary>
+    Private Sub SkeeMaskApply(acc As Single(), tex As Single(), tr As Single, tg As Single, tb As Single,
+                              opa As Single, npix As Integer)
+        System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, npix),
+                Sub(range)
+                    Dim lo = range.Item1 * 4, hi = range.Item2 * 4
+                    Dim e = lo
+                    If FastPow.AcceleratedV Then
+                        While (e And (lanes - 1)) <> 0 AndAlso e < hi
+                            SkeeMaskOne(acc, tex, tr, tg, tb, opa, e) : e += 1
+                        End While
+                        ' AoS, 8 floats = 2 pixeles. `la` sale del ALPHA de cada pixel ⇒ se difunde con un
+                        ' permute de indices constantes (3,3,3,3, 7,7,7,7), igual que el mask de ComposeLayer.
+                        Dim tintV = FastPow.VPerChannel(tr, tg, tb, 1.0F)
+                        Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
+                        Dim opaV = VBroadcastS(opa)
+                        ' scratch DEL HILO para las permutaciones dentro del pixel. ⛔ Local por llamada.
+                        Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
+                        Dim one = VBroadcastS(1.0F)
+                        Dim zero = Vector(Of Single).Zero
+                        While e + lanes <= hi
+                            Dim t = VBroadcastS(tex, e)
+                            Dim a = VBroadcastS(acc, e)
+                            Dim la = Clamp01V(Vector.Multiply(FastPow.VBroadcastChannelV(t, 3, shTmp), opaV))
+                            ' early-out de bloque: restituye el `If la <= 0 Then Continue For` del escalar
+                            If Vector.LessThanOrEqualAll(la, zero) Then
+                                e += lanes
+                                Continue While
+                            End If
+                            ' (tex*tint)*la + acc*(1-la) — MISMO orden de operaciones que el escalar
+                            Dim res = Vector.Add(Vector.Multiply(Vector.Multiply(t, tintV), la),
+                                                    Vector.Multiply(a, Vector.Subtract(one, la)))
+                            ' replica los dos guards a la vez: alpha intacto, y `If la <= 0 Then Continue For`
+                            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(la, zero))
+                            Vector.ConditionalSelect(keep, res, a).CopyTo(acc, e)
+                            e += lanes
+                        End While
+                    End If
+                    While e < hi
+                        SkeeMaskOne(acc, tex, tr, tg, tb, opa, e) : e += 1
+                    End While
+                End Sub)
+    End Sub
+
+
+    ''' <summary>Blend de normales MSN sobre el acumulador (prologo / cuerpo vectorial / cola, todo por
+    ''' PIXEL ENTERO). Extraida del lambda para que <see cref="OverlayVectorSelfTest"/> la pueda contrastar
+    ''' contra <see cref="MsnBlendPixel"/>; el codigo es el mismo.</summary>
+    Private Sub MsnBlendApply(msnAcc As Single(), ovNorm As Single(), ovDiff As Single(),
+                              opa As Single, npix As Integer)
+        System.Threading.Tasks.Parallel.ForEach(
+                System.Collections.Concurrent.Partitioner.Create(0, npix),
+                Sub(range)
+                    Dim lo = range.Item1 * 4, hi = range.Item2 * 4
+                    Dim e = lo
+                    If FastPow.AcceleratedV Then
+                        ' de a PIXEL ENTERO (4 elementos), no de a elemento: ver MsnBlendPixel
+                        While (e And (lanes - 1)) <> 0 AndAlso e < hi
+                            MsnBlendPixel(msnAcc, ovNorm, ovDiff, opa, e >> 2) : e += 4
+                        End While
+                        Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
+                        Dim opaV = VBroadcastS(opa)
+                        Dim one = VBroadcastS(1.0F), two = VBroadcastS(2.0F), half = VBroadcastS(0.5F)
+                        Dim zero = Vector(Of Single).Zero
+                        Dim epsV = VBroadcastS(0.0000001F)
+                        ' scratch DEL HILO para las permutaciones dentro del pixel. ⛔ Local por llamada.
+                        Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
+                        While e + lanes <= hi
+                            Dim accV = VBroadcastS(msnAcc, e)
+                            Dim covV = Vector.Multiply(FastPow.VBroadcastChannelV(VBroadcastS(ovDiff, e), 3, shTmp), opaV)
+                            ' early-out de bloque: restituye el `If cov <= 0 Then Continue For` del escalar
+                            If Vector.LessThanOrEqualAll(Of Single)(covV, zero) Then
+                                e += lanes
+                                Continue While
+                            End If
+                            covV = Vector.ConditionalSelect(Vector.GreaterThan(covV, one), one, covV)   ' If cov > 1 Then cov = 1
+                            Dim hv = Vector.Subtract(Vector.Multiply(two, accV), one)
+                            Dim ovv = Vector.Subtract(Vector.Multiply(two, VBroadcastS(ovNorm, e)), one)
+                            Dim nv = Vector.Add(hv, Vector.Multiply(covV, Vector.Subtract(ovv, hv)))
+                            ' len = sqrt(nx*nx + ny*ny + nz*nz) — suma HORIZONTAL dentro de cada pixel.
+                            ' ⭐ El orden del arbol coincide EXACTAMENTE con el del escalar: con el lane 3 puesto
+                            ' en 0, el primer paso da (nx²+ny²) y (nz²+0), y el segundo los suma ⇒ ((nx²+ny²)+nz²),
+                            ' que es como asocia VB. La suma float NO es asociativa, asi que esto no es un detalle.
+                            Dim sq = Vector.ConditionalSelect(rgbMask, Vector.Multiply(nv, nv), zero)
+                            Dim s1 = Vector.Add(sq, FastPow.VSwapWithinPixel(sq, 1, shTmp))
+                            Dim ss = Vector.Add(s1, FastPow.VSwapWithinPixel(s1, 2, shTmp))
+                            Dim lenV = Vector.SquareRoot(ss)
+                            Dim norm = Vector.ConditionalSelect(Vector.GreaterThan(lenV, epsV),
+                                                                   Vector.Divide(nv, lenV), nv)
+                            Dim res = Vector.Multiply(Vector.Add(norm, one), half)
+                            ' guards del escalar: alpha intacto y `If cov <= 0 Then Continue For`
+                            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(covV, zero))
+                            Vector.ConditionalSelect(keep, res, accV).CopyTo(msnAcc, e)
+                            e += lanes
+                        End While
+                    End If
+                    While e < hi
+                        MsnBlendPixel(msnAcc, ovNorm, ovDiff, opa, e >> 2) : e += 4
+                    End While
+                End Sub)
+    End Sub
+
+    ''' <summary>Self-test de paridad de los DOS loops vectorizados de este modulo (alpha-over de skee y blend
+    ''' de normales MSN) contra su ley escalar. Devuelve "" si todo coincide bit a bit.
+    ''' <para>⛔ HACE FALTA que exista: el corpus VANILLA de SSE no tiene overlays de RaceMenu, asi que un
+    ''' barrido A/B de corpus NO ejercita nada de esto. Sin este test, estos dos caminos irian sin cobertura.</para>
+    ''' <para>Los tamaños son deliberadamente impares para que el prologo y la cola entren en juego.</para></summary>
+    Public Function OverlayVectorSelfTest() As String
+        If Not FastPow.AcceleratedV Then Return ""
+        Dim seed As UInteger = 24680135UI
+        For Each np In New Integer() {1, 2, 3, 7, 9, 33, 1021}
+            Dim tex(np * 4 - 1) As Single, nrm(np * 4 - 1) As Single, dif(np * 4 - 1) As Single
+            For i = 0 To np * 4 - 1
+                tex(i) = Rnd01(seed) : nrm(i) = Rnd01(seed) : dif(i) = Rnd01(seed)
+            Next
+            ' bordes: cobertura 0 (dispara el Continue For) y 1, y un normal degenerado (len ~ 0)
+            If np >= 3 Then
+                dif(3) = 0.0F : dif(7) = 1.0F
+                nrm(4) = 0.5F : nrm(5) = 0.5F : nrm(6) = 0.5F      ' -> n = (0,0,0) tras el decode
+            End If
+            Dim opa As Single = 0.8F, tr As Single = 0.9F, tg As Single = 0.7F, tb As Single = 1.1F
+
+            ' ---- alpha-over de skee ----
+            Dim aVec(np * 4 - 1) As Single, aRef(np * 4 - 1) As Single
+            For i = 0 To np * 4 - 1
+                aVec(i) = Rnd01(seed) : aRef(i) = aVec(i)
+            Next
+            SkeeMaskApply(aVec, tex, tr, tg, tb, opa, np)
+            For e = 0 To np * 4 - 1
+                SkeeMaskOne(aRef, tex, tr, tg, tb, opa, e)
+            Next
+            For i = 0 To np * 4 - 1
+                If BitConverter.SingleToInt32Bits(aVec(i)) <> BitConverter.SingleToInt32Bits(aRef(i)) Then
+                    Return $"SkeeMask vector MISMATCH: npix={np} i={i} scalar={aRef(i)} vector={aVec(i)}"
+                End If
+            Next
+
+            ' ---- blend de normales MSN ----
+            Dim mVec(np * 4 - 1) As Single, mRef(np * 4 - 1) As Single
+            For i = 0 To np * 4 - 1
+                mVec(i) = Rnd01(seed) : mRef(i) = mVec(i)
+            Next
+            MsnBlendApply(mVec, nrm, dif, opa, np)
+            For px = 0 To np - 1
+                MsnBlendPixel(mRef, nrm, dif, opa, px)
+            Next
+            For i = 0 To np * 4 - 1
+                If BitConverter.SingleToInt32Bits(mVec(i)) <> BitConverter.SingleToInt32Bits(mRef(i)) Then
+                    Return $"MsnBlend vector MISMATCH: npix={np} i={i} scalar={mRef(i)} vector={mVec(i)}"
+                End If
+            Next
+        Next
+
+        ' ---- ApplyOverlays: TODOS los blend modes x los 3 layer types ----
+        For Each bm In [Enum].GetValues(GetType(SseBlendMode))
+            Dim mode = CType(bm, SseBlendMode)
+            For Each lt In New Integer() {0, 1, 2}
+                For Each np In New Integer() {1, 2, 3, 7, 9, 33, 1021}
+                    Dim tex(np * 4 - 1) As Single
+                    For i = 0 To np * 4 - 1
+                        tex(i) = Rnd01(seed)
+                    Next
+                    If np >= 3 Then tex(3) = 0.0F : tex(0) = 0.0F     ' alpha/mask 0 -> Continue For
+                    ' ⭐ NaN EN LA COBERTURA. Es EL caso que distingue el guard escalar `<= 0` (falso con
+                    ' NaN => COMPONE) del vectorial `> 0` (tambien falso => SALTEABA). Como el prologo/cola
+                    ' son escalares y el cuerpo vectorial, sin esto el resultado del pixel dependia de donde
+                    ' corto el Partitioner. Va en un pixel ALTO para que caiga en el cuerpo vectorial.
+                    If np >= 12 Then tex(4 * 9 + 3) = Single.NaN : tex(4 * 9) = Single.NaN
+                    If np >= 12 Then tex(4 * 10 + 1) = Single.NaN
+                    Dim ovT As New SseOverlay With {.BlendMode = mode, .LayerType = lt,
+                                                    .Color = New Double() {0.4, 0.55, 0.7, 0.8},
+                                                    .Texture = tex}
+                    Dim aVec(np * 4 - 1) As Single, aRef(np * 4 - 1) As Single
+                    For i = 0 To np * 4 - 1
+                        aVec(i) = Rnd01(seed) : aRef(i) = aVec(i)
+                    Next
+                    ApplyOverlays(aVec, New SseOverlay() {ovT}, np, 1)
+                    Dim mm = BlendOpFromSseMode(mode)
+                    For px = 0 To np - 1
+                        ApplyOverlayPixel(aRef, ovT, mm, 0.4F, 0.55F, 0.7F, 0.8F, px)
+                    Next
+                    For i = 0 To np * 4 - 1
+                        If BitConverter.SingleToInt32Bits(aVec(i)) <> BitConverter.SingleToInt32Bits(aRef(i)) Then
+                            Return $"ApplyOverlays vector MISMATCH: mode={mode} layerType={lt} npix={np} i={i} scalar={aRef(i)} vector={aVec(i)}"
+                        End If
+                    Next
+                Next
+            Next
+        Next
+        Return ""
+    End Function
+
+    Private Function Rnd01(ByRef s As UInteger) As Single
+        s = s Xor (s << 13) : s = s Xor (s >> 17) : s = s Xor (s << 5)
+        Return CSng(s Mod 1000003UI) / 1000003.0F
+    End Function
+
+    ''' <summary>Un PIXEL COMPLETO del blend de normales MSN — la ley escalar, verbatim.
+    ''' <para>⛔ ES POR PIXEL Y NO POR ELEMENTO, A PROPOSITO. A diferencia del fold o del alpha-over, este
+    ''' cuerpo LEE los tres canales (<c>hx,hy,hz</c>) y ESCRIBE los tres: hacerlo elemento por elemento
+    ''' introduce un read-after-write —al calcular G ya se leyó una R pisada— y cambia el resultado. Como
+    ''' <c>lo</c> y <c>hi</c> son multiplos de 4 y el vector avanza de a 8, el prologo y la cola cubren 0 ó 1
+    ''' pixel ENTERO, nunca medio.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub MsnBlendPixel(msnAcc As Single(), ovNorm As Single(), ovDiff As Single(), opa As Single, px As Integer)
+        Dim cov As Single = ovDiff(px * 4 + 3) * opa
+        If cov <= 0.0F Then Return
+        If cov > 1.0F Then cov = 1.0F
+        Dim hx = 2.0F * msnAcc(px * 4) - 1.0F, hy = 2.0F * msnAcc(px * 4 + 1) - 1.0F, hz = 2.0F * msnAcc(px * 4 + 2) - 1.0F
+        Dim ox = 2.0F * ovNorm(px * 4) - 1.0F, oy = 2.0F * ovNorm(px * 4 + 1) - 1.0F, oz = 2.0F * ovNorm(px * 4 + 2) - 1.0F
+        Dim nx = hx + cov * (ox - hx), ny = hy + cov * (oy - hy), nz = hz + cov * (oz - hz)
+        Dim len = MathF.Sqrt(nx * nx + ny * ny + nz * nz)
+        If len > 0.0000001F Then nx /= len : ny /= len : nz /= len
+        msnAcc(px * 4) = (nx + 1.0F) * 0.5F
+        msnAcc(px * 4 + 1) = (ny + 1.0F) * 0.5F
+        msnAcc(px * 4 + 2) = (nz + 1.0F) * 0.5F
+    End Sub
+
+    ''' <summary>Un ELEMENTO del alpha-over de skee: la ley escalar, usada por el prologo y la cola del
+    ''' cuerpo vectorial de arriba. Una sola definicion ⇒ el resultado no depende de donde corte la particion.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub SkeeMaskOne(acc As Single(), tex As Single(), tr As Single, tg As Single, tb As Single,
+                            opa As Single, e As Integer)
+        Dim ch = e And 3
+        If ch = 3 Then Return                                    ' el alpha no se toca
+        Dim px = e >> 2
+        Dim la = Clamp01(tex(px * 4 + 3) * opa)
+        If la <= 0.0F Then Return
+        Dim tint = If(ch = 0, tr, If(ch = 1, tg, tb))
+        acc(e) = CSng((tex(e) * tint) * la + acc(e) * (1 - la))
+    End Sub
 
     ''' <summary>Compose the FACE overlays' NORMAL maps into the head normal accumulator (MODEL-SPACE / MSN, in
     ''' place), in the SAME node-index order as the diffuse (Ovl0 bottom → OvlN top). Los normales NO se mezclan
@@ -305,26 +703,7 @@ Public Module SseOverlayCompositor
             Dim opacity As Double = If(ov.HasAlpha, ov.Alpha, 1.0)
             Dim opa = CSng(opacity)   ' invariante del loop: se angosta una vez, no por pixel
             ' Paralelo por rangos (píxeles independientes ⇒ bit-idéntico); orden entre overlays = For Each serial.
-            System.Threading.Tasks.Parallel.ForEach(
-                System.Collections.Concurrent.Partitioner.Create(0, npix),
-                Sub(range)
-                    For i = range.Item1 To range.Item2 - 1
-                        ' Sin ternario: el guard de arriba ya garantiza ovDiff válido. La rama `ovNorm(...)` que
-                        ' había acá ERA el fallback roto — dejarla como código muerto es cómo vuelve.
-                        Dim cov As Single = ovDiff(i * 4 + 3) * opa
-                        If cov <= 0.0F Then Continue For
-                        If cov > 1.0F Then cov = 1.0F
-                        ' decode ambos a [-1,1], lerp, renormalize, re-encode a [0,1].
-                        Dim hx = 2.0F * msnAcc(i * 4) - 1.0F, hy = 2.0F * msnAcc(i * 4 + 1) - 1.0F, hz = 2.0F * msnAcc(i * 4 + 2) - 1.0F
-                        Dim ox = 2.0F * ovNorm(i * 4) - 1.0F, oy = 2.0F * ovNorm(i * 4 + 1) - 1.0F, oz = 2.0F * ovNorm(i * 4 + 2) - 1.0F
-                        Dim nx = hx + cov * (ox - hx), ny = hy + cov * (oy - hy), nz = hz + cov * (oz - hz)
-                        Dim len = MathF.Sqrt(nx * nx + ny * ny + nz * nz)
-                        If len > 0.0000001F Then nx /= len : ny /= len : nz /= len
-                        msnAcc(i * 4) = (nx + 1.0F) * 0.5F
-                        msnAcc(i * 4 + 1) = (ny + 1.0F) * 0.5F
-                        msnAcc(i * 4 + 2) = (nz + 1.0F) * 0.5F
-                    Next
-                End Sub)
+            MsnBlendApply(msnAcc, ovNorm, ovDiff, opa, npix)
             any = True
         Next
         Return any

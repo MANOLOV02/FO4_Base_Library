@@ -5,7 +5,7 @@ Imports OpenTK.Mathematics
 
 Public Class Floor_Shader_Class
     Inherits Shader_Base_Class
-    Private Const Vertex_Floor As String =
+    Friend Const Vertex_Floor As String =
 "#version 430
 layout(location = 0) in vec3 vertexPosition;
 
@@ -18,7 +18,7 @@ void main()
     gl_Position = matProjection * matView * matModel * vec4(vertexPosition, 1.0);
 }"
 
-    Private Const Fragment_Floor As String =
+    Friend Const Fragment_Floor As String =
 "#version 430
 uniform vec3 gridColor;
 out vec4 FragColor;
@@ -34,7 +34,7 @@ End Class
 
 Public Class Shader_Class_Fo4
     Inherits Shader_Base_Class
-    Private Const Vertex_FO4 As String = "
+    Friend Const Vertex_FO4 As String = "
 #version 430
 uniform mat4 matProjection;
 uniform mat4 matView;
@@ -268,7 +268,7 @@ void main(void)
 	}
 }
 "
-    Private Const Fragment_FO4 As String = "
+    Friend Const Fragment_FO4 As String = "
 #version 430
 
 /*
@@ -1471,7 +1471,7 @@ End Class
 
 Public Class Shader_Class_SSE
     Inherits Shader_Base_Class
-    Private Const Vertex_SSE As String = "
+    Friend Const Vertex_SSE As String = "
 #version 430
 // SSE vertex shader with model-space normal (MSN) support
 uniform mat4 matProjection;
@@ -1709,7 +1709,7 @@ void main(void)
 	}
 }
 "
-    Private Const Fragment_SSE As String = "
+    Friend Const Fragment_SSE As String = "
 #version 430
 // SSE fragment shader with model-space normal (MSN) support
 

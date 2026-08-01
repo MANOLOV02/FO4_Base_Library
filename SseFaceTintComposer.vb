@@ -1,5 +1,7 @@
 ﻿Option Strict On
 
+Imports System.Numerics
+
 Imports System.Collections.Concurrent
 Imports System.Runtime.CompilerServices
 Imports System.Linq
@@ -23,6 +25,12 @@ Imports System.Linq
 ''' <para>Es el analogo SSE de <see cref="FaceTintInputBuilder"/> (FO4) y es SSE-only: los callers gatean por
 ''' juego. Ver 31-sse-facetint-spec.</para></summary>
 Public Module SseFaceTintComposer
+    ''' <summary>Lanes de un Vector(Of Single) en ESTA maquina: 8 con AVX2, 4 con SSE2. Es el tamano de
+    ''' bloque de TODOS los loops vectoriales de este modulo. ⛔ Es constante durante todo el proceso
+    ''' (Vector(Of T).Count lo es), asi que vive aca y no se recalcula por pixel. Hardcodear 8 en su lugar
+    ''' corrompe silenciosamente una maquina de 4 lanes: leeria y escribiria fuera del bloque.</summary>
+    Private ReadOnly lanes As Integer = FastPow.LaneCount
+
 
     ''' <summary>CAPACIDAD DECLARADA de este compositor, para los caminos GL que lo tienen de ESPEJO. Este
     ''' modulo SI implementa la ley de los cuatro espacios: compone con
@@ -173,17 +181,8 @@ Public Module SseFaceTintComposer
         End If
         If baseImg IsNot Nothing AndAlso baseImg.Length >= npix * 4 Then
             Array.Copy(baseImg, acc, npix * 4)
-            If needSpaceCvt Then
-                System.Threading.Tasks.Parallel.ForEach(
-                    System.Collections.Concurrent.Partitioner.Create(0, npix),
-                    Sub(range)
-                        For i = range.Item1 To range.Item2 - 1
-                            For ch = 0 To 2
-                                acc(i * 4 + ch) = CSng(FaceTintCpuCompositor.ConvertSpaceShared(acc(i * 4 + ch), osSp, accSp))
-                            Next
-                        Next
-                    End Sub)
-            End If
+            ' AoS: convierte R/G/B y deja el alpha. Vectorizado en el helper compartido.
+            FaceTintCpuCompositor.ConvertSpaceRgbAosInPlace(acc, npix, osSp, accSp)
         Else
             ' Paralelo por rangos (escrituras disjuntas por píxel ⇒ bit-idéntico); a 4K son 67M de writes.
             System.Threading.Tasks.Parallel.ForEach(
@@ -223,17 +222,7 @@ Public Module SseFaceTintComposer
             If mi IsNot Nothing Then ComposeLayer(acc, mi, CSng(cr), CSng(cg), CSng(cbb), CSng(iv), npix, conv, maskConvI, maskCh)
         Next
         ' UNICA conversion de vuelta a OutputSpace (no-op cuando accSp == osSp).
-        If needSpaceCvt Then
-            System.Threading.Tasks.Parallel.ForEach(
-                System.Collections.Concurrent.Partitioner.Create(0, npix),
-                Sub(range)
-                    For i = range.Item1 To range.Item2 - 1
-                        For ch = 0 To 2
-                            acc(i * 4 + ch) = CSng(FaceTintCpuCompositor.ConvertSpaceShared(acc(i * 4 + ch), accSp, osSp))
-                        Next
-                    Next
-                End Sub)
-        End If
+        If needSpaceCvt Then FaceTintCpuCompositor.ConvertSpaceRgbAosInPlace(acc, npix, accSp, osSp)
         Return acc
     End Function
 
@@ -487,19 +476,170 @@ Public Module SseFaceTintComposer
         ' PARALELO por rangos: cada píxel toca sólo sus índices (acc/cov por i) ⇒ bit-idéntico al serial. El fold
         ' SSE compone a la resolución NATIVA del complexion (4096² con COtR), donde el serial era parte de los
         ' segundos por fold. El orden ENTRE capas (no conmutativo) lo preserva el caller (loop de capas serial).
+        ' ⭐ Espejo vectorial. Se toma SOLO cuando la convencion tiene espejo y NO hay que acumular `cov`
+        ' (ese acumulador es por PIXEL, no por elemento, y romperia el paso de a 8 floats). Si no, corre el
+        ' loop escalar de siempre — mismo resultado, sin acelerar.
+        Dim wsL = CInt(conv.WorkingSpace), csL = CInt(conv.CompositeSpace), ssL = CInt(conv.SrcSpace)
+        Dim osL = CInt(conv.OutputSpace), bopL = CInt(conv.Blend), slL = CInt(conv.SoftLight), fwL = CInt(conv.Framework)
+        Dim aspL = CInt(conv.AccumSpace)
+        If aspL < 0 Then aspL = osL                     ' MISMA regla que ComposeOne
+        Dim vecOk = (cov Is Nothing) AndAlso FaceTintCpuCompositor.VecComposeSupported(fwL, bopL, slL)
+
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, npix),
             Sub(range)
-                For i = range.Item1 To range.Item2 - 1
-                    Dim a = FaceTintCpuCompositor.ConvMaskShared(mask(i * 4 + maskCh), maskConv) * tinv   ' cobertura por la ley
-                    If a <= 0.0 Then Continue For
-                    acc(i * 4) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4), cR, a, conv))
-                    acc(i * 4 + 1) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 1), cG, a, conv))
-                    acc(i * 4 + 2) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 2), cB, a, conv))
-                    If cov IsNot Nothing Then cov(i) = CSng(cov(i) + a * (1 - cov(i)))   ' accumulate coverage
-                Next
+                If Not vecOk Then
+                    For i = range.Item1 To range.Item2 - 1
+                        Dim a = FaceTintCpuCompositor.ConvMaskShared(mask(i * 4 + maskCh), maskConv) * tinv   ' cobertura por la ley
+                        If a <= 0.0 Then Continue For
+                        acc(i * 4) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4), cR, a, conv))
+                        acc(i * 4 + 1) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 1), cG, a, conv))
+                        acc(i * 4 + 2) = CSng(FaceTintCpuCompositor.ComposePixel(acc(i * 4 + 2), cB, a, conv))
+                        If cov IsNot Nothing Then cov(i) = CSng(cov(i) + a * (1 - cov(i)))   ' accumulate coverage
+                    Next
+                    Return
+                End If
+                ' Indices de ELEMENTO. Prologo hasta alinear a 8, cuerpo vectorial, cola — las tres partes
+                ' con la MISMA ley, igual que el fold (los rangos del Partitioner no vienen alineados).
+                Dim lo = range.Item1 * 4, hi = range.Item2 * 4
+                Dim e = lo
+                While (e And (lanes - 1)) <> 0 AndAlso e < hi
+                    ComposeLayerOne(acc, mask, cR, cG, cB, tinv, conv, maskConv, maskCh, e)
+                    e += 1
+                End While
+                e = ComposeLayerRangeV(acc, mask, cR, cG, cB, tinv, maskConv, maskCh,
+                                       wsL, csL, ssL, aspL, bopL, slL, e, hi)
+                While e < hi
+                    ComposeLayerOne(acc, mask, cR, cG, cB, tinv, conv, maskConv, maskCh, e)
+                    e += 1
+                End While
             End Sub)
     End Sub
+
+    ''' <summary>Self-test de paridad del cuerpo vectorial de <see cref="ComposeLayer"/> contra su ley escalar
+    ''' (<see cref="ComposeLayerOne"/>). Devuelve "" si coinciden bit a bit.
+    ''' <para>Cubre: la ley de SSE (all-linear, Replace) y la de FO4 (softlight en G22), los cuatro canales de
+    ''' mascara, tamaños que NO son multiplo de 8 —para que entren prologo y cola— y cobertura CERO, que es la
+    ''' que dispara el <c>Continue For</c> del escalar y que el vector replica con un select.</para></summary>
+    Public Function ComposeLayerSelfTest() As String
+        If Not FastPow.AcceleratedV Then Return ""
+        Dim seed As UInteger = 13571113UI
+        Dim convs = New FaceTintConvention.FaceTintConventionSet() {
+            MakeTestConv(0, 0, 0, 0, 0, FaceTintConvention.FaceTintBlend.Replace),
+            MakeTestConv(2, 2, 0, 2, 2, FaceTintConvention.FaceTintBlend.SoftLight),
+            MakeTestConv(2, 2, 0, 2, 0, FaceTintConvention.FaceTintBlend.SoftLight)}
+        For Each cv In convs
+            For Each mc In New Integer() {0, 3, 4}
+                For Each mch In New Integer() {0, 1, 3}
+                    For Each np In New Integer() {1, 2, 3, 7, 9, 33, 1021}
+                        Dim mask(np * 4 - 1) As Single
+                        For i = 0 To np * 4 - 1
+                            mask(i) = Rnd01(seed)
+                        Next
+                        If np >= 3 Then mask(mch) = 0.0F          ' cobertura 0 -> Continue For
+                        ' ⭐ NaN en la cobertura: el guard escalar `a <= 0` es FALSO con NaN y por lo tanto
+                        ' COMPONE. El vectorial tiene que hacer lo mismo o el pixel cambia segun el corte
+                        ' del Partitioner. Va en un pixel alto, para que caiga en el cuerpo vectorial.
+                        If np >= 12 Then mask(4 * 9 + mch) = Single.NaN
+                        Dim aVec(np * 4 - 1) As Single, aRef(np * 4 - 1) As Single
+                        For i = 0 To np * 4 - 1
+                            aVec(i) = Rnd01(seed) : aRef(i) = aVec(i)
+                        Next
+                        ComposeLayer(aVec, mask, 0.3F, 0.6F, 0.9F, 0.75F, np, cv, mc, mch)
+                        For e = 0 To np * 4 - 1
+                            ComposeLayerOne(aRef, mask, 0.3F, 0.6F, 0.9F, 0.75F, cv, mc, mch, e)
+                        Next
+                        For i = 0 To np * 4 - 1
+                            If BitConverter.SingleToInt32Bits(aVec(i)) <> BitConverter.SingleToInt32Bits(aRef(i)) Then
+                                Return $"ComposeLayer vector MISMATCH: bop={cv.Blend} mc={mc} maskCh={mch} npix={np} i={i} scalar={aRef(i)} vector={aVec(i)}"
+                            End If
+                        Next
+                    Next
+                Next
+            Next
+        Next
+        Return ""
+    End Function
+
+    Private Function MakeTestConv(ss As Integer, ws As Integer, cs As Integer, os As Integer, asp As Integer,
+                                  bop As FaceTintConvention.FaceTintBlend) As FaceTintConvention.FaceTintConventionSet
+        Dim c As FaceTintConvention.FaceTintConventionSet
+        c.SrcSpace = CType(ss, FaceTintConvention.FaceTintWorkingSpace)
+        c.WorkingSpace = CType(ws, FaceTintConvention.FaceTintWorkingSpace)
+        c.CompositeSpace = CType(cs, FaceTintConvention.FaceTintWorkingSpace)
+        c.OutputSpace = CType(os, FaceTintConvention.FaceTintWorkingSpace)
+        c.AccumSpace = CType(asp, FaceTintConvention.FaceTintWorkingSpace)
+        c.Blend = bop
+        c.SoftLight = FaceTintConvention.FaceTintSoftLight.Gimp
+        c.Framework = FaceTintConvention.FaceTintFramework.OverPrev
+        Return c
+    End Function
+
+    Private Function Rnd01(ByRef s As UInteger) As Single
+        s = s Xor (s << 13) : s = s Xor (s >> 17) : s = s Xor (s << 5)
+        Return CSng(s Mod 1000003UI) / 1000003.0F
+    End Function
+
+    ''' <summary>Un ELEMENTO (canal) del compose de capa. Es la ley escalar reexpresada por elemento en vez de
+    ''' por pixel — exactamente las mismas cuentas, sólo que el prologo y la cola pueden entrar por la mitad de
+    ''' un pixel. La usan prologo y cola; el cuerpo vectorial es su espejo.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub ComposeLayerOne(acc As Single(), mask As Single(), cR As Single, cG As Single, cB As Single,
+                                tinv As Single, conv As FaceTintConvention.FaceTintConventionSet,
+                                maskConv As Integer, maskCh As Integer, e As Integer)
+        Dim ch = e And 3
+        If ch = 3 Then Return                                    ' el alpha no se toca
+        Dim px = e >> 2
+        Dim a = FaceTintCpuCompositor.ConvMaskShared(mask(px * 4 + maskCh), maskConv) * tinv
+        If a <= 0.0 Then Return
+        Dim col = If(ch = 0, cR, If(ch = 1, cG, cB))
+        acc(e) = CSng(FaceTintCpuCompositor.ComposePixel(acc(e), col, a, conv))
+    End Sub
+
+    ''' <summary>Cuerpo vectorial: 8 floats = 2 pixeles exactos. Devuelve el primer indice sin procesar.
+    ''' <para>⚠️ Acá el AoS SÍ pide un shuffle, al reves que el fold de <c>SseFaceGenBaker</c>: la cobertura es
+    ''' UNA por pixel y sale de UN canal (<paramref name="maskCh"/>) del buffer intercalado, asi que hay que
+    ''' difundirla a los 4 lanes de su pixel. Es un permute de indices CONSTANTES (invariantes de la capa), no
+    ''' un gather con direcciones — barato y determinista.</para></summary>
+    Private Function ComposeLayerRangeV(acc As Single(), mask As Single(), cR As Single, cG As Single, cB As Single,
+                                        tinv As Single, maskConv As Integer, maskCh As Integer,
+                                        ws As Integer, cs As Integer, ss As Integer, asp As Integer, bop As Integer,
+                                        sl As Integer, lo As Integer, hi As Integer) As Integer
+        Dim e = lo
+        ' scratch DEL HILO para las permutaciones dentro del pixel (reemplazan a Vector256.Shuffle,
+        ' que no existe en la API de ancho variable). ⛔ Local: compartirlo entre hilos lo corrompe.
+        Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
+        Dim srcV = FastPow.VPerChannel(cR, cG, cB, 0.0F)
+        Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
+        Dim tinvV = VBroadcastS(tinv)
+        Dim zero = Vector(Of Single).Zero
+        While e + lanes <= hi
+            Dim prev = VBroadcastS(acc, e)
+            ' difundir mask[maskCh] de cada pixel a sus 4 lanes, DESPUES convertir: asi la conv corre sobre el
+            ' valor que corresponde y no sobre los canales que no se usan.
+            Dim mb = FastPow.VBroadcastChannelV(VBroadcastS(mask, e), maskCh, shTmp)
+            Dim av = Vector.Multiply(FaceTintCpuCompositor.ConvMaskV(mb, maskConv), tinvV)
+            ' ⭐ EARLY-OUT DE BLOQUE — NO es una optimizacion opcional, es RESTITUIR la del escalar.
+            ' El escalar tenia `If a <= 0.0 Then Continue For`, y las mascaras de tint son CASI TODAS CERO
+            ' (cada capa cubre una region chica de la cara), asi que ese branch acertaba la enorme mayoria de
+            ' las veces. Calcular los 8 lanes igual y recien despues seleccionar lo perdia: MEDIDO, la fase
+            ' Textures de SSE subio 10,6 % contra ~4,5 % de deriva de maquina. Con el bloque salteado cuando
+            ' ningun lane tiene cobertura, el skip vuelve — y sigue siendo exacto, porque donde no se compone
+            ' queda el valor PREVIO, que es lo que dejaba el Continue For.
+            If Vector.LessThanOrEqualAll(av, zero) Then
+                e += lanes
+                Continue While
+            End If
+            Dim composed = FaceTintCpuCompositor.ComposeOneV(prev, srcV, av, ws, cs, ss, asp, bop, sl)
+            ' `keep` replica los DOS guards del escalar a la vez: el alpha no se toca (rgbMask) y el
+            ' `If a <= 0.0 Then Continue For` (a > 0). Donde no se compone queda el valor PREVIO, que es
+            ' exactamente lo que dejaba el Continue — no un compose con cov=0, que con cs<>asp no es lo mismo.
+            Dim keep = Vector.AndNot(rgbMask, Vector.LessThanOrEqual(Of Single)(av, zero))
+            Vector.ConditionalSelect(keep, composed, prev).CopyTo(acc, e)
+            e += lanes
+        End While
+        Return e
+    End Function
 
     ''' <summary>Aplica el orden configurable SSE (<c>Setting_FaceTintSort_SSE.TintRules</c>, claves
     ''' <see cref="FaceTintSseTintSortKey"/>) sobre las capas del RACE que devuelve <see cref="GetRaceLayersOrdered"/>.

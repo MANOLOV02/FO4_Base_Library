@@ -473,6 +473,53 @@ Public Module FaceTintCompositor
     End Sub
 
 
+    ''' <summary>⛔ GUARD: los dos shaders tienen que ser ASCII PURO. Devuelve "" si lo son, o el detalle
+    ''' del primer caracter que no lo sea.
+    ''' <para><b>Por qué existe.</b> Un no-ASCII adentro del string GLSL —una flecha, un guion largo, una
+    ''' vocal acentuada en un COMENTARIO— hace que el shader no compile. Y ese fallo es MUDO en producción:
+    ''' <see cref="EnsureCompositorInitialized"/> reporta el error de compilación por <c>Logger.LogLazy</c>,
+    ''' que está APAGADO en Release, y el bake sigue andando porque el bake es CPU. El síntoma es que el
+    ''' compositor GL —el que usa el RENDER— deja de dibujar.</para>
+    ''' <para>⛔ Y NINGÚN barrido de bytes lo ve: el A/B de corpus corre con <c>FGBAKE_GPU_PARITY=0</c>, o sea
+    ''' con el camino GL apagado. Pasó de verdad (2026-07-31) y costó una corrida entera de paridad: el gate
+    ''' de bytes daba PASS con el shader roto. Por eso el chequeo va acá, donde corre SIEMPRE y sin GL.</para>
+    ''' <para>La regla "GLSL ASCII puro" ya estaba escrita; lo que faltaba era algo que la hiciera cumplir.</para></summary>
+    ''' <summary>Todos los shaders GLSL que el gate tiene que revisar. ⛔ NO sólo los dos de este compositor:
+    ''' el fallo es igual de mudo en los del RENDER, y cubrir dos de ocho daba una falsa sensación de gate.
+    ''' <para>⚠️ Los dos del <c>TextOverlayRenderer</c> (Render.vb) quedan afuera porque son variables LOCALES
+    ''' dentro de un <c>Private Sub</c>: para incluirlos habría que izarlos a constantes. Es el overlay de
+    ''' TEXTO, no un camino de cara; se deja anotado en vez de refactorizar de prepo.</para></summary>
+    Private Function AllShaderSources() As (Name As String, Text As String)()
+        Return New (Name As String, Text As String)() {
+            ("FACETINT-VERTEX", VertexShaderSource),
+            ("FACETINT-FRAGMENT", FragmentShaderSource),
+            ("RENDER-FO4-VERTEX", Shader_Class_Fo4.Vertex_FO4),
+            ("RENDER-FO4-FRAGMENT", Shader_Class_Fo4.Fragment_FO4),
+            ("RENDER-FLOOR-VERTEX", Floor_Shader_Class.Vertex_Floor),
+            ("RENDER-FLOOR-FRAGMENT", Floor_Shader_Class.Fragment_Floor),
+            ("RENDER-SSE-VERTEX", Shader_Class_SSE.Vertex_SSE),
+            ("RENDER-SSE-FRAGMENT", Shader_Class_SSE.Fragment_SSE)}
+    End Function
+
+    Public Function ShaderSourceAsciiSelfTest() As String
+        For Each src In AllShaderSources()
+            Dim line As Integer = 1, col As Integer = 1
+            For Each ch In src.Text
+                If ch = vbLf Then
+                    line += 1 : col = 1
+                Else
+                    If AscW(ch) > 127 Then
+                        Return $"ShaderSourceAsciiSelfTest: el shader {src.Name} tiene un caracter NO-ASCII " &
+                               $"U+{AscW(ch):X4} ('{ch}') en la linea {line}, columna {col}. El GLSL tiene que ser " &
+                               "ASCII puro o el shader NO COMPILA (y el fallo es mudo en Release)."
+                    End If
+                    col += 1
+                End If
+            Next
+        Next
+        Return ""
+    End Function
+
     Private Const VertexShaderSource As String = "#version 430
 layout(location = 0) in vec2 aPos;
 out vec2 vUV;
@@ -970,6 +1017,28 @@ void main() {
     }
 
     float cov = clamp(convMaskFull(maskV) * uOpacity, 0.0, 1.0);
+    // COBERTURA CERO = IDENTIDAD. Una capa que no cubre este pixel no puede cambiarlo, asi que el
+    // acumulador sale tal cual entro. ESTA RAMA ES OBLIGATORIA, no es una optimizacion del shader:
+    // el CPU saltea igual (FaceTintCpuCompositor, loop de capas: early-out de bloque + `If cov > 0`), y
+    // RENDER == BAKE exige que los dos compositores hagan LO MISMO. Si uno saltea y el otro compone,
+    // divergen: no hoy (con uAccumSpace == uCompositeSpace componer con cov=0 ya es identidad) pero si
+    // en cuanto alguien separe los espacios desde CharGen Options, que el codigo soporta.
+    // Ademas ALINEA el tercer camino: SseFaceTintComposer.ComposeLayer ya salteaba con cov<=0 y este
+    // shader (que es COMPARTIDO FO4/SSE) no, o sea que SSE estaba divergiendo del GPU. Ahora los tres
+    // (CPU FO4, CPU SSE y GLSL) saltean con cobertura CERO.
+    // OJO, MATIZ MEDIDO, no lo borres: con cov = NaN NO coinciden. Aca `!(cov > 0.0)` es TRUE => saltea, y
+    // el CPU de SSE (SseFaceTintComposer, guard `a <= 0.0`) da FALSE => COMPONE. El CPU de FO4 saltea, o
+    // sea que FO4 y el shader si coinciden. Es inerte con data real (las mascaras salen de bytes, que no
+    // producen NaN) y alinearlo exigiria cambiar la LEY ESCALAR de SSE, que es la referencia. Se deja
+    // anotado en vez de afirmar una coincidencia que no existe.
+    // ATENCION: ASCII PURO. Este texto viaja DENTRO del string GLSL y el compilador de shaders lo
+    // rechaza si trae no-ASCII. Un caracter como los que uso en los comentarios de VB deja el programa
+    // sin compilar y el compositor GL sin dibujar, y eso NO lo ve ningun barrido de bytes del bake:
+    // el A/B corre con FGBAKE_GPU_PARITY=0. Costo: una corrida entera de paridad.
+    if (!(cov > 0.0)) {
+        fragColor = vec4(prev, (uForceOpaqueAlpha == 1) ? 1.0 : prevRgba.a);
+        return;
+    }
     // over-RUNNING + 4 espacios (shader AGNOSTICO): el acumulador prev vive en uAccumSpace; el BLEND OP
     // corre en uWorkingSpace; el color de capa esta en uSrcSpace; y el COMPOSITE (lerp por cov) corre en
     // uCompositeSpace. Ley gen3: el blend va en su espacio (g22/srgb) pero la lerp por cobertura va en

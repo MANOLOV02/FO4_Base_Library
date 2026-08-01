@@ -1,7 +1,9 @@
 ﻿Option Strict On
 
 Imports FO4_Base_Library.FaceTintConvention
+Imports System.Numerics
 Imports System.Runtime.CompilerServices
+Imports System.Runtime.Intrinsics
 
 ' FaceTintCpuCompositor - espejo CPU EXACTO del compositor GL.
 '
@@ -21,6 +23,12 @@ Imports System.Runtime.CompilerServices
 ' BGRA byte por canal, listo para el encode del bake.
 
 Public Module FaceTintCpuCompositor
+    ''' <summary>Lanes de un Vector(Of Single) en ESTA maquina: 8 con AVX2, 4 con SSE2. Es el tamano de
+    ''' bloque de TODOS los loops vectoriales de este modulo. ⛔ Es constante durante todo el proceso
+    ''' (Vector(Of T).Count lo es), asi que vive aca y no se recalcula por pixel. Hardcodear 8 en su lugar
+    ''' corrompe silenciosamente una maquina de 4 lanes: leeria y escribiria fuera del bloque.</summary>
+    Private ReadOnly lanes As Integer = FastPow.LaneCount
+
 
     ''' <summary>⭐ CAPACIDAD DECLARADA de este compositor, para los caminos GL que lo tienen de ESPEJO.
     ''' Este modulo SI implementa la ley completa del acumulador: siembra en <c>AccumSpace</c>, compone
@@ -45,7 +53,10 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>Exponentes de las transfer functions. Se calculan en Double y RECIÉN AHÍ se angostan: el
     ''' float más cercano al exponente real. Escribirlos como <c>1.0F/2.2F</c> daría OTRO float
-    ''' (0,45454544 en vez de 0,45454547) y por lo tanto otra imagen.</summary>
+    ''' (0,45454544 en vez de 0,45454547) y por lo tanto otra imagen.
+    ''' <para>⭐ El <c>pow</c> ya NO es <c>MathF.Pow</c>: es <see cref="FastPow"/>, la MISMA ley en escalar,
+    ''' Vector128 y Vector256 (probadas bit-idénticas entre sí). Los exponentes de acá quedan porque los usan
+    ''' los <c>MathF.Pow</c> de exponente VARIABLE que sobreviven (Illusions soft-light).</para></summary>
     Private ReadOnly InvG22 As Single = CSng(1.0 / 2.2)
     Private ReadOnly InvG24 As Single = CSng(1.0 / 2.4)
 
@@ -56,21 +67,26 @@ Public Module FaceTintCpuCompositor
         Return c
     End Function
 
+    ' ⛔ Los Clamp01 de abajo se CONSERVAN aunque FastPow clampee internamente: son el contrato de entrada que
+    ' tenían con MathF.Pow y sacarlos no ahorra nada medible frente a un pow. FastPow reproduce además el
+    ' NaN→NaN de MathF.Pow, así que estas cuatro funciones se comportan igual que antes salvo por el error de
+    ' aproximación acotado (|byte delta| <= 1, enumerado sobre el dominio entero — ver FastPow).
+
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function SrgbToLin1(c As Single) As Single
         c = Clamp01(c)
-        Return If(c <= 0.04045F, c / 12.92F, MathF.Pow((c + 0.055F) / 1.055F, 2.4F))
+        Return If(c <= 0.04045F, c / 12.92F, FastPow.Pow1((c + 0.055F) / 1.055F, FastPow.G24))
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToSrgb1(c As Single) As Single
         c = Clamp01(c)
-        Return If(c <= 0.0031308F, c * 12.92F, 1.055F * MathF.Pow(c, InvG24) - 0.055F)
+        Return If(c <= 0.0031308F, c * 12.92F, 1.055F * FastPow.Pow1(c, FastPow.InvG24) - 0.055F)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function G22ToLin1(c As Single) As Single
-        Return MathF.Pow(Clamp01(c), 2.2F)
+        Return FastPow.Pow1(Clamp01(c), FastPow.G22)
     End Function
 
     ''' <summary>⭐ LUT byte→byte de <see cref="G22DiffuseBgraToLinearInPlace"/>. BIT-IDENTICA a calcularlo,
@@ -115,17 +131,17 @@ Public Module FaceTintCpuCompositor
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToG221(c As Single) As Single
-        Return MathF.Pow(Clamp01(c), InvG22)
+        Return FastPow.Pow1(Clamp01(c), FastPow.InvG22)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function G24ToLin1(c As Single) As Single
-        Return MathF.Pow(Clamp01(c), 2.4F)
+        Return FastPow.Pow1(Clamp01(c), FastPow.G24)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function LinToG241(c As Single) As Single
-        Return MathF.Pow(Clamp01(c), InvG24)
+        Return FastPow.Pow1(Clamp01(c), FastPow.InvG24)
     End Function
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
@@ -184,7 +200,10 @@ Public Module FaceTintCpuCompositor
             Case 2 ' Illusions.hu  d^(2^(2(0.5-s)))
                 ' El exponente interno queda acotado a [0,5 , 2] para s en [0,1] y la base a >=1e-6, asi que
                 ' el peor caso es 1e-12: muy por encima del minimo normal de float. No hace falta guard.
-                Return MathF.Pow(MathF.Max(d, 0.000001F), MathF.Pow(2.0F, 2.0F * (0.5F - s)))
+                ' ⭐ FastPow, no MathF.Pow: el exponente es VARIABLE por pixel, asi que usa el split de Dekker
+                ' en runtime (PowVar1) y el 2^y va por Exp2_1 — que existe porque PowVar clampea la BASE a
+                ' [0,1] y con base 2 devolveria 1. El espejo vectorial hace exactamente estas dos llamadas.
+                Return FastPow.PowVar1(MathF.Max(d, 0.000001F), FastPow.Exp2_1(2.0F * (0.5F - s)))
             Case 3 ' pegtop
                 Return (1.0F - 2.0F * s) * d * d + 2.0F * s * d
             Case Else ' 0 = W3C SVG
@@ -815,10 +834,30 @@ Public Module FaceTintCpuCompositor
         Dim srcDirect As Boolean = (src.Width = w AndAlso src.Height = h)
         Dim srcPx As Byte() = If(srcDirect, src.Rgba8, Nothing)
         Dim seedLut = ByteToUnit
+        ' ⭐ SEED VECTORIZADO. Deja de ser gratis justo con la convención REAL de FO4: ahí `accSp`(Linear) y
+        ' `outSp`(G22) DIFIEREN, así que `Cvt1` NO cortocircuita y esto es UN POW POR PÍXEL Y POR CANAL a
+        ' resolución nativa, una vez por canal. Con el config viejo (accSp == outSp) era identidad y por eso
+        ' nunca figuró como resto escalar.
+        ' Sólo el camino `srcDirect`: el otro es SampleChannelAt = bilineal por UV = gather.
+        Dim seedFromSp As Integer = If(SeedConventionIs_G22 AndAlso isD, seedSrc, outSp)
+        Dim seedVecOk As Boolean = FastPow.AcceleratedV AndAlso srcDirect
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, n),
             Sub(range)
-                For i As Integer = range.Item1 To range.Item2 - 1
+                Dim iv = range.Item1
+                If seedVecOk Then
+                    While iv + lanes <= range.Item2
+                        Dim rV, gV, bV, aV As Vector(Of Single)
+                        LoadRgba8BlockV(srcPx, iv * 4, rV, gV, bV, aV)
+                        CvtV(rV, seedFromSp, accSp).CopyTo(accR, iv)
+                        CvtV(gV, seedFromSp, accSp).CopyTo(accG, iv)
+                        CvtV(bV, seedFromSp, accSp).CopyTo(accB, iv)
+                        ' El ALPHA es RAW: no es color, NO pasa por ninguna conversión de espacio.
+                        If keepBaseAlpha Then aV.CopyTo(accA, iv)
+                        iv += lanes
+                    End While
+                End If
+                For i As Integer = iv To range.Item2 - 1
                     Dim r0 As Single, g0 As Single, b0 As Single
                     If srcDirect Then
                         Dim pb = i * 4
@@ -888,10 +927,36 @@ Public Module FaceTintCpuCompositor
                 Dim swPx As Byte() = If(swDirect, swTex.Rgba8, Nothing)
                 Dim mkPx As Byte() = If(mkDirect, mkTex.Rgba8, Nothing)
                 Dim swLut = ByteToUnit
+                ' ⭐ REGION SWAP VECTORIZADO. Era el otro resto per-píxel entero del compose: 3 ComposeOne
+                ' ESCALARES por píxel y por swap, y no es un caso raro — el reporte de paridad CPU-vs-GPU
+                ' mide 66 M de 85 M de píxeles en NPCs CON region swaps.
+                ' El framework es OverPrev (ComposeOne se llama sin `framework` ⇒ 0), así que el espejo
+                ' vectorial aplica si VecComposeSupported lo cubre; los dos sampleos tienen que ser directos
+                ' (si no, es SampleChannelAt = gather).
+                ' ⛔ SIN skip de cov<=0: el escalar de acá NO lo tiene y el GLSL (uMode==1) TAMPOCO ⇒ meterlo
+                ' sólo del lado CPU rompería la paridad con el GPU. Si algún día se agrega, va en los dos.
+                Dim swVecOk As Boolean = swDirect AndAlso mkDirect AndAlso VecComposeSupported(0, sbop, ssl)
                 System.Threading.Tasks.Parallel.ForEach(
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
-                        For i As Integer = range.Item1 To range.Item2 - 1
+                        Dim iv = range.Item1
+                        If swVecOk Then
+                            Dim msdvV = VBroadcast(msdv)
+                            While iv + lanes <= range.Item2
+                                Dim srV, sgV, sbV, saV As Vector(Of Single)
+                                LoadRgba8BlockV(swPx, iv * 4, srV, sgV, sbV, saV)
+                                ' la máscara del swap es el canal R (igual que el escalar: mkPx(i*4))
+                                Dim mkR, mkG, mkB, mkA As Vector(Of Single)
+                                LoadRgba8BlockV(mkPx, iv * 4, mkR, mkG, mkB, mkA)
+                                ' MISMO orden que el escalar: convertir, multiplicar, recién ahí clampear.
+                                Dim covV = Clamp01V(Vector.Multiply(ConvMaskV(mkR, smc), msdvV))
+                                ComposeSwapBlockV(accR, iv, srV, covV, sws, scs, sss, accSp, sbop, ssl)
+                                ComposeSwapBlockV(accG, iv, sgV, covV, sws, scs, sss, accSp, sbop, ssl)
+                                ComposeSwapBlockV(accB, iv, sbV, covV, sws, scs, sss, accSp, sbop, ssl)
+                                iv += lanes
+                            End While
+                        End If
+                        For i As Integer = iv To range.Item2 - 1
                             Dim sr As Single, sg As Single, sb As Single, mask As Single
                             If swDirect Then
                                 Dim pb = i * 4
@@ -1042,10 +1107,85 @@ Public Module FaceTintCpuCompositor
                 Dim layerDirect As Boolean = (layerTex.Width = w AndAlso layerTex.Height = h)
                 Dim layerPx As Byte() = If(layerDirect, layerTex.Rgba8, Nothing)
                 Dim lut = ByteToUnit
+                ' ⭐ VECTORIZACION DEL COMPOSE — en DOS FASES, y el corte esta puesto donde esta a proposito.
+                '   Fase A (per pixel, ESCALAR e INTACTA): sampleo, mask/src por kind, pre-tono, cobertura.
+                '     Es la parte RAMOSA (kind, hair palette, forceUniform, diffMask, preToneSkin...) y la que
+                '     hace gathers. Se deja tal cual y solo deposita su resultado en el bloque.
+                '   Fase B (por bloques de 8, VECTORIAL): los 3 ComposeOne. Ahi vive el 83 % del kernel (los
+                '     pow de las conversiones de espacio), medido sobre el ComposePixel real.
+                ' El acumulador de FO4 es SoA (accR/accG/accB separados) ⇒ 8 pixeles son 8 floats contiguos:
+                ' carga directa, sin gather y SIN requisito de alineacion (a diferencia del AoS del fold SSE),
+                ' asi que aca no hace falta prologo — solo la cola cuando el rango no cierra en 8.
+                ' ⛔ Si la combinacion (framework, blend, softlight) no tiene espejo vectorial, se usa el
+                ' camino escalar de siempre: MISMO resultado, sin acelerar. No es un fallback aproximado.
+                ' ⛔ NO agregar `AndAlso Not needsBase` aca. Lo tuve y estaba de mas: VecComposeSupported ya
+                ' exige fw=0 (OverPrev), y OverPrev NO LEE `base` en ninguna rama de ComposeOne. Como
+                ' `needsBase` es por CANAL, una sola capa OverBase apagaba el vectorial para TODAS las capas
+                ' OverPrev del canal — perdida pura, sin ganar nada de correccion.
+                Dim vecOk As Boolean = VecComposeSupported(fw, bop, sl)
+                ' `asp` EFECTIVO: ComposeOne hace `If accSpace < 0 Then os`. El espejo vectorial recibe el
+                ' espacio YA resuelto, asi que hay que aplicar la misma regla aca o los dos caminos diferirian
+                ' justo cuando accSp viene sin resolver.
+                Dim aspEff As Integer = If(accSp < 0, os, accSp)
+                ' ⭐⭐ FASE A VECTORIZADA. Es el resto grande que quedaba del loop (~87 ns/px por resta) y
+                ' ademas se paga a si misma dos veces: al armar los 8 sources EN REGISTRO desaparecen los 4
+                ' stores + 4 loads por pixel que el split Fase A/B habia AGREGADO (bSrcR/G/B + bMask).
+                ' El gate excluye, y cada exclusion es por una razon distinta:
+                '   - Not layerDirect  -> el sampleo es bilineal por UV = GATHER. Es LA barrera real de todo
+                '     este trabajo: la API cross-platform Vector(Of T) no tiene gather y Avx2.GatherVector256
+                '     es x86-only, o sea que usarlo reintroduciria DOS leyes segun la CPU.
+                '   - useHairPalette   -> SampleLutEngine es un fetch NEAREST indexado por el valor del pixel:
+                '     otro gather, y ademas engine-exact (no se toca).
+                '   - preToneSkin      -> muestrea la mascara del skintone y corre 3 ComposeOne mas por pixel;
+                '     es un camino raro (flagged-after-skintone) y no vale duplicarlo.
+                '   - diffMask no directa -> idem layerDirect, para la textura de la mascara.
+                ' Lo que queda cubierto es el caso NORMAL y el 100 % de la data vanilla: PaletteMask con color
+                ' plano y TextureSet con la textura de la capa.
+                Dim diffMaskDirect As Boolean = (diffMaskTex IsNot Nothing AndAlso diffMaskTex.Width = w AndAlso diffMaskTex.Height = h)
+                Dim diffMaskPx As Byte() = If(diffMaskDirect, diffMaskTex.Rgba8, Nothing)
+                Dim fastA As Boolean = vecOk AndAlso layerDirect AndAlso Not useHairPalette AndAlso Not preToneSkin _
+                                       AndAlso (diffMaskTex Is Nothing OrElse diffMaskDirect)
+                Dim isPalette As Boolean = (kind = FaceTintLayerKind.PaletteMask)
                 System.Threading.Tasks.Parallel.ForEach(
                     System.Collections.Concurrent.Partitioner.Create(0, n),
                     Sub(range)
-                        For i As Integer = range.Item1 To range.Item2 - 1
+                      ' Buffers del bloque POR RANGO (no por pixel): cada tarea del Partitioner tiene los
+                      ' suyos. ⛔ NO subirlos fuera del lambda: los comparten los hilos y se corrompen.
+                      Dim bSrcR(lanes - 1) As Single, bSrcG(lanes - 1) As Single, bSrcB(lanes - 1) As Single, bMask(lanes - 1) As Single
+                      ' Los bloques de 8 que entran por la Fase A vectorial se consumen ACA, desde el principio
+                      ' del rango; el loop escalar de abajo arranca donde este termino y se hace cargo del
+                      ' resto (y del rango ENTERO cuando fastA es False, o sea el comportamiento de siempre).
+                      Dim iStart As Integer = range.Item1
+                      If fastA Then
+                          Dim colRV = VBroadcast(uColR), colGV = VBroadcast(uColG), colBV = VBroadcast(uColB)
+                          Dim opV = VBroadcast(op)
+                          Dim zeroV = Vector(Of Single).Zero
+                          While iStart + lanes <= range.Item2
+                              Dim lrV, lgV, lbV, laV As Vector(Of Single)
+                              LoadRgba8BlockV(layerPx, iStart * 4, lrV, lgV, lbV, laV)
+                              Dim sRV, sGV, sBV, mV As Vector(Of Single)
+                              ' ⭐ El ESPEJO de LayerSrcMaskPixel: la MISMA funcion que el loop escalar
+                              ' llama, y la misma que el self-test contrasta. Tenerla extraida es lo que
+                              ' hace que el test valga: inline, el test tendria que re-implementar la
+                              ' cadena y podria coincidir con el bug en vez de detectarlo.
+                              Dim dmAV = If(diffMaskPx Is Nothing, Vector(Of Single).Zero,
+                                            LoadAlpha8BlockV(diffMaskPx, iStart * 4))
+                              LayerSrcMaskBlockV(lrV, lgV, lbV, laV, dmAV,
+                                                 isPalette, isD, forceUniform, texTimesColor,
+                                                 diffMaskPx IsNot Nothing,
+                                                 colRV, colGV, colBV, sRV, sGV, sBV, mV)
+                              ' Cobertura: mismas ops y mismo orden que CovBlockV (convertir, multiplicar, clampear).
+                              Dim covV = Clamp01V(Vector.Multiply(ConvMaskV(mV, mc), opV))
+                              If Not Vector.LessThanOrEqualAll(covV, zeroV) Then
+                                  ComposeBlockV(accR, iStart, sRV, covV, ws, cs, ss, aspEff, bop, sl)
+                                  ComposeBlockV(accG, iStart, sGV, covV, ws, cs, ss, aspEff, bop, sl)
+                                  ComposeBlockV(accB, iStart, sBV, covV, ws, cs, ss, aspEff, bop, sl)
+                              End If
+                              iStart += lanes
+                          End While
+                      End If
+                      Dim blkAt As Integer = iStart, blkN As Integer = 0
+                        For i As Integer = iStart To range.Item2 - 1
                         Dim lr As Single, lg As Single, lb As Single, la As Single
                         If layerDirect Then
                             Dim pb = i * 4
@@ -1060,30 +1200,20 @@ Public Module FaceTintCpuCompositor
                         ' mask + src por kind (= rama uLayerKind del shader)
                         Dim maskV As Single
                         Dim srcR As Single, srcG As Single, srcB As Single
-                        If kind = FaceTintLayerKind.PaletteMask Then
-                            If useHairPalette Then
-                                srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
-                            Else
-                                srcR = uColR : srcG = uColG : srcB = uColB
-                            End If
-                            maskV = lg
-                        Else ' TextureSetDiffuse
-                            If useHairPalette Then
-                                srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
-                            ElseIf forceUniform Then
-                                srcR = uColR : srcG = uColG : srcB = uColB
-                            ElseIf texTimesColor Then
-                                srcR = lr * uColR : srcG = lg * uColG : srcB = lb * uColB   ' skee type-0: tex × tint
-                            Else
-                                srcR = lr : srcG = lg : srcB = lb
-                            End If
-                            If isD Then
-                                maskV = la
-                            ElseIf diffMaskTex IsNot Nothing Then
-                                maskV = SampleChannelAt(diffMaskTex, i, w, h, 3)
-                            Else
-                                maskV = Math.Max(lr, Math.Max(lg, lb))
-                            End If
+                        Dim isPal As Boolean = (kind = FaceTintLayerKind.PaletteMask)
+                        Dim hasDm As Boolean = (diffMaskTex IsNot Nothing)
+                        Dim dmA As Single = 0.0F
+                        If hasDm AndAlso Not isPal AndAlso Not isD Then dmA = SampleChannelAt(diffMaskTex, i, w, h, 3)
+                        ' ⭐ LA MISMA funcion que el bloque vectorial (via LayerSrcMaskBlockV) y que el
+                        ' self-test contrastan. Extraida a proposito: inline, el test tendria que
+                        ' re-implementar la cadena y podria coincidir con el bug en vez de detectarlo.
+                        LayerSrcMaskPixel(lr, lg, lb, la, dmA, isPal, isD, forceUniform, texTimesColor, hasDm,
+                                          uColR, uColG, uColB, srcR, srcG, srcB, maskV)
+                        If useHairPalette Then
+                            ' PALETA DE PELO: fetch NEAREST indexado por el VALOR del pixel = gather, y
+                            ' engine-exact. Pisa solo el `src`; el `mask` ya lo resolvio la cadena comun, que
+                            ' es exactamente lo que hacia el codigo anterior. `fastA` excluye este camino.
+                            srcR = SampleLutEngine(lutTex, lg, luY, 0, ss, os) : srcG = SampleLutEngine(lutTex, lg, luY, 1, ss, os) : srcB = SampleLutEngine(lutTex, lg, luY, 2, ss, os)
                         End If
 
                         ' Pre-tono TakesSkinTone (guard preToneSkin): aplica el softlight del skintone al SOURCE
@@ -1097,21 +1227,73 @@ Public Module FaceTintCpuCompositor
                             srcB = ComposeOne(srcB, stColB, stCov, stWs, stCs, stSs, stOs, stBop, stSl)
                         End If
 
-                        Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
-
-                        ' base SÓLO existe si algún framework del canal es OverBase/AddBase (ver needsBase). Con
-                        ' OverPrev/ModSrc ComposeOne no lee este parámetro en ninguna rama, así que pasar 0.0
-                        ' es exactamente lo mismo que pasar el snapshot. Cuando SÍ hace falta, se lee el mismo
-                        ' Single y se ensancha a Double igual que antes ⇒ bit-idéntico en los dos caminos.
-                        Dim bR As Single = 0.0F, bG As Single = 0.0F, bB As Single = 0.0F
-                        If needsBase Then
-                            bR = baseR(i) : bG = baseG(i) : bB = baseB(i)
-                        End If
                         ' composite agnostico (= shader): blend en ws, lerp en cs, storage en os.
-                        accR(i) = CSng(ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, bR, fw, accSpace:=accSp))
-                        accG(i) = CSng(ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, bG, fw, accSpace:=accSp))
-                        accB(i) = CSng(ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, bB, fw, accSpace:=accSp))
+                        If vecOk Then
+                            ' Fase B DIFERIDA: se acumula el pixel en el bloque y se compone de a 8.
+                            ' Se guarda el mask CRUDO, no la cobertura: convertirlo es un pow por pixel y se
+                            ' hace vectorizado mas abajo. (`base` no se lee: vecOk exige OverPrev.)
+                            bSrcR(blkN) = srcR : bSrcG(blkN) = srcG : bSrcB(blkN) = srcB : bMask(blkN) = maskV
+                            blkN += 1
+                            If blkN = lanes Then
+                                ' El mask conv se vectoriza ACA, no en la Fase A: con la ley por defecto es
+                                ' G22Encode = UN POW POR PIXEL, y era el mayor resto escalar del loop.
+                                Dim covV = CovBlockV(bMask, mc, op)
+                                ' ⭐ EARLY-OUT DE BLOQUE — una capa con cobertura CERO no aporta nada, asi que
+                                ' aplicarla tiene que ser la IDENTIDAD. Sin esto el bloque pagaba los pow de
+                                ' ComposeOneV x3 canales para no mover un byte. Mismo patron que
+                                ' SseFaceTintComposer.ComposeLayer / SkeeMaskApply / MsnBlendApply.
+                                ' ⛔ VA TAMBIEN EN EL GLSL (FaceTintCompositor, rama de composeOne): los dos
+                                ' compositores tienen que hacer LO MISMO o se rompe la paridad CPU/GPU.
+                                If Not Vector.LessThanOrEqualAll(covV, Vector(Of Single).Zero) Then
+                                    ComposeBlockV(accR, blkAt, bSrcR, covV, ws, cs, ss, aspEff, bop, sl)
+                                    ComposeBlockV(accG, blkAt, bSrcG, covV, ws, cs, ss, aspEff, bop, sl)
+                                    ComposeBlockV(accB, blkAt, bSrcB, covV, ws, cs, ss, aspEff, bop, sl)
+                                End If
+                                blkAt = i + 1
+                                blkN = 0
+                            End If
+                        Else
+                            Dim cov = Clamp01(ConvMask1(maskV, mc) * op)
+                            ' ⭐ SKIP DE COBERTURA CERO — gemelo escalar del early-out de bloque de arriba y de
+                            ' la rama `cov <= 0` del GLSL. Una capa que no cubre este pixel no puede cambiarlo.
+                            ' Con asp = cs (la ley real de los dos juegos) componer con cov=0 ya devolvia
+                            ' Clamp01(prev) = prev (el acumulador se siembra del LUT de bytes y toda escritura
+                            ' sale clampeada, o sea que vive en [0,1]) ⇒ saltear es BYTE-NEUTRO, pura velocidad.
+                            ' Con asp <> cs el skip ademas CORRIGE: el round-trip os->cs->os degradaba el
+                            ' acumulador por una capa que no pinta nada.
+                            If cov > 0.0F Then
+                            ' base SÓLO existe si algún framework del canal es OverBase/AddBase (ver needsBase).
+                            ' Con OverPrev/ModSrc ComposeOne no lee este parámetro en ninguna rama, así que pasar
+                            ' 0.0 es exactamente lo mismo que pasar el snapshot. Cuando SÍ hace falta, se lee el
+                            ' mismo Single ⇒ bit-idéntico en los dos caminos.
+                            Dim bR As Single = 0.0F, bG As Single = 0.0F, bB As Single = 0.0F
+                            If needsBase Then
+                                bR = baseR(i) : bG = baseG(i) : bB = baseB(i)
+                            End If
+                            accR(i) = CSng(ComposeOne(accR(i), srcR, cov, ws, cs, ss, os, bop, sl, bR, fw, accSpace:=accSp))
+                            accG(i) = CSng(ComposeOne(accG(i), srcG, cov, ws, cs, ss, os, bop, sl, bG, fw, accSpace:=accSp))
+                            accB(i) = CSng(ComposeOne(accB(i), srcB, cov, ws, cs, ss, os, bop, sl, bB, fw, accSpace:=accSp))
+                            End If
+                        End If
                         Next
+                        ' COLA: los ultimos <8 pixeles del rango. ⛔ Obligatoria — los rangos del Partitioner
+                        ' casi nunca miden un multiplo de 8, asi que sin esto se perderian hasta 7 pixeles POR
+                        ' RANGO. Va por el escalar, que es la misma ley: `base` va 0.0F porque vecOk exige
+                        ' OverPrev, y OverPrev no lo lee.
+                        If vecOk Then
+                            For j As Integer = 0 To blkN - 1
+                                Dim k = blkAt + j
+                                Dim covT = Clamp01(ConvMask1(bMask(j), mc) * op)
+                                ' ⛔ `Not (covT > 0)`, NO `covT <= 0`: con NaN la primera es TRUE (saltea) y
+                                ' la segunda FALSE (compone). El bloque vectorial, el escalar no-vectorial y
+                                ' el GLSL saltean con NaN; esta cola componia => el pixel dependia de si caia
+                                ' en los ultimos <lanes del rango. Tiene que ser la negacion EXACTA del guard.
+                                If Not (covT > 0.0F) Then Continue For
+                                accR(k) = CSng(ComposeOne(accR(k), bSrcR(j), covT, ws, cs, ss, os, bop, sl, 0.0F, fw, accSpace:=accSp))
+                                accG(k) = CSng(ComposeOne(accG(k), bSrcG(j), covT, ws, cs, ss, os, bop, sl, 0.0F, fw, accSpace:=accSp))
+                                accB(k) = CSng(ComposeOne(accB(k), bSrcB(j), covT, ws, cs, ss, os, bop, sl, 0.0F, fw, accSpace:=accSp))
+                            Next
+                        End If
                     End Sub)
 
                 ' Capturar el skintone (slot 12) tras componerlo: color/op/mask/conv para pre-tonar las
@@ -1134,15 +1316,11 @@ Public Module FaceTintCpuCompositor
         ' Cvt1 cortocircuita y es un no-op exacto. Con el acumulador en CompositeSpace, este es el UNICO lugar
         ' donde se paga la conversion de salida, en vez de pagarla ida-y-vuelta en CADA capa.
         If accSp <> outSp Then
-            System.Threading.Tasks.Parallel.ForEach(
-                System.Collections.Concurrent.Partitioner.Create(0, n),
-                Sub(range)
-                    For i As Integer = range.Item1 To range.Item2 - 1
-                        accR(i) = CSng(Cvt1(accR(i), accSp, outSp))
-                        accG(i) = CSng(Cvt1(accG(i), accSp, outSp))
-                        accB(i) = CSng(Cvt1(accB(i), accSp, outSp))
-                    Next
-                End Sub)
+            ' Los tres canales son arrays SEPARADOS (SoA) ⇒ cada uno es contiguo y se vectoriza directo,
+            ' sin la alineacion que exige el AoS. Mismo Cvt1 por elemento, sólo que de a 8.
+            ConvertSpaceSoaInPlace(accR, n, accSp, outSp)
+            ConvertSpaceSoaInPlace(accG, n, accSp, outSp)
+            ConvertSpaceSoaInPlace(accB, n, accSp, outSp)
         End If
 
         Dim outB(n * 4 - 1) As Byte
@@ -1154,13 +1332,33 @@ Public Module FaceTintCpuCompositor
         ' compose CPU de FO4, y corre UNA VEZ POR CANAL (D, N y S) a resolucion nativa: con una cara 4096 son
         ' 3 x 16,7M iteraciones, mientras el seed, los region-swaps y el loop de capas de mas arriba ya
         ' paralelizan. Mismo patron y misma justificacion que esos.
+        ' La LECTURA es SoA (accR/G/B contiguos) pero la ESCRITURA es AoS (BGRA intercalado). Se vectoriza la
+        ' parte cara —NaN, clamp y redondeo de los 3 canales— y los 4 stores de byte quedan escalares: armar
+        ' el intercalado en registro pediria shuffles que no compensan frente a un store de byte.
         System.Threading.Tasks.Parallel.ForEach(
             System.Collections.Concurrent.Partitioner.Create(0, n),
             Sub(range)
-                For i As Integer = range.Item1 To range.Item2 - 1
+                Dim i = range.Item1
+                If FastPow.AcceleratedV Then
+                    Dim tr(lanes - 1) As Single, tg(lanes - 1) As Single, tb(lanes - 1) As Single, ta(lanes - 1) As Single
+                    While i + lanes <= range.Item2
+                        ToByteBlockV(accR, i).CopyTo(tr, 0)
+                        ToByteBlockV(accG, i).CopyTo(tg, 0)
+                        ToByteBlockV(accB, i).CopyTo(tb, 0)
+                        If keepBaseAlpha Then ToByteBlockV(accA, i).CopyTo(ta, 0)
+                        For j = 0 To lanes - 1
+                            Dim o = (i + j) * 4
+                            outB(o) = CByte(tb(j)) : outB(o + 1) = CByte(tg(j)) : outB(o + 2) = CByte(tr(j))
+                            outB(o + 3) = If(keepBaseAlpha, CByte(ta(j)), CByte(255))
+                        Next
+                        i += lanes
+                    End While
+                End If
+                While i < range.Item2
                     Dim o = i * 4
                     outB(o) = ToByte(accB(i)) : outB(o + 1) = ToByte(accG(i)) : outB(o + 2) = ToByte(accR(i)) : outB(o + 3) = If(keepBaseAlpha, ToByte(accA(i)), CByte(255))
-                Next
+                    i += 1
+                End While
             End Sub)
         Return New CpuChannelResult With {.Width = w, .Height = h, .Bgra = outB}
     End Function
@@ -1248,6 +1446,947 @@ Public Module FaceTintCpuCompositor
         End Select
     End Function
 
+    ' =================================================================================================
+    ' =================================================================================================
+    ' ⭐ ANCHO VARIABLE. Todo el espejo vectorial de abajo está escrito sobre `Vector(Of T)`, que elige SOLO
+    ' el ancho que la máquina tiene: 8 lanes con AVX2, 4 con SSE2. Antes estaba escrito contra `Vector256` a
+    ' secas y una CPU con SSE2 pero sin AVX2 caía HASTA EL ESCALAR — que es 1,54× más lento que MathF.Pow, o
+    ' sea que en esa máquina todo este trabajo la dejaba MÁS LENTA. La alternativa era duplicar las ~23
+    ' funciones espejo a Vector128 y mantener los dos juegos en sincronía a mano; con el ancho variable hay
+    ' UNA sola escritura de cada ley. Ver el contrato en FastPow.
+    ' ⛔ Sólo es legítimo porque los anchos están probados BIT-IDÉNTICOS entre sí. Si no lo estuvieran, el
+    ' MISMO binario daría bytes distintos según la CPU.
+    ' ⛔ NINGÚN loop puede hardcodear 8: el tamaño de bloque es FastPow.LaneCount.
+    '
+    ' `VBroadcast` existe para que el cuerpo se lea igual que antes (era `Vector256.Create`) y para que la
+    ' elección de tipo la haga la RESOLUCIÓN DE SOBRECARGA y no yo en cada sitio.
+    ' =================================================================================================
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function VBroadcast(x As Single) As Vector(Of Single)
+        Return New Vector(Of Single)(x)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function VBroadcast(x As Double) As Vector(Of Double)
+        Return New Vector(Of Double)(x)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function VBroadcast(x As UInteger) As Vector(Of UInteger)
+        Return New Vector(Of UInteger)(x)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function VBroadcast(a As Single(), i As Integer) As Vector(Of Single)
+        Return New Vector(Of Single)(a, i)
+    End Function
+
+    ''' <summary>Máscara "los 3 canales RGB sí, el alpha no" para un buffer AoS RGBA, del ANCHO de la máquina.
+    ''' Antes era el literal <c>Create(-1,-1,-1,0,-1,-1,-1,0)</c>, que asume 8 lanes y en una máquina de 4
+    ''' dejaría el patrón corrido. Se arma una sola vez.</summary>
+    Private ReadOnly RgbAosMaskV As Vector(Of Single) = BuildRgbAosMaskV()
+    Private Function BuildRgbAosMaskV() As Vector(Of Single)
+        Dim n = Vector(Of Integer).Count
+        Dim m(n - 1) As Integer
+        For i = 0 To n - 1
+            m(i) = If((i And 3) = 3, 0, -1)      ' lane 3 de cada pixel = alpha = NO tocar
+        Next
+        Return Vector.As(Of Integer, Single)(New Vector(Of Integer)(m))
+    End Function
+
+    ' ESPEJO VECTORIAL de ComposeOne. Es lo que hace que el loop de capas —el 67,8 % del bake de FO4—
+    ' pague UN pow por cada 8 pixeles en vez de uno por pixel.
+    '
+    ' ⛔ REGLA: cada funcion de aca es el espejo EXACTO de su gemela escalar de mas arriba, operacion por
+    ' operacion y en el mismo orden. No es "equivalente matematicamente": es la MISMA cuenta. Cuando no lo
+    ' sea, el test de paridad (VecComposeSupported + el arnes) tiene que fallar, no pasar por poco.
+    '
+    ' ⛔ Clamp01 vectorial va con SELECTS EXPLICITOS, no con Min/Max: el Clamp01 escalar deja pasar NaN
+    ' (sus dos comparaciones son falsas) y el NaN-handling de Min/Max no esta garantizado igual en todas
+    ' las plataformas. Con selects la coincidencia es exacta, NaN incluido.
+    ' =================================================================================================
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function Clamp01V(c As Vector(Of Single)) As Vector(Of Single)
+        Dim r = Vector.ConditionalSelect(Vector.LessThan(c, Vector(Of Single).Zero), Vector(Of Single).Zero, c)
+        Return Vector.ConditionalSelect(Vector.GreaterThan(r, VBroadcast(1.0F)), VBroadcast(1.0F), r)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SrgbToLinV(c As Vector(Of Single)) As Vector(Of Single)
+        c = Clamp01V(c)
+        Dim loB = Vector.Divide(c, VBroadcast(12.92F))
+        Dim hiB = FastPow.PowV(Vector.Divide(Vector.Add(c, VBroadcast(0.055F)),
+                                                   VBroadcast(1.055F)), FastPow.G24)
+        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(c, VBroadcast(0.04045F)), loB, hiB)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function LinToSrgbV(c As Vector(Of Single)) As Vector(Of Single)
+        c = Clamp01V(c)
+        Dim loB = Vector.Multiply(c, VBroadcast(12.92F))
+        Dim hiB = Vector.Subtract(Vector.Multiply(VBroadcast(1.055F),
+                                                        FastPow.PowV(c, FastPow.InvG24)),
+                                     VBroadcast(0.055F))
+        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(c, VBroadcast(0.0031308F)), loB, hiB)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SpaceToLinV(c As Vector(Of Single), s As Integer) As Vector(Of Single)
+        If s = 0 Then Return c
+        If s = 1 Then Return SrgbToLinV(c)
+        If s = 3 Then Return FastPow.PowV(Clamp01V(c), FastPow.G24)
+        Return FastPow.PowV(Clamp01V(c), FastPow.G22)     ' s=2
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function LinToSpaceV(c As Vector(Of Single), s As Integer) As Vector(Of Single)
+        If s = 0 Then Return c
+        If s = 1 Then Return LinToSrgbV(c)
+        If s = 3 Then Return FastPow.PowV(Clamp01V(c), FastPow.InvG24)
+        Return FastPow.PowV(Clamp01V(c), FastPow.InvG22)  ' s=2
+    End Function
+
+    ''' <summary>Espejo de <see cref="Cvt1"/>, cortocircuito incluido (que es de donde sale que los buckets
+    ''' N/S no paguen NI UN pow).</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function CvtV(c As Vector(Of Single), fromS As Integer, toS As Integer) As Vector(Of Single)
+        If fromS = toS Then Return c
+        Return LinToSpaceV(SpaceToLinV(c, fromS), toS)
+    End Function
+
+    ''' <summary>Espejo de <see cref="ConvMask1"/>. Vale la pena aparte porque el mask conv por DEFECTO de la
+    ''' ley FO4 es <c>G22Encode</c>, o sea UN POW POR PIXEL POR CAPA — medido, 21,96 ns/px escalar contra los
+    ''' ~15 ns/canal que cuesta el compose ya vectorizado. Era el mayor resto escalar del loop.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function ConvMaskV(m As Vector(Of Single), mc As Integer) As Vector(Of Single)
+        Select Case mc
+            Case 1 : Return LinToSrgbV(m)
+            Case 2 : Return SrgbToLinV(m)
+            Case 3 : Return FastPow.PowV(Clamp01V(m), FastPow.InvG22)
+            Case 4 : Return FastPow.PowV(Clamp01V(m), FastPow.G22)
+            Case 5 : Return FastPow.PowV(Clamp01V(m), FastPow.InvG24)
+            Case 6 : Return FastPow.PowV(Clamp01V(m), FastPow.G24)
+            Case Else : Return m
+        End Select
+    End Function
+
+    ''' <summary>Cobertura de un bloque de 8 pixeles: <c>Clamp01(ConvMask1(mask, mc) * op)</c>, en el MISMO
+    ''' orden que el escalar (convertir, multiplicar, recien ahi clampear).</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function CovBlockV(mask As Single(), mc As Integer, op As Single) As Vector(Of Single)
+        Return Clamp01V(Vector.Multiply(ConvMaskV(VBroadcast(mask, 0), mc), VBroadcast(op)))
+    End Function
+
+    ''' <summary>¿Esta combinacion de (framework, blend, softlight) tiene espejo vectorial? Lo que NO esta
+    ''' cae al camino escalar de siempre — que da el MISMO resultado, sólo que sin acelerar.
+    ''' <para>Cubre lo que la data real usa: el scan de 2026-06-20 dio 4008/4008 TemplateColors de las 110
+    ''' RACE de Fallout4.esm+DLCs en bop 0 ó 3, CERO Multiply/Overlay/HardLight; y la ley de SSE es Replace.
+    ''' Una RACE modeada con bop 1/2/4 no se acelera, pero sale idéntica.</para></summary>
+    Friend Function VecComposeSupported(fw As Integer, bop As Integer, sl As Integer) As Boolean
+        If Not FastPow.AcceleratedV Then Return False
+        If fw <> 0 Then Return False                     ' sólo OverPrev
+        ' ⛔ 20 (Grayscale) y 21 (ColorMode) NO son separables: piden los tres canales del destino juntos.
+        If bop < 0 OrElse bop > 19 Then Return False
+        ' El modelo 2 (Illusions) TAMBIEN entra: FastPow.PowVarV hace el split de Dekker en runtime.
+        Return True
+    End Function
+
+    ''' <summary>Espejo de <c>BlendDispatch1</c> para los dos bop que <see cref="VecComposeSupported"/>
+    ''' habilita. El GIMP replica la rama <c>s &lt;= 0.5</c> con un select, calculando las dos.</summary>
+    ' ⛔ MinV/MaxV replican la semantica de MathF.Min/MathF.Max en sus DOS casos raros, y los dos costaron:
+    '   1. NaN: las dos devuelven NaN si CUALQUIERA de los operandos lo es. `Vector.Min/Max` no lo
+    '      garantiza igual en toda plataforma, y esto corre sobre datos de textura donde un NaN es posible.
+    '   2. CERO CON SIGNO: `Math.Max(+0, -0)` es +0 y `Math.Min(+0, -0)` es -0, PERO +0 y -0 comparan IGUAL,
+    '      asi que el select por `GreaterThan`/`LessThan` se queda con el operando equivocado (lo pesco el
+    '      self-test: MaxV(+0,-0) daba -0). Cuando los dos comparan iguales el bit de signo se resuelve con
+    '      AND para el max (0x00000000 gana) y OR para el min (0x80000000 gana); si son iguales y NO son
+    '      cero, AND/OR devuelven ese mismo valor, asi que el arreglo es inerte fuera del caso ±0.
+    ''' <summary>Min/Max expuestos para el espejo de HSV de <c>SseOverlayCompositor</c>. Se comparten en vez de
+    ''' re-implementarlos allá: son los que replican <c>MathF.Min/Max</c> con NaN Y con cero firmado, y dos
+    ''' copias de esa sutileza podrían divergir sin que nada lo note.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function MinVShared(a As Vector(Of Single), b As Vector(Of Single)) As Vector(Of Single)
+        Return MinV(a, b)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function MaxVShared(a As Vector(Of Single), b As Vector(Of Single)) As Vector(Of Single)
+        Return MaxV(a, b)
+    End Function
+
+    ' ⛔ EL NaN QUE SE DEVUELVE ES EL DE ENTRADA, NO UNO CANONICO. `Math.Max(x, y)` devuelve el operando que
+    ' ES NaN, con SU payload y SU signo (y si los dos lo son, el PRIMERO). Devolver `Single.NaN` fijo
+    ' (0xFFC00000) parecia inocuo —todo NaN termina en el byte 0— pero contradice la igualdad bit a bit que
+    ' este espejo promete, y el self-test no podia verlo porque usaba `Single.NaN` como unico NaN de entrada.
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function MinV(a As Vector(Of Single), b As Vector(Of Single)) As Vector(Of Single)
+        Dim eq = Vector.Equals(Of Single)(a, b)
+        Dim r = Vector.ConditionalSelect(eq, Vector.BitwiseOr(a, b),
+                                            Vector.ConditionalSelect(Vector.LessThan(a, b), a, b))
+        ' `b` NaN primero y `a` NaN despues: en una cadena de selects gana el ULTIMO, y en Math.Min/Max gana `a`.
+        r = Vector.ConditionalSelect(Vector.Equals(Of Single)(b, b), r, b)
+        Return Vector.ConditionalSelect(Vector.Equals(Of Single)(a, a), r, a)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function MaxV(a As Vector(Of Single), b As Vector(Of Single)) As Vector(Of Single)
+        Dim eq = Vector.Equals(Of Single)(a, b)
+        Dim r = Vector.ConditionalSelect(eq, Vector.BitwiseAnd(a, b),
+                                            Vector.ConditionalSelect(Vector.GreaterThan(a, b), a, b))
+        r = Vector.ConditionalSelect(Vector.Equals(Of Single)(b, b), r, b)
+        Return Vector.ConditionalSelect(Vector.Equals(Of Single)(a, a), r, a)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function OverlayV(d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Dim one = VBroadcast(1.0F), two = VBroadcast(2.0F)
+        Dim hiB = Vector.Subtract(one, Vector.Multiply(Vector.Multiply(two, Vector.Subtract(one, d)), Vector.Subtract(one, s)))
+        Dim loB = Vector.Multiply(Vector.Multiply(two, d), s)
+        Return Vector.ConditionalSelect(Vector.GreaterThanOrEqual(d, VBroadcast(0.5F)), hiB, loB)
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function ColorDodgeV(d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Dim one = VBroadcast(1.0F)
+        Return Vector.ConditionalSelect(Vector.GreaterThanOrEqual(s, one), one,
+                                           MinV(one, Vector.Divide(d, Vector.Subtract(one, s))))
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function ColorBurnV(d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Dim one = VBroadcast(1.0F), zero = Vector(Of Single).Zero
+        Return Vector.ConditionalSelect(Vector.LessThanOrEqual(s, zero), zero,
+                                           Vector.Subtract(one, MinV(one, Vector.Divide(Vector.Subtract(one, d), s))))
+    End Function
+
+    ''' <summary>Espejo de <c>BlendSoftLightModel</c>: modelos 0 (W3C), 1 (GIMP) y 3 (pegtop).
+    ''' <para>⭐ El modelo 2 (Illusions) SI ESTA: es <c>pow(d, pow(2, 2*(0.5-s)))</c>, o sea EXPONENTE VARIABLE
+    ''' por pixel, y durante un tiempo se dio por imposible porque FastPow era de exponente CONSTANTE. Lo
+    ''' resuelve <c>FastPow.PowVarV</c>, que hace el split de Dekker EN RUNTIME.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function SoftLightV(model As Integer, d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        d = Clamp01V(d) : s = Clamp01V(s)
+        Dim one = VBroadcast(1.0F), two = VBroadcast(2.0F), half = VBroadcast(0.5F)
+        Select Case model
+            Case 1 ' GIMP
+                Dim loB = Vector.Add(Vector.Multiply(Vector.Multiply(two, d), s),
+                                        Vector.Multiply(Vector.Multiply(d, d),
+                                                           Vector.Subtract(one, Vector.Multiply(two, s))))
+                Dim hiB = Vector.Add(Vector.Multiply(Vector.Multiply(two, d), Vector.Subtract(one, s)),
+                                        Vector.Multiply(Vector.SquareRoot(d),
+                                                           Vector.Subtract(Vector.Multiply(two, s), one)))
+                Return Vector.ConditionalSelect(Vector.LessThanOrEqual(s, half), loB, hiB)
+            Case 2 ' Illusions.hu: d^(2^(2(0.5-s))), con EXPONENTE VARIABLE por lane
+                ' El exponente interno queda en [0,5 , 2] y la base con piso 1e-6, igual que el escalar.
+                Dim yv = FastPow.Exp2V(Vector.Multiply(two, Vector.Subtract(half, s)))
+                Return FastPow.PowVarV(MaxV(d, VBroadcast(0.000001F)), yv)
+            Case 3 ' pegtop: (1-2s)*d*d + 2*s*d
+                Return Vector.Add(Vector.Multiply(Vector.Multiply(Vector.Subtract(one, Vector.Multiply(two, s)), d), d),
+                                     Vector.Multiply(Vector.Multiply(two, s), d))
+            Case Else ' 0 = W3C SVG
+                Dim poly = Vector.Multiply(Vector.Add(Vector.Multiply(Vector.Subtract(Vector.Multiply(VBroadcast(16.0F), d), VBroadcast(12.0F)), d), VBroadcast(4.0F)), d)
+                Dim g = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(d, VBroadcast(0.25F)), Vector.SquareRoot(d), poly)
+                Dim hiB = Vector.Add(d, Vector.Multiply(Vector.Subtract(Vector.Multiply(two, s), one), Vector.Subtract(g, d)))
+                Dim loB = Vector.Subtract(d, Vector.Multiply(Vector.Multiply(Vector.Subtract(one, Vector.Multiply(two, s)), d), Vector.Subtract(one, d)))
+                Return Vector.ConditionalSelect(Vector.GreaterThanOrEqual(s, half), hiB, loB)
+        End Select
+    End Function
+
+    ''' <summary>Espejo de <c>BlendDispatch1</c> para TODOS los modos SEPARABLES (0..19). Transcripcion 1:1:
+    ''' misma expresion, mismo orden, condiciones vueltas selects.
+    ''' <para>⛔ Los NO separables de skee —Grayscale(20) y ColorMode(21)— no estan y no pueden estar aca: piden
+    ''' los TRES canales del destino juntos (luminancia / HSV), o sea una reduccion ENTRE canales que un
+    ''' dispatch por canal no puede expresar. Los resuelve el escalar en sus propias ramas.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function BlendDispatchV(bop As Integer, sl As Integer,
+                                   d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Dim one = VBroadcast(1.0F), zero = Vector(Of Single).Zero, two = VBroadcast(2.0F)
+        Dim half = VBroadcast(0.5F)
+        Select Case bop
+            Case 1 : Return Vector.Multiply(d, s)                                        ' multiply
+            Case 2 : Return OverlayV(d, s)                                                  ' overlay
+            Case 3 : Return SoftLightV(sl, d, s)                                            ' softlight
+            Case 4 : Return OverlayV(s, d)                                                  ' hardlight
+            Case 5 : Return Vector.Subtract(Vector.Add(d, s), Vector.Multiply(d, s))  ' screen
+            Case 6 : Return MinV(d, s)                                                      ' darken
+            Case 7 : Return MaxV(d, s)                                                      ' lighten
+            Case 8 : Return ColorDodgeV(d, s)                                               ' colordodge
+            Case 9 : Return ColorBurnV(d, s)                                                ' colorburn
+            Case 10 : Return Vector.Abs(Vector.Subtract(d, s))                        ' difference
+            Case 11 : Return Vector.Subtract(Vector.Add(d, s), Vector.Multiply(Vector.Multiply(two, d), s)) ' exclusion
+            Case 12 : Return MinV(one, Vector.Add(d, s))                                 ' lineardodge
+            Case 13 : Return MaxV(zero, Vector.Subtract(Vector.Add(d, s), one))       ' linearburn
+            Case 14 : Return MaxV(zero, Vector.Subtract(d, s))                           ' subtract
+            Case 15 : Return Vector.ConditionalSelect(Vector.LessThanOrEqual(s, zero), one,
+                                                         MinV(one, Vector.Divide(d, s))) ' divide
+            Case 16 : Return Clamp01V(Vector.Subtract(Vector.Add(d, Vector.Multiply(two, s)), one)) ' linearlight
+            Case 17 : Return Vector.ConditionalSelect(Vector.LessThan(s, half),
+                                                         ColorBurnV(d, Vector.Multiply(two, s)),
+                                                         ColorDodgeV(d, Vector.Multiply(two, Vector.Subtract(s, half)))) ' vividlight
+            Case 18 : Return Vector.ConditionalSelect(Vector.LessThan(s, half),
+                                                         MinV(d, Vector.Multiply(two, s)),
+                                                         MaxV(d, Vector.Subtract(Vector.Multiply(two, s), one))) ' pinlight
+            Case 19 : Return Vector.ConditionalSelect(Vector.GreaterThanOrEqual(Vector.Add(d, s), one), one, zero) ' hardmix
+            Case Else : Return s                                                             ' replace (0, default)
+        End Select
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function BlendV(bop As Integer, sl As Integer, d As Vector(Of Single), s As Vector(Of Single)) As Vector(Of Single)
+        Return BlendDispatchV(bop, sl, d, s)
+    End Function
+
+    ''' <summary>Espejo de <see cref="ComposeOne"/> para framework OverPrev. Incluye la MISMA reutilizacion
+    ''' de <c>base_w</c> cuando <c>cs = ws</c> que hace el escalar: no es una optimizacion nueva, es copiar
+    ''' la que ya estaba (y que es bit-identica por ser la misma funcion pura con los mismos argumentos).</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function ComposeOneV(prev As Vector(Of Single), src As Vector(Of Single), cov As Vector(Of Single),
+                                 ws As Integer, cs As Integer, ss As Integer, asp As Integer,
+                                 bop As Integer, sl As Integer) As Vector(Of Single)
+        Dim srcW = CvtV(src, ss, ws)
+        Dim baseW = CvtV(prev, asp, ws)
+        Dim blended = BlendV(bop, sl, baseW, srcW)
+        Dim baseC = If(cs = ws, baseW, CvtV(prev, asp, cs))
+        Dim blendC = CvtV(blended, ws, cs)
+        Return CvtV(Clamp01V(Vector.Add(baseC, Vector.Multiply(cov, Vector.Subtract(blendC, baseC)))), cs, asp)
+    End Function
+
+    ''' <summary>Compone un canal del acumulador para un bloque de 8 pixeles consecutivos.
+    ''' <para>El acumulador de FO4 es SoA (<c>accR</c>/<c>accG</c>/<c>accB</c> separados), asi que estos 8
+    ''' pixeles son 8 floats CONTIGUOS: carga directa, sin gather y sin ninguna exigencia de alineacion —
+    ''' al reves que el AoS del fold de SSE. Por eso aca no hace falta prologo.</para>
+    ''' <para>⭐ Las lanes con <c>cov &lt;= 0</c> quedan INTACTAS: es el espejo exacto del skip escalar
+    ''' (<c>If cov &gt; 0 Then</c>) del loop de capas. Ver la nota del call site.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub ComposeBlockV(acc As Single(), at As Integer, src As Single(), cov As Vector(Of Single),
+                              ws As Integer, cs As Integer, ss As Integer, asp As Integer, bop As Integer, sl As Integer)
+        ' `cov` llega YA calculada (CovBlockV) porque es la MISMA para los tres canales: convertir el mask
+        ' una vez por bloque en vez de tres es exacto (funcion pura, mismos argumentos) y ahorra 2 pow.
+        ComposeBlockV(acc, at, VBroadcast(src, 0), cov, ws, cs, ss, asp, bop, sl)
+    End Sub
+
+    ''' <summary>Idem con el source YA en registro. Lo usa la Fase A vectorizada, que arma los 8 sources sin
+    ''' pasar por un buffer — que es justamente lo que el split Fase A/B costaba de mas (4 stores + 4 loads
+    ''' por pixel). La version de array de arriba delega acá: una sola ley, no dos.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub ComposeBlockV(acc As Single(), at As Integer, srcV As Vector(Of Single), cov As Vector(Of Single),
+                              ws As Integer, cs As Integer, ss As Integer, asp As Integer, bop As Integer, sl As Integer)
+        Dim prev = VBroadcast(acc, at)
+        Dim composed = ComposeOneV(prev, srcV, cov, ws, cs, ss, asp, bop, sl)
+        ' BLOQUE MIXTO: donde no hay cobertura queda el valor PREVIO, no el resultado de componer con cov=0
+        ' (que con asp <> cs NO es lo mismo: es un round-trip que degrada el acumulador). Mismo `keep` que
+        ' SseFaceTintComposer.ComposeLayer, sin el termino rgbMask porque aca el acumulador es SoA y no hay
+        ' alpha intercalado que proteger. El bloque ENTERAMENTE sin cobertura lo saltea el call site.
+        Vector.ConditionalSelect(Vector.GreaterThan(cov, Vector(Of Single).Zero), composed, prev).CopyTo(acc, at)
+    End Sub
+
+    ''' <summary>⭐ LA CADENA DE DECISIÓN DE LA FASE A, escalar, para UN píxel: elige el <c>src</c> y el
+    ''' <c>mask</c> según el kind de la capa y sus flags. Es la LEY, y la llaman TANTO el loop de capas COMO su
+    ''' espejo vectorial <see cref="LayerSrcMaskBlockV"/> a través del self-test.
+    ''' <para>⛔ Existe extraída, y no inline en el loop, por una razón concreta: la Fase A vectorizada era el
+    ''' código nuevo más grande del trabajo y NO tenía oráculo — el self-test del compose sólo ejercitaba la
+    ''' Fase B. Con la ley en UNA función, el test compara el vector contra lo que produccion realmente corre,
+    ''' en vez de contra una re-implementación que puede coincidir con el bug.</para>
+    ''' <para>⚠️ NO cubre el camino de hair-palette (<c>SampleLutEngine</c>): ése es un fetch indexado por el
+    ''' valor del píxel, o sea un gather, y el gate <c>fastA</c> lo excluye. El caller lo resuelve antes.</para>
+    ''' <param name="dmA">Alpha de la máscara diffuse YA muestreado (sólo se lee con
+    ''' <paramref name="hasDiffMask"/>); el sampleo queda afuera porque puede ser bilineal.</param></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Sub LayerSrcMaskPixel(lr As Single, lg As Single, lb As Single, la As Single, dmA As Single,
+                                 isPalette As Boolean, isD As Boolean, forceUniform As Boolean,
+                                 texTimesColor As Boolean, hasDiffMask As Boolean,
+                                 uColR As Single, uColG As Single, uColB As Single,
+                                 ByRef srcR As Single, ByRef srcG As Single, ByRef srcB As Single,
+                                 ByRef maskV As Single)
+        If isPalette Then
+            srcR = uColR : srcG = uColG : srcB = uColB
+            maskV = lg
+        Else
+            If forceUniform Then
+                srcR = uColR : srcG = uColG : srcB = uColB
+            ElseIf texTimesColor Then
+                srcR = lr * uColR : srcG = lg * uColG : srcB = lb * uColB   ' skee type-0: tex × tint
+            Else
+                srcR = lr : srcG = lg : srcB = lb
+            End If
+            If isD Then
+                maskV = la
+            ElseIf hasDiffMask Then
+                maskV = dmA
+            Else
+                maskV = Math.Max(lr, Math.Max(lg, lb))
+            End If
+        End If
+    End Sub
+
+    ''' <summary>Espejo vectorial EXACTO de <see cref="LayerSrcMaskPixel"/> para un bloque. Mismas ramas, mismo
+    ''' orden. <c>MaxV</c> y no <c>Vector.Max</c>: replica <c>Math.Max</c> con NaN y con cero firmado.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub LayerSrcMaskBlockV(lrV As Vector(Of Single), lgV As Vector(Of Single), lbV As Vector(Of Single),
+                                   laV As Vector(Of Single), dmAV As Vector(Of Single),
+                                   isPalette As Boolean, isD As Boolean, forceUniform As Boolean,
+                                   texTimesColor As Boolean, hasDiffMask As Boolean,
+                                   colRV As Vector(Of Single), colGV As Vector(Of Single), colBV As Vector(Of Single),
+                                   ByRef sRV As Vector(Of Single), ByRef sGV As Vector(Of Single),
+                                   ByRef sBV As Vector(Of Single), ByRef mV As Vector(Of Single))
+        If isPalette Then
+            sRV = colRV : sGV = colGV : sBV = colBV
+            mV = lgV
+        Else
+            If forceUniform Then
+                sRV = colRV : sGV = colGV : sBV = colBV
+            ElseIf texTimesColor Then
+                sRV = Vector.Multiply(lrV, colRV) : sGV = Vector.Multiply(lgV, colGV) : sBV = Vector.Multiply(lbV, colBV)
+            Else
+                sRV = lrV : sGV = lgV : sBV = lbV
+            End If
+            If isD Then
+                mV = laV
+            ElseIf hasDiffMask Then
+                mV = dmAV
+            Else
+                mV = MaxV(lrV, MaxV(lgV, lbV))
+            End If
+        End If
+    End Sub
+
+    ''' <summary>Compose de un bloque para el loop de REGION SWAPS. Es <see cref="ComposeBlockV"/> SIN el
+    ''' select por <c>cov &gt; 0</c>.
+    ''' <para>⛔ La diferencia NO es un descuido: el loop escalar de los swaps no tiene el
+    ''' <c>If cov &gt; 0</c> que sí tiene el de capas, y el GLSL tampoco lo tiene en su rama <c>uMode==1</c>.
+    ''' Meterlo sólo acá haría que el vectorial difiera de su propio escalar Y del GPU. Si algún día se decide
+    ''' saltear también en los swaps, va en los TRES lados a la vez.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub ComposeSwapBlockV(acc As Single(), at As Integer, srcV As Vector(Of Single), cov As Vector(Of Single),
+                                  ws As Integer, cs As Integer, ss As Integer, asp As Integer, bop As Integer, sl As Integer)
+        ComposeOneV(VBroadcast(acc, at), srcV, cov, ws, cs, ss, asp, bop, sl).CopyTo(acc, at)
+    End Sub
+
+    ''' <summary>⭐ DE-INTERLEAVE AoS→SoA de 8 pixeles RGBA8 CONTIGUOS (32 bytes) a 4 vectores en unidad [0,1].
+    ''' Es lo que desbloquea la Fase A del loop de capas.
+    ''' <para><b>Sin gather y sin shuffle.</b> Los 32 bytes se leen como 8 <c>UInt32</c> — un pixel por lane, o
+    ''' sea que a nivel de PIXEL el layout ya es SoA — y cada canal sale con un shift y un and. La alternativa
+    ''' obvia (shuffle de bytes cross-lane) no existe barata en la API cross-platform; esta no la necesita, y
+    ''' por eso la Fase A se puede vectorizar sin romper el contrato de UNA sola ley.</para>
+    ''' <para>⛔ La conversion a unidad es <c>ConvertToSingle(b) / 255f</c> y tiene que ser una DIVISION:
+    ''' multiplicar por <c>1/255f</c> redondea distinto. Que eso valga EXACTAMENTE lo mismo que el LUT escalar
+    ''' <c>ByteToUnit(b) = CSng(b/255.0)</c> (que divide en DOUBLE) no se asume — lo enumera sobre los 256
+    ''' bytes <see cref="VectorPathsSelfTest"/>.</para>
+    ''' <para>⚠️ Lee los 4 bytes de un pixel como un UInt32 little-endian (R en los bits bajos). Es lo que son
+    ''' x64 y ARM64; no hay plataforma big-endian en el target.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Sub LoadRgba8BlockV(px As Byte(), pb As Integer,
+                                ByRef r As Vector(Of Single), ByRef g As Vector(Of Single),
+                                ByRef b As Vector(Of Single), ByRef a As Vector(Of Single))
+        Dim u = Vector.As(Of Byte, UInteger)(New Vector(Of Byte)(px, pb))
+        Dim ff = VBroadcast(255UI)
+        r = ByteLanesToUnitV(Vector.BitwiseAnd(u, ff))
+        g = ByteLanesToUnitV(Vector.BitwiseAnd(Vector.ShiftRightLogical(u, 8), ff))
+        b = ByteLanesToUnitV(Vector.BitwiseAnd(Vector.ShiftRightLogical(u, 16), ff))
+        a = ByteLanesToUnitV(Vector.ShiftRightLogical(u, 24))          ' el shift solo ya deja 0..255
+    End Sub
+
+    ''' <summary>Sólo el canal ALPHA de 8 pixeles RGBA8 contiguos (= la máscara diffuse de un TextureSet en
+    ''' N/S). Mismo de-interleave que <see cref="LoadRgba8BlockV"/>, sin calcular los otros tres.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function LoadAlpha8BlockV(px As Byte(), pb As Integer) As Vector(Of Single)
+        Return ByteLanesToUnitV(Vector.ShiftRightLogical(Vector.As(Of Byte, UInteger)(New Vector(Of Byte)(px, pb)), 24))
+    End Function
+
+    ''' <summary>8 lanes con un valor 0..255 en cada una → unidad [0,1]. Espejo vectorial del LUT
+    ''' <see cref="ByteToUnit"/>.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function ByteLanesToUnitV(v As Vector(Of UInteger)) As Vector(Of Single)
+        Return Vector.Divide(Vector.ConvertToSingle(Vector.As(Of UInteger, Integer)(v)), VBroadcast(255.0F))
+    End Function
+
+    ''' <summary>Espejo vectorial de <see cref="ToByte"/> para 8 elementos contiguos. Devuelve los valores YA
+    ''' redondeados y acotados a [0,255] como Single: el <c>CByte</c> final lo hace el caller (es un store).
+    ''' <para>Replica el orden EXACTO del escalar: NaN→0 primero, después Clamp01, después ×255, después
+    ''' round-half-to-even, y recién ahí el clamp a [0,255]. El redondeo usa la constante mágica en vez de un
+    ''' intrínseco; tras el Clamp01 el argumento vive en [0,255], muy dentro del rango donde el truco es
+    ''' exacto (|s| &lt; 2²²).</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function ToByteBlockV(a As Single(), at As Integer) As Vector(Of Single)
+        Dim c = VBroadcast(a, at)
+        c = Vector.ConditionalSelect(Vector.Equals(Of Single)(c, c), c, Vector(Of Single).Zero)   ' NaN -> 0
+        c = Vector.Multiply(Clamp01V(c), VBroadcast(255.0F))
+        Dim mg = VBroadcast(12582912.0F)
+        Dim v = Vector.Subtract(Vector.Add(c, mg), mg)
+        v = Vector.ConditionalSelect(Vector.LessThan(v, Vector(Of Single).Zero), Vector(Of Single).Zero, v)
+        Return Vector.ConditionalSelect(Vector.GreaterThan(v, VBroadcast(255.0F)), VBroadcast(255.0F), v)
+    End Function
+
+    ''' <summary>Convierte EN SITIO un buffer CONTIGUO (SoA: un canal por array, como accR/accG/accB de FO4)
+    ''' de <paramref name="fromS"/> a <paramref name="toS"/>. Paralelo + vectorial con cola escalar; con
+    ''' <c>fromS = toS</c> es un no-op exacto (lo cortocircuita <see cref="Cvt1"/>).
+    ''' <para>⚠️ Con la config por DEFECTO este camino ni corre (accSp == outSp). Se vectoriza igual porque los
+    ''' espacios son CONFIGURABLES desde CharGen Options: el día que alguien los separe, esto es un pow por
+    ''' elemento y por canal a resolución nativa.</para></summary>
+    Public Sub ConvertSpaceSoaInPlace(buf As Single(), n As Integer, fromS As Integer, toS As Integer)
+        If buf Is Nothing OrElse fromS = toS Then Return
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, n),
+            Sub(range)
+                Dim i = range.Item1
+                If FastPow.AcceleratedV Then
+                    While i + lanes <= range.Item2
+                        CvtV(VBroadcast(buf, i), fromS, toS).CopyTo(buf, i)
+                        i += lanes
+                    End While
+                End If
+                While i < range.Item2
+                    buf(i) = Cvt1(buf(i), fromS, toS)
+                    i += 1
+                End While
+            End Sub)
+    End Sub
+
+    ''' <summary>Idem pero sobre un buffer INTERCALADO (AoS RGBA, como el acumulador de SSE): convierte R/G/B y
+    ''' deja el ALPHA intacto. Mismo prólogo/cuerpo/cola que el fold, y por el mismo motivo: el vector sólo
+    ''' engancha alineado a 8 o el patrón de canal queda corrido.</summary>
+    Public Sub ConvertSpaceRgbAosInPlace(buf As Single(), npix As Integer, fromS As Integer, toS As Integer)
+        If buf Is Nothing OrElse fromS = toS Then Return
+        Dim rgbMask = RgbAosMaskV
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, npix),
+            Sub(range)
+                Dim lo = range.Item1 * 4, hi = range.Item2 * 4
+                Dim i = lo
+                If FastPow.AcceleratedV Then
+                    While (i And (lanes - 1)) <> 0 AndAlso i < hi
+                        If (i And 3) <> 3 Then buf(i) = Cvt1(buf(i), fromS, toS)
+                        i += 1
+                    End While
+                    While i + lanes <= hi
+                        Dim v = VBroadcast(buf, i)
+                        Vector.ConditionalSelect(rgbMask, CvtV(v, fromS, toS), v).CopyTo(buf, i)
+                        i += lanes
+                    End While
+                End If
+                While i < hi
+                    If (i And 3) <> 3 Then buf(i) = Cvt1(buf(i), fromS, toS)
+                    i += 1
+                End While
+            End Sub)
+    End Sub
+
+    ''' <summary>⭐ SELF-TEST DE PARIDAD del espejo vectorial contra el escalar. Devuelve "" si TODO coincide
+    ''' bit a bit; si no, la primera divergencia con sus datos.
+    ''' <para><b>Para qué está.</b> El camino escalar sigue siendo la LEY y el oráculo: todo lo que
+    ''' <see cref="VecComposeSupported"/> no cubre cae ahí. Este test es lo que permite AMPLIAR el espejo
+    ''' vectorial después (más blend ops, más frameworks, Fase A vectorizada, 16 lanes) sin que una
+    ''' divergencia se escape a una cara: se agrega el caso acá y el test lo contrasta contra el escalar.</para>
+    ''' <para>Barre el dominio real MÁS los bordes que rompen (0, 1, fuera de [0,1], NaN), y prueba largos
+    ''' que NO son múltiplo de 8 para ejercitar la cola del bloque — que es donde estuvo el bug clásico.</para>
+    ''' <para>⛔ No lo borres "porque el bake ya anda": es el único punto donde la paridad se comprueba sin
+    ''' hornear un corpus entero.</para></summary>
+    Public Function ComposeVectorSelfTest() As String
+        If Not FastPow.AcceleratedV Then Return ""      ' sin AVX2 el espejo ni se usa
+        ' Convenciones REALES: la ley de FO4 (con AccumInCompositeSpace en sus dos valores) y la de SSE.
+        ' {ss, ws, cs, os, asp, bop}
+        Dim cases = New Integer()() {
+            New Integer() {2, 2, 0, 2, 2, 3},   ' FO4 PaletteMask, softlight, acc en G22
+            New Integer() {2, 2, 0, 2, 0, 3},   ' FO4 PaletteMask, softlight, acc en Linear
+            New Integer() {1, 2, 0, 2, 2, 3},   ' FO4 TextureSet (src sRGB), softlight
+            New Integer() {1, 0, 0, 2, 2, 0},   ' FO4 TextureSet, replace
+            New Integer() {2, 0, 0, 2, 2, 0},   ' FO4 PaletteMask, replace
+            New Integer() {0, 0, 0, 0, 0, 0},   ' SSE: todo linear, replace
+            New Integer() {3, 2, 0, 2, 2, 3},   ' G24 de src, por cubrir el cuarto espacio
+            New Integer() {2, 2, 1, 2, 2, 3}}   ' composite en sRGB (no es la ley, pero el espejo debe darlo)
+        ' Largos deliberadamente NO multiplos de 8: el ultimo bloque queda corto y tiene que irse por la cola.
+        Dim lens = New Integer() {1, 7, 8, 9, 15, 16, 17, 63, 1000, 1024, 1031}
+        Dim seed As UInteger = 2463534242UI          ' xorshift: reproducible, sin Random ni tiempo
+
+        For Each c In cases
+            Dim ss = c(0), ws = c(1), cs = c(2), os = c(3), asp = c(4)
+            ' ⭐ Barrido de TODOS los blend ops separables (0..19) x los modelos de softlight con espejo
+            ' (0=W3C, 1=GIMP, 3=pegtop). El 2 (Illusions) TAMBIEN entra (PowVarV, split de Dekker en runtime).
+            For Each bop In New Integer() {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
+            For Each slm In New Integer() {0, 1, 2, 3}
+            If Not VecComposeSupported(0, bop, slm) Then Continue For
+            If bop <> 3 AndAlso slm <> 1 Then Continue For     ' el modelo solo importa en softlight
+            ' Se barren TODOS los mask conv (0..6), no solo el default: el mask se convierte vectorizado y
+            ' cada `mc` es una rama distinta de ConvMaskV.
+            For Each mc In New Integer() {0, 1, 2, 3, 4, 5, 6}
+            For Each nn In lens
+                Dim prev(nn - 1) As Single, src(nn - 1) As Single, mask(nn - 1) As Single
+                Dim opv As Single = 0.75F
+                For i = 0 To nn - 1
+                    prev(i) = NextUnit(seed, i) : src(i) = NextUnit(seed, i + 7) : mask(i) = NextUnit(seed, i + 13)
+                Next
+                ' bordes: 0, 1, fuera de rango y NaN, que es donde Clamp01/Min-Max se comportan distinto
+                ' ⛔ 8, NO `lanes`: este guard NO es del ancho del vector sino de cuántos ÍNDICES escribe
+                ' el bloque de bordes de abajo (0..7). Cambiarlo por `lanes` reventaba con 4 lanes: el
+                ' guard pasaba con nn=4 y el cuerpo escribía prev(7). Lo pescó correr el test a 128 bits.
+                If nn >= 8 Then
+                    prev(0) = 0.0F : src(0) = 0.0F : mask(0) = 0.0F
+                    prev(1) = 1.0F : src(1) = 1.0F : mask(1) = 1.0F
+                    prev(2) = -0.5F : src(2) = 1.5F : mask(2) = 1.5F
+                    prev(3) = Single.NaN : src(3) = 0.5F : mask(3) = 0.5F
+                    prev(4) = 0.5F : src(4) = Single.NaN : mask(4) = 0.5F
+                    prev(5) = 0.5F : src(5) = 0.5F : mask(5) = Single.NaN
+                    prev(6) = 0.5F : src(6) = 0.5F : mask(6) = -0.25F
+                    ' ⭐ COBERTURA CERO con un `prev` que NO es punto fijo del round-trip. Es EL caso que
+                    ' distingue "saltear" de "componer con cov=0": con asp <> cs (los casos de arriba con
+                    ' asp=2, cs=0) componer daria Cvt1(Clamp01(Cvt1(0.37, asp, cs)), cs, asp) <> 0,37, asi que
+                    ' un camino vectorial que NO saltee falla aca. mask=0 da cov=0 en los SIETE mask conv
+                    ' (todos mandan 0 -> 0). Los indices 0..2 tambien tienen mask=0 o negativo, pero su prev
+                    ' es 0 o 1 (puntos fijos) y no distinguirian nada.
+                    prev(7) = 0.37F : src(7) = 0.83F : mask(7) = 0.0F
+                End If
+
+                ' --- escalar (la ley) ---
+                Dim expct(nn - 1) As Single
+                For i = 0 To nn - 1
+                    Dim cv = Clamp01(ConvMask1(mask(i), mc) * opv)
+                    ' El oraculo lleva el MISMO skip de cov<=0 que el loop de capas — porque el skip ES la ley
+                    ' ahora, en los tres caminos (escalar, vectorial y GLSL). NaN entra por aca: `> 0` es False
+                    ' con NaN, asi que un cov NaN saltea, y `Vector.GreaterThan` hace exactamente lo mismo.
+                    expct(i) = If(cv > 0.0F, ComposeOne(prev(i), src(i), cv, ws, cs, ss, os, bop, slm, 0.0F, 0, accSpace:=asp), prev(i))
+                Next
+                ' --- vectorial, con el MISMO bloqueo de 8 + cola que usa el loop de capas ---
+                Dim got(nn - 1) As Single
+                Array.Copy(prev, got, nn)
+                Dim blk(lanes - 1) As Single, bm(lanes - 1) As Single
+                Dim at = 0, k = 0
+                For i = 0 To nn - 1
+                    blk(k) = src(i) : bm(k) = mask(i) : k += 1
+                    If k = lanes Then
+                        ' Se replica el early-out de bloque del loop real, no sólo ComposeBlockV: así el test
+                        ' cubre las DOS ramas (bloque entero sin cobertura y bloque mixto).
+                        Dim covV = CovBlockV(bm, mc, opv)
+                        If Not Vector.LessThanOrEqualAll(covV, Vector(Of Single).Zero) Then
+                            ComposeBlockV(got, at, blk, covV, ws, cs, ss, asp, bop, slm)
+                        End If
+                        at = i + 1 : k = 0
+                    End If
+                Next
+                For j = 0 To k - 1
+                    Dim cv = Clamp01(ConvMask1(bm(j), mc) * opv)
+                    ' misma negacion exacta que la cola del loop real (ver alli): con NaN hay que SALTEAR
+                    If Not (cv > 0.0F) Then Continue For
+                    got(at + j) = ComposeOne(got(at + j), blk(j), cv, ws, cs, ss, os, bop, slm, 0.0F, 0, accSpace:=asp)
+                Next
+
+                For i = 0 To nn - 1
+                    ' ⭐ IGUALDAD BIT A BIT, con UNA excepcion acotada: dos NaN cuentan como iguales aunque
+                    ' difieran en el PAYLOAD (visto: escalar 0xFFC00000 vs vector 0x7FC00000, o sea solo el
+                    ' bit de signo). No es una diferencia numerica ni algo que se pueda arreglar desde VB:
+                    ' IEEE-754 NO especifica que payload sobrevive a `a + b` con los dos operandos NaN, y el
+                    ' JIT puede conmutar los operandos de un Add VECTORIAL (la suma es conmutativa salvo
+                    ' justamente en el payload). Es INOCUO para el contrato de este trabajo —"los mismos BYTES
+                    ' en toda PC"— porque el byte-pack manda TODO NaN al mismo byte 0, sin mirar el signo
+                    ' (ToByte / ToByteBlockV, cubierto por VectorPathsSelfTest). Y en produccion no hay NaN:
+                    ' el acumulador se siembra de un LUT de bytes y toda escritura sale clampeada.
+                    ' ⛔ Fuera de este caso la comparacion sigue siendo EXACTA: un valor normal que difiera en
+                    ' 1 ULP tiene que seguir fallando.
+                    If Single.IsNaN(got(i)) AndAlso Single.IsNaN(expct(i)) Then Continue For
+                    If BitConverter.SingleToInt32Bits(got(i)) <> BitConverter.SingleToInt32Bits(expct(i)) Then
+                        ' Los BITS van en el mensaje: con NaN de por medio "scalar=NaN vector=NaN" no dice
+                        ' nada — la diferencia esta en el payload y sin verlo no se puede diagnosticar.
+                        Return $"ComposeVectorSelfTest MISMATCH: ss={ss} ws={ws} cs={cs} os={os} asp={asp} bop={bop} " &
+                               $"mc={mc} sl={slm} len={nn} i={i} prev={prev(i)} src={src(i)} mask={mask(i)} scalar={expct(i)} vector={got(i)} " &
+                               $"[bits scalar=0x{BitConverter.SingleToInt32Bits(expct(i)):X8} vector=0x{BitConverter.SingleToInt32Bits(got(i)):X8} " &
+                               $"prev=0x{BitConverter.SingleToInt32Bits(prev(i)):X8} src=0x{BitConverter.SingleToInt32Bits(src(i)):X8}]"
+                    End If
+                Next
+            Next
+            Next
+            Next
+            Next
+        Next
+        Return ""
+    End Function
+
+    ''' <summary>Self-test de los OTROS caminos vectorizados de este modulo: la conversion de espacio (SoA y
+    ''' AoS) y el empaquetado a byte. Devuelve "" si todo coincide bit a bit con el escalar.
+    ''' <para>Los largos incluyen no-multiplos de 8 y los buffers AoS arrancan en offsets que obligan al
+    ''' prologo; los valores incluyen NaN y fuera de rango.</para></summary>
+    Public Function VectorPathsSelfTest() As String
+        If Not FastPow.AcceleratedV Then Return ""
+        Dim seed As UInteger = 987654321UI
+        Dim spaces = New Integer() {0, 1, 2, 3}
+
+        ' ---- conversion de espacio, layout SoA (contiguo) ----
+        For Each fs In spaces
+            For Each ts In spaces
+                For Each nn In New Integer() {1, 7, 8, 9, 17, 1000, 1031}
+                    Dim a(nn - 1) As Single, b(nn - 1) As Single
+                    For i = 0 To nn - 1
+                        a(i) = NextUnit(seed, i)
+                    Next
+                    If nn >= 6 Then
+                        a(0) = 0.0F : a(1) = 1.0F : a(2) = -0.5F : a(3) = 1.5F : a(4) = Single.NaN : a(5) = 0.5F
+                    End If
+                    Array.Copy(a, b, nn)
+                    ConvertSpaceSoaInPlace(a, nn, fs, ts)
+                    For i = 0 To nn - 1
+                        Dim want = Cvt1(b(i), fs, ts)
+                        If BitConverter.SingleToInt32Bits(a(i)) <> BitConverter.SingleToInt32Bits(want) Then
+                            Return $"ConvertSpaceSoaInPlace MISMATCH: from={fs} to={ts} len={nn} i={i} in={b(i)} scalar={want} vector={a(i)}"
+                        End If
+                    Next
+                Next
+            Next
+        Next
+
+        ' ---- conversion de espacio, layout AoS (RGB, alpha intacto) ----
+        For Each fs In spaces
+            For Each ts In spaces
+                For Each np In New Integer() {1, 2, 3, 5, 9, 257}
+                    Dim a(np * 4 - 1) As Single, b(np * 4 - 1) As Single
+                    For i = 0 To np * 4 - 1
+                        a(i) = NextUnit(seed, i)
+                    Next
+                    Array.Copy(a, b, np * 4)
+                    ConvertSpaceRgbAosInPlace(a, np, fs, ts)
+                    For i = 0 To np * 4 - 1
+                        Dim want = If((i And 3) = 3, b(i), Cvt1(b(i), fs, ts))
+                        If BitConverter.SingleToInt32Bits(a(i)) <> BitConverter.SingleToInt32Bits(want) Then
+                            Return $"ConvertSpaceRgbAosInPlace MISMATCH: from={fs} to={ts} npix={np} i={i} in={b(i)} scalar={want} vector={a(i)}"
+                        End If
+                    Next
+                Next
+            Next
+        Next
+
+        ' ---- empaquetado a byte: ToByteBlockV vs ToByte ----
+        Dim probe(15) As Single
+        probe(0) = 0.0F : probe(1) = 1.0F : probe(2) = -0.5F : probe(3) = 1.5F
+        probe(4) = Single.NaN : probe(5) = Single.PositiveInfinity : probe(6) = Single.NegativeInfinity
+        probe(7) = 0.5F / 255.0F : probe(8) = 1.5F / 255.0F : probe(9) = 2.5F / 255.0F
+        probe(10) = 0.0019607844F : probe(11) = 0.99999994F : probe(12) = 1.0F / 510.0F
+        probe(13) = 254.5F / 255.0F : probe(14) = 3.0F / 510.0F : probe(15) = 0.4980392F
+        For blk = 0 To probe.Length \ lanes - 1
+            Dim v = ToByteBlockV(probe, blk * lanes)
+            For j = 0 To lanes - 1
+                Dim want As Integer = ToByte(probe(blk * lanes + j))
+                Dim got As Integer = CByte(v.GetElement(j))
+                If got <> want Then
+                    Return $"ToByteBlockV MISMATCH: v={probe(blk * lanes + j)} scalar={want} vector={got}"
+                End If
+            Next
+        Next
+        ' barrido denso sobre el dominio real, para pescar los bordes de redondeo
+        Dim buf(lanes - 1) As Single
+        For k = 0 To 200000
+            For j = 0 To lanes - 1
+                buf(j) = CSng(((k * lanes + j) Mod 65536) / 65535.0)
+            Next
+            Dim v2 = ToByteBlockV(buf, 0)
+            For j = 0 To lanes - 1
+                If CByte(v2.GetElement(j)) <> ToByte(buf(j)) Then
+                    Return $"ToByteBlockV MISMATCH (barrido): v={buf(j)} scalar={ToByte(buf(j))} vector={CByte(v2.GetElement(j))}"
+                End If
+            Next
+        Next
+
+        ' ---- ⭐ byte→unidad de la FASE A vectorizada: LoadRgba8BlockV / LoadAlpha8BlockV vs el LUT ByteToUnit.
+        ' Es EXHAUSTIVO por construccion: el buffer recorre los 256 valores posibles en CADA uno de los cuatro
+        ' canales. Es el eslabon que hay que probar, no suponer: el vector DIVIDE en Single
+        ' (ConvertToSingle(b)/255f) y el LUT divide en DOUBLE (CSng(b/255.0)). Que coincidan en 256/256 es lo
+        ' que permite que la Fase A no necesite gather ni una LUT vectorial.
+        Dim npx As Integer = 256
+        Dim pxbuf(npx * 4 - 1) As Byte
+        For i = 0 To npx - 1
+            pxbuf(i * 4) = CByte(i)                          ' R barre 0..255
+            pxbuf(i * 4 + 1) = CByte(255 - i)                ' G barre 255..0
+            pxbuf(i * 4 + 2) = CByte((i * 7) Mod 256)        ' B  \ ordenes distintos: ningun canal
+            pxbuf(i * 4 + 3) = CByte((i * 13) Mod 256)       ' A  / repite la posicion de otro
+        Next
+        Dim lutRef = ByteToUnit
+        For blkI = 0 To npx \ lanes - 1
+            Dim baseIdx = blkI * lanes
+            Dim rV, gV, bV, aV As Vector(Of Single)
+            LoadRgba8BlockV(pxbuf, baseIdx * 4, rV, gV, bV, aV)
+            Dim aOnly = LoadAlpha8BlockV(pxbuf, baseIdx * 4)
+            For j = 0 To lanes - 1
+                Dim p = (baseIdx + j) * 4
+                Dim wants = New Single() {lutRef(pxbuf(p)), lutRef(pxbuf(p + 1)), lutRef(pxbuf(p + 2)), lutRef(pxbuf(p + 3))}
+                Dim gots = New Single() {rV.GetElement(j), gV.GetElement(j), bV.GetElement(j), aV.GetElement(j)}
+                For ch = 0 To 3
+                    If BitConverter.SingleToInt32Bits(gots(ch)) <> BitConverter.SingleToInt32Bits(wants(ch)) Then
+                        Return $"LoadRgba8BlockV MISMATCH: byte={pxbuf(p + ch)} ch={ch} lane={j} lut={wants(ch)} vector={gots(ch)}"
+                    End If
+                Next
+                If BitConverter.SingleToInt32Bits(aOnly.GetElement(j)) <> BitConverter.SingleToInt32Bits(wants(3)) Then
+                    Return $"LoadAlpha8BlockV MISMATCH: byte={pxbuf(p + 3)} lane={j} lut={wants(3)} vector={aOnly.GetElement(j)}"
+                End If
+            Next
+        Next
+
+        ' ---- MinV/MaxV vs Math.Min/Math.Max, sobre la tabla COMPLETA de pares raros: NaN, infinitos y los DOS
+        ' ceros firmados. El ±0 no es teorico — asi se pesco que MaxV(+0,-0) daba -0 donde Math.Max da +0.
+        ' MaxV lo usa la Fase A para el mask `max(r, max(g, b))` de un TextureSet N/S sin mascara diffuse, y
+        ' los dos los usa BlendDispatchV en darken/lighten/dodge/burn/divide/linear*.
+        Dim mx = New Single() {0.0F, -0.0F, 1.0F, 0.5F, -0.5F, Single.NaN, Single.PositiveInfinity, Single.NegativeInfinity}
+        For ia = 0 To mx.Length - 1
+            Dim av = VBroadcast(mx(ia))
+            For ib = 0 To mx.Length - 1
+                Dim bv = VBroadcast(mx(ib))
+                Dim gotMax = MaxV(av, bv).GetElement(0), wantMax = Math.Max(mx(ia), mx(ib))
+                If BitConverter.SingleToInt32Bits(gotMax) <> BitConverter.SingleToInt32Bits(wantMax) Then
+                    Return $"MaxV MISMATCH: a={mx(ia)} b={mx(ib)} scalar=0x{BitConverter.SingleToInt32Bits(wantMax):X8} vector=0x{BitConverter.SingleToInt32Bits(gotMax):X8}"
+                End If
+                Dim gotMin = MinV(av, bv).GetElement(0), wantMin = Math.Min(mx(ia), mx(ib))
+                If BitConverter.SingleToInt32Bits(gotMin) <> BitConverter.SingleToInt32Bits(wantMin) Then
+                    Return $"MinV MISMATCH: a={mx(ia)} b={mx(ib)} scalar=0x{BitConverter.SingleToInt32Bits(wantMin):X8} vector=0x{BitConverter.SingleToInt32Bits(gotMin):X8}"
+                End If
+            Next
+        Next
+        Return ""
+    End Function
+
+    ' =================================================================================================
+    ' PACK RGBA float -> BGRA byte CON REDONDEO EN DOUBLE. Es el byte-pack del camino 4K de SSE (el fold
+    ' del diffuse y el _msn), cuya ley es `FaceGenBuilder.ClampByte255`.
+    '
+    ' ⛔⛔ NO ES <see cref="ToByte"/> NI <see cref="ToByteBlockV"/>, Y NO SON INTERCAMBIABLES. Aquel redondea
+    ' en SINGLE (MathF.Round(s*255f)); este ensancha el Single a Double y redondea en DOUBLE
+    ' (Math.Round(CDbl(s)*255.0)). Cerca de los bordes .5 los dos redondeos pueden dar bytes DISTINTOS, asi
+    ' que reusar el otro helper "porque ya esta vectorizado" cambiaria la salida. Por eso este va en
+    ' Vector(Of Double): 4 lanes, no 8.
+    ' =================================================================================================
+
+    ''' <summary>Ley ESCALAR del pack (= <c>FaceGenBuilder.ClampByte255(v * 255.0)</c>). Es el oraculo y la
+    ''' cola del vectorial. ⚠️ Con NaN <c>CByte</c> TIRA OverflowException, y tiene que seguir haciendolo: un
+    ''' NaN en el acumulador es una anomalia real y degradarla a un 0 la esconderia.</summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function ToByteRoundDouble(v As Single) As Byte
+        Return CByte(Math.Max(0.0, Math.Min(255.0, Math.Round(CDbl(v) * 255.0))))
+    End Function
+
+    ''' <summary>4 componentes (un pixel RGBA) en unidad → los mismos valores ×255, redondeados half-to-even y
+    ''' acotados a [0,255], todavia como Double. Espejo de <see cref="ToByteRoundDouble"/> sin el CByte final.
+    ''' <para>El redondeo va por CONSTANTE MAGICA (1,5·2⁵²), no por intrinseco, igual que el resto de FastPow:
+    ''' es round-half-to-even exacto con sola suma y resta, y no depende de que la plataforma tenga roundsd.
+    ''' Arriba de 2⁵² el argumento ya ES entero y el truco no aplica ⇒ se selecciona el valor sin tocar (y de
+    ''' todos modos ese rango termina clampeado a 255).</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Private Function RoundClamp255V(v As Vector(Of Double)) As Vector(Of Double)
+        Dim x = Vector.Multiply(v, VBroadcast(255.0))
+        Dim mg = VBroadcast(6755399441055744.0)                       ' 1,5 · 2^52
+        Dim r = Vector.Subtract(Vector.Add(x, mg), mg)
+        r = Vector.ConditionalSelect(
+                Vector.GreaterThanOrEqual(Vector.Abs(x), VBroadcast(4503599627370496.0)), x, r)   ' 2^52
+        r = Vector.ConditionalSelect(Vector.GreaterThan(r, VBroadcast(255.0)), VBroadcast(255.0), r)
+        Return Vector.ConditionalSelect(Vector.LessThan(r, Vector(Of Double).Zero), Vector(Of Double).Zero, r)
+    End Function
+
+    ''' <summary>Empaqueta un acumulador RGBA float en unidad [0,1] a BGRA byte, en paralelo y vectorizado.
+    ''' Es el pack del camino 4K de SSE: corre a resolucion NATIVA (16,7 M pixeles a 4096²) una vez por fold
+    ''' y otra por <c>_msn</c>.
+    ''' <para>Se procesa un bloque de <c>FastPow.LaneCount</c> COMPONENTES (no de píxeles): se ensancha a dos
+    ''' <c>Vector(Of Double)</c> con <c>Vector.Widen</c>, se hace la cuenta cara vectorizada, y el swizzle
+    ''' RGBA→BGRA queda escalar sobre el bloque.</para>
+    ''' <para>⛔ NO se puede asumir "un píxel por vector": con 8 lanes de Single un <c>Vector(Of Double)</c>
+    ''' tiene 4 elementos y SÍ es un píxel, pero con 4 lanes tiene 2 y el píxel queda partido al medio. Por eso
+    ''' el bloque se cuenta en componentes (LaneCount es múltiplo de 4 ⇒ cubre píxeles enteros) y el store va
+    ''' por índice, no por lane.</para>
+    ''' <para>⛔ NaN ⇒ se sale del camino vectorial y el resto del rango lo hace el ESCALAR, que tira
+    ''' OverflowException igual que antes. El vector NO lo "arregla" devolviendo 0.</para></summary>
+    Public Sub PackUnitRgbaToBgraRoundDouble(acc As Single(), bgra As Byte(), npix As Integer)
+        Dim lanes = FastPow.LaneCount
+        Dim pixPerBlock = lanes \ 4                       ' LaneCount siempre es multiplo de 4 (4, 8, 16)
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, npix),
+            Sub(range)
+                Dim i = range.Item1
+                If FastPow.AcceleratedV AndAlso pixPerBlock >= 1 Then
+                    Dim tmp(lanes - 1) As Double
+                    While i + pixPerBlock <= range.Item2
+                        Dim v = VBroadcast(acc, i * 4)
+                        If Not Vector.EqualsAll(v, v) Then Exit While    ' hay NaN -> que lo tire el escalar
+                        Dim dlo As Vector(Of Double), dhi As Vector(Of Double)
+                        Vector.Widen(v, dlo, dhi)
+                        RoundClamp255V(dlo).CopyTo(tmp, 0)
+                        RoundClamp255V(dhi).CopyTo(tmp, lanes \ 2)
+                        For p = 0 To pixPerBlock - 1
+                            Dim o = (i + p) * 4, s = p * 4
+                            bgra(o) = CByte(tmp(s + 2))       ' B
+                            bgra(o + 1) = CByte(tmp(s + 1))   ' G
+                            bgra(o + 2) = CByte(tmp(s))       ' R
+                            bgra(o + 3) = CByte(tmp(s + 3))   ' A
+                        Next
+                        i += pixPerBlock
+                    End While
+                End If
+                While i < range.Item2
+                    bgra(i * 4) = ToByteRoundDouble(acc(i * 4 + 2))      ' B
+                    bgra(i * 4 + 1) = ToByteRoundDouble(acc(i * 4 + 1))  ' G
+                    bgra(i * 4 + 2) = ToByteRoundDouble(acc(i * 4))      ' R
+                    bgra(i * 4 + 3) = ToByteRoundDouble(acc(i * 4 + 3))  ' A
+                    i += 1
+                End While
+            End Sub)
+    End Sub
+
+    ''' <summary>Self-test del pack en Double: vectorial vs la ley escalar, bit a bit sobre el byte.
+    ''' <para>Barre los bordes de redondeo (los .5 exactos, donde half-to-even decide), fuera de rango, los
+    ''' infinitos, y largos que NO son multiplo de 2 para ejercitar la cola. NaN NO se barre acá a proposito:
+    ''' el contrato es que EXPLOTE, y eso se verifica aparte.</para></summary>
+    Public Function PackRoundDoubleSelfTest() As String
+        Dim vals As New List(Of Single)
+        ' los N+0,5/255 exactos son EL caso: ahi half-to-even elige, y un redondeo distinto cambia el byte
+        For k = 0 To 255
+            vals.Add(CSng(k / 255.0))
+            vals.Add(CSng((k + 0.5) / 255.0))
+            vals.Add(CSng((k + 0.4999) / 255.0))
+            vals.Add(CSng((k + 0.5001) / 255.0))
+        Next
+        vals.AddRange(New Single() {0.0F, -0.0F, 1.0F, -0.5F, 1.5F, 1000.0F, -1000.0F,
+                                    Single.PositiveInfinity, Single.NegativeInfinity, Single.Epsilon})
+        For Each npix In New Integer() {1, 2, 3, 5, 8, 9, 1031}
+            Dim acc(npix * 4 - 1) As Single
+            Dim got(npix * 4 - 1) As Byte, want(npix * 4 - 1) As Byte
+            Dim vi As Integer = 0
+            For pass = 0 To vals.Count \ Math.Max(1, npix * 4)
+                For j = 0 To npix * 4 - 1
+                    acc(j) = vals((vi + j) Mod vals.Count)
+                Next
+                vi += npix * 4
+                PackUnitRgbaToBgraRoundDouble(acc, got, npix)
+                For i = 0 To npix - 1
+                    want(i * 4) = ToByteRoundDouble(acc(i * 4 + 2))
+                    want(i * 4 + 1) = ToByteRoundDouble(acc(i * 4 + 1))
+                    want(i * 4 + 2) = ToByteRoundDouble(acc(i * 4))
+                    want(i * 4 + 3) = ToByteRoundDouble(acc(i * 4 + 3))
+                Next
+                For j = 0 To npix * 4 - 1
+                    If got(j) <> want(j) Then
+                        Return $"PackUnitRgbaToBgraRoundDouble MISMATCH: npix={npix} j={j} in={acc((j \ 4) * 4 + (2 - (j Mod 4) + If((j Mod 4) = 3, 6, 0)))} scalar={want(j)} vector={got(j)}"
+                    End If
+                Next
+            Next
+        Next
+        ' ⛔ El contrato del NaN: TIENE que tirar OverflowException, no devolver 0.
+        Dim nanAcc(7) As Single
+        nanAcc(2) = Single.NaN
+        Dim nanOut(7) As Byte
+        Try
+            PackUnitRgbaToBgraRoundDouble(nanAcc, nanOut, 2)
+            Return "PackUnitRgbaToBgraRoundDouble: un NaN NO tiro OverflowException (el vector se lo trago)"
+        Catch ex As Exception
+            ' Parallel.ForEach envuelve en AggregateException; lo que importa es que NO pase en silencio.
+            If TypeOf ex IsNot OverflowException AndAlso
+               Not (TypeOf ex Is AggregateException AndAlso
+                    DirectCast(ex, AggregateException).InnerExceptions.Any(Function(e) TypeOf e Is OverflowException)) Then
+                Return $"PackUnitRgbaToBgraRoundDouble: con NaN tiro {ex.GetType().Name}, se esperaba OverflowException"
+            End If
+        End Try
+        Return ""
+    End Function
+
+    ''' <summary>xorshift32 -> [0,1). Determinista y sin dependencias: el self-test tiene que dar lo mismo
+    ''' en cada corrida y en cada maquina, o deja de ser un gate.</summary>
+    Private Function NextUnit(ByRef s As UInteger, salt As Integer) As Single
+        s = s Xor (s << 13) : s = s Xor (s >> 17) : s = s Xor (s << 5)
+        Return CSng((s Xor CUInt(salt And &H7FFFFFFF)) Mod 1000000UI) / 1000000.0F
+    End Function
+
     ''' <summary>Sample de un canal del DecodedTex en el índice de píxel del acumulador (w,h). Si el tex
     ''' es del MISMO tamaño, índice directo; si difiere, bilineal por UV (resolución por canal / LUT).</summary>
     Private Function SampleChannelAt(t As DecodedTex, accIdx As Integer, accW As Integer, accH As Integer, ch As Integer) As Single
@@ -1271,6 +2410,220 @@ Public Module FaceTintCpuCompositor
         If v < 0.0F Then v = 0.0F
         If v > 255.0F Then v = 255.0F
         Return CByte(v)
+    End Function
+
+    ''' <summary>⭐ SELF-TEST de los DOS caminos que se vectorizaron último y no tenían oráculo: el SEED y el
+    ''' loop de REGION SWAPS de <see cref="ComposeChannelCpu"/>. Devuelve "" si coinciden BIT A BIT.
+    '''
+    ''' <para><b>Por qué hacen falta aparte.</b> <c>ComposeVectorSelfTest</c> sólo ejercita la Fase B del loop
+    ''' de capas (<see cref="ComposeBlockV"/>). El seed y los swaps son loops distintos, con su propia carga de
+    ''' bytes y su propia regla de cobertura — y el de swaps es justo el que A PROPÓSITO no lleva el skip de
+    ''' <c>cov &lt;= 0</c>, o sea el más fácil de romper copiando el de capas.</para>
+    '''
+    ''' <para>SEED: reproduce <c>LoadRgba8BlockV</c> + <c>CvtV(...)</c> contra <c>ByteToUnit</c> + <c>Cvt1</c>,
+    ''' sobre los 256 bytes y las 16 combinaciones de espacio. Es el camino que dejó de ser gratis al alinear
+    ''' el config (con <c>accSp ≠ outSp</c> es un pow por píxel y por canal).</para>
+    ''' <para>SWAPS: <see cref="ComposeSwapBlockV"/> contra <see cref="ComposeOne"/> SIN skip, con máscaras que
+    ''' incluyen cobertura CERO — que es donde este camino tiene que componer igual y no saltear.</para></summary>
+    Public Function SeedAndSwapVectorSelfTest() As String
+        If Not FastPow.AcceleratedV Then Return ""
+        Dim lut = ByteToUnit
+
+        ' ---------------- SEED ----------------
+        ' Buffer con los 256 valores en cada canal, en órdenes distintos para que ningún canal repita
+        ' la posición de otro.
+        Dim npx = 256
+        Dim px(npx * 4 - 1) As Byte
+        For i = 0 To npx - 1
+            px(i * 4) = CByte(i)
+            px(i * 4 + 1) = CByte(255 - i)
+            px(i * 4 + 2) = CByte((i * 7) Mod 256)
+            px(i * 4 + 3) = CByte((i * 13) Mod 256)
+        Next
+        For Each fromSp In New Integer() {0, 1, 2, 3}
+            For Each accSp In New Integer() {0, 1, 2, 3}
+                For blkI = 0 To npx \ lanes - 1
+                    Dim at = blkI * lanes
+                    Dim rV, gV, bV, aV As Vector(Of Single)
+                    LoadRgba8BlockV(px, at * 4, rV, gV, bV, aV)
+                    Dim cr = CvtV(rV, fromSp, accSp), cg = CvtV(gV, fromSp, accSp), cb = CvtV(bV, fromSp, accSp)
+                    For j = 0 To lanes - 1
+                        Dim p = (at + j) * 4
+                        Dim wantR = Cvt1(lut(px(p)), fromSp, accSp)
+                        Dim wantG = Cvt1(lut(px(p + 1)), fromSp, accSp)
+                        Dim wantB = Cvt1(lut(px(p + 2)), fromSp, accSp)
+                        ' el ALPHA es RAW: no pasa por conversión de espacio (igual que el escalar)
+                        Dim wantA = lut(px(p + 3))
+                        If BitConverter.SingleToInt32Bits(cr(j)) <> BitConverter.SingleToInt32Bits(wantR) OrElse
+                           BitConverter.SingleToInt32Bits(cg(j)) <> BitConverter.SingleToInt32Bits(wantG) OrElse
+                           BitConverter.SingleToInt32Bits(cb(j)) <> BitConverter.SingleToInt32Bits(wantB) OrElse
+                           BitConverter.SingleToInt32Bits(aV(j)) <> BitConverter.SingleToInt32Bits(wantA) Then
+                            Return $"SEED vector MISMATCH: from={fromSp} acc={accSp} px={at + j} " &
+                                   $"bytes=({px(p)},{px(p + 1)},{px(p + 2)},{px(p + 3)})"
+                        End If
+                    Next
+                Next
+            Next
+        Next
+
+        ' ---------------- REGION SWAPS ----------------
+        ' {ss, ws, cs, asp, bop} — las convenciones reales del swap más un par que fuerzan asp <> cs.
+        Dim cases = New Integer()() {
+            New Integer() {0, 0, 0, 0, 0},
+            New Integer() {2, 2, 0, 2, 0},
+            New Integer() {2, 2, 0, 0, 0},
+            New Integer() {1, 2, 0, 2, 3},
+            New Integer() {2, 0, 0, 2, 0}}
+        Dim seed As UInteger = 99887766UI
+        For Each c In cases
+            Dim ss = c(0), ws = c(1), cs = c(2), asp = c(3), bop = c(4)
+            For Each sl In New Integer() {0, 1, 3}
+                If bop <> 3 AndAlso sl <> 1 Then Continue For
+                If Not VecComposeSupported(0, bop, sl) Then Continue For
+                For Each mc In New Integer() {0, 1, 3}
+                    ' ⛔ Largos que NO son multiplos de `lanes`: con solo multiplos exactos `iv` llega
+                    ' siempre a `nn` y el remanente escalar del loop real no se compara NUNCA.
+                    For Each nn In New Integer() {lanes, lanes + 1, lanes * 3 - 1, lanes * 7 + 3}
+                        Dim accV(nn - 1) As Single, accS(nn - 1) As Single
+                        Dim swPx(nn * 4 - 1) As Byte, mkPx(nn * 4 - 1) As Byte
+                        For i = 0 To nn - 1
+                            accV(i) = NextUnit(seed, i) : accS(i) = accV(i)
+                        Next
+                        For i = 0 To nn * 4 - 1
+                            swPx(i) = CByte((CInt(NextUnit(seed, i) * 255.0F)) And &HFF)
+                            mkPx(i) = CByte((CInt(NextUnit(seed, i + 5) * 255.0F)) And &HFF)
+                        Next
+                        ' ⭐ cobertura CERO en varios píxeles: el swap NO saltea, tiene que componer igual
+                        For i = 0 To nn - 1 Step 3
+                            mkPx(i * 4) = 0
+                        Next
+                        Dim msdv As Single = 0.65F
+
+                        ' vectorial, en bloques como el loop real
+                        Dim iv = 0
+                        While iv + lanes <= nn
+                            Dim srV, sgV, sbV, saV As Vector(Of Single)
+                            LoadRgba8BlockV(swPx, iv * 4, srV, sgV, sbV, saV)
+                            Dim mkR, mkG, mkB, mkA As Vector(Of Single)
+                            LoadRgba8BlockV(mkPx, iv * 4, mkR, mkG, mkB, mkA)
+                            Dim covV = Clamp01V(Vector.Multiply(ConvMaskV(mkR, mc), VBroadcast(msdv)))
+                            ComposeSwapBlockV(accV, iv, srV, covV, ws, cs, ss, asp, bop, sl)
+                            iv += lanes
+                        End While
+
+                        ' escalar (la ley), sobre los mismos píxeles
+                        For i = 0 To iv - 1
+                            Dim sr = ByteToUnit(swPx(i * 4))
+                            Dim mask = ByteToUnit(mkPx(i * 4))
+                            Dim cov = Clamp01(ConvMask1(mask, mc) * msdv)
+                            accS(i) = CSng(ComposeOne(accS(i), sr, cov, ws, cs, ss, 0, bop, sl, accSpace:=asp))
+                        Next
+
+                        For i = 0 To iv - 1
+                            If BitConverter.SingleToInt32Bits(accV(i)) <> BitConverter.SingleToInt32Bits(accS(i)) Then
+                                Return $"SWAP vector MISMATCH: ss={ss} ws={ws} cs={cs} asp={asp} bop={bop} sl={sl} " &
+                                       $"mc={mc} n={nn} i={i} escalar=0x{BitConverter.SingleToInt32Bits(accS(i)):X8} " &
+                                       $"vector=0x{BitConverter.SingleToInt32Bits(accV(i)):X8}"
+                            End If
+                        Next
+                    Next
+                Next
+            Next
+        Next
+        Return ""
+    End Function
+
+    ''' <summary>⭐ SELF-TEST DE LA FASE A del loop de capas de FO4: <see cref="LayerSrcMaskBlockV"/> contra
+    ''' <see cref="LayerSrcMaskPixel"/>, que es la función que el loop ESCALAR realmente llama. Devuelve "" si
+    ''' coinciden BIT A BIT.
+    '''
+    ''' <para><b>Por qué existe.</b> La Fase A era el código nuevo más grande de toda la vectorización y el
+    ''' único camino sin oráculo: <c>ComposeVectorSelfTest</c> arma los bloques a mano y sólo ejercita la Fase
+    ''' B, y <c>SeedAndSwapVectorSelfTest</c> cubre otros dos loops. Que la lógica "coincida" por lectura no es
+    ''' un gate.</para>
+    ''' <para>⛔ Compara contra la función de PRODUCCIÓN, no contra una re-implementación de la cadena: una
+    ''' copia en el test podría heredar el mismo error y dar verde.</para>
+    ''' <para>Barre las <b>32 combinaciones</b> de los 5 flags (isPalette × isD × forceUniform × texTimesColor
+    ''' × hasDiffMask) — incluidas las que en producción no se dan juntas, porque el gate <c>fastA</c> puede
+    ''' cambiar. Y alimenta la carga de bytes REAL (<see cref="LoadRgba8BlockV"/>) con los 256 valores, más NaN
+    ''' y ±0 en el canal del <c>dmA</c>, que es donde <c>MaxV</c> se comporta distinto de un Min/Max ingenuo.</para></summary>
+    Public Function PhaseAVectorSelfTest() As String
+        If Not FastPow.AcceleratedV Then Return ""
+        Dim lut = ByteToUnit
+        Dim npx = 256
+        Dim px(npx * 4 - 1) As Byte, dm(npx * 4 - 1) As Byte
+        For i = 0 To npx - 1
+            px(i * 4) = CByte(i)
+            px(i * 4 + 1) = CByte(255 - i)
+            px(i * 4 + 2) = CByte((i * 7) Mod 256)
+            px(i * 4 + 3) = CByte((i * 13) Mod 256)
+            dm(i * 4 + 3) = CByte((i * 31) Mod 256)
+        Next
+        Dim uColR As Single = 0.3F, uColG As Single = 0.62F, uColB As Single = 0.87F
+        Dim colRV = VBroadcast(uColR), colGV = VBroadcast(uColG), colBV = VBroadcast(uColB)
+
+        For flags = 0 To 31
+            Dim isPalette = (flags And 1) <> 0
+            Dim isD = (flags And 2) <> 0
+            Dim forceUniform = (flags And 4) <> 0
+            Dim texTimesColor = (flags And 8) <> 0
+            Dim hasDiffMask = (flags And 16) <> 0
+
+            For blkI = 0 To npx \ lanes - 1
+                Dim at = blkI * lanes
+                Dim lrV, lgV, lbV, laV As Vector(Of Single)
+                LoadRgba8BlockV(px, at * 4, lrV, lgV, lbV, laV)
+                Dim dmAV = If(hasDiffMask, LoadAlpha8BlockV(dm, at * 4), Vector(Of Single).Zero)
+                Dim sRV, sGV, sBV, mV As Vector(Of Single)
+                LayerSrcMaskBlockV(lrV, lgV, lbV, laV, dmAV, isPalette, isD, forceUniform, texTimesColor,
+                                   hasDiffMask, colRV, colGV, colBV, sRV, sGV, sBV, mV)
+
+                For j = 0 To lanes - 1
+                    Dim p = (at + j) * 4
+                    Dim lr = lut(px(p)), lg = lut(px(p + 1)), lb = lut(px(p + 2)), la = lut(px(p + 3))
+                    Dim dmA = If(hasDiffMask, lut(dm(p + 3)), 0.0F)
+                    Dim wR As Single, wG As Single, wB As Single, wM As Single
+                    LayerSrcMaskPixel(lr, lg, lb, la, dmA, isPalette, isD, forceUniform, texTimesColor,
+                                      hasDiffMask, uColR, uColG, uColB, wR, wG, wB, wM)
+                    If BitConverter.SingleToInt32Bits(sRV(j)) <> BitConverter.SingleToInt32Bits(wR) OrElse
+                       BitConverter.SingleToInt32Bits(sGV(j)) <> BitConverter.SingleToInt32Bits(wG) OrElse
+                       BitConverter.SingleToInt32Bits(sBV(j)) <> BitConverter.SingleToInt32Bits(wB) OrElse
+                       BitConverter.SingleToInt32Bits(mV(j)) <> BitConverter.SingleToInt32Bits(wM) Then
+                        Return $"FASE A vector MISMATCH: pal={isPalette} isD={isD} uni={forceUniform} " &
+                               $"txc={texTimesColor} dm={hasDiffMask} px={at + j} " &
+                               $"escalar=({wR},{wG},{wB} | {wM}) vector=({sRV(j)},{sGV(j)},{sBV(j)} | {mV(j)})"
+                    End If
+                Next
+            Next
+        Next
+
+        ' ---- bordes que el barrido de bytes NO puede producir: NaN y cero firmado en el max(r,g,b) ----
+        ' Es la rama donde MaxV tiene que replicar Math.Max exactamente (NaN de ENTRADA, +0 sobre -0).
+        Dim edges As Single() = {0.0F, -0.0F, Single.NaN, 1.0F, -1.0F, 0.5F,
+                                 Single.PositiveInfinity, Single.NegativeInfinity}
+        Dim er(lanes - 1) As Single, eg(lanes - 1) As Single, eb(lanes - 1) As Single, ea(lanes - 1) As Single
+        For a = 0 To edges.Length - 1
+            For b = 0 To edges.Length - 1
+                For c = 0 To edges.Length - 1
+                    For j = 0 To lanes - 1
+                        er(j) = edges(a) : eg(j) = edges(b) : eb(j) = edges(c) : ea(j) = edges((a + b) Mod edges.Length)
+                    Next
+                    Dim sRV, sGV, sBV, mV As Vector(Of Single)
+                    ' isPalette=False, isD=False, hasDiffMask=False => la rama del max(r, max(g, b))
+                    LayerSrcMaskBlockV(VBroadcast(er, 0), VBroadcast(eg, 0), VBroadcast(eb, 0), VBroadcast(ea, 0),
+                                       Vector(Of Single).Zero, False, False, False, False, False,
+                                       colRV, colGV, colBV, sRV, sGV, sBV, mV)
+                    Dim wR As Single, wG As Single, wB As Single, wM As Single
+                    LayerSrcMaskPixel(edges(a), edges(b), edges(c), edges((a + b) Mod edges.Length), 0.0F,
+                                      False, False, False, False, False, uColR, uColG, uColB, wR, wG, wB, wM)
+                    If BitConverter.SingleToInt32Bits(mV(0)) <> BitConverter.SingleToInt32Bits(wM) Then
+                        Return $"FASE A mask MISMATCH en bordes: r={edges(a)} g={edges(b)} b={edges(c)} " &
+                               $"escalar=0x{BitConverter.SingleToInt32Bits(wM):X8} vector=0x{BitConverter.SingleToInt32Bits(mV(0)):X8}"
+                    End If
+                Next
+            Next
+        Next
+        Return ""
     End Function
 
 End Module
