@@ -219,11 +219,14 @@ Public Class SkinningHelper
         If shapeGeom.HasNormals Then
             Dim srcNormals = shapeGeom.GetNormals()
             rawNormals = New Vector3d(rawVerts.Length - 1) {}
-            Parallel.For(0, rawVerts.Length, Sub(i)
-                                                 Dim v As New Vector3d(srcNormals(i).X, srcNormals(i).Y, srcNormals(i).Z)
-                                                 Dim l = v.Length
-                                                 rawNormals(i) = If(l > 0.000001, v / l, Vector3d.Zero)
-                                             End Sub)
+            Parallel.ForEach(Partitioner.Create(0, rawVerts.Length),
+                Sub(rango As Tuple(Of Integer, Integer))
+                    For i = rango.Item1 To rango.Item2 - 1
+                                                     Dim v As New Vector3d(srcNormals(i).X, srcNormals(i).Y, srcNormals(i).Z)
+                                                     Dim l = v.Length
+                                                     rawNormals(i) = If(l > 0.000001, v / l, Vector3d.Zero)
+                    Next
+                End Sub)
         Else
             rawNormals = New Vector3d(rawVerts.Length - 1) {}
         End If
@@ -233,16 +236,19 @@ Public Class SkinningHelper
             Dim srcBit = shapeGeom.GetBitangents()
             rawTangents = New Vector3d(rawVerts.Length - 1) {}
             rawBitangs = New Vector3d(rawVerts.Length - 1) {}
-            Parallel.For(0, rawVerts.Length, Sub(i)
-                                                 Dim t = srcTan(i)
-                                                 Dim b = srcBit(i)
-                                                 Dim tv As New Vector3d(t.X, t.Y, t.Z)
-                                                 Dim bv As New Vector3d(b.X, b.Y, b.Z)
-                                                 Dim tl = tv.Length
-                                                 Dim bl = bv.Length
-                                                 rawTangents(i) = If(tl > 0.000001, tv / tl, Vector3d.Zero)
-                                                 rawBitangs(i) = If(bl > 0.000001, bv / bl, Vector3d.Zero)
-                                             End Sub)
+            Parallel.ForEach(Partitioner.Create(0, rawVerts.Length),
+                Sub(rango As Tuple(Of Integer, Integer))
+                    For i = rango.Item1 To rango.Item2 - 1
+                                                     Dim t = srcTan(i)
+                                                     Dim b = srcBit(i)
+                                                     Dim tv As New Vector3d(t.X, t.Y, t.Z)
+                                                     Dim bv As New Vector3d(b.X, b.Y, b.Z)
+                                                     Dim tl = tv.Length
+                                                     Dim bl = bv.Length
+                                                     rawTangents(i) = If(tl > 0.000001, tv / tl, Vector3d.Zero)
+                                                     rawBitangs(i) = If(bl > 0.000001, bv / bl, Vector3d.Zero)
+                    Next
+                End Sub)
         Else
             rawTangents = Enumerable.Repeat(New Vector3d(0.0F, 0.0F, 0.0F), rawVerts.Length).ToArray()
             rawBitangs = Enumerable.Repeat(New Vector3d(0.0F, 0.0F, 0.0F), rawVerts.Length).ToArray()
@@ -498,9 +504,12 @@ Public Class SkinningHelper
         Dim vtxColors As Vector4()
         If shapeGeom.HasVertexColors Then
             vtxColors = New Vector4(vertexCount - 1) {}
-            Parallel.For(0, vertexCount, Sub(i)
-                                             vtxColors(i) = New Vector4(vertexColorsList(i).R, vertexColorsList(i).G, vertexColorsList(i).B, vertexColorsList(i).A)
-                                         End Sub)
+            Parallel.ForEach(Partitioner.Create(0, vertexCount),
+                Sub(rango As Tuple(Of Integer, Integer))
+                    For i = rango.Item1 To rango.Item2 - 1
+                                                 vtxColors(i) = New Vector4(vertexColorsList(i).R, vertexColorsList(i).G, vertexColorsList(i).B, vertexColorsList(i).A)
+                    Next
+                End Sub)
         Else
             vtxColors = New Vector4(vertexCount - 1) {}
             Array.Fill(vtxColors, New Vector4(1.0F, 1.0F, 1.0F, 1.0F))
@@ -601,6 +610,54 @@ Public Class SkinningHelper
     ''' to identity (no-op outcome, callers paid the parallel-loop cost). Callers that want
     ''' "bake skipped when no pose" must check upstream and avoid invoking this method.
     ''' </summary>
+    ''' <summary>
+    ''' Tupla (indices de hueso, pesos) de un vertice. Es la ENTRADA completa del calculo de las
+    ''' matrices de skin: dos vertices con la misma firma dan exactamente las mismas matrices.
+    ''' Se comparan los bits crudos de los pesos (no hay tolerancia) justo para que un acierto
+    ''' devuelva el mismo resultado que el calculo, hasta el ultimo bit.
+    ''' Cubre hasta 4 influencias, que es el maximo del formato.
+    ''' </summary>
+    Private Structure SkinFirma
+        Implements IEquatable(Of SkinFirma)
+        Public i0, i1, i2, i3 As Integer
+        Public w0, w1, w2, w3 As Single
+
+        Public Shared Function Desde(idx() As Byte, wgt() As System.Half, baseIdx As Integer, wpv As Integer) As SkinFirma
+            Dim f As New SkinFirma
+            Dim n = Math.Min(wpv, Math.Min(idx.Length - baseIdx, wgt.Length - baseIdx))
+            ' Los pesos son Half: se guardan como Single porque la conversion es exacta y hace la
+            ' comparacion trivial. No hay tolerancia — se compara bit a bit.
+            If n > 0 Then f.i0 = idx(baseIdx) : f.w0 = CSng(wgt(baseIdx))
+            If n > 1 Then f.i1 = idx(baseIdx + 1) : f.w1 = CSng(wgt(baseIdx + 1))
+            If n > 2 Then f.i2 = idx(baseIdx + 2) : f.w2 = CSng(wgt(baseIdx + 2))
+            If n > 3 Then f.i3 = idx(baseIdx + 3) : f.w3 = CSng(wgt(baseIdx + 3))
+            Return f
+        End Function
+
+        Public Overloads Function Equals(o As SkinFirma) As Boolean Implements IEquatable(Of SkinFirma).Equals
+            Return i0 = o.i0 AndAlso i1 = o.i1 AndAlso i2 = o.i2 AndAlso i3 = o.i3 AndAlso
+                   w0.Equals(o.w0) AndAlso w1.Equals(o.w1) AndAlso w2.Equals(o.w2) AndAlso w3.Equals(o.w3)
+        End Function
+
+        Public Overrides Function Equals(o As Object) As Boolean
+            Return TypeOf o Is SkinFirma AndAlso Equals(DirectCast(o, SkinFirma))
+        End Function
+
+        Public Overrides Function GetHashCode() As Integer
+            Return HashCode.Combine(i0, i1, i2, i3, w0, w1, w2, w3)
+        End Function
+    End Structure
+
+    ''' <summary>Lo que se memoiza por firma: la matriz del vertice y su inversa-transpuesta.</summary>
+    Private Structure MatricesDeVertice
+        Public ReadOnly Total As Matrix4d
+        Public ReadOnly Normales As Matrix4d
+        Public Sub New(total_ As Matrix4d, normales_ As Matrix4d)
+            Total = total_
+            Normales = normales_
+        End Sub
+    End Structure
+
     Public Shared Sub BakeFromMemoryUsingOriginal(Shape As IRenderableShape, ByRef geom As SkinnedGeometry, inverse As Boolean, ApplyMorph As Boolean, RemoveZaps As Boolean, singleBoneSkinning As Boolean,
                                                    Optional geometryModifier As IGeometryModifier = Nothing)
         ' 2) Matrices calculadas en ExtractSkinnedGeometry
@@ -648,72 +705,105 @@ Public Class SkinningHelper
         ' matsBind.Length>0 sigue como guard secundario para acceso a arrays de matrices.
         Select Case True
             Case Shape.IsSkinned AndAlso Not singleBoneSkinning AndAlso matsBind.Length > 0
-                ' Multibone — vertices in shape-local; transform per-vertex con blend lineal
-                Parallel.For(0, worldV.Length, Sub(i)
-                                                   Dim MposeBlend As Matrix4d = Matrix4d.Zero
-                                                   Dim MbindBlend As Matrix4d = Matrix4d.Zero
-                                                   Dim sumW As Double = 0
+                ' ⭐ MEMOIZACION POR FIRMA DE SKIN. Las dos matrices que se derivan del vertice
+                ' (totalSkinMat y su inversa-transpuesta) dependen SOLO de la tupla
+                ' (indices de hueso, pesos). Miles de vertices comparten esa tupla — todo lo rigido
+                ' pegado a un solo hueso con peso 1, que en un cuerpo es la mayor parte — y para cada
+                ' uno se pagaba un Matrix4d.Invert MAS un Create_Normal_Matrix (otra inversa 3x3 y una
+                ' transpuesta). La clave es EXACTA (los mismos bits de indices y pesos), asi que un
+                ' acierto devuelve exactamente las matrices que se habrian calculado: byte-identico.
+                Dim memo As New Concurrent.ConcurrentDictionary(Of SkinFirma, MatricesDeVertice)()
+                Parallel.ForEach(Partitioner.Create(0, worldV.Length),
+                    Sub(rango As Tuple(Of Integer, Integer))
+                        For i = rango.Item1 To rango.Item2 - 1
+                                                       Dim MposeBlend As Matrix4d = Matrix4d.Zero
+                                                       Dim MbindBlend As Matrix4d = Matrix4d.Zero
+                                                       Dim sumW As Double = 0
 
-                                                   If hasSkin Then
-                                                       Dim baseIdx = i * skinWpv
-                                                       Dim cnt = Math.Min(skinWpv, Math.Min(skinFlatWgt.Length - baseIdx, skinFlatIdx.Length - baseIdx)) - 1
-                                                       ' Normalizacion de pesos del MOTOR — se aplica a las DOS mezclas (pose y bind),
-                                                       ' que es lo que hace el CK: los dos SkinBlend de ApplyCustomizationRemap corren la
-                                                       ' misma ley. Gate apagado (default) ⇒ rama normalizada de siempre, bit-idéntica.
-                                                       Dim ckWv(EngineSkinWeightNormalization.Slots - 1) As Single
-                                                       If EngineSkinWeightNormalization.TryComputeWeights(skinFlatWgt, baseIdx, skinWpv, ckWv) Then
-                                                           For j = 0 To EngineSkinWeightNormalization.Slots - 1
-                                                               If ckWv(j) > 0.0F Then
-                                                                   Dim idxc = skinFlatIdx(baseIdx + j)
-                                                                   If idxc >= 0 AndAlso idxc < matsBind.Length Then
-                                                                       MposeBlend += matsPose(idxc) * CDbl(ckWv(j))
-                                                                       MbindBlend += matsBind(idxc) * CDbl(ckWv(j))
+                                                       ' Camino rapido: si esta tupla (indices, pesos) ya se
+                                                       ' resolvio, se reusan sus matrices tal cual.
+                                                       Dim firma As SkinFirma = Nothing
+                                                       Dim memoOk As Boolean = False
+                                                       If hasSkin Then
+                                                           firma = SkinFirma.Desde(skinFlatIdx, skinFlatWgt, i * skinWpv, skinWpv)
+                                                           Dim listo As MatricesDeVertice = Nothing
+                                                           If memo.TryGetValue(firma, listo) Then
+                                                               worldV(i) = Vector3d.TransformPosition(worldV(i), listo.Total)
+                                                               worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), listo.Normales))
+                                                               worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), listo.Total))
+                                                               worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), listo.Total))
+                                                               Return
+                                                           End If
+                                                           memoOk = True
+                                                       End If
+
+                                                       If hasSkin Then
+                                                           Dim baseIdx = i * skinWpv
+                                                           Dim cnt = Math.Min(skinWpv, Math.Min(skinFlatWgt.Length - baseIdx, skinFlatIdx.Length - baseIdx)) - 1
+                                                           ' Normalizacion de pesos del MOTOR — se aplica a las DOS mezclas (pose y bind),
+                                                           ' que es lo que hace el CK: los dos SkinBlend de ApplyCustomizationRemap corren la
+                                                           ' misma ley. Gate apagado (default) ⇒ rama normalizada de siempre, bit-idéntica.
+                                                           Dim ckWv(EngineSkinWeightNormalization.Slots - 1) As Single
+                                                           If EngineSkinWeightNormalization.TryComputeWeights(skinFlatWgt, baseIdx, skinWpv, ckWv) Then
+                                                               For j = 0 To EngineSkinWeightNormalization.Slots - 1
+                                                                   If ckWv(j) > 0.0F Then
+                                                                       Dim idxc = skinFlatIdx(baseIdx + j)
+                                                                       If idxc >= 0 AndAlso idxc < matsBind.Length Then
+                                                                           MposeBlend += matsPose(idxc) * CDbl(ckWv(j))
+                                                                           MbindBlend += matsBind(idxc) * CDbl(ckWv(j))
+                                                                       End If
                                                                    End If
-                                                               End If
-                                                           Next
-                                                       Else
-                                                       For j = 0 To cnt
-                                                           sumW += CType(skinFlatWgt(baseIdx + j), Double)
-                                                       Next
-                                                       If sumW = 0F Then
-                                                           Dim idx0 = If(cnt >= 0, skinFlatIdx(baseIdx), CByte(0))
-                                                           Dim idx0c = Math.Max(0, Math.Min(CInt(idx0), matsBind.Length - 1))
-                                                           MposeBlend = matsPose(idx0c)
-                                                           MbindBlend = matsBind(idx0c)
-                                                       Else
+                                                               Next
+                                                           Else
                                                            For j = 0 To cnt
-                                                               Dim w = CType(skinFlatWgt(baseIdx + j), Double) / sumW
-                                                               Dim idx = skinFlatIdx(baseIdx + j)
-                                                               If idx >= 0 AndAlso idx < matsBind.Length Then
-                                                                   MposeBlend += matsPose(idx) * w
-                                                                   MbindBlend += matsBind(idx) * w
-                                                               End If
+                                                               sumW += CType(skinFlatWgt(baseIdx + j), Double)
                                                            Next
+                                                           If sumW = 0F Then
+                                                               Dim idx0 = If(cnt >= 0, skinFlatIdx(baseIdx), CByte(0))
+                                                               Dim idx0c = Math.Max(0, Math.Min(CInt(idx0), matsBind.Length - 1))
+                                                               MposeBlend = matsPose(idx0c)
+                                                               MbindBlend = matsBind(idx0c)
+                                                           Else
+                                                               For j = 0 To cnt
+                                                                   Dim w = CType(skinFlatWgt(baseIdx + j), Double) / sumW
+                                                                   Dim idx = skinFlatIdx(baseIdx + j)
+                                                                   If idx >= 0 AndAlso idx < matsBind.Length Then
+                                                                       MposeBlend += matsPose(idx) * w
+                                                                       MbindBlend += matsBind(idx) * w
+                                                                   End If
+                                                               Next
+                                                           End If
+                                                           End If
+                                                       Else
+                                                           MposeBlend = matsPose(0)
+                                                           MbindBlend = matsBind(0)
                                                        End If
+
+                                                       ' v_baked tal que v_baked·MbindBlend = v_orig·MposeBlend
+                                                       '   ⇒ v_baked = v_orig · MposeBlend · inv(MbindBlend)
+                                                       ' Inverse=True invierte la dirección (unbake).
+                                                       Dim skinMat As Matrix4d
+                                                       If Not inverse Then
+                                                           skinMat = MposeBlend * Matrix4d.Invert(MbindBlend)
+                                                       Else
+                                                           skinMat = MbindBlend * Matrix4d.Invert(MposeBlend)
                                                        End If
-                                                   Else
-                                                       MposeBlend = matsPose(0)
-                                                       MbindBlend = matsBind(0)
-                                                   End If
+                                                       Dim totalSkinMat As Matrix4d = InverseGlobal * skinMat * GlobalTransform
+                                                       Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
+                                                       If memoOk Then
+                                                           memo.TryAdd(firma, New MatricesDeVertice(totalSkinMat, NormalsMat))
+                                                       End If
 
-                                                   ' v_baked tal que v_baked·MbindBlend = v_orig·MposeBlend
-                                                   '   ⇒ v_baked = v_orig · MposeBlend · inv(MbindBlend)
-                                                   ' Inverse=True invierte la dirección (unbake).
-                                                   Dim skinMat As Matrix4d
-                                                   If Not inverse Then
-                                                       skinMat = MposeBlend * Matrix4d.Invert(MbindBlend)
-                                                   Else
-                                                       skinMat = MbindBlend * Matrix4d.Invert(MposeBlend)
-                                                   End If
-                                                   Dim totalSkinMat As Matrix4d = InverseGlobal * skinMat * GlobalTransform
-                                                   Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
-
-                                                   ' Bake (local -> new-local)
-                                                   worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                                                   worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
-                                                   worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
-                                                   worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
-                                               End Sub)
+                                                       ' Bake (local -> new-local)
+                                                       worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
+                                                       worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
+                                                       ' T y B van con la MATRIZ, no con la inversa-transpuesta:
+                                                       ' son direcciones SOBRE la superficie. La
+                                                       ' inversa-transpuesta es la ley de la NORMAL.
+                                                       worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), totalSkinMat))
+                                                       worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), totalSkinMat))
+                        Next
+                    End Sub)
 
             Case Shape.IsSkinned AndAlso singleBoneSkinning AndAlso matsBind.Length > 0
                 ' Single-bone — vertices are already in local space, transform per-vertex.
@@ -729,13 +819,19 @@ Public Class SkinningHelper
                 Dim totalSkinMat As Matrix4d = InverseGlobal * skinMat * GlobalTransform
                 Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
 
-                Parallel.For(0, worldV.Length, Sub(i)
-                                                   ' Bake (local -> new-local)
-                                                   worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                                                   worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
-                                                   worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
-                                                   worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
-                                               End Sub)
+                Parallel.ForEach(Partitioner.Create(0, worldV.Length),
+                    Sub(rango As Tuple(Of Integer, Integer))
+                        For i = rango.Item1 To rango.Item2 - 1
+                                                       ' Bake (local -> new-local)
+                                                       worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
+                                                       worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
+                                                       ' T y B van con la MATRIZ, no con la inversa-transpuesta:
+                                                       ' son direcciones SOBRE la superficie. La
+                                                       ' inversa-transpuesta es la ley de la NORMAL.
+                                                       worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), totalSkinMat))
+                                                       worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), totalSkinMat))
+                        Next
+                    End Sub)
 
             Case Else
                 ' Cubre dos casos: (A) IsSkinned=False (genuinamente unskinned) — la geometría ya
@@ -746,12 +842,18 @@ Public Class SkinningHelper
                 Dim totalSkinMat As Matrix4d = Matrix4d.Identity
                 Dim NormalsMat = Create_Normal_Matrix(totalSkinMat)
 
-                Parallel.For(0, worldV.Length, Sub(i)
-                                                   worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                                                   worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
-                                                   worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), NormalsMat))
-                                                   worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), NormalsMat))
-                                               End Sub)
+                Parallel.ForEach(Partitioner.Create(0, worldV.Length),
+                    Sub(rango As Tuple(Of Integer, Integer))
+                        For i = rango.Item1 To rango.Item2 - 1
+                                                       worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
+                                                       worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), NormalsMat))
+                                                       ' T y B van con la MATRIZ, no con la inversa-transpuesta:
+                                                       ' son direcciones SOBRE la superficie. La
+                                                       ' inversa-transpuesta es la ley de la NORMAL.
+                                                       worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), totalSkinMat))
+                                                       worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), totalSkinMat))
+                        Next
+                    End Sub)
 
         End Select
 
@@ -1006,11 +1108,14 @@ Public Class SkinningHelper
         Dim localMats = geo.PerVertexSkinMatrix
         Dim wv(count - 1) As Vector3d
         Dim wn(count - 1) As Vector3d
-        Parallel.For(0, count, Sub(i)
-                                   wv(i) = Vector3d.TransformPosition(localVerts(i), localMats(i))
-                                   Dim nm = Create_Normal_Matrix(localMats(i))
-                                   wn(i) = Vector3d.Normalize(Vector3d.TransformNormal(localNorms(i), nm))
-                               End Sub)
+        Parallel.ForEach(Partitioner.Create(0, count),
+            Sub(rango As Tuple(Of Integer, Integer))
+                For i = rango.Item1 To rango.Item2 - 1
+                                       wv(i) = Vector3d.TransformPosition(localVerts(i), localMats(i))
+                                       Dim nm = Create_Normal_Matrix(localMats(i))
+                                       wn(i) = Vector3d.Normalize(Vector3d.TransformNormal(localNorms(i), nm))
+                Next
+            End Sub)
         geo.CachedWorldVertices = wv
         geo.CachedWorldNormals = wn
         geo.WorldCacheValid = True
@@ -1375,7 +1480,11 @@ Public Class RecalcTBN
         ' Cantidad de triángulos
         Public TriCount As Integer
         ' Adjacencia: por cada vértice -> lista de triángulos incidentes (ID de tri: [0..TriCount-1])
-        Public VertexToTriangles As List(Of Integer)()
+        ' Adyacencia vertice -> incidencias, en CSR: las del vertice v son
+        ' V2TData(V2TStart(v) .. V2TStart(v+1)-1). V2TStart tiene nVerts+1 entradas.
+        ' Cada entrada empaqueta `triangulo*4 + esquina` (esquina 0..2).
+        Public V2TStart As Integer()
+        Public V2TData As Integer()
         ' Derivadas UV precomputadas por triángulo (dependen SOLO de UV)
         Public Tri_du1 As Double()
         Public Tri_dv1 As Double()
@@ -1387,18 +1496,15 @@ Public Class RecalcTBN
     ' -------------------------------
     ' Opciones de calidad / robustez
     ' -------------------------------
-    Public Enum NormalWeightMode
-        AreaOnly = 0
-        AngleOnly = 1
-        AreaTimesAngle = 2   ' recomendado (por defecto)
-    End Enum
-
+    ' ⛔ HAY UNA SOLA LEY de ponderado, la de BodySlide: la normal de cara se acumula SIN normalizar
+    ' (pesa por area) y la base tangente se normaliza por triangulo y se acumula sin peso. El
+    ' `NormalWeightMode` configurable (area / angulo / area x angulo) se fue el 2026-08-03: dejaba el
+    ' marco tangente rotado respecto del canonico, que es el marco contra el que se autoran los
+    ' normal maps del ecosistema. Una clave `WeightMode` en un config.json viejo se ignora.
     Public Structure TBNOptions
-        Public Property WeightMode As NormalWeightMode          ' cómo pesar contribuciones de caras
         Public Property EpsilonPos As Double                    ' umbral para degenerados geométricos
         Public Property EpsilonUV As Double                     ' umbral para degenerados en UV (det≈0)
         Public Property NormalizeOutputs As Boolean             ' normalizar N/T/B al final
-        Public Property ForceOrthogonalBitangent As Boolean     ' si True: B := normalize(N × T)
         Public Property RepairNaNs As Boolean                   ' si True: reemplaza NaN por vectores seguros
 
         ''' <summary>
@@ -1427,11 +1533,9 @@ Public Class RecalcTBN
 
     Public Shared Function DefaultTBNOptions() As TBNOptions
         Return New TBNOptions With {
-                .WeightMode = NormalWeightMode.AreaTimesAngle,
                 .EpsilonPos = 0.000000000001,
                 .EpsilonUV = 0.000000000001,
                 .NormalizeOutputs = True,
-                .ForceOrthogonalBitangent = True,     ' false preserva B acumulada si es válida
                 .RepairNaNs = True,
                 .EnableWelding = False,                ' desactivado por defecto
                 .WeldPosEpsilon = 0.000000000001,
@@ -1449,10 +1553,30 @@ Public Class RecalcTBN
     Public Shared Function BuildTBNCache(ByRef Uvs_Weight() As Vector3, ByVal indices As UInteger()) As TBNCache
         Dim nVerts As Integer = Uvs_Weight.Length
         Dim triCount As Integer = indices.Length \ 3
-        Dim v2t As List(Of Integer)() = New List(Of Integer)(nVerts - 1) {}
-        For v = 0 To nVerts - 1
-            v2t(v) = New List(Of Integer)(8)
+
+        ' ⭐ ADYACENCIA EN CSR PLANO (offsets + array), no una List(Of Integer) por vertice.
+        ' Una List por vertice son N objetos por cada construccion de cache (22.700 en un cuerpo) y
+        ' deja el recorrido de la fase B saltando de heap en heap. Con CSR son DOS arrays y el
+        ' recorrido de los triangulos incidentes de un vertice es secuencial en memoria.
+        ' El ORDEN dentro de cada vertice es el mismo que tenia la List (triangulos en orden
+        ' creciente), asi que la suma se hace en el mismo orden ⇒ mismos bytes.
+        ' Pasada 1: contar. Pasada 2: llenar.
+        Dim v2tStart(nVerts) As Integer          ' nVerts + 1 offsets
+        For t As Integer = 0 To triCount - 1
+            Dim a As Integer = CInt(indices(3 * t + 0))
+            Dim b As Integer = CInt(indices(3 * t + 1))
+            Dim c As Integer = CInt(indices(3 * t + 2))
+            If a >= nVerts OrElse b >= nVerts OrElse c >= nVerts Then Continue For
+            v2tStart(a + 1) += 1
+            v2tStart(b + 1) += 1
+            v2tStart(c + 1) += 1
         Next
+        For v = 1 To nVerts
+            v2tStart(v) += v2tStart(v - 1)
+        Next
+        Dim v2tData(Math.Max(0, v2tStart(nVerts) - 1)) As Integer
+        Dim cursor(nVerts - 1) As Integer
+        Array.Copy(v2tStart, cursor, nVerts)
 
         ' Derivadas UV por tri
         Dim du1(triCount - 1) As Double
@@ -1467,9 +1591,14 @@ Public Class RecalcTBN
             Dim i2 As Integer = CInt(indices(3 * t + 2))
 
             If i0 >= nVerts OrElse i1 >= nVerts OrElse i2 >= nVerts Then Continue For
-            v2t(i0).Add(t)
-            v2t(i1).Add(t)
-            v2t(i2).Add(t)
+            ' Se guarda `triangulo*4 + esquina`, no sólo el triángulo. La esquina es lo que el
+            ' consumidor tenía que redescubrir comparando los 3 índices del triángulo contra el
+            ' vértice — 3 loads y 3 comparaciones por entrada que ahora no existen. Y un vértice
+            ' repetido en un triángulo degenerado queda como DOS entradas, que es exactamente el
+            ' doble aporte que antes se contaba a mano.
+            v2tData(cursor(i0)) = t * 4 : cursor(i0) += 1
+            v2tData(cursor(i1)) = t * 4 + 1 : cursor(i1) += 1
+            v2tData(cursor(i2)) = t * 4 + 2 : cursor(i2) += 1
 
 
             ' UV del tri
@@ -1490,7 +1619,8 @@ Public Class RecalcTBN
         Return New TBNCache With {
             .Indices = indices,
             .TriCount = triCount,
-            .VertexToTriangles = v2t,
+            .V2TStart = v2tStart,
+            .V2TData = v2tData,
             .Tri_du1 = du1, .Tri_dv1 = dv1,
             .Tri_du2 = du2, .Tri_dv2 = dv2,
             .Tri_det = det
@@ -1514,17 +1644,15 @@ Public Class RecalcTBN
     Public Shared Sub RefreshUvDerivatives(ByRef geo As SkinnedGeometry, verticesTocados As HashSet(Of Integer))
         If verticesTocados Is Nothing OrElse verticesTocados.Count = 0 Then Return
         Dim c = geo.CachedTBN
-        If c.Indices Is Nothing OrElse c.VertexToTriangles Is Nothing Then Return
+        If c.Indices Is Nothing OrElse c.V2TStart Is Nothing OrElse c.V2TData Is Nothing Then Return
         If geo.Uvs_Weight Is Nothing Then Return
 
         Dim nVerts As Integer = geo.Uvs_Weight.Length
         Dim tris As New HashSet(Of Integer)()
         For Each vi In verticesTocados
-            If vi < 0 OrElse vi >= c.VertexToTriangles.Length Then Continue For
-            Dim lista = c.VertexToTriangles(vi)
-            If lista Is Nothing Then Continue For
-            For Each t In lista
-                tris.Add(t)
+            If vi < 0 OrElse vi >= c.V2TStart.Length - 1 Then Continue For
+            For k = c.V2TStart(vi) To c.V2TStart(vi + 1) - 1
+                tris.Add(c.V2TData(k) >> 2)
             Next
         Next
 
@@ -1566,26 +1694,30 @@ Public Class RecalcTBN
         End If
 
         ' -------- (Opcional) Welding lógico por posición+UV (NO cacheado) --------
+        ' ⭐ `membersOf Is Nothing` SIGNIFICA IDENTIDAD (cada vértice es su propio grupo, él solo).
+        ' Con el welding apagado —que es el default— materializar eso costaba un Dictionary de N
+        ' entradas MÁS una List(Of Integer) de un elemento por vértice: ~45.000 objetos por recálculo
+        ' en un cuerpo de 22.700 vértices, para no representar nada. Los dos consumidores tienen su
+        ' rama de identidad, así que sacarlo es byte-idéntico.
         Dim masterOf() As Integer = Nothing
         Dim membersOf As Dictionary(Of Integer, List(Of Integer)) = Nothing
         If opts.EnableWelding Then
             Vertices_Adicionales.UnionWith(BuildWeldGroups(geo, opts.WeldPosEpsilon, opts.WeldUVEpsilon, opts.WeldByPositionOnly, masterOf, membersOf))
         Else
             masterOf = New Integer(nVerts - 1) {}
-            membersOf = New Dictionary(Of Integer, List(Of Integer))(nVerts)
             For i As Integer = 0 To nVerts - 1
                 masterOf(i) = i
-                membersOf(i) = New List(Of Integer)(1) From {i}
             Next
         End If
 
         ' -------- 1) Triángulos afectados via adjacencia --------
         Dim affectedTris As New HashSet(Of Integer)()
+        Dim v2tS = geo.CachedTBN.V2TStart
+        Dim v2tD = geo.CachedTBN.V2TData
         For Each vi In geo.dirtyVertexIndices
             If vi < 0 OrElse vi >= nVerts Then Continue For
-            Dim triList As List(Of Integer) = geo.CachedTBN.VertexToTriangles(vi)
-            For Each t In triList
-                affectedTris.Add(t)
+            For k = v2tS(vi) To v2tS(vi + 1) - 1
+                affectedTris.Add(v2tD(k) >> 2)
             Next
         Next
         If affectedTris.Count = 0 Then Return Vertices_Adicionales
@@ -1630,10 +1762,8 @@ Public Class RecalcTBN
         ' Parallel when triangle count is large enough to amortize overhead.
         ' Each thread accumulates into thread-local dictionaries, then merged.
         Dim triArray = affectedTris.ToArray()
-        Dim useAngle As Boolean = (opts.WeightMode <> NormalWeightMode.AreaOnly)
         Dim epsPos As Double = opts.EpsilonPos
         Dim epsUV As Double = opts.EpsilonUV
-        Dim wMode As NormalWeightMode = opts.WeightMode
         Dim localIndices = geo.CachedTBN.Indices
         Dim localVerts = geo.Vertices
         Dim localDu1 = geo.CachedTBN.Tri_du1
@@ -1679,12 +1809,10 @@ Public Class RecalcTBN
             ' ⚠️ El resultado NO es bit-identico al del scatter (cambia el orden de suma), asi que
             ' este cambio MUEVE BYTES una vez. A partir de ahi es estable.
             Dim nTri As Integer = triArray.Length
-            Dim faceN(nTri - 1) As Vector3d
-            Dim faceT(nTri - 1) As Vector3d
-            Dim faceB(nTri - 1) As Vector3d
-            Dim wc0(nTri - 1) As Double
-            Dim wc1(nTri - 1) As Double
-            Dim wc2(nTri - 1) As Double
+            ' ⭐ N, T y B de la cara INTERLEAVADOS en un solo array, 3 por triangulo. Son temporales
+            ' internos, asi que el layout es libre: la fase B lee los tres juntos, y asi salen de UN
+            ' bloque contiguo de 72 bytes en vez de tres indexaciones a tres arrays distintos.
+            Dim face((nTri * 3) - 1) As Vector3d
             ' triangulo -> su lugar en los arrays de arriba, o -1 si no esta afectado. El centinela
             ' es -1 y no 0 porque el triangulo 0 es un indice valido.
             Dim slotOf(geo.CachedTBN.TriCount - 1) As Integer
@@ -1711,25 +1839,11 @@ Public Class RecalcTBN
                         ' AccumulateTriangle.
                         If area2 <= epsPos Then Continue For
 
-                        Dim a0 As Double, a1 As Double, a2 As Double
-                        If useAngle Then
-                            Dim g0 = AngleBetweenSafe(e1, e2, epsPos)
-                            Dim g1 = AngleBetweenSafe(p0 - p1, p2 - p1, epsPos)
-                            Dim g2 = AngleBetweenSafe(p0 - p2, p1 - p2, epsPos)
-                            If wMode = NormalWeightMode.AngleOnly Then
-                                a0 = g0 : a1 = g1 : a2 = g2
-                            Else ' AreaTimesAngle
-                                a0 = area2 * g0 : a1 = area2 * g1 : a2 = area2 * g2
-                            End If
-                        Else ' AreaOnly
-                            a0 = area2 : a1 = area2 : a2 = area2
-                        End If
-
                         Dim tf As Vector3d, bf As Vector3d
                         ComputeFaceTB(fn, e1, e2, localDu1(t), localDv1(t), localDu2(t), localDv2(t),
                                       localDet(t), epsPos, epsUV, tf, bf)
-                        faceN(k) = fn : faceT(k) = tf : faceB(k) = bf
-                        wc0(k) = a0 : wc1(k) = a1 : wc2(k) = a2
+                        Dim fb = k * 3
+                        face(fb) = fn : face(fb + 1) = tf : face(fb + 2) = bf
                     Next
                 End Sub)
 
@@ -1745,40 +1859,49 @@ Public Class RecalcTBN
                 If vistos.Add(m) Then maestros.Add(m)
             Next
             Dim maestroArr = maestros.ToArray()
-            Dim v2t = geo.CachedTBN.VertexToTriangles
+            Dim locS = geo.CachedTBN.V2TStart
+            Dim locD = geo.CachedTBN.V2TData
             Dim locMembers = membersOf
 
             Parallel.ForEach(Partitioner.Create(0, maestroArr.Length),
                 Sub(range As Tuple(Of Integer, Integer))
+                    ' Buffer reusado: sin welding el grupo es SIEMPRE {m}, y alocar una List por
+                    ' vertice para eso era el grueso de las allocations de esta fase.
+                    Dim unoSolo(0) As Integer
                     For ci = range.Item1 To range.Item2 - 1
                         Dim m = maestroArr(ci)
-                        Dim miembros As List(Of Integer) = Nothing
-                        If Not locMembers.TryGetValue(m, miembros) OrElse miembros Is Nothing Then Continue For
+                        Dim miembros As IList(Of Integer)
+                        If locMembers Is Nothing Then
+                            unoSolo(0) = m
+                            miembros = unoSolo
+                        Else
+                            ' ⛔ La variable de salida del TryGetValue tiene que ser del tipo EXACTO:
+                            ' castearla en el sitio del argumento manda el valor a un temporal y la
+                            ' local queda en Nothing. Lo cazo TB6b (paralelo != secuencial con welding).
+                            Dim lst As List(Of Integer) = Nothing
+                            If Not locMembers.TryGetValue(m, lst) Then Continue For
+                            miembros = lst
+                        End If
+                        If miembros Is Nothing Then Continue For
                         Dim accN As Vector3d = Vector3d.Zero
                         Dim accT As Vector3d = Vector3d.Zero
                         Dim accB As Vector3d = Vector3d.Zero
                         For Each vi In miembros
-                            If vi < 0 OrElse vi >= v2t.Length Then Continue For
-                            Dim lista = v2t(vi)
-                            If lista Is Nothing Then Continue For
-                            For Each t In lista
-                                Dim k = slotOf(t)
+                            If vi < 0 OrElse vi >= locS.Length - 1 Then Continue For
+                            ' Una entrada del CSR = UNA incidencia (una esquina de un triangulo que es
+                            ' este vertice), asi que se suma una vez y listo: ya no hay que releer los
+                            ' 3 indices del triangulo ni contar cuantas esquinas coinciden. Un vertice
+                            ' repetido en un triangulo degenerado son dos entradas, o sea el mismo
+                            ' doble aporte (y f+f = f*2 exacto en punto flotante).
+                            ' El aporte no lleva peso: la normal de cara viene sin normalizar (pesa
+                            ' por area) y la base tangente viene normalizada por triangulo.
+                            For kk = locS(vi) To locS(vi + 1) - 1
+                                Dim k = slotOf(locD(kk) >> 2)
                                 If k < 0 Then Continue For   ' triangulo no afectado por este update
-                                If CInt(localIndices(3 * t)) = vi Then
-                                    accN += faceN(k) * wc0(k)
-                                    accT += faceT(k) * wc0(k)
-                                    accB += faceB(k) * wc0(k)
-                                End If
-                                If CInt(localIndices(3 * t + 1)) = vi Then
-                                    accN += faceN(k) * wc1(k)
-                                    accT += faceT(k) * wc1(k)
-                                    accB += faceB(k) * wc1(k)
-                                End If
-                                If CInt(localIndices(3 * t + 2)) = vi Then
-                                    accN += faceN(k) * wc2(k)
-                                    accT += faceT(k) * wc2(k)
-                                    accB += faceB(k) * wc2(k)
-                                End If
+                                Dim fb = k * 3
+                                accN += face(fb)
+                                accT += face(fb + 1)
+                                accB += face(fb + 2)
                             Next
                         Next
                         nAccum(m) = accN : tAccum(m) = accT : bAccum(m) = accB
@@ -1790,13 +1913,11 @@ Public Class RecalcTBN
                 If useFullArrays Then
                     AccumulateTriangle(t, localIndices, localVerts, localMasterOf,
                                        localDu1, localDv1, localDu2, localDv2, localDet,
-                                       useAngle, wMode, epsPos, epsUV,
-                                       nAccum, tAccum, bAccum)
+                                       epsPos, epsUV, nAccum, tAccum, bAccum)
                 Else
                     AccumulateTriangleSparse(t, localIndices, localVerts, localMasterOf,
                                              localDu1, localDv1, localDu2, localDv2, localDet,
-                                             useAngle, wMode, epsPos, epsUV,
-                                             sparseN, sparseT, sparseB)
+                                             epsPos, epsUV, sparseN, sparseT, sparseB)
                 End If
             Next
         End If
@@ -1821,9 +1942,8 @@ Public Class RecalcTBN
 
             ' Copias de los ACUMULADOS, antes de que el Gram-Schmidt de abajo los pise. Las necesita
             ' la rama de miembros soldados de KeepExistingNormals: proyectar la T/B FINALES del
-            ' maestro (ya ortogonalizadas contra SU normal, y con ForceOrthogonalBitangent la B final
-            ' es exactamente +/-cross(N,T)) hacia la normal del miembro deriva su base — y su
-            ' handedness — del maestro, que es justo lo que esa rama existe para no hacer.
+            ' maestro (ya ortogonalizadas contra SU normal) hacia la normal del miembro deriva su
+            ' base — y su handedness — del maestro, que es justo lo que esa rama existe para no hacer.
             Dim Tacc As Vector3d = T
             Dim Bacc As Vector3d = B
 
@@ -1838,43 +1958,47 @@ Public Class RecalcTBN
                 N = Vector3d.Normalize(N)
             End If
 
-            ' Tangent: Gram-Schmidt orthogonalization against N
-            T -= N * Vector3d.Dot(N, T)
+            ' ⛔⛔ EL PRIMARIO ES **B**, NO T: decide el ROLL del marco alrededor de la normal.
+            ' `tAcc` acumula ∂P/∂u y `bAcc` ∂P/∂v, y NO son perpendiculares (sesgo de la
+            ' parametrizacion UV) ⇒ ortogonalizar A contra B no da lo mismo que B contra A.
+            ' El que termina en el campo TANGENTE del NIF es `geo.Bitangents` (el adaptador cruza:
+            ' SetTangents escribe el campo Bitangent), y ese tiene que ser el primario.
+            ' Al reves el marco quedaba rotado: mediana 14,6° contra BodySlide, y la mitad de los
+            ' vertices por encima de 15°. Con este orden, SSE sale BYTE-IDENTICO.
+            Dim Bcross As Vector3d
+            B -= N * Vector3d.Dot(N, B)
+            If B.LengthSquared <= epsPos OrElse HasNaN(B) Then
+                B = OrthonormalTangentFromNormal(N)
+            ElseIf opts.NormalizeOutputs Then
+                B = Vector3d.Normalize(B)
+            End If
+
+            ' El secundario se proyecta contra N y DESPUES contra el primario.
+            Bcross = Vector3d.Cross(N, B)
+            Dim Tproj As Vector3d = T - N * Vector3d.Dot(N, T)
+            T = Tproj - B * Vector3d.Dot(B, Tproj)
             If T.LengthSquared <= epsPos OrElse HasNaN(T) Then
-                T = OrthonormalTangentFromNormal(N)
+                T = Bcross
             ElseIf opts.NormalizeOutputs Then
                 T = Vector3d.Normalize(T)
             End If
 
-            ' Bitangent: preserve handedness from accumulated B
-            Dim Bcross As Vector3d = Vector3d.Cross(N, T)
-            Dim s As Double = 1.0
-            Dim Bproj As Vector3d = B - N * Vector3d.Dot(N, B)
-            If Not HasNaN(Bproj) AndAlso Bproj.LengthSquared > epsPos Then
-                If Vector3d.Dot(Bcross, Bproj) < 0.0 Then s = -1.0
-            End If
-
-            If opts.ForceOrthogonalBitangent Then
-                B = Bcross * s
-            Else
-                B -= N * Vector3d.Dot(N, B)
-                If B.LengthSquared <= epsPos OrElse HasNaN(B) Then
-                    B = Bcross * s
-                End If
-            End If
-
-            If opts.NormalizeOutputs AndAlso B.LengthSquared > epsPos Then
-                B = Vector3d.Normalize(B)
-            End If
-
             If opts.RepairNaNs Then
-                If HasNaN(B) Then B = Bcross * s
+                If HasNaN(B) Then B = Bcross
             End If
 
             ' Propagate to all members of the weld group
-            ' FO4 convention (uniform for both FO4 and SSE): T->geo.Tangents, B->geo.Bitangents.
-            ' T/B swap for SSE NIF format is handled at ExtractSkinnedGeometry / InjectToTrishape boundaries.
+            ' Convención uniforme para los dos juegos: T->geo.Tangents, B->geo.Bitangents. El cruce
+            ' hacia los campos del NIF lo hace el adaptador de shape, no esto.
             Dim escribeNormales As Boolean = Not opts.KeepExistingNormals
+            ' Sin welding (membersOf Is Nothing) el grupo es {m}: se escribe directo y se evita el
+            ' lookup. Es exactamente la rama `vi = m` de abajo.
+            If membersOf Is Nothing Then
+                If escribeNormales Then geo.Normals(m) = N
+                geo.Tangents(m) = T
+                geo.Bitangents(m) = B
+                Continue For
+            End If
             Dim members As List(Of Integer) = Nothing
             If membersOf.TryGetValue(m, members) Then
                 For Each vi As Integer In members
@@ -1893,36 +2017,31 @@ Public Class RecalcTBN
                         ' Miembro soldado que conserva SU normal (no se le escribe la del maestro):
                         ' la base se reortogonaliza contra esa, o queda torcida. Parte de Tacc/Bacc
                         ' (los ACUMULADOS del grupo), no de la T/B ya ortogonalizadas del maestro, y
-                        ' respeta ForceOrthogonalBitangent igual que el camino del maestro.
+                        ' cierra con el mismo doble Gram-Schmidt que el camino del maestro.
                         Dim Nv As Vector3d = geo.Normals(vi)
                         If Nv.LengthSquared <= epsPos OrElse HasNaN(Nv) Then
                             Nv = New Vector3d(0, 0, 1)
                         ElseIf opts.NormalizeOutputs Then
                             Nv = Vector3d.Normalize(Nv)
                         End If
-                        Dim Tv As Vector3d = Tacc - Nv * Vector3d.Dot(Nv, Tacc)
+                        ' Mismo orden que el camino del maestro: PRIMARIO el que va al campo tangente
+                        ' del NIF (Bacc), y despues el otro proyectado contra el.
+                        Dim Bv As Vector3d = Bacc - Nv * Vector3d.Dot(Nv, Bacc)
+                        If Bv.LengthSquared <= epsPos OrElse HasNaN(Bv) Then
+                            Bv = OrthonormalTangentFromNormal(Nv)
+                        ElseIf opts.NormalizeOutputs Then
+                            Bv = Vector3d.Normalize(Bv)
+                        End If
+
+                        Dim Bcrossv As Vector3d = Vector3d.Cross(Nv, Bv)
+                        Dim Tprojv As Vector3d = Tacc - Nv * Vector3d.Dot(Nv, Tacc)
+                        Dim Tv As Vector3d = Tprojv - Bv * Vector3d.Dot(Bv, Tprojv)
                         If Tv.LengthSquared <= epsPos OrElse HasNaN(Tv) Then
-                            Tv = OrthonormalTangentFromNormal(Nv)
+                            Tv = Bcrossv
                         ElseIf opts.NormalizeOutputs Then
                             Tv = Vector3d.Normalize(Tv)
                         End If
-
-                        Dim Bcrossv As Vector3d = Vector3d.Cross(Nv, Tv)
-                        Dim sv As Double = 1.0
-                        Dim Bprojv As Vector3d = Bacc - Nv * Vector3d.Dot(Nv, Bacc)
-                        If Not HasNaN(Bprojv) AndAlso Bprojv.LengthSquared > epsPos Then
-                            If Vector3d.Dot(Bcrossv, Bprojv) < 0.0 Then sv = -1.0
-                        End If
-
-                        Dim Bv As Vector3d
-                        If opts.ForceOrthogonalBitangent Then
-                            Bv = Bcrossv * sv
-                        Else
-                            Bv = Bprojv
-                            If Bv.LengthSquared <= epsPos OrElse HasNaN(Bv) Then Bv = Bcrossv * sv
-                        End If
-                        If opts.NormalizeOutputs AndAlso Bv.LengthSquared > epsPos Then Bv = Vector3d.Normalize(Bv)
-                        If opts.RepairNaNs AndAlso HasNaN(Bv) Then Bv = Bcrossv * sv
+                        If opts.RepairNaNs AndAlso HasNaN(Tv) Then Tv = Bcrossv
 
                         geo.Tangents(vi) = Tv
                         geo.Bitangents(vi) = Bv
@@ -2088,21 +2207,11 @@ Public Class RecalcTBN
         Return Math.Abs(a.X - b.X) <= eps AndAlso Math.Abs(a.Y - b.Y) <= eps
     End Function
 
-    ' Ángulo seguro entre a y b (radianes); 0 si degenerado.
-    ' Uses Atan2(|cross|, dot) instead of Acos(dot) for better numerical stability near 0° and 180°.
-    Private Shared Function AngleBetweenSafe(a As Vector3d, b As Vector3d, eps As Double) As Double
-        Dim crossVec = Vector3d.Cross(a, b)
-        Dim sinVal = crossVec.Length
-        Dim cosVal = Vector3d.Dot(a, b)
-        If sinVal <= eps AndAlso Math.Abs(cosVal) <= eps Then Return 0.0
-        Return Math.Atan2(sinVal, cosVal)
-    End Function
-
     ' Core per-triangle accumulation logic — extracted to avoid duplication between sequential/parallel paths.
     Private Shared Sub AccumulateTriangle(t As Integer,
                                           indices As UInteger(), verts As Vector3d(), masterOf As Integer(),
                                           du1 As Double(), dv1 As Double(), du2 As Double(), dv2 As Double(), det As Double(),
-                                          useAngle As Boolean, wMode As NormalWeightMode, epsPos As Double, epsUV As Double,
+                                          epsPos As Double, epsUV As Double,
                                           nAcc As Vector3d(), tAcc As Vector3d(), bAcc As Vector3d())
         Dim i0 As Integer = CInt(indices(3 * t)), i1 As Integer = CInt(indices(3 * t + 1)), i2 As Integer = CInt(indices(3 * t + 2))
         Dim m0 = masterOf(i0), m1 = masterOf(i1), m2 = masterOf(i2)
@@ -2112,33 +2221,21 @@ Public Class RecalcTBN
         Dim area2 = fn.Length
         If area2 <= epsPos Then Exit Sub
 
-        Dim wn0 As Double, wn1 As Double, wn2 As Double
-        If useAngle Then
-            Dim w0 = AngleBetweenSafe(e1, e2, epsPos)
-            Dim w1 = AngleBetweenSafe(p0 - p1, p2 - p1, epsPos)
-            Dim w2 = AngleBetweenSafe(p0 - p2, p1 - p2, epsPos)
-            If wMode = NormalWeightMode.AngleOnly Then
-                wn0 = w0 : wn1 = w1 : wn2 = w2
-            Else ' AreaTimesAngle
-                wn0 = area2 * w0 : wn1 = area2 * w1 : wn2 = area2 * w2
-            End If
-        Else ' AreaOnly
-            wn0 = area2 : wn1 = area2 : wn2 = area2
-        End If
-
+        ' La normal de cara va SIN normalizar: eso ya la pondera por AREA. La base tangente viene
+        ' normalizada por triangulo desde ComputeFaceTB y se acumula sin peso.
         Dim tFace As Vector3d, bFace As Vector3d
         ComputeFaceTB(fn, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
 
-        nAcc(m0) += fn * wn0 : nAcc(m1) += fn * wn1 : nAcc(m2) += fn * wn2
-        tAcc(m0) += tFace * wn0 : tAcc(m1) += tFace * wn1 : tAcc(m2) += tFace * wn2
-        bAcc(m0) += bFace * wn0 : bAcc(m1) += bFace * wn1 : bAcc(m2) += bFace * wn2
+        nAcc(m0) += fn : nAcc(m1) += fn : nAcc(m2) += fn
+        tAcc(m0) += tFace : tAcc(m1) += tFace : tAcc(m2) += tFace
+        bAcc(m0) += bFace : bAcc(m1) += bFace : bAcc(m2) += bFace
     End Sub
 
     ' Sparse variant for small partial updates — avoids allocating full-size arrays.
     Private Shared Sub AccumulateTriangleSparse(t As Integer,
                                                 indices As UInteger(), verts As Vector3d(), masterOf As Integer(),
                                                 du1 As Double(), dv1 As Double(), du2 As Double(), dv2 As Double(), det As Double(),
-                                                useAngle As Boolean, wMode As NormalWeightMode, epsPos As Double, epsUV As Double,
+                                                epsPos As Double, epsUV As Double,
                                                 nAcc As Dictionary(Of Integer, Vector3d),
                                                 tAcc As Dictionary(Of Integer, Vector3d),
                                                 bAcc As Dictionary(Of Integer, Vector3d))
@@ -2150,38 +2247,33 @@ Public Class RecalcTBN
         Dim area2 = fn.Length
         If area2 <= epsPos Then Exit Sub
 
-        Dim wn0 As Double, wn1 As Double, wn2 As Double
-        If useAngle Then
-            Dim w0 = AngleBetweenSafe(e1, e2, epsPos)
-            Dim w1 = AngleBetweenSafe(p0 - p1, p2 - p1, epsPos)
-            Dim w2 = AngleBetweenSafe(p0 - p2, p1 - p2, epsPos)
-            If wMode = NormalWeightMode.AngleOnly Then
-                wn0 = w0 : wn1 = w1 : wn2 = w2
-            Else
-                wn0 = area2 * w0 : wn1 = area2 * w1 : wn2 = area2 * w2
-            End If
-        Else
-            wn0 = area2 : wn1 = area2 : wn2 = area2
-        End If
-
+        ' ⛔ Este bloque tiene que ser IDENTICO al de AccumulateTriangle. Al migrar el ponderado me
+        ' quede sin actualizarlo y el camino secuencial (sparse) siguio con el viejo mientras el
+        ' paralelo usaba el nuevo: los tests TB5/TB6b (paralelo == secuencial) lo cazaron con un
+        ' delta de 0,1. Si se toca uno, se tocan los dos.
         Dim tFace As Vector3d, bFace As Vector3d
         ComputeFaceTB(fn, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
 
         Dim vn0 As Vector3d, vn1 As Vector3d, vn2 As Vector3d
-        nAcc.TryGetValue(m0, vn0) : nAcc(m0) = vn0 + fn * wn0
-        nAcc.TryGetValue(m1, vn1) : nAcc(m1) = vn1 + fn * wn1
-        nAcc.TryGetValue(m2, vn2) : nAcc(m2) = vn2 + fn * wn2
+        nAcc.TryGetValue(m0, vn0) : nAcc(m0) = vn0 + fn
+        nAcc.TryGetValue(m1, vn1) : nAcc(m1) = vn1 + fn
+        nAcc.TryGetValue(m2, vn2) : nAcc(m2) = vn2 + fn
         Dim vt0 As Vector3d, vt1 As Vector3d, vt2 As Vector3d
-        tAcc.TryGetValue(m0, vt0) : tAcc(m0) = vt0 + tFace * wn0
-        tAcc.TryGetValue(m1, vt1) : tAcc(m1) = vt1 + tFace * wn1
-        tAcc.TryGetValue(m2, vt2) : tAcc(m2) = vt2 + tFace * wn2
+        tAcc.TryGetValue(m0, vt0) : tAcc(m0) = vt0 + tFace
+        tAcc.TryGetValue(m1, vt1) : tAcc(m1) = vt1 + tFace
+        tAcc.TryGetValue(m2, vt2) : tAcc(m2) = vt2 + tFace
         Dim vb0 As Vector3d, vb1 As Vector3d, vb2 As Vector3d
-        bAcc.TryGetValue(m0, vb0) : bAcc(m0) = vb0 + bFace * wn0
-        bAcc.TryGetValue(m1, vb1) : bAcc(m1) = vb1 + bFace * wn1
-        bAcc.TryGetValue(m2, vb2) : bAcc(m2) = vb2 + bFace * wn2
+        bAcc.TryGetValue(m0, vb0) : bAcc(m0) = vb0 + bFace
+        bAcc.TryGetValue(m1, vb1) : bAcc(m1) = vb1 + bFace
+        bAcc.TryGetValue(m2, vb2) : bAcc(m2) = vb2 + bFace
     End Sub
 
-    ' Computes per-face tangent and bitangent from edges + cached UV derivatives.
+    ''' <summary>
+    ''' Tangente y bitangente de UNA cara, a partir de las aristas y las derivadas de UV cacheadas.
+    ''' Del determinante se usa SOLO EL SIGNO, y cada direccion se NORMALIZA por triangulo: el
+    ''' llamador las acumula sin peso. Es la ley de BodySlide, y es la que decide en que marco se
+    ''' interpreta el normal map — las texturas del ecosistema se autoran contra ese marco.
+    ''' </summary>
     Private Shared Sub ComputeFaceTB(fn As Vector3d, e1 As Vector3d, e2 As Vector3d,
                                       _du1 As Double, _dv1 As Double, _du2 As Double, _dv2 As Double, _det As Double,
                                       epsPos As Double, epsUV As Double,
@@ -2199,9 +2291,11 @@ Public Class RecalcTBN
                 bFace = Vector3d.Normalize(Vector3d.Cross(nf, tFace))
             End If
         Else
-            Dim r As Double = 1.0 / _det
-            tFace = (e1 * _dv2 - e2 * _dv1) * r
-            bFace = (e2 * _du1 - e1 * _du2) * r
+            Dim r As Double = If(_det >= 0.0, 1.0, -1.0)
+            Dim tf = (e1 * _dv2 - e2 * _dv1) * r
+            Dim bf = (e2 * _du1 - e1 * _du2) * r
+            tFace = If(tf.LengthSquared > epsPos, Vector3d.Normalize(tf), Vector3d.Zero)
+            bFace = If(bf.LengthSquared > epsPos, Vector3d.Normalize(bf), Vector3d.Zero)
         End If
     End Sub
 
