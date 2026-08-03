@@ -715,6 +715,12 @@ Public Class PreviewControl
 
             ' GPU upload
             Model.Setup_GL()
+            ' Las UVs se suben SIEMPRE, tambien en GPU-skinning: ahi UpdateSkinBuffers_GL no corre
+            ' (el shader skinnea del SSBO) pero un slider uv igual movio Uvs_Weight. Es no-op si el
+            ' flag esta apagado, que es el caso de todo modelo sin sliders uv.
+            For Each mesh In Model.meshes
+                mesh.UpdateUvBuffer_GL()
+            Next
             If Not Config_App.Current.Setting_GPUSkinning Then
                 For Each mesh In Model.meshes
                     mesh.UpdateSkinBuffers_GL()
@@ -2226,7 +2232,31 @@ Public Class PreviewModel
         ''' maneja la linea gateada del pass 1; incondicional aca bypasseaba ese gate (8,9 ms/frame medidos).
         ''' El nombre difiere de ComputeBounds a proposito: VB es case-insensitive y un parametro homonimo
         ''' sombrearia al metodo.</param>
+        ''' <summary>
+        ''' Resube el VBO de UV cuando un slider uv movio <c>Uvs_Weight</c>. El buffer se creo
+        ''' <c>StaticDraw</c> porque hasta ahora las UVs no cambiaban nunca despues de cargar el NIF;
+        ''' con sliders uv si cambian, y sin esto el viewport mostraba las UVs viejas mientras el .nif
+        ''' construido salia con las nuevas. Se sube entero (los arrays de UV son chicos y esto solo
+        ''' corre cuando el flag esta prendido, no por frame).
+        ''' </summary>
+        Public Sub UpdateUvBuffer_GL()
+            If MeshData Is Nothing Then Exit Sub
+            Dim geom = MeshData.Meshgeometry
+            If Not geom.UvsDirty Then Exit Sub
+            ' El flag se limpia DESPUES de subir, no antes: si el VBO todavia no existe hay que
+            ' volver a intentarlo en el proximo update. Limpiarlo primero perdia el aviso para
+            ' siempre y las UVs morpheadas no subian nunca.
+            If vboUVMaskWeight = 0 OrElse geom.Uvs_Weight Is Nothing OrElse geom.Uvs_Weight.Length = 0 Then Exit Sub
+            Me.ParentModel.ParentControl.EnsureContextCurrent()
+            GL.BindBuffer(BufferTarget.ArrayBuffer, vboUVMaskWeight)
+            GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero,
+                             geom.Uvs_Weight.Length * 3 * 4, geom.Uvs_Weight)
+            geom.UvsDirty = False
+            MeshData.Meshgeometry = geom
+        End Sub
+
         Public Sub UpdateSkinBuffers_GL(Optional recomputeBounds As Boolean = True)
+            UpdateUvBuffer_GL()
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
             ' Detect skinning mode change: if the toggle changed since last upload, force ALL dirty
             ' [RENDER-MS] instrumentacion — gateada por Logger.Enabled. Esta funcion corre POR MALLA POR

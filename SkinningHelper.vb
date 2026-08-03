@@ -34,6 +34,21 @@ Public Structure SkinnedGeometry
     Public Tangents() As Vector3d
     Public Bitangents() As Vector3d
     Public Uvs_Weight() As Vector3
+
+    ' UVs TAL COMO SALIERON DEL NIF, antes de cualquier slider uv. Las hace falta por lo mismo que
+    ' NifLocalVertices: ApplyUVDiff ACUMULA (`uvs[i].u += ...`), asi que sin una base a la que volver
+    ' cada re-aplicacion sumaria encima de la anterior y las UVs derivarian a cada movimiento del
+    ' slider. La escribe ExtractSkinnedGeometry; MorphEngine/MorphingHelper restauran desde aca.
+    Public BaseUvs_Weight() As Vector3
+
+    ' True cuando un canal uv reescribio Uvs_Weight y el VBO de UV (StaticDraw) quedo viejo.
+    ' Lo levanta MorphEngine.ApplyMorphPlan y lo consume/limpia Render.UpdateUvBuffer_GL.
+    Public UvsDirty As Boolean
+
+    ' True si la ULTIMA aplicacion de morphs escribio deltas de uv. Es lo que permite saltear el
+    ' reset (un Array.Copy del array entero) en el caso normal — ningun slider uv — sin perder el
+    ' momento en que hay que volver a la base: el update en el que el ultimo canal uv se apaga.
+    Public UvsMorphed As Boolean
     Public Eyedata() As Single
     Public ParentGlobalTransform As Matrix4d
     Public BoneMatsBind() As Matrix4d   ' bind-pose matrices
@@ -549,6 +564,7 @@ Public Class SkinningHelper
             uvsWeight(i) = New Vector3(u, v, w0)
         Next
         geo.Uvs_Weight = uvsWeight
+        geo.BaseUvs_Weight = CType(uvsWeight.Clone(), Vector3())
 
         If RecalculateNormals OrElse Not shapeGeom.HasNormals OrElse Not shapeGeom.HasTangents Then
             Dim opts = Config_App.Current.Setting_TBN
@@ -1385,6 +1401,23 @@ Public Class RecalcTBN
         Public Property ForceOrthogonalBitangent As Boolean     ' si True: B := normalize(N × T)
         Public Property RepairNaNs As Boolean                   ' si True: reemplaza NaN por vectores seguros
 
+        ''' <summary>
+        ''' Sólo TANGENTES: ortogonaliza contra la normal ALMACENADA y no reescribe <c>geo.Normals</c>.
+        ''' Es lo que hace <c>CalcTangentsForShape</c> del canónico, que corre INCONDICIONAL en la
+        ''' fase 3 del build (BodySlideApp.cpp:4501 y :4529) mientras las normales van aparte y
+        ''' gateadas por <c>lockNormals</c> (:4494).
+        ''' Hace falta cuando lo único que cambió son las UVs — la base tangente se deriva de ellas,
+        ''' las normales no. ⛔ NO alcanza con recalcular todo y restaurar <c>Normals</c> después: el
+        ''' Gram-Schmidt de abajo ortogonaliza T (y deriva B) contra la N RECALCULADA, así que
+        ''' restaurarla al final dejaba una base que no es ortonormal respecto de la normal que
+        ''' finalmente queda en la geometría.
+        ''' Con <c>EnableWelding</c> cada miembro del grupo conserva SU normal, asi que T/B se
+        ''' reortogonalizan por miembro: propagarle la del maestro (que es lo que se hace cuando la
+        ''' opcion esta apagada, porque ahi la normal del maestro TAMBIEN se le escribe) dejaria la
+        ''' base torcida respecto de la normal que el miembro se queda.
+        ''' </summary>
+        Public Property KeepExistingNormals As Boolean
+
         ' --- Welding (opcional) ---
         Public Property EnableWelding As Boolean                ' activa agrupación por posición+UV
         Public Property WeldPosEpsilon As Double                ' tolerancia para posición (en unidades del modelo)
@@ -1463,6 +1496,59 @@ Public Class RecalcTBN
             .Tri_det = det
         }
     End Function
+
+    ''' <summary>
+    ''' Refresca SOLO las derivadas UV por triangulo de los triangulos incidentes a
+    ''' <paramref name="verticesTocados"/>, conservando el resto del cache.
+    '''
+    ''' ⭐ Existe para no tirar el cache entero cuando lo unico que se movio son UVs. El cache tiene
+    ''' dos mitades con dependencias distintas: la ADJACENCIA (<c>VertexToTriangles</c>,
+    ''' <c>TriCount</c>, <c>Indices</c>) depende solo de los indices, y las DERIVADAS
+    ''' (<c>Tri_du*</c>, <c>Tri_det</c>) dependen de las UVs. Un slider uv no toca los indices, asi
+    ''' que rehacer la adjacencia — que es la parte cara, O(triangulos) con una List por vertice —
+    ''' era trabajo tirado en cada tick del arrastre.
+    '''
+    ''' No hace nada si todavia no hay cache: ahi <c>RecalculateNormalsTangentsBitangents</c> lo
+    ''' construye entero desde las UVs actuales, que ya es lo correcto.
+    ''' </summary>
+    Public Shared Sub RefreshUvDerivatives(ByRef geo As SkinnedGeometry, verticesTocados As HashSet(Of Integer))
+        If verticesTocados Is Nothing OrElse verticesTocados.Count = 0 Then Return
+        Dim c = geo.CachedTBN
+        If c.Indices Is Nothing OrElse c.VertexToTriangles Is Nothing Then Return
+        If geo.Uvs_Weight Is Nothing Then Return
+
+        Dim nVerts As Integer = geo.Uvs_Weight.Length
+        Dim tris As New HashSet(Of Integer)()
+        For Each vi In verticesTocados
+            If vi < 0 OrElse vi >= c.VertexToTriangles.Length Then Continue For
+            Dim lista = c.VertexToTriangles(vi)
+            If lista Is Nothing Then Continue For
+            For Each t In lista
+                tris.Add(t)
+            Next
+        Next
+
+        For Each t In tris
+            If t < 0 OrElse t >= c.TriCount Then Continue For
+            Dim i0 As Integer = CInt(c.Indices(3 * t + 0))
+            Dim i1 As Integer = CInt(c.Indices(3 * t + 1))
+            Dim i2 As Integer = CInt(c.Indices(3 * t + 2))
+            If i0 >= nVerts OrElse i1 >= nVerts OrElse i2 >= nVerts Then Continue For
+
+            Dim uv0 As Vector3 = geo.Uvs_Weight(i0)
+            Dim uv1 As Vector3 = geo.Uvs_Weight(i1)
+            Dim uv2 As Vector3 = geo.Uvs_Weight(i2)
+
+            Dim _du1 As Double = uv1.X - uv0.X
+            Dim _dv1 As Double = uv1.Y - uv0.Y
+            Dim _du2 As Double = uv2.X - uv0.X
+            Dim _dv2 As Double = uv2.Y - uv0.Y
+
+            c.Tri_du1(t) = _du1 : c.Tri_dv1(t) = _dv1
+            c.Tri_du2(t) = _du2 : c.Tri_dv2(t) = _dv2
+            c.Tri_det(t) = _du1 * _dv2 - _du2 * _dv1
+        Next
+    End Sub
 
     ' ===========================================================================================
     ' API PÚBLICA: Recalcular N/T/B SOLO para la clausura afectada (dirty + sus triángulos)
@@ -1637,7 +1723,19 @@ Public Class RecalcTBN
             Dim T As Vector3d = If(useFullArrays, tAccum(m), TX)
             Dim B As Vector3d = If(useFullArrays, bAccum(m), Tb)
 
+            ' Copias de los ACUMULADOS, antes de que el Gram-Schmidt de abajo los pise. Las necesita
+            ' la rama de miembros soldados de KeepExistingNormals: proyectar la T/B FINALES del
+            ' maestro (ya ortogonalizadas contra SU normal, y con ForceOrthogonalBitangent la B final
+            ' es exactamente +/-cross(N,T)) hacia la normal del miembro deriva su base — y su
+            ' handedness — del maestro, que es justo lo que esa rama existe para no hacer.
+            Dim Tacc As Vector3d = T
+            Dim Bacc As Vector3d = B
+
             ' Normal
+            If opts.KeepExistingNormals Then
+                ' Sólo tangentes: la N es la que YA está en la geometría (ver KeepExistingNormals).
+                N = geo.Normals(m)
+            End If
             If N.LengthSquared <= epsPos OrElse HasNaN(N) Then
                 N = New Vector3d(0, 0, 1)
             ElseIf opts.NormalizeOutputs Then
@@ -1680,15 +1778,62 @@ Public Class RecalcTBN
             ' Propagate to all members of the weld group
             ' FO4 convention (uniform for both FO4 and SSE): T->geo.Tangents, B->geo.Bitangents.
             ' T/B swap for SSE NIF format is handled at ExtractSkinnedGeometry / InjectToTrishape boundaries.
+            Dim escribeNormales As Boolean = Not opts.KeepExistingNormals
             Dim members As List(Of Integer) = Nothing
             If membersOf.TryGetValue(m, members) Then
                 For Each vi As Integer In members
-                    geo.Normals(vi) = N
-                    geo.Tangents(vi) = T
-                    geo.Bitangents(vi) = B
+                    If escribeNormales Then
+                        geo.Normals(vi) = N
+                        geo.Tangents(vi) = T
+                        geo.Bitangents(vi) = B
+                    ElseIf vi = m Then
+                        ' El maestro: T y B ya se calcularon contra geo.Normals(m). Escribir tal cual
+                        ' deja este camino BYTE-IDENTICO al de siempre cuando no hay welding — y sin
+                        ' welding `membersOf` tiene un singleton por vertice, asi que este es el caso
+                        ' normal, no una excepcion.
+                        geo.Tangents(vi) = T
+                        geo.Bitangents(vi) = B
+                    Else
+                        ' Miembro soldado que conserva SU normal (no se le escribe la del maestro):
+                        ' la base se reortogonaliza contra esa, o queda torcida. Parte de Tacc/Bacc
+                        ' (los ACUMULADOS del grupo), no de la T/B ya ortogonalizadas del maestro, y
+                        ' respeta ForceOrthogonalBitangent igual que el camino del maestro.
+                        Dim Nv As Vector3d = geo.Normals(vi)
+                        If Nv.LengthSquared <= epsPos OrElse HasNaN(Nv) Then
+                            Nv = New Vector3d(0, 0, 1)
+                        ElseIf opts.NormalizeOutputs Then
+                            Nv = Vector3d.Normalize(Nv)
+                        End If
+                        Dim Tv As Vector3d = Tacc - Nv * Vector3d.Dot(Nv, Tacc)
+                        If Tv.LengthSquared <= epsPos OrElse HasNaN(Tv) Then
+                            Tv = OrthonormalTangentFromNormal(Nv)
+                        ElseIf opts.NormalizeOutputs Then
+                            Tv = Vector3d.Normalize(Tv)
+                        End If
+
+                        Dim Bcrossv As Vector3d = Vector3d.Cross(Nv, Tv)
+                        Dim sv As Double = 1.0
+                        Dim Bprojv As Vector3d = Bacc - Nv * Vector3d.Dot(Nv, Bacc)
+                        If Not HasNaN(Bprojv) AndAlso Bprojv.LengthSquared > epsPos Then
+                            If Vector3d.Dot(Bcrossv, Bprojv) < 0.0 Then sv = -1.0
+                        End If
+
+                        Dim Bv As Vector3d
+                        If opts.ForceOrthogonalBitangent Then
+                            Bv = Bcrossv * sv
+                        Else
+                            Bv = Bprojv
+                            If Bv.LengthSquared <= epsPos OrElse HasNaN(Bv) Then Bv = Bcrossv * sv
+                        End If
+                        If opts.NormalizeOutputs AndAlso Bv.LengthSquared > epsPos Then Bv = Vector3d.Normalize(Bv)
+                        If opts.RepairNaNs AndAlso HasNaN(Bv) Then Bv = Bcrossv * sv
+
+                        geo.Tangents(vi) = Tv
+                        geo.Bitangents(vi) = Bv
+                    End If
                 Next
             Else
-                geo.Normals(m) = N
+                If escribeNormales Then geo.Normals(m) = N
                 geo.Tangents(m) = T
                 geo.Bitangents(m) = B
             End If

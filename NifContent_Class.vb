@@ -140,6 +140,23 @@ Public Class Nifcontent_Class_Manolo
             AssignExtraData(target, triPath)
         End If
     End Sub
+    ''' <summary>
+    ''' Prende el bit 0 (hidden) de NiAVObject.flags, que es lo que hace BodySlide con
+    ''' <c>shape-&gt;flags |= 1</c> (BodySlideApp.cpp:3619) para una shape que quedaria totalmente
+    ''' zapeada pero debe conservarse en el archivo.
+    '''
+    ''' NiAVObject serializa flags como uint32 con StreamVersion &gt; 26 y como uint16 en adelante
+    ''' hacia atras (NiMain.NiAVObject.g.cs:139-149). FO4 (130) y SSE (100) caen siempre en el
+    ''' uint32; se escriben los dos para que el campo quede coherente sea cual sea el que se
+    ''' serialice, ya que el no usado no se emite.
+    ''' </summary>
+    Public Sub SetShapeHidden(shape As INiShape)
+        Dim avo = TryCast(shape, NiAVObject)
+        If avo Is Nothing Then Exit Sub
+        avo.Flags_ui = avo.Flags_ui Or 1UI
+        avo.Flags_us = CUShort(avo.Flags_us Or 1US)
+    End Sub
+
     Public Sub RemoveTriData(shapeName As String, toRoot As Boolean)
         Dim target As NiAVObject
         If toRoot Then
@@ -336,8 +353,17 @@ Public Class Nifcontent_Class_Manolo
         End Using
     End Function
 
+    ''' <summary>
+    ''' Shapes del NIF, o vacio si todavia no se cargo ninguno. NiflySharp.GetShapes hace
+    ''' `Blocks.OfType(...)` sin guard (NifFile.cs:1055) y tira ArgumentNullException con un
+    ''' Nifcontent recien construido — justo el estado de un sliderset antes de Load_and_Check_Shapedata.
+    ''' Los callers lo usan como "dame las shapes que haya" (p. ej. el guard
+    ''' `Not IsNothing(NIFContent.NifShapes)` de EnsureShapeDataLookupCacheCore, que al evaluar la
+    ''' propiedad se llevaba por delante el chequeo que pretendia hacer).
+    ''' </summary>
     Public ReadOnly Property NifShapes As IEnumerable(Of NiflySharp.INiShape)
         Get
+            If Me.Blocks Is Nothing Then Return Array.Empty(Of NiflySharp.INiShape)()
             Return Me.GetShapes
         End Get
     End Property
@@ -961,6 +987,10 @@ Public Class Nifcontent_Class_Manolo
     ''' (e.g. zap removal or shape splitting).
     ''' </summary>
     Public Sub RemapSkinPartitionTriangles(shape As INiShape, oldToNew As IReadOnlyDictionary(Of Integer, Integer))
+        ' El caller obtiene el shape con `geom.Geometry?.BackingShape`, que puede dar Nothing para una
+        ' SkinnedGeometry que no viene de un NIF. Sin este guard reventaba con NRE en vez de ser no-op,
+        ' igual que los dos guards de abajo cuando no hay skin o no hay particion.
+        If shape Is Nothing Then Return
         Dim skinInst = GetBlock(Of NiSkinInstance)(shape.SkinInstanceRef)
         If skinInst Is Nothing Then Return
         Dim skinPart = GetBlock(skinInst.SkinPartition)

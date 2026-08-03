@@ -33,32 +33,92 @@ End Enum
 ''' Shape name matching is case-sensitive (Ordinal) to match the original engine behavior.
 ''' </summary>
 Public Class TriFile
-    ''' <summary>Shape name -> list of morph entries. Case-sensitive keys.</summary>
+    ''' <summary>
+    ''' Shape name -&gt; list of morph entries. Claves CASE-SENSITIVE, igual que el
+    ''' <c>std::map&lt;std::string, std::vector&lt;MorphDataPtr&gt;&gt;</c> de BSOS (TriFile.h:31), que es la
+    ''' autoridad del ESCRITOR: dos shapes que difieren solo en caja son dos entradas distintas y las
+    ''' dos se emiten. Colapsarlas perdia los morphs de la segunda al construir el .tri.
+    '''
+    ''' La busqueda case-insensitive del MOTOR vive en <see cref="GetMorphsForShape"/>, no aca — ver
+    ''' la nota ahi.
+    ''' </summary>
     Public ReadOnly Property ShapeMorphs As New Dictionary(Of String, List(Of TriMorphEntry))(StringComparer.Ordinal)
 
-    ''' <summary>Add a morph entry for a shape (deduplicates by name).</summary>
+    ''' <summary>
+    ''' Add a morph entry for a shape. Deduplica por (nombre, TIPO), no sólo por nombre.
+    '''
+    ''' El modelo del motor de SSE es exactamente ese: <c>BodyMorphMap</c> de skee64 es
+    ''' <c>unordered_map&lt;SKEEFixedString, pair&lt;posicion, uv&gt;&gt;</c> (BodyMorphInterface.h:194) —
+    ''' UN nombre de morph lleva datos de posicion en <c>.first</c> y de UV en <c>.second</c>, y
+    ''' <c>ApplyMorphs</c> recibe dos functors, uno por cada cosa. Dedupear sólo por nombre (como hace
+    ''' <c>TriFile::AddMorph</c> de BSOS, TriFile.cpp:282-288) descartaba la entrada UV de un morph que
+    ''' tuviera las dos, perdiendo datos que RaceMenu sí aplica.
+    ''' Para FO4 es indistinto: f4ee nunca lee la seccion UV.
+    ''' <c>TriFile::Write</c> de BSOS ya filtra por tipo, asi que emitir ambas es valido en el formato.
+    ''' </summary>
     Public Sub AddMorph(shapeName As String, entry As TriMorphEntry)
         Dim list As List(Of TriMorphEntry) = Nothing
         If Not ShapeMorphs.TryGetValue(shapeName, list) Then
             list = New List(Of TriMorphEntry)()
             ShapeMorphs(shapeName) = list
         End If
-        If Not list.Exists(Function(e) e.Name.Equals(entry.Name, StringComparison.OrdinalIgnoreCase)) Then
+        ' Ordinal (case-SENSITIVE) igual que `searchData->name == data->name` de TriFile::AddMorph
+        ' (TriFile.cpp:282-286): la autoridad de este metodo es el ESCRITOR de BSOS. Emitir los dos
+        ' es equivalente para el motor, que dedupea case-insensitive quedandose con el primero.
+        If Not list.Exists(Function(e) e.MorphType = entry.MorphType AndAlso
+                                       String.Equals(e.Name, entry.Name, StringComparison.Ordinal)) Then
             list.Add(entry)
         End If
     End Sub
 
-    ''' <summary>Get all morph entries for a shape, or empty list.</summary>
+    ''' <summary>
+    ''' Get all morph entries for a shape, or empty list.
+    '''
+    ''' Match exacto primero y, si falla, fallback case-insensitive: los mapas de shape de los DOS
+    ''' motores comparan con <c>_stricmp</c> — f4ee <c>TriShapeMap : unordered_map&lt;F4EEFixedString,…&gt;</c>
+    ''' (BodyMorphInterface.h:86 + StringTable.h:22-30) y skee64 igual (BodyMorphInterface.h:194 +
+    ''' StringTable.h:28-36). El fallback devuelve la PRIMERA coincidencia, que es lo que hace
+    ''' <c>emplace</c> ante claves equivalentes.
+    '''
+    ''' ⚠️ Esto NO habilita el match case-insensitive del NIF contra el .tri: ese paso lo hace
+    ''' <c>object-&gt;GetObjectByName</c> (BodyMorphInterface.cpp:1372) y su sensibilidad a caja NO es
+    ''' verificable desde este workspace (BSFixedString es StringCache::Ref con ctor nativo).
+    ''' BodySlideMorphResolver mantiene su comparacion exacta a proposito.
+    '''
+    ''' El desempate ante varias claves equivalentes es la ORDINAL-MENOR, no la primera que devuelva
+    ''' el Dictionary (cuyo orden .NET declara no especificado): el `emplace` del motor gana en orden
+    ''' de ARCHIVO, y el archivo lo escribimos ordenado Ordinal (ver WriteSection).
+    ''' </summary>
     Public Function GetMorphsForShape(shapeName As String) As List(Of TriMorphEntry)
         Dim list As List(Of TriMorphEntry) = Nothing
         If ShapeMorphs.TryGetValue(shapeName, list) Then Return list
-        Return New List(Of TriMorphEntry)()
+
+        Dim bestKey As String = Nothing
+        For Each kv In ShapeMorphs
+            If String.Equals(kv.Key, shapeName, StringComparison.OrdinalIgnoreCase) Then
+                If bestKey Is Nothing OrElse String.CompareOrdinal(kv.Key, bestKey) < 0 Then bestKey = kv.Key
+            End If
+        Next
+        If bestKey IsNot Nothing Then Return ShapeMorphs(bestKey)
+        ' Instancia nueva a proposito: devolver una lista Shared mutable desde una API publica de una
+        ' libreria compartida deja que el primer caller que haga .Add envenene a todas las TriFile
+        ' del proceso.
+        Return New List(Of TriMorphEntry)(0)
     End Function
 
-    ''' <summary>Get a specific morph entry by shape and morph name, or Nothing.</summary>
-    Public Function GetMorph(shapeName As String, morphName As String) As TriMorphEntry
+    ''' <summary>
+    ''' Get a specific morph entry by shape and morph name, or Nothing.
+    '''
+    ''' Filtra por tipo, con Position por defecto, porque es lo unico que aplica el motor de FO4:
+    ''' <c>GetTrishapeMap</c> lee la seccion de posiciones del PIRT y RETORNA sin tocar la seccion UV
+    ''' (BodyMorphInterface.cpp:150-304). Sin el filtro, un morph que existiera SOLO en la seccion UV
+    ''' se devolvia y sus deltas de UV se aplicaban como posiciones.
+    ''' skee64 si lee la seccion UV (:953-1042), pero la aplica a UVs, no a vertices.
+    ''' </summary>
+    Public Function GetMorph(shapeName As String, morphName As String,
+                             Optional morphType As TriMorphType = TriMorphType.Position) As TriMorphEntry
         Return GetMorphsForShape(shapeName).Find(
-            Function(e) e.Name.Equals(morphName, StringComparison.OrdinalIgnoreCase))
+            Function(e) e.MorphType = morphType AndAlso e.Name.Equals(morphName, StringComparison.OrdinalIgnoreCase))
     End Function
 
     ''' <summary>Write this TRI file to disk in PIRT binary format.</summary>
@@ -115,12 +175,12 @@ Public Module TriFileParser
 
         For i = 0 To shapeCount - 1
             Dim shapeLen = CInt(br.ReadByte())
-            Dim shapeName = ReadAsciiString(br, shapeLen)
+            Dim shapeName = ReadTriName(br, shapeLen)
             Dim morphCount = br.ReadUInt16()
 
             For m = 0 To morphCount - 1
                 Dim morphLen = CInt(br.ReadByte())
-                Dim morphName = ReadAsciiString(br, morphLen)
+                Dim morphName = ReadTriName(br, morphLen)
                 Dim mult = br.ReadSingle()
                 Dim vertexCount = br.ReadUInt16()
 
@@ -132,6 +192,17 @@ Public Module TriFileParser
                 For k = 0 To vertexCount - 1
                     Dim vid = br.ReadUInt16()
 
+                    ' ⛔ Sin epsilon y ACUMULANDO, a proposito. La autoridad del LECTOR es el MOTOR, no el
+                    ' editor de BodySlide:
+                    '   • f4ee y skee64 cargan TODO delta sin filtrar por magnitud
+                    '     (BodyMorphInterface.cpp:265-274 y :927-942) y lo aplican con
+                    '     `vertices[idx] += delta * factor` (TriShapePacked/FullVertexData::ApplyMorph),
+                    '     recorriendo el VECTOR: un id repetido se suma DOS veces.
+                    '   • `!offset.IsZero(true)` de TriFile::Read (TriFile.cpp:81/:134) y el first-wins de
+                    '     su `emplace` son el modelo in-memory del EDITOR, que es otra cosa.
+                    ' El skip de cero exacto se conserva porque sumar 0 es inerte: no cambia el resultado.
+                    ' (El epsilon SI es canonico del lado del ESCRITOR — ver IsOffsetNegligible en
+                    ' TriFiles.vb, que replica el `!v.IsZero(true)` de BodySlideApp::WriteMorphTRI:1457.)
                     If sectionType = TriMorphType.Position Then
                         Dim sx = br.ReadInt16()
                         Dim sy = br.ReadInt16()
@@ -140,7 +211,12 @@ Public Module TriFileParser
                         Dim y = CSng(sy) * mult
                         Dim z = CSng(sz) * mult
                         If Not (x = 0.0F AndAlso y = 0.0F AndAlso z = 0.0F) Then
-                            entry.Offsets(vid) = New Vector3(x, y, z)
+                            Dim prev As Vector3
+                            If entry.Offsets.TryGetValue(vid, prev) Then
+                                entry.Offsets(vid) = New Vector3(prev.X + x, prev.Y + y, prev.Z + z)
+                            Else
+                                entry.Offsets(vid) = New Vector3(x, y, z)
+                            End If
                         End If
                     Else
                         Dim sx = br.ReadInt16()
@@ -148,7 +224,12 @@ Public Module TriFileParser
                         Dim x = CSng(sx) * mult
                         Dim y = CSng(sy) * mult
                         If Not (x = 0.0F AndAlso y = 0.0F) Then
-                            entry.Offsets(vid) = New Vector3(x, y, 0.0F)
+                            Dim prev As Vector3
+                            If entry.Offsets.TryGetValue(vid, prev) Then
+                                entry.Offsets(vid) = New Vector3(prev.X + x, prev.Y + y, 0.0F)
+                            Else
+                                entry.Offsets(vid) = New Vector3(x, y, 0.0F)
+                            End If
                         End If
                     End If
                 Next
@@ -160,14 +241,21 @@ Public Module TriFileParser
         Next
     End Sub
 
-    Private Function ReadAsciiString(br As BinaryReader, length As Integer) As String
+    ''' <summary>
+    ''' Nombre del .tri como string .NET. Latin1, NO ASCII: es 1 byte = 1 char sin perdida, y es
+    ''' exactamente lo que usa NiflySharp para NiStringRef (NiStringRef.cs:53-62), o sea que el nombre
+    ''' leido del .tri y el nombre leido del NIF quedan comparables caracter a caracter.
+    ''' Con Encoding.ASCII todo byte &gt;= 0x80 se decodificaba como '?' y la shape no matcheaba nunca —
+    ''' BSOS en cambio lee los bytes crudos a un std::string (TriFile.cpp:49-51).
+    ''' </summary>
+    Private Function ReadTriName(br As BinaryReader, length As Integer) As String
         If length < 0 Then Throw New FormatException("Negative string length in TRI data.")
         If length = 0 Then Return ""
         Dim bytes = br.ReadBytes(length)
         If bytes Is Nothing OrElse bytes.Length <> length Then
-            Throw New FormatException("Could not read expected ASCII bytes from TRI data.")
+            Throw New FormatException("Could not read expected name bytes from TRI data.")
         End If
-        Return Encoding.ASCII.GetString(bytes)
+        Return Encoding.Latin1.GetString(bytes)
     End Function
 
 End Module
@@ -363,19 +451,18 @@ Public Module TriFileWriter
         If tri Is Nothing OrElse String.IsNullOrWhiteSpace(fileName) Then Return False
 
         Try
-            Using fs As New FileStream(fileName, FileMode.Create, FileAccess.Write, FileShare.None)
-                Using bw As New BinaryWriter(fs, Encoding.ASCII, leaveOpen:=False)
-                    ' Header "PIRT"
-                    bw.Write(Encoding.ASCII.GetBytes("PIRT"))
-
-                    ' Position section
-                    WriteSection(bw, tri, TriMorphType.Position)
-
-                    ' UV section
-                    WriteSection(bw, tri, TriMorphType.UV)
-                End Using
-            End Using
-        Catch
+            ' Una SOLA implementación del formato, en WriteTriToBytes: tener el header y las dos
+            ' WriteSection duplicados acá hacía que los tests validaran una copia distinta de la que
+            ' corre en el build. Se serializa a memoria y recién ahí se toca el disco, así que un
+            ' throw de los límites del formato ya no deja un .tri truncado (FileMode.Create trunca
+            ' antes de escribir).
+            Dim payload = BuildTriBytes(tri)
+            File.WriteAllBytes(fileName, payload)
+        Catch ex As Exception
+            ' Un .tri que no se escribio deja al NIF con un BODYTRI apuntando a nada. El caller
+            ' DEBE propagar el False; aca solo queda el rastro de la causa real, que si no se
+            ' pierde entera: nombre de shape/morph >255 chars, o Offsets.Count >65535.
+            Logger.LogLazy(Function() $"[TRI] Write failed for '{fileName}': {ex.GetType().Name}: {ex.Message}")
             Return False
         End Try
 
@@ -386,9 +473,22 @@ Public Module TriFileWriter
     Public Function WriteTriToBytes(tri As TriFile) As Byte()
         If tri Is Nothing Then Return Nothing
 
+        Try
+            Return BuildTriBytes(tri)
+        Catch ex As Exception
+            ' Mismo contrato que WriteTriToFile: los limites del formato (nombre >255 bytes,
+            ' Offsets.Count >65535) no deben escaparse crudos al consumidor.
+            Logger.LogLazy(Function() $"[TRI] WriteTriToBytes failed: {ex.GetType().Name}: {ex.Message}")
+            Return Nothing
+        End Try
+    End Function
+
+    ''' <summary>Serializa el PIRT completo a memoria. ÚNICA implementación del formato: la usan tanto
+    ''' <see cref="WriteTriToFile"/> como <see cref="WriteTriToBytes"/>.</summary>
+    Private Function BuildTriBytes(tri As TriFile) As Byte()
         Using ms As New MemoryStream()
-            Using bw As New BinaryWriter(ms, Encoding.ASCII, leaveOpen:=True)
-                bw.Write(Encoding.ASCII.GetBytes("PIRT"))
+            Using bw As New BinaryWriter(ms, Encoding.Latin1, leaveOpen:=True)
+                bw.Write(Encoding.Latin1.GetBytes("PIRT"))
                 WriteSection(bw, tri, TriMorphType.Position)
                 WriteSection(bw, tri, TriMorphType.UV)
             End Using
@@ -397,28 +497,46 @@ Public Module TriFileWriter
     End Function
 
     Private Sub WriteSection(bw As BinaryWriter, tri As TriFile, sectionType As TriMorphType)
-        ' Count shapes that have morphs of this type
+        ' Count shapes that have morphs of this type.
+        ' El orden de shapes replica TriFile::Write de BSOS, que itera un std::map<std::string>.
+        ' Sin este OrderBy el orden dependia del orden de insercion de un Dictionary, que no esta
+        ' garantizado por contrato.
+        ' ⚠️ Residuo conocido: MSVC compara std::string con char SIGNED (bytes >= 0x80 ordenan ANTES
+        ' del ASCII) y StringComparer.Ordinal compara unidades UTF-16 (ordenan DESPUES). Un nombre de
+        ' shape con bytes altos se ordena distinto que en BSOS. Los BYTES emitidos si coinciden desde
+        ' que la escritura pasa por Latin1.
         Dim shapeNames = tri.ShapeMorphs.Keys.
             Where(Function(sn) tri.GetMorphsForShape(sn).Any(Function(m) m.MorphType = sectionType)).
+            OrderBy(Function(sn) sn, StringComparer.Ordinal).
             ToList()
         bw.Write(CUShort(shapeNames.Count))
 
         For Each shapeName In shapeNames
-            If shapeName.Length > 255 Then Throw New InvalidOperationException($"Shape name exceeds 255-character TRI format limit: '{shapeName}'")
-            bw.Write(CByte(shapeName.Length))
-            If shapeName.Length > 0 Then bw.Write(Encoding.ASCII.GetBytes(shapeName))
+            ' Latin1, NO ASCII: son los MISMOS bytes que NiflySharp decodifico del NIF
+            ' (NiString.cs:102/135 para la string table de FO4/SSE; NiStringRef.cs:53-62 en el
+            ' formato legacy), o sea los mismos que escribe BSOS copiando el std::string crudo.
+            ' Con ASCII cualquier byte >= 0x80 salia como '?'.
+            ' El prefijo de largo va en BYTES, no en chars: un par suplente son 2 chars y 1 byte,
+            ' y el desfasaje corrompia el archivo entero.
+            Dim shapeBytes = Encoding.Latin1.GetBytes(shapeName)
+            If shapeBytes.Length > 255 Then Throw New InvalidOperationException($"Shape name exceeds the 255-byte TRI format limit: '{shapeName}'")
+            bw.Write(CByte(shapeBytes.Length))
+            If shapeBytes.Length > 0 Then bw.Write(shapeBytes)
 
+            ' Orden de morphs = orden de insercion (= orden de sliders del .osp), igual que el
+            ' std::vector<MorphDataPtr> de BSOS. NO alfabetico: ordenar por nombre desviaba del
+            ' layout canonico e impedia el diff binario contra BodySlide.
             Dim morphs = tri.GetMorphsForShape(shapeName).
                 Where(Function(m) m.MorphType = sectionType).
-                OrderBy(Function(m) m.Name, StringComparer.Ordinal).
                 ToList()
             bw.Write(CUShort(morphs.Count))
 
             For Each morph In morphs
                 Dim morphName = If(morph.Name, "")
-                If morphName.Length > 255 Then Throw New InvalidOperationException($"Morph name exceeds 255-character TRI format limit: '{morphName}'")
-                bw.Write(CByte(morphName.Length))
-                If morphName.Length > 0 Then bw.Write(Encoding.ASCII.GetBytes(morphName))
+                Dim morphBytes = Encoding.Latin1.GetBytes(morphName)
+                If morphBytes.Length > 255 Then Throw New InvalidOperationException($"Morph name exceeds the 255-byte TRI format limit: '{morphName}'")
+                bw.Write(CByte(morphBytes.Length))
+                If morphBytes.Length > 0 Then bw.Write(morphBytes)
 
                 ' Compute quantization multiplier: max absolute component / 0x7FFF
                 Dim maxAbs As Single = 0.0F
