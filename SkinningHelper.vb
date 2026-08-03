@@ -1644,50 +1644,146 @@ Public Class RecalcTBN
         Dim localMasterOf = masterOf
 
         If useFullArrays AndAlso triArray.Length >= 2000 Then
-            ' Parallel path: per-thread local arrays via ThreadLocal, merge at end
-            Dim x1 = New Vector3d(nVerts - 1) {}
-            Dim x2 = New Vector3d(nVerts - 1) {}
-            Dim x3 = New Vector3d(nVerts - 1) {}
-            Dim threadLocalN As New Threading.ThreadLocal(Of Vector3d())(Function() x1, trackAllValues:=True)
-            Dim threadLocalT As New Threading.ThreadLocal(Of Vector3d())(Function() x2, trackAllValues:=True)
-            Dim threadLocalB As New Threading.ThreadLocal(Of Vector3d())(Function() x3, trackAllValues:=True)
+            ' ===== Camino PARALELO — SCATTER reemplazado por GATHER =====
+            '
+            ' ⛔ EL BUG QUE ESTO ARREGLA (medido 2026-08-03). La version anterior era:
+            '
+            '     Dim x1 = New Vector3d(nVerts - 1) {}
+            '     Dim threadLocalN As New Threading.ThreadLocal(Of Vector3d())(Function() x1, trackAllValues:=True)
+            '
+            ' La fabrica devolvia SIEMPRE EL MISMO array x1, asi que los "thread locals" no eran
+            ' locales de nadie: todos los hilos acumulaban sobre el MISMO buffer y `tlN(m) += ...`
+            ' era un read-modify-write concurrente ⇒ se perdian actualizaciones, distintas en cada
+            ' corrida. (El merge ademas recorria .Values y sumaba N veces el mismo array, pero eso
+            ' solo ESCALA el acumulador y la normalizacion final lo cancelaba; lo que rompia era la
+            ' carrera.) Sintoma medido: construir DOS VECES el mismo proyecto daba NIF distintos —
+            ' 2 o 3 de cada 243 en el corpus de FO4, y no siempre los mismos, con posiciones, UV y
+            ' triangulos IDENTICOS y hasta 1,78 de delta en una normal (o sea una normal apuntando a
+            ' otro lado, no ruido de ultimo bit). El self-test TB3 lo reproduce en proceso.
+            '
+            ' ⭐ POR QUE GATHER Y NO "un array por hilo". Darle a cada hilo su propio buffer saca la
+            ' carrera pero NO alcanza para que el resultado sea reproducible: el merge recorreria
+            ' .Values, cuyo orden depende del scheduler, y la suma flotante no es asociativa. Ademas
+            ' la cantidad de hilos cambia entre maquinas, y la app SE DISTRIBUYE: el resultado no
+            ' puede depender de cuantos nucleos tenga quien la corre.
+            '
+            ' Con gather cada vertice maestro lo escribe UNA sola iteracion, sumando en un orden
+            ' fijado por el cache (miembros del grupo x VertexToTriangles), que es el mismo en toda
+            ' maquina y en toda corrida. Sin carrera y sin dependencia del paralelismo.
+            '
+            ' Fase A (paralela, una escritura por triangulo en SU indice) precomputa la normal de
+            ' cara, la base tangente y los tres pesos por esquina; fase B (paralela, una escritura
+            ' por maestro) los suma. La fase A evita recalcular cross/angulos las 3 veces que la
+            ' fase B visita cada triangulo; cuesta 96 bytes por triangulo afectado.
+            '
+            ' ⚠️ El resultado NO es bit-identico al del scatter (cambia el orden de suma), asi que
+            ' este cambio MUEVE BYTES una vez. A partir de ahi es estable.
+            Dim nTri As Integer = triArray.Length
+            Dim faceN(nTri - 1) As Vector3d
+            Dim faceT(nTri - 1) As Vector3d
+            Dim faceB(nTri - 1) As Vector3d
+            Dim wc0(nTri - 1) As Double
+            Dim wc1(nTri - 1) As Double
+            Dim wc2(nTri - 1) As Double
+            ' triangulo -> su lugar en los arrays de arriba, o -1 si no esta afectado. El centinela
+            ' es -1 y no 0 porque el triangulo 0 es un indice valido.
+            Dim slotOf(geo.CachedTBN.TriCount - 1) As Integer
+            For k = 0 To slotOf.Length - 1
+                slotOf(k) = -1
+            Next
+            For k = 0 To nTri - 1
+                slotOf(triArray(k)) = k
+            Next
 
-            Parallel.ForEach(Partitioner.Create(0, triArray.Length),
+            ' --- FASE A: por triangulo. Cada iteracion escribe solo en su propio indice k.
+            Parallel.ForEach(Partitioner.Create(0, nTri),
                 Sub(range As Tuple(Of Integer, Integer))
-                    Dim tlN = threadLocalN.Value
-                    Dim tlT = threadLocalT.Value
-                    Dim tlB = threadLocalB.Value
-                    For ti = range.Item1 To range.Item2 - 1
-                        AccumulateTriangle(triArray(ti), localIndices, localVerts, localMasterOf,
-                                           localDu1, localDv1, localDu2, localDv2, localDet,
-                                           useAngle, wMode, epsPos, epsUV,
-                                           tlN, tlT, tlB)
+                    For k = range.Item1 To range.Item2 - 1
+                        Dim t = triArray(k)
+                        Dim i0 As Integer = CInt(localIndices(3 * t))
+                        Dim i1 As Integer = CInt(localIndices(3 * t + 1))
+                        Dim i2 As Integer = CInt(localIndices(3 * t + 2))
+                        Dim p0 = localVerts(i0), p1 = localVerts(i1), p2 = localVerts(i2)
+                        Dim e1 = p1 - p0, e2 = p2 - p0
+                        Dim fn = Vector3d.Cross(e1, e2)
+                        Dim area2 = fn.Length
+                        ' Cara degenerada: queda todo en cero y no aporta, igual que el Exit Sub de
+                        ' AccumulateTriangle.
+                        If area2 <= epsPos Then Continue For
+
+                        Dim a0 As Double, a1 As Double, a2 As Double
+                        If useAngle Then
+                            Dim g0 = AngleBetweenSafe(e1, e2, epsPos)
+                            Dim g1 = AngleBetweenSafe(p0 - p1, p2 - p1, epsPos)
+                            Dim g2 = AngleBetweenSafe(p0 - p2, p1 - p2, epsPos)
+                            If wMode = NormalWeightMode.AngleOnly Then
+                                a0 = g0 : a1 = g1 : a2 = g2
+                            Else ' AreaTimesAngle
+                                a0 = area2 * g0 : a1 = area2 * g1 : a2 = area2 * g2
+                            End If
+                        Else ' AreaOnly
+                            a0 = area2 : a1 = area2 : a2 = area2
+                        End If
+
+                        Dim tf As Vector3d, bf As Vector3d
+                        ComputeFaceTB(fn, e1, e2, localDu1(t), localDv1(t), localDu2(t), localDv2(t),
+                                      localDet(t), epsPos, epsUV, tf, bf)
+                        faceN(k) = fn : faceT(k) = tf : faceB(k) = bf
+                        wc0(k) = a0 : wc1(k) = a1 : wc2(k) = a2
                     Next
                 End Sub)
 
-            ' Merge thread-local arrays into nAccum — only touch affected master vertices
-            For Each tlN In threadLocalN.Values
-                For Each vi In affectedVerts
-                    Dim m = localMasterOf(vi)
-                    nAccum(m) += tlN(m)
-                Next
+            ' --- FASE B: por vertice MAESTRO. Cada iteracion escribe solo nAccum(m)/tAccum(m)/bAccum(m).
+            ' Se recorre (miembros del grupo) x (triangulos incidentes del miembro), y de cada
+            ' triangulo se suma SOLO la esquina que ES ese miembro. Asi cada par (triangulo, esquina)
+            ' se visita exactamente una vez, que es el mismo multiconjunto de aportes que hacia el
+            ' scatter: no se puede contar dos veces un triangulo que toque dos miembros del grupo.
+            Dim maestros As New List(Of Integer)()
+            Dim vistos As New HashSet(Of Integer)()
+            For Each vi In affectedVerts
+                Dim m = localMasterOf(vi)
+                If vistos.Add(m) Then maestros.Add(m)
             Next
-            For Each tlT In threadLocalT.Values
-                For Each vi In affectedVerts
-                    Dim m = localMasterOf(vi)
-                    tAccum(m) += tlT(m)
-                Next
-            Next
-            For Each tlB In threadLocalB.Values
-                For Each vi In affectedVerts
-                    Dim m = localMasterOf(vi)
-                    bAccum(m) += tlB(m)
-                Next
-            Next
+            Dim maestroArr = maestros.ToArray()
+            Dim v2t = geo.CachedTBN.VertexToTriangles
+            Dim locMembers = membersOf
 
-            threadLocalN.Dispose()
-            threadLocalT.Dispose()
-            threadLocalB.Dispose()
+            Parallel.ForEach(Partitioner.Create(0, maestroArr.Length),
+                Sub(range As Tuple(Of Integer, Integer))
+                    For ci = range.Item1 To range.Item2 - 1
+                        Dim m = maestroArr(ci)
+                        Dim miembros As List(Of Integer) = Nothing
+                        If Not locMembers.TryGetValue(m, miembros) OrElse miembros Is Nothing Then Continue For
+                        Dim accN As Vector3d = Vector3d.Zero
+                        Dim accT As Vector3d = Vector3d.Zero
+                        Dim accB As Vector3d = Vector3d.Zero
+                        For Each vi In miembros
+                            If vi < 0 OrElse vi >= v2t.Length Then Continue For
+                            Dim lista = v2t(vi)
+                            If lista Is Nothing Then Continue For
+                            For Each t In lista
+                                Dim k = slotOf(t)
+                                If k < 0 Then Continue For   ' triangulo no afectado por este update
+                                If CInt(localIndices(3 * t)) = vi Then
+                                    accN += faceN(k) * wc0(k)
+                                    accT += faceT(k) * wc0(k)
+                                    accB += faceB(k) * wc0(k)
+                                End If
+                                If CInt(localIndices(3 * t + 1)) = vi Then
+                                    accN += faceN(k) * wc1(k)
+                                    accT += faceT(k) * wc1(k)
+                                    accB += faceB(k) * wc1(k)
+                                End If
+                                If CInt(localIndices(3 * t + 2)) = vi Then
+                                    accN += faceN(k) * wc2(k)
+                                    accT += faceT(k) * wc2(k)
+                                    accB += faceB(k) * wc2(k)
+                                End If
+                            Next
+                        Next
+                        nAccum(m) = accN : tAccum(m) = accT : bAccum(m) = accB
+                    Next
+                End Sub)
         Else
             ' Sequential path: direct accumulation (full arrays or sparse)
             For Each t In triArray
