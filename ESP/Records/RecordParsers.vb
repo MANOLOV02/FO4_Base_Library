@@ -2125,11 +2125,6 @@ Public Module RecordParsers
         Return Color.FromArgb(a, r, g, b)
     End Function
 
-    Private Function ParseByteColor(data As Byte(), offset As Integer) As Color
-        If data Is Nothing OrElse offset < 0 OrElse offset + 4 > data.Length Then Return Color.Empty
-        Return Color.FromArgb(data(offset + 3), data(offset), data(offset + 1), data(offset + 2))
-    End Function
-
     Private Function ParseLeveledEntry(rec As PluginRecord, sr As SubrecordData, pluginManager As PluginManager) As LVLN_Entry
         If sr.Data Is Nothing OrElse sr.Data.Length < 8 Then Return Nothing
 

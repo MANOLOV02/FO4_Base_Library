@@ -1684,17 +1684,6 @@ void main() {
         Return resultTex
     End Function
 
-    ''' <summary>Format a pair of DXGI codes (original + final) as a short readable tag.
-    ''' Reports orig->final when they differ, single name when they're identical.
-    ''' "+a" suffix marks formats that guarantee an alpha channel — important to know
-    ''' which layer masks actually carry alpha vs. constant 1. Diagnostic only.</summary>
-    Private Function DescribeFormat(origCode As Integer, finCode As Integer) As String
-        Dim orig = DxgiName(origCode)
-        Dim fin = DxgiName(finCode)
-        If orig = fin Then Return orig
-        Return $"{orig}->{fin}"
-    End Function
-
     ''' <summary>DXGI_FORMAT code -> short name for the formats actually seen in FO4 face textures.</summary>
     Private Function DxgiName(code As Integer) As String
         Select Case code

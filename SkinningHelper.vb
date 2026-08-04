@@ -125,43 +125,16 @@ Public Class SkinningHelper
     '   normaliza en runtime; la GPU aplica transpose(inverse(mat3)) a N/T/B y la CPU los deja en local.
     '   Test de paridad: alternar Setting_GPUSkinning sobre un shape posado — debe verse idéntico.
     '   Ver 00-reglas-ui-y-vb.md (§10) y 00-reglas-comentarios.md.
-    Private Shared Function BlendBoneMatrices(boneWeights As System.Half(), boneIndices As Byte(), precomputed() As Matrix4d) As Matrix4d
-        If boneWeights Is Nothing OrElse boneIndices Is Nothing OrElse precomputed.Length = 0 Then Return If(precomputed.Length > 0, precomputed(0), Matrix4d.Identity)
-        Dim result As Matrix4d = Matrix4d.Zero
-        Dim sumW As Double = 0
-        Dim cnt = Math.Min(boneWeights.Length, boneIndices.Length) - 1
-        ' Normalizacion de pesos del MOTOR (EngineSkinWeightNormalization): w3 = 1−Σ, descarta el slot con peso ≤0,
-        ' Gate apagado (default) ⇒ early-return y el camino de abajo queda bit-idéntico al de siempre.
-        Dim ckW(EngineSkinWeightNormalization.Slots - 1) As Single
-        If EngineSkinWeightNormalization.TryComputeWeights(boneWeights, 0, boneWeights.Length, ckW) Then
-            For j = 0 To EngineSkinWeightNormalization.Slots - 1
-                If ckW(j) > 0.0F Then
-                    Dim idxc = boneIndices(j)
-                    If idxc >= 0 AndAlso idxc < precomputed.Length Then result += precomputed(idxc) * CDbl(ckW(j))
-                End If
-            Next
-            Return result
-        End If
-        ' Single pass: accumulate weighted matrices and sum of weights simultaneously
-        For j = 0 To cnt
-            Dim w = CType(boneWeights(j), Double)
-            sumW += w
-            Dim idx = boneIndices(j)
-            If idx >= 0 AndAlso idx < precomputed.Length Then result += precomputed(idx) * w
-        Next
-        If sumW = 0 Then
-            Dim idx0 = If(boneIndices.Length > 0, boneIndices(0), 0)
-            Return precomputed(Math.Max(0, Math.Min(idx0, precomputed.Length - 1)))
-        End If
-        Return result * (1.0 / sumW)
-    End Function
-
     ''' <summary>
-    ''' Flat-array overload of BlendBoneMatrices that reads <paramref name="wpv"/> bone slots
-    ''' starting at <paramref name="baseIdx"/> in the flat <paramref name="boneWeights"/> /
-    ''' <paramref name="boneIndices"/> arrays.  Same semantics and fallback as the per-vertex
-    ''' overload but avoids per-vertex slice allocation, which matters in the inner skinning
-    ''' loop (called once per vertex per Extract/Bake call).
+    ''' Mezcla las matrices de los huesos que influyen al vértice que arranca en
+    ''' <paramref name="baseIdx"/>, leyendo <paramref name="wpv"/> slots de los arrays PLANOS de
+    ''' índices y pesos. Sin slice por vértice: corre una vez por vértice por Extract/Bake.
+    '''
+    ''' <para>⛔ Existía un segundo overload que recibía los arrays de UN solo vértice (sin
+    ''' <paramref name="baseIdx"/> ni <paramref name="wpv"/>) y repetía esta misma ley entera.
+    ''' <b>No lo llamaba nadie</b> — era <c>Private</c> y sin un solo call site en los tres repos —,
+    ''' así que era una copia muerta de la fórmula del contrato SYNC esperando desincronizarse en
+    ''' silencio la próxima vez que alguien tocara sólo una de las dos. Se eliminó.</para>
     ''' </summary>
     Private Shared Function BlendBoneMatrices(boneWeights As System.Half(), boneIndices As Byte(), baseIdx As Integer, wpv As Integer, precomputed() As Matrix4d,
                                               Optional flatPal As Double() = Nothing) As Matrix4d

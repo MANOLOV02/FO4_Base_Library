@@ -3127,17 +3127,6 @@ Public Module SaveNpcEspWriter
         End Using
     End Function
 
-    Private Function TryReadMasterFileSizeForDir(outDir As String, masterName As String) As ULong
-        Try
-            If String.IsNullOrEmpty(outDir) Then Return 0UL
-            Dim masterPath = Path.Combine(outDir, masterName)
-            If Not File.Exists(masterPath) Then Return 0UL
-            Return CULng(New FileInfo(masterPath).Length)
-        Catch
-            Return 0UL
-        End Try
-    End Function
-
     ''' <summary>The game's master file name. Public so callers building entries (NpcOverrideSaver's SSE
     ''' hair-colour materialization) can tell "this record lives in the game master, reusing it adds no
     ''' dependency" from "this record would drag a new plugin into the MAST list".</summary>
