@@ -1294,26 +1294,56 @@ Public Class SkinningHelper
         If geo.PerVertexMatrixValid Then Return
         Dim mats = geo.PerVertexSkinMatrix
         If mats Is Nothing Then Return
-        Dim vc = mats.Length
         Dim poseMats = geo.BoneMatsPose
-        Dim flatIdx = geo.Skinning.BoneIndices
-        Dim flatWgt = geo.Skinning.BoneWeights
-        Dim wpv = If(geo.Skinning.WeightsPerVertex > 0, geo.Skinning.WeightsPerVertex, 4)
-        Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso geo.Skinning.VertexCount = vc AndAlso poseMats IsNot Nothing)
-        If hasSkin Then
-            ' ⛔ MISMA función que el eager. `ParentGlobalTransform` lo escriben LOS DOS caminos
-            ' eager (Extract al construir y Recompute al recomputar), asi que acá se lee el que
-            ' realmente se usó.
-            Dim precomputed = BuildPosePalette(poseMats, geo.ParentGlobalTransform)
-            Dim flatPalette = FastGeom.BuildFlatPalette(precomputed)
-            Dim body As Action(Of Integer) = Sub(i) mats(i) = BlendBoneMatrices(flatWgt, flatIdx, i * wpv, wpv, precomputed, flatPalette)
-            If vc >= 500 Then
-                Parallel.For(0, vc, body)
-            Else
-                For i = 0 To vc - 1 : body(i) : Next
-            End If
-        End If
+        If poseMats Is Nothing Then Return
+        ' ⛔ MISMA paleta y MISMO cuerpo de relleno que el eager: BuildPosePalette +
+        ' FillPerVertexSkinMatrix. `ParentGlobalTransform` lo escriben LOS DOS caminos eager
+        ' (Extract al construir y Recompute al recomputar), así que acá se lee el que realmente se usó.
+        FillPerVertexSkinMatrix(mats, geo.Skinning, BuildPosePalette(poseMats, geo.ParentGlobalTransform))
         geo.PerVertexMatrixValid = True
+    End Sub
+
+    ''' <summary>
+    ''' Llena <paramref name="mats"/> con la matriz de skin de cada vértice, mezclando
+    ''' <paramref name="palette"/> con los pesos de <paramref name="skinning"/>.
+    '''
+    ''' <para>⛔⛔ ÚNICO CUERPO. Lo llaman la pasada 2 de <see cref="RecomputeGPUBoneMatrices"/> (eager)
+    ''' y <see cref="EnsurePerVertexSkinMatrix"/> (perezoso). Estaban duplicados y <b>ya habían
+    ''' divergido en DOS ejes distintos</b>: la paleta (arreglado con <see cref="BuildPosePalette"/>)
+    ''' y este relleno.</para>
+    '''
+    ''' <para>⛔ La divergencia de acá era la más grave de las dos y NO era de signos de cero: con
+    ''' <c>hasSkin = False</c> el eager llenaba cada vértice con <c>palette(0)</c>, y el perezoso
+    ''' <b>no tocaba nada</b> y marcaba <c>PerVertexMatrixValid = True</c> igual. O sea que dejaba las
+    ''' matrices del extract anterior —de otra pose— y las daba por buenas: tras un play en GPU sobre
+    ''' una shape sin datos de skin per-vértice, el world-cache, los bounds, el picking y el export
+    ''' leían matrices viejas. Se detectó al factorizar, no antes: mirando los dos cuerpos por
+    ''' separado la rama faltante no salta.</para>
+    ''' </summary>
+    Friend Shared Sub FillPerVertexSkinMatrix(mats() As Matrix4d, skinning As ShapeSkinningData, palette() As Matrix4d)
+        If mats Is Nothing OrElse palette Is Nothing Then Return
+        Dim vc = mats.Length
+        If vc = 0 Then Return
+        Dim flatIdx = skinning.BoneIndices
+        Dim flatWgt = skinning.BoneWeights
+        Dim wpv = If(skinning.WeightsPerVertex > 0, skinning.WeightsPerVertex, 4)
+        Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso skinning.VertexCount = vc)
+        Dim sinSkin = If(palette.Length > 0, palette(0), Matrix4d.Identity)
+        ' Paleta plana para el blend vectorial: una vez por shape, no por vértice. Ver FastGeom.
+        Dim flatPalette = FastGeom.BuildFlatPalette(palette)
+        Dim body As Action(Of Integer) =
+            Sub(i)
+                If hasSkin Then
+                    mats(i) = BlendBoneMatrices(flatWgt, flatIdx, i * wpv, wpv, palette, flatPalette)
+                Else
+                    mats(i) = sinSkin
+                End If
+            End Sub
+        If vc >= 500 Then
+            Parallel.For(0, vc, body)
+        Else
+            For i = 0 To vc - 1 : body(i) : Next
+        End If
     End Sub
 
     Public Shared Sub ComputeWorldSpaceCache(ByRef geo As SkinnedGeometry)
@@ -1491,30 +1521,11 @@ Public Class SkinningHelper
             ' re-snapshot tri.VertexData/VertexDataSSE here, those arrays are already encoded
             ' in geo.Skinning (and they're empty for NiTriShape, where the partition path was used).
             Dim perVertexSkinMatrix = geo.PerVertexSkinMatrix
-            Dim localFlatIdx = geo.Skinning.BoneIndices
-            Dim localFlatWgt = geo.Skinning.BoneWeights
-            Dim localWpv = If(geo.Skinning.WeightsPerVertex > 0, geo.Skinning.WeightsPerVertex, 4)
-            Dim localHasSkin = (localFlatIdx IsNot Nothing AndAlso localFlatWgt IsNot Nothing AndAlso geo.Skinning.VertexCount = vertexCount)
-            Dim localPrecomputed = precomputedBoneMatrices
-            ' Paleta plana para el blend vectorial: una vez por shape, no por vertice. Ver FastGeom.
-            Dim localFlatPalette = FastGeom.BuildFlatPalette(precomputedBoneMatrices)
-
-            Dim skinBody As Action(Of Integer) = Sub(i)
-                                                     If localHasSkin Then
-                                                         perVertexSkinMatrix(i) = BlendBoneMatrices(localFlatWgt, localFlatIdx, i * localWpv, localWpv, localPrecomputed, localFlatPalette)
-                                                     Else
-                                                         perVertexSkinMatrix(i) = If(localPrecomputed.Length > 0, localPrecomputed(0), Matrix4d.Identity)
-                                                     End If
-                                                 End Sub
+            Dim localSkinning = geo.Skinning
 
             If updatePerVertexSkin Then
-                If vertexCount >= 500 Then
-                    Parallel.For(0, vertexCount, skinBody)
-                Else
-                    For i = 0 To vertexCount - 1
-                        skinBody(i)
-                    Next
-                End If
+                ' ⛔ UN SOLO cuerpo, compartido con la recomposición perezosa. Ver FillPerVertexSkinMatrix.
+                FillPerVertexSkinMatrix(perVertexSkinMatrix, localSkinning, precomputedBoneMatrices)
                 geo.PerVertexMatrixValid = True
             Else
                 ' GPU-skin + animación + opaco: el shader skinnea del SSBO (GPUBoneMatrices ya
