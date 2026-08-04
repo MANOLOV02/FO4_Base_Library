@@ -367,6 +367,35 @@ Public Class SkinningHelper
             Return "[skin-blend-wpv0] wpv=0 no devolvio precomputed(0)"
         End If
 
+        ' ⛔ LA RAMA DEL GATE DEL MOTOR. `EngineSkinWeightNormalization.Enabled` es False por default,
+        ' asi que TryComputeWeights sale temprano y todo lo de arriba ejercita SOLO la rama normal —
+        ' pero el refactor de BlendBoneMatrices toco LAS DOS. Sin esto, prender el gate en FO4 haria
+        ' correr un camino vectorial que ningun test vio nunca.
+        ' Se prende y se restaura en Finally: es una propiedad GLOBAL y este self-test corre dentro
+        ' del parity gate, o sea justo antes de un bake.
+        Dim previo = EngineSkinWeightNormalization.Enabled
+        Try
+            EngineSkinWeightNormalization.Enabled = True
+            For iter As Integer = 0 To 499
+                For s = 0 To wgt.Length - 1
+                    wgt(s) = CType(pesos(CInt(NextB() Mod CULng(pesos.Length))), System.Half)
+                    idx(s) = CByte(NextB() Mod CULng(nBones + 2))
+                Next
+                Dim baseIdx As Integer = CInt(NextB() Mod 3UL) * 4
+                Dim gEsc = BlendBoneMatrices(wgt, idx, baseIdx, 4, precomputed)
+                Dim gVec = BlendBoneMatrices(wgt, idx, baseIdx, 4, precomputed, flatPal)
+                FastGeom.StoreMatrix(gEsc, a, 0) : FastGeom.StoreMatrix(gVec, b2, 0)
+                For e = 0 To FastGeom.MatDoubles - 1
+                    If BitConverter.DoubleToInt64Bits(a(e)) <> BitConverter.DoubleToInt64Bits(b2(e)) Then
+                        Return $"[skin-blend-enginenorm] iter {iter} base={baseIdx}: elemento {e} difiere " &
+                               $"(escalar={a(e):R} vectorial={b2(e):R}, {FastGeom.WidthInfo})"
+                    End If
+                Next
+            Next
+        Finally
+            EngineSkinWeightNormalization.Enabled = previo
+        End Try
+
         Return ""
     End Function
 
@@ -1297,8 +1326,13 @@ Public Class SkinningHelper
         Dim poseMats = geo.BoneMatsPose
         If poseMats Is Nothing Then Return
         ' ⛔ MISMA paleta y MISMO cuerpo de relleno que el eager: BuildPosePalette +
-        ' FillPerVertexSkinMatrix. `ParentGlobalTransform` lo escriben LOS DOS caminos eager
-        ' (Extract al construir y Recompute al recomputar), así que acá se lee el que realmente se usó.
+        ' FillPerVertexSkinMatrix.
+        ' `ParentGlobalTransform` lo escribe SOLO ExtractSkinnedGeometry, y con el mismo valor que
+        ' usa RecomputeGPUBoneMatrices (los dos son Matrix4d.Identity hardcodeado), asi que leerlo
+        ' acá da el transform que realmente uso el eager. ⛔ NO agregar una escritura en Recompute
+        ' "por las dudas": hoy seria un no-op demostrable, y codigo especulativo en un camino que
+        ' corre por frame es ruido. Si algun dia esos dos valores pudieran diferir, lo que hace falta
+        ' es un TEST que lo detecte, no una escritura preventiva.
         FillPerVertexSkinMatrix(mats, geo.Skinning, BuildPosePalette(poseMats, geo.ParentGlobalTransform))
         geo.PerVertexMatrixValid = True
     End Sub
@@ -1504,13 +1538,6 @@ Public Class SkinningHelper
                     CSng(m.M31), CSng(m.M32), CSng(m.M33), CSng(m.M34),
                     CSng(m.M41), CSng(m.M42), CSng(m.M43), CSng(m.M44))
             Next
-
-            ' ⛔ CIERRA EL AGUJERO QUE DEJABA EL ARREGLO ANTERIOR. La recomposición perezosa necesita
-            ' EL MISMO globalTransform que uso el camino eager, y lo lee de este campo. Recompute
-            ' antes NO lo escribia: usaba un local y se iba, asi que el perezoso quedaba siguiendo el
-            ' que habia guardado Extract. Hoy los dos son Identity y coincidian por casualidad; el dia
-            ' que uno dejara de serlo volvian a divergir en silencio.
-            geo.ParentGlobalTransform = GlobalTransform
 
             ' Also update perVertexSkinMatrix for world-space cache
             ' (Recompute per-vertex blended matrices using the same precomputed bone matrices)
