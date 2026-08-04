@@ -2306,6 +2306,9 @@ Public Class PreviewModel
                         ' del medio no), causando que las normales del medio usaran el nm3
                         ' del vertex 0. Se removio — ahora siempre per-vertex para coincidir
                         ' con el shader GPU que tambien computa skinNormalMat per-vertex.
+                        ' ⛔ Igual que el camino GPU de abajo: el cuerpo se despacha POR RANGO, no por
+                        ' vertice. Acá pesa aún más porque el cuerpo incluye una inversa 3x3 por
+                        ' vertice (NormalMatrixOrIdentity) y corre por malla POR FRAME.
                         Dim body As Action(Of Integer) = Sub(i)
                                                              Dim m = mats(i)
                                                              Dim wp = Vector3d.TransformPosition(lv(i), m)
@@ -2350,20 +2353,48 @@ Public Class PreviewModel
                                                                  bitanF(i) = New Vector3(CSng(wb.X), CSng(wb.Y), CSng(wb.Z))
                                                              End If
                                                          End Sub
-                        If vertexCount >= 500 Then Parallel.For(0, vertexCount, body) Else For i = 0 To vertexCount - 1 : body(i) : Next
+                        If vertexCount >= 500 Then
+                            Parallel.ForEach(SkinningHelper.RangosDe(vertexCount),
+                                Sub(rango As Tuple(Of Integer, Integer))
+                                    For i = rango.Item1 To rango.Item2 - 1
+                                        body(i)
+                                    Next
+                                End Sub)
+                        Else
+                            For i = 0 To vertexCount - 1 : body(i) : Next
+                        End If
                     Else
                         ' GPU skinning: upload local-space as-is
                         Dim gv = MeshData.Meshgeometry.Vertices
                         Dim gn = MeshData.Meshgeometry.Normals
                         Dim gt = MeshData.Meshgeometry.Tangents
                         Dim gb = MeshData.Meshgeometry.Bitangents
-                        Dim gpuBody As Action(Of Integer) = Sub(i)
-                                                                Dim vv = gv(i) : posF(i) = New Vector3(CSng(vv.X), CSng(vv.Y), CSng(vv.Z))
-                                                                Dim nn = gn(i) : nrmF(i) = New Vector3(CSng(nn.X), CSng(nn.Y), CSng(nn.Z))
-                                                                Dim tt = gt(i) : tanF(i) = New Vector3(CSng(tt.X), CSng(tt.Y), CSng(tt.Z))
-                                                                Dim bb = gb(i) : bitanF(i) = New Vector3(CSng(bb.X), CSng(bb.Y), CSng(bb.Z))
-                                                            End Sub
-                        If vertexCount >= 2000 Then Parallel.For(0, vertexCount, gpuBody) Else For i = 0 To vertexCount - 1 : gpuBody(i) : Next
+                        ' ⭐ Partitioner + For interno, NO `Parallel.For(0, n, Sub(i))`. La forma
+                        ' anterior invocaba UN DELEGATE POR VERTICE (22.700 por malla POR FRAME) para
+                        ' un cuerpo que son 12 conversiones y 4 stores: el despacho costaba del orden
+                        ' del trabajo. Es el mismo hallazgo que ya se aplico en el compositor de
+                        ' facetint (ver 61-perf-plan-4-hotpaths §3), acá replicado en el upload.
+                        ' ⛔ Esto NO cambia un bit: la aritmetica, el orden y el redondeo son los
+                        ' mismos; lo unico que se va es el despacho.
+                        ' ⚠️ Y NO se vectoriza con Vector.Narrow, aunque sea el caso ideal (un run
+                        ' plano de 3N doubles a 3N floats): para eso habria que ver el Vector3d() como
+                        ' Double(), y eso pide MemoryMarshal/Span, que VB.NET no admite en ninguna
+                        ' posicion. Copiar a un staging plano primero cuesta mas trafico de memoria
+                        ' del que ahorra el narrow, asi que el camino escalar es el correcto acá.
+                        Dim convertRange As Action(Of Tuple(Of Integer, Integer)) =
+                            Sub(rango As Tuple(Of Integer, Integer))
+                                For i = rango.Item1 To rango.Item2 - 1
+                                    Dim vv = gv(i) : posF(i) = New Vector3(CSng(vv.X), CSng(vv.Y), CSng(vv.Z))
+                                    Dim nn = gn(i) : nrmF(i) = New Vector3(CSng(nn.X), CSng(nn.Y), CSng(nn.Z))
+                                    Dim tt = gt(i) : tanF(i) = New Vector3(CSng(tt.X), CSng(tt.Y), CSng(tt.Z))
+                                    Dim bb = gb(i) : bitanF(i) = New Vector3(CSng(bb.X), CSng(bb.Y), CSng(bb.Z))
+                                Next
+                            End Sub
+                        If vertexCount >= 2000 Then
+                            Parallel.ForEach(SkinningHelper.RangosDe(vertexCount), convertRange)
+                        Else
+                            convertRange(Tuple.Create(0, vertexCount))
+                        End If
                     End If
                     If _instr Then
                         ParentModel.ParentControl._skinComputeMs += _swSkinPhase.Elapsed.TotalMilliseconds

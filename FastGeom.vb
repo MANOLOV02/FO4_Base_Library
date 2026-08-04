@@ -1,0 +1,320 @@
+Imports System.Numerics
+Imports OpenTK.Mathematics
+
+''' <summary>
+''' Espejo vectorial del blend de matrices de skin. Es el gemelo de <see cref="FastPow"/> para
+''' geometria: mismo criterio de ancho variable (<c>Vector(Of T)</c> elige 256 / 128 / escalar segun
+''' la maquina) y mismo contrato de bit-exactitud.
+'''
+''' <para>⭐ POR QUE ACA SI Y EN EL RECALCULO DE TBN NO. El kernel del skinning es
+''' <c>acc += palette(idx) * w</c> sobre una matriz 4x4, o sea <b>16 doubles CONTIGUOS</b>: un unico
+''' indice indirecto lleva a un bloque contiguo ⇒ cargas vectoriales seguidas, sin gather, sin
+''' transposicion AoS↔SoA y <b>sin cola</b> (16 es divisible por 8, 4, 2 y 1, o sea por CUALQUIER
+''' <c>Vector(Of Double).Count</c> posible). Ademas la paleta son 20-60 matrices = 2,5-7,5 KB, o sea
+''' que vive en L1. El TBN, en cambio, trabaja sobre <c>Vector3d</c> en AoS con indices de triangulo
+''' dispersos: ahi el ancho se va en transponer y no queda ganancia.</para>
+'''
+''' <para>⭐⭐ Y POR ESO EL FALLBACK ANGOSTO ACA SI GANA. Con 2 lanes (SSE2) el cuerpo sigue siendo
+''' la mitad de las operaciones del escalar, porque no hay transposicion que amortizar. En el TBN,
+''' 2 lanes de double con transposicion queda POR DEBAJO del escalar — que es exactamente el modo de
+''' falla que ya se pago una vez con FastPow antes de pasarlo a ancho variable.</para>
+'''
+''' <para>⛔ <b>ESTE MODULO NO ES UNA LEY NUEVA.</b> A diferencia de <see cref="FastPow"/>, que PASO
+''' A SER la ley y movio 2.881 bytes, aca el camino vectorial es un espejo EXACTO del escalar y no
+''' puede mover un bit. Lo que lo garantiza:</para>
+''' <list type="bullet">
+''' <item>La lane <c>k</c> siempre acumula el elemento <c>k</c> ⇒ mismo orden de sumas por elemento,
+''' cero reasociacion, cero reduccion entre lanes.</item>
+''' <item>⛔ <b>NUNCA <c>Vector.FusedMultiplyAdd</c>.</b> El JIT de .NET no contrae <c>a + b*c</c>
+''' por su cuenta, asi que <c>acc + vm * vw</c> es multiply-then-add igual que el escalar. Un FMA
+''' "de optimizacion" redondea UNA sola vez y cambia los bits en silencio.</item>
+''' <item>Las guardas (peso &gt; 0, indice en rango) se quedan ESCALARES en el llamador, afuera del
+''' cuerpo vectorial. No hay una sola mascara por lane ⇒ las trampas del orden de los
+''' <c>ConditionalSelect</c> y de NaN (61-perf-simd-trampas #4 y #5) NO APLICAN acá.</item>
+''' </list>
+'''
+''' <para>⛔ <b>POR QUE TODO PASA POR ARRAYS PLANOS DE <c>Double</c> Y NO POR <c>Matrix4d</c>.</b>
+''' VB.NET no soporta ref structs en NINGUNA posicion — ni parametro, ni retorno, ni variable local
+''' (BC30668 / BC30643) — asi que <c>Span(Of T)</c> y todo <c>MemoryMarshal</c> estan fuera de
+''' alcance y no hay forma de ver un <c>Matrix4d</c> como 16 doubles sin copiarlo. Lo que si tiene
+''' <c>Vector(Of T)</c> son constructor y <c>CopyTo</c> <b>sobre arrays</b>, y sobre eso se apoya
+''' todo esto. La paleta plana se arma UNA vez por shape (20-60 matrices), no por vertice, asi que
+''' esa copia no esta en el camino caliente.</para>
+''' </summary>
+Public Module FastGeom
+
+    ''' <summary>Doubles que ocupa una matriz 4x4. Es constante de FORMATO, no de ancho SIMD.</summary>
+    Public Const MatDoubles As Integer = 16
+
+    ''' <summary>Lanes de double del ancho que eligio el runtime (8 = AVX-512, 4 = AVX2, 2 = SSE2,
+    ''' 1 = sin aceleracion). Todos dividen a 16 ⇒ ningun loop de matriz lleva cola.</summary>
+    Public ReadOnly Property LaneCountD As Integer
+        Get
+            Return Vector(Of Double).Count
+        End Get
+    End Property
+
+    ''' <summary>True cuando conviene el camino vectorial. Con <c>Count = 1</c> el "vector" es un
+    ''' double suelto y el escalar directo es mejor (menos overhead, mismo resultado). La guarda de
+    ''' divisibilidad no es paranoia gratuita: si alguna vez <c>Count</c> superara 16, el loop
+    ''' <c>e += n</c> leeria fuera del bloque de la matriz.</summary>
+    Public ReadOnly Property Accelerated As Boolean
+        Get
+            Dim n = Vector(Of Double).Count
+            Return Vector.IsHardwareAccelerated AndAlso n >= 2 AndAlso n <= MatDoubles AndAlso (MatDoubles Mod n) = 0
+        End Get
+    End Property
+
+    ''' <summary>Descripcion del ancho activo, para el mensaje del gate.</summary>
+    Public ReadOnly Property WidthInfo As String
+        Get
+            Return $"Vector(Of Double).Count={Vector(Of Double).Count} accelerated={Vector.IsHardwareAccelerated}"
+        End Get
+    End Property
+
+    ' ============================================================================================
+    '  Conversion Matrix4d <-> plano. Escalar A PROPOSITO: corre una vez por HUESO (20-60) al armar
+    '  la paleta, y una vez por vertice al devolver el resultado. No esta en el bucle de slots.
+    ' ============================================================================================
+
+    ''' <summary>Vuelca una <see cref="Matrix4d"/> en <paramref name="dst"/> a partir de
+    ''' <paramref name="off"/>, en orden row-major (M11..M14, M21..M24, M31..M34, M41..M44).</summary>
+    Public Sub StoreMatrix(m As Matrix4d, dst As Double(), off As Integer)
+        dst(off + 0) = m.M11 : dst(off + 1) = m.M12 : dst(off + 2) = m.M13 : dst(off + 3) = m.M14
+        dst(off + 4) = m.M21 : dst(off + 5) = m.M22 : dst(off + 6) = m.M23 : dst(off + 7) = m.M24
+        dst(off + 8) = m.M31 : dst(off + 9) = m.M32 : dst(off + 10) = m.M33 : dst(off + 11) = m.M34
+        dst(off + 12) = m.M41 : dst(off + 13) = m.M42 : dst(off + 14) = m.M43 : dst(off + 15) = m.M44
+    End Sub
+
+    ''' <summary>Reconstruye una <see cref="Matrix4d"/> desde el bloque plano.</summary>
+    Public Function LoadMatrix(src As Double(), off As Integer) As Matrix4d
+        Return New Matrix4d(
+            src(off + 0), src(off + 1), src(off + 2), src(off + 3),
+            src(off + 4), src(off + 5), src(off + 6), src(off + 7),
+            src(off + 8), src(off + 9), src(off + 10), src(off + 11),
+            src(off + 12), src(off + 13), src(off + 14), src(off + 15))
+    End Function
+
+    ''' <summary>Arma la paleta plana de una lista de matrices. UNA vez por shape.</summary>
+    Public Function BuildFlatPalette(mats As Matrix4d()) As Double()
+        If mats Is Nothing OrElse mats.Length = 0 Then Return Array.Empty(Of Double)()
+        Dim flat(mats.Length * MatDoubles - 1) As Double
+        For k As Integer = 0 To mats.Length - 1
+            StoreMatrix(mats(k), flat, k * MatDoubles)
+        Next
+        Return flat
+    End Function
+
+    ' ============================================================================================
+    '  EL KERNEL
+    ' ============================================================================================
+
+    ''' <summary>
+    ''' <c>accBuf(0..15) = Σ_j flatPal(idxBuf(j)*16 + e) * wBuf(j)</c>, partiendo de cero.
+    '''
+    ''' <para>⭐ El recorrido es CHUNK AFUERA / SLOT ADENTRO: para cada bloque de <c>LaneCount</c>
+    ''' elementos de la matriz se recorren los 4 slots de hueso. Asi el acumulador se queda en un
+    ''' REGISTRO vectorial durante los 4 slots y toca memoria una sola vez, al final del chunk. Al
+    ''' reves (slot afuera) habria que releer y reescribir el acumulador entero 4 veces.</para>
+    '''
+    ''' <para>⛔ El orden de suma por elemento es el mismo que el del escalar —
+    ''' <c>0 + p0·w0 + p1·w1 + …</c>, de izquierda a derecha— asi que el resultado es bit-identico.
+    ''' Los pares (indice, peso) llegan YA FILTRADOS por el llamador, en el mismo orden en que el
+    ''' escalar los recorreria: las guardas no viven aca.</para>
+    ''' </summary>
+    ''' <param name="flatPal">Paleta plana, <c>16 × cantidadDeMatrices</c> doubles.</param>
+    ''' <param name="idxBuf">Indices de matriz ya validados contra el largo de la paleta.</param>
+    ''' <param name="wBuf">Pesos, alineados con <paramref name="idxBuf"/>.</param>
+    ''' <param name="nUsed">Cuantas entradas de los dos buffers son validas.</param>
+    ''' <param name="accBuf">Destino, al menos 16 doubles. Se sobrescribe entero.</param>
+    Public Sub BlendInto(flatPal As Double(), idxBuf As Integer(), wBuf As Double(), nUsed As Integer, accBuf As Double())
+        If Not Accelerated Then
+            BlendIntoScalar(flatPal, idxBuf, wBuf, nUsed, accBuf)
+            Return
+        End If
+        Dim n As Integer = Vector(Of Double).Count
+        Dim e As Integer = 0
+        Do While e < MatDoubles
+            Dim acc As Vector(Of Double) = Vector(Of Double).Zero
+            For j As Integer = 0 To nUsed - 1
+                Dim vm As New Vector(Of Double)(flatPal, idxBuf(j) * MatDoubles + e)
+                Dim vw As New Vector(Of Double)(wBuf(j))
+                ' ⛔ multiply-then-add EXPLICITO. No cambiar por Vector.FusedMultiplyAdd.
+                acc = acc + vm * vw
+            Next
+            acc.CopyTo(accBuf, e)
+            e += n
+        Loop
+    End Sub
+
+    ''' <summary>Referencia escalar de <see cref="BlendInto"/> — la ley, elemento por elemento.
+    ''' Produccion solo la usa cuando no hay SIMD; su razon de existir es que
+    ''' <see cref="VectorParitySelfTest"/> pueda comparar los dos caminos EN EL MISMO PROCESO.
+    ''' ⛔ No borrar por "codigo duplicado": es el gate.</summary>
+    Public Sub BlendIntoScalar(flatPal As Double(), idxBuf As Integer(), wBuf As Double(), nUsed As Integer, accBuf As Double())
+        For e As Integer = 0 To MatDoubles - 1
+            Dim acc As Double = 0.0
+            For j As Integer = 0 To nUsed - 1
+                acc += flatPal(idxBuf(j) * MatDoubles + e) * wBuf(j)
+            Next
+            accBuf(e) = acc
+        Next
+    End Sub
+
+    ''' <summary><c>accBuf *= s</c> (el <c>result * (1.0 / sumW)</c> del blend).</summary>
+    Public Sub ScaleAcc(accBuf As Double(), s As Double)
+        If Not Accelerated Then
+            ScaleAccScalar(accBuf, s)
+            Return
+        End If
+        Dim n As Integer = Vector(Of Double).Count
+        Dim vs As New Vector(Of Double)(s)
+        Dim e As Integer = 0
+        Do While e < MatDoubles
+            Dim va As New Vector(Of Double)(accBuf, e)
+            Dim vr As Vector(Of Double) = va * vs
+            vr.CopyTo(accBuf, e)
+            e += n
+        Loop
+    End Sub
+
+    ''' <summary>Referencia escalar de <see cref="ScaleAcc"/>. Ver la nota de <see cref="BlendIntoScalar"/>.</summary>
+    Public Sub ScaleAccScalar(accBuf As Double(), s As Double)
+        For e As Integer = 0 To MatDoubles - 1
+            accBuf(e) *= s
+        Next
+    End Sub
+
+    ' ============================================================================================
+    '  SELF-TEST
+    ' ============================================================================================
+
+    ''' <summary>PRNG determinista propio: el veredicto del gate no puede cambiar entre corridas
+    ''' (00-reglas-app-distribuida). xorshift64.</summary>
+    Private _rng As ULong
+
+    Private Function NextBits() As ULong
+        _rng = _rng Xor (_rng << 13)
+        _rng = _rng Xor (_rng >> 7)
+        _rng = _rng Xor (_rng << 17)
+        Return _rng
+    End Function
+
+    ''' <summary>Rango amplio, con signo y con exponentes variados: el objetivo es sacudir el
+    ''' redondeo del ultimo bit, y un [0,1) no lo hace.</summary>
+    Private Function NextDouble() As Double
+        Dim b = NextBits()
+        Dim mant As Double = CDbl(b And &H1FFFFFFFFFFFFFUL) / CDbl(&H20000000000000UL)
+        Dim expo As Integer = CInt(b >> 58) - 16
+        Dim sgn As Double = If((b And &H100000000UL) = 0UL, 1.0, -1.0)
+        Return sgn * (0.5 + mant) * Math.Pow(2.0, expo)
+    End Function
+
+    ''' <summary>Indice del primer elemento que difiere EN BITS, o -1 si son identicos.
+    ''' ⛔ Compara bits, no valores: <c>=</c> daria por iguales a +0.0 y -0.0, y el signo del cero
+    ''' es un bit que despues sale escrito al NIF.</summary>
+    Private Function FirstBitDiff(a As Double(), b As Double()) As Integer
+        For e As Integer = 0 To MatDoubles - 1
+            If BitConverter.DoubleToInt64Bits(a(e)) <> BitConverter.DoubleToInt64Bits(b(e)) Then Return e
+        Next
+        Return -1
+    End Function
+
+    ''' <summary>
+    ''' Vectorial == escalar, BIT A BIT, para el blend y el escalado, incluyendo la cadena completa
+    ''' de 4 slots + normalizacion (que es la forma REAL del kernel, no una operacion suelta).
+    ''' Devuelve "" si pasa.
+    '''
+    ''' <para>⛔ Compara los dos caminos EN EL MISMO PROCESO, asi que da veredicto al ancho que tenga
+    ''' la maquina. Para cubrir la portabilidad hay que correrlo TAMBIEN con
+    ''' <c>DOTNET_MaxVectorTBitWidth=128</c> (o <c>DOTNET_EnableAVX2=0 DOTNET_EnableAVX=0</c>): un
+    ''' test que solo corre al ancho nativo no prueba nada del otro (61-perf-simd-trampas #3).</para>
+    ''' </summary>
+    Public Function VectorParitySelfTest() As String
+        _rng = &H9E3779B97F4A7C15UL   ' semilla FIJA
+
+        Const nMats As Integer = 8
+        Dim mats(nMats - 1) As Matrix4d
+        For k As Integer = 0 To nMats - 1
+            Dim m As Matrix4d = Matrix4d.Zero
+            m.M11 = NextDouble() : m.M12 = NextDouble() : m.M13 = NextDouble() : m.M14 = NextDouble()
+            m.M21 = NextDouble() : m.M22 = NextDouble() : m.M23 = NextDouble() : m.M24 = NextDouble()
+            m.M31 = NextDouble() : m.M32 = NextDouble() : m.M33 = NextDouble() : m.M34 = NextDouble()
+            m.M41 = NextDouble() : m.M42 = NextDouble() : m.M43 = NextDouble() : m.M44 = NextDouble()
+            mats(k) = m
+        Next
+        Dim pal = BuildFlatPalette(mats)
+
+        ' Round-trip Store/Load: si esto se rompe, TODO lo de abajo compara basura contra basura.
+        For k As Integer = 0 To nMats - 1
+            Dim back = LoadMatrix(pal, k * MatDoubles)
+            Dim a(MatDoubles - 1) As Double
+            Dim b(MatDoubles - 1) As Double
+            StoreMatrix(mats(k), a, 0)
+            StoreMatrix(back, b, 0)
+            Dim bad0 = FirstBitDiff(a, b)
+            If bad0 >= 0 Then Return $"[geom-roundtrip] matriz {k}: elemento {bad0} no sobrevive Store/Load"
+        Next
+
+        Dim idxBuf(3) As Integer
+        Dim wBuf(3) As Double
+        Dim accV(MatDoubles - 1) As Double
+        Dim accS(MatDoubles - 1) As Double
+
+        ' nUsed 0..4 cubre el vertice sin huesos validos (0) y el caso lleno (4).
+        For iter As Integer = 0 To 499
+            Dim nUsed As Integer = CInt(NextBits() Mod 5UL)
+            For j As Integer = 0 To nUsed - 1
+                idxBuf(j) = CInt(NextBits() Mod CULng(nMats))
+                wBuf(j) = NextDouble()
+            Next
+            BlendInto(pal, idxBuf, wBuf, nUsed, accV)
+            BlendIntoScalar(pal, idxBuf, wBuf, nUsed, accS)
+            Dim bad = FirstBitDiff(accV, accS)
+            If bad >= 0 Then Return $"[geom-blend] iter {iter} nUsed={nUsed}: elemento {bad} difiere ({WidthInfo})"
+
+            ' Cadena completa: blend + normalizacion, que es lo que hace BlendBoneMatrices.
+            Dim sumW As Double = 0
+            For j As Integer = 0 To nUsed - 1
+                sumW += wBuf(j)
+            Next
+            If sumW <> 0 Then
+                ScaleAcc(accV, 1.0 / sumW)
+                ScaleAccScalar(accS, 1.0 / sumW)
+                bad = FirstBitDiff(accV, accS)
+                If bad >= 0 Then Return $"[geom-blendchain] iter {iter}: elemento {bad} difiere ({WidthInfo})"
+            End If
+        Next
+
+        ' Casos con valores especiales: el signo del cero, pesos cero y pesos que se cancelan.
+        ' Un peso 0 sobre una matriz con -0.0 no da lo mismo por los dos caminos si algun dia se
+        ' colara un FMA o un reordenamiento, asi que va explicito.
+        Dim esp(nMats - 1) As Matrix4d
+        Dim vals As Double() = {0.0, -0.0, 1.0, -1.0, Double.Epsilon, -Double.Epsilon, 1.0E+300, 1.0E-300}
+        For k As Integer = 0 To nMats - 1
+            Dim m As Matrix4d = Matrix4d.Zero
+            Dim tmp(MatDoubles - 1) As Double
+            For e As Integer = 0 To MatDoubles - 1
+                tmp(e) = vals((e + k) Mod vals.Length)
+            Next
+            m = LoadMatrix(tmp, 0)
+            esp(k) = m
+        Next
+        Dim palEsp = BuildFlatPalette(esp)
+        Dim pesos As Double() = {0.0, -0.0, 1.0, -1.0, 0.5, 1.0E-300, 1.0E+300, 3.0}
+        For iter As Integer = 0 To 199
+            Dim nUsed As Integer = CInt(NextBits() Mod 5UL)
+            For j As Integer = 0 To nUsed - 1
+                idxBuf(j) = CInt(NextBits() Mod CULng(nMats))
+                wBuf(j) = pesos(CInt(NextBits() Mod CULng(pesos.Length)))
+            Next
+            BlendInto(palEsp, idxBuf, wBuf, nUsed, accV)
+            BlendIntoScalar(palEsp, idxBuf, wBuf, nUsed, accS)
+            Dim bad = FirstBitDiff(accV, accS)
+            If bad >= 0 Then Return $"[geom-blend-especiales] iter {iter} nUsed={nUsed}: elemento {bad} difiere ({WidthInfo})"
+        Next
+
+        Return ""
+    End Function
+
+End Module

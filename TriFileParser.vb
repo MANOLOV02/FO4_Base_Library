@@ -501,10 +501,10 @@ Public Module TriFileWriter
         ' El orden de shapes replica TriFile::Write de BSOS, que itera un std::map<std::string>.
         ' Sin este OrderBy el orden dependia del orden de insercion de un Dictionary, que no esta
         ' garantizado por contrato.
-        ' ⚠️ Residuo conocido: MSVC compara std::string con char SIGNED (bytes >= 0x80 ordenan ANTES
-        ' del ASCII) y StringComparer.Ordinal compara unidades UTF-16 (ordenan DESPUES). Un nombre de
-        ' shape con bytes altos se ordena distinto que en BSOS. Los BYTES emitidos si coinciden desde
-        ' que la escritura pasa por Latin1.
+        ' El orden coincide TAMBIEN con bytes altos, y no por casualidad: std::char_traits<char>::compare
+        ' esta especificado como memcmp, o sea compara como unsigned char, y el round-trip Latin1 manda
+        ' 0x80..0xFF a U+0080..U+00FF, que StringComparer.Ordinal rankea en el mismo orden.
+        ' (Aca decia que MSVC comparaba con char SIGNED y que por eso quedaba un residuo; es falso.)
         Dim shapeNames = tri.ShapeMorphs.Keys.
             Where(Function(sn) tri.GetMorphsForShape(sn).Any(Function(m) m.MorphType = sectionType)).
             OrderBy(Function(sn) sn, StringComparer.Ordinal).
