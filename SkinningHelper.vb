@@ -126,6 +126,35 @@ Public Class SkinningHelper
     '   Test de paridad: alternar Setting_GPUSkinning sobre un shape posado — debe verse idéntico.
     '   Ver 00-reglas-ui-y-vb.md (§10) y 00-reglas-comentarios.md.
     ''' <summary>
+    ''' Paleta que consume el blend por vértice: <c>globalTransform × matsPose(k)</c> para cada hueso.
+    '''
+    ''' <para>⛔⛔ ESTE ES EL ÚNICO LUGAR DONDE SE ESCRIBE ESA FÓRMULA. Los tres sitios que llenan
+    ''' <c>PerVertexSkinMatrix</c> —<see cref="ExtractSkinnedGeometry"/>,
+    ''' <see cref="RecomputeGPUBoneMatrices"/> y <see cref="EnsurePerVertexSkinMatrix"/>— pasan por
+    ''' acá. Antes cada uno la escribía por su cuenta y <b>ya habían divergido</b>: el perezoso
+    ''' blendeaba <c>BoneMatsPose</c> CRUDO mientras los otros dos multiplicaban por
+    ''' <c>globalTransform</c>. El comentario que había decía que daba igual "porque GlobalTransform es
+    ''' Identity", y es FALSO: ese producto suma ceros, o sea que el elemento (1,j) sale de
+    ''' <c>1·M1j + 0·M2j + 0·M3j + 0·M4j</c> y convierte <c>-0.0</c> en <c>+0.0</c> (y daría NaN si
+    ''' hubiera un ±Inf en la columna). El blend normal lo lava porque parte de <c>Matrix4d.Zero</c> y
+    ''' suma, <b>pero la rama <c>sumW = 0</c> devuelve la matriz de la paleta TAL CUAL</b> — ahí el
+    ''' signo sobrevive y el mismo vértice salía con distinto bit según si la pasada 2 se había
+    ''' salteado. Verificado con test en negativo: revertir esto hace fallar S3 y S4 de la suite.</para>
+    '''
+    ''' <para>⭐ El arreglo NO es "copiar la fórmula en el tercer sitio" —eso fue mi primer intento y
+    ''' dejaba viva la posibilidad de volver a divergir, además de acoplar el perezoso a un campo que
+    ''' un tercer camino no actualizaba. El arreglo es que <b>haya una sola fórmula</b>: acá.</para>
+    ''' </summary>
+    Private Shared Function BuildPosePalette(matsPose() As Matrix4d, globalTransform As Matrix4d) As Matrix4d()
+        If matsPose Is Nothing Then Return Array.Empty(Of Matrix4d)()
+        Dim pal(matsPose.Length - 1) As Matrix4d
+        For k = 0 To matsPose.Length - 1
+            pal(k) = globalTransform * matsPose(k)
+        Next
+        Return pal
+    End Function
+
+    ''' <summary>
     ''' Mezcla las matrices de los huesos que influyen al vértice que arranca en
     ''' <paramref name="baseIdx"/>, leyendo <paramref name="wpv"/> slots de los arrays PLANOS de
     ''' índices y pesos. Sin slice por vértice: corre una vez por vértice por Extract/Bake.
@@ -504,11 +533,8 @@ Public Class SkinningHelper
         ' acceso seguro a matsBind/matsPose.
         Select Case True
             Case shape.IsSkinned AndAlso Not singleboneskinning AndAlso bones.Count > 0
-                ' Pre-compute bone matrices (shapeGlobalTransform * matsPose(k))
-                Dim precomputedBoneMatrices(bones.Count - 1) As Matrix4d
-                For k = 0 To bones.Count - 1
-                    precomputedBoneMatrices(k) = GlobalTransform * matsPose(k)
-                Next
+                ' ⛔ La fórmula vive en BuildPosePalette y en ningún otro lado. Ver su docstring.
+                Dim precomputedBoneMatrices = BuildPosePalette(matsPose, GlobalTransform)
                 ' Paleta plana para el blend vectorial. Se arma UNA vez por shape (20-60 matrices),
                 ' no por vertice: la copia no esta en el camino caliente. Ver FastGeom.
                 Dim flatPalette = FastGeom.BuildFlatPalette(precomputedBoneMatrices)
@@ -1253,22 +1279,11 @@ Public Class SkinningHelper
     ''' un play GPU; el occlusion en background nunca corre sobre un control que está reproduciendo
     ''' animación.
     '''
-    ''' <para>⛔⛔ ACA HABIA UNA DIVERGENCIA REAL CON EL CAMINO EAGER, arreglada 2026-08-03. El
-    ''' docstring afirmaba que blendear <c>BoneMatsPose</c> crudo era "bit-idéntico al cálculo eager
-    ''' porque GlobalTransform es Identity". <b>Es falso.</b> El eager blendea
-    ''' <c>GlobalTransform * matsPose(k)</c>, y ese producto con la identidad NO es la identidad a
-    ''' nivel de bits: el elemento (1,j) sale de <c>1·M1j + 0·M2j + 0·M3j + 0·M4j</c>, o sea que suma
-    ''' ceros. Con <c>M1j = -0.0</c> el resultado es <c>+0.0</c> (IEEE: la suma de ceros de signo
-    ''' opuesto da +0), y con cualquier ±Inf en la columna daria NaN. O sea que el mismo vértice podía
-    ''' salir con el SIGNO DEL CERO distinto según si la pasada 2 se había salteado o no — y ese bit
-    ''' se escribe tal cual al NIF cuando la coordenada es exactamente cero.
-    ''' <br/>Peor que el síntoma: era una bomba latente. El día que <c>GlobalTransform</c> deje de ser
-    ''' <c>Matrix4d.Identity</c> (hoy está hardcodeado así en Extract y en Recompute), los dos caminos
-    ''' divergirían de verdad, en silencio y solo después de un play en GPU.
-    ''' <br/>El arreglo aplica el MISMO producto que el eager, tomando el transform de
-    ''' <c>geo.ParentGlobalTransform</c> — que es justo el <c>GlobalTransform</c> que
-    ''' ExtractSkinnedGeometry guardó. Se eligió alinear el lazy CON el eager (y no al revés) porque el
-    ''' eager es el que produce los bytes del corpus: mover el eager habría movido bytes.</para>
+    ''' <para>⛔⛔ ACÁ HABÍA UNA DIVERGENCIA REAL CON EL CAMINO EAGER. La fórmula de la paleta —y el
+    ''' por qué de la divergencia— están en <see cref="BuildPosePalette"/>, que ahora es el único
+    ''' lugar donde se escribe. Este camino y los dos eager la llaman, así que no pueden volver a
+    ''' separarse. El <c>globalTransform</c> sale de <c>geo.ParentGlobalTransform</c>, que ahora
+    ''' escriben LOS DOS caminos eager.</para>
     ''' <para>⭐ La OTRA mitad —saltear la pasada 2 en GPU-skin opaco en play— NO es una discrepancia y
     ''' se deja como está: en CPU-skin nunca se saltea, y en GPU-skin el salto marca
     ''' <c>PerVertexMatrixValid=False</c> de modo que cualquier lector pasa por acá antes de leer. Es
@@ -1286,12 +1301,10 @@ Public Class SkinningHelper
         Dim wpv = If(geo.Skinning.WeightsPerVertex > 0, geo.Skinning.WeightsPerVertex, 4)
         Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso geo.Skinning.VertexCount = vc AndAlso poseMats IsNot Nothing)
         If hasSkin Then
-            ' MISMA paleta que el eager: GlobalTransform × matsPose(k). Ver la nota del docstring.
-            Dim g = geo.ParentGlobalTransform
-            Dim precomputed(poseMats.Length - 1) As Matrix4d
-            For k = 0 To poseMats.Length - 1
-                precomputed(k) = g * poseMats(k)
-            Next
+            ' ⛔ MISMA función que el eager. `ParentGlobalTransform` lo escriben LOS DOS caminos
+            ' eager (Extract al construir y Recompute al recomputar), asi que acá se lee el que
+            ' realmente se usó.
+            Dim precomputed = BuildPosePalette(poseMats, geo.ParentGlobalTransform)
             Dim flatPalette = FastGeom.BuildFlatPalette(precomputed)
             Dim body As Action(Of Integer) = Sub(i) mats(i) = BlendBoneMatrices(flatWgt, flatIdx, i * wpv, wpv, precomputed, flatPalette)
             If vc >= 500 Then
@@ -1447,15 +1460,27 @@ Public Class SkinningHelper
                 Dim matPose = poseT.ComposeTransforms(localT).ToMatrix4d()
                 geo.BoneMatsBind(k) = matBind
                 geo.BoneMatsPose(k) = matPose
+            Next
 
-                Dim m = GlobalTransform * matPose
-                precomputedBoneMatrices(k) = m
+            ' ⛔ La paleta se arma DESPUES del loop y con BuildPosePalette, no inline: es la misma
+            ' fórmula que usan Extract y la recomposición perezosa, y tiene que salir del mismo sitio.
+            ' Cuesta una segunda pasada sobre ≤60 huesos.
+            precomputedBoneMatrices = BuildPosePalette(geo.BoneMatsPose, GlobalTransform)
+            For k = 0 To bones.Count - 1
+                Dim m = precomputedBoneMatrices(k)
                 geo.GPUBoneMatrices(k) = New Matrix4(
                     CSng(m.M11), CSng(m.M12), CSng(m.M13), CSng(m.M14),
                     CSng(m.M21), CSng(m.M22), CSng(m.M23), CSng(m.M24),
                     CSng(m.M31), CSng(m.M32), CSng(m.M33), CSng(m.M34),
                     CSng(m.M41), CSng(m.M42), CSng(m.M43), CSng(m.M44))
             Next
+
+            ' ⛔ CIERRA EL AGUJERO QUE DEJABA EL ARREGLO ANTERIOR. La recomposición perezosa necesita
+            ' EL MISMO globalTransform que uso el camino eager, y lo lee de este campo. Recompute
+            ' antes NO lo escribia: usaba un local y se iba, asi que el perezoso quedaba siguiendo el
+            ' que habia guardado Extract. Hoy los dos son Identity y coincidian por casualidad; el dia
+            ' que uno dejara de serlo volvian a divergir en silencio.
+            geo.ParentGlobalTransform = GlobalTransform
 
             ' Also update perVertexSkinMatrix for world-space cache
             ' (Recompute per-vertex blended matrices using the same precomputed bone matrices)
