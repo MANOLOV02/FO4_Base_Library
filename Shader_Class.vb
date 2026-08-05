@@ -517,7 +517,18 @@ vec3 TorranceSparrow(float NdotL, float NdotH, float NdotV, float VdotH, vec3 co
 	// El min entra ANTES de multiplicar por la mascara y la fuerza del material, no despues.
 	// Sin el, con NdotH -> 1 y exponente alto (power = exp2(Smoothness*10+1) llega a 2048) el
 	// termino D = (power+2)/(2*PI) se dispara y el highlight revienta en vez de saturar.
-	float spec = min((F * G_NdotV * D) / 4.0, 15.0);
+	float specRaw = (F * G_NdotV * D) / 4.0;
+	// TERNARIO A PROPOSITO, NO `min()`: replica la semantica de min de D3D, no la de GLSL.
+	// Con un material mal autorado (Smoothness > 12,8) el exponente `exp2(specGloss*Smoothness*10+1)`
+	// desborda a +Inf en fp32, y ahi D = (Inf+2)/(2*PI) * pow(NdotH, Inf) = Inf * 0 = NaN.
+	// D3D define min/max como: si un operando es NaN, devuelve el OTRO => el engine satura en 15.
+	// GLSL especifica min(x,y) como `y < x ? y : x`, que con x = NaN devuelve el NaN y pinta el shape
+	// entero de blanco. El ternario da 15.0 tanto para NaN como para +Inf, igual que el engine.
+	// MEDIDO (2026-08-05): el engine NO clampea Smoothness en ningun eslabon -- ni el shader
+	// (`mul r3.xz, r3.yyxy, cb2[11].xxyx` sin _sat, en los 207 PS que arman la cadena), ni
+	// SetupMaterial 0x142232EA0 (`mov eax,[rsi+0x88]` crudo al cbuffer, 0 minss/maxss en la funcion).
+	// O sea este min ES la unica defensa del engine, y por eso tiene que comportarse como la de D3D.
+	float spec = (specRaw < 15.0) ? specRaw : 15.0;
 
 	return color * spec * M_PI;
 }
@@ -571,7 +582,15 @@ void directionalLight(in DirectionalLight light, in vec3 lightDir, in bool isKey
 
 	// Specularity
 	float smoothness = 1.0;
-	float roughness = clamp(1.0 - shininess, 0.0, 1.0);   // 3b engine: diffuse roughness = 1 - Smoothness (constant; spec map drives only the highlight power, rec1498 L108)
+	// SIN clamp, A PROPOSITO. El engine arma esta roughness con un `add rN.y, -cb2[11].x, l(1.000000)`
+	// PELADO -- medido sobre los 3939 DXBC de `Fallout4 - Shaders.ba2`: 17 PS la construyen asi y
+	// ninguno satura, y SetupMaterial 0x142232EA0 sube Smoothness (mat+0x88) al cbuffer con un `mov`
+	// de 32 bits sin tocarla (0 minss/maxss en toda la funcion). El clamp que habia aca era un no-op
+	// para todo material sano (6616 BGSM vanilla: max 10, 98,6 % <= 1,0) y divergia justo donde
+	// importaba: con un material mal autorado a Smoothness = 80 el engine trabaja con roughness = -79
+	// -> r2 = 6241 -> C1 ~ 0,50, y el clamp lo llevaba a 0 -> C1 = 1,0, o sea el DOBLE de difuso que
+	// el juego. OrenNayarFO4 solo usa r2 = roughness*roughness, asi que el signo negativo es inocuo.
+	float roughness = 1.0 - shininess;   // 3b engine: diffuse roughness = 1 - Smoothness (constant; spec map drives only the highlight power, rec1498 L108)
 	float specMask = 1.0;
 	if (bSpecular && bShowTexture)
 	{

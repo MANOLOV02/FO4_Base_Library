@@ -553,6 +553,13 @@ Public Class MorphEngine
         End If
 
         ' Recalculate normals/TBN if needed
+        ' ⚠️ ABIERTO: el canonico llama `CalcTangentsForShape` INCONDICIONAL (BodySlideApp.cpp:4501);
+        ' aca se gatea por `recalculateNormals` (decision de WM, el switch del usuario manda) Y ademas
+        ' por si se movio algo. Un shape que el preset no toca conserva las tangentes AUTORADAS.
+        ' ⛔ PROBADO Y DESCARTADO: forzar el recalculo completo cuando no hay nada sucio NO cambio el
+        ' resultado de `BaseUndies` (35,20 grados, identico en 4 versiones distintas del codigo), asi
+        ' que la divergencia de ese shape NO esta aca — sus tangentes llegan al NIF por otro camino.
+        ' Se revirtio para no pagar un recalculo de malla entera por frame sin beneficio medido.
         If ((recalculateNormals AndAlso huboCambioDePosicion) OrElse uvsCambiaron) AndAlso geom.dirtyVertexIndices.Count > 0 Then
             Dim opt As RecalcTBN.TBNOptions = Config_App.Current.Setting_TBN
             opt.KeepExistingNormals = soloTangentes

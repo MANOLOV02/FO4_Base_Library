@@ -962,7 +962,14 @@ Public Class SkinningHelper
                                                                worldN(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldN(i), listo.Normales))
                                                                worldT(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldT(i), listo.Total))
                                                                worldB(i) = Vector3d.Normalize(Vector3d.TransformNormal(worldB(i), listo.Total))
-                                                               Return
+                                                               ' ⛔⛔ `Continue For`, NUNCA `Return`. Esto vive dentro de un
+                                                               ' Sub(rango) de Parallel.ForEach sobre Partitioner.Create(0, n):
+                                                               ' un `Return` sale del SUB y abandona el RANGO ENTERO. Medido
+                                                               ' 2026-08-04: con `Return` se bakeaban 50 de 20.000 vertices, y
+                                                               ' cuantos dependia del scheduler ⇒ el build no era reproducible
+                                                               ' (A/A 61 de 821 archivos; con este arreglo, 0 en 6 pares).
+                                                               ' Gate: tritest\Memo.cs (M1/M2/M3).
+                                                               Continue For
                                                            End If
                                                            memoOk = True
                                                        End If
@@ -1197,10 +1204,21 @@ Public Class SkinningHelper
         Dim norN As New List(Of System.Numerics.Vector3)(nNew)
         Dim tanN As New List(Of System.Numerics.Vector3)(nNew)
         Dim bitN As New List(Of System.Numerics.Vector3)(nNew)
+        ' ⛔ RED FINAL: ni un NaN ni un vector NULO salen a un NIF. No importa de donde vengan — un
+        ' triangulo degenerado, una normal que colapso, un morph roto: si llega hasta aca, el archivo
+        ' queda con basura que el motor dibuja como una mancha negra y que no se puede diagnosticar
+        ' despues. Se repara con una base ORTONORMAL derivada de la normal, y si ni eso hay, con los
+        ' ejes. MEDIDO: sin esto quedaban unos pocos vertices con NaN en la bitangente de `BaseUndies`
+        ' y del CBBE de FO4 (la media salia NaN con p50 en 0,07).
         For i = 0 To nNew - 1
-            Dim n1 = geom.Normals(i) : norN.Add(New System.Numerics.Vector3(CSng(n1.X), CSng(n1.Y), CSng(n1.Z)))
-            Dim t1 = geom.Tangents(i) : tanN.Add(New System.Numerics.Vector3(CSng(t1.X), CSng(t1.Y), CSng(t1.Z)))
-            Dim b1 = geom.Bitangents(i) : bitN.Add(New System.Numerics.Vector3(CSng(b1.X), CSng(b1.Y), CSng(b1.Z)))
+            Dim n1 = geom.Normals(i), t1 = geom.Tangents(i), b1 = geom.Bitangents(i)
+            If RecalcTBN.HasNaN(n1) OrElse n1.LengthSquared <= 0.0 Then n1 = New Vector3d(0, 0, 1)
+            If RecalcTBN.HasNaN(b1) OrElse b1.LengthSquared <= 0.0 Then b1 = New Vector3d(n1.Y, n1.Z, n1.X)
+            If RecalcTBN.HasNaN(t1) OrElse t1.LengthSquared <= 0.0 Then t1 = Vector3d.Cross(n1, b1)
+            If RecalcTBN.HasNaN(t1) OrElse t1.LengthSquared <= 0.0 Then t1 = New Vector3d(1, 0, 0)
+            norN.Add(New System.Numerics.Vector3(CSng(n1.X), CSng(n1.Y), CSng(n1.Z)))
+            tanN.Add(New System.Numerics.Vector3(CSng(t1.X), CSng(t1.Y), CSng(t1.Z)))
+            bitN.Add(New System.Numerics.Vector3(CSng(b1.X), CSng(b1.Y), CSng(b1.Z)))
         Next
         shapeGeom.SetNormals(norN)
         shapeGeom.SetTangents(tanN)
@@ -1793,6 +1811,34 @@ Public Class RecalcTBN
         ''' </summary>
         Public Property KeepExistingNormals As Boolean
 
+        ''' <summary>
+        ''' ⭐ Promedia las normales de los vértices COINCIDENTES en posición — las costuras — sumando
+        ''' sólo las que estén a menos de <see cref="SmoothSeamNormalsAngle"/>.
+        '''
+        ''' ⛔ NO es opcional para tener paridad: es lo que hace el canónico en CADA build
+        ''' (<c>CalcNormalsForShape(shape, force, smoothSeamNormals)</c>, BodySlideApp.cpp:4494-4496 →
+        ''' nifly <c>CalculateNormals</c>, Geometry.cpp:912-935), su default es <b>true</b> y el corpus
+        ''' no trae el atributo <c>SmoothSeamNormals</c> ni una sola vez ⇒ TODOS los shapes de los dos
+        ''' juegos se construyen con esto puesto. Por eso acá también arranca en True.
+        '''
+        ''' Sin esto, cada duplicado de una costura acumula sólo las caras que referencian SU índice —
+        ''' medio vecindario — así que dos vértices en el MISMO punto de la superficie quedan con
+        ''' normales distintas y el juego dibuja una línea de iluminación. MEDIDO el 2026-08-04 sobre
+        ''' `CBBE Body`: en los 2.444 vértices de costura, 6,52° de media contra BodySlide y hasta 54°;
+        ''' en los 20.264 sin costura, 0,02°. Y `LaceBra`, que no tiene ninguna costura, daba 0,01° —
+        ''' o sea que el error estaba TODO acá.
+        '''
+        ''' ⚠️ No confundir con <see cref="EnableWelding"/>: aquél elige un MAESTRO y le copia su
+        ''' normal a todo el grupo, lo que borra las aristas duras. Éste deja que cada miembro conserve
+        ''' la suya y sólo suma los que estén dentro del umbral, que es justo lo que las preserva.
+        ''' </summary>
+        Public Property SmoothSeamNormals As Boolean
+
+        ''' <summary>Umbral en GRADOS. Un compañero de costura que difiera en <b>más o igual</b> que
+        ''' esto no aporta — así una arista dura sigue dura. Default 60, que es
+        ''' <c>SliderSetShape::SliderSetDefaultSmoothAngle</c> (SliderSet.h:24).</summary>
+        Public Property SmoothSeamNormalsAngle As Double
+
         ' --- Welding (opcional) ---
         Public Property EnableWelding As Boolean                ' activa agrupación por posición+UV
         Public Property WeldPosEpsilon As Double                ' tolerancia para posición (en unidades del modelo)
@@ -1806,6 +1852,8 @@ Public Class RecalcTBN
                 .EpsilonUV = 0.000000000001,
                 .NormalizeOutputs = True,
                 .RepairNaNs = True,
+                .SmoothSeamNormals = True,             ' el canonico lo tiene en true y el corpus no lo pisa
+                .SmoothSeamNormalsAngle = 60.0,        ' SliderSetDefaultSmoothAngle
                 .EnableWelding = False,                ' desactivado por defecto
                 .WeldPosEpsilon = 0.000000000001,
                 .WeldUVEpsilon = 0.000000000001,
@@ -1943,6 +1991,9 @@ Public Class RecalcTBN
 
             c.Tri_du1(t) = _du1 : c.Tri_dv1(t) = _dv1
             c.Tri_du2(t) = _du2 : c.Tri_dv2(t) = _dv2
+            ' ⛔ PROBADO Y DESCARTADO: calcular esto en Single para igualar el `float r` del canonico
+            ' (Geometry.cpp:1011). No cambio nada — la bitangente de `BaseUndies` quedo en 38,74 igual.
+            ' La precision del determinante NO es la causa del signo invertido de esa costura.
             c.Tri_det(t) = _du1 * _dv2 - _du2 * _dv1
         Next
     End Sub
@@ -1951,6 +2002,77 @@ Public Class RecalcTBN
     ' API PÚBLICA: Recalcular N/T/B SOLO para la clausura afectada (dirty + sus triángulos)
     ' - Usa el cache (adjacencia + UV-derivs). Welding opcional (NO cacheado).
     ' ===========================================================================================
+    ''' <summary>
+    ''' Grupos de vértices COINCIDENTES en posición — las costuras. Réplica de <c>SortingMatcher</c>
+    ''' (nifly KDMatcher.hpp:79-126): epsilon relativo a la escala del modelo, orden por X, y barrido
+    ''' hacia adelante que corta apenas la diferencia en X llega al epsilon.
+    '''
+    ''' ⛔ El epsilon es <c>EPSILON * 0.01 * escala</c> con <c>EPSILON = 1e-4</c> y escala = el mayor
+    ''' |coordenada| de TODO el conjunto, o sea ~1e-6 relativo. NO es igualdad exacta de floats:
+    ''' medirlo con igualdad exacta subestima cuántos vértices son de costura.
+    ''' ⛔ El <c>used</c> del canónico se indexa por POSICIÓN EN EL ORDEN, no por índice de vértice.
+    ''' Cambiarlo altera qué grupos salen cuando hay tres o más coincidentes.
+    ''' </summary>
+    ''' <param name="grupoDe">Salida: por vértice, el índice de su grupo, o -1 si no tiene compañeros.</param>
+    ''' <returns>Los grupos, cada uno con 2 o más miembros. Un vértice solo NO forma grupo, igual que
+    ''' en el canónico, que sólo emite un matchset cuando encontró al menos una coincidencia.</returns>
+    Public Shared Function ConstruyeGruposDeCostura(verts() As Vector3d, nVerts As Integer,
+                                                    ByRef grupoDe() As Integer) As List(Of Integer())
+        Dim grupos As New List(Of Integer())
+        grupoDe = New Integer(Math.Max(0, nVerts - 1)) {}
+        For i = 0 To nVerts - 1
+            grupoDe(i) = -1
+        Next
+        If nVerts <= 1 Then Return grupos
+
+        Dim escala As Double = 0.0
+        For i = 0 To nVerts - 1
+            Dim v = verts(i)
+            escala = Math.Max(escala, Math.Max(Math.Abs(v.X), Math.Max(Math.Abs(v.Y), Math.Abs(v.Z))))
+        Next
+        Dim eps As Double = 0.0001 * 0.01 * escala
+        If eps <= 0.0 Then Return grupos
+
+        Dim orden(nVerts - 1) As Integer
+        For i = 0 To nVerts - 1
+            orden(i) = i
+        Next
+        ' Clave separada: Array.Sort(keys, items) es introsort sobre el array de claves y evita el
+        ' delegado de comparación por par, que en 22.700 vértices es el grueso del costo.
+        Dim clave(nVerts - 1) As Double
+        For i = 0 To nVerts - 1
+            clave(i) = verts(i).X
+        Next
+        Array.Sort(clave, orden)
+
+        Dim usado(nVerts - 1) As Boolean      ' por POSICIÓN EN EL ORDEN, como el canónico
+        For si = 0 To nVerts - 1
+            If usado(si) Then Continue For
+            Dim vi = orden(si)
+            Dim actual As List(Of Integer) = Nothing
+            For mi = si + 1 To nVerts - 1
+                If clave(mi) - clave(si) >= eps Then Exit For
+                If usado(mi) Then Continue For
+                Dim vj = orden(mi)
+                If Math.Abs(verts(vi).Y - verts(vj).Y) >= eps Then Continue For
+                If Math.Abs(verts(vi).Z - verts(vj).Z) >= eps Then Continue For
+                If actual Is Nothing Then
+                    actual = New List(Of Integer)(4) From {vi}
+                End If
+                actual.Add(vj)
+                usado(mi) = True
+            Next
+            If actual IsNot Nothing Then
+                Dim idx = grupos.Count
+                For Each v In actual
+                    grupoDe(v) = idx
+                Next
+                grupos.Add(actual.ToArray())
+            End If
+        Next
+        Return grupos
+    End Function
+
     Public Shared Function RecalculateNormalsTangentsBitangents(ByRef geo As SkinnedGeometry, ByVal opts As TBNOptions) As HashSet(Of Integer)
         If IsNothing(geo.CachedTBN.Indices) Then
             geo.CachedTBN = BuildTBNCache(geo.Uvs_Weight, geo.Indices)
@@ -2006,6 +2128,40 @@ Public Class RecalcTBN
             Vertices_Adicionales.Add(masterOf(i1))
             Vertices_Adicionales.Add(masterOf(i2))
         Next
+
+        ' -------- 2b) Costuras: los COMPANEROS de un vertice afectado tambien se recalculan --------
+        ' Si no, un companero que no estaba sucio conservaria la normal del frame anterior y el
+        ' promedio de abajo la mezclaria con las nuevas. Ademas hay que reenviarlos al render, por eso
+        ' van tambien a Vertices_Adicionales.
+        Dim grupoDe() As Integer = Nothing
+        Dim gruposCostura As List(Of Integer()) = Nothing
+        Dim suaviza As Boolean = opts.SmoothSeamNormals AndAlso Not opts.KeepExistingNormals
+        If suaviza Then
+            gruposCostura = ConstruyeGruposDeCostura(geo.Vertices, nVerts, grupoDe)
+            If gruposCostura.Count = 0 Then
+                suaviza = False
+            Else
+                Dim aSumar As New List(Of Integer)()
+                For Each vi In affectedVerts
+                    If vi < 0 OrElse vi >= nVerts Then Continue For
+                    Dim g = grupoDe(vi)
+                    If g < 0 Then Continue For
+                    For Each vj In gruposCostura(g)
+                        aSumar.Add(vj)
+                    Next
+                Next
+                For Each vj In aSumar
+                    affectedVerts.Add(vj)
+                    affectedVerts.Add(masterOf(vj))
+                    Vertices_Adicionales.Add(vj)
+                    Vertices_Adicionales.Add(masterOf(vj))
+                    ' Sus triangulos incidentes tambien, o el acumulador del companero sale vacio.
+                    For k = v2tS(vj) To v2tS(vj + 1) - 1
+                        affectedTris.Add(v2tD(k) >> 2)
+                    Next
+                Next
+            End If
+        End If
 
         ' -------- 3) Acumuladores: sparse cuando el update es parcial, full cuando es masivo --------
         Dim useFullArrays As Boolean = (affectedTris.Count > geo.CachedTBN.TriCount * 0.4)
@@ -2104,13 +2260,26 @@ Public Class RecalcTBN
                         Dim e1 = p1 - p0, e2 = p2 - p0
                         Dim fn = Vector3d.Cross(e1, e2)
                         Dim area2 = fn.Length
-                        ' Cara degenerada: queda todo en cero y no aporta, igual que el Exit Sub de
-                        ' AccumulateTriangle.
-                        If area2 <= epsPos Then Continue For
-
+                        ' ***** UNA CARA DE AREA CERO NO APORTA NORMAL, PERO SI APORTA TANGENTE *****
+                        ' El canonico calcula las dos cosas por caminos separados: la normal sale de
+                        ' `trinormal` (el cross), que en una cara degenerada da CERO y por lo tanto no
+                        ' suma nada solo; pero `sdir`/`tdir` de `CalcTangentSpace` salen de las UV y de
+                        ' los deltas de posicion (Geometry.cpp:999-1026) y NO tienen ningun chequeo de
+                        ' area — una cara colineal pero con vertices distintos aporta igual.
+                        ' Saltear el triangulo entero sacaba ese aporte del acumulado de tangente.
+                        ' MEDIDO en `BaseUndies` de SSE, donde el 78 % de los vertices son de costura:
+                        ' daba 35,20 grados de media contra BodySlide, con distribucion bimodal y sin
+                        ' moverse ante NINGUN cambio de formula — porque el problema no era la formula
+                        ' sino que faltaban sumandos.
                         Dim tf As Vector3d, bf As Vector3d
-                        ComputeFaceTB(fn, e1, e2, localDu1(t), localDv1(t), localDu2(t), localDv2(t),
-                                      localDet(t), epsPos, epsUV, tf, bf)
+                        If area2 <= epsPos Then
+                            fn = Vector3d.Zero
+                            ComputeFaceTB(Vector3d.UnitZ, e1, e2, localDu1(t), localDv1(t), localDu2(t), localDv2(t),
+                                          localDet(t), epsPos, epsUV, tf, bf)
+                        Else
+                            ComputeFaceTB(fn, e1, e2, localDu1(t), localDv1(t), localDu2(t), localDv2(t),
+                                          localDet(t), epsPos, epsUV, tf, bf)
+                        End If
                         Dim fb = k * 3
                         face(fb) = fn : face(fb + 1) = tf : face(fb + 2) = bf
                     Next
@@ -2197,6 +2366,9 @@ Public Class RecalcTBN
             candidates.Add(localMasterOf(vi))
         Next
 
+        Dim accCrudo As Dictionary(Of Integer, ValueTuple(Of Vector3d, Vector3d)) =
+            If(suaviza, New Dictionary(Of Integer, ValueTuple(Of Vector3d, Vector3d))(candidates.Count), Nothing)
+
         For Each m As Integer In candidates
             Dim NX As Vector3d = Nothing
             Dim TX As Vector3d = Nothing
@@ -2215,6 +2387,12 @@ Public Class RecalcTBN
             ' base — y su handedness — del maestro, que es justo lo que esa rama existe para no hacer.
             Dim Tacc As Vector3d = T
             Dim Bacc As Vector3d = B
+            ' Para el pase de costura: hay que reortogonalizar contra la normal SUAVIZADA partiendo de
+            ' los ACUMULADOS crudos, no de la T/B ya ortogonalizadas contra la normal sin suavizar.
+            ' Proyectar dos veces pierde informacion y no es lo que hace el canonico, que calcula las
+            ' tangentes DESPUES de las normales (BodySlideApp.cpp:4494-4501), o sea una sola vez y
+            ' contra la normal final.
+            If suaviza AndAlso grupoDe(m) >= 0 Then accCrudo(m) = New ValueTuple(Of Vector3d, Vector3d)(Tacc, Bacc)
 
             ' Normal
             If opts.KeepExistingNormals Then
@@ -2234,27 +2412,7 @@ Public Class RecalcTBN
             ' SetTangents escribe el campo Bitangent), y ese tiene que ser el primario.
             ' Al reves el marco quedaba rotado: mediana 14,6° contra BodySlide, y la mitad de los
             ' vertices por encima de 15°. Con este orden, SSE sale BYTE-IDENTICO.
-            Dim Bcross As Vector3d
-            B -= N * Vector3d.Dot(N, B)
-            If B.LengthSquared <= epsPos OrElse HasNaN(B) Then
-                B = OrthonormalTangentFromNormal(N)
-            ElseIf opts.NormalizeOutputs Then
-                B = Vector3d.Normalize(B)
-            End If
-
-            ' El secundario se proyecta contra N y DESPUES contra el primario.
-            Bcross = Vector3d.Cross(N, B)
-            Dim Tproj As Vector3d = T - N * Vector3d.Dot(N, T)
-            T = Tproj - B * Vector3d.Dot(B, Tproj)
-            If T.LengthSquared <= epsPos OrElse HasNaN(T) Then
-                T = Bcross
-            ElseIf opts.NormalizeOutputs Then
-                T = Vector3d.Normalize(T)
-            End If
-
-            If opts.RepairNaNs Then
-                If HasNaN(B) Then B = Bcross
-            End If
+            BaseTangenteDeVertice(N, Tacc, Bacc, opts, epsPos, T, B)
 
             ' Propagate to all members of the weld group
             ' Convención uniforme para los dos juegos: T->geo.Tangents, B->geo.Bitangents. El cruce
@@ -2293,24 +2451,9 @@ Public Class RecalcTBN
                         ElseIf opts.NormalizeOutputs Then
                             Nv = Vector3d.Normalize(Nv)
                         End If
-                        ' Mismo orden que el camino del maestro: PRIMARIO el que va al campo tangente
-                        ' del NIF (Bacc), y despues el otro proyectado contra el.
-                        Dim Bv As Vector3d = Bacc - Nv * Vector3d.Dot(Nv, Bacc)
-                        If Bv.LengthSquared <= epsPos OrElse HasNaN(Bv) Then
-                            Bv = OrthonormalTangentFromNormal(Nv)
-                        ElseIf opts.NormalizeOutputs Then
-                            Bv = Vector3d.Normalize(Bv)
-                        End If
-
-                        Dim Bcrossv As Vector3d = Vector3d.Cross(Nv, Bv)
-                        Dim Tprojv As Vector3d = Tacc - Nv * Vector3d.Dot(Nv, Tacc)
-                        Dim Tv As Vector3d = Tprojv - Bv * Vector3d.Dot(Bv, Tprojv)
-                        If Tv.LengthSquared <= epsPos OrElse HasNaN(Tv) Then
-                            Tv = Bcrossv
-                        ElseIf opts.NormalizeOutputs Then
-                            Tv = Vector3d.Normalize(Tv)
-                        End If
-                        If opts.RepairNaNs AndAlso HasNaN(Tv) Then Tv = Bcrossv
+                        ' Mismo helper que el camino del maestro: una sola ley, un solo fallback.
+                        Dim Tv As Vector3d, Bv As Vector3d
+                        BaseTangenteDeVertice(Nv, Tacc, Bacc, opts, epsPos, Tv, Bv)
 
                         geo.Tangents(vi) = Tv
                         geo.Bitangents(vi) = Bv
@@ -2322,8 +2465,86 @@ Public Class RecalcTBN
                 geo.Bitangents(m) = B
             End If
         Next
+
+        If suaviza Then SuavizaNormalesDeCostura(geo, opts, gruposCostura, grupoDe, affectedVerts, accCrudo, epsPos)
         Return Vertices_Adicionales
     End Function
+
+    ''' <summary>
+    ''' Promedia las normales de cada grupo de costura y REHACE la base tangente contra la normal
+    ''' resultante. Replica del bloque <c>if (smooth)</c> de <c>CalculateNormals</c>
+    ''' (nifly Geometry.cpp:911-935):
+    ''' <code>
+    ''' for (matchset : matcher.matches)
+    '''     for (j : matchset) { sn = norms[j];
+    '''         for (k : matchset) if (k != j &amp;&amp; norms[j].angle(norms[k]) &lt; thresh) sn += norms[k];
+    '''         sn.Normalize(); seamNorms[j] = sn; }
+    '''     for (j : matchset) norms[j] = seamNorms[j];
+    ''' </code>
+    ''' ⛔ Los dos bucles van SEPARADOS a proposito: el promedio de cada miembro se calcula contra
+    ''' las normales SIN suavizar de los demas. Pisarlas sobre la marcha haria que el resultado
+    ''' dependiera del orden dentro del grupo.
+    ''' ⛔ Se descarta con <b>&gt;=</b> el umbral, o sea que aporta el que esta estrictamente por
+    ''' debajo. Asi una arista dura (mas de 60 grados) sigue dura.
+    ''' </summary>
+    Private Shared Sub SuavizaNormalesDeCostura(ByRef geo As SkinnedGeometry, opts As TBNOptions,
+                                                grupos As List(Of Integer()), grupoDe() As Integer,
+                                                afectados As HashSet(Of Integer),
+                                                accCrudo As Dictionary(Of Integer, ValueTuple(Of Vector3d, Vector3d)),
+                                                epsPos As Double)
+        If grupos Is Nothing OrElse grupos.Count = 0 Then Exit Sub
+        Dim umbral As Double = Math.Cos(Math.Max(0.0, opts.SmoothSeamNormalsAngle) * Math.PI / 180.0)
+
+        ' Solo los grupos que toco este update. Con el arrastre de un trackbar eso es un punado.
+        Dim tocados As New HashSet(Of Integer)()
+        For Each vi In afectados
+            If vi < 0 OrElse vi >= grupoDe.Length Then Continue For
+            If grupoDe(vi) >= 0 Then tocados.Add(grupoDe(vi))
+        Next
+        If tocados.Count = 0 Then Exit Sub
+
+        Dim suavizadas(7) As Vector3d
+        For Each gi In tocados
+            Dim g = grupos(gi)
+            If g.Length > suavizadas.Length Then ReDim suavizadas(g.Length - 1)
+
+            For j = 0 To g.Length - 1
+                Dim n As Vector3d = geo.Normals(g(j))
+                Dim sn As Vector3d = n
+                Dim nl As Double = n.Length
+                For k = 0 To g.Length - 1
+                    If k = j Then Continue For
+                    Dim mn As Vector3d = geo.Normals(g(k))
+                    Dim ml As Double = mn.Length
+                    If nl <= epsPos OrElse ml <= epsPos Then Continue For
+                    ' cos(angulo) > cos(umbral)  ==  angulo < umbral, sin acos.
+                    If Vector3d.Dot(n, mn) / (nl * ml) <= umbral Then Continue For
+                    sn += mn
+                Next
+                If sn.LengthSquared > epsPos AndAlso Not HasNaN(sn) Then sn = Vector3d.Normalize(sn)
+                suavizadas(j) = sn
+            Next
+
+            For j = 0 To g.Length - 1
+                Dim vi = g(j)
+                Dim N = suavizadas(j)
+                ' ⛔ El acumulado se busca ANTES de escribir la normal. Si el miembro no lo tiene no se
+                ' le toca NADA: escribirle la normal suavizada y dejarle la tangente ortogonalizada
+                ' contra la VIEJA deja una base inconsistente — normal de un lado, tangente del otro.
+                ' (No deberia pasar: la expansion de affectedVerts mete a todos los companeros de
+                ' grupo. Es un guard, no un camino esperado.)
+                Dim acc As ValueTuple(Of Vector3d, Vector3d) = Nothing
+                If accCrudo Is Nothing OrElse Not accCrudo.TryGetValue(vi, acc) Then Continue For
+                geo.Normals(vi) = N
+                ' La base tangente se rehace contra la normal nueva, partiendo de los acumulados
+                ' crudos y con el MISMO orden (primario B) que el camino principal.
+                Dim T As Vector3d, B As Vector3d
+                BaseTangenteDeVertice(N, acc.Item1, acc.Item2, opts, epsPos, T, B)
+                geo.Tangents(vi) = T
+                geo.Bitangents(vi) = B
+            Next
+        Next
+    End Sub
 
     ' -----------------------
     ' Utilitarios privados
@@ -2488,12 +2709,23 @@ Public Class RecalcTBN
         Dim e1 = p1 - p0, e2 = p2 - p0
         Dim fn = Vector3d.Cross(e1, e2)
         Dim area2 = fn.Length
-        If area2 <= epsPos Then Exit Sub
-
+        ' ***** AREA CERO NO APORTA NORMAL, PERO SI APORTA TANGENTE *****
+        ' Ver la nota larga en la Fase A del camino paralelo: el canonico saca la normal de
+        ' `trinormal` (que en una cara degenerada da cero y no suma) pero `sdir`/`tdir` salen de las UV
+        ' y NO tienen chequeo de area (Geometry.cpp:999-1026). Saltear el triangulo entero le quitaba
+        ' sumandos al acumulado de tangente.
+        ' ⛔ ESTE camino es el que usan las mallas CHICAS: el paralelo pide `triArray.Length >= 2000`.
+        ' Por eso arreglarlo solo alla no movia `BaseUndies` (288 vertices) mientras `BaseArmor`
+        ' (2.637) ya daba 0,24 grados. Los DOS caminos tienen que tener la misma ley.
         ' La normal de cara va SIN normalizar: eso ya la pondera por AREA. La base tangente viene
         ' normalizada por triangulo desde ComputeFaceTB y se acumula sin peso.
         Dim tFace As Vector3d, bFace As Vector3d
-        ComputeFaceTB(fn, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
+        If area2 <= epsPos Then
+            fn = Vector3d.Zero
+            ComputeFaceTB(Vector3d.UnitZ, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
+        Else
+            ComputeFaceTB(fn, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
+        End If
 
         nAcc(m0) += fn : nAcc(m1) += fn : nAcc(m2) += fn
         tAcc(m0) += tFace : tAcc(m1) += tFace : tAcc(m2) += tFace
@@ -2514,14 +2746,19 @@ Public Class RecalcTBN
         Dim e1 = p1 - p0, e2 = p2 - p0
         Dim fn = Vector3d.Cross(e1, e2)
         Dim area2 = fn.Length
-        If area2 <= epsPos Then Exit Sub
 
         ' ⛔ Este bloque tiene que ser IDENTICO al de AccumulateTriangle. Al migrar el ponderado me
         ' quede sin actualizarlo y el camino secuencial (sparse) siguio con el viejo mientras el
         ' paralelo usaba el nuevo: los tests TB5/TB6b (paralelo == secuencial) lo cazaron con un
         ' delta de 0,1. Si se toca uno, se tocan los dos.
+        ' Area cero: no aporta NORMAL (fn = 0) pero SI aporta tangente — ver la nota de la Fase A.
         Dim tFace As Vector3d, bFace As Vector3d
-        ComputeFaceTB(fn, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
+        If area2 <= epsPos Then
+            fn = Vector3d.Zero
+            ComputeFaceTB(Vector3d.UnitZ, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
+        Else
+            ComputeFaceTB(fn, e1, e2, du1(t), dv1(t), du2(t), dv2(t), det(t), epsPos, epsUV, tFace, bFace)
+        End If
 
         Dim vn0 As Vector3d, vn1 As Vector3d, vn2 As Vector3d
         nAcc.TryGetValue(m0, vn0) : nAcc(m0) = vn0 + fn
@@ -2547,28 +2784,156 @@ Public Class RecalcTBN
                                       _du1 As Double, _dv1 As Double, _du2 As Double, _dv2 As Double, _det As Double,
                                       epsPos As Double, epsUV As Double,
                                       ByRef tFace As Vector3d, ByRef bFace As Vector3d)
-        If Math.Abs(_det) <= epsUV Then
-            ' Degenerate UV: stable fallback in face-normal plane
-            Dim nf = Vector3d.Normalize(fn)
-            Dim e1p = e1 - nf * Vector3d.Dot(nf, e1)
-            If e1p.LengthSquared <= epsPos Then e1p = e2 - nf * Vector3d.Dot(nf, e2)
-            If e1p.LengthSquared <= epsPos Then
-                tFace = Vector3d.Zero
-                bFace = Vector3d.Zero
-            Else
-                tFace = Vector3d.Normalize(e1p)
-                bFace = Vector3d.Normalize(Vector3d.Cross(nf, tFace))
-            End If
-        Else
-            Dim r As Double = If(_det >= 0.0, 1.0, -1.0)
-            Dim tf = (e1 * _dv2 - e2 * _dv1) * r
-            Dim bf = (e2 * _du1 - e1 * _du2) * r
-            tFace = If(tf.LengthSquared > epsPos, Vector3d.Normalize(tf), Vector3d.Zero)
-            bFace = If(bf.LengthSquared > epsPos, Vector3d.Normalize(bf), Vector3d.Zero)
-        End If
+        ' ***** SIN RAMA PARA UV DEGENERADA: EL CANONICO NO LA TIENE *****
+        ' `CalcTangentSpace` (nifly Geometry.cpp:1011-1018) calcula sdir/tdir con la formula SIEMPRE,
+        ' sin mirar el determinante — sea cual sea, `r` es +1 o -1 y nunca cero.
+        ' La rama que habia aca se inventaba una base ortonormal en el plano de la cara
+        ' (`tFace = normalize(e1 proyectado)`, `bFace = cross(n, tFace)`) y esa pareja NO respeta los
+        ' roles: `tFace` deberia ser dP/du y termina siendo una direccion arbitraria del triangulo.
+        ' MEDIDO en `BaseUndies` (SSE, shell de UV ESPEJADO, 78 % de vertices de costura): la tangente
+        ' de BodySlide coincidia con la BITANGENTE de WM a 13-30 grados mientras la comparacion directa
+        ' daba 103-120 — la firma de canales INTERCAMBIADOS, no de un signo ni de otra formula.
+        ' `BaseArmor`, sin shell espejado, ya daba 0,24 grados por este mismo camino.
+        Dim r As Double = If(_det >= 0.0, 1.0, -1.0)
+        Dim tf = (e1 * _dv2 - e2 * _dv1) * r
+        Dim bf = (e2 * _du1 - e1 * _du2) * r
+        tFace = If(tf.LengthSquared > epsPos, Vector3d.Normalize(tf), Vector3d.Zero)
+        bFace = If(bf.LengthSquared > epsPos, Vector3d.Normalize(bf), Vector3d.Zero)
     End Sub
 
     ' Tangente ortonormal a partir de una normal: elige un eje auxiliar poco alineado
+    ''' <summary>
+    ''' La base tangente de UN vertice, replicando el bloque por vertice de
+    ''' <c>BSTriShape::CalcTangentSpace</c> (nifly Geometry.cpp:1032-1053).
+    '''
+    ''' Mapeo de nombres, que es donde es facil equivocarse:
+    ''' el canonico acumula <c>tdir</c> (dP/dv) en <c>rawTangents</c> y <c>sdir</c> (dP/du) en
+    ''' <c>rawBitangents</c>, y <c>rawTangents</c> es el PRIMARIO. Aca <c>accV</c> es ese primario y
+    ''' sale por <paramref name="B"/>, que es el que el adaptador escribe en el campo TANGENTE del
+    ''' NIF. O sea: mismo vector, distinto nombre.
+    '''
+    ''' ⛔⛔ EL FALLBACK DEGENERADO NO ES CUALQUIERA. Cuando el acumulado es cero el canonico usa una
+    ''' ROTACION DE COMPONENTES de la normal, <c>(N.y, N.z, N.x)</c>, y deriva el otro con un cross —
+    ''' y NO normaliza ni ortogonaliza esa rama. WM usaba un cross contra un eje fijo, que es otra
+    ''' direccion completamente distinta: MEDIDO, eso daba tangentes a 175-180 grados de BodySlide
+    ''' (o sea dadas vuelta) en los vertices degenerados. En `BaseUndies` de SSE eran 51 de 224.
+    ''' ⛔ Y dispara si CUALQUIERA de los dos acumulados es cero, reemplazando LOS DOS.
+    ''' ⛔ El cero es EXACTO (<c>IsZero()</c> sin epsilon, Object3d.hpp:111-119), no un umbral.
+    '''
+    ''' Fuera de esa rama: primario contra la normal, y el secundario contra la normal y DESPUES
+    ''' contra el primario. El orden decide el roll del marco alrededor de la normal.
+    ''' </summary>
+    ''' <summary>
+    ''' ⭐ NORMALIZAR y DESPUES proyectar, no al reves, y caer al fallback SOLO con cero EXACTO.
+    ''' Es literalmente el bloque por vertice de <c>BSTriShape::CalcTangentSpace</c>
+    ''' (nifly Geometry.cpp:1032-1053):
+    ''' <code>
+    ''' if (rawTangents.IsZero() || rawBitangents.IsZero()) {
+    '''     rawTangents = (N.y, N.z, N.x); rawBitangents = N.cross(rawTangents); }
+    ''' else {
+    '''     rawTangents.Normalize();   rawTangents -= N * N.dot(rawTangents);   rawTangents.Normalize();
+    '''     rawBitangents.Normalize(); rawBitangents -= N * N.dot(rawBitangents);
+    '''     rawBitangents -= rawTangents * rawTangents.dot(rawBitangents); rawBitangents.Normalize(); }
+    ''' </code>
+    '''
+    ''' ⛔⛔ EL ORDEN NO ES COSMETICO, Y EL UMBRAL TAMPOCO. En una costura de ESPEJO los triangulos
+    ''' de los dos lados aportan <c>tdir</c> OPUESTAS (el factor <c>r</c> les cambia de signo), asi que
+    ''' el acumulado se CANCELA y queda un vector diminuto pero NO exactamente cero. El canonico lo
+    ''' normaliza igual —amplificando ese residuo a un unitario— y recien despues proyecta.
+    ''' WM hacia lo contrario: proyectaba primero y, al ver la longitud por debajo de un epsilon,
+    ''' se iba al fallback. Dos resultados distintos para el mismo vertice, tipicamente OPUESTOS.
+    ''' MEDIDO: era el 78% de `BaseUndies` en SSE (35,20 grados de media, p90 153) y ~140 vertices
+    ''' del CBBE de FO4. Distribucion BIMODAL —mitad en 0,45 grados y mitad en 180— que es la firma
+    ''' de un signo, no de una formula distinta.
+    '''
+    ''' Mapeo de nombres: el canonico acumula <c>tdir</c> (dP/dv) en <c>rawTangents</c> y <c>sdir</c>
+    ''' (dP/du) en <c>rawBitangents</c>, y el PRIMARIO es <c>rawTangents</c>. Aca <paramref name="accV"/>
+    ''' es ese primario y sale por <paramref name="B"/>, que es el que el adaptador escribe en el
+    ''' campo TANGENTE del NIF.
+    ''' </summary>
+    Private Shared Sub BaseTangenteDeVertice(N As Vector3d, accU As Vector3d, accV As Vector3d,
+                                             opts As TBNOptions, epsPos As Double,
+                                             ByRef T As Vector3d, ByRef B As Vector3d)
+        If EsCeroExacto(accU) OrElse EsCeroExacto(accV) Then
+            ParDegenerado(N, T, B)
+            Return
+        End If
+
+        B = NormalizaComoNifly(accV)
+        B = NormalizaComoNifly(B - N * Vector3d.Dot(N, B))
+
+        T = NormalizaComoNifly(accU)
+        T = T - N * Vector3d.Dot(N, T)
+        T = NormalizaComoNifly(T - B * Vector3d.Dot(B, T))
+
+        ' ⛔⛔ SOLO NaN. Probado y DESCARTADO cazar tambien el vector nulo, con epsilon (1e-12) y con
+        ' cero exacto: las DOS versiones empeoraron las tangentes de `BaseUndies` de 0,14 a 8,25
+        ' grados, porque el reemplazo por el par degenerado pisa vectores que el canonico normaliza
+        ' igual sin mirar magnitud.
+        ' ⛔ El SECUNDARIO puede COLAPSAR y ahi hay que derivarlo, no dejarlo en cero. Pasa cuando las
+        ' dos direcciones acumuladas salen (anti)paralelas — tipico de un triangulo con UV degenerada,
+        ' donde dP/du y dP/dv son colineales: al proyectar una contra la otra no queda nada.
+        ' `Cross(N, B)` es ortogonal a la normal POR CONSTRUCCION, que es lo que exige el gate F19.
+        If EsCeroExacto(T) OrElse HasNaN(T) Then
+            T = Vector3d.Cross(N, B)
+            If T.LengthSquared > 0.0 Then T = Vector3d.Normalize(T)
+        End If
+        If HasNaN(B) OrElse HasNaN(T) OrElse EsCeroExacto(T) Then ParDegenerado(N, T, B)
+
+        ' ⛔ GARANTIA FINAL: los dos ejes ORTOGONALES a la normal, siempre. No es adorno — una base no
+        ' ortonormal en el NIF se ve como iluminacion sucia, y es lo que exige el gate F19.
+        ' El canonico no lo garantiza (su par degenerado es una rotacion de componentes de la normal,
+        ' que no tiene por que ser perpendicular); se diverge a proposito y solo donde el no da una
+        ' respuesta buena. El costo son dos productos punto por vertice.
+        ' ⛔⛔ EL ORDEN IMPORTA: primero el PRIMARIO contra la normal, y despues el SECUNDARIO contra
+        ' la normal Y contra el primario ya fijado. Proyectar los dos contra la normal por separado
+        ' —que es lo que hacia antes— deja T y B sin ser perpendiculares ENTRE SI: medido en
+        ' `BaseUndies`, dot(T,B) llegaba a -0,98, o sea casi paralelas. Una base asi no es una base.
+        Dim nn As Double = N.LengthSquared
+        If nn > 0.0 Then
+            B -= N * (Vector3d.Dot(N, B) / nn)
+            If B.LengthSquared > 0.0 Then B = Vector3d.Normalize(B)
+            T -= N * (Vector3d.Dot(N, T) / nn)
+            Dim bb As Double = B.LengthSquared
+            If bb > 0.0 Then T -= B * (Vector3d.Dot(B, T) / bb)
+            If T.LengthSquared > 0.0 Then T = Vector3d.Normalize(T)
+            If EsCeroExacto(T) OrElse EsCeroExacto(B) Then ParDegenerado(N, T, B)
+        End If
+    End Sub
+
+    ''' <summary>El <c>Normalize()</c> de nifly: divide por la longitud, y con longitud CERO deja el
+    ''' vector como esta. Sin umbral — el umbral es justo lo que hacia divergir las costuras de espejo.</summary>
+    Private Shared Function NormalizaComoNifly(v As Vector3d) As Vector3d
+        Dim l As Double = v.Length
+        If l = 0.0 Then Return v
+        Return v / l
+    End Function
+
+    ''' <summary>Cero EXACTO en las tres componentes, que es el <c>IsZero()</c> del canonico sin
+    ''' epsilon. Un umbral aca cambiaria cuantos vertices caen en el fallback degenerado.</summary>
+    ''' <summary>
+    ''' El par degenerado del canonico: <c>rawTangents = (N.y, N.z, N.x)</c> y
+    ''' <c>rawBitangents = N x rawTangents</c> (nifly Geometry.cpp:1036-1040).
+    ''' ⛔ DIVERGENCIA DELIBERADA: el canonico NO ortogonaliza ese par, asi que su
+    ''' <c>rawTangents</c> no es perpendicular a la normal — una rotacion de componentes no tiene por
+    ''' que serlo. Aca se lo proyecta contra N antes de derivar el otro, porque una base no ortonormal
+    ''' en el NIF se ve como iluminacion sucia y el gate F19 lo exige. Solo aplica al caso degenerado
+    ''' (acumulado en CERO EXACTO), que es justo donde el canonico no tiene una respuesta buena.
+    ''' </summary>
+    Private Shared Sub ParDegenerado(N As Vector3d, ByRef T As Vector3d, ByRef B As Vector3d)
+        B = New Vector3d(N.Y, N.Z, N.X)
+        Dim nl As Double = N.LengthSquared
+        If nl > 0.0 Then B -= N * (Vector3d.Dot(N, B) / nl)
+        If B.LengthSquared <= 0.0 Then B = OrthonormalTangentFromNormal(N)
+        If B.LengthSquared > 0.0 Then B = Vector3d.Normalize(B)
+        T = Vector3d.Cross(N, B)
+        If T.LengthSquared > 0.0 Then T = Vector3d.Normalize(T)
+    End Sub
+
+    Private Shared Function EsCeroExacto(v As Vector3d) As Boolean
+        Return v.X = 0.0 AndAlso v.Y = 0.0 AndAlso v.Z = 0.0
+    End Function
+
     Private Shared Function OrthonormalTangentFromNormal(n As Vector3d) As Vector3d
         Dim ax As Vector3d = If(Math.Abs(n.X) < 0.9, New Vector3d(1, 0, 0), New Vector3d(0, 1, 0))
         Dim t As Vector3d = Vector3d.Cross(ax, n)
@@ -2577,7 +2942,7 @@ Public Class RecalcTBN
         Return Vector3d.Normalize(t)
     End Function
 
-    Private Shared Function HasNaN(v As Vector3d) As Boolean
+    Friend Shared Function HasNaN(v As Vector3d) As Boolean
         Return Double.IsNaN(v.X) OrElse Double.IsNaN(v.Y) OrElse Double.IsNaN(v.Z)
     End Function
 

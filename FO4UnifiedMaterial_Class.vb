@@ -3275,7 +3275,7 @@ Public Class FO4UnifiedMaterial_Class
                                         NifColor3ToMaterialRgb(shad.HairTintColor),
                                         CUInt(&H808080UI))),
                 .Smoothness = If(Nif.Header.Version.IsSSE,
-                                  CSng(Math.Max(0.0, (Math.Log(Math.Max(CDbl(shad.Glossiness), 2.0), 2.0) - 1.0) / 10.0)),
+                                  SseGlossinessToSmoothness(shad.Glossiness),
                                   shad.Smoothness),
                 .SubsurfaceLightingRolloff = If(Nif.Header.Version.IsSSE, shad.Softlight, shad.SubsurfaceRolloff),
                 .ExternalEmittance = shad.HasExternalEmittance,
@@ -3671,7 +3671,7 @@ Public Class FO4UnifiedMaterial_Class
             shad.EnvironmentMapScale = If(effectiveEnvMapping, Mat.EnvironmentMappingMaskScale, 1.0F)
         End If
         If Nif.Header.Version.IsSSE Then
-            shad.Glossiness = CSng(Math.Pow(2.0, CDbl(Mat.Smoothness) * 10.0 + 1.0))
+            shad.Glossiness = SmoothnessToSseGlossiness(Mat.Smoothness)
         Else
             shad.Smoothness = Mat.Smoothness
         End If
@@ -4201,6 +4201,38 @@ Public Class FO4UnifiedMaterial_Class
         Return CType((CUInt(ClampByte(color.R * 255)) << 16) Or
                      (CUInt(ClampByte(color.G * 255)) << 8) Or
                      CUInt(ClampByte(color.B * 255)), UInteger)
+    End Function
+
+    ' Dominio representable del par Smoothness (FO4) <-> Glossiness (SSE) = exp2(Smoothness*10+1) y su
+    ' inversa. OJO: aca NO hay oraculo de motor -- Skyrim no tiene campo Smoothness ni FO4 tiene
+    ' Glossiness, o sea esta conversion es transporte NUESTRO entre juegos, no una ley de ninguno.
+    ' El exponente se acota a [1, 127]:
+    '   1   = Smoothness 0 -> Glossiness 2, que es EXACTAMENTE el piso que la inversa ya asumia
+    '         (el viejo Math.Max(Glossiness, 2.0)); asi las dos guardas quedan simetricas.
+    '   127 = el ultimo 2^n que entra en un Single (2^127 = 1,70e38 < Single.MaxValue = 3,40e38).
+    ' POR QUE HACE FALTA (medido 2026-08-05): CSng NO tira OverflowException con un Double fuera de
+    ' rango, devuelve +Infinity. Sin este clamp, un Smoothness > 12,7 escribia 0x7F800000 en el campo
+    ' Glossiness del NIF SSE sin avisar (12,8 -> Inf; el outfit que lo destapo traia Smoothness = 80),
+    ' y al releerlo daba Smoothness = Inf -> roughness = -Inf -> r2 = Inf -> Inf/(Inf+0,09) = NaN en el
+    ' Oren-Nayar de los dos fragments (que quedaron SIN clamp a proposito, por fidelidad al motor).
+    ' POR QUE NO SE ACOTA A [0,1]: 90 de los 6616 BGSM vanilla traen Smoothness > 1 (hasta 10, el
+    ' MirelurkHunterLegendary). Con [1,127] todo lo vanilla hace round-trip intacto y solo se fija lo
+    ' mal autorado; con [0,1] se perderian esos 90 en cada conversion FO4->SSE.
+    Private Const SseGlossinessExponentMin As Double = 1.0
+    Private Const SseGlossinessExponentMax As Double = 127.0
+
+    Private Shared Function SmoothnessToSseGlossiness(smoothness As Single) As Single
+        Dim expo = CDbl(smoothness) * 10.0 + 1.0
+        If Double.IsNaN(expo) Then expo = SseGlossinessExponentMin
+        expo = Math.Min(Math.Max(expo, SseGlossinessExponentMin), SseGlossinessExponentMax)
+        Return CSng(Math.Pow(2.0, expo))
+    End Function
+
+    Private Shared Function SseGlossinessToSmoothness(glossiness As Single) As Single
+        Dim expo = Math.Log(Math.Max(CDbl(glossiness), 2.0), 2.0)
+        If Double.IsNaN(expo) Then expo = SseGlossinessExponentMin
+        expo = Math.Min(Math.Max(expo, SseGlossinessExponentMin), SseGlossinessExponentMax)
+        Return CSng((expo - 1.0) / 10.0)
     End Function
 
     Private Shared Function NormalizeGameRelativePath(rawPath As String, rootPrefix As String) As String

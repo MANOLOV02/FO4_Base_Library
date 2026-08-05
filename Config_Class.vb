@@ -279,6 +279,17 @@ Public Class Config_App
         If cfg IsNot Nothing Then
             Current = cfg
             If Current.Settings_RenderGrid.Size = 0 Then Current.Settings_RenderGrid = Default_RenderGrid_Settings()
+            ' ⛔ Un config.json ANTERIOR a la opcion de costuras no trae estas dos claves, y TBNOptions
+            ' es una Structure: el deserializador la crea en CERO y solo asigna lo que encuentra, asi
+            ' que el usuario existente arrancaria con el suavizado APAGADO y el angulo en 0 — o sea con
+            ' la correccion desactivada sin haberlo pedido. El angulo 0 no es un valor legitimo (con
+            ' 0 grados no se promedia ningun companero), asi que sirve de centinela de "clave ausente".
+            If Current.Setting_TBN.SmoothSeamNormalsAngle <= 0.0 Then
+                Dim t = Current.Setting_TBN
+                t.SmoothSeamNormals = True
+                t.SmoothSeamNormalsAngle = 60.0
+                Current.Setting_TBN = t
+            End If
         End If
     End Sub
 
