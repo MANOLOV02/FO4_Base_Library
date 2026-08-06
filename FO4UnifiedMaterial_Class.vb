@@ -298,6 +298,7 @@ Public Class FO4UnifiedMaterial_Class
         copy._blendFunctionDest = _blendFunctionDest
         copy._skinTintAlpha = _skinTintAlpha
         copy._NifGlossiness = _NifGlossiness
+        copy._NifGlossinessFromShader = _NifGlossinessFromShader
         ' Multiplicador runtime del tint (convención ×2 del pelo SSE): vive en el wrapper, no en el
         ' BGSM, así que el loop de reflexión de arriba no lo alcanza. Sin esto un clon perdería el ×2.
         copy.TintColorScale = TintColorScale
@@ -393,6 +394,37 @@ Public Class FO4UnifiedMaterial_Class
             Return _NifGlossiness
         End Get
     End Property
+
+    ''' <summary>True sólo si <see cref="_NifGlossiness"/> se leyó de un shader REAL (no es el default 1.0).
+    ''' Sin esto, un material venido de un `.bgsm` suelto escribiría 1.0 como glossiness.</summary>
+    Private _NifGlossinessFromShader As Boolean = False
+
+    ''' <summary>⛔ La conversión Glossiness↔Smoothness NO es reversible y ACUMULA.
+    ''' `SseGlossinessToSmoothness` (log2) y `SmoothnessToSseGlossiness` (pow) pasan por un Single de
+    ''' 24 bits de mantisa, y el exponente necesita más: MEDIDO sobre 3014 valores de glossiness reales,
+    ''' 2322 no vuelven al valor original — p.ej. **30.0 → 29,999996185302734** (`00 00 f0 41` →
+    ''' `fe ff ef 41`), y **80.0 → 80,00000762939453**: el error va para los DOS lados, no siempre baja.
+    ''' ⛔ NO acumula: MEDIDO, el segundo guardado ya no mueve el valor (30 → 29,999996 → 29,999996 → …).
+    ''' Es una cuantización de UNA sola vez, no una deriva que empeora con el uso. (Una versión previa de
+    ''' este comentario decía que acumulaba y que siempre bajaba: las dos mitades eran falsas.)
+    ''' <para>El arreglo NO es redondear: medido, hacen falta 9 decimales para volver exacto, y un Single
+    ''' no los sostiene (~7 dígitos). El arreglo es **no reconvertir lo que el usuario no tocó**: si
+    ''' `Smoothness` no divergió del snapshot de carga, se reescribe el glossiness CRUDO del NIF.
+    ''' Alcance: sólo el round-trip NIF SSE → material en memoria → NIF SSE. Un `.bgsm` en disco guarda
+    ''' `Smoothness` nativo y nunca pasa por esta conversión.</para>
+    ''' <para>⛔ NO cambiar `BGSM.Smoothness` a Double para arreglar esto: el campo vive en MaterialLib
+    ''' (`BGSM.cs:132`) y el formato binario lo persiste como Single (`:376`/`:545`) — ensancharlo obliga
+    ''' a tocar la librería de materiales y no compra nada que esto no dé ya.</para></summary>
+    ''' <remarks>⛔ NO usar el seguimiento de cambios (`_cleanSnapshot`/`IsDirty`) para esto: eso
+    ''' responde "¿divergió del estado de carga?", que depende de que el snapshot exista y de por qué
+    ''' camino se editó. Acá la pregunta es más simple y no tiene estado oculto: **¿el crudo guardado
+    ''' sigue proyectando EXACTAMENTE a la Smoothness actual?** Si sí, nadie lo tocó y el crudo es el
+    ''' valor bueno. Si no, hubo una edición y hay que convertir. Función pura del estado actual.</remarks>
+    Private Function NifGlossinessStillMatchesSmoothness() As Boolean
+        If Not _NifGlossinessFromShader Then Return False
+        If Not (TypeOf Underlying_Material Is BGSM) Then Return False
+        Return SseGlossinessToSmoothness(_NifGlossiness) = Me.Smoothness
+    End Function
 
     ' Modelo del estado de alpha-blend: los cuatro valores canonicos (None/Standard/Additive/Multiplicative)
     ' fijan cada uno una tupla (enabled, src, dst). Unknown es la valvula de escape para combinaciones que no
@@ -3099,6 +3131,38 @@ Public Class FO4UnifiedMaterial_Class
         Return shad IsNot Nothing AndAlso shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK
     End Function
 
+    ''' <summary>⛔ `shad.Type` NO se serializa: es propiedad escrita a mano (`BSShaderProperty.cs:9`),
+    ''' default `None`, y la puebla `BeforeSync` como EFECTO SECUNDARIO de sincronizar contra un stream.
+    ''' Un bloque recién construido o pasado por `Clone()` la trae en `None`.
+    ''' <para>⛔⛔ `Clone()` la PIERDE: el generador copia sólo sus `_fields` y deja el estado a mano al
+    ''' hook `partial void CopyFromExtra`, que NADIE implementó (0 implementaciones en todo NiflySharp).
+    ''' Regresión de upstream `f1f3404` "Replace runtime reflection deep copying with generated clone
+    ''' logic" — antes la reflexión copiaba `Type` sola.</para>
+    ''' <para>Con `Type = None` los `switch` de `ShaderHelper` caen a `_ =&gt; false` (NO tiran excepción:
+    ''' devuelven "todo apagado", que es plausible y por eso el fallo es mudo). MEDIDO con
+    ''' `Tools\SkFlagAxisProbe --clone` sobre la cabeza vanilla SSE: el material derivado del clon
+    ''' pierde 8 campos vs el del original — `CastShadows`, `ZBufferWrite`, `ZBufferTest`,
+    ''' `SpecularEnabled`, `ModelSpaceNormals`, `SubsurfaceLighting`, **`Facegen`** y el `_sk` de
+    ''' `LightingTexture`. Con este backfill: 8 → 0.</para>
+    ''' <para>La escalera es COPIA TEXTUAL de la que ya tenían los dos `Save_To_Shader` (:3432-3441 y
+    ''' :3643-3651) y es byte-idéntica a la de `BSLightingShaderProperty.cs:293-315`. La asimetría era
+    ''' que el ESCRITOR se protegía y el LECTOR no. ⛔ NO reemplazar por el juego de `Config_App`: el eje
+    ''' es el vocabulario de flags del BLOQUE, y un NIF puede traer bloques de shader distintos.</para>
+    ''' <para>No-op para todo shader leído de disco (`BeforeSync` ya le puso el `Type`): medido en
+    ''' stream 83 → SK, 100 → SK, 130 → FO4.</para></summary>
+    Private Shared Sub EnsureShaderGameType(shad As INiShader, Nif As Nifcontent_Class_Manolo)
+        If shad Is Nothing OrElse Nif Is Nothing Then Exit Sub
+        If shad.Type <> NiflySharp.Helpers.ShaderHelper.ShaderGameType.None Then Exit Sub
+        Dim streamVer = Nif.Header.Version.StreamVersion
+        If streamVer = 155 Then
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO76SF
+        ElseIf streamVer >= 130 Then
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO4
+        Else
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK
+        End If
+    End Sub
+
     Private Shared Function CastShadowsFlagValue(shad As INiShader) As UInteger
         ' SK Cast_Shadows (1<<9) == FO4 Cast_Shadows (1<<9).
         Return If(IsSkShader(shad),
@@ -3218,7 +3282,7 @@ Public Class FO4UnifiedMaterial_Class
             ' flags=0x12ED threshold=128 (default de NiflySharp + bit del BGSM + AlphaTestRef del BGSM).
             ' El camino de round-trip (el shape ya tenia NiAlphaProperty) queda intacto: ahi el bloque clonado se
             ' reescribe desde el material, que salio de ese mismo bloque. Solo FO4; Skyrim no se toca.
-            If createdNew AndAlso Not Nif.Header.Version.IsSSE Then
+            If createdNew AndAlso Nif.Header.Version.IsFO4 Then
                 alp.Flags.Value = &HECUS
                 alp.Flags.AlphaTest = Underlying_Material.AlphaTest
                 alp.Threshold = 0
@@ -3235,6 +3299,7 @@ Public Class FO4UnifiedMaterial_Class
     End Sub
     Public Sub Create_From_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty)
         If Nif.Valid = False Then Exit Sub
+        EnsureShaderGameType(shad, Nif)
 
         Dim mat As BGSM
 
@@ -3253,18 +3318,18 @@ Public Class FO4UnifiedMaterial_Class
                 .EnvironmentMapping = shad.HasEnvironmentMapping,
                 .EnvironmentMappingMaskScale = If(shad.IsTypeEyeEnvironmentMap, shad.EyeCubemapScale, shad.EnvironmentMapScale),
                 .ModelSpaceNormals = shad.ModelSpace,
-                .Facegen = If(Nif.Header.Version.IsSSE, shad.IsTypeFaceTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Face) <> 0),
-                .Hair = If(Nif.Header.Version.IsSSE, shad.IsTypeHairTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair) <> 0),
-                .SkinTint = If(Nif.Header.Version.IsSSE, shad.IsTypeSkinTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Skin_Tint) <> 0),
-                .BackLighting = If(Nif.Header.Version.IsSSE, shad.HasBacklight, shad.BacklightPower > 0.0F),
+                .Facegen = If(IsSkShader(shad), shad.IsTypeFaceTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Face) <> 0),
+                .Hair = If(IsSkShader(shad), shad.IsTypeHairTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair) <> 0),
+                .SkinTint = If(IsSkShader(shad), shad.IsTypeSkinTint, (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Skin_Tint) <> 0),
+                .BackLighting = If(IsSkShader(shad), shad.HasBacklight, shad.BacklightPower > 0.0F),
                 .BackLightPower = shad.BacklightPower,
                 .SpecularEnabled = shad.HasSpecular,
                 .SpecularColor = NifColor3ToMaterialRgb(shad.SpecularColor),
                 .SpecularMult = shad.SpecularStrength,
                 .Glowmap = shad.HasGlowmap,
                 .Tree = shad.HasTreeAnim,
-                .SubsurfaceLighting = If(Nif.Header.Version.IsSSE, shad.HasSoftlight, shad.SubsurfaceRolloff > 0.0F),
-                .RimLighting = If(Nif.Header.Version.IsSSE, shad.HasRimlight, shad.RimlightPower < Single.MaxValue),
+                .SubsurfaceLighting = If(IsSkShader(shad), shad.HasSoftlight, shad.SubsurfaceRolloff > 0.0F),
+                .RimLighting = If(IsSkShader(shad), shad.HasRimlight, shad.RimlightPower < Single.MaxValue),
                 .RimPower = shad.RimlightPower,
                 .GrayscaleToPaletteColor = shad.HasGreyscaleToPaletteColor,
                 .GrayscaleToPaletteScale = shad.GrayscaleToPaletteScale,
@@ -3274,10 +3339,10 @@ Public Class FO4UnifiedMaterial_Class
                                     If(shad.IsTypeHairTint,
                                         NifColor3ToMaterialRgb(shad.HairTintColor),
                                         CUInt(&H808080UI))),
-                .Smoothness = If(Nif.Header.Version.IsSSE,
+                .Smoothness = If(IsSkShader(shad),
                                   SseGlossinessToSmoothness(shad.Glossiness),
                                   shad.Smoothness),
-                .SubsurfaceLightingRolloff = If(Nif.Header.Version.IsSSE, shad.Softlight, shad.SubsurfaceRolloff),
+                .SubsurfaceLightingRolloff = If(IsSkShader(shad), shad.Softlight, shad.SubsurfaceRolloff),
                 .ExternalEmittance = shad.HasExternalEmittance,
                 .EnvironmentMappingEye = shad.HasEyeEnvironmentMapping,
                 .RootMaterialPath = If(shad.RootMaterialName, ""),
@@ -3298,12 +3363,12 @@ Public Class FO4UnifiedMaterial_Class
                 .ZBufferTest = ShaderHelper.HasFlagSF1(shad, ZBufferTestFlagValue(shad)),
                 .Refraction = ShaderHelper.HasFlagSF1(shad, RefractionFlagValue(shad)),
                 .AnisoLighting = ShaderHelper.HasFlagSF2(shad, AnisotropicLightingFlagValue(shad)),
-                .Tessellate = (Not Nif.Header.Version.IsSSE) AndAlso ((shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate) <> 0),
-                .SkewSpecularAlpha = (Not Nif.Header.Version.IsSSE) AndAlso ((shad.ShaderFlags_F4SPF2 And NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha) <> 0)
+                .Tessellate = (Not IsSkShader(shad)) AndAlso ((shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate) <> 0),
+                .SkewSpecularAlpha = (Not IsSkShader(shad)) AndAlso ((shad.ShaderFlags_F4SPF2 And NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Skew_Specular_Alpha) <> 0)
             }
             If Not IsNothing(shad.TextureSetRef) AndAlso shad.TextureSetRef.Index <> -1 Then
                 Dim texset = TryCast(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
-                ReadBgsmTexturesFromTextureSet(mat, texset, Nif.Header.Version.IsSSE, _EnvmapMaskPath)
+                ReadBgsmTexturesFromTextureSet(mat, texset, IsSkShader(shad), _EnvmapMaskPath)
             End If
         Else
             mat = New BGSM
@@ -3320,10 +3385,12 @@ Public Class FO4UnifiedMaterial_Class
             _NifShaderType = shad.ShaderType_SK_FO4
             _skinTintAlpha = shad.SkinTintAlpha
             _NifGlossiness = shad.Glossiness
+            _NifGlossinessFromShader = True
         Else
             _NifShaderType = NiflySharp.Enums.BSLightingShaderType.Default
             _skinTintAlpha = 1.0F
             _NifGlossiness = 1.0F
+            _NifGlossinessFromShader = False
         End If
         ApplyAlphaPropertyFromNif(shap, Nif)
         ' NO llamar ApplyShaderTypeToBgsm acá: los flags ya vienen FIELES del shader (Facegen/
@@ -3368,6 +3435,7 @@ Public Class FO4UnifiedMaterial_Class
 
     Public Sub Create_From_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty)
         If Nif.Valid = False Then Exit Sub
+        EnsureShaderGameType(shad, Nif)
         Dim mat As BGEM
         If Not IsNothing(shad) Then
             mat = New BGEM With {
@@ -3388,10 +3456,10 @@ Public Class FO4UnifiedMaterial_Class
             .EnvironmentMappingMaskScale = shad.EnvironmentMapScale,
             .EmittanceColor = NifColor3ToMaterialRgb(shad.EmittanceColor),
             .FalloffEnabled = ShaderHelper.HasFlagSF1(shad, ShaderHelper.FalloffFlagValue(shad)),
-            .FalloffColorEnabled = Not Nif.Header.Version.IsSSE AndAlso (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.RGB_Falloff) <> 0,
+            .FalloffColorEnabled = Not IsSkShader(shad) AndAlso (shad.ShaderFlags_F4SPF1 And NiflySharp.Enums.Fallout4ShaderPropertyFlags1.RGB_Falloff) <> 0,
             .GrayscaleToPaletteColor = shad.HasGreyscaleToPaletteColor,
             .GrayscaleToPaletteAlpha = shad.HasGreyscaleToPaletteAlpha,
-            .EffectLightingEnabled = (If(Nif.Header.Version.IsSSE,
+            .EffectLightingEnabled = (If(IsSkShader(shad),
                                         (shad.ShaderFlags_SSPF2 And NiflySharp.Enums.SkyrimShaderPropertyFlags2.Effect_Lighting) <> 0,
                                         (shad.ShaderFlags_F4SPF2 And NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Effect_Lighting) <> 0)),
             .BaseColor = NifColor4ToMaterialRgb(shad.BaseColor),
@@ -3429,15 +3497,19 @@ Public Class FO4UnifiedMaterial_Class
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSEffectShaderProperty)
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGEM)
-        If shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.None Then
-            Dim streamVer = Nif.Header.Version.StreamVersion
-            If streamVer = 155 Then
-                shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO76SF
-            ElseIf streamVer >= 130 Then
-                shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO4
-            Else
-                shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK
-            End If
+        ' ⛔ SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
+        ' único que sabe qué vocabulario de flags corresponde es el archivo donde se está ESCRIBIENDO.
+        ' Si el bloque arrastra un Type viejo — leído de otro NIF, o estampado por EnsureShaderGameType
+        ' durante la LECTURA — ese valor NO puede ganarle al destino: los switch de ShaderHelper caen a
+        ' `_ => false` y el material se escribiría con el idioma equivocado, EN SILENCIO. Cuando el Type
+        ' ya es el correcto (todos los casos vivos hoy) re-derivarlo da el mismo valor: no-op.
+        Dim streamVer = Nif.Header.Version.StreamVersion
+        If streamVer = 155 Then
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO76SF
+        ElseIf streamVer >= 130 Then
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO4
+        Else
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK
         End If
         shad.DoubleSided = Mat.TwoSided
         shad.UVOffset = New TexCoord(Mat.UOffset, Mat.VOffset)
@@ -3481,7 +3553,7 @@ Public Class FO4UnifiedMaterial_Class
         ShaderHelper.SetFlagSF1(shad, RefractionFlagValue(shad), Mat.Refraction)
         ShaderHelper.SetFlagSF1(shad, ShaderHelper.FalloffFlagValue(shad), Mat.FalloffEnabled)
 
-        If Nif.Header.Version.IsSSE Then
+        If IsSkShader(shad) Then
             If Mat.EffectLightingEnabled Then
                 shad.ShaderFlags_SSPF2 = shad.ShaderFlags_SSPF2 Or NiflySharp.Enums.SkyrimShaderPropertyFlags2.Effect_Lighting
             Else
@@ -3640,15 +3712,19 @@ Public Class FO4UnifiedMaterial_Class
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "")
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGSM)
-        If shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.None Then
-            Dim streamVer = Nif.Header.Version.StreamVersion
-            If streamVer = 155 Then
-                shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO76SF
-            ElseIf streamVer >= 130 Then
-                shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO4
-            Else
-                shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK
-            End If
+        ' ⛔ SIEMPRE se re-deriva del header del NIF **DESTINO**, no sólo cuando viene en None: el
+        ' único que sabe qué vocabulario de flags corresponde es el archivo donde se está ESCRIBIENDO.
+        ' Si el bloque arrastra un Type viejo — leído de otro NIF, o estampado por EnsureShaderGameType
+        ' durante la LECTURA — ese valor NO puede ganarle al destino: los switch de ShaderHelper caen a
+        ' `_ => false` y el material se escribiría con el idioma equivocado, EN SILENCIO. Cuando el Type
+        ' ya es el correcto (todos los casos vivos hoy) re-derivarlo da el mismo valor: no-op.
+        Dim streamVer = Nif.Header.Version.StreamVersion
+        If streamVer = 155 Then
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO76SF
+        ElseIf streamVer >= 130 Then
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.FO4
+        Else
+            shad.Type = NiflySharp.Helpers.ShaderHelper.ShaderGameType.SK
         End If
         shad.DoubleSided = Mat.TwoSided
         shad.UVOffset = New TexCoord(Mat.UOffset, Mat.VOffset)
@@ -3670,8 +3746,11 @@ Public Class FO4UnifiedMaterial_Class
         Else
             shad.EnvironmentMapScale = If(effectiveEnvMapping, Mat.EnvironmentMappingMaskScale, 1.0F)
         End If
-        If Nif.Header.Version.IsSSE Then
-            shad.Glossiness = SmoothnessToSseGlossiness(Mat.Smoothness)
+        ' ⛔ Ver SmoothnessUnchangedSinceLoad: reconvertir Smoothness→Glossiness cuando el usuario NO tocó
+        ' la Smoothness corrompe el valor (30.0 → 29,999996) y ACUMULA a cada guardado. Si no la tocó, se
+        ' reescribe el crudo del NIF.
+        If IsSkShader(shad) Then
+            shad.Glossiness = If(NifGlossinessStillMatchesSmoothness(), _NifGlossiness, SmoothnessToSseGlossiness(Mat.Smoothness))
         Else
             shad.Smoothness = Mat.Smoothness
         End If
@@ -3685,7 +3764,7 @@ Public Class FO4UnifiedMaterial_Class
         ' Por que no puede haber regresion: con el flag apagado el motor no consume LightingEffect1, asi que el
         ' valor es INERTE; y con el flag encendido la compuerta vieja ya dejaba pasar el mismo valor.
         ' FO4 no se toca: alli la compuerta replica una del motor, verificada por RE en los dos binarios.
-        If Nif.Header.Version.IsSSE Then
+        If IsSkShader(shad) Then
             shad.Softlight = Mat.SubsurfaceLightingRolloff
         Else
             shad.SubsurfaceRolloff = If(Mat.SubsurfaceLighting, Mat.SubsurfaceLightingRolloff, 0.0F)
@@ -3717,7 +3796,28 @@ Public Class FO4UnifiedMaterial_Class
         Dim hairTintNifColor = MaterialRgbToNifColor3(Mat.HairTintColor, Me.TintColorScale)
         shad.HairTintColor = hairTintNifColor
         If Mat.SkinTint Then
-            shad.SkinTintColor = hairTintNifColor
+            ' ⛔ MISMO problema que la Glossiness (ver NifGlossinessStillMatchesSmoothness), acá al lado.
+            ' `_skinTintColor_C3` se serializa para StreamVersion <= 139 con shaderType 5 — o sea TAMBIÉN en
+            ' stream 83 (Oldrim). El viaje Color3(float) → bytes (NifColor3ToMaterialRgb) → Color3
+            ' (MaterialRgbToNifColor3) es LOSSY: cuantiza a la grilla de 1/255 por canal (0,37 → 0,36862746).
+            ' ⛔ NO acumula — MEDIDO: el segundo guardado ya no mueve el valor. Es pérdida de UNA sola vez.
+            ' (Una versión previa de este comentario decía que acumulaba: era falso.)
+            ' Antes de alinear el eje del material esto no se notaba en Oldrim porque ahí `Mat.SkinTint` salía
+            ' False y el bloque no disparaba nunca; al corregir la lectura empezó a disparar. Guard: si el
+            ' Color3 que YA tiene el shader proyecta exactamente a los bytes del material, nadie lo tocó ⇒ no
+            ' se reescribe y el valor original sobrevive bit a bit. Sólo se toma el atajo con TintColorScale
+            ' neutro: con escala ≠ 1 lectura y escritura no son inversas y la comparación no valdría.
+            ' ⚠️ El guard NO puede suprimir un valor derivado: `SkinTintColor` y `HairTintColor` del material
+            ' son EL MISMO campo del BGSM (ver el getter de SkinTintColor), así que cuando el resolver
+            ' escribe el tono de piel del actor (NpcMaterialResolver ~:1508) el valor DIFIERE del que trae el
+            ' shader y el guard no salta. Sólo saltea cuando escribir sería un no-op salvo por la cuantización.
+            ' ⛔ Y por eso el HairTintColor de arriba se escribe SIEMPRE y no lleva guard: ése es un valor
+            ' DERIVADO del CLFM del NPC (2 × CLFM, paridad con el CK — verificado byte-exacto: NPC 0x00016F04
+            ' → CLFM HairColor12BlackTrue (16,18,18) → NIF horneado (32,36,36)/255). Preservarlo sería el bug.
+            Dim skinTintUntouched As Boolean =
+                Me.TintColorScale = 1.0F AndAlso
+                NifColor3ToMaterialRgb(shad.SkinTintColor) = Mat.HairTintColor
+            If Not skinTintUntouched Then shad.SkinTintColor = hairTintNifColor
             shad.SkinTintAlpha = Me.SkinTintAlpha
         End If
         shad.HasBacklight = Mat.BackLighting
@@ -3779,7 +3879,7 @@ Public Class FO4UnifiedMaterial_Class
         ShaderHelper.SetFlagSF1(shad, HairFlagValue(shad), Mat.Hair)
         ShaderHelper.SetFlagSF1(shad, EyeEnvironmentMappingFlagValue(shad), Mat.EnvironmentMappingEye)
 
-        If Not Nif.Header.Version.IsSSE Then
+        If Not IsSkShader(shad) Then
             If Mat.Tessellate Then
                 shad.ShaderFlags_F4SPF1 = shad.ShaderFlags_F4SPF1 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Tessellate
             Else
@@ -3811,7 +3911,7 @@ Public Class FO4UnifiedMaterial_Class
         End If
 
         Dim texset = CType(Nif.Blocks(shad.TextureSetRef.Index), BSShaderTextureSet)
-        WriteBgsmTexturesToTextureSet(Mat, texset, Nif.Header.Version.IsSSE, envmapMaskPath)
+        WriteBgsmTexturesToTextureSet(Mat, texset, IsSkShader(shad), envmapMaskPath)
         WriteAlphaPropertyToShape(shap, Nif)
     End Sub
     ''' <summary>
@@ -3859,7 +3959,13 @@ Public Class FO4UnifiedMaterial_Class
     Private Const textset_FlowTexture As Integer = 5
     Private Const textset_LightingTexture As Integer = 6
     Private Const textset_SmoothSpecTextureAs As Integer = 7
-    Private Shared Sub ReadBgsmTexturesFromTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSSE As Boolean, ByRef envmapMaskPath As String)
+    ''' <summary>⛔ El parámetro se llamaba `isSSE` y ese nombre indujo el bug: lo que decide NO es
+    ''' "¿el archivo es SSE?" sino "¿este shader habla el vocabulario de SKYRIM?" — verdadero para
+    ''' Oldrim (stream 83) Y para SSE (stream 100). El llamador (único) pasa `IsSkShader(shad)`.
+    ''' Con el eje viejo, una malla de Oldrim se ruteaba con slots de Fallout 4: el `_sk` caía en
+    ''' GlowTexture, el detail en GreyscaleTexture y el slot 6 (facetint) no se leía nunca. MEDIDO
+    ''' con `Tools\SkFlagAxisProbe`. Ver [[31-sse-nif-le-stream83-eje-equivocado]].</summary>
+    Private Shared Sub ReadBgsmTexturesFromTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSkyrim As Boolean, ByRef envmapMaskPath As String)
         If IsNothing(mat) OrElse IsNothing(texset) Then Exit Sub
 
         EnsureShaderTextureSetSlots(texset)
@@ -3868,7 +3974,7 @@ Public Class FO4UnifiedMaterial_Class
         mat.NormalTexture = texset.Textures(textset_NormalTexture).Content
         ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, PreviewWindow.cpp:439, fo4_default.frag:15).
         ' SSE legacy kept on DisplacementTexture until evidence says otherwise.
-        If isSSE Then
+        If isSkyrim Then
             mat.DisplacementTexture = texset.Textures(textset_DisplacementTexture).Content
         Else
             mat.GreyscaleTexture = texset.Textures(textset_DisplacementTexture).Content
@@ -3876,7 +3982,7 @@ Public Class FO4UnifiedMaterial_Class
         mat.EnvmapTexture = texset.Textures(textset_EnvmapTexture).Content
         ' Slot 5: FO4 = EnvMask (lives only in NIF texture set, not in BGSM binary).
         ' SSE legacy kept on FlowTexture.
-        If isSSE Then
+        If isSkyrim Then
             mat.FlowTexture = texset.Textures(textset_FlowTexture).Content
         Else
             envmapMaskPath = texset.Textures(textset_FlowTexture).Content
@@ -3888,7 +3994,7 @@ Public Class FO4UnifiedMaterial_Class
         ' sse_facegen_skin.asm) -- so include Facegen: the _sk lands on LightingTexture even when the
         ' head's Soft_Lighting flag is not set (it often isn't).
         Dim slot2 = texset.Textures(textset_GlowTexture).Content
-        If isSSE AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
+        If isSkyrim AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
             mat.LightingTexture = slot2
             mat.GlowTexture = ""
         Else
@@ -3902,7 +4008,7 @@ Public Class FO4UnifiedMaterial_Class
         ' diffuse. It must land on its OWN field (InnerLayerTexture), NOT LightingTexture, because slot 2's
         ' subsurface (_sk) already occupies LightingTexture — otherwise the facetint is lost/clobbered (WM
         ' dropped it, leaving the head without its tint). Game-gated (SSE) + facegen-gated. FO4: untouched.
-        If isSSE Then
+        If isSkyrim Then
             If mat.Facegen Then
                 mat.InnerLayerTexture = texset.Textures(textset_LightingTexture).Content
             ElseIf String.IsNullOrEmpty(mat.LightingTexture) Then
@@ -3911,7 +4017,7 @@ Public Class FO4UnifiedMaterial_Class
         End If
     End Sub
 
-    Private Shared Sub WriteBgsmTexturesToTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSSE As Boolean, envmapMaskPath As String)
+    Private Shared Sub WriteBgsmTexturesToTextureSet(mat As BGSM, texset As BSShaderTextureSet, isSkyrim As Boolean, envmapMaskPath As String)
         If IsNothing(mat) OrElse IsNothing(texset) Then Exit Sub
 
         EnsureShaderTextureSetSlots(texset)
@@ -3920,7 +4026,7 @@ Public Class FO4UnifiedMaterial_Class
         texset.Textures(textset_NormalTexture).Content = mat.NormalTexture
         ' Slot 3: FO4 = Greyscale palette (BodySlide GLMaterial.cpp:70, PreviewWindow.cpp:439, fo4_default.frag:15).
         ' SSE legacy kept on DisplacementTexture until evidence says otherwise.
-        If isSSE Then
+        If isSkyrim Then
             texset.Textures(textset_DisplacementTexture).Content = mat.DisplacementTexture
         Else
             texset.Textures(textset_DisplacementTexture).Content = mat.GreyscaleTexture
@@ -3928,7 +4034,7 @@ Public Class FO4UnifiedMaterial_Class
         texset.Textures(textset_EnvmapTexture).Content = mat.EnvmapTexture
         ' Slot 5: FO4 = EnvMask (runtime path, no BGSM binary field).
         ' SSE legacy writes FlowTexture here.
-        If isSSE Then
+        If isSkyrim Then
             texset.Textures(textset_FlowTexture).Content = mat.FlowTexture
         Else
             texset.Textures(textset_FlowTexture).Content = If(envmapMaskPath, "")
@@ -3937,7 +4043,7 @@ Public Class FO4UnifiedMaterial_Class
 
         ' Slot 2/6: glow vs lightmask/subsurface remapping (SSE dual-purpose). Mirror the read: facegen
         ' ignores the Soft_Lighting flag (engine does subsurface unconditionally for technique 4).
-        If isSSE AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
+        If isSkyrim AndAlso Not mat.Glowmap AndAlso (mat.SubsurfaceLighting OrElse mat.RimLighting OrElse mat.Facegen) Then
             texset.Textures(textset_GlowTexture).Content = mat.LightingTexture
             ' Slot 6: a FaceTint head keeps its TINT MASK (facetint) from InnerLayerTexture; else clear (the
             ' _sk subsurface lives on slot 2 via LightingTexture). Mirror of the read. Game+facegen gated.
@@ -3947,7 +4053,7 @@ Public Class FO4UnifiedMaterial_Class
             ' Slot 6: SSE writes LightingTexture; FO4 has no sampler here, so we
             ' clear slot 6 explicitly. Without this, reusing a texset from a SSE
             ' source NIF on a FO4 save would leave stale data behind.
-            If isSSE Then
+            If isSkyrim Then
                 texset.Textures(textset_LightingTexture).Content = mat.LightingTexture
             Else
                 texset.Textures(textset_LightingTexture).Content = ""

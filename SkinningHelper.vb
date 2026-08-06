@@ -1868,6 +1868,43 @@ Public Class RecalcTBN
         ''' esas caras en vez de dejarlas como estaban.
         ''' </summary>
         Public Tri_DetNeg As Boolean()
+
+        ''' <summary>La precisión de UV con la que se calcularon las derivadas. Parte de la firma del
+        ''' cache: si cambia, las derivadas guardadas ya no son las que corresponden.</summary>
+        Public UvHalf As Boolean
+
+        ''' <summary>
+        ''' ⭐ SCRATCH REUSABLE del recálculo, colgado del cache porque vive exactamente lo mismo que él
+        ''' —la topología— y porque así se asigna UNA vez por malla en vez de una por llamada.
+        '''
+        ''' ⛔ La validez va por SELLO DE CORRIDA, no por un valor centinela: `Scratch_SlotSello(v) =
+        ''' Corrida` significa "`Scratch_SlotDe(v)` es de ESTA llamada". Antes cada llamada asignaba
+        ''' `slotDe`, `vertArr`, `triVisto`, `triArr` y `slotTri` —cinco arrays del tamaño de la MALLA—
+        ''' y encima barría dos de ellos enteros para inicializarlos a -1. O sea que mover un puñado de
+        ''' vértices seguía pagando O(malla) en asignaciones, en puesta a cero del runtime y en presión
+        ''' de GC, dentro de una operación cuya razón de ser es ser proporcional a lo que cambió.
+        ''' Con el sello no hay init ni reseteo: una entrada vieja simplemente no coincide.
+        ''' ⛔ Es estado MUTABLE por malla: dos hilos recalculando la MISMA `SkinnedGeometry` a la vez se
+        ''' pisarían. Ya no era seguro antes —escriben `geo.Normals` sin sincronizar— y el paralelismo
+        ''' del bake es POR NPC, así que cada hilo trae su propia geometría.
+        ''' </summary>
+        Public Corrida As Integer
+        Public Scratch_SlotDe As Integer()
+        Public Scratch_SlotSello As Integer()
+        Public Scratch_VertArr As Integer()
+        Public Scratch_SlotTri As Integer()
+        Public Scratch_TriSello As Integer()
+        Public Scratch_TriArr As Integer()
+
+        ''' <summary>
+        ''' El orden por X de la ultima llamada, y las X con las que se armo. Es lo que permite no
+        ''' re-ordenar la malla entera cuando se movieron unos pocos vertices. Ver
+        ''' <see cref="OrdenPorX"/>.
+        ''' ⛔ NO se invalida con las posiciones: se CONTRASTA contra ellas. Guardar las X es lo que
+        ''' hace que un cambio de posicion que nadie declaro sucio igual se detecte.
+        ''' </summary>
+        Public Orden_PorX As Integer()
+        Public X_DelOrden As Double()
     End Structure
 
     ' -------------------------------
@@ -1879,7 +1916,15 @@ Public Class RecalcTBN
     ' marco tangente rotado respecto del canonico, que es el marco contra el que se autoran los
     ' normal maps del ecosistema. Una clave `WeightMode` en un config.json viejo se ignora.
     Public Structure TBNOptions
-        Public Property EpsilonPos As Double                    ' umbral para degenerados geométricos
+        ''' <summary>
+        ''' Umbral de TRIÁNGULO DEGENERADO, en LONGITUD y en unidades del modelo: se descarta el aporte
+        ''' de una cara cuya dirección tangente mide menos que esto. Default 0 = el canónico.
+        ''' ⛔ Es una longitud, no una longitud al cuadrado. El predicado compara contra
+        ''' <c>LengthSquared</c> —para no pagar una raíz por triángulo— así que quien lo consume lo
+        ''' eleva al cuadrado UNA vez (<see cref="ComputeFaceTB"/>). Pasándolo crudo, el umbral efectivo
+        ''' era <c>sqrt(eps)</c> y la opción filtraba mil veces más de lo que el usuario pedía.
+        ''' </summary>
+        Public Property EpsilonPos As Double
         Public Property NormalizeOutputs As Boolean             ' normalizar N/T/B al final
         Public Property RepairNaNs As Boolean                   ' si True: reemplaza NaN por vectores seguros
 
@@ -1974,8 +2019,11 @@ Public Class RecalcTBN
     ''' Versión del juego de opciones del TBN. Historia:
     '''   0 — archivos anteriores al centinela (no traen la clave).
     '''   1 — se agrega <see cref="TBNOptions.DeterministicOnCollapse"/>.
+    '''   2 — <see cref="TBNOptions.EpsilonPos"/> pasa a interpretarse como LONGITUD. No es una opción
+    '''       nueva: cambia el SIGNIFICADO de un número que el usuario ya tiene en disco, que es
+    '''       igual de invisible y por eso necesita su rama.
     ''' </summary>
-    Public Const VersionDeOpcionesTBN As Integer = 1
+    Public Const VersionDeOpcionesTBN As Integer = 2
 
     ''' <summary>
     ''' ⛔ ÚNICA fuente de los defaults del TBN. No re-declararlos en ningún otro lado: el centinela de
@@ -2116,8 +2164,40 @@ Public Class RecalcTBN
             .V2TData = v2tData,
             .Tri_du1 = du1, .Tri_dv1 = dv1,
             .Tri_du2 = du2, .Tri_dv2 = dv2,
-            .Tri_DetNeg = detNeg
+            .Tri_DetNeg = detNeg,
+            .UvHalf = uvHalf,
+            .Corrida = 0,
+            .Scratch_SlotDe = New Integer(Math.Max(0, nVerts - 1)) {},
+            .Scratch_SlotSello = New Integer(Math.Max(0, nVerts - 1)) {},
+            .Scratch_VertArr = New Integer(Math.Max(0, nVerts - 1)) {},
+            .Scratch_SlotTri = New Integer(Math.Max(0, triCount - 1)) {},
+            .Scratch_TriSello = New Integer(Math.Max(0, triCount - 1)) {},
+            .Scratch_TriArr = New Integer(Math.Max(0, triCount - 1)) {}
         }
+    End Function
+
+    ''' <summary>
+    ''' ¿El cache corresponde a ESTA geometría? Se compara la FIRMA ESTRUCTURAL, no un flag de sucio:
+    ''' la referencia del array de índices, el conteo de vértices y la precisión de UV con la que se
+    ''' calcularon las derivadas.
+    '''
+    ''' ⛔ Antes la única condición era <c>Indices Is Nothing</c>, o sea que la coherencia dependía
+    ''' enteramente de que todos los llamadores se acordaran de invalidar a mano. Para las UVs esa
+    ''' disciplina existe y está documentada (<c>CachedTBN = Nothing</c> al mover UVs); para un cambio
+    ''' de topología o de conteo de vértices no había ninguna, y el modo de fallar es silencioso y
+    ''' feo: adjacencia y derivadas de OTRA malla, o un <c>IndexOutOfRange</c> a mitad de un build.
+    ''' Verificar la firma no reemplaza a la invalidación explícita —no ve un cambio de VALOR de las
+    ''' UVs, que conserva la firma— sino que le pone piso a lo que un olvido puede romper.
+    ''' </summary>
+    Private Shared Function CacheEsCoherente(ByRef c As TBNCache, indices As UInteger(),
+                                             nVerts As Integer, uvHalf As Boolean) As Boolean
+        If c.Indices Is Nothing OrElse c.V2TStart Is Nothing Then Return False
+        If Not Object.ReferenceEquals(c.Indices, indices) Then Return False
+        If c.V2TStart.Length <> nVerts + 1 Then Return False
+        If c.UvHalf <> uvHalf Then Return False
+        If c.Scratch_SlotDe Is Nothing OrElse c.Scratch_SlotDe.Length < nVerts Then Return False
+        If c.Scratch_TriArr Is Nothing OrElse c.Scratch_TriArr.Length < c.TriCount Then Return False
+        Return True
     End Function
 
     ''' <summary>
@@ -2195,6 +2275,42 @@ Public Class RecalcTBN
     ''' en el canónico, que sólo emite un matchset cuando encontró al menos una coincidencia.</returns>
     Public Shared Function ConstruyeGruposDeCostura(verts() As Vector3d, nVerts As Integer,
                                                     ByRef grupoDe() As Integer) As List(Of Integer())
+        Dim sinCache As TBNCache = Nothing
+        Return ConstruyeGruposDeCostura(verts, nVerts, grupoDe, sinCache, False)
+    End Function
+
+    ''' <summary>
+    ''' Igual que la sobrecarga de arriba, pero manteniendo el ORDEN POR X entre llamadas en vez de
+    ''' re-ordenar la malla entera en cada una.
+    '''
+    ''' ⭐⭐ Es EXACTAMENTE equivalente, y la razon es una propiedad del resultado y no del algoritmo:
+    ''' el orden que produce esta funcion es un orden TOTAL —X ascendente, y los empates desempatados
+    ''' por indice de vertice ascendente, cosa que el bloque de estabilizacion ya hacia explicita— asi
+    ''' que hay UN solo orden valido y cualquier metodo que lo produzca da los mismos bytes. Sin esa
+    ''' propiedad esto no se podria hacer.
+    '''
+    ''' ⛔ POR QUE. MEDIDO con este arnés (`Tools\TbnPerfProbe`), sobre una rejilla de 22.201 vertices
+    ''' con las X todas distintas —o sea sin la patologia de la rejilla perfecta, donde una columna
+    ''' entera comparte X y el barrido se degrada— un arrastre de UN vertice costaba 1,76 ms, de los
+    ''' cuales el 99,9 % era este agrupado, y de ese agrupado el 85-89 % era el <c>Array.Sort</c>. O
+    ''' sea: el grueso del costo de mover un vertice era re-ordenar los otros 22.200, que no se
+    ''' movieron.
+    '''
+    ''' La ley: los que no cambiaron de X conservan su orden relativo, asi que alcanza con sacarlos del
+    ''' orden anterior, ordenar SOLO los que cambiaron y mezclar. Queda O(V + k·log k) en vez de
+    ''' O(V·log V), con k = cuantos se movieron.
+    ''' </summary>
+    ''' <param name="cache">Donde vive el orden anterior. Con <c>usaCache</c> en False se ignora y se
+    ''' ordena todo, que es el camino de la sobrecarga publica y el que corre la primera vez.</param>
+    ''' <remarks>⭐ Es PUBLICA y no Friend para que el self-test pueda comparar las dos salidas
+    ''' DIRECTAMENTE. Comparar el efecto rio abajo —las normales— no alcanza: un orden equivocado casi
+    ''' nunca se ve en la salida (en el corpus real, 4 shapes de 12.789), asi que un test por el efecto
+    ''' da verde con el orden roto. MEDIDO: rompiendo el desempate a proposito, el caso que comparaba
+    ''' normales seguia en verde.</remarks>
+    Public Shared Function ConstruyeGruposDeCostura(verts() As Vector3d, nVerts As Integer,
+                                                    ByRef grupoDe() As Integer,
+                                                    ByRef cache As TBNCache,
+                                                    usaCache As Boolean) As List(Of Integer())
         Dim grupos As New List(Of Integer())
         grupoDe = New Integer(Math.Max(0, nVerts - 1)) {}
         For i = 0 To nVerts - 1
@@ -2214,39 +2330,9 @@ Public Class RecalcTBN
         Dim eps As Double = 0.0001 * 0.01 * escala
         If eps <= 0.0 Then Return grupos
 
-        Dim orden(nVerts - 1) As Integer
-        For i = 0 To nVerts - 1
-            orden(i) = i
-        Next
-        ' Clave separada: Array.Sort(keys, items) es introsort sobre el array de claves y evita el
-        ' delegado de comparación por par, que en 22.700 vértices es el grueso del costo.
-        Dim clave(nVerts - 1) As Double
-        For i = 0 To nVerts - 1
-            clave(i) = verts(i).X
-        Next
-        Array.Sort(clave, orden)
-
-        ' ⛔ DESEMPATE EXPLÍCITO. `Array.Sort` es INESTABLE: ante claves iguales su orden es un detalle
-        ' de implementación del runtime, no parte del contrato. Y la partición SÍ depende de él —
-        ' MEDIDO sobre 3.742 mallas fuente de los dos juegos (12.789 shapes): 4 shapes cambian de
-        ' agrupación según el desempate, hasta 128 vértices en el peor caso (`Shino Body_Suit_1.nif`).
-        ' Sin fijarlo, una actualización de .NET puede cambiar la salida de esos builds EN SILENCIO, y
-        ' esta app se distribuye.
-        ' ⚠️ NO acerca al canónico: `std::sort` tampoco define su desempate, así que la paridad exacta
-        ' en esas 4 shapes es inalcanzable por construcción. Lo que se gana es que lo NUESTRO sea
-        ' reproducible.
-        ' ⭐ Se estabiliza sólo DENTRO de cada corrida de X idéntica, en vez de pasar un comparador al
-        ' sort: el delegado por par sobre 22.700 vértices es justamente lo que la clave separada de
-        ' arriba evita, y las corridas de X repetida son una minoría.
-        Dim ini As Integer = 0
-        While ini < nVerts
-            Dim fin As Integer = ini + 1
-            While fin < nVerts AndAlso clave(fin) = clave(ini)
-                fin += 1
-            End While
-            If fin - ini > 1 Then Array.Sort(orden, ini, fin - ini)
-            ini = fin
-        End While
+        Dim orden() As Integer = Nothing
+        Dim clave() As Double = Nothing
+        OrdenPorX(verts, nVerts, cache, usaCache, orden, clave)
 
         Dim usado(nVerts - 1) As Boolean      ' por POSICIÓN EN EL ORDEN, como el canónico
         For si = 0 To nVerts - 1
@@ -2275,6 +2361,163 @@ Public Class RecalcTBN
         Next
         Return grupos
     End Function
+
+    ''' <summary>
+    ''' Los vértices ordenados por X, con los empates desempatados por índice ascendente — el orden
+    ''' TOTAL del que depende la partición en grupos de costura. Devuelve también la clave (la X en
+    ''' ese orden), que es lo que usa el barrido para cortar.
+    '''
+    ''' ⛔ DESEMPATE EXPLÍCITO, y no es cosmético. <c>Array.Sort</c> es INESTABLE: ante claves iguales
+    ''' su orden es un detalle de implementación del runtime, no parte del contrato, y la partición SÍ
+    ''' depende de él — MEDIDO sobre 3.742 mallas fuente de los dos juegos (12.789 shapes): 4 shapes
+    ''' cambian de agrupación según el desempate, hasta 128 vértices (<c>Shino Body_Suit_1.nif</c>).
+    ''' Sin fijarlo, una actualización de .NET podía cambiar la salida de esos builds EN SILENCIO, y
+    ''' esta app se distribuye.
+    ''' ⚠️ NO acerca al canónico: <c>std::sort</c> tampoco define su desempate, así que la paridad
+    ''' exacta en esas 4 shapes es inalcanzable por construcción. Lo que se gana es que lo NUESTRO sea
+    ''' reproducible. ⭐ Y es justamente esa reproducibilidad la que habilita el camino incremental de
+    ''' abajo: con el orden fijado por contrato hay UNA sola respuesta correcta.
+    ''' </summary>
+    Private Shared Sub OrdenPorX(verts() As Vector3d, nVerts As Integer,
+                                 ByRef cache As TBNCache, usaCache As Boolean,
+                                 ByRef orden() As Integer, ByRef clave() As Double)
+        ' ---- ¿se puede reusar el orden de la llamada anterior? ----
+        Dim previo() As Integer = Nothing
+        Dim xPrevia() As Double = Nothing
+        If usaCache Then
+            previo = cache.Orden_PorX
+            xPrevia = cache.X_DelOrden
+            If previo Is Nothing OrElse previo.Length <> nVerts OrElse
+               xPrevia Is Nothing OrElse xPrevia.Length <> nVerts Then previo = Nothing
+        End If
+
+        ' ---- los que cambiaron de X desde la ultima vez ----
+        ' ⛔ Se detecta COMPARANDO, no confiando en `dirtyVertexIndices`: el conjunto de sucios dice
+        ' que pidio recalcular el llamador, no que se movio de verdad, y hay caminos (el morph
+        ' reescribe posiciones desde la base) donde no coinciden. Un falso negativo aca corrompe la
+        ' particion en silencio, asi que la fuente de verdad son las posiciones mismas.
+        Dim cambiados As List(Of Integer) = Nothing
+        If previo IsNot Nothing Then
+            cambiados = New List(Of Integer)()
+            For v = 0 To nVerts - 1
+                Dim x As Double = verts(v).X
+                ' ⛔ Un NaN en X nunca es "igual" a si mismo, asi que caeria en `cambiados` siempre; y
+                ' peor, la mezcla de abajo compara con `<` y con NaN eso no ordena. Se cae al camino
+                ' completo, que es lo que hacia antes.
+                If Double.IsNaN(x) Then
+                    cambiados = Nothing
+                    Exit For
+                End If
+                If x <> xPrevia(v) Then cambiados.Add(v)
+            Next
+            ' Si se movio casi todo, mezclar no ahorra: la mezcla es O(V) ADEMAS del sort de los k.
+            If cambiados IsNot Nothing AndAlso cambiados.Count * 2 > nVerts Then cambiados = Nothing
+        End If
+
+        orden = New Integer(nVerts - 1) {}
+        clave = New Double(nVerts - 1) {}
+
+        If cambiados Is Nothing Then
+            ' ---- camino completo ----
+            For i = 0 To nVerts - 1
+                orden(i) = i
+                clave(i) = verts(i).X
+            Next
+            ' Clave separada: Array.Sort(keys, items) es introsort sobre el array de claves y evita el
+            ' delegado de comparación por par, que en 22.700 vértices es el grueso del costo.
+            Array.Sort(clave, orden)
+            Dim ini As Integer = 0
+            While ini < nVerts
+                Dim fin As Integer = ini + 1
+                While fin < nVerts AndAlso clave(fin) = clave(ini)
+                    fin += 1
+                End While
+                ' Se estabiliza sólo DENTRO de cada corrida de X idéntica, en vez de pasar un
+                ' comparador al sort: el delegado por par sobre 22.700 vértices es justamente lo que
+                ' la clave separada de arriba evita, y las corridas de X repetida son una minoría.
+                If fin - ini > 1 Then Array.Sort(orden, ini, fin - ini)
+                ini = fin
+            End While
+        Else
+            ' ---- camino incremental: sacar los movidos, ordenarlos, y mezclar ----
+            Dim movido(nVerts - 1) As Boolean
+            For Each v In cambiados
+                movido(v) = True
+            Next
+
+            ' Los quietos, en el orden anterior. Su X no cambio y su orden relativo tampoco, asi que
+            ' la subsecuencia sigue ordenada por (X, indice) sin tocarla.
+            Dim quietos(Math.Max(0, nVerts - cambiados.Count - 1)) As Integer
+            Dim nQ As Integer = 0
+            For k = 0 To nVerts - 1
+                Dim v = previo(k)
+                If Not movido(v) Then
+                    quietos(nQ) = v
+                    nQ += 1
+                End If
+            Next
+
+            ' Los movidos, ordenados por la MISMA ley: X y, en el empate, indice.
+            Dim mov(cambiados.Count - 1) As Integer
+            Dim movX(cambiados.Count - 1) As Double
+            For k = 0 To cambiados.Count - 1
+                mov(k) = cambiados(k)
+                movX(k) = verts(cambiados(k)).X
+            Next
+            Array.Sort(movX, mov)
+            Dim ini2 As Integer = 0
+            While ini2 < mov.Length
+                Dim fin2 As Integer = ini2 + 1
+                While fin2 < mov.Length AndAlso movX(fin2) = movX(ini2)
+                    fin2 += 1
+                End While
+                If fin2 - ini2 > 1 Then Array.Sort(mov, ini2, fin2 - ini2)
+                ini2 = fin2
+            End While
+
+            ' Mezcla estable con el comparador COMPLETO (X, y en el empate el indice): las dos
+            ' entradas ya estan en ese orden, asi que la salida tambien lo esta. Es el mismo unico
+            ' orden que produce el camino completo.
+            Dim iq As Integer = 0, im As Integer = 0, o As Integer = 0
+            While iq < nQ OrElse im < mov.Length
+                Dim tomaQuieto As Boolean
+                If iq >= nQ Then
+                    tomaQuieto = False
+                ElseIf im >= mov.Length Then
+                    tomaQuieto = True
+                Else
+                    Dim xq As Double = xPrevia(quietos(iq))
+                    Dim xm As Double = movX(im)
+                    If xq < xm Then
+                        tomaQuieto = True
+                    ElseIf xm < xq Then
+                        tomaQuieto = False
+                    Else
+                        tomaQuieto = quietos(iq) < mov(im)
+                    End If
+                End If
+                Dim v As Integer
+                If tomaQuieto Then
+                    v = quietos(iq) : iq += 1
+                Else
+                    v = mov(im) : im += 1
+                End If
+                orden(o) = v
+                clave(o) = verts(v).X
+                o += 1
+            End While
+        End If
+
+        ' ---- se guarda para la proxima ----
+        If usaCache Then
+            cache.Orden_PorX = orden
+            Dim xs(nVerts - 1) As Double
+            For v = 0 To nVerts - 1
+                xs(v) = verts(v).X
+            Next
+            cache.X_DelOrden = xs
+        End If
+    End Sub
 
     ''' <summary>
     ''' Recalcula normales y base tangente. Replica la ley de nifly —el productor contra el que se
@@ -2307,24 +2550,28 @@ Public Class RecalcTBN
         If nVerts = 0 OrElse geo.dirtyVertexIndices Is Nothing OrElse geo.dirtyVertexIndices.Count = 0 Then
             Return New List(Of Integer)()
         End If
-        If IsNothing(geo.CachedTBN.Indices) Then
-            geo.CachedTBN = BuildTBNCache(geo.Uvs_Weight, geo.Indices,
-                                          geo.Geometry IsNot Nothing AndAlso geo.Geometry.UvsAreHalfPrecision)
+        Dim uvHalf As Boolean = geo.Geometry IsNot Nothing AndAlso geo.Geometry.UvsAreHalfPrecision
+        If Not CacheEsCoherente(geo.CachedTBN, geo.Indices, nVerts, uvHalf) Then
+            geo.CachedTBN = BuildTBNCache(geo.Uvs_Weight, geo.Indices, uvHalf)
         End If
 
         Dim v2tS = geo.CachedTBN.V2TStart
         Dim v2tD = geo.CachedTBN.V2TData
         Dim idxTri = geo.CachedTBN.Indices
         Dim triCount As Integer = geo.CachedTBN.TriCount
-        Dim epsPos As Single = CSng(opts.EpsilonPos)
+        ' ⛔ `EpsilonPos` es una LONGITUD y el predicado del degenerado compara contra `LengthSquared`
+        ' —sin raiz, que corre por triangulo—, asi que el cuadrado se hace UNA vez aca. Antes se pasaba
+        ' la longitud cruda contra el cuadrado: el umbral efectivo era `sqrt(eps)`. Con el default 0 da
+        ' lo mismo (0² = 0 y el predicado es `> 0` en los dos casos), asi que la salida por defecto no
+        ' se mueve un byte; para cualquier otro valor recien ahora el numero significa lo que dice.
+        Dim epsPosSq As Single = CSng(opts.EpsilonPos * opts.EpsilonPos)
         Dim cuantizaNormal As Boolean = geo.Geometry IsNot Nothing AndAlso geo.Geometry.NormalsAreByteQuantized
 
         ' ---- welding: agrupación propia de WM (posición [+ UV]), opt-in ----
         Dim masterOf() As Integer = Nothing
         Dim membersOf As Dictionary(Of Integer, List(Of Integer)) = Nothing
-        Dim weldExtras As HashSet(Of Integer) = Nothing
         If opts.EnableWelding Then
-            weldExtras = BuildWeldGroups(geo, opts.WeldPosEpsilon, opts.WeldUVEpsilon, opts.WeldByPositionOnly, masterOf, membersOf)
+            BuildWeldGroups(geo, opts.WeldPosEpsilon, opts.WeldUVEpsilon, opts.WeldByPositionOnly, masterOf, membersOf)
         End If
 
         ' ---- grupos de costura: posición coincidente, réplica de SortingMatcher ----
@@ -2332,7 +2579,7 @@ Public Class RecalcTBN
         Dim gruposCostura As List(Of Integer()) = Nothing
         Dim suaviza As Boolean = opts.SmoothSeamNormals AndAlso Not opts.KeepExistingNormals
         If suaviza Then
-            gruposCostura = ConstruyeGruposDeCostura(geo.Vertices, nVerts, grupoDe)
+            gruposCostura = ConstruyeGruposDeCostura(geo.Vertices, nVerts, grupoDe, geo.CachedTBN, True)
             suaviza = gruposCostura.Count > 0
         End If
 
@@ -2341,14 +2588,17 @@ Public Class RecalcTBN
         ' ⭐ `slotDe` mapea vertice -> ranura en los acumuladores, que se dimensionan a la CLAUSURA y
         ' no a la malla. Reemplaza al camino sparse (diccionarios) sin duplicar la ley: mismo codigo
         ' para un arrastre de 200 vertices que para un build entero.
-        Dim slotDe(nVerts - 1) As Integer
-        For i = 0 To nVerts - 1
-            slotDe(i) = -1
-        Next
-        Dim vertArr(nVerts - 1) As Integer
+        ' ⭐ Los buffers salen del cache y la validez va por SELLO DE CORRIDA (ver `TBNCache`): no se
+        ' asigna ni se inicializa nada del tamaño de la malla en cada llamada. `slotDe(v)` vale sólo si
+        ' `slotSello(v) = corrida`, así que una entrada de una llamada anterior no coincide y equivale
+        ' al -1 que antes había que ir a escribir vértice por vértice.
+        Dim corrida As Integer = ProximaCorrida(geo.CachedTBN)
+        Dim slotDe() As Integer = geo.CachedTBN.Scratch_SlotDe
+        Dim slotSello() As Integer = geo.CachedTBN.Scratch_SlotSello
+        Dim vertArr() As Integer = geo.CachedTBN.Scratch_VertArr
         Dim nAff As Integer = 0
         For Each vi In geo.dirtyVertexIndices
-            AgregaConRanura(vi, slotDe, vertArr, nAff)
+            AgregaConRanura(vi, slotDe, slotSello, corrida, vertArr, nAff)
         Next
         Dim nDirty As Integer = nAff
 
@@ -2358,37 +2608,63 @@ Public Class RecalcTBN
             Dim vi = vertArr(kv)
             For k = v2tS(vi) To v2tS(vi + 1) - 1
                 Dim t = v2tD(k) >> 2
-                AgregaConRanura(CInt(idxTri(3 * t + 0)), slotDe, vertArr, nAff)
-                AgregaConRanura(CInt(idxTri(3 * t + 1)), slotDe, vertArr, nAff)
-                AgregaConRanura(CInt(idxTri(3 * t + 2)), slotDe, vertArr, nAff)
+                AgregaConRanura(CInt(idxTri(3 * t + 0)), slotDe, slotSello, corrida, vertArr, nAff)
+                AgregaConRanura(CInt(idxTri(3 * t + 1)), slotDe, slotSello, corrida, vertArr, nAff)
+                AgregaConRanura(CInt(idxTri(3 * t + 2)), slotDe, slotSello, corrida, vertArr, nAff)
             Next
         Next
 
-        ' Compañeros de costura y de weld: comparten normal, así que entran al conjunto de escritura.
-        Dim nAntes As Integer = nAff
-        For kv = 0 To nAntes - 1
-            Dim vi = vertArr(kv)
+        ' Compañeros de costura y de weld: comparten normal o base, así que entran al conjunto de
+        ' escritura.
+        ' ⛔⛔ HASTA PUNTO FIJO, y con TODOS los miembros del grupo de weld — no sólo el maestro.
+        ' `FusionaGrupos` suma únicamente a los compañeros QUE TIENEN RANURA y saltea a los que
+        ' quedaron afuera, así que un grupo partido entre dentro y fuera de la clausura producía una
+        ' base fusionada distinta de la que da el recálculo de malla entera: el resultado dependía de
+        ' cuántos compañeros hubiera arrastrado el gesto del usuario. Es justo la propiedad de dominio
+        ' que declara la doc de esta función («el subconjunto da el MISMO resultado»), y con welding
+        ' puesto no se cumplía. Traer el grupo entero la restablece.
+        ' El punto fijo hace falta porque un compañero recién agregado pertenece a su propio grupo de
+        ' costura, que también hay que traer; una sola pasada dejaba esa segunda capa afuera.
+        ' ⭐ Ampliar la clausura NO cambia lo que se escribe en los que ya estaban: el acumulado de un
+        ' vértice sale de SUS triángulos incidentes, que ya estaban todos incluidos. Sólo agrega
+        ' vértices más, calculados bien.
+        Dim kExp As Integer = 0
+        While kExp < nAff
+            Dim vi = vertArr(kExp)
             If suaviza AndAlso grupoDe(vi) >= 0 Then
                 For Each vj In gruposCostura(grupoDe(vi))
-                    AgregaConRanura(vj, slotDe, vertArr, nAff)
+                    AgregaConRanura(vj, slotDe, slotSello, corrida, vertArr, nAff)
                 Next
             End If
-            If masterOf IsNot Nothing Then AgregaConRanura(masterOf(vi), slotDe, vertArr, nAff)
-        Next
+            If masterOf IsNot Nothing Then
+                Dim m As Integer = masterOf(vi)
+                AgregaConRanura(m, slotDe, slotSello, corrida, vertArr, nAff)
+                Dim hermanos As List(Of Integer) = Nothing
+                If membersOf IsNot Nothing AndAlso membersOf.TryGetValue(m, hermanos) AndAlso hermanos IsNot Nothing Then
+                    For Each vk In hermanos
+                        AgregaConRanura(vk, slotDe, slotSello, corrida, vertArr, nAff)
+                    Next
+                End If
+            End If
+            kExp += 1
+        End While
 
         ' T = triángulos que alimentan el acumulado: TODOS los incidentes de TODO vértice de W.
         ' ⛔ Es la condición que hace que el subconjunto dé lo mismo que la malla entera. Sin esto un
         ' vértice del borde de W recibe sólo parte de sus caras y su base no es la de la malla.
-        Dim triVisto(Math.Max(0, triCount - 1)) As Boolean
-        Dim triArr(Math.Max(0, triCount - 1)) As Integer
+        ' ⭐ Un SOLO sello para los triángulos: `triSello(t) = corrida` significa a la vez «t ya está en
+        ' `triArr`» —lo que antes hacía el array `triVisto`— y «`slotTri(t)` es de esta corrida». Son la
+        ' misma condición: `slotTri` se llena exactamente para los triángulos de `triArr`.
+        Dim triSello() As Integer = geo.CachedTBN.Scratch_TriSello
+        Dim triArr() As Integer = geo.CachedTBN.Scratch_TriArr
         Dim nTris As Integer = 0
         For kv = 0 To nAff - 1
             Dim vi = vertArr(kv)
             For k = v2tS(vi) To v2tS(vi + 1) - 1
-                AgregaUnaVez(v2tD(k) >> 2, triVisto, triArr, nTris)
+                AgregaUnaVez(v2tD(k) >> 2, triSello, corrida, triArr, nTris)
             Next
         Next
-        If nTris = 0 Then Return AdicionalesDe(weldExtras, vertArr, nDirty, nAff)
+        If nTris = 0 Then Return AdicionalesDe(vertArr, nDirty, nAff)
         ' Orden creciente de triángulo, que es el del canónico. Con el acumulador en Single la suma no
         ' es asociativa, así que el orden es parte de la ley.
         Array.Sort(triArr, 0, nTris)
@@ -2405,8 +2681,8 @@ Public Class RecalcTBN
         Dim tan1(Math.Max(0, nAff - 1)) As Vector3   ' tdir -> PRIMARIO  (campo Tangent del NIF)
         Dim tan2(Math.Max(0, nAff - 1)) As Vector3   ' sdir -> SECUNDARIO (campo Bitangent del NIF)
         Dim quiral(Math.Max(0, nAff - 1)) As Single  ' signo del determinante UV, sumado por vertice
-        Acumula(triArr, nTris, idxTri, geo.Vertices, geo.CachedTBN, epsPos,
-                vertArr, nAff, slotDe, accN, tan1, tan2, quiral)
+        Acumula(triArr, nTris, idxTri, geo.Vertices, geo.CachedTBN, epsPosSq,
+                vertArr, nAff, corrida, accN, tan1, tan2, quiral)
 
         ' ================= PASE A: NORMALES =================
         Dim norms() As Vector3 = geo.Normals
@@ -2489,9 +2765,20 @@ Public Class RecalcTBN
         ' identica, 964 son costuras de UV reales (normales a menos de 60 grados), 99 son aristas
         ' duras y 128 son doble cara (normales a mas de 120). En esos 227 los dos lados tienen
         ' tangentes GENUINAMENTE distintas y forzarles un marco comun rompe el normal map de uno.
+        ' ⛔ La QUIRALIDAD se fusiona con los acumulados, en la misma pasada y con el mismo criterio de
+        ' pertenencia. Es lo que dice de que lado apunta el secundario cuando hay que reconstruirlo
+        ' (`SecundarioDeLaBase`), o sea que pertenece al mismo modelo de datos que `tan1`/`tan2`: si el
+        ' acumulado es la suma del grupo, el signo del determinante tambien tiene que serlo. Quedandose
+        ' con la quiralidad LOCAL, dos miembros con el MISMO acumulado fusionado reconstruian el
+        ' secundario con signos OPUESTOS —el caso tipico es la costura de espejo, donde los dos lados
+        ' tienen det de signo contrario— y eso invierte el canal verde del normal map de uno de los dos.
+        ' El chequeo de ortogonalidad no lo puede ver: es ciego al signo.
+        ' En una costura de espejo la suma fusionada da ~0, que es la respuesta honesta —los datos no
+        ' determinan un lado— y ahi `SecundarioDeLaBase` cae a la convencion del formato, igual para
+        ' todos los miembros.
         Dim cosUmbralWeld As Single = CSng(Math.Cos(Math.Max(0.0, opts.SmoothSeamNormalsAngle) * Math.PI / 180.0))
-        FusionaGrupos(tan1, vertArr, nAff, slotDe, masterOf, membersOf, norms, cosUmbralWeld)
-        FusionaGrupos(tan2, vertArr, nAff, slotDe, masterOf, membersOf, norms, cosUmbralWeld)
+        FusionaGrupos(tan1, tan2, quiral, vertArr, nAff, slotDe, slotSello, corrida,
+                      masterOf, membersOf, norms, cosUmbralWeld)
 
         ' ⛔ PROBADO Y DESCARTADO paralelizar este pase. Es correcto hacerlo —cada iteración lee
         ' `norms(vi)`, que el pase A ya dejó escrito entero, y escribe SÓLO su propio `vi`, único en la
@@ -2502,10 +2789,10 @@ Public Class RecalcTBN
         Dim salidaT = geo.Tangents
         Dim salidaB = geo.Bitangents
         For kv = 0 To nAff - 1
-            BaseDeUnVertice(kv, vertArr, norms, tan1, tan2, quiral, opts, epsPos, cuantizaNormal, salidaT, salidaB)
+            BaseDeUnVertice(kv, vertArr, norms, tan1, tan2, quiral, opts, cuantizaNormal, salidaT, salidaB)
         Next
 
-        Return AdicionalesDe(weldExtras, vertArr, nDirty, nAff)
+        Return AdicionalesDe(vertArr, nDirty, nAff)
     End Function
 
     ''' <summary>
@@ -2514,7 +2801,7 @@ Public Class RecalcTBN
     ''' </summary>
     Private Shared Sub BaseDeUnVertice(kv As Integer, vertArr() As Integer, norms() As Vector3,
                                        tan1() As Vector3, tan2() As Vector3, quiral() As Single,
-                                       opts As TBNOptions, epsPos As Single, cuantizaNormal As Boolean,
+                                       opts As TBNOptions, cuantizaNormal As Boolean,
                                        salidaT() As Vector3, salidaB() As Vector3)
         Dim vi = vertArr(kv)
         ' Misma regla que la red final de InjectNormalsToTrishape, y por la misma razon: el NaN no
@@ -2527,7 +2814,7 @@ Public Class RecalcTBN
         If HasNaN(nUso) Then nUso = New Vector3(0, 0, 1)
         If opts.RepairNaNs AndAlso nUso.LengthSquared <= 0.0F Then nUso = New Vector3(0, 0, 1)
         Dim T As Vector3, B As Vector3
-        BaseTangenteDeVertice(NormalParaTBN(nUso, cuantizaNormal), tan2(kv), tan1(kv), quiral(kv), opts, epsPos, T, B)
+        BaseTangenteDeVertice(NormalParaTBN(nUso, cuantizaNormal), tan2(kv), tan1(kv), quiral(kv), opts, T, B)
         salidaT(vi) = T          ' secundario
         salidaB(vi) = B          ' primario
     End Sub
@@ -2545,8 +2832,8 @@ Public Class RecalcTBN
     ''' </summary>
     Private Shared Sub Acumula(triArr() As Integer, nTris As Integer, idxTri As UInteger(),
                                verts As Vector3d(), cache As TBNCache,
-                               epsPos As Single, vertArr() As Integer, nAff As Integer,
-                               slotDe() As Integer,
+                               epsPosSq As Single, vertArr() As Integer, nAff As Integer,
+                               corrida As Integer,
                                accN As Vector3(), tan1 As Vector3(), tan2 As Vector3(),
                                quiral As Single())
         ' Fase 1 — por triángulo. Los tres vectores van juntos: la fase 2 los lee de un bloque
@@ -2558,10 +2845,12 @@ Public Class RecalcTBN
         ' define el canonico, `sdir x tdir = det * (e1 x e2)`, o sea que el signo del determinante UV
         ' ES la quiralidad del marco respecto de la normal de cara.
         Dim signo(Math.Max(0, nTris - 1)) As Single
-        Dim slotTri(Math.Max(0, cache.TriCount - 1)) As Integer
-        For k = 0 To slotTri.Length - 1
-            slotTri(k) = -1
-        Next
+        ' ⭐ Del cache y con sello: `triSello(t) = corrida` ya marca exactamente a los triangulos de
+        ' `triArr`, asi que `slotTri` no necesita ni asignacion ni el barrido completo a -1 que habia
+        ' aca — O(triangulos de la MALLA) en cada llamada, para despues escribir O(triangulos de la
+        ' clausura) posiciones.
+        Dim slotTri() As Integer = cache.Scratch_SlotTri
+        Dim triSello() As Integer = cache.Scratch_TriSello
         For k = 0 To nTris - 1
             slotTri(triArr(k)) = k
         Next
@@ -2577,7 +2866,7 @@ Public Class RecalcTBN
                     Dim e1 = PosParaTBN(verts(i1)) - p0
                     Dim e2 = PosParaTBN(verts(i2)) - p0
                     Dim sdir As Vector3, tdir As Vector3
-                    ComputeFaceTB(e1, e2, du1(t), dv1(t), du2(t), dv2(t), detNeg(t), epsPos, sdir, tdir)
+                    ComputeFaceTB(e1, e2, du1(t), dv1(t), du2(t), dv2(t), detNeg(t), epsPosSq, sdir, tdir)
                     Dim fb = k * 3
                     cara(fb) = Vector3.Cross(e1, e2)   ' normal de cara, SIN normalizar
                     cara(fb + 1) = tdir
@@ -2594,27 +2883,45 @@ Public Class RecalcTBN
                     Dim aN As Vector3 = Vector3.Zero, a1 As Vector3 = Vector3.Zero, a2 As Vector3 = Vector3.Zero
                     Dim aQ As Single = 0.0F
                     For k = v2tS(vi) To v2tS(vi + 1) - 1
-                        Dim sl = slotTri(v2tD(k) >> 2)
-                        If sl < 0 Then Continue For
-                        Dim fb = sl * 3
+                        Dim t = v2tD(k) >> 2
+                        ' El sello es lo que dice si `slotTri(t)` es de esta corrida. Sin el, una
+                        ' entrada de una llamada anterior es un indice perfectamente valido apuntando
+                        ' al triangulo equivocado.
+                        If triSello(t) <> corrida Then Continue For
+                        Dim fb = slotTri(t) * 3
                         aN += cara(fb)
                         a1 += cara(fb + 1)
                         a2 += cara(fb + 2)
-                        aQ += signo(sl)
+                        aQ += signo(slotTri(t))
                     Next
                     accN(kv) = aN : tan1(kv) = a1 : tan2(kv) = a2 : quiral(kv) = aQ
                 Next
             End Sub
 
-        ' Paralelizar sólo si hay trabajo para más de un núcleo. No hay un umbral medido que
-        ' justifique otra constante, y elegirla a ojo sería calibrar al equipo de desarrollo.
-        If Environment.ProcessorCount > 1 AndAlso nTris >= Environment.ProcessorCount Then
-            Parallel.ForEach(SkinningHelper.RangosDe(nTris), porCara)
-            Parallel.ForEach(SkinningHelper.RangosDe(nAff), porVertice)
-        Else
-            porCara(Tuple.Create(0, nTris))
-            porVertice(Tuple.Create(0, nAff))
-        End If
+        ' ⛔⛔ PROBADO Y DESCARTADO paralelizar esta acumulacion. Es CORRECTO hacerlo —el gather de
+        ' arriba hace que cada vertice lo escriba una sola iteracion— pero NO PAGA. MEDIDO con
+        ' `Tools\TbnPerfProbe` (modo `escala`), dos corridas independientes, minimo de 11 repeticiones,
+        ' comparando una libreria forzada a serie contra una forzada a paralelo sobre las MISMAS
+        ' mallas, en un equipo de 12 nucleos — cociente paralelo/serie:
+        '
+        '     8 tri  4,2x     288 tri  1,5x     4.608 tri  0,87x
+        '    18 tri  3,1x     512 tri  1,3x     8.192 tri  0,83x
+        '    72 tri  1,3x   1.152 tri  1,00x   18.432 tri  1,61x
+        '   128 tri  1,4x   2.048 tri  0,94x   32.768 tri  1,12x
+        '
+        ' O sea: gana como mucho un 17 %, y solo en la banda de 2k a 8k triangulos; afuera pierde, y
+        ' en los cierres CHICOS —el caso interactivo, un arrastre que toca unos pocos vertices— pierde
+        ' hasta 4,2x. El umbral que habia (`nTris >= ProcessorCount`, o sea 12 triangulos) mandaba por
+        ' el camino paralelo practicamente a toda malla, incluida esa zona.
+        '
+        ' ⛔ Y no se reemplaza por un umbral: cualquier constante que separe esa banda estaria
+        ' calibrada a ESTE equipo, y la app se distribuye (ver 00-reglas-app-distribuida). La unica
+        ' respuesta que no depende del equipo es no paralelizar. Es la misma conclusion —y por la misma
+        ' razon, trabajo por item demasiado barato para pagar el particionado— a la que se llego
+        ' midiendo el PASE B, que tambien salio correcto y tambien se revirtio.
+        ' Para re-intentarlo hay que cambiar antes el costo por item, no el umbral.
+        porCara(Tuple.Create(0, nTris))
+        porVertice(Tuple.Create(0, nAff))
     End Sub
 
     ''' <summary>
@@ -2623,14 +2930,24 @@ Public Class RecalcTBN
     '''
     ''' ⭐⛔ El welding es una operacion sobre los ACUMULADORES, no un retoque posterior: si al miembro
     ''' se le pisa la base DESPUES de armarla, queda ortogonalizada contra otra normal — o sea torcida.
-    ''' ⛔ Se llama SOLO sobre `tan1` y `tan2` (la base tangente), NUNCA sobre `accN`: promediar
-    ''' normales aca arruinaria las aristas duras, y el promedio de normales con umbral angular es
-    ''' otra cosa y la hace el suavizado de costura. El canonico no aplica weld sets a la base
-    ''' tangente —sus weld sets alimentan unicamente `Mesh::SmoothNormals`—, asi que esto es una
+    ''' ⛔ Se aplica a `tan1`, `tan2` y `quiral` —los tres canales de la BASE TANGENTE— y NUNCA a
+    ''' `accN`: promediar normales aca arruinaria las aristas duras, y el promedio de normales con
+    ''' umbral angular es otra cosa y la hace el suavizado de costura. El canonico no aplica weld sets a
+    ''' la base tangente —sus weld sets alimentan unicamente `Mesh::SmoothNormals`—, asi que esto es una
     ''' funcion propia de WM y por eso viene apagada.
+    ''' ⛔ Los tres van en UNA pasada, no en tres llamadas. El criterio de pertenencia —el umbral
+    ''' angular contra la normal del compañero— es el MISMO para los tres, y con una llamada por canal
+    ''' ese predicado se evaluaba una vez por canal (tres veces el mismo producto punto y la misma
+    ''' division) y, peor, podia quedar un canal sin fusionar sin que nada lo delatara: fue exactamente
+    ''' lo que paso con `quiral`.
     ''' </summary>
-    Private Shared Sub FusionaGrupos(acc() As Vector3, vertArr() As Integer, nAff As Integer,
-                                     slotDe() As Integer, masterOf() As Integer,
+    ''' <remarks>⛔ La ranura se lee con <see cref="RanuraDe"/> y NO con <c>slotDe(v) &lt; 0</c>: los
+    ''' buffers se reusan entre llamadas, así que una entrada de una corrida anterior tiene un número
+    ''' perfectamente válido y apuntaría a la ranura de OTRO vértice.</remarks>
+    Private Shared Sub FusionaGrupos(tan1() As Vector3, tan2() As Vector3, quiral() As Single,
+                                     vertArr() As Integer, nAff As Integer,
+                                     slotDe() As Integer, slotSello() As Integer, corrida As Integer,
+                                     masterOf() As Integer,
                                      membersOf As Dictionary(Of Integer, List(Of Integer)),
                                      norms() As Vector3, cosUmbral As Single)
         If membersOf Is Nothing Then Exit Sub
@@ -2647,31 +2964,48 @@ Public Class RecalcTBN
             ' costura. Con una suma unica, un vertice de doble cara recibia tambien el aporte del
             ' lado opuesto —que apunta al reves— y su marco salia del promedio de dos superficies
             ' distintas. Asi una arista dura sigue dura, que es lo que preserva el normal map.
-            Dim fusionadas(members.Count - 1) As Vector3
+            Dim fus1(members.Count - 1) As Vector3
+            Dim fus2(members.Count - 1) As Vector3
+            Dim fusQ(members.Count - 1) As Single
             For j = 0 To members.Count - 1
-                Dim sj = slotDe(members(j))
+                Dim sj = RanuraDe(members(j), slotDe, slotSello, corrida)
                 If sj < 0 Then Continue For
                 Dim nj = norms(members(j))
                 Dim lj As Single = nj.Length
-                Dim suma As Vector3 = acc(sj)
+                Dim suma1 As Vector3 = tan1(sj)
+                Dim suma2 As Vector3 = tan2(sj)
+                Dim sumaQ As Single = quiral(sj)
                 For k = 0 To members.Count - 1
                     If k = j Then Continue For
-                    Dim sk = slotDe(members(k))
+                    Dim sk = RanuraDe(members(k), slotDe, slotSello, corrida)
                     If sk < 0 Then Continue For
                     Dim nk = norms(members(k))
                     Dim lk As Single = nk.Length
                     If lj <= 0.0F OrElse lk <= 0.0F Then Continue For
                     If Vector3.Dot(nj, nk) / (lj * lk) <= cosUmbral Then Continue For
-                    suma += acc(sk)
+                    suma1 += tan1(sk)
+                    suma2 += tan2(sk)
+                    sumaQ += quiral(sk)
                 Next
-                fusionadas(j) = suma
+                fus1(j) = suma1 : fus2(j) = suma2 : fusQ(j) = sumaQ
             Next
             For j = 0 To members.Count - 1
-                Dim sj = slotDe(members(j))
-                If sj >= 0 Then acc(sj) = fusionadas(j)
+                Dim sj = RanuraDe(members(j), slotDe, slotSello, corrida)
+                If sj >= 0 Then
+                    tan1(sj) = fus1(j) : tan2(sj) = fus2(j) : quiral(sj) = fusQ(j)
+                End If
             Next
         Next
     End Sub
+
+    ''' <summary>La ranura de un vértice en los acumuladores de ESTA corrida, o -1 si no está en la
+    ''' clausura. El sello es lo que distingue «ranura 0» de «entrada de una llamada anterior».</summary>
+    Private Shared Function RanuraDe(v As Integer, slotDe() As Integer, sello() As Integer,
+                                     corrida As Integer) As Integer
+        If v < 0 OrElse v >= slotDe.Length Then Return -1
+        If sello(v) <> corrida Then Return -1
+        Return slotDe(v)
+    End Function
 
     ''' <summary>
     ''' Índices con <c>LOCKEDNORM</c>: el canónico deja su normal intacta
@@ -2682,17 +3016,23 @@ Public Class RecalcTBN
     End Function
 
     ''' <summary>
-    ''' Los vertices tocados que NO venian sucios: la COLA de la clausura (<c>[nDirty, nAff)</c>) mas
-    ''' los que agrego el welding. No hace falta un conjunto aparte — el array de la clausura arranca
-    ''' justamente con los sucios, en orden, asi que todo lo que sigue es lo agregado.
-    ''' Puede repetir algo que ya estuviera sucio si el welding lo devolvio; los llamadores hacen
-    ''' <c>Add</c> sobre un HashSet y sobre un array de flags, que son idempotentes.
+    ''' Los vertices tocados que NO venian sucios: la COLA de la clausura (<c>[nDirty, nAff)</c>). No
+    ''' hace falta un conjunto aparte — el array de la clausura arranca justamente con los sucios, en
+    ''' orden, asi que todo lo que sigue es lo agregado.
+    '''
+    ''' ⛔ Ya NO se suma el conjunto del welding, y no es una optimizacion: era INCORRECTO. Ese
+    ''' conjunto lo arma <c>BuildWeldGroups</c> sobre la MALLA ENTERA —todo vertice que entro a un
+    ''' grupo, este o no en la clausura— asi que se devolvian como "tocados" miles de vertices que esta
+    ''' llamada no escribio. El llamador los marca sucios, con dos efectos: sube al render vertices que
+    ''' no cambiaron, y —lo caro— la clausura de la llamada SIGUIENTE arranca conteniendo medio mesh,
+    ''' o sea que con welding puesto el camino incremental dejaba de ser incremental a partir del
+    ''' segundo tick. Existia para tapar que la clausura no traia a los companeros de weld; ahora los
+    ''' trae (ver la expansion a punto fijo), asi que la cola YA ES el conjunto exacto de lo escrito
+    ''' de mas.
     ''' </summary>
-    Private Shared Function AdicionalesDe(weldExtras As HashSet(Of Integer), vertArr() As Integer,
+    Private Shared Function AdicionalesDe(vertArr() As Integer,
                                           nDirty As Integer, nAff As Integer) As List(Of Integer)
-        Dim extra As Integer = If(weldExtras Is Nothing, 0, weldExtras.Count)
-        Dim res As New List(Of Integer)(extra + Math.Max(0, nAff - nDirty))
-        If weldExtras IsNot Nothing Then res.AddRange(weldExtras)
+        Dim res As New List(Of Integer)(Math.Max(0, nAff - nDirty))
         If vertArr IsNot Nothing Then
             For k = nDirty To nAff - 1
                 res.Add(vertArr(k))
@@ -2702,36 +3042,64 @@ Public Class RecalcTBN
     End Function
 
     ''' <summary>
-    ''' Agrega <paramref name="v"/> al conjunto compacto (flags + array + contador) si no estaba, y
+    ''' Agrega <paramref name="v"/> al conjunto compacto (sellos + array + contador) si no estaba, y
     ''' descarta los indices fuera de rango. Reemplaza a <c>HashSet(Of Integer).Add</c> conservando el
     ''' ORDEN DE INSERCION, que es lo que hace que el camino secuencial sume en el mismo orden.
     ''' </summary>
-    Private Shared Sub AgregaUnaVez(v As Integer, visto As Boolean(), arr As Integer(), ByRef n As Integer)
-        If v < 0 OrElse v >= visto.Length Then Exit Sub
-        If visto(v) Then Exit Sub
-        visto(v) = True
+    Private Shared Sub AgregaUnaVez(v As Integer, sello As Integer(), corrida As Integer,
+                                    arr As Integer(), ByRef n As Integer)
+        If v < 0 OrElse v >= sello.Length Then Exit Sub
+        If sello(v) = corrida Then Exit Sub
+        sello(v) = corrida
         arr(n) = v
         n += 1
     End Sub
 
-    ''' <summary>Igual que <see cref="AgregaUnaVez"/> pero sobre un mapa vertice -> ranura: el
-    ''' centinela es -1 y la ranura queda registrada para indexar los acumuladores.</summary>
-    Private Shared Sub AgregaConRanura(v As Integer, slotDe As Integer(), arr As Integer(), ByRef n As Integer)
+    ''' <summary>Igual que <see cref="AgregaUnaVez"/> pero sobre un mapa vertice -> ranura: la ranura
+    ''' queda registrada para indexar los acumuladores, y vale sólo mientras el sello coincida con la
+    ''' corrida.</summary>
+    Private Shared Sub AgregaConRanura(v As Integer, slotDe As Integer(), sello As Integer(),
+                                       corrida As Integer, arr As Integer(), ByRef n As Integer)
         If v < 0 OrElse v >= slotDe.Length Then Exit Sub
-        If slotDe(v) >= 0 Then Exit Sub
+        If sello(v) = corrida Then Exit Sub
+        sello(v) = corrida
         slotDe(v) = n
         arr(n) = v
         n += 1
     End Sub
+
+    ''' <summary>
+    ''' El número de corrida de esta llamada, y la garantía de que ningún sello viejo lo iguale.
+    '''
+    ''' ⛔ Arranca en 1, no en 0: un array de sellos recién asignado está TODO en cero, así que con
+    ''' corrida 0 cada vértice de la malla se vería como «ya agregado en esta corrida» y la clausura
+    ''' saldría vacía.
+    ''' ⛔ Y al desbordar se limpian los sellos. Es inalcanzable en la práctica —2^31 recálculos de la
+    ''' misma malla sin recargarla— pero el modo de fallar sería un sello viejo coincidiendo con la
+    ''' corrida nueva, o sea vértices fantasma en la clausura, que es indepurable. Limpiar cuesta una
+    ''' pasada cada 2.000 millones de llamadas.
+    ''' </summary>
+    Private Shared Function ProximaCorrida(ByRef c As TBNCache) As Integer
+        If c.Corrida >= Integer.MaxValue - 1 Then
+            Array.Clear(c.Scratch_SlotSello, 0, c.Scratch_SlotSello.Length)
+            Array.Clear(c.Scratch_TriSello, 0, c.Scratch_TriSello.Length)
+            c.Corrida = 0
+        End If
+        c.Corrida += 1
+        Return c.Corrida
+    End Function
 
     ' -----------------------
     ' Utilitarios privados
     ' -----------------------
 
     ' Welding lógico por posición+UV con tolerancias (NO cacheado)
-    Private Shared Function BuildWeldGroups(ByRef geo As SkinnedGeometry, ByVal weldPosEpsOrig As Double, ByVal weldUVEps As Double, ByVal byPosOnly As Boolean, ByRef masterOf() As Integer, ByRef membersOf As Dictionary(Of Integer, List(Of Integer))) As HashSet(Of Integer)
+    ''' <remarks>⛔ Es un Sub. Devolvia el conjunto de los vertices que entraron a un grupo y ese
+    ''' conjunto se devolvia al llamador como "vertices tocados", que era falso: se arma sobre la malla
+    ''' ENTERA y no sobre la clausura. Ver <see cref="AdicionalesDe"/>. Sin ese consumidor, armarlo era
+    ''' un HashSet del tamaño de la malla por llamada, para nada.</remarks>
+    Private Shared Sub BuildWeldGroups(ByRef geo As SkinnedGeometry, ByVal weldPosEpsOrig As Double, ByVal weldUVEps As Double, ByVal byPosOnly As Boolean, ByRef masterOf() As Integer, ByRef membersOf As Dictionary(Of Integer, List(Of Integer)))
         Dim n As Integer = geo.Vertices.Length
-        Dim vertices_adicionales As New HashSet(Of Integer)
         masterOf = New Integer(n - 1) {}
         membersOf = New Dictionary(Of Integer, List(Of Integer))(n)
         ' ⭐ `weldPosEpsOrig` es una DISTANCIA en unidades de modelo, que es lo que declaran los
@@ -2748,14 +3116,20 @@ Public Class RecalcTBN
                 masterOf(i) = i
                 membersOf(i) = New List(Of Integer)(1) From {i}
             Next
-            Return vertices_adicionales
+            Exit Sub
         End If
 
         ' Hash buckets por celda cuantizada.
-        ' ⛔ Se barren las 27 celdas (la propia y las 26 vecinas). Mirar solo la celda propia dejaba
-        ' fuera a los pares que caen a los dos lados de un borde de grilla: estaba medido que era el
-        ' 64 % de los que pasan el predicado de distancia. Con una sola celda la agrupacion dependia de
-        ' donde cayera la grilla, no de la geometria.
+        ' ⛔ Se barre la celda propia y TODAS sus vecinas. Mirar solo la celda propia dejaba fuera a los
+        ' pares que caen a los dos lados de un borde de grilla: estaba medido que era el 64 % de los que
+        ' pasan el predicado de distancia. Con una sola celda la agrupacion dependia de donde cayera la
+        ' grilla, no de la geometria.
+        ' ⛔ La grilla tiene CINCO ejes cuando se agrupa por posicion Y UV, y el barrido tiene que
+        ' cubrirlos a los cinco. Corriendo solo x/y/z, dos vertices con la UV a menos de `weldUVEps`
+        ' pero a los dos lados de un borde de celda de UV caian en buckets distintos y NO se comparaban
+        ' nunca: exactamente el problema de bordes de grilla que este barrido existe para evitar, con la
+        ' agravante de que el default de `WeldUVEpsilon` es 1e-12, o sea celdas de UV diminutas donde
+        ' caer del lado equivocado del borde es lo NORMAL y no la excepcion.
         Dim buckets As New Dictionary(Of WeldKey, List(Of Integer))(n)
 
         For i As Integer = 0 To n - 1
@@ -2771,41 +3145,62 @@ Public Class RecalcTBN
                 buckets(key) = list
             End If
 
-            ' Chequeo fino sobre la celda propia y las 26 vecinas.
-            Dim assigned As Boolean = False
-            For dz = -1 To 1
-                For dy = -1 To 1
-                    For dx = -1 To 1
-                        Dim vecina As List(Of Integer) = Nothing
-                        If Not buckets.TryGetValue(key.Desplazada(dx, dy, dz), vecina) Then Continue For
-                        For Each cand As Integer In vecina
-                            If cand = i Then Continue For
-                            Dim posOk As Boolean = ClosePos(geo.Vertices(cand), p, weldPosEps)
-                            Dim uvOk As Boolean = byPosOnly OrElse CloseUV(geo.Uvs_Weight(cand), uv, weldUVEps)
-                            If posOk AndAlso uvOk Then
-                                masterOf(i) = masterOf(cand)
-                                membersOf(masterOf(cand)).Add(i)
-                                list.Add(i)
-                                vertices_adicionales.Add(i)
-                                assigned = True
-                                Exit For
-                            End If
-                        Next
-                        If assigned Then Exit For
-                    Next
-                    If assigned Then Exit For
-                Next
-                If assigned Then Exit For
-            Next
-
-            If Not assigned Then
+            ' Chequeo fino sobre la celda propia y todas las vecinas.
+            Dim cand As Integer = BuscaCompanero(geo, i, p, uv, key, buckets, weldPosEps, weldUVEps, byPosOnly)
+            If cand >= 0 Then
+                masterOf(i) = masterOf(cand)
+                membersOf(masterOf(cand)).Add(i)
+                list.Add(i)
+            Else
                 ' Nuevo grupo con i como maestro
                 masterOf(i) = i
                 list.Add(i)
                 membersOf(i) = New List(Of Integer)(4) From {i}
             End If
         Next
-        Return vertices_adicionales
+    End Sub
+
+    ''' <summary>
+    ''' El primer vertice ya registrado que suelda con <paramref name="i"/>, o -1. Barre la celda propia
+    ''' y las vecinas en los ejes que la clave realmente usa: 27 celdas agrupando solo por posicion, 243
+    ''' agrupando por posicion Y UV.
+    '''
+    ''' ⛔ Sale como funcion propia porque con cinco ejes el barrido con `Exit For` anidado eran cinco
+    ''' banderas y cinco cortes, y equivocarse en uno solo deja el eje sin barrer EN SILENCIO — que es
+    ''' exactamente el defecto que se esta arreglando.
+    ''' ⭐ El orden del barrido es parte de la ley: el resultado es el PRIMER candidato que pasa el
+    ''' predicado, asi que recorrer las celdas en otro orden puede cambiar a que grupo entra un vertice
+    ''' que esta cerca de dos. Se fija de menor a mayor desplazamiento, con la celda propia adentro del
+    ''' recorrido y no antes, que es lo que hacia la version de 27 celdas.
+    ''' </summary>
+    Private Shared Function BuscaCompanero(ByRef geo As SkinnedGeometry, i As Integer,
+                                           p As Vector3d, uv As Vector3, key As WeldKey,
+                                           buckets As Dictionary(Of WeldKey, List(Of Integer)),
+                                           weldPosEps As Double, weldUVEps As Double,
+                                           byPosOnly As Boolean) As Integer
+        ' Con `byPosOnly` la clave deja qu/qv en cero, asi que desplazarlos solo generaria 216 consultas
+        ' garantizadas a fallar.
+        Dim uvLo As Integer = If(byPosOnly, 0, -1)
+        Dim uvHi As Integer = If(byPosOnly, 0, 1)
+        For dv = uvLo To uvHi
+            For du = uvLo To uvHi
+                For dz = -1 To 1
+                    For dy = -1 To 1
+                        For dx = -1 To 1
+                            Dim vecina As List(Of Integer) = Nothing
+                            If Not buckets.TryGetValue(key.Desplazada(dx, dy, dz, du, dv), vecina) Then Continue For
+                            For Each cand As Integer In vecina
+                                If cand = i Then Continue For
+                                If Not ClosePos(geo.Vertices(cand), p, weldPosEps) Then Continue For
+                                If Not byPosOnly AndAlso Not CloseUV(geo.Uvs_Weight(cand), uv, weldUVEps) Then Continue For
+                                Return cand
+                            Next
+                        Next
+                    Next
+                Next
+            Next
+        Next
+        Return -1
     End Function
 
 
@@ -2831,12 +3226,17 @@ Public Class RecalcTBN
             Return k
         End Function
 
-        ''' <summary>La misma clave corrida una celda en cada eje: hace falta para barrer las 26
-        ''' vecinas, porque dos vertices a menos de epsilon pueden caer a los dos lados de un borde de
-        ''' grilla y en celdas distintas.</summary>
-        Public Function Desplazada(dx As Integer, dy As Integer, dz As Integer) As WeldKey
+        ''' <summary>La misma clave corrida una celda en cada eje: hace falta para barrer las vecinas,
+        ''' porque dos vertices a menos de epsilon pueden caer a los dos lados de un borde de grilla y
+        ''' en celdas distintas.
+        ''' ⛔ Los CINCO ejes, no tres. La clave incluye qu/qv cuando se agrupa por posicion Y UV, y
+        ''' desplazar solo la posicion dejaba el borde de grilla de la UV sin barrer: dos UV a menos de
+        ''' `WeldUVEpsilon` pero en celdas distintas no se comparaban nunca.</summary>
+        Public Function Desplazada(dx As Integer, dy As Integer, dz As Integer,
+                                   du As Integer, dv As Integer) As WeldKey
             Dim k As WeldKey = Me
             k.qx += dx : k.qy += dy : k.qz += dz
+            k.qu += du : k.qv += dv
             Return k
         End Function
 
@@ -2884,20 +3284,26 @@ Public Class RecalcTBN
     ''' cero. Inventar una base en el plano de la cara rompe los ROLES —<c>tFace</c> tiene que ser
     ''' dP/du— y en un shell de UV espejado sale con los canales intercambiados.
     '''
-    ''' <paramref name="epsPos"/> es el umbral de degenerado, del config, y su default es CERO — o sea
+    ''' <paramref name="epsPosSq"/> es el umbral de degenerado, del config, y su default es CERO — o sea
     ''' el canonico, que normaliza sin umbral. Sigue expuesto porque descarta el aporte de un triangulo
     ''' cuya direccion es puro redondeo, pero prenderlo hoy solo aleja: ver la medicion en
     ''' <see cref="DefaultTBNOptions"/>.
+    '''
+    ''' ⛔ Entra YA ELEVADO AL CUADRADO, y el nombre lo dice. <c>EpsilonPos</c> es una LONGITUD —asi lo
+    ''' declara la opcion y asi lo pide el control de la UI— y aca se compara contra
+    ''' <c>LengthSquared</c>, que es lo que evita la raiz por triangulo. Pasando la longitud cruda, el
+    ''' umbral efectivo sobre la longitud era <c>sqrt(eps)</c>: pedir 1e-6 filtraba a 1e-3, mil veces
+    ''' mas de lo pedido. El cuadrado lo hace el llamador UNA vez por malla, no una por triangulo.
     ''' </summary>
     Private Shared Sub ComputeFaceTB(e1 As Vector3, e2 As Vector3,
                                       _du1 As Single, _dv1 As Single, _du2 As Single, _dv2 As Single,
-                                      _detNeg As Boolean, epsPos As Single,
+                                      _detNeg As Boolean, epsPosSq As Single,
                                       ByRef tFace As Vector3, ByRef bFace As Vector3)
         Dim r As Single = If(_detNeg, -1.0F, 1.0F)
         Dim tf = (e1 * _dv2 - e2 * _dv1) * r
         Dim bf = (e2 * _du1 - e1 * _du2) * r
-        tFace = If(tf.LengthSquared > epsPos, Vector3.Normalize(tf), Vector3.Zero)
-        bFace = If(bf.LengthSquared > epsPos, Vector3.Normalize(bf), Vector3.Zero)
+        tFace = If(tf.LengthSquared > epsPosSq, Vector3.Normalize(tf), Vector3.Zero)
+        bFace = If(bf.LengthSquared > epsPosSq, Vector3.Normalize(bf), Vector3.Zero)
     End Sub
 
     ''' <summary>
@@ -2930,8 +3336,11 @@ Public Class RecalcTBN
     ''' que un NaN o un vector nulo lleguen al NIF. Apagarlos no rompe: deja pasar exactamente lo
     ''' que calculo el canonico.
     ''' </summary>
+    ''' <remarks>⛔ NO recibe <c>EpsilonPos</c> a proposito. Lo recibia y no lo usaba —parametro muerto
+    ''' que sugeria que aca habia un umbral configurable cuando el criterio es el CERO EXACTO del
+    ''' canonico, que es otra cosa. Ver la nota de <see cref="BaseDeUnVertice"/>.</remarks>
     Private Shared Sub BaseTangenteDeVertice(N As Vector3, accU As Vector3, accV As Vector3,
-                                             quiral As Single, opts As TBNOptions, epsPos As Single,
+                                             quiral As Single, opts As TBNOptions,
                                              ByRef T As Vector3, ByRef B As Vector3)
         ' ⛔ Rama degenerada del canonico: rotacion de componentes de la normal + cross. El canonico
         ' NO la ortogonaliza, asi que su `rawTangents` puede no ser perpendicular a la normal. Es el

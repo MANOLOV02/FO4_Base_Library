@@ -318,6 +318,16 @@ Public Class Config_App
                     t.EpsilonPos = d.EpsilonPos
                     t.WeldByPositionOnly = d.WeldByPositionOnly
                 End If
+                If t.OptionsVersion < 2 Then
+                    ' ⛔ NO es una opcion nueva: es la MISMA clave con otro significado. Hasta la v1 el
+                    ' numero se comparaba contra `LengthSquared`, o sea que el umbral EFECTIVO sobre la
+                    ' longitud era su raiz; desde la v2 el numero ES la longitud. Sin esta rama, un
+                    ' usuario que hubiera elegido un valor se encontraria con un filtro mil veces mas
+                    ' agresivo sin haber tocado nada. La raiz deja el comportamiento EXACTAMENTE igual
+                    ' al que tenia. Con el default 0 es un no-op (sqrt(0) = 0), que es el caso de
+                    ' practicamente todos: la migracion a v1 ya habia forzado EpsilonPos a 0.
+                    If t.EpsilonPos > 0.0 Then t.EpsilonPos = Math.Sqrt(t.EpsilonPos)
+                End If
                 t.OptionsVersion = RecalcTBN.VersionDeOpcionesTBN
                 Current.Setting_TBN = t
                 SaveConfig()
