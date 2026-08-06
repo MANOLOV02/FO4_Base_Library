@@ -2207,6 +2207,10 @@ Public Class RecalcTBN
             Dim v = verts(i)
             escala = Math.Max(escala, Math.Max(Math.Abs(v.X), Math.Max(Math.Abs(v.Y), Math.Abs(v.Z))))
         Next
+        ' ⭐ NO es un numero elegido: es el epsilon del `SortingMatcher` del canonico, que es quien
+        ' arma sus weld sets (nifly KDMatcher.hpp:89-92): `scale` = la mayor componente absoluta del
+        ' conjunto de puntos, y `epsilon = EPSILON * 0.01f * scale` con `EPSILON = 0.0001f`
+        ' (Object3d.hpp:16). Relativo a la escala de la malla, o sea independiente de las unidades.
         Dim eps As Double = 0.0001 * 0.01 * escala
         If eps <= 0.0 Then Return grupos
 
@@ -2221,6 +2225,28 @@ Public Class RecalcTBN
             clave(i) = verts(i).X
         Next
         Array.Sort(clave, orden)
+
+        ' ⛔ DESEMPATE EXPLÍCITO. `Array.Sort` es INESTABLE: ante claves iguales su orden es un detalle
+        ' de implementación del runtime, no parte del contrato. Y la partición SÍ depende de él —
+        ' MEDIDO sobre 3.742 mallas fuente de los dos juegos (12.789 shapes): 4 shapes cambian de
+        ' agrupación según el desempate, hasta 128 vértices en el peor caso (`Shino Body_Suit_1.nif`).
+        ' Sin fijarlo, una actualización de .NET puede cambiar la salida de esos builds EN SILENCIO, y
+        ' esta app se distribuye.
+        ' ⚠️ NO acerca al canónico: `std::sort` tampoco define su desempate, así que la paridad exacta
+        ' en esas 4 shapes es inalcanzable por construcción. Lo que se gana es que lo NUESTRO sea
+        ' reproducible.
+        ' ⭐ Se estabiliza sólo DENTRO de cada corrida de X idéntica, en vez de pasar un comparador al
+        ' sort: el delegado por par sobre 22.700 vértices es justamente lo que la clave separada de
+        ' arriba evita, y las corridas de X repetida son una minoría.
+        Dim ini As Integer = 0
+        While ini < nVerts
+            Dim fin As Integer = ini + 1
+            While fin < nVerts AndAlso clave(fin) = clave(ini)
+                fin += 1
+            End While
+            If fin - ini > 1 Then Array.Sort(orden, ini, fin - ini)
+            ini = fin
+        End While
 
         Dim usado(nVerts - 1) As Boolean      ' por POSICIÓN EN EL ORDEN, como el canónico
         For si = 0 To nVerts - 1
@@ -2457,8 +2483,15 @@ Public Class RecalcTBN
         ' Compartir la BASE es seguro donde promediar la NORMAL no lo era: la base se reortogonaliza
         ' despues contra la normal de cada miembro, asi que un miembro con normal distinta no hereda
         ' un marco torcido.
-        FusionaGrupos(tan1, vertArr, nAff, slotDe, masterOf, membersOf)
-        FusionaGrupos(tan2, vertArr, nAff, slotDe, masterOf, membersOf)
+        ' ⛔ El welding comparte la base tangente con el MISMO umbral angular que el suavizado de
+        ' costura, y por la misma razon. Antes no tenia ninguno: fusionaba todo vertice co-locado,
+        ' incluida la geometria de DOBLE CARA. MEDIDO en `CBBE Body`: de sus 1.191 grupos de posicion
+        ' identica, 964 son costuras de UV reales (normales a menos de 60 grados), 99 son aristas
+        ' duras y 128 son doble cara (normales a mas de 120). En esos 227 los dos lados tienen
+        ' tangentes GENUINAMENTE distintas y forzarles un marco comun rompe el normal map de uno.
+        Dim cosUmbralWeld As Single = CSng(Math.Cos(Math.Max(0.0, opts.SmoothSeamNormalsAngle) * Math.PI / 180.0))
+        FusionaGrupos(tan1, vertArr, nAff, slotDe, masterOf, membersOf, norms, cosUmbralWeld)
+        FusionaGrupos(tan2, vertArr, nAff, slotDe, masterOf, membersOf, norms, cosUmbralWeld)
 
         ' ⛔ PROBADO Y DESCARTADO paralelizar este pase. Es correcto hacerlo —cada iteración lee
         ' `norms(vi)`, que el pase A ya dejó escrito entero, y escribe SÓLO su propio `vi`, único en la
@@ -2598,7 +2631,8 @@ Public Class RecalcTBN
     ''' </summary>
     Private Shared Sub FusionaGrupos(acc() As Vector3, vertArr() As Integer, nAff As Integer,
                                      slotDe() As Integer, masterOf() As Integer,
-                                     membersOf As Dictionary(Of Integer, List(Of Integer)))
+                                     membersOf As Dictionary(Of Integer, List(Of Integer)),
+                                     norms() As Vector3, cosUmbral As Single)
         If membersOf Is Nothing Then Exit Sub
         ' Se recorre el GRUPO, no los afectados, para no sumar dos veces si dos miembros del mismo
         ' grupo estan en la clausura. Un miembro fuera de la clausura no tiene ranura y no aporta.
@@ -2608,14 +2642,33 @@ Public Class RecalcTBN
             If Not hecho.Add(m) Then Continue For
             Dim members As List(Of Integer) = Nothing
             If Not membersOf.TryGetValue(m, members) OrElse members Is Nothing Then Continue For
-            Dim suma As Vector3 = Vector3.Zero
-            For Each vi In members
-                Dim sl = slotDe(vi)
-                If sl >= 0 Then suma += acc(sl)
+            ' ⛔ POR MIEMBRO, no una suma unica para todo el grupo: cada uno acumula SOLO a los
+            ' companeros cuya normal esta dentro del umbral, exactamente igual que el suavizado de
+            ' costura. Con una suma unica, un vertice de doble cara recibia tambien el aporte del
+            ' lado opuesto —que apunta al reves— y su marco salia del promedio de dos superficies
+            ' distintas. Asi una arista dura sigue dura, que es lo que preserva el normal map.
+            Dim fusionadas(members.Count - 1) As Vector3
+            For j = 0 To members.Count - 1
+                Dim sj = slotDe(members(j))
+                If sj < 0 Then Continue For
+                Dim nj = norms(members(j))
+                Dim lj As Single = nj.Length
+                Dim suma As Vector3 = acc(sj)
+                For k = 0 To members.Count - 1
+                    If k = j Then Continue For
+                    Dim sk = slotDe(members(k))
+                    If sk < 0 Then Continue For
+                    Dim nk = norms(members(k))
+                    Dim lk As Single = nk.Length
+                    If lj <= 0.0F OrElse lk <= 0.0F Then Continue For
+                    If Vector3.Dot(nj, nk) / (lj * lk) <= cosUmbral Then Continue For
+                    suma += acc(sk)
+                Next
+                fusionadas(j) = suma
             Next
-            For Each vi In members
-                Dim sl = slotDe(vi)
-                If sl >= 0 Then acc(sl) = suma
+            For j = 0 To members.Count - 1
+                Dim sj = slotDe(members(j))
+                If sj >= 0 Then acc(sj) = fusionadas(j)
             Next
         Next
     End Sub
@@ -3014,7 +3067,14 @@ Public Class RecalcTBN
     ''' Precisión de la mantisa de IEEE-754 binary32: 2^-23. Es una propiedad del TIPO, no una
     ''' constante ajustada — <c>Single.Epsilon</c> NO sirve acá, que es el subnormal más chico.
     ''' </summary>
-    Private Const EpsilonDeMantisaSingle As Single = 1.1920929E-07F
+    ''' ⛔ DERIVADO, no transcrito: 2^-23 es la precision de la mantisa de IEEE-754 binary32. Estaba
+    ''' escrito como el literal `1.1920929E-07F`, que obliga a confiar en que alguien lo copio bien.
+    Private Shared ReadOnly EpsilonDeMantisaSingle As Single = 1.0F / (1UL << 23)
+
+    ''' ⭐ Precalculado. Estaba como `Math.Sqrt(...)` DENTRO de dos funciones que corren POR VERTICE:
+    ''' una raiz en Double mas la conversion, dos veces por vertice, sobre decenas de millones. Es una
+    ''' constante del TIPO — no depende de la malla ni del vertice — asi que se calcula una sola vez.
+    Private Shared ReadOnly RaizDeEpsilonSingle As Single = CSng(Math.Sqrt(1.0F / (1UL << 23)))
 
     ''' <summary>
     ''' ¿Los dos vectores son perpendiculares dentro de lo que permite el tipo? Un Gram-Schmidt sano
@@ -3046,7 +3106,7 @@ Public Class RecalcTBN
     ''' <c>sqrt(eps)</c>.
     ''' </summary>
     Private Shared Function ToleranciaDePerpendicularidad(N As Vector3) As Single
-        Dim piso As Single = CSng(Math.Sqrt(EpsilonDeMantisaSingle))
+        Dim piso As Single = RaizDeEpsilonSingle
         Dim delta As Single = Math.Abs(1.0F - N.LengthSquared)
         ' ⛔ La derivacion vale para una normal que es UNITARIA salvo la cuantizacion del formato: ahi
         ' `delta` es como mucho ~0,0136 (error de 1/255 por componente). Una normal cuya longitud no
@@ -3074,7 +3134,7 @@ Public Class RecalcTBN
         ' Entre primario y secundario no interviene: esa proyección usa un primario ya unitario, así
         ' que ahí lo único que queda es el redondeo.
         Dim tolN As Single = ToleranciaDePerpendicularidad(N)
-        Dim tolPuro As Single = CSng(Math.Sqrt(EpsilonDeMantisaSingle))
+        Dim tolPuro As Single = RaizDeEpsilonSingle
         Return SonPerpendiculares(N, primario, tolN) AndAlso
                SonPerpendiculares(N, secundario, tolN) AndAlso
                SonPerpendiculares(primario, secundario, tolPuro)
@@ -3115,6 +3175,13 @@ Public Class RecalcTBN
         Return OrthonormalTangentFromNormal(N)
     End Function
 
+    ''' <summary>
+    ''' Un eje perpendicular a la normal, deterministico, para cuando la geometria no determina
+    ''' ninguno. Se elige el eje del mundo MENOS alineado con la normal para que el producto cruz no
+    ''' salga degenerado; el 0,9 es el corte estandar de esa heuristica (con |n.x| &gt;= 0,9 la normal ya
+    ''' esta casi sobre X y conviene cruzar contra Y). No hay respuesta canonica: el canonico no llega
+    ''' hasta aca. Lo unico que importa es que sea SIEMPRE la misma para la misma normal.
+    ''' </summary>
     Private Shared Function OrthonormalTangentFromNormal(n As Vector3) As Vector3
         Dim ax As Vector3 = If(Math.Abs(n.X) < 0.9F, New Vector3(1, 0, 0), New Vector3(0, 1, 0))
         Dim t As Vector3 = Vector3.Cross(ax, n)
