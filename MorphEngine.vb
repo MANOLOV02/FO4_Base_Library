@@ -563,8 +563,9 @@ Public Class MorphEngine
         If ((recalculateNormals AndAlso huboCambioDePosicion) OrElse uvsCambiaron) AndAlso geom.dirtyVertexIndices.Count > 0 Then
             Dim opt As RecalcTBN.TBNOptions = Config_App.Current.Setting_TBN
             opt.KeepExistingNormals = soloTangentes
+            ' Devuelve una List, no un HashSet, y puede repetir vertices que ya estaban sucios: los
+            ' dos Add de abajo son idempotentes, asi que el ExceptWith que habia aca era optimizacion.
             Dim adicionales = RecalcTBN.RecalculateNormalsTangentsBitangents(geom, opt)
-            adicionales.ExceptWith(geom.dirtyVertexIndices)
             For Each ad In adicionales
                 geom.dirtyVertexIndices.Add(ad)
                 geom.dirtyVertexFlags(ad) = True

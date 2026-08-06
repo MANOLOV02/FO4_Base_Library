@@ -285,10 +285,42 @@ Public Class Config_App
             ' la correccion desactivada sin haberlo pedido. El angulo 0 no es un valor legitimo (con
             ' 0 grados no se promedia ningun companero), asi que sirve de centinela de "clave ausente".
             If Current.Setting_TBN.SmoothSeamNormalsAngle <= 0.0 Then
+                ' ⛔ Los valores salen de DefaultTBNOptions, que es donde viven los defaults. Repetirlos
+                ' aca dejaba el default declarado en dos lugares y este pisaba al otro en silencio.
+                Dim d = RecalcTBN.DefaultTBNOptions()
                 Dim t = Current.Setting_TBN
-                t.SmoothSeamNormals = True
-                t.SmoothSeamNormalsAngle = 60.0
+                t.SmoothSeamNormals = d.SmoothSeamNormals
+                t.SmoothSeamNormalsAngle = d.SmoothSeamNormalsAngle
                 Current.Setting_TBN = t
+            End If
+
+            ' ⛔ MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
+            ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0.
+            ' O sea que la estrenaria APAGADA sin haberlo pedido, en silencio. `OptionsVersion` dice con
+            ' que juego de opciones se escribio el archivo y aca se rellenan SOLO las posteriores; lo
+            ' que el usuario si eligio no se toca. Al agregar una opcion: subir la constante en
+            ' RecalcTBN y agregar su rama.
+            If Current.Setting_TBN.OptionsVersion < RecalcTBN.VersionDeOpcionesTBN Then
+                Dim d = RecalcTBN.DefaultTBNOptions()
+                Dim t = Current.Setting_TBN
+                If t.OptionsVersion < 1 Then
+                    ' Opcion NUEVA: sin esto quedaria en False para todo usuario existente.
+                    t.DeterministicOnCollapse = d.DeterministicOnCollapse
+                    ' ⛔ Y los dos defaults que CAMBIARON. No alcanza con migrar las claves nuevas: la
+                    ' version anterior ESCRIBIO estos valores al disco, asi que un usuario existente
+                    ' los tiene como si los hubiera elegido, y los dos estan medidos como peores.
+                    '   EpsilonPos 1e-12 -> 0 : el 1e-12 EMPEORA (FO4 CBBE, bitangente de costura
+                    '     0,52 -> 0,85 grados y su maximo 153 -> 180) y en SSE es inerte.
+                    '   WeldByPositionOnly False -> True : con False el welding no agrupa nada y la
+                    '     opcion queda en un no-op (dispersion del marco en el grupo 84,13 vs 6,19
+                    '     grados). Solo se lee con EnableWelding puesta, que viene apagada.
+                    ' Los dos se pueden volver a poner desde la pantalla de configuracion.
+                    t.EpsilonPos = d.EpsilonPos
+                    t.WeldByPositionOnly = d.WeldByPositionOnly
+                End If
+                t.OptionsVersion = RecalcTBN.VersionDeOpcionesTBN
+                Current.Setting_TBN = t
+                SaveConfig()
             End If
         End If
     End Sub

@@ -2385,9 +2385,10 @@ Public Class PreviewModel
                             Sub(rango As Tuple(Of Integer, Integer))
                                 For i = rango.Item1 To rango.Item2 - 1
                                     Dim vv = gv(i) : posF(i) = New Vector3(CSng(vv.X), CSng(vv.Y), CSng(vv.Z))
-                                    Dim nn = gn(i) : nrmF(i) = New Vector3(CSng(nn.X), CSng(nn.Y), CSng(nn.Z))
-                                    Dim tt = gt(i) : tanF(i) = New Vector3(CSng(tt.X), CSng(tt.Y), CSng(tt.Z))
-                                    Dim bb = gb(i) : bitanF(i) = New Vector3(CSng(bb.X), CSng(bb.Y), CSng(bb.Z))
+                                    ' N/T/B ya son Single: copia de struct, sin conversion.
+                                    nrmF(i) = gn(i)
+                                    tanF(i) = gt(i)
+                                    bitanF(i) = gb(i)
                                 Next
                             End Sub
                         If vertexCount >= 2000 Then
@@ -2791,9 +2792,13 @@ Public Class PreviewModel
             GL.BindVertexArray(vao)
 
             Dim posF() As Vector3 = Array.ConvertAll(MeshData.Meshgeometry.Vertices, Function(v) New Vector3(v.X, v.Y, v.Z))
-            Dim nrmF() As Vector3 = Array.ConvertAll(MeshData.Meshgeometry.Normals, Function(v) New Vector3(v.X, v.Y, v.Z))
-            Dim tanF() As Vector3 = Array.ConvertAll(MeshData.Meshgeometry.Tangents, Function(v) New Vector3(v.X, v.Y, v.Z))
-            Dim bitanF() As Vector3 = Array.ConvertAll(MeshData.Meshgeometry.Bitangents, Function(v) New Vector3(v.X, v.Y, v.Z))
+            ' ⭐ N/T/B ya ESTAN en Single (ver SkinnedGeometry.Normals): van derecho al VBO. Antes cada
+            ' creacion de buffers alocaba tres arrays float de la malla entera solo para convertir
+            ' desde Double — 36 B por vertice de basura y un barrido de N por shape. El valor que sube
+            ' a la GPU es exactamente el mismo: el ConvertAll hacia esa misma narrowing.
+            Dim nrmF() As Vector3 = MeshData.Meshgeometry.Normals
+            Dim tanF() As Vector3 = MeshData.Meshgeometry.Tangents
+            Dim bitanF() As Vector3 = MeshData.Meshgeometry.Bitangents
 
             ' POSICIONES — DynamicDraw
             GL.BindBuffer(BufferTarget.ArrayBuffer, vboPosition)

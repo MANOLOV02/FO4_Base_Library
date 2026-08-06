@@ -1,4 +1,4 @@
-Imports NiflySharp
+﻿Imports NiflySharp
 Imports NiflySharp.Structs
 Imports SysNumerics = System.Numerics
 
@@ -42,6 +42,35 @@ Public Interface IShapeGeometry
     ReadOnly Property HasEyeData As Boolean
     ReadOnly Property IsSkinned As Boolean
     ReadOnly Property Bounds As BoundingSphere
+
+    ''' <summary>
+    ''' True si el bloque guarda la normal CUANTIZADA A BYTE (3 sbyte por vertice) en vez de en float.
+    '''
+    ''' ⭐ No es un detalle de serializacion: <c>BSTriShape::CalcTangentSpace</c> llama
+    ''' <c>UpdateRawNormals()</c> en su primera linea (nifly Geometry.cpp:975), y esa funcion
+    ''' RE-DECODIFICA las normales desde esos bytes (Geometry.cpp:642), pisando la copia de plena
+    ''' precision. O sea que el canonico ortogonaliza la base tangente contra la normal cuantizada, y
+    ''' medio paso de cuantizacion son 0,45 grados. En el PRIMARIO eso es un sesgo chico; en el
+    ''' SECUNDARIO de un shell de UV espejado —donde el residuo del Gram-Schmidt es mas chico que ese
+    ''' error— decide el SIGNO. Sin replicarlo no hay paridad posible en esos vertices.
+    ''' </summary>
+    ReadOnly Property NormalsAreByteQuantized As Boolean
+
+    ''' <summary>
+    ''' True si el bloque guarda las UV en HALF (16 bits). <c>BSTriShape</c> lo hace SIEMPRE, en los
+    ''' dos juegos y sin condicional de precision (nifly Geometry.cpp:535).
+    ''' ⭐ Importa porque <c>CalcTangentSpace</c> deriva s1/s2/t1/t2 de <c>vertData[i].uv</c>, o sea
+    ''' de las UV ya redondeadas. El paso de half en [0,1] es ~5e-4: contra float es enorme, y en una
+    ''' costura de UV espejado —donde los aportes de los dos lados casi se cancelan— es lo unico que
+    ''' queda del acumulado, asi que define el SIGNO de la bitangente.
+    ''' </summary>
+    ReadOnly Property UvsAreHalfPrecision As Boolean
+
+    ''' <summary>
+    ''' Indices cuya normal NO se recalcula: el <c>NiIntegersExtraData</c> llamado <c>LOCKEDNORM</c>.
+    ''' El canonico los saltea en <c>NifFile::CalcNormalsForShape</c>. Nothing si la shape no lo trae.
+    ''' </summary>
+    Function GetLockedNormalIndices() As HashSet(Of Integer)
 
     ' ─────────────── Read ───────────────
     ''' <summary>Vertex positions in shape-local space.  Always returns VertexCount entries.</summary>

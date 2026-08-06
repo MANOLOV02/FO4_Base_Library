@@ -152,6 +152,40 @@ Public Class NiTriShapeGeometry
         _syntheticSkinning = data
     End Sub
 
+    ''' <summary>No: <c>NiTriShapeData.Normals</c> son <c>Vector3</c> float. Ver la nota de la
+    ''' interfaz.</summary>
+    Public ReadOnly Property NormalsAreByteQuantized As Boolean Implements IShapeGeometry.NormalsAreByteQuantized
+        Get
+            Return False
+        End Get
+    End Property
+
+    ''' <summary>No: <c>NiTriShapeData</c> guarda las UV como <c>TexCoord</c> float.</summary>
+    Public ReadOnly Property UvsAreHalfPrecision As Boolean Implements IShapeGeometry.UvsAreHalfPrecision
+        Get
+            Return False
+        End Get
+    End Property
+
+    ''' <summary>Indices de LOCKEDNORM; Nothing si la shape no trae ese extra data.</summary>
+    Public Function GetLockedNormalIndices() As HashSet(Of Integer) Implements IShapeGeometry.GetLockedNormalIndices
+        Dim lista = _shape?.ExtraDataList
+        If lista Is Nothing OrElse lista.References Is Nothing Then Return Nothing
+        Dim res As HashSet(Of Integer) = Nothing
+        For Each ref In lista.References
+            If ref.Index < 0 OrElse ref.Index >= _nif.Blocks.Count Then Continue For
+            Dim ints = TryCast(_nif.Blocks(CInt(ref.Index)), NiIntegersExtraData)
+            If ints Is Nothing OrElse ints.Data Is Nothing Then Continue For
+            If Not String.Equals(ints.Name?.String, "LOCKEDNORM", StringComparison.Ordinal) Then Continue For
+            If res Is Nothing Then res = New HashSet(Of Integer)()
+            For Each v In ints.Data
+                res.Add(CInt(v))
+            Next
+        Next
+        Return res
+    End Function
+
+
     Public ReadOnly Property Bounds As BoundingSphere Implements IShapeGeometry.Bounds
         Get
             Dim d = GetData()
