@@ -541,9 +541,13 @@ Public Class MorphEngine
         Dim soloTangentes As Boolean = Not (recalculateNormals AndAlso huboCambioDePosicion)
         If uvsCambiaron Then
             ' ⭐ SOLO los vertices cuyas UV se movieron. RecalculateNormalsTangentsBitangents hace
-            ' la clausura sola (dirty -> triangulos incidentes -> los 3 vertices de cada uno) y elige
-            ' acumuladores SPARSE por debajo del 40 % de los triangulos. Marcar la malla entera
-            ' forzaba el camino full y el maximo trabajo posible en CADA tick del arrastre.
+            ' la clausura sola (dirty -> triangulos incidentes -> los 3 vertices de cada uno) y
+            ' dimensiona los acumuladores A ESA CLAUSURA, no a la malla. Marcar la malla entera
+            ' forzaba el maximo trabajo posible en CADA tick del arrastre.
+            ' ⛔ Este comentario decia "elige acumuladores SPARSE por debajo del 40 % de los
+            ' triangulos": esa rama YA NO EXISTE. Se fue al unificar el camino sparse y el full en uno
+            ' solo indexado por ranura. Un comentario que describe una rama muerta manda a buscar un
+            ' umbral que no esta en ningun lado.
             For Each iv In uvTocados
                 If iv >= 0 AndAlso iv < count Then
                     geom.dirtyVertexIndices.Add(iv)

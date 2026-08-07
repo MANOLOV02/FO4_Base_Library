@@ -2564,14 +2564,34 @@ Public Class RecalcTBN
         ' la longitud cruda contra el cuadrado: el umbral efectivo era `sqrt(eps)`. Con el default 0 da
         ' lo mismo (0² = 0 y el predicado es `> 0` en los dos casos), asi que la salida por defecto no
         ' se mueve un byte; para cualquier otro valor recien ahora el numero significa lo que dice.
-        Dim epsPosSq As Single = CSng(opts.EpsilonPos * opts.EpsilonPos)
+        ' ⛔ SANEADO antes de elevar al cuadrado, y no es defensa decorativa: el cuadrado convierte
+        ' entradas invalidas en un umbral que DESCARTA TODO en silencio, y la salida no seria un error
+        ' sino una malla con la base tangente inventada por la rama degenerada en cada vertice.
+        '   · NaN  -> `x > NaN` es False para todo x ⇒ cero aportes, sin excepcion que lo delate.
+        '   · +Inf, o un valor grande que al elevarlo al cuadrado desborda a +Inf en Single ⇒ idem.
+        '   · NEGATIVO ⇒ el cuadrado lo vuelve POSITIVO y grande: -1 pasaba de "no filtrar nada"
+        '     (`LengthSquared > -1` es siempre cierto) a filtrar con umbral 1. Ese cambio de sentido lo
+        '     introdujo el paso a longitud-al-cuadrado y hay que taparlo acá: la UI tiene el minimo en
+        '     0, pero un config.json editado a mano no, y la migracion deja pasar los negativos.
+        ' ⛔ SON DOS POLITICAS DISTINTAS, a proposito, y la diferencia es si el numero es algo que el
+        ' usuario pudo haber QUERIDO:
+        '   · NaN, ±Inf y negativo -> 0 (el canonico, sin umbral). Ninguno de los tres es un umbral que
+        '     alguien pueda pretender; son corrupcion del config o el efecto no deseado del cuadrado.
+        '   · Un finito enorme (1e200) -> SATURA en `Single.MaxValue`, o sea descarta todo. NO cae a 0.
+        '     Es lo que el usuario pidio, y ademas es lo que ya hacia ANTES de este cambio: `CSng(1e200)`
+        '     daba +Inf y `LengthSquared > Inf` descartaba todo igual. Mandarlo a 0 seria ignorar en
+        '     silencio un numero que alguien escribio, que es peor que obedecerlo.
+        ' La saturacion existe para no ESCRIBIR un infinito en el umbral, no para acotar el efecto.
+        Dim epsPosLong As Double = opts.EpsilonPos
+        If Double.IsNaN(epsPosLong) OrElse Double.IsInfinity(epsPosLong) OrElse epsPosLong <= 0.0 Then epsPosLong = 0.0
+        Dim epsPosSq As Single = CSng(Math.Min(epsPosLong * epsPosLong, CDbl(Single.MaxValue)))
         Dim cuantizaNormal As Boolean = geo.Geometry IsNot Nothing AndAlso geo.Geometry.NormalsAreByteQuantized
 
         ' ---- welding: agrupación propia de WM (posición [+ UV]), opt-in ----
         Dim masterOf() As Integer = Nothing
         Dim membersOf As Dictionary(Of Integer, List(Of Integer)) = Nothing
         If opts.EnableWelding Then
-            BuildWeldGroups(geo, opts.WeldPosEpsilon, opts.WeldUVEpsilon, opts.WeldByPositionOnly, masterOf, membersOf)
+            BuildWeldGroups(geo, opts.WeldPosEpsilon, opts.WeldUVEpsilon, opts.WeldByPositionOnly, masterOf, membersOf, geo.CachedTBN)
         End If
 
         ' ---- grupos de costura: posición coincidente, réplica de SortingMatcher ----
@@ -3098,7 +3118,9 @@ Public Class RecalcTBN
     ''' conjunto se devolvia al llamador como "vertices tocados", que era falso: se arma sobre la malla
     ''' ENTERA y no sobre la clausura. Ver <see cref="AdicionalesDe"/>. Sin ese consumidor, armarlo era
     ''' un HashSet del tamaño de la malla por llamada, para nada.</remarks>
-    Private Shared Sub BuildWeldGroups(ByRef geo As SkinnedGeometry, ByVal weldPosEpsOrig As Double, ByVal weldUVEps As Double, ByVal byPosOnly As Boolean, ByRef masterOf() As Integer, ByRef membersOf As Dictionary(Of Integer, List(Of Integer)))
+    Private Shared Sub BuildWeldGroups(ByRef geo As SkinnedGeometry, ByVal weldPosEpsOrig As Double, ByVal weldUVEps As Double, ByVal byPosOnly As Boolean,
+                                       ByRef masterOf() As Integer, ByRef membersOf As Dictionary(Of Integer, List(Of Integer)),
+                                       ByRef cache As TBNCache)
         Dim n As Integer = geo.Vertices.Length
         masterOf = New Integer(n - 1) {}
         membersOf = New Dictionary(Of Integer, List(Of Integer))(n)
@@ -3119,152 +3141,64 @@ Public Class RecalcTBN
             Exit Sub
         End If
 
-        ' Hash buckets por celda cuantizada.
-        ' ⛔ Se barre la celda propia y TODAS sus vecinas. Mirar solo la celda propia dejaba fuera a los
-        ' pares que caen a los dos lados de un borde de grilla: estaba medido que era el 64 % de los que
-        ' pasan el predicado de distancia. Con una sola celda la agrupacion dependia de donde cayera la
-        ' grilla, no de la geometria.
-        ' ⛔ La grilla tiene CINCO ejes cuando se agrupa por posicion Y UV, y el barrido tiene que
-        ' cubrirlos a los cinco. Corriendo solo x/y/z, dos vertices con la UV a menos de `weldUVEps`
-        ' pero a los dos lados de un borde de celda de UV caian en buckets distintos y NO se comparaban
-        ' nunca: exactamente el problema de bordes de grilla que este barrido existe para evitar, con la
-        ' agravante de que el default de `WeldUVEpsilon` es 1e-12, o sea celdas de UV diminutas donde
-        ' caer del lado equivocado del borde es lo NORMAL y no la excepcion.
-        Dim buckets As New Dictionary(Of WeldKey, List(Of Integer))(n)
+        ' ⭐⭐ SE AGRUPA SOBRE EL ORDEN POR X, el mismo que mantiene el agrupado de costura entre
+        ' llamadas. Antes esto armaba una GRILLA HASH propia —cuantizar cada vertice a una celda,
+        ' meterlo en un diccionario y barrer las celdas vecinas— y el costo era brutal:
+        '
+        '   MEDIDO (`Tools\TbnPerfProbe`, modo `weldarrastre`), arrastre de UN vertice:
+        '     malla de  9.409 vertices: 0,27 ms sin welding vs 25,6 ms con welding = 96x
+        '     malla de 22.201 vertices: 0,55 ms sin welding vs 33,6 ms con welding = 61x
+        '
+        ' O sea que mover un vertice pagaba como si se hubieran movido los 22.201, en cada tick de un
+        ' arrastre, y un cuadro a 60 fps dura 16,6 ms: UNA shape con welding puesto se comia dos
+        ' cuadros. La causa no era el barrido de vecinas en si sino que la grilla se reconstruye ENTERA
+        ' en cada recalculo; y encima el barrido son 27 consultas al diccionario por vertice agrupando
+        ' por posicion, y 243 agrupando por posicion Y UV.
+        '
+        ' El orden por X ya esta calculado y ya se mantiene incremental (ver `OrdenPorX`), y el
+        ' predicado de posicion del weld es del mismo tipo que el del canonico —L-infinito contra un
+        ' epsilon— asi que el mismo barrido hacia adelante con corte por X sirve, con OTRO epsilon.
+        ' Resultado: sin diccionario, sin hashing, sin cuantizar, y sin una segunda ley de agrupado.
+        '
+        ' ⛔ ESTO CAMBIA LA AGRUPACION respecto de la version de grilla, y por lo tanto la salida
+        ' cuando `EnableWelding` esta puesto. Es inevitable: el resultado de la version vieja era "el
+        ' primer candidato que aparece recorriendo los vertices en orden de indice", o sea que dependia
+        ' del orden de recorrido. Acá el grupo queda definido como "todos los que coinciden con el
+        ' PRIMERO en orden de X", que es la misma forma que usa `ConstruyeGruposDeCostura` y la misma
+        ' del `SortingMatcher` canonico. Es una definicion mas firme, no sólo mas rapida.
+        Dim orden() As Integer = Nothing
+        Dim clave() As Double = Nothing
+        OrdenPorX(geo.Vertices, n, cache, True, orden, clave)
 
-        For i As Integer = 0 To n - 1
-            Dim p As Vector3d = geo.Vertices(i)
-            Dim uv As Vector3 = geo.Uvs_Weight(i)
-
-            ' Clave cuantizada por tolerancia (redondeo a celda)
-            Dim key As WeldKey = WeldKey.From(p, uv, weldPosEps, weldUVEps, byPosOnly)
-
-            Dim list As List(Of Integer) = Nothing
-            If Not buckets.TryGetValue(key, list) Then
-                list = New List(Of Integer)()
-                buckets(key) = list
-            End If
-
-            ' Chequeo fino sobre la celda propia y todas las vecinas.
-            Dim cand As Integer = BuscaCompanero(geo, i, p, uv, key, buckets, weldPosEps, weldUVEps, byPosOnly)
-            If cand >= 0 Then
-                masterOf(i) = masterOf(cand)
-                membersOf(masterOf(cand)).Add(i)
-                list.Add(i)
-            Else
-                ' Nuevo grupo con i como maestro
-                masterOf(i) = i
-                list.Add(i)
-                membersOf(i) = New List(Of Integer)(4) From {i}
-            End If
+        Dim asignado(n - 1) As Boolean
+        For si As Integer = 0 To n - 1
+            Dim vi As Integer = orden(si)
+            If asignado(vi) Then Continue For
+            asignado(vi) = True
+            masterOf(vi) = vi
+            Dim grupo As New List(Of Integer)(4) From {vi}
+            For mi As Integer = si + 1 To n - 1
+                ' Corte por X: `ClosePos` exige |dx| <= eps, asi que en cuanto la diferencia lo supera
+                ' no puede haber mas candidatos mas adelante — el orden es creciente en X.
+                If clave(mi) - clave(si) > weldPosEps Then Exit For
+                Dim vj As Integer = orden(mi)
+                If asignado(vj) Then Continue For
+                If Not ClosePos(geo.Vertices(vj), geo.Vertices(vi), weldPosEps) Then Continue For
+                If Not byPosOnly AndAlso Not CloseUV(geo.Uvs_Weight(vj), geo.Uvs_Weight(vi), weldUVEps) Then Continue For
+                asignado(vj) = True
+                masterOf(vj) = vi
+                grupo.Add(vj)
+            Next
+            membersOf(vi) = grupo
         Next
     End Sub
 
-    ''' <summary>
-    ''' El primer vertice ya registrado que suelda con <paramref name="i"/>, o -1. Barre la celda propia
-    ''' y las vecinas en los ejes que la clave realmente usa: 27 celdas agrupando solo por posicion, 243
-    ''' agrupando por posicion Y UV.
-    '''
-    ''' ⛔ Sale como funcion propia porque con cinco ejes el barrido con `Exit For` anidado eran cinco
-    ''' banderas y cinco cortes, y equivocarse en uno solo deja el eje sin barrer EN SILENCIO — que es
-    ''' exactamente el defecto que se esta arreglando.
-    ''' ⭐ El orden del barrido es parte de la ley: el resultado es el PRIMER candidato que pasa el
-    ''' predicado, asi que recorrer las celdas en otro orden puede cambiar a que grupo entra un vertice
-    ''' que esta cerca de dos. Se fija de menor a mayor desplazamiento, con la celda propia adentro del
-    ''' recorrido y no antes, que es lo que hacia la version de 27 celdas.
-    ''' </summary>
-    Private Shared Function BuscaCompanero(ByRef geo As SkinnedGeometry, i As Integer,
-                                           p As Vector3d, uv As Vector3, key As WeldKey,
-                                           buckets As Dictionary(Of WeldKey, List(Of Integer)),
-                                           weldPosEps As Double, weldUVEps As Double,
-                                           byPosOnly As Boolean) As Integer
-        ' Con `byPosOnly` la clave deja qu/qv en cero, asi que desplazarlos solo generaria 216 consultas
-        ' garantizadas a fallar.
-        Dim uvLo As Integer = If(byPosOnly, 0, -1)
-        Dim uvHi As Integer = If(byPosOnly, 0, 1)
-        For dv = uvLo To uvHi
-            For du = uvLo To uvHi
-                For dz = -1 To 1
-                    For dy = -1 To 1
-                        For dx = -1 To 1
-                            Dim vecina As List(Of Integer) = Nothing
-                            If Not buckets.TryGetValue(key.Desplazada(dx, dy, dz, du, dv), vecina) Then Continue For
-                            For Each cand As Integer In vecina
-                                If cand = i Then Continue For
-                                If Not ClosePos(geo.Vertices(cand), p, weldPosEps) Then Continue For
-                                If Not byPosOnly AndAlso Not CloseUV(geo.Uvs_Weight(cand), uv, weldUVEps) Then Continue For
-                                Return cand
-                            Next
-                        Next
-                    Next
-                Next
-            Next
-        Next
-        Return -1
-    End Function
-
-
-    ' Clave de bucket (cuantización por eps)
-    Private Structure WeldKey
-        Public qx As Long, qy As Long, qz As Long
-        Public qu As Long, qv As Long
-
-        Public Shared Function From(p As Vector3d, uv As Vector3, posEps As Double, uvEps As Double, byPosOnly As Boolean) As WeldKey
-            Dim invPos As Double = If(posEps > 0.0, 1.0 / posEps, 0.0)
-            Dim invUV As Double = If(uvEps > 0.0, 1.0 / uvEps, 0.0)
-
-            Dim k As WeldKey
-            k.qx = QuantizeToLong(p.X, invPos)
-            k.qy = QuantizeToLong(p.Y, invPos)
-            k.qz = QuantizeToLong(p.Z, invPos)
-            If byPosOnly Then
-                k.qu = 0 : k.qv = 0
-            Else
-                k.qu = QuantizeToLong(uv.X, invUV)
-                k.qv = QuantizeToLong(uv.Y, invUV)
-            End If
-            Return k
-        End Function
-
-        ''' <summary>La misma clave corrida una celda en cada eje: hace falta para barrer las vecinas,
-        ''' porque dos vertices a menos de epsilon pueden caer a los dos lados de un borde de grilla y
-        ''' en celdas distintas.
-        ''' ⛔ Los CINCO ejes, no tres. La clave incluye qu/qv cuando se agrupa por posicion Y UV, y
-        ''' desplazar solo la posicion dejaba el borde de grilla de la UV sin barrer: dos UV a menos de
-        ''' `WeldUVEpsilon` pero en celdas distintas no se comparaban nunca.</summary>
-        Public Function Desplazada(dx As Integer, dy As Integer, dz As Integer,
-                                   du As Integer, dv As Integer) As WeldKey
-            Dim k As WeldKey = Me
-            k.qx += dx : k.qy += dy : k.qz += dz
-            k.qu += du : k.qv += dv
-            Return k
-        End Function
-
-        Private Shared Function QuantizeToLong(val As Double, invStep As Double) As Long
-            If invStep <= 0.0 Then Return 0
-            If Double.IsNaN(val) OrElse Double.IsInfinity(val) Then Return 0
-            Dim q As Double = Math.Round(val * invStep)
-            Const LMAX As Double = 9.2233720368547758E+18
-            Const LMIN As Double = -9.2233720368547758E+18
-            If q > LMAX Then Return Long.MaxValue
-            If q < LMIN Then Return Long.MinValue
-            Return CLng(q)
-        End Function
-
-        Public Overrides Function GetHashCode() As Integer
-            ' versión segura (sin overflow)
-            Dim hc As New HashCode()
-            hc.Add(qx) : hc.Add(qy) : hc.Add(qz) : hc.Add(qu) : hc.Add(qv)
-            Return hc.ToHashCode()
-        End Function
-
-        Public Overrides Function Equals(obj As Object) As Boolean
-            If TypeOf obj IsNot WeldKey Then Return False
-            Dim o As WeldKey = CType(obj, WeldKey)
-            Return qx = o.qx AndAlso qy = o.qy AndAlso qz = o.qz AndAlso qu = o.qu AndAlso qv = o.qv
-        End Function
-    End Structure
-
+    ' ⛔ Aca vivian `BuscaCompanero` y la Structure `WeldKey` (clave cuantizada + barrido de 27 o 243
+    ' celdas vecinas + `QuantizeToLong` + `IEquatable`). Se fueron enteros al pasar el agrupado al
+    ' orden por X: sin grilla no hay celdas que barrer, y el bug de "dos vertices a menos de epsilon
+    ' caen a los dos lados de un borde de celda" desaparece POR CONSTRUCCION en vez de taparse con un
+    ' barrido de vecinas. Un barrido de vecinas es siempre la señal de que la estructura de indexado
+    ' no es la que corresponde al predicado.
     ' Comparación fina por componente (posición)
     Private Shared Function ClosePos(a As Vector3d, b As Vector3d, eps As Double) As Boolean
         Return Math.Abs(a.X - b.X) <= eps AndAlso Math.Abs(a.Y - b.Y) <= eps AndAlso Math.Abs(a.Z - b.Z) <= eps
