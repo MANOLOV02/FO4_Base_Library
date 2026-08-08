@@ -498,7 +498,10 @@ Public Module FaceTintCompositor
     ''' <para>⚠️ Los dos del <c>TextOverlayRenderer</c> (Render.vb) quedan afuera porque son variables LOCALES
     ''' dentro de un <c>Private Sub</c>: para incluirlos habría que izarlos a constantes. Es el overlay de
     ''' TEXTO, no un camino de cara; se deja anotado en vez de refactorizar de prepo.</para></summary>
-    Private Function AllShaderSources() As (Name As String, Text As String)()
+    ''' <remarks>`Friend` y no `Private` para que el gate de BUILD (Tools/ParityGate, `glsl-ascii`) pueda
+    ''' barrer los ocho fuentes. El gate SALIO de esta lib el 2026-08-08: es lexico sobre strings constantes,
+    ''' da lo mismo en toda maquina ⇒ no tiene nada que hacer corriendo en el proceso del usuario.</remarks>
+    Friend Function AllShaderSources() As (Name As String, Text As String)()
         Return New (Name As String, Text As String)() {
             ("FACETINT-VERTEX", VertexShaderSource),
             ("FACETINT-FRAGMENT", FragmentShaderSource),
@@ -510,24 +513,10 @@ Public Module FaceTintCompositor
             ("RENDER-SSE-FRAGMENT", Shader_Class_SSE.Fragment_SSE)}
     End Function
 
-    Public Function ShaderSourceAsciiSelfTest() As String
-        For Each src In AllShaderSources()
-            Dim line As Integer = 1, col As Integer = 1
-            For Each ch In src.Text
-                If ch = vbLf Then
-                    line += 1 : col = 1
-                Else
-                    If AscW(ch) > 127 Then
-                        Return $"ShaderSourceAsciiSelfTest: el shader {src.Name} tiene un caracter NO-ASCII " &
-                               $"U+{AscW(ch):X4} ('{ch}') en la linea {line}, columna {col}. El GLSL tiene que ser " &
-                               "ASCII puro o el shader NO COMPILA (y el fallo es mudo en Release)."
-                    End If
-                    col += 1
-                End If
-            Next
-        Next
-        Return ""
-    End Function
+    ' ⛔ EL GATE `glsl-ascii` YA NO VIVE ACA. Se mudó a Tools/ParityGate (LawGates.ShaderSourceAsciiGate) el
+    ' 2026-08-08: es léxico sobre strings constantes, o sea que da EXACTAMENTE lo mismo en toda máquina, y
+    ' corría en el proceso del usuario en cada primer bake. Sigue siendo obligatorio antes de publicar —
+    ' un no-ASCII deja el shader sin compilar y el fallo es MUDO en Release.
 
     Private Const VertexShaderSource As String = "#version 430
 layout(location = 0) in vec2 aPos;

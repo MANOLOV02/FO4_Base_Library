@@ -19,6 +19,23 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Tools/ParityGate corre los self-tests que NO dependen de la maquina del usuario (leyes del
+         resolver, lexico del GLSL, golden absolutos). Vivian DENTRO de esta lib y corrian en el proceso
+         del usuario; salieron el 2026-08-08. Esto les da acceso a los miembros `Friend` que ya usaban,
+         SIN volver Public nada: la superficie de API que se distribuye no cambia.
+         Ver memoria 00-reglas-self-tests-no-van-en-el-binario. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ParityGate</_Parameter1>
+    </AssemblyAttribute>
+    <!-- Idem: ObtsRoundTripSelfTest (386 lineas) vivia en ESP/ DE ESTA LIB y no lo llamaba NINGUNA de las
+         tres apps — solo esta probe. Se mudo el 2026-08-08 y llega a ParseOBTSPayload / BuildObtsPayload
+         (Friend) desde afuera, que era la unica razon por la que estaba adentro. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ObtsBlockRoundtripProbe</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
     <Import Include="System.Data" />
     <Import Include="System.Drawing" />
     <Import Include="System.Windows.Forms" />

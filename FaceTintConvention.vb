@@ -303,8 +303,8 @@ Public Module FaceTintConvention
         ''' caia en el bucket del CANAL y eso estaba declarado como PROVISIONAL. Ahora tiene el suyo.
         ''' <para>El default es un CLON del bucket del canal ⇒ byte-inerte: separar la etapa no cambia un
         ''' byte hasta que el usuario mueva ESTE bucket. ⛔ Su <c>AccumInCompositeSpace</c> tiene que seguir
-        ''' coincidiendo con el del tint o el acumulador viviria en dos espacios: lo vigila
-        ''' <see cref="AccumSpaceConsistencySelfTest"/>, que SI incluye Fold y Overlay.</para></summary>
+        ''' coincidiendo con el del tint o el acumulador viviria en dos espacios: lo vigila el gate de BUILD
+        ''' `accum-space` (Tools/ParityGate), que SI incluye Fold y Overlay.</para></summary>
         Public Property Fold As FaceTintBucketConvention
         ''' <summary>Bucket de los OVERLAYS de RaceMenu. Misma historia y mismo criterio que
         ''' <see cref="Fold"/>: default = clon del bucket del canal ⇒ byte-inerte.</summary>
@@ -726,42 +726,10 @@ Public Module FaceTintConvention
         Return Math.Max(0.0F, Math.Min(1.0F, intensity))
     End Function
 
-    ''' <summary>⭐ El acumulador de un canal es UN SOLO buffer que cruza todas las etapas, así que todas
-    ''' tienen que resolver el MISMO espacio de acumulador. Este test lo verifica para las 5 etapas × 3
-    ''' canales en vez de confiar en que el resolver siga eligiendo el bucket del canal.
-    ''' <para>⛔ NO hace early-return: no usa SIMD ni GL, así que corre en toda máquina. Es el tipo de test
-    ''' que el gate necesitaba — los siete de espejo vectorial se saltean solos donde no hay SIMD.</para>
-    ''' <para>Qué atraparía: que alguien le dé bucket propio a Overlay o a Fold (fases 7 y 8) y ese bucket
-    ''' traiga su propio <c>AccumInCompositeSpace</c>. Ahí las etapas escribirían el mismo buffer en dos
-    ''' espacios distintos y la salida sería basura sin que falle nada.</para></summary>
-    Public Function AccumSpaceConsistencySelfTest() As String
-        ' ⛔ RegionSwap QUEDA FUERA, y no por comodidad: es la única etapa con bucket propio, y su
-        ' `AccumInCompositeSpace` NO participa del storage POR DISEÑO (ver AccumSpaceForChannel, que resuelve
-        ' siempre con la etapa de tint). Medido en FO4 Release: el tint resuelve Linear (AccumInCompositeSpace
-        ' del bucket Diffuse = True) y el swap resolvería G22 — divergencia REAL y esperada, que nadie consume
-        ' porque ningún compositor lee `ResolveConvention(RegionSwap, ...).AccumSpace`. Lo que sí se vigila de
-        ' esa etapa es que su OutputSpace coincida con el acumulador, y eso ya lo latchea NoteSwapAccumMismatch.
-        ' Incluirla acá hacía fallar el gate y ABORTABA el bake de FO4 — el test estaba mal, no el código.
-        ' ⭐ RegionSwap YA ENTRA. La nota de arriba describía el estado ANTERIOR: el AccumSpace salía del
-        ' bucket de la ETAPA, así que el swap resolvía G22 donde el tint resolvía Linear y meter el swap acá
-        ' hacía fallar el gate y abortaba el bake de FO4. Desde que `AccumSpace` se resuelve con el bucket del
-        ' CANAL (ver ResolveConvention) esa divergencia NO PUEDE existir, y la etapa entra al barrido como
-        ' cualquier otra. Que este test pase con RegionSwap adentro ES la prueba de que la ley es estructural.
-        Dim stages = New FaceTintStage() {FaceTintStage.TintDiffuse, FaceTintStage.TintNormalSpecular,
-                                          FaceTintStage.Overlay, FaceTintStage.Fold, FaceTintStage.RegionSwap}
-        For Each ch In New FaceTintChannel() {FaceTintChannel.Diffuse, FaceTintChannel.Normal, FaceTintChannel.Specular}
-            ' La referencia es la etapa de TINT del canal: es la que gobierna el storage (ver AccumSpaceForChannel).
-            Dim want = ResolveConvention(TintStageFor(ch), ch, isTextureSet:=False, blendOp:=0).AccumSpace
-            For Each st In stages
-                Dim got = ResolveConvention(st, ch, isTextureSet:=False, blendOp:=0).AccumSpace
-                If got <> want Then
-                    Return $"canal {ch}: la etapa {st} resuelve AccumSpace={got} pero la etapa de tint resuelve {want}. " &
-                           "El acumulador es UN buffer compartido por todas las etapas: no puede vivir en dos espacios."
-                End If
-            Next
-        Next
-        Return ""
-    End Function
+    ' ⛔ EL GATE `accum-space` YA NO VIVE ACA. Se mudó a Tools/ParityGate
+    ' (LawGates.AccumSpaceConsistencyGate) el 2026-08-08: es una invariante de la LEY, sin aritmética ni
+    ' SIMD, o sea que da lo mismo en toda máquina. Vigila que las 5 etapas × 3 canales resuelvan el MISMO
+    ' AccumSpace — el acumulador es UN buffer compartido y no puede vivir en dos espacios.
 
     ''' <summary>OutputSpace del acumulador de un canal — el espacio en el que el compose tiene que DEJAR el
     ''' resultado, y el destino del unico pase final. Mismo resolver y mismos argumentos que
@@ -897,7 +865,8 @@ Public Module FaceTintConvention
         ' Diffuse de SSE persistido tiene False — MEDIDO en los config del arnés, no supuesto. Hoy no se nota
         ' porque la ley SSE es all-Linear y las dos fórmulas dan Linear; el día que un espacio deje de serlo,
         ' las etapas escribirían EL MISMO buffer en dos espacios distintos y la salida sería basura sin que
-        ' falle nada. Era exactamente el escenario que AccumSpaceConsistencySelfTest declara vigilar.
+        ' falle nada. Era exactamente el escenario que el gate de BUILD `accum-space` (Tools/ParityGate)
+        ' declara vigilar.
         ' ⛔ Con stage = la etapa de tint del canal (el caso de TODOS los callers previos) `storage` ES
         ' `bucket` ⇒ byte-idéntico. Sólo cambia para las etapas con bucket propio, que es la corrección.
         Dim storage As FaceTintBucketConvention =

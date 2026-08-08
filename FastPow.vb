@@ -499,7 +499,7 @@ Public Module FastPow
     ' (1/4 + 1/16 + 1/64 + 1/256 = 0,33203), que es lo unico que `Vector(Of Integer)` sabe hacer sin division.
     ' Con un error inicial peor que 30 % los cuatro pasos de Newton (convergencia cuadratica) llegan al ULP.
     ' Escalar y vectorial ejecutan LA MISMA secuencia de operaciones en el MISMO orden ⇒ bit-identicos por
-    ' construccion, no por aproximacion. Lo verifica FaceTintCpuCompositor.SoftLightInverseSelfTest a traves
+    ' construccion, no por aproximacion. Lo verifica el gate de BUILD `softlight-inv` (Tools/ParityGate) a traves
     ' de la inversa de W3C, y el gate `baker` a traves del espejo escalar-vs-vectorial del unfold.
 
     ''' <summary>Sesgo del truco de bits: <c>(127 − 127/3)·2^23</c>, o sea el ancla del exponente cuando la

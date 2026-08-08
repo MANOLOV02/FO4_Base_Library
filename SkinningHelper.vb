@@ -391,15 +391,17 @@ Public Class SkinningHelper
             Return "[skin-blend-wpv0] wpv=0 no devolvio precomputed(0)"
         End If
 
-        ' ⛔ LA RAMA DEL GATE DEL MOTOR. `EngineSkinWeightNormalization.Enabled` es False por default,
-        ' asi que TryComputeWeights sale temprano y todo lo de arriba ejercita SOLO la rama normal —
-        ' pero el refactor de BlendBoneMatrices toco LAS DOS. Sin esto, prender el gate en FO4 haria
-        ' correr un camino vectorial que ningun test vio nunca.
-        ' Se prende y se restaura en Finally: es una propiedad GLOBAL y este self-test corre dentro
-        ' del parity gate, o sea justo antes de un bake.
-        Dim previo = EngineSkinWeightNormalization.Enabled
-        Try
-            EngineSkinWeightNormalization.Enabled = True
+        ' ⛔ LA RAMA DEL GATE DEL MOTOR. `EngineSkinWeightNormalization.Enabled` es False por default, asi que
+        ' TryComputeWeights sale temprano y todo lo de arriba ejercita SOLO la rama normal — pero el refactor
+        ' de BlendBoneMatrices toco LAS DOS.
+        ' ⛔⛔ ANTES ESTE BLOQUE PRENDIA LA GLOBAL Y LA RESTAURABA EN Finally, y eso corria en el proceso del
+        ' USUARIO justo antes de un bake (2026-08-08). Un test no muta estado global de produccion en caliente
+        ' en una app que se distribuye: si algo tira entre el Set y el Finally, o si otro hilo lee la propiedad
+        ' en esa ventana, el bake sale con una ley que el usuario no eligio.
+        ' Ahora: se corre SOLO si el usuario YA la tiene prendida — que es exactamente cuando esa rama le
+        ' importa a SU bake— y NO se toca nada. El caso FORZADO (prenderla para cubrir la rama con el default
+        ' apagado) es un gate de BUILD y vive en Tools/ParityGate, que si puede mutar lo que quiera.
+        If EngineSkinWeightNormalization.Enabled Then
             For iter As Integer = 0 To 499
                 For s = 0 To wgt.Length - 1
                     wgt(s) = CType(pesos(CInt(NextB() Mod CULng(pesos.Length))), System.Half)
@@ -416,9 +418,7 @@ Public Class SkinningHelper
                     End If
                 Next
             Next
-        Finally
-            EngineSkinWeightNormalization.Enabled = previo
-        End Try
+        End If
 
         Return ""
     End Function

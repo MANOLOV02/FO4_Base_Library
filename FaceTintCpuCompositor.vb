@@ -219,7 +219,9 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>Soft-light AGNOSTICO por modelo (= shader blendSoftLightModel; paridad CPU/GL). model:
     ''' 0=W3C 1=GIMP 2=Illusions 3=pegtop (FaceTintSoftLight). d=base, s=src. Default del resolver = GIMP.</summary>
-    Private Function BlendSoftLightModel(model As Integer, d As Single, s As Single) As Single
+    ''' <remarks>`Friend` y no `Private` para que el gate de BUILD `softlight-inv` (Tools/ParityGate) pueda
+    ''' contrastar el forward contra <see cref="BlendSoftLightModelInverse"/>. No amplía la API distribuida.</remarks>
+    Friend Function BlendSoftLightModel(model As Integer, d As Single, s As Single) As Single
         d = Clamp01(d) : s = Clamp01(s)
         Select Case model
             Case 1 ' GIMP / Photoshop
@@ -354,7 +356,7 @@ Public Module FaceTintCpuCompositor
     ''' <see cref="BlendSoftLightModel"/>, con el MISMO orden de modelos (0=W3C 1=GIMP 2=Illusions 3=pegtop).
     ''' <para>⛔ SYNC: es la FUENTE UNICA de la inversa. La tienen que espejar el <c>PreCompensateEngineChain</c>
     ''' (escalar y vectorial) y la rama <c>uFgTintFold==2</c> del GLSL. Lo verifica
-    ''' <see cref="SoftLightInverseSelfTest"/>, que es el gate: sin ese test, una inversa mal derivada NO se
+    ''' el gate de BUILD `softlight-inv` (Tools/ParityGate): sin ese test, una inversa mal derivada NO se
     ''' ve en el bake (sale una cara levemente distinta, no un fallo).</para></summary>
     Public Function BlendSoftLightModelInverse(model As Integer, y As Single, s As Single) As Single
         ' ⛔⛔ `y` NO SE ACOTA, y no es un olvido: su consumidor es el UNFOLD, donde `y` es un valor LINEAL que
@@ -374,32 +376,9 @@ Public Module FaceTintCpuCompositor
         End Select
     End Function
 
-    ''' <summary>GATE de la inversa: para los CUATRO modelos barre (d, s) y verifica que
-    ''' <c>Inv(model, Fwd(model, d, s), s) ≈ d</c>. Devuelve "" si pasa.
-    ''' <para>El criterio es en unidades de BYTE (lo que se hornea), no en epsilon de float: la cadena termina
-    ''' en un DDS de 8 bits. Tolerancia 1 byte = 1/255.</para>
-    ''' <para>⛔ Se saltean los puntos donde el forward DESTRUYE informacion y ninguna inversa los recupera:
-    ''' Illusions con d por debajo de su piso (1e-6) — misma politica declarada que el amplify con amp ≤ 0 en
-    ''' <c>SseFaceGenBaker.FgAmpInverse</c>. No se maquilla la tolerancia para taparlos.</para></summary>
-    Public Function SoftLightInverseSelfTest() As String
-        Const TOL As Single = 1.0F / 255.0F
-        For model As Integer = 0 To 3
-            For si As Integer = 0 To 64
-                Dim s As Single = si / 64.0F
-                For di As Integer = 0 To 64
-                    Dim d As Single = di / 64.0F
-                    If model = 2 AndAlso d < 0.001F Then Continue For   ' piso del forward: no es invertible
-                    Dim y As Single = BlendSoftLightModel(model, d, s)
-                    Dim back As Single = BlendSoftLightModelInverse(model, y, s)
-                    Dim err As Single = MathF.Abs(back - d)
-                    If err > TOL Then
-                        Return $"soft-light inverse MISMATCH: model={model} s={s:F4} d={d:F4} fwd={y:F6} inv={back:F6} err={err * 255.0F:F3} bytes (tol=1)"
-                    End If
-                Next
-            Next
-        Next
-        Return ""
-    End Function
+    ' ⛔ EL GATE `softlight-inv` YA NO VIVE ACA (Tools/ParityGate, LawGates.SoftLightInverseGate,
+    ' 2026-08-08). Verifica Inv(Fwd(d,s),s) ≈ d con tolerancia de 1 byte para los cuatro modelos. Sin él una
+    ' inversa mal derivada NO se ve: sale una cara levemente distinta, no un fallo.
 
     ' ---- Modos separables estandar adicionales (5..19). Transcripcion 1:1 del shader. ----
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
@@ -782,68 +761,9 @@ Public Module FaceTintCpuCompositor
         Return outp
     End Function
 
-    ''' <summary>⭐ GATE DEL IZADO: los planos materializados tienen que ser EXACTAMENTE lo que devolvía el
-    ''' muestreo por texel, elemento por elemento y bit por bit. Devuelve "" si coinciden.
-    ''' <para><b>Por qué hace falta si ya está <see cref="BilinearLawSelfTest"/>.</b> Aquél fija la LEY (que
-    ''' materializar y muestrear coinciden); éste fija el IZADO CONCRETO que consume el compose: el orden de
-    ''' los canales en los planos, el índice (plano(i) ↔ píxel i) y el <c>chMask</c>. Un plano de G escrito en
-    ''' el de B pasaría el primero y fallaría éste.</para>
-    ''' <para>⛔ El corpus NO puede cubrirlo: vanilla trae las máscaras ya al tamaño del acumulador, así que
-    ''' el camino izado no se ejecuta ni una vez y un A/B en 0 bytes no dice nada de él. Ver
-    ''' <c>_unitResampled</c> y la memoria 00-reglas-epistemica §9.</para>
-    ''' <para>Barre upsize, downsize y tamaños que NO son múltiplo del ancho SIMD (31×19, 37×23, 11×11): el
-    ''' cuerpo vectorial consume bloques de <c>lanes</c> y la cola escalar tiene que leer los MISMOS planos.</para></summary>
-    Public Function ResampleHoistSelfTest() As String
-        Dim seed As UInteger = 2246822519UI
-        For Each dims In New(TW As Integer, TH As Integer, W As Integer, H As Integer)() {
-            (8, 8, 32, 32), (32, 32, 8, 8), (13, 7, 31, 19), (31, 19, 13, 7), (5, 5, 11, 11), (64, 64, 37, 23)}
-            Dim tw = dims.TW, th = dims.TH, w = dims.W, h = dims.H
-            Dim px(tw * th * 4 - 1) As Byte
-            For i = 0 To px.Length - 1
-                seed = seed Xor (seed << 13) : seed = seed Xor (seed >> 17) : seed = seed Xor (seed << 5)
-                px(i) = CByte(seed And 255UI)
-            Next
-            Dim tex As New DecodedTex With {.Width = tw, .Height = th, .Rgba8 = px, .Channels = 4}
-            Dim pR As Single() = Nothing, pG As Single() = Nothing, pB As Single() = Nothing, pA As Single() = Nothing
-            ResampleToUnitPlanes(tex, w, h, 15, pR, pG, pB, pA)
-            If pR Is Nothing OrElse pG Is Nothing OrElse pB Is Nothing OrElse pA Is Nothing Then
-                Return $"izado: chMask=15 tiene que devolver los CUATRO planos y alguno vino Nothing ({tw}x{th}->{w}x{h})"
-            End If
-            Dim planes = New Single()() {pR, pG, pB, pA}
-            For i = 0 To w * h - 1
-                For c = 0 To 3
-                    Dim want = SampleChannelAt(tex, i, w, h, c)
-                    Dim got = planes(c)(i)
-                    If BitConverter.SingleToInt32Bits(want) <> BitConverter.SingleToInt32Bits(got) Then
-                        Return $"izado: el plano NO es el muestreo por texel. {tw}x{th}->{w}x{h} " &
-                               $"px={i} (x={i Mod w},y={i \ w}) ch={c} porTexel={want} plano={got} " &
-                               $"[bits 0x{BitConverter.SingleToInt32Bits(want):X8} vs 0x{BitConverter.SingleToInt32Bits(got):X8}]"
-                    End If
-                Next
-            Next
-            ' chMask: pedir UN canal tiene que dar ese MISMO plano y Nothing en los otros tres. Es lo que usan
-            ' la máscara del swap (sólo R) y la diffMask (sólo A); un mask mal armado devolvería Nothing y el
-            ' consumidor leería una referencia nula recién con una textura no-directa, o sea nunca en vanilla.
-            For c = 0 To 3
-                Dim qR As Single() = Nothing, qG As Single() = Nothing, qB As Single() = Nothing, qA As Single() = Nothing
-                ResampleToUnitPlanes(tex, w, h, 1 << c, qR, qG, qB, qA)
-                Dim q = New Single()() {qR, qG, qB, qA}
-                For k = 0 To 3
-                    If k = c Then
-                        If q(k) Is Nothing Then Return $"izado: chMask={1 << c} no devolvió el plano {k} ({tw}x{th}->{w}x{h})"
-                        For i = 0 To w * h - 1
-                            If BitConverter.SingleToInt32Bits(q(k)(i)) <> BitConverter.SingleToInt32Bits(planes(k)(i)) Then
-                                Return $"izado: chMask={1 << c} dio OTRO valor que chMask=15 en ch={k} px={i} ({tw}x{th}->{w}x{h})"
-                            End If
-                        Next
-                    ElseIf q(k) IsNot Nothing Then
-                        Return $"izado: chMask={1 << c} materializó de más el plano {k} ({tw}x{th}->{w}x{h})"
-                    End If
-                Next
-            Next
-        Next
-        Return ""
-    End Function
+    ' ⛔ EL GATE `resample-hoist` YA NO VIVE ACA (Tools/ParityGate, LawGates.ResampleHoistGate,
+    ' 2026-08-08). Fija el IZADO CONCRETO que consume el compose: orden de canales, índice plano(i)↔píxel i
+    ' y chMask. El corpus NO lo cubre: vanilla trae las máscaras ya al tamaño del acumulador.
 
     ''' <summary>⭐ IZA EL RESAMPLE fuera del loop de píxeles: materializa <paramref name="t"/> a
     ''' <paramref name="w"/>×<paramref name="h"/> en unidad [0,1] sobre PLANOS SoA (un array por canal).
@@ -1080,95 +1000,13 @@ Public Module FaceTintCpuCompositor
                 Threading.Interlocked.Read(_batchUnitBytes), Threading.Volatile.Read(_unitRejected))
     End Function
 
-    ''' <summary>⭐ Los EJES de las claves de decode tienen que ser DISJUNTOS: dos peticiones que difieran en
-    ''' cualquier eje no pueden colisionar, y dos idénticas tienen que dar la misma clave.
-    ''' <para>⛔ Existe porque a la clave del nivel 2 le faltaba el tamaño (parcheado restringiendo el dominio
-    ''' a 512² con cuatro guardas) y a las DOS les faltaba la política de mip, que es estado global mutable
-    ''' desde la UI. Un eje ausente no falla: sirve el buffer equivocado.</para>
-    ''' <para>No hace early-return: es texto, no aritmética. Corre en toda máquina.</para></summary>
-    Public Function CacheKeyAxesSelfTest() As String
-        Dim saved = DownsizeFromMip0
-        Try
-            Dim seen As New Dictionary(Of String, String)(StringComparer.Ordinal)
-            For Each policy In New Boolean() {False, True}
-                DownsizeFromMip0 = policy
-                For Each path In New String() {"a\b.dds", "a\c.dds"}
-                    For Each wh In New(W As Integer, H As Integer)() {(512, 512), (1024, 1024), (512, 1024)}
-                        For Each nrm In New Boolean() {False, True}
-                            Dim id = $"{path}|{wh.W}x{wh.H}|{nrm}|{policy}"
-                            Dim key = $"{path}|{wh.W}x{wh.H}|{If(nrm, "nrm", "col")}|{MipPolicyTag()}"
-                            Dim prev As String = Nothing
-                            If seen.TryGetValue(key, prev) AndAlso prev <> id Then
-                                Return $"colision de clave nivel 2: '{key}' la producen {prev} y {id}"
-                            End If
-                            seen(key) = id
-                        Next
-                    Next
-                Next
-            Next
-            ' Y el eje de mip tiene que MOVER la clave del nivel 1 (es el que faltaba).
-            DownsizeFromMip0 = False : Dim k1 = MipPolicyTag()
-            DownsizeFromMip0 = True : Dim k2 = MipPolicyTag()
-            If k1 = k2 Then Return "la politica de mip NO cambia el tag de la clave: el eje volveria a ser invisible"
-            Return ""
-        Finally
-            DownsizeFromMip0 = saved
-        End Try
-    End Function
+    ' ⛔ EL GATE `cache-keys` YA NO VIVE ACA (Tools/ParityGate, LawGates.CacheKeyAxesGate, 2026-08-08).
+    ' Además de no depender de la máquina, MUTABA `DownsizeFromMip0` — una propiedad global de producción—
+    ' en el proceso del usuario justo antes de un bake. Eso solo ya lo echaba del binario.
 
-    ''' <summary>⭐ LA LEY DEL BILINEAL ES UNA: el que MATERIALIZA el resample y el que muestrea UN texel
-    ''' tienen que dar los MISMOS BITS. Devuelve "" si coinciden.
-    '''
-    ''' <para><b>Por qué existe.</b> Había CUATRO transcripciones del bilineal y la cuarta
-    ''' (el resample interno del nivel 2 del caché) no coincidía con las otras tres: derivaba el índice alto del
-    ''' bajo YA clampeado, con lo cual el borde de la textura salía corrido medio texel. Nadie lo veía porque
-    ''' los dos caminos los usan juegos distintos y el A/B del corpus no ejercita el resample (las máscaras
-    ''' vanilla ya vienen al tamaño del acumulador). Un gate de bytes en 0 NO cubre esto: hace falta este test.</para>
-    ''' <para>Barre UPSIZE (que es el caso del fold de SSE: máscaras 512² al tamaño del complexion), DOWNSIZE,
-    ''' identidad y tamaños que no son potencia de dos ni múltiplos entre sí. Y compara TODOS los píxeles, no
-    ''' una muestra: la divergencia vieja vivía en la PRIMERA y la ÚLTIMA fila/columna.</para>
-    ''' <para>⛔ No hace early-return: es aritmética escalar, corre en toda máquina.</para></summary>
-    Public Function BilinearLawSelfTest() As String
-        Dim seed As UInteger = 1234567891UI
-        For Each dims In New(SW As Integer, SH As Integer, DW As Integer, DH As Integer)() {
-            (8, 8, 32, 32), (32, 32, 8, 8), (8, 8, 8, 8), (13, 7, 31, 19), (31, 19, 13, 7),
-            (4, 16, 16, 4), (512, 512, 1024, 1024)}
-            Dim sw = dims.SW, sh = dims.SH, dw = dims.DW, dh = dims.DH
-            ' Fuente sintética: un DecodedTex de bytes y su expansión EXACTA a unidad, para que las dos
-            ' formas de la ley reciban EXACTAMENTE los mismos números de entrada.
-            Dim px(sw * sh * 4 - 1) As Byte
-            For i = 0 To px.Length - 1
-                seed = seed Xor (seed << 13) : seed = seed Xor (seed >> 17) : seed = seed Xor (seed << 5)
-                px(i) = CByte(seed And 255UI)
-            Next
-            Dim tex As New DecodedTex With {.Width = sw, .Height = sh, .Rgba8 = px, .Channels = 4}
-            Dim unit = tex.ToUnitArray()
-            ' (a) MATERIALIZADO: Single() -> Single() de una pasada.
-            Dim mat = ResampleRgbaFloat(unit, sw, sh, dw, dh)
-            ' (b) POR TEXEL: el muestreo que hace el loop de capas cuando la capa no es directa.
-            For i = 0 To dw * dh - 1
-                For c = 0 To 3
-                    Dim byTexel = SampleChannelAt(tex, i, dw, dh, c)
-                    Dim materialized = mat(i * 4 + c)
-                    If BitConverter.SingleToInt32Bits(byTexel) <> BitConverter.SingleToInt32Bits(materialized) Then
-                        Return $"bilineal: materializar y muestrear NO dan lo mismo. {sw}x{sh}->{dw}x{dh} " &
-                               $"px={i} (x={i Mod dw},y={i \ dw}) ch={c} " &
-                               $"porTexel={byTexel} materializado={materialized} " &
-                               $"[bits 0x{BitConverter.SingleToInt32Bits(byTexel):X8} vs 0x{BitConverter.SingleToInt32Bits(materialized):X8}]"
-                    End If
-                Next
-            Next
-        Next
-        ' EL BORDE, explícito: con el texel en -0,5 la ley es CLAMP-TO-EDGE ⇒ los dos índices colapsan al 0 y
-        ' el resultado es el texel de borde, NO un lerp entre las filas 0 y 1. Es exactamente lo que la cuarta
-        ' transcripción hacía mal, así que se fija como comportamiento y no sólo como "coinciden entre sí".
-        Dim i0 As Integer, i1 As Integer, t As Single
-        BilinearAxis(0.0F, 16, i0, i1, t)
-        If i0 <> 0 OrElse i1 <> 0 Then Return $"bilineal: en u=0 la ley pide clamp-to-edge (0,0) y dio ({i0},{i1})"
-        BilinearAxis(1.0F, 16, i0, i1, t)
-        If i0 <> 15 OrElse i1 <> 15 Then Return $"bilineal: en u=1 la ley pide clamp-to-edge (15,15) y dio ({i0},{i1})"
-        Return ""
-    End Function
+    ' ⛔ EL GATE `bilinear` YA NO VIVE ACA (Tools/ParityGate, LawGates.BilinearLawGate, 2026-08-08).
+    ' Su propio docstring decía "es aritmética escalar, corre en toda máquina": justamente por eso no tenía
+    ' nada que hacer en el binario. Cazó la cuarta transcripción del bilineal, corrida medio texel.
 
     ''' <summary>⭐ MEDICIÓN (no gate) de la FORMA del soft-light: enumera el dominio ENTERO de 8 bits —los
     ''' 65.536 pares (d,s) con d,s ∈ {0/255…255/255}— y reporta en cuántos difiere la expresión del FOLD de la
@@ -1232,51 +1070,10 @@ Public Module FaceTintCpuCompositor
                $"| FUERA de [0,1]: {If(edgeDiff.Count = 0, "coinciden", String.Join(" ; ", edgeDiff))}"
     End Function
 
-    ''' <summary>⭐ FASE 8 — el QNAM del CUERPO y el facetint de la CARA tienen que salir del MISMO número.
-    ''' Devuelve "" si coinciden.
-    '''
-    ''' <para><b>Por qué es un self-test y no un barrido.</b> El corpus vanilla de Skyrim no tiene ni un
-    ''' overlay, así que un A/B mide CERO muestras de este camino. El oráculo es el compositor compartido:
-    ''' se compara el pliegue del skin-tone (<c>lerp(seed, TINC, TINV)</c>, lo que va al QNAM) contra
-    ''' <see cref="ComposePixel"/> con la convención de la capa de piel, que es lo que compone la cara.</para>
-    ''' <para>Lo que atrapa: que alguien vuelva a cablear el <c>0,5</c> en uno de los dos lados. Con el
-    ''' literal, mover el seed en CharGen Options desincronizaba el cuello del pecho EN SILENCIO.</para>
-    ''' <para>⛔ No hace early-return: es aritmética escalar, corre en toda máquina.</para></summary>
-    Public Function QnamMatchesFaceSelfTest() As String
-        Dim conv = FaceTintConvention.ResolveConvention(FaceTintConvention.FaceTintStage.TintDiffuse,
-                                                        FaceTintChannel.Diffuse, isTextureSet:=False, blendOp:=0)
-        ' Se barren seeds distintos del 0,5 A PROPÓSITO: con 0,5 las dos formas coinciden por casualidad
-        ' aritmética y el test no probaría nada. Es el caso que el literal escondía.
-        For Each seed In New Single() {0.5F, 0.0F, 1.0F, 0.25F, 0.73F}
-            For ci = 0 To 255
-                Dim c = ByteToUnit(ci)
-                For Each tinv In New Single() {0.0F, 0.01F, 0.25F, 0.52F, 0.75F, 1.0F}
-                    ' (a) la cara: el compositor compartido, una capa de color plano sobre el seed.
-                    Dim face = ComposePixel(seed, c, tinv, conv)
-                    ' (b) el cuerpo: el pliegue del skin-tone que alimenta el QNAM.
-                    Dim body = ComposePixel(seed, c, tinv, conv)
-                    If BitConverter.SingleToInt32Bits(face) <> BitConverter.SingleToInt32Bits(body) Then
-                        Return $"QNAM vs cara: seed={seed} TINC={c} TINV={tinv} cara={face} cuerpo={body}"
-                    End If
-                    ' Y con los defaults de SSE tiene que dar EXACTAMENTE el lerp del que salía el literal:
-                    ' es lo que sostiene que la fase 8 sea byte-idéntica y no "parecida".
-                    If conv.Blend = FaceTintConvention.FaceTintBlend.Replace AndAlso
-                       conv.CompositeSpace = FaceTintConvention.FaceTintWorkingSpace.Linear AndAlso
-                       conv.AccumSpace = FaceTintConvention.FaceTintWorkingSpace.Linear AndAlso
-                       conv.SrcSpace = FaceTintConvention.FaceTintWorkingSpace.Linear Then
-                        Dim lerp As Single = seed + tinv * (c - seed)
-                        If lerp < 0.0F Then lerp = 0.0F
-                        If lerp > 1.0F Then lerp = 1.0F
-                        If BitConverter.SingleToInt32Bits(face) <> BitConverter.SingleToInt32Bits(lerp) Then
-                            Return $"QNAM: con los defaults de SSE el compose deberia ser el lerp literal. " &
-                                   $"seed={seed} TINC={c} TINV={tinv} compose={face} lerp={lerp}"
-                        End If
-                    End If
-                Next
-            Next
-        Next
-        Return ""
-    End Function
+    ' ⛔ EL GATE `qnam-face` YA NO VIVE ACA (Tools/ParityGate, LawGates.QnamMatchesFaceGate, 2026-08-08).
+    ' ⛔⛔ Y ARRASTRA UN DEFECTO CONOCIDO: su primera comparación es VACUA (`face` y `body` se calculaban
+    ' con la MISMA expresión literal), o sea un verde de mentira. Se migró tal cual, anotado, para no
+    ' mezclar el traslado con un arreglo de lógica.
 
     ''' <summary>Arranca el cache de decode batch (llamar ANTES del loop de clones). Arranca los DOS niveles.</summary>
     Public Sub BeginBatchDecodeCache()
@@ -3479,7 +3276,10 @@ Public Module FaceTintCpuCompositor
 
     ''' <summary>Sample de un canal del DecodedTex en el índice de píxel del acumulador (w,h). Si el tex
     ''' es del MISMO tamaño, índice directo; si difiere, bilineal por UV (resolución por canal / LUT).</summary>
-    Private Function SampleChannelAt(t As DecodedTex, accIdx As Integer, accW As Integer, accH As Integer, ch As Integer) As Single
+    ''' <remarks>`Friend` y no `Private` para que los gates de BUILD `bilinear` y `resample-hoist`
+    ''' (Tools/ParityGate) puedan contrastar el muestreo por texel contra el resample materializado y contra
+    ''' los planos izados. No amplía la API distribuida.</remarks>
+    Friend Function SampleChannelAt(t As DecodedTex, accIdx As Integer, accW As Integer, accH As Integer, ch As Integer) As Single
         If t.Width = accW AndAlso t.Height = accH Then
             Return t.Unit(accIdx * 4 + ch)
         End If

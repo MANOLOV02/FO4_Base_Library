@@ -628,7 +628,10 @@ Public Module SseFaceGenBaker
     ' ⚠️ RE-CONGELADOS 2026-08-01 con `--paritygate --dump-golden`, A PROPOSITO: la fase 6 SACO el piso del
     ' amplify (decision 1). Los que se movieron son los tres casos que el piso levantaba; el resto no cambio,
     ' que es justo lo que confirma que el cambio fue el buscado y no una deriva de arriba.
-    Private ReadOnly FoldGoldenBits As Integer(,) = {
+    ''' <remarks>`Friend` y no `Private` para que el gate de BUILD `fold-golden` (Tools/ParityGate) pueda
+    ''' contrastar contra estos literales. No amplía la API distribuida. Se re-congelan con
+    ''' <see cref="FoldGoldenDump"/> cuando un cambio de ley los mueve A PROPÓSITO.</remarks>
+    Friend ReadOnly FoldGoldenBits As Integer(,) = {
         {&H3F011AB4I, &H3F002EACI, &H3F011AB4I},   ' 0,5043137 0,50071216 0,5043137
         {&H00000000I, &H00000000I, &H00000000I},   ' 0 0 0  — comp=0 anula el amplify
         {&H3F800000I, &H3F800000I, &H3F800000I},   ' 1 1 1
@@ -720,25 +723,9 @@ Public Module SseFaceGenBaker
         Return New Single() {comp(0), comp(1), comp(2)}
     End Function
 
-    ''' <summary>Compara el fold contra los golden vectors congelados. "" si pasa.</summary>
-    Public Function FoldGoldenSelfTest() As String
-        For ci = 0 To FoldGoldenCases.Length - 1
-            Dim got = FoldGoldenActual(ci)
-            Dim k = FoldGoldenCases(ci)
-            If got Is Nothing Then
-                Return $"golden[{ci}] (comp={k.Comp}, tint={k.Tint}, det={k.Detail}): prólogo/cuerpo/cola del fold NO coinciden entre sí"
-            End If
-            For c = 0 To 2
-                Dim gotBits = BitConverter.SingleToInt32Bits(got(c))
-                If gotBits <> FoldGoldenBits(ci, c) Then
-                    Return $"golden[{ci}] ch{c} (comp={k.Comp}, tint={k.Tint}, det={k.Detail}): " &
-                           $"got 0x{gotBits:X8} ({got(c):R}), want 0x{FoldGoldenBits(ci, c):X8} " &
-                           $"({BitConverter.Int32BitsToSingle(FoldGoldenBits(ci, c)):R})"
-                End If
-            Next
-        Next
-        Return ""
-    End Function
+    ' ⛔ EL GATE `fold-golden` YA NO VIVE ACA (Tools/ParityGate, LawGates.FoldGoldenGate, 2026-08-08).
+    ' Es un GOLDEN ABSOLUTO: el único eje que atrapa un cambio de ley que entra por igual en el escalar y en
+    ' el vectorial. Se re-congela con `FoldGoldenDump()`, que sigue acá.
 
     ''' <summary>Vuelca los golden en el formato exacto de <c>FoldGoldenBits</c>, para re-congelarlos cuando
     ''' un cambio de ley los mueva A PROPÓSITO. Es un volcado, no un gate.</summary>
