@@ -3737,6 +3737,40 @@ Public Class FO4UnifiedMaterial_Class
         End Try
     End Function
 
+    ''' <summary>Vuelca el skin-tone de ESTE material (color + alpha) al shader INLINE de un shape.
+    ''' Único escritor del campo: lo llaman el bake vía <see cref="Save_To_Shader"/> y el export a NIF,
+    ''' que necesita el MISMO gesto sin reescribir el resto del shader. No-op si el material no es de piel.
+    ''' <para>⛔ EL GATE DEL TIPO ES DEL CALLER, no de acá. `Skin Tint Color` sólo se SERIALIZA con
+    ''' `Shader Type == 5 (SkinTint)` y `Skin Tint Alpha` sólo en FO4 (nif.xml, BSLightingShaderProperty):
+    ''' escribirlo con otro tipo no rompe nada pero no viaja. Este método no fuerza el tipo — cambiarlo
+    ''' cambiaría el sombreado, que es otra cosa que copiar un color.</para>
+    ''' <para>⛔ MISMO problema que la Glossiness (ver NifGlossinessStillMatchesSmoothness). El viaje
+    ''' Color3(float) → bytes (NifColor3ToMaterialRgb) → Color3 (MaterialRgbToNifColor3) es LOSSY:
+    ''' cuantiza a la grilla de 1/255 por canal (0,37 → 0,36862746). ⛔ NO acumula — MEDIDO: el segundo
+    ''' guardado ya no mueve el valor. Es pérdida de UNA sola vez. (Una versión previa de este comentario
+    ''' decía que acumulaba: era falso.) Antes de alinear el eje del material esto no se notaba en Oldrim
+    ''' porque ahí `SkinTint` salía False y el bloque no disparaba nunca; al corregir la lectura empezó a
+    ''' disparar. Guard: si el Color3 que YA tiene el shader proyecta exactamente a los bytes del material,
+    ''' nadie lo tocó ⇒ no se reescribe y el valor original sobrevive bit a bit. Sólo se toma el atajo con
+    ''' TintColorScale neutro: con escala ≠ 1 lectura y escritura no son inversas y la comparación no valdría.</para>
+    ''' <para>⚠️ El guard NO puede suprimir un valor derivado: `SkinTintColor` y `HairTintColor` del material
+    ''' son EL MISMO campo del BGSM (ver el getter de SkinTintColor), así que cuando el resolver escribe el
+    ''' tono de piel del actor (NpcMaterialResolver ~:1521) el valor DIFIERE del que trae el shader y el guard
+    ''' no salta. Sólo saltea cuando escribir sería un no-op salvo por la cuantización. ⛔ Y por eso el
+    ''' HairTintColor de Save_To_Shader se escribe SIEMPRE y no lleva guard: ése es un valor DERIVADO del CLFM
+    ''' del NPC (2 × CLFM, paridad con el CK — verificado byte-exacto: NPC 0x00016F04 → CLFM
+    ''' HairColor12BlackTrue (16,18,18) → NIF horneado (32,36,36)/255). Preservarlo sería el bug.</para></summary>
+    Public Sub WriteSkinTintToShader(shad As BSLightingShaderProperty)
+        If shad Is Nothing Then Return
+        Dim mat = TryCast(Underlying_Material, BGSM)
+        If mat Is Nothing OrElse Not mat.SkinTint Then Return
+        Dim skinTintUntouched As Boolean =
+            Me.TintColorScale = 1.0F AndAlso
+            NifColor3ToMaterialRgb(shad.SkinTintColor) = mat.HairTintColor
+        If Not skinTintUntouched Then shad.SkinTintColor = MaterialRgbToNifColor3(mat.HairTintColor, Me.TintColorScale)
+        shad.SkinTintAlpha = Me.SkinTintAlpha
+    End Sub
+
     Public Sub Save_To_Shader(Nif As Nifcontent_Class_Manolo, shap As INiShape, shad As BSLightingShaderProperty, Optional shaderType As NiflySharp.Enums.BSLightingShaderType = NiflySharp.Enums.BSLightingShaderType.Default, Optional envmapMaskPath As String = "")
         If Nif.Valid = False Then Exit Sub
         Dim Mat = DirectCast(Underlying_Material, BGSM)
@@ -3823,31 +3857,8 @@ Public Class FO4UnifiedMaterial_Class
         ' TintColorScale sube el ×2 del pelo SSE al dominio FLOAT (el storage BGSM es de bytes, techo 1.0).
         Dim hairTintNifColor = MaterialRgbToNifColor3(Mat.HairTintColor, Me.TintColorScale)
         shad.HairTintColor = hairTintNifColor
-        If Mat.SkinTint Then
-            ' ⛔ MISMO problema que la Glossiness (ver NifGlossinessStillMatchesSmoothness), acá al lado.
-            ' `_skinTintColor_C3` se serializa para StreamVersion <= 139 con shaderType 5 — o sea TAMBIÉN en
-            ' stream 83 (Oldrim). El viaje Color3(float) → bytes (NifColor3ToMaterialRgb) → Color3
-            ' (MaterialRgbToNifColor3) es LOSSY: cuantiza a la grilla de 1/255 por canal (0,37 → 0,36862746).
-            ' ⛔ NO acumula — MEDIDO: el segundo guardado ya no mueve el valor. Es pérdida de UNA sola vez.
-            ' (Una versión previa de este comentario decía que acumulaba: era falso.)
-            ' Antes de alinear el eje del material esto no se notaba en Oldrim porque ahí `Mat.SkinTint` salía
-            ' False y el bloque no disparaba nunca; al corregir la lectura empezó a disparar. Guard: si el
-            ' Color3 que YA tiene el shader proyecta exactamente a los bytes del material, nadie lo tocó ⇒ no
-            ' se reescribe y el valor original sobrevive bit a bit. Sólo se toma el atajo con TintColorScale
-            ' neutro: con escala ≠ 1 lectura y escritura no son inversas y la comparación no valdría.
-            ' ⚠️ El guard NO puede suprimir un valor derivado: `SkinTintColor` y `HairTintColor` del material
-            ' son EL MISMO campo del BGSM (ver el getter de SkinTintColor), así que cuando el resolver
-            ' escribe el tono de piel del actor (NpcMaterialResolver ~:1508) el valor DIFIERE del que trae el
-            ' shader y el guard no salta. Sólo saltea cuando escribir sería un no-op salvo por la cuantización.
-            ' ⛔ Y por eso el HairTintColor de arriba se escribe SIEMPRE y no lleva guard: ése es un valor
-            ' DERIVADO del CLFM del NPC (2 × CLFM, paridad con el CK — verificado byte-exacto: NPC 0x00016F04
-            ' → CLFM HairColor12BlackTrue (16,18,18) → NIF horneado (32,36,36)/255). Preservarlo sería el bug.
-            Dim skinTintUntouched As Boolean =
-                Me.TintColorScale = 1.0F AndAlso
-                NifColor3ToMaterialRgb(shad.SkinTintColor) = Mat.HairTintColor
-            If Not skinTintUntouched Then shad.SkinTintColor = hairTintNifColor
-            shad.SkinTintAlpha = Me.SkinTintAlpha
-        End If
+        ' El skin-tone tiene UN solo escritor, compartido con el export a NIF: WriteSkinTintToShader.
+        WriteSkinTintToShader(shad)
         shad.HasBacklight = Mat.BackLighting
         ' GATE SOLO EN SKYRIM. La nota anterior decia que el CK gatea el power por el flag al hornear, simetrico
         ' con el rolloff. Es FALSO y esta medido en los DOS binarios: en la transferencia BGSM -> material hay
