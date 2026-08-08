@@ -304,8 +304,9 @@ Public Class FO4UnifiedMaterial_Class
         copy.TintColorScale = TintColorScale
         ' Decisión de escritura del alpha-test: vive en el wrapper (NO en el BGSM), así que el loop de
         ' reflexión de arriba no lo alcanza. Sin esto un clon perdería el bit F4SPF2 Alpha_Test y el veto
-        ' de fabricación. Ver AlphaTestWriteDecision.
-        copy.AlphaTestWriteDecision = AlphaTestWriteDecision
+        ' Es un HECHO del record, no una orden. Ver NpcDiffuseAlphaTest.
+        copy.NpcDiffuseAlphaTest = NpcDiffuseAlphaTest
+        copy.VetoAlphaPropertyCreation = VetoAlphaPropertyCreation
         Return copy
     End Function
 
@@ -1001,8 +1002,30 @@ Public Class FO4UnifiedMaterial_Class
     ''' lo haria, pero no existe ni un caso (el unico consumidor que pone True es el bake FO4 y su unico NPC con
     ''' el flag tiene material CON alpha).</para>
     ''' <para>Vive en el WRAPPER, no en el BGSM: no se serializa al material en disco.</para></summary>
+    ''' <para>⛔ REEMPLAZA a `AlphaTestWriteDecision As Boolean?` (2026-08-08). Aquel mezclaba DOS cosas en
+    ''' un tri-estado: este HECHO del record, y un VETO sobre la creacion del NiAlphaProperty. El veto tenia
+    ''' tres defectos: (1) se asignaba DENTRO de la rama del MNAM de ApplyTextureSetOverrides y se evaporaba
+    ''' cuando el TXST no traia MNAM -- medido: 1.757 NPC en FO4, y SIEMPRE en SSE (el TXST de Skyrim no
+    ''' tiene MNAM); (2) frenaba la creacion pero NO el borrado, siendo la misma decision en espejo; (3) al
+    ''' vivir en el material tenia que hilarse por una funcion de TEXTURAS.</para>
+    ''' <para>El veto se ELIMINO, no se reemplazo. MEDIDO sobre el 100% de los head parts de los dos juegos:
+    ''' dejar que el material gobierne las DOS direcciones coincide con el motor (ApplyMaterialToGeometry
+    ''' 0x142169BB0: aloca si el material pide alpha, desprende si no). Efecto total: SSE 0 shapes, FO4 1
+    ''' shape (AikeaHeadband, que hoy queda SIN el bloque que el motor SI le pone).</para>
+    ''' <para>Queda como HECHO del record del NPC (flag ACBS Diffuse Alpha Test 0x01000000), con un unico
+    ''' consumidor: el bit F4SPF2 Alpha_Test. Ese bit NO es funcion del material y la lib no puede derivarlo.</para>
     <Browsable(False)>
-    Public Property AlphaTestWriteDecision As Boolean?
+    Public Property NpcDiffuseAlphaTest As Boolean
+
+    ''' <summary><b>Intención del CONSUMIDOR sobre la EXISTENCIA del NiAlphaProperty.</b> True = no estrenar
+    ''' un bloque que el shape fuente no traía (el round-trip de los que sí lo traían no se toca).
+    ''' <para>Separado de <see cref="NpcDiffuseAlphaTest"/> desde 2026-08-08: antes los dos viajaban en un
+    ''' único <c>Boolean?</c> donde `Nothing` significaba a la vez "sin opinión" y "comportamiento histórico",
+    ''' y eso hacía imposible expresar el veto sin arrastrar el hecho del record (y viceversa).</para>
+    ''' <para>Default False = fabrica, que es lo que hacía `Nothing` ⇒ ningún consumidor cambia de
+    ''' comportamiento salvo el que lo prenda explícitamente.</para></summary>
+    <Browsable(False)>
+    Public Property VetoAlphaPropertyCreation As Boolean
 
     <Category("Opacity")>
     <DefaultValue(CType(128, Byte))>
@@ -3261,15 +3284,20 @@ Public Class FO4UnifiedMaterial_Class
         If needAlphaProperty Then
             Dim createdNew = False
             If IsNothing(shap.AlphaPropertyRef) OrElse shap.AlphaPropertyRef.Index = -1 Then
-                ' ⛔ VETO DE FABRICACIÓN (ver AlphaTestWriteDecision). ESTRENAR un NiAlphaProperty que el
-                ' shape fuente NO traía es una decisión que el material NO puede tomar: un material con
-                ' AlphaTest=True es condición NECESARIA pero no suficiente (10.995 shapes horneados por el
-                ' CK tienen NiAlphaProperty sin que su material lo dicte, y a la inversa el CK NO fabrica
-                ' salvo bajo su propia regla de dominio). Si el consumidor dijo explícitamente que NO,
-                ' se respeta y se sale: no hay nada que quitar (el shape no tenía bloque) y el round-trip
-                ' de los que SÍ lo traían queda intacto, porque ese camino no pasa por acá.
-                ' `Nothing` (sin decisión) mantiene el comportamiento histórico: fabrica.
-                If Me.AlphaTestWriteDecision.HasValue AndAlso Not Me.AlphaTestWriteDecision.Value Then Return
+                ' ⛔⛔ VETO DE FABRICACIÓN — NO BORRARLO. Se intentó el 2026-08-08 y el A/B del corpus lo
+                ' refutó en una sola corrida: DLCCoast.esm/00004639 (DiMA) pasó de 26 a 27 bloques porque su
+                ' shape 'SynthHeadGen2' recibió un NiAlphaProperty. Es EL caso contra el que se midió la ley
+                ' del bake — "DiMA no debe recibir NiAlphaProperty" (paridad CK). Fue el ÚNICO NIF que se
+                ' movió de los 2.877 de FO4 (SSE: 0 de 4.460), o sea que el veto tiene exactamente un
+                ' consumidor real y es load-bearing.
+                ' ⚠️ Y ojo con la auditoría estática: mirar el BGSM que NOMBRA el NIF da AlphaTest=False para
+                ' la cabeza de DiMA. El bake NO usa ese material sino el RESUELTO (cadena TXST→MNAM), que sí
+                ' pide alpha. Medir la fuente equivocada fue lo que hizo creer que este veto era inalcanzable.
+                ' ESTRENAR un NiAlphaProperty que el shape fuente NO traía es una decisión que el material NO
+                ' puede tomar: AlphaTest=True es condición NECESARIA pero no suficiente (10.995 shapes
+                ' horneados por el CK tienen el bloque sin que su material lo dicte, y a la inversa el CK NO
+                ' fabrica salvo bajo su propia regla de dominio).
+                If Me.VetoAlphaPropertyCreation Then Return
                 shap.AlphaPropertyRef = New NiBlockRef(Of NiAlphaProperty) With {.Index = Nif.AddBlock(New NiAlphaProperty)}
                 createdNew = True
             End If
@@ -3890,10 +3918,10 @@ Public Class FO4UnifiedMaterial_Class
             ' lo pone en UNA sola shape. Espejarlo incondicionalmente lo puso en 3465 shapes donde el CK no
             ' lo pone (regresión revertida).
             ' El árbitro real es el flag de record ACBS\Diffuse Alpha Test, pero eso NO se decide acá: la lib
-            ' sólo TRANSPORTA la decisión del consumidor vía AlphaTestWriteDecision. `Nothing` = bit limpio,
+            ' sólo TRANSPORTA el HECHO del record vía NpcDiffuseAlphaTest. False (el default) = bit limpio,
             ' que es el comportamiento de todo consumidor que no sea el bake de FO4.
             ' Ley completa y evidencia: 40-bake-leyes-fo4.md §8.
-            If Me.AlphaTestWriteDecision.GetValueOrDefault(False) Then
+            If Me.NpcDiffuseAlphaTest Then
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 Or NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
             Else
                 shad.ShaderFlags_F4SPF2 = shad.ShaderFlags_F4SPF2 And Not NiflySharp.Enums.Fallout4ShaderPropertyFlags2.Alpha_Test
