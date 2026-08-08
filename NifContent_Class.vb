@@ -725,33 +725,16 @@ Public Class Nifcontent_Class_Manolo
             End If
         End If
 
-        ' NiflySharp DeepCopyHelper bug workaround: structs short-circuit at DeepCopy
-        ' (DeepCopyHelper.cs:37 `type.IsValueType → return original`), so reference-type
-        ' FIELDS inside struct elements of cloned lists stay aliased with the source.
-        ' Specifically for NiSkinData: BoneList is List<BoneData> (struct); cloned fine
-        ' element-wise, but each struct's VertexWeights (List<BoneVertData>) is SHARED
-        ' between source and clone.  Subsequent SetSkinning on the clone mutates the
-        ' source's BoneList too → UpdateSkinPartitions(source) reads stale/overwritten
-        ' weights and throws KeyNotFound on vertex indices that no longer exist in the
-        ' aliased list.  Same category of bug we handle for BSGeometrySegmentData.SubSegment
-        ' in SplitShapeHelper — fix by manually deep-cloning the nested reference fields.
-        If destShape IsNot Nothing Then
-            Dim destSkinInst = TryCast(GetBlock(Of NiSkinInstance)(destShape.SkinInstanceRef), NiSkinInstance)
-            If destSkinInst IsNot Nothing Then
-                Dim destSkinData = GetBlock(destSkinInst.Data)
-                If destSkinData IsNot Nothing AndAlso destSkinData.BoneList IsNot Nothing Then
-                    Dim newBoneList As New List(Of NiflySharp.Structs.BoneData)(destSkinData.BoneList.Count)
-                    For Each bone In destSkinData.BoneList
-                        Dim copy = bone   ' struct copy
-                        If bone.VertexWeights IsNot Nothing Then
-                            copy.VertexWeights = New List(Of NiflySharp.Structs.BoneVertData)(bone.VertexWeights)
-                        End If
-                        newBoneList.Add(copy)
-                    Next
-                    destSkinData.BoneList = newBoneList
-                End If
-            End If
-        End If
+        ' Acá vivía un workaround manual del aliasing de NiSkinData.BoneList[].VertexWeights, escrito
+        ' cuando el DeepCopy de NiflySharp cortaba en los structs. YA NO HACE FALTA: el fork lo
+        ' resuelve en el código generado, y mantener la copia a mano sólo duplicaba trabajo y sugería
+        ' un bug inexistente. Verificado en el generador —
+        '   NiSkinData copy-ctor:      _boneList.ConvertAll(e => e.DeepClone())
+        '   BoneData.DeepClone:        VertexWeights = new List<BoneVertData>(this.VertexWeights)
+        '   NiSkinPartition copy-ctor: _partitions.ConvertAll(e => e.DeepClone())
+        '   SkinPartition.DeepClone:   re-aloja sus OCHO listas (Bones, VertexMap, VertexWeights,
+        '                              Strips, StripLengths, Triangles, BoneIndices, TrianglesCopy)
+        ' ⇒ un shape clonado NO comparte listas de skin con el NIF fuente.
 
         Return destShape
     End Function
@@ -986,6 +969,54 @@ Public Class Nifcontent_Class_Manolo
     ''' Call before UpdateSkinPartitions whenever vertex compaction changes indices
     ''' (e.g. zap removal or shape splitting).
     ''' </summary>
+    ''' <summary>
+    ''' Reindexa <c>NiSkinData.BoneList[].VertexWeights</c> al espacio de vértices posterior a una
+    ''' compactación, descartando los pesos de los vértices que se cayeron.
+    '''
+    ''' <para>⛔ HACE FALTA AUNQUE YA SE HAYA LLAMADO A <c>SetSkinning</c>. En la familia BSTriShape
+    ''' (FO4/SSE) el skin vive DOS VECES: por vértice dentro del vertex data (que es lo que
+    ''' <c>BSTriShapeGeometry.SetSkinning</c> escribe) y otra vez en <c>NiSkinData.BoneList</c>, como
+    ''' lista de pares (índice de vértice, peso). El adapter NO toca la segunda — sólo la familia
+    ''' NiTriShape la reconstruye.</para>
+    '''
+    ''' <para>Y esa segunda copia no es decorativa: <c>UpdateSkinPartitions</c> regenera la partición
+    ''' leyendo de ahí (<c>vertBoneWeights[bw.Index]</c> en NifFile.cs). Si los índices quedaron en el
+    ''' espacio viejo, cada peso se aplica al vértice EQUIVOCADO y los que apuntan más allá del nuevo
+    ''' conteo se pierden ⇒ la malla sale con vértices disparados. MEDIDO en un export con oclusión:
+    ''' el shape pasó de 2434 a 1900 vértices y salió reventado, mientras el shape hermano del mismo
+    ''' NIF —que no se compactó— salió intacto.</para>
+    '''
+    ''' <para>Llamar ANTES de <see cref="UpdateSkinPartitions"/>, junto con
+    ''' <see cref="RemapSkinPartitionTriangles"/>.</para></summary>
+    Public Sub RemapSkinDataVertexWeights(shape As INiShape, oldToNew As IReadOnlyDictionary(Of Integer, Integer))
+        If shape Is Nothing Then Return
+        Dim skinInst = GetBlock(Of NiSkinInstance)(shape.SkinInstanceRef)
+        If skinInst Is Nothing Then Return
+        Dim skinData = GetBlock(skinInst.Data)
+        If skinData Is Nothing OrElse skinData.BoneList Is Nothing Then Return
+
+        Dim newBoneList As New List(Of NiflySharp.Structs.BoneData)(skinData.BoneList.Count)
+        For Each bone In skinData.BoneList
+            Dim copy = bone   ' struct copy
+            If bone.VertexWeights IsNot Nothing Then
+                Dim remapped As New List(Of NiflySharp.Structs.BoneVertData)(bone.VertexWeights.Count)
+                For Each vw In bone.VertexWeights
+                    Dim ni As Integer
+                    If oldToNew.TryGetValue(CInt(vw.Index), ni) AndAlso ni >= 0 Then
+                        Dim c = vw   ' struct copy
+                        c.Index = CUShort(ni)
+                        remapped.Add(c)
+                    End If
+                Next
+                copy.VertexWeights = remapped
+                ' NumVertices de un BoneData es la cantidad de PESOS de ese hueso, no la del shape.
+                copy.NumVertices = CUShort(remapped.Count)
+            End If
+            newBoneList.Add(copy)
+        Next
+        skinData.BoneList = newBoneList
+    End Sub
+
     Public Sub RemapSkinPartitionTriangles(shape As INiShape, oldToNew As IReadOnlyDictionary(Of Integer, Integer))
         ' El caller obtiene el shape con `geom.Geometry?.BackingShape`, que puede dar Nothing para una
         ' SkinnedGeometry que no viene de un NIF. Sin este guard reventaba con NRE en vez de ser no-op,

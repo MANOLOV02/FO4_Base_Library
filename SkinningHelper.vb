@@ -561,10 +561,31 @@ Public Class SkinningHelper
             If Logger.Enabled Then
                 Dim skm = poseT.ComposeTransforms(localT)
                 Dim skt = skm.Translation
+                Dim bt = bindT.Translation, lt = localT.Translation
+                ' src= de qué rama salió el bind. Las dos ramas dan mundos DISTINTOS, así que un shape
+                ' con huesos mezclados tiene la paleta partida y el blend LBS deforma (single-bone lo
+                ' tapa porque usa sólo pal[0]). Sin este campo el [SKIN-MAT] no permite distinguirlo.
+                Dim src = If(SkeletonBone Is Nothing, "nif-fallback", "skel")
                 Dim shNm = shape.ShapeName, bnNm = boneName, kIdx = k
-                Logger.LogLazy(Function() $"[SKIN-MAT] shape='{shNm}' bone[{kIdx}]='{bnNm}' skin.T=({skt.X:F3},{skt.Y:F3},{skt.Z:F3})")
+                Logger.LogLazy(Function() $"[SKIN-MAT] shape='{shNm}' bone[{kIdx}]='{bnNm}' src={src} skin.T=({skt.X:F3},{skt.Y:F3},{skt.Z:F3}) bind.T=({bt.X:F3},{bt.Y:F3},{bt.Z:F3}) local.T=({lt.X:F3},{lt.Y:F3},{lt.Z:F3})")
             End If
         Next
+
+        ' [SKIN-SKEL] Resumen por shape: qué esqueleto está vivo y cuántos huesos salieron de cada rama.
+        ' Una paleta partida (ambos contadores > 0) es condición SUFICIENTE para que full skinning
+        ' deforme y single-bone no.
+        If Logger.Enabled Then
+            Dim nSkel = 0, nFallback = 0
+            For k = 0 To bones.Count - 1
+                If effectiveSkel.SkeletonDictionary.ContainsKey(bones(k).Name.String) Then nSkel += 1 Else nFallback += 1
+            Next
+            Dim shNm2 = shape.ShapeName
+            Dim skelFile = If(effectiveSkel.HasSkeleton, Config_App.Current.SkeletonFilePath, "<SIN ESQUELETO CARGADO>")
+            Dim nDict = effectiveSkel.SkeletonDictionary.Count
+            Dim isDefault = (effectiveSkel Is SkeletonInstance.Default)
+            Dim nb = bones.Count
+            Logger.LogLazy(Function() $"[SKIN-SKEL] shape='{shNm2}' bones={nb} src:skel={nSkel} src:nif-fallback={nFallback} PALETA-PARTIDA={(nSkel > 0 AndAlso nFallback > 0)} skelDict={nDict} isDefaultInstance={isDefault} skelFile='{skelFile}'")
+        End If
 
         ' 4) Aplicar skinning CPU
         ' Save NIF-local vertices BEFORE skinning (needed for correct morph-space application)

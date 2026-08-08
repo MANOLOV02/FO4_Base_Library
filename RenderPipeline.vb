@@ -193,6 +193,13 @@ Public Class RenderIntent
     ' ── Optional callback for async texture prefetch before geometry load ──
     Public Property TexturePrefetchAction As Action
 
+    ''' <summary>Texto que el pipeline deja en pantalla cuando <see cref="Shapes"/> viene vacío
+    ''' (camino "no hay nada que dibujar"): limpia el modelo y pinta este cartel. <c>Nothing</c>
+    ''' (default) = "Empty". Es estado POR RENDER: <see cref="ClearDirty"/> lo devuelve a Nothing,
+    ''' igual que <see cref="PreserveTextureCache"/>, así un cartel puntual ("Unreadable...") no
+    ''' se hereda al siguiente vaciado.</summary>
+    Public Property EmptyStatusText As String = Nothing
+
     ''' <summary>One-shot callback invoked exactly once after the next False→True transition of
     ''' <see cref="PreviewModel.TexturesReady"/> caused by background uploads completing.
     ''' Receives the <see cref="PreviewModel"/> so the callback can read / mutate
@@ -288,6 +295,7 @@ Public Class RenderIntent
         _dirty = RenderDirtyFlags.None
         DirtyShapes.Clear()
         PreserveTextureCache = False
+        EmptyStatusText = Nothing
     End Sub
 
     ''' <summary>True if any dirty flag is set — the pipeline has work to do.</summary>

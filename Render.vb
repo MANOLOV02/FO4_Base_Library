@@ -624,6 +624,22 @@ Public Class PreviewControl
         ExecuteRenderPipeline()
     End Sub
 
+    ''' <summary>
+    ''' Deja el control SIN nada que dibujar y con <paramref name="statusText"/> en pantalla.
+    ''' ⛔ No alcanza con llamar a <see cref="Processing_Status"/>: ese cartel es un frame suelto y
+    ''' NO toca el modelo, así que las mallas anteriores siguen vivas con <c>Can_Render=True</c> y
+    ''' el primer repaint que llegue (el heartbeat de seguridad de ~1 s del Tick, un resize, el
+    ''' mouse) vuelve a dibujar el contenido VIEJO encima del cartel. Este camino pasa por el
+    ''' pipeline vacío, que limpia mallas/texturas, frena el RenderTimer y recién ahí pinta el
+    ''' texto — por eso el cartel queda.
+    ''' </summary>
+    Public Sub ClearRender(Optional statusText As String = "Empty")
+        Intent.Shapes = Nothing
+        Intent.EmptyStatusText = statusText
+        Intent.MarkDirty(RenderDirtyFlags.Shapes)
+        InvalidateRender()
+    End Sub
+
     ''' <summary>Hace el contexto GL current SOLO si no lo está ya. MakeCurrent() (cambio de
     ''' contexto) es caro aunque el contexto ya sea el current; llamarlo por-mesh por-buffer en el
     ''' loop de upload (UpdateSkinBuffers_GL + UpdateBoneMatricesSSBO) cuesta. El guard con
@@ -657,7 +673,7 @@ Public Class PreviewControl
             _lastLoadedShapesSource = Nothing
             _skeletonPreparedForShapes = Nothing
             intent.TexturePrefetchAction = Nothing
-            Model.Processing_Status_GL("Empty")
+            Model.Processing_Status_GL(If(String.IsNullOrEmpty(intent.EmptyStatusText), "Empty", intent.EmptyStatusText))
             intent.ClearDirty()
             Return
         End If
@@ -1876,6 +1892,33 @@ Public Class PreviewModel
         ' of the runtime value.
         Private _lastDrawHidden As Boolean = True
         Private _occlHidden As Boolean() = Nothing
+        Private _occlEvaluated As Boolean = False
+
+        ''' <summary>
+        ''' El set de triángulos que la oclusión por segmento/partición dejó FUERA del draw, indexado
+        ''' por índice de triángulo del shape (mismo orden que <c>Meshgeometry.Indices</c>).
+        ''' <c>Nothing</c> = no hay nada oculto por esta vía.
+        ''' <para>Es el mismo array que <see cref="EnsureZapIndexBuffer"/> usó para filtrar el element
+        ''' buffer del último frame, expuesto para que un consumidor (el export a NIF) LEA lo que se
+        ''' dibujó en vez de recalcularlo. Recalcularlo es reproducir el criterio, y dos copias del
+        ''' criterio se desincronizan; esto no puede.</para>
+        ''' <para>⚠️ Sólo es significativo si <see cref="OcclusionEvaluated"/> es True: el cómputo vive
+        ''' dentro de Render(), DESPUÉS del early-return por <c>RenderHide</c>, así que un shape que
+        ''' nunca se dibujó no tiene valor válido acá.</para></summary>
+        Public ReadOnly Property HiddenTriangles As Boolean()
+            Get
+                Return _occlHidden
+            End Get
+        End Property
+
+        ''' <summary>True una vez que este mesh pasó por el cómputo de oclusión al dibujar. False =
+        ''' <see cref="HiddenTriangles"/> no significa "nada oculto", significa "no se sabe".</summary>
+        Public ReadOnly Property OcclusionEvaluated As Boolean
+            Get
+                Return _occlEvaluated
+            End Get
+        End Property
+
         Public Class MaterialData
             Sub New(Parent As MeshData_Class)
                 ParentMeshData = Parent
@@ -2718,6 +2761,11 @@ Public Class PreviewModel
                 End If
             End If
             _occlHidden = occl
+            ' Marcado acá y no en los returns de abajo: el early-return del dirty gate sólo puede
+            ' darse si ya hubo una pasada previa por este punto (los centinelas de _lastCoveredSlotsMask
+            ' y _lastDrawHidden fuerzan que la PRIMERA siempre llegue), así que el flag no puede
+            ' quedar en False con un _occlHidden ya válido.
+            _occlEvaluated = True
 
             Dim shouldFilter As Boolean = applyZaps
             If shouldFilter Then
