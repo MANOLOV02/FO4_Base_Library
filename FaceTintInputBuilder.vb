@@ -34,15 +34,17 @@ Public Module FaceTintInputBuilder
     ''' <paramref name="tintBytesCache"/> is a process-lifetime cache of decoded DDS bytes
     ''' keyed by normalized texture path. Pass <c>Nothing</c> for an uncached one-shot read.
     ''' </summary>
+    ''' <param name="dataPath">Data\ desde el que leer el registro de LUTs de LooksMenu. Nothing = el global
+    ''' <see cref="Config_App"/> (camino de la app); el CLI headless thread-ea el suyo.</param>
     Public Function Build(npcData As NPC_Data,
                           race As RACE_Data,
                           isFemale As Boolean,
                           pluginManager As PluginManager,
                           tintBytesCache As Dictionary(Of String, Byte()),
-                          Optional hairLutPath As String = "",
                           Optional hairColorFormID As UInteger = 0UI,
                           Optional hasTextureLighting As Boolean = False,
-                          Optional textureLightingColorArgb As Integer = 0) As TintBuildResult
+                          Optional textureLightingColorArgb As Integer = 0,
+                          Optional dataPath As String = Nothing) As TintBuildResult
         Dim result As New TintBuildResult()
         If pluginManager Is Nothing OrElse npcData Is Nothing OrElse race Is Nothing Then Return result
 
@@ -64,6 +66,16 @@ Public Module FaceTintInputBuilder
         ' details are no longer washed out. No-op when QNAM is absent, when the race has no
         ' slot-12 catalog (non-skin races), or when the NPC already authors a slot-12 layer.
         InjectSyntheticSkinToneLayer(mergedLayers, npcData, race, isFemale, hasTextureLighting, textureLightingColorArgb)
+        ' ⭐ La paleta de la CEJA se resuelve ACÁ ADENTRO, desde el RACE que este builder ya tiene, y NO la
+        ' pasa el caller. Antes era un parámetro y había TRES implementaciones de la regla (dos en
+        ' NpcMaterialResolver, una en el CLI), las tres recorriendo la malla de pelo — que es la ley del
+        ' MESH (ProcessHairColor), no la de la cara. El motor saca este LUT del RACE dentro de
+        ' StartFaceCustomizationGenerationForNPC; ver LmHairColorLutLoader.ResolveBrowPaletteTexture, que
+        ' cita el desensamblado. Resolverlo acá hace estructuralmente imposible que render, bake y CLI
+        ' vuelvan a divergir.
+        LmHairColorLutLoader.EnsureLoaded(pluginManager, If(dataPath, Config_App.Current?.DataPath))
+        Dim hairLutPath As String = LmHairColorLutLoader.ResolveBrowPaletteTexture(race, hairColorFormID)
+
         ' Pass the caller-supplied HCLF through verbatim -- it is the engine-effective value
         ' (NPC.HCLF + TPLT chain + LM overlay + RACE.HCLF fallback) resolved by the caller's
         ' state pipeline. The builder must not second-guess it; if the caller decides the NPC

@@ -308,6 +308,24 @@ Public Class PluginManager
         Return (CUInt(F) << 24) Or (objectID And &HFFFFFFUI)
     End Function
 
+    ''' <summary>FormID global a partir del nombre del plugin y el <b>object ID CRUDO</b>: 12 bits útiles en
+    ''' un ESL, 24 en un plugin completo. Es la convención que muestran el CK y xEdit, y la que usan los JSON
+    ''' de f4ee (<c>haircolors.json</c>, "Form": "800").
+    ''' <para>⛔ NO confundir con <see cref="GlobalFormIDFromIdentifierLocal"/>: aquella recibe el local de 24
+    ''' bits de LooksMenu, que en un ESL YA trae el light slot en los bits 12..23, y por eso se limita a OR-ear
+    ''' 0xFE. Pasarle un object ID pelado de un ESL produce <c>0xFE000xxx</c> — el record xxx del ESL en el
+    ''' slot 0, o sea otro plugin. Devuelve 0 si el plugin no está cargado.</para></summary>
+    Public Function GlobalFormIDFromObjectID(pluginName As String, objectID As UInteger) As UInteger
+        _rwLock.EnterReadLock()
+        Try
+            Dim idx As Integer
+            If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, idx) Then Return 0UI
+            Return MakeGlobalFormID(Plugins(idx), objectID)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+    End Function
+
     ''' <summary>Resolve a referenced FormID using the source plugin that owns the record.</summary>
     Public Function ResolveReferencedFormID(sourcePluginName As String, localFormID As UInteger) As UInteger
         If localFormID = 0UI Then Return 0UI
