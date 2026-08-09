@@ -20,6 +20,39 @@ Public Class TriMorphEntry
 
     ''' <summary>Vertex index -> position delta (X,Y,Z). For UV morphs, Z=0.</summary>
     Public ReadOnly Property Offsets As New Dictionary(Of UShort, Vector3)()
+
+    Private _maxVertexIndex As Integer = -1
+
+    ''' <summary>
+    ''' Indice de vertice MAS ALTO que declara este morph EN EL ARCHIVO, o -1 si no tiene ninguno.
+    ''' Es el operando de <c>m_maxIndex</c> del gate de skee64 (BodyMorphInterface.cpp:340/:364/:384/
+    ''' :405/:425/:447): <c>if (m_maxIndex &lt; vertexCount)</c> aplica el morph ENTERO, y si no lo
+    ''' DESCARTA ENTERO con un <c>_ERROR</c> — no aplica nada parcial.
+    '''
+    ''' â›” NO se puede derivar de <see cref="Offsets"/>: el lector de skee64 hace
+    ''' <c>m_vertexDeltas.push_back</c> de TODA entrada leida y actualiza <c>m_maxIndex</c> antes de
+    ''' mirar magnitudes (:938-939), mientras que <see cref="TriFileParser"/> descarta los deltas
+    ''' EXACTAMENTE cero porque sumar 0 es inerte. Inerte para APLICAR, no para el gate: si las
+    ''' entradas de indice mas alto de un morph fueran todas cero, el maximo de Offsets quedaria por
+    ''' debajo del de skee64 y el gate abriria donde el motor cierra. Por eso se captura al parsear.
+    '''
+    ''' El getter cae al maximo de <see cref="Offsets"/> cuando la entrada NO vino de un archivo
+    ''' (la arma en memoria el ESCRITOR — WM TriFiles.vb:458). No es un modo alternativo: es la
+    ''' misma pregunta respondida con el unico dato disponible en ese caso.
+    ''' </summary>
+    Public Property MaxVertexIndex As Integer
+        Get
+            If _maxVertexIndex >= 0 Then Return _maxVertexIndex
+            Dim m As Integer = -1
+            For Each k In Offsets.Keys
+                If CInt(k) > m Then m = CInt(k)
+            Next
+            Return m
+        End Get
+        Set(value As Integer)
+            _maxVertexIndex = value
+        End Set
+    End Property
 End Class
 
 ''' <summary>TRI morph type.</summary>
@@ -189,8 +222,14 @@ Public Module TriFileParser
                     .MorphType = sectionType
                 }
 
+                ' Maximo de indice SOBRE EL ARCHIVO, capturado ANTES del skip de deltas cero de abajo.
+                ' Es el m_maxIndex de skee64; ver TriMorphEntry.MaxVertexIndex para por que no se puede
+                ' derivar de Offsets.
+                Dim maxVid As Integer = -1
+
                 For k = 0 To vertexCount - 1
                     Dim vid = br.ReadUInt16()
+                    If CInt(vid) > maxVid Then maxVid = CInt(vid)
 
                     ' ⛔ Sin epsilon y ACUMULANDO, a proposito. La autoridad del LECTOR es el MOTOR, no el
                     ' editor de BodySlide:
@@ -233,6 +272,8 @@ Public Module TriFileParser
                         End If
                     End If
                 Next
+
+                entry.MaxVertexIndex = maxVid
 
                 If entry.Offsets.Count > 0 Then
                     tri.AddMorph(shapeName, entry)
