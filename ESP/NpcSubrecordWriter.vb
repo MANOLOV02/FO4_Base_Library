@@ -82,9 +82,29 @@ Public Module NpcSubrecordWriter
                 If npc.HasCombatStyle Then EmitFormId(bw, "ZNAM", npc.CombatStyleFormID, remap)
                 If npc.HasGiftFilter Then EmitFormId(bw, "GNAM", npc.GiftFilterFormID, remap)
                 EmitNam5(bw, npc.Nam5Raw)
+                ' NAM6 = Height Min on FO4, plain Height on SSE — same signature, same float, both games.
                 If npc.HasHeightMin Then EmitFloat(bw, "NAM6", npc.HeightMin)
                 EmitNam7(bw, npc.Nam7Raw)
+                ' NAM4 (Height Max) is FO4-only in the schema — 0 of the 5118 NPC_ in Skyrim.esm carry one.
+                ' ⛔ Deliberately NOT gated on the game, unlike MRSV below. The two are not analogous: MRSV is
+                ' emitted from a LIST an editor overlay can claim ownership of and fill spuriously, whereas
+                ' HasHeightMax can only be True because the PARSER read a NAM4 off the record — no app path
+                ' authors one under Skyrim (the Edit Body height section gates on _isSSE, and the record
+                ' override never sets HeightMax there). So a game gate here could only ever DROP a NAM4 that a
+                ' third-party SSE plugin genuinely carries, which is the round-trip fidelity rule in reverse.
                 If npc.HasHeightMax Then EmitFloat(bw, "NAM4", npc.HeightMax)
+                ' ⚠️ CHECK AUTOMÁTICO — the revert above rests on "under Skyrim, HasHeightMax can only mean the
+                ' parser read a real NAM4". Nothing enforces that, so say so out loud if it ever stops being
+                ' true (a new editor path authoring HeightMax without checking the game). Same shape as the
+                ' [FTST-INVARIANT] probe below. Does NOT change the emitted bytes: a third-party SSE plugin
+                ' that genuinely carries a NAM4 must keep round-tripping it verbatim.
+                If isSse AndAlso npc.HasHeightMax Then
+                    Dim edidNam4 = npc.EditorID
+                    Dim fidNam4 = npc.FormID
+                    Logger.LogLazy(Function() $"[NAM4-INVARIANT] NPC_ {edidNam4} ({fidNam4:X8}): NAM4 emitted under Skyrim. " &
+                                              "Expected only for a third-party plugin that already carried one — " &
+                                              "if this NPC was edited in-app, some path is authoring HeightMax without a game check.")
+                End If
                 EmitMwgt(bw, npc)
                 If npc.HasSoundLevel Then EmitU32(bw, "NAM8", npc.SoundLevel)
                 EmitActorSounds(bw, npc, remap)
