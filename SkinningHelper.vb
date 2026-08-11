@@ -19,7 +19,11 @@ Public Structure SkinnedGeometry
     Public Vertices() As Vector3d
     Public BaseVertices() As Vector3d
     Public NifLocalVertices() As Vector3d      ' pre-skinning NIF local space — base for morph application
-    Public PerVertexSkinMatrix() As Matrix4d   ' per-vertex blended Mtot = GlobalTransform * skin; filled once in ExtractSkinnedGeometry
+    ' ⭐⛔ EN SINGLE, NO EN DOUBLE. Es 128 bytes por vertice en Matrix4d y se recorre ENTERA una vez por
+    ' vertice por frame durante una animacion: con 130.500 vertices son 16,7 MB de lectura por pasada, y el
+    ' destino de todo eso es un VBO de floats. La precision extra no se usaba en ningun lado.
+    ' Ver NormalMatrixOrIdentity, que se paso a Single por el mismo motivo y en el mismo movimiento.
+    Public PerVertexSkinMatrix() As Matrix4   ' per-vertex blended Mtot = GlobalTransform * skin
     Public dirtyMaskIndices As HashSet(Of Integer)              ' Para dirty-tracking de máscara
     ' Set by MorphEngine.ApplyMorphPlan whenever it (re)computes the zap mask; consumed + cleared by
     ' Render.EnsureZapIndexBuffer to rebuild the filtered element buffer only when the zap set changed.
@@ -590,7 +594,8 @@ Public Class SkinningHelper
         ' 4) Aplicar skinning CPU
         ' Save NIF-local vertices BEFORE skinning (needed for correct morph-space application)
         Dim nifLocalVerts = rawVerts.ToArray()
-        Dim perVertexMtot(vertexCount - 1) As Matrix4d
+        ' Se guarda en Single: ver el campo PerVertexSkinMatrix.
+        Dim perVertexMtot(vertexCount - 1) As Matrix4
 
         ' O2.4: Parallel options — use regular For for small meshes, bound parallelism for large ones
         Dim useParallel As Boolean = vertexCount >= 500
@@ -679,7 +684,7 @@ Public Class SkinningHelper
                                                              End If
 
                                                              ' Store double-precision Mtot for world-space cache / bake
-                                                             perVertexMtot(i) = Mtot
+                                                             perVertexMtot(i) = AMatrix4(Mtot)
                                                          End Sub
 
                 If useParallel Then
@@ -693,7 +698,7 @@ Public Class SkinningHelper
             Case shape.IsSkinned AndAlso singleboneskinning AndAlso bones.Count > 0
                 ' Single-bone: pre-compute once — GPU path: do NOT transform rawVerts/N/T/B
                 Dim Mtot = GlobalTransform * matsPose(0)
-                Array.Fill(perVertexMtot, Mtot)
+                Array.Fill(perVertexMtot, AMatrix4(Mtot))
 
                 ' GPU Skinning: single bone matrix for SSBO
                 gpuBoneMats = New Matrix4(0) {}
@@ -730,7 +735,7 @@ Public Class SkinningHelper
                     Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
                 End If
 
-                Array.Fill(perVertexMtot, Mtot)
+                Array.Fill(perVertexMtot, AMatrix4(Mtot))
 
                 ' GPU Skinning: single bone matrix for SSBO
                 gpuBoneMats = New Matrix4(0) {}
@@ -753,7 +758,7 @@ Public Class SkinningHelper
         Dim minV As New Vector3d(Double.MaxValue)
         Dim maxV As New Vector3d(Double.MinValue)
         For i As Integer = 0 To rawVerts.Length - 1
-            Dim wv = Vector3d.TransformPosition(rawVerts(i), perVertexMtot(i))
+            Dim wv = Vector3d.TransformPosition(rawVerts(i), AMatrix4d(perVertexMtot(i)))
             If wv.X < minV.X Then minV.X = wv.X
             If wv.Y < minV.Y Then minV.Y = wv.Y
             If wv.Z < minV.Z Then minV.Z = wv.Z
@@ -865,10 +870,63 @@ Public Class SkinningHelper
     ''' inversa: la geometría colapsa a un plano/punto y la normal queda matemáticamente
     ''' indefinida. Devolvemos identidad en lugar de dejar que OpenTK tire
     ''' InvalidOperationException ("Matrix is singular and cannot be inverted").</summary>
+    ''' <summary>Matriz de normales: la inversa transpuesta del 3x3, con Identidad si es degenerada.
+    ''' <para>⭐⛔ LA INVERSA SE EVALUA EN SINGLE, NO EN DOUBLE, Y ES A PROPOSITO. El vertex shader hace
+    ''' <c>transpose(inverse(mat3(skinMatrix)))</c> en float: calcularla en Double de este lado no era mas
+    ''' fiel, era OTRA cuenta, y parte de la divergencia CPU/GPU que mide el arnes salia de aca.</para>
+    ''' <para>⛔ EL CAMBIO ES GLOBAL A PROPOSITO. Acotarlo al camino de render habria dejado el preview
+    ''' calculando una cosa y el BAKE otra — que es exactamente la divergencia que la regla RENDER==BAKE
+    ''' existe para impedir. Los consumidores son el render (UpdateSkinBuffers_GL), la extraccion de
+    ''' geometria, el world-cache y el exportador de NIF, y todos tienen que ver la misma normal.</para>
+    ''' <para>⚠️ POR LO TANTO CAMBIA BYTES HORNEADOS Y EXPORTADOS. No es una optimizacion invisible: hay
+    ''' que correr el corpus de bake y mirar la diff. El motivo es que la precision extra no se usaba —
+    ''' el destino de todas estas normales es un buffer de floats o un NIF, que guarda floats.</para>
+    ''' <para>El resultado se devuelve en Matrix3d para no cambiar la firma ni los call sites; lo que
+    ''' viaja adentro es precision de Single. El corte por determinante queda en 1e-12, la misma
+    ''' constante de antes, para no mover QUE se considera degenerado.</para></summary>
+    ''' <summary>Matrix4d -> Matrix4. Se usa al GUARDAR en <c>PerVertexSkinMatrix</c>: el blend sigue
+    ''' evaluandose en Double (es la ley canonica, con su self-test SIMD bit a bit), y lo unico que baja
+    ''' de precision es el ALMACENAMIENTO.</summary>
+    Public Shared Function AMatrix4(m As Matrix4d) As Matrix4
+        Return New Matrix4(CSng(m.M11), CSng(m.M12), CSng(m.M13), CSng(m.M14),
+                           CSng(m.M21), CSng(m.M22), CSng(m.M23), CSng(m.M24),
+                           CSng(m.M31), CSng(m.M32), CSng(m.M33), CSng(m.M34),
+                           CSng(m.M41), CSng(m.M42), CSng(m.M43), CSng(m.M44))
+    End Function
+
+    ''' <summary>Matrix4 -> Matrix4d. Para los consumidores que siguen haciendo su cuenta en Double
+    ''' (world-cache, exportador): ensanchar en un registro no cuesta memoria, y asi el unico cambio de
+    ''' esta tanda es la precision guardada, no la de las cuentas.</summary>
+    Public Shared Function AMatrix4d(m As Matrix4) As Matrix4d
+        Return New Matrix4d(m.M11, m.M12, m.M13, m.M14,
+                            m.M21, m.M22, m.M23, m.M24,
+                            m.M31, m.M32, m.M33, m.M34,
+                            m.M41, m.M42, m.M43, m.M44)
+    End Function
+
+    ''' <summary>Sobrecarga para la matriz de skin, que ahora se guarda en Single. Evita el viaje
+    ''' Single -> Double -> Single que haria pasar por la otra.</summary>
+    Public Shared Function NormalMatrixOrIdentity(Origen As Matrix4) As Matrix3d
+        Dim L As New OpenTK.Mathematics.Matrix3(Origen.M11, Origen.M12, Origen.M13,
+                                                Origen.M21, Origen.M22, Origen.M23,
+                                                Origen.M31, Origen.M32, Origen.M33)
+        If Math.Abs(L.Determinant) < 0.000000000001F Then Return Matrix3d.Identity
+        Dim inv = L.Inverted().Transposed()
+        Return New Matrix3d(inv.M11, inv.M12, inv.M13,
+                            inv.M21, inv.M22, inv.M23,
+                            inv.M31, inv.M32, inv.M33)
+    End Function
+
     Public Shared Function NormalMatrixOrIdentity(Origen As Matrix4d) As Matrix3d
-        Dim L As New Matrix3d(Origen)
-        If Math.Abs(L.Determinant) < 0.000000000001 Then Return Matrix3d.Identity
-        Return L.Inverted().Transposed()
+        ' Matrix3 es ambiguo: NiflySharp.Structs tambien define uno. Se califica.
+        Dim L As New OpenTK.Mathematics.Matrix3(CSng(Origen.M11), CSng(Origen.M12), CSng(Origen.M13),
+                             CSng(Origen.M21), CSng(Origen.M22), CSng(Origen.M23),
+                             CSng(Origen.M31), CSng(Origen.M32), CSng(Origen.M33))
+        If Math.Abs(L.Determinant) < 0.000000000001F Then Return Matrix3d.Identity
+        Dim inv = L.Inverted().Transposed()
+        Return New Matrix3d(inv.M11, inv.M12, inv.M13,
+                            inv.M21, inv.M22, inv.M23,
+                            inv.M31, inv.M32, inv.M33)
     End Function
 
     Private Shared Function Create_Normal_Matrix(Origen As Matrix4d) As Matrix4d
@@ -1462,7 +1520,7 @@ Public Class SkinningHelper
     ''' leían matrices viejas. Se detectó al factorizar, no antes: mirando los dos cuerpos por
     ''' separado la rama faltante no salta.</para>
     ''' </summary>
-    Friend Shared Sub FillPerVertexSkinMatrix(mats() As Matrix4d, skinning As ShapeSkinningData, palette() As Matrix4d)
+    Friend Shared Sub FillPerVertexSkinMatrix(mats() As Matrix4, skinning As ShapeSkinningData, palette() As Matrix4d)
         If mats Is Nothing OrElse palette Is Nothing Then Return
         Dim vc = mats.Length
         If vc = 0 Then Return
@@ -1476,9 +1534,9 @@ Public Class SkinningHelper
         Dim body As Action(Of Integer) =
             Sub(i)
                 If hasSkin Then
-                    mats(i) = BlendBoneMatrices(flatWgt, flatIdx, i * wpv, wpv, palette, flatPalette)
+                    mats(i) = AMatrix4(BlendBoneMatrices(flatWgt, flatIdx, i * wpv, wpv, palette, flatPalette))
                 Else
-                    mats(i) = sinSkin
+                    mats(i) = AMatrix4(sinSkin)
                 End If
             End Sub
         If vc >= 500 Then
@@ -1500,8 +1558,9 @@ Public Class SkinningHelper
         Parallel.ForEach(RangosDe(count),
             Sub(rango As Tuple(Of Integer, Integer))
                 For i = rango.Item1 To rango.Item2 - 1
-                    wv(i) = Vector3d.TransformPosition(localVerts(i), localMats(i))
-                    Dim nm = Create_Normal_Matrix(localMats(i))
+                    Dim md = AMatrix4d(localMats(i))
+                    wv(i) = Vector3d.TransformPosition(localVerts(i), md)
+                    Dim nm = Create_Normal_Matrix(md)
                     ' El world-cache queda en Double: lo consumen bounds, picking, el
                     ' exportador y el raytracer de oclusion. Lo unico que cambia es que
                     ' la normal de ENTRADA ya viene redondeada a Single.
@@ -1558,7 +1617,7 @@ Public Class SkinningHelper
                 Dim mx As New Vector3d(Double.MinValue)
                 Dim i1 = Math.Min(r * chunk + chunk, count)
                 For i = r * chunk To i1 - 1
-                    Dim w = Vector3d.TransformPosition(localVerts(i), localMats(i))
+                    Dim w = Vector3d.TransformPosition(localVerts(i), AMatrix4d(localMats(i)))
                     If w.X < mn.X Then mn.X = w.X
                     If w.Y < mn.Y Then mn.Y = w.Y
                     If w.Z < mn.Z Then mn.Z = w.Z
@@ -1774,7 +1833,7 @@ Public Class SkinningHelper
                 CSng(Mtot.M21), CSng(Mtot.M22), CSng(Mtot.M23), CSng(Mtot.M24),
                 CSng(Mtot.M31), CSng(Mtot.M32), CSng(Mtot.M33), CSng(Mtot.M34),
                 CSng(Mtot.M41), CSng(Mtot.M42), CSng(Mtot.M43), CSng(Mtot.M44))
-            Array.Fill(geo.PerVertexSkinMatrix, Mtot)
+            Array.Fill(geo.PerVertexSkinMatrix, AMatrix4(Mtot))
             geo.PerVertexMatrixValid = True   ' rama single-bone/unskinned: siempre se llena (barato)
         End If
 

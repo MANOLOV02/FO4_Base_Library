@@ -1046,7 +1046,7 @@ Partial Class LightRigForm
         ' controls themselves. The text is the user's own documentation of each knob; dropping it on
         ' the way over would have made the shared dialog strictly worse than the screen it replaced.
         '
-        ToolTip1.SetToolTip(chkRecalcNormals, "Recalculate normals and tangents when geometry is EXTRACTED for the preview. This is not the same knob as NPC Manager's CharGen 'Recalculate tangent space', which runs after the morph pass.")
+        ToolTip1.SetToolTip(chkRecalcNormals, "Recalculate normals and the tangent basis for the preview, both when geometry is loaded and after morphs deform it. Without it a morphed mesh keeps the tangent basis of its un-morphed shape, which is the frame the shader reads the normal map in.")
         ToolTip1.SetToolTip(chkRepairNaN, "Repair invalid NaN values found in recalculated tangent-space data.")
         ToolTip1.SetToolTip(chkNormalize, "Normalize recalculated tangent-space vectors.")
         ToolTip1.SetToolTip(chkDeterministic, "When the bitangent's Gram-Schmidt residual falls below single-precision noise, complete the basis from the normal and tangent instead of normalizing rounding noise. Turn off to reproduce BodySlide byte for byte.")

@@ -2509,6 +2509,27 @@ Public Class PreviewModel
             MeshData.Meshgeometry = geom
         End Sub
 
+        ''' <summary>Buffers de staging del upload, UNO POR MALLA y reusados entre frames. Ver el uso.
+        ''' <para>⛔ Se dimensionan al ALTA y no se achican: una malla no cambia de cantidad de vertices sin
+        ''' pasar por una re-extraccion, que reconstruye el RenderableMesh entero.</para></summary>
+        Private _upPos() As Vector3, _upNrm() As Vector3, _upTan() As Vector3, _upBitan() As Vector3
+
+        ''' <summary>⭐ Separa COMPUTO de SUBIDA dentro del camino de upload completo, para decidir donde
+        ''' vale la pena optimizar: si el que domina es el driver, vectorizar la aritmetica no mueve nada.
+        ''' <para>⛔ NO se usa `Logger.Enabled` para esto. Ese flag no gobierna solo la escritura del log: es
+        ''' la compuerta de TODOS los calculos de diagnostico del codigo y ademas mete dos Stopwatch por
+        ''' malla por frame, o sea que mediria un frame que no es el que corre en produccion.</para>
+        ''' <para>Apagado por default: cuando esta en False el costo es un test de booleano por llamada.</para>
+        ''' </summary>
+        Friend Shared Property MedirFasesDeUpload As Boolean = False
+        Friend Shared MsComputo As Double
+        Friend Shared MsSubida As Double
+
+        Private Sub EnsureUploadScratch(n As Integer)
+            If _upPos IsNot Nothing AndAlso _upPos.Length >= n Then Exit Sub
+            ReDim _upPos(n - 1) : ReDim _upNrm(n - 1) : ReDim _upTan(n - 1) : ReDim _upBitan(n - 1)
+        End Sub
+
         Public Sub UpdateSkinBuffers_GL(Optional recomputeBounds As Boolean = True)
             UpdateUvBuffer_GL()
             ' Actualiza VBOs de Normales, Tangentes, Bitangentes y Posiciones
@@ -2540,10 +2561,16 @@ Public Class PreviewModel
                 If MeshData.Meshgeometry.dirtyVertexIndices.Count > vertexCount * 0.6 Then
                     ' [RENDER-MS] compute vs upload — gateado (ver la nota del tope de la funcion).
                     Dim _swSkinPhase As System.Diagnostics.Stopwatch = If(_instr, System.Diagnostics.Stopwatch.StartNew(), Nothing)
-                    Dim posF(vertexCount - 1) As Vector3
-                    Dim nrmF(vertexCount - 1) As Vector3
-                    Dim tanF(vertexCount - 1) As Vector3
-                    Dim bitanF(vertexCount - 1) As Vector3
+                    ' ⛔⭐ SCRATCH REUTILIZADO, NO CUATRO ARRAYS NUEVOS POR FRAME. Este bloque corre por
+                    ' malla y por frame durante toda una animacion con skinning CPU (y en cada morph), y
+                    ' alocaba `vertexCount * 12 bytes * 4` cada vez: con 130.500 vertices son 6,3 MB de Gen0
+                    ' POR FRAME, ~375 MB/s a 60 fps. Es la misma politica que este archivo ya aplica a
+                    ' _shadowCasters y a BlendScratch, aca sin aplicar.
+                    ' No cambia un bit: mismos valores, mismo orden, mismos indices escritos. Lo unico que
+                    ' desaparece es la alocacion.
+                    EnsureUploadScratch(vertexCount)
+                    Dim posF = _upPos, nrmF = _upNrm, tanF = _upTan, bitanF = _upBitan
+                    Dim _swFase As System.Diagnostics.Stopwatch = If(MedirFasesDeUpload, System.Diagnostics.Stopwatch.StartNew(), Nothing)
 
                     If cpuSkin Then
                         ' CPU skinning: transform local ? world using PerVertexSkinMatrix
@@ -2565,7 +2592,7 @@ Public Class PreviewModel
                         ' vertice (NormalMatrixOrIdentity) y corre por malla POR FRAME.
                         Dim body As Action(Of Integer) = Sub(i)
                                                              Dim m = mats(i)
-                                                             Dim wp = Vector3d.TransformPosition(lv(i), m)
+                                                             Dim wp = Vector3d.TransformPosition(lv(i), SkinningHelper.AMatrix4d(m))
                                                              posF(i) = New Vector3(CSng(wp.X), CSng(wp.Y), CSng(wp.Z))
                                                              Dim nm3 As Matrix3d = SkinningHelper.NormalMatrixOrIdentity(m)
                                                              If isMSN Then
@@ -2656,6 +2683,11 @@ Public Class PreviewModel
                         _swSkinPhase.Restart()
                     End If
 
+                    If MedirFasesDeUpload Then
+                        MsComputo += _swFase.Elapsed.TotalMilliseconds
+                        _swFase.Restart()
+                    End If
+
                     GL.BindBuffer(BufferTarget.ArrayBuffer, vboPosition)
                     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, totalBytes, posF)
 
@@ -2667,6 +2699,7 @@ Public Class PreviewModel
 
                     GL.BindBuffer(BufferTarget.ArrayBuffer, vboBitangent)
                     GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, totalBytes, bitanF)
+                    If MedirFasesDeUpload Then MsSubida += _swFase.Elapsed.TotalMilliseconds
 
                     GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
                     If _instr Then
@@ -2734,7 +2767,7 @@ Public Class PreviewModel
                         Dim m = sparseMats(i)
                         Dim nm3 As Matrix3d = SkinningHelper.NormalMatrixOrIdentity(m)
 
-                        Dim wp = Vector3d.TransformPosition(MeshData.Meshgeometry.Vertices(i), m)
+                        Dim wp = Vector3d.TransformPosition(MeshData.Meshgeometry.Vertices(i), SkinningHelper.AMatrix4d(m))
                         buf(0) = CSng(wp.X) : buf(1) = CSng(wp.Y) : buf(2) = CSng(wp.Z)
                         Marshal.Copy(buf, 0, baseP, 3)
 
@@ -5058,6 +5091,55 @@ Public Class PreviewModel
         End Get
     End Property
 
+    ''' <summary>⭐ CRONOMETRO DE GPU DEL PASE DE PROFUNDIDAD. Apagado por default: cuando esta en False no
+    ''' se crea ni una query y el camino de dibujo queda exactamente como antes.
+    ''' <para>⛔ HACE FALTA UNA QUERY DE GL Y NO UN Stopwatch. El pase de profundidad es trabajo de GPU; un
+    ''' cronometro de CPU alrededor mide el ENCOLADO de comandos, que no tiene nada que ver con lo que
+    ''' cuesta. Y un <c>GL.Finish</c> para forzarlo mediria ademas todo lo que hubiera pendiente de antes.
+    ''' <c>TimeElapsed</c> lo mide en la GPU y se lee UN FRAME DESPUES, para no frenar el pipeline.</para>
+    ''' <para>Existe para contestar una pregunta concreta: cuanto del costo de la feature es el pase de
+    ''' profundidad —que se podria saltear en un frame donde nada que lo alimenta cambio— y cuanto es el
+    ''' lookup por fragmento, que se paga siempre. El A/B que alterna `Enabled` los mezcla.</para></summary>
+    Friend Shared Property MedirPaseDeProfundidad As Boolean = False
+
+    ''' <summary>Nanosegundos de GPU del ultimo pase de profundidad medido (los DOS mapas). 0 si no hay
+    ''' medicion todavia.</summary>
+    Friend Shared ReadOnly Property NsPaseDeProfundidad As Long
+        Get
+            Return _nsPaseProfundidad
+        End Get
+    End Property
+
+    Private Shared _nsPaseProfundidad As Long
+    Private _queryProf As Integer
+    Private _queryEnVuelo As Boolean
+
+    ''' <summary>Arranca la query si la medicion esta prendida, y cosecha la del frame anterior.</summary>
+    Private Sub AbrirCronometroDeProfundidad()
+        If Not MedirPaseDeProfundidad Then Exit Sub
+        If _queryProf = 0 Then _queryProf = GL.GenQuery()
+        If _queryEnVuelo Then
+            ' Un frame de atraso: para este punto el resultado ya esta y no se frena nada.
+            Dim listo As Integer = 0
+            GL.GetQueryObject(_queryProf, GetQueryObjectParam.QueryResultAvailable, listo)
+            If listo <> 0 Then
+                Dim ns As Long = 0
+                GL.GetQueryObject(_queryProf, GetQueryObjectParam.QueryResult, ns)
+                _nsPaseProfundidad = ns
+                _queryEnVuelo = False
+            Else
+                Exit Sub   ' todavia en vuelo: no se puede reusar la misma query
+            End If
+        End If
+        GL.BeginQuery(QueryTarget.TimeElapsed, _queryProf)
+    End Sub
+
+    Private Sub CerrarCronometroDeProfundidad()
+        If Not MedirPaseDeProfundidad OrElse _queryProf = 0 OrElse _queryEnVuelo Then Exit Sub
+        GL.EndQuery(QueryTarget.TimeElapsed)
+        _queryEnVuelo = True
+    End Sub
+
     Friend ReadOnly Property ShadowFit As ShadowMapMath.LightFit
         Get
             Return _shadowFit
@@ -5358,7 +5440,9 @@ Public Class PreviewModel
         ' porque la direccion de la key sale de _frameLights.KeyDir — la MISMA que va a los uniforms del
         ' fragment. Tomarla de otro lado permitiria que la sombra se proyecte desde una direccion y la luz
         ' venga de otra.
+        AbrirCronometroDeProfundidad()
         RenderShadowPass()
+        CerrarCronometroDeProfundidad()
         ' Y los uniforms que el fragment iluminado necesita, una sola vez para todos los draws del frame.
         UploadShadowUniforms(ParentControl.CurrentShader, _shadowFit, ParentControl.ShadowTarget, _shadowActive,
                              TextureUnit.Texture14, _shadowSettings.NormalBiasTexels,
