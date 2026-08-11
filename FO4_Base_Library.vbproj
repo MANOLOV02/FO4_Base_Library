@@ -35,6 +35,14 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- Shared\ NO se compila dentro de esta lib: son fuentes que cada APP linkea a su propio ensamblado.
+       CrashReport tiene que sobrevivir a que este DLL no cargue (cuarentena del antivirus, extraccion
+       parcial) — adentro de la lib se caeria junto con ella y el usuario volveria al silencio.
+       Linkeado desde: FO4_NPC_Manager y Wardrobe_Manager. Ver Shared\CrashReport.vb. -->
+  <ItemGroup>
+    <Compile Remove="Shared\**" />
+  </ItemGroup>
+
   <ItemGroup>
     <Import Include="System.Data" />
     <Import Include="System.Drawing" />
