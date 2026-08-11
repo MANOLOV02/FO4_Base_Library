@@ -475,8 +475,38 @@ Public Class Transform_Class
                 ux = ux / len * angle
                 uy = uy / len * angle
                 uz = uz / len * angle
+            ElseIf cosA < 0.0 Then
+                ' ⛔⛔ ACÁ SE DEVOLVÍA (1,0,0) CON EL COMENTARIO "caso degenerado de 180° con eje indefinido".
+                ' EL EJE NO ES INDEFINIDO: para una rotación de 180° es el autovector de autovalor +1, y está
+                ' perfectamente determinado. Lo único ambiguo es el SIGNO (n y −n describen la misma rotación de
+                ' 180°), que es inocuo. Lo que se anula a θ=π es (M − Mᵀ), o sea la fórmula de arriba — no el eje.
+                ' Síntoma medible sin ningún preset: tipear 180 en el slider de rotación Z hacía girar el hueso
+                ' sobre X. Y desde que el .jslot y el ESP re-emiten la matriz CRUDA, el preview quedaba mostrando
+                ' un eje y el juego otro, que es justo la regla que este proyecto no negocia.
+                '
+                ' Para una rotación de 180°: M + I = 2·n·nᵀ, así que TODA columna de (M + I) es paralela a n. Se
+                ' toma la de mayor norma por estabilidad numérica (las otras pueden ser ~0 si n tiene componentes
+                ' nulas). Después se normaliza y se escala por θ.
+                Dim cx = New Double() {M.M11 + 1.0, M.M21, M.M31}
+                Dim cy = New Double() {M.M12, M.M22 + 1.0, M.M32}
+                Dim cz = New Double() {M.M13, M.M23, M.M33 + 1.0}
+                Dim nx = cx(0) * cx(0) + cx(1) * cx(1) + cx(2) * cx(2)
+                Dim ny = cy(0) * cy(0) + cy(1) * cy(1) + cy(2) * cy(2)
+                Dim nz = cz(0) * cz(0) + cz(1) * cz(1) + cz(2) * cz(2)
+                Dim best = cx : Dim bestN = nx
+                If ny > bestN Then best = cy : bestN = ny
+                If nz > bestN Then best = cz : bestN = nz
+                If bestN > 0.000000001 Then
+                    Dim inv = angle / Math.Sqrt(bestN)
+                    ux = best(0) * inv : uy = best(1) * inv : uz = best(2) * inv
+                Else
+                    ' M + I ≈ 0 no puede pasar con una rotación real (implicaría M = −I, det = −1). Si llegara acá
+                    ' el input no era una rotación; se conserva el legacy en vez de inventar.
+                    ux = angle : uy = 0 : uz = 0
+                End If
             Else
-                ' Caso degenerado de 180° con eje indefinido: escoger (1,0,0)
+                ' θ ≈ 0: la rotación es la identidad. Se conserva EXACTO el legacy (angle≈0 ⇒ vector ≈ 0), así que
+                ' esta rama no cambia ni un byte.
                 ux = angle : uy = 0 : uz = 0
             End If
         Else

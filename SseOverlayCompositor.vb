@@ -394,7 +394,7 @@ Public Module SseOverlayCompositor
         If list Is Nothing OrElse list.Count <= 1 Then Return list
         Dim cfg = Config_App.Current?.Setting_FaceTintSort_SSE
         Dim rules = If(cfg IsNot Nothing, cfg.SwapRules, Nothing)
-        If rules Is Nothing OrElse rules.Count = 0 Then Return list.OrderBy(Function(o) ParseOvlIndex(o.NodeName)).ToList()
+        If rules Is Nothing OrElse rules.Count = 0 Then Return list.OrderBy(Function(o) CompositeOrderKey(o.NodeName)).ToList()
         Dim items As New List(Of (Ov As RaceMenuJslot.JslotOverlayNode, Pos As Integer))
         For i = 0 To list.Count - 1 : items.Add((list(i), i)) : Next
         items.Sort(Function(a, b)
@@ -412,7 +412,7 @@ Public Module SseOverlayCompositor
         Select Case CType(key, FaceTintSseOverlaySortKey)
             Case FaceTintSseOverlaySortKey.Alpha : Return If(ov.HasAlpha, ov.Alpha, 1.0)
             Case FaceTintSseOverlaySortKey.Has_Tint : Return If(ov.HasTint, 1.0, 0.0)
-            Case Else : Return ParseOvlIndex(ov.NodeName)   ' Ovl_Index (default) = orden skee
+            Case Else : Return CompositeOrderKey(ov.NodeName)   ' Ovl_Index (default) = orden skee (pool primario, y encima el magic)
         End Select
     End Function
 
@@ -426,7 +426,7 @@ Public Module SseOverlayCompositor
         ' `for i=0..N` + AttachChild ⇒ Ovl0 se dibuja primero (abajo) y OvlN último (arriba); el topmost gana en
         ' solapes. NO por posición en la lista (el jslot puede venir en cualquier orden). Ver OverlayInterface.cpp.
         Dim faceOrdered = SortFaceOverlays(overlays.
-            Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
+            Where(Function(o) IsFoldableFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
         For Each ov In faceOrdered
             ' Predicado ÚNICO con el gate (HasBakeableFaceOverlays) ⇒ no pueden discrepar. Va ANTES del decode:
             ' una capa invisible no justifica leer su textura.
@@ -746,7 +746,7 @@ Public Module SseOverlayCompositor
         ' términos están también en el gate (HasFaceOverlayNormals) ⇒ no pueden discrepar. El chequeo de adentro
         ' cubre el otro caso, el que el gate NO puede saber sin tocar disco: declarado pero ilegible = ERROR.
         Dim faceOrdered = SortFaceOverlays(overlays.
-            Where(Function(o) IsFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath) AndAlso
+            Where(Function(o) IsFoldableFaceOverlay(o) AndAlso Not String.IsNullOrEmpty(o.NormalPath) AndAlso
                               Not String.IsNullOrEmpty(o.DiffusePath)).ToList())   ' predicado unico + orden skee
         For Each ov In faceOrdered
             ' Predicado ÚNICO con el gate (HasFaceOverlayNormals), y ANTES del decode. Ver ComposeFaceOverlaysIntoDiffuse.
@@ -796,7 +796,7 @@ Public Module SseOverlayCompositor
     Public Function HasFaceOverlayNormals(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
-            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) AndAlso
+            If IsFoldableFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.NormalPath) AndAlso
                Not String.IsNullOrEmpty(ov.DiffusePath) AndAlso OverlayIsVisible(ov) Then Return True
         Next
         Return False
@@ -821,19 +821,127 @@ Public Module SseOverlayCompositor
     End Function
 
     ''' <summary>El MISMO test, por nombre de nodo — para los call sites que sólo tienen el string (el emisor del
-    ''' script Papyrus, el ruteo de shapes del render). Que exista una sola implementación es el punto entero.</summary>
+    ''' script Papyrus, el ruteo de shapes del render). Que exista una sola implementación es el punto entero.
+    ''' <para>Cubre las DOS familias de la cara: <c>Face [Ovl{n}]</c> y <c>Face [SOvl{n}]</c>. Es ruteo de
+    ''' GEOMETRÍA (¿va en la cabeza?), no de mecanismo — el mecanismo lo decide
+    ''' <see cref="IsSpellOverlayNodeName"/>.</para></summary>
     Public Function IsFaceOverlayNodeName(nodeName As String) As Boolean
         Return Not String.IsNullOrEmpty(nodeName) AndAlso
                nodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase)
     End Function
 
-    ''' <summary>The FACE overlays of <paramref name="overlays"/> — node filter only, no texture requirement.
+    ''' <summary>⭐ THE canonical "is this the MAGIC (spell) pool?" test — el nodo <c>… [SOvl{n}]</c> en vez de
+    ''' <c>… [Ovl{n}]</c>. skee64 mantiene DOS pools por zona, cada uno con su propio contador
+    ''' (<c>g_numSpell*Overlays</c> / key <c>iSpellOverlays</c>, main.cpp:775-781, default 1) y su propia malla
+    ''' plantilla (<c>*_magicoverlay.nif</c> vs <c>*_overlay.nif</c>, OverlayInterface.h:23-46).
+    '''
+    ''' <para>⭐⭐ QUÉ CAMBIA DE VERDAD ENTRE LOS DOS POOLS — MEDIDO sobre los 8 NIF de <c>RaceMenu.bsa</c>
+    ''' (parseo de bloques, 2026-08-10), no razonado: los dos son <c>NiNode → NiTriShape +
+    ''' BSLightingShaderProperty + BSShaderTextureSet + NiAlphaProperty</c> con el MISMO <c>default.dds</c>; el magic
+    ''' agrega <c>BSEffectShaderPropertyFloatController + NiFloatInterpolator + NiFloatData</c>, y los campos del
+    ''' controller son: <c>typeOfControlledVariable = 5</c> (=<b>Alpha</b>), <c>target</c> = el
+    ''' <c>BSLightingShaderProperty</c>, <c>flags = 0x4A</c> = <b>ACTIVE + CYCLE_REVERSE</b>, <c>frequency = 8</c>,
+    ''' <c>startTime = 0</c>, <c>stopTime = 10</c>, y 2 keys LINEALES <c>(t=0, v=0) → (t=10, v=1)</c>.
+    ''' <para>⇒ La OPACIDAD del pool magic la maneja el motor: <b>pulsa 0↔1</b> mientras el controller corre. No
+    ''' "arranca apagada" (eso era una inferencia sobre la primera key) y nuestro <c>KEY_ALPHA</c> autorado lo pisa el
+    ''' controller mientras anima.</para>
+    ''' Y la GEOMETRÍA no sale del NIF en ninguno de los dos: <c>InstallOverlay</c> descarta la shape del archivo
+    ''' y crea una BSTriShape nueva copiando <c>vertexDesc</c>, los vértices dinámicos, <c>m_localTransform</c> y
+    ''' <c>m_spSkinInstance</c> DE LA PIEL del actor (OverlayInterface.cpp:137-186); del NIF sólo sobreviven el
+    ''' shader/alpha property, y encima <c>g_overlayAlphaOverride</c>+<c>g_overlayForceDecal</c> (defaults true)
+    ''' reescriben alpha flags y fuerzan el flag Decal en AMBOS.</para>
+    '''
+    ''' <para>⇒ Dibujar un spell overlay con el MISMO decal coplanar alpha-over que uno normal es FIEL en
+    ''' geometría, UV, skinning, blend y decal. Lo único que no se replica es el controller — y es un valor que
+    ''' depende del TIEMPO, o sea que ningún cuadro estático puede mostrarlo "bien": el preview lo muestra a su
+    ''' alpha autorada = el PICO del ciclo, que es lo que el autor necesita ver. Que la opacidad real sea un pulso y
+    ''' no un estado es justamente por qué el preview PRINCIPAL no los dibuja.</para></summary>
+    Public Function IsSpellOverlayNodeName(nodeName As String) As Boolean
+        If String.IsNullOrEmpty(nodeName) Then Return False
+        ' El corchete es lo que distingue: "[SOvl" vs "[Ovl". Buscar "[SOvl" y no "SOvl" a secas evita que un
+        ' nodo ajeno llamado "…SOvl…" sin corchete se confunda con el pool.
+        Return nodeName.IndexOf("[SOvl", StringComparison.OrdinalIgnoreCase) >= 0
+    End Function
+
+    ''' <summary>El mismo test sobre el overlay. Ver <see cref="IsSpellOverlayNodeName"/>.</summary>
+    Public Function IsSpellOverlay(ov As RaceMenuJslot.JslotOverlayNode) As Boolean
+        Return ov IsNot Nothing AndAlso IsSpellOverlayNodeName(ov.NodeName)
+    End Function
+
+    ''' <summary>Posición del <c>[</c> que abre el tag de overlay (<c>[Ovl</c> o <c>[SOvl</c>), o −1.
+    ''' <para>Se exige el CORCHETE y no sólo las letras: sin él, un nodo ajeno que contuviera "Ovl" en el nombre
+    ''' pasaría por overlay. Es la única función que sabe cómo se escribe el tag, y de ella dependen el índice
+    ''' (<see cref="ParseOvlIndex"/>) y el orden (<see cref="CompositeOrderKey"/>).</para></summary>
+    ''' <remarks>Prefiere <c>[Ovl</c> sobre <c>[SOvl</c> si un nombre trajera los DOS tags (daría el índice del
+    ''' pool normal con <c>IsSpell=True</c>). Inalcanzable con el dato real: el decoder del <c>.jslot</c> exige
+    ''' <c>^(Body|Hands|Feet|Face) \[S?Ovl\d+\]$</c>, o sea UN tag y nada más.</remarks>
+    Private Function FindOvlTagStart(nodeName As String) As Integer
+        Dim k = nodeName.IndexOf("[Ovl", StringComparison.OrdinalIgnoreCase)
+        If k >= 0 Then Return k
+        Return nodeName.IndexOf("[SOvl", StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    ''' <summary>⭐⭐ LA MEMBRESÍA DEL FOLD: overlay de cara que el pliegue (render Y bake) se queda.
+    ''' <para>Es <see cref="IsFaceOverlay"/> MENOS el pool magic, y la razón es de MECANISMO, no de gusto: plegar
+    ''' es escribir el overlay DENTRO del diffuse de la cabeza, o sea volverlo permanente e incondicional. Un
+    ''' <c>Face [SOvl{n}]</c> es la capa que un magic effect prende y apaga en runtime (su plantilla trae un
+    ''' controller que PULSA su alpha 0↔1; ver <see cref="IsSpellOverlayNodeName"/>): horneada, quedaría prendida para siempre y el
+    ''' efecto del mod la volvería a pintar ENCIMA. Por eso la ley es UNA y sin solape:</para>
+    ''' <para>  cara NO-magic ⇒ SÓLO fold (nunca decal vivo) · cara magic ⇒ SÓLO decal vivo (nunca fold).</para>
+    ''' <para>Vive acá, en el mismo archivo que los gates y los dos composers, para que ninguno pueda discrepar:
+    ''' los composers filtran por este predicado, así que aunque un caller pase la lista sin filtrar, un spell
+    ''' overlay NO PUEDE terminar plegado.</para></summary>
+    Public Function IsFoldableFaceOverlay(ov As RaceMenuJslot.JslotOverlayNode) As Boolean
+        Return IsFaceOverlay(ov) AndAlso Not IsSpellOverlay(ov)
+    End Function
+
+    ''' <summary>⭐ EL ORDEN DE COMPOSICIÓN DE skee, como clave única y ordenable.
+    ''' <para><c>SetupOverlay</c> corre el loop del pool PRIMARIO completo y DESPUÉS el del secundario
+    ''' (OverlayInterface.cpp:659-668), y cada <c>InstallOverlay</c> termina en <c>AttachChild</c> (:257) ⇒ el
+    ''' orden de dibujo es: <b>TODOS los <c>[Ovl]</c> ascendentes, y encima TODOS los <c>[SOvl]</c>
+    ''' ascendentes</b>. NO es un único índice compartido.</para>
+    ''' <para>⛔ Ordenar por <see cref="ParseOvlIndex"/> a secas —que saltea la <c>S</c>— empataba
+    ''' <c>[SOvl0]</c> con <c>[Ovl0]</c> y podía dejar el spell DEBAJO de <c>[Ovl1]</c>. Con el offset, el pool
+    ''' magic siempre queda arriba, que es lo que hace el motor.</para>
+    ''' <para>⛔ EL OFFSET NO PUEDE SER "UN NÚMERO QUE ALCANCE". Era 1000, justificado con "skee clampea todo
+    ''' contador a 0x7F", y eso confunde lo que el MOTOR instancia con lo que el DATO puede traer: el decoder del
+    ''' <c>.jslot</c> acepta <c>\[S?Ovl\d+\]</c> sin techo (y el barrido del apply-script existe justamente porque un
+    ''' preset importado puede traer un <c>[SOvl40]</c>), así que un <c>Body [Ovl2000]</c> ordenaba ARRIBA de un
+    ''' <c>Body [SOvl0]</c> — rompiendo el único invariante que esta función existe para sostener. Y sumarle 1000 a un
+    ''' índice cercano a <c>Integer.MaxValue</c> DESBORDA: VB chequea overflow por default, así que era una excepción
+    ''' dentro del <c>OrderBy</c> del render, en un Task en background.
+    ''' <para>Solución: el índice se SATURA en un rango acotado y el pool aporta un offset que ese rango no puede
+    ''' alcanzar. Así el pool domina SIEMPRE, el orden dentro del pool se preserva para cualquier índice
+    ''' representable, y no hay suma que pueda desbordar.</para></para></summary>
+    Public Function CompositeOrderKey(nodeName As String) As Integer
+        Dim idx = ParseOvlIndex(nodeName)
+        ' ⚠️ El índice literal 2147483647 ES el centinela, o sea indistinguible de "sin índice" ya desde
+        ' ParseOvlIndex. Inalcanzable con dato real (skee clampea a 127) y sin consecuencia (los dos ordenan
+        ' último y el OrderBy es estable), pero queda dicho: el dominio no está perfectamente separado.
+        If idx = Integer.MaxValue Then Return Integer.MaxValue   ' sin índice = al final, como antes
+        Dim bounded = Math.Max(0, Math.Min(idx, PoolOrderOffset - 1))
+        Return If(IsSpellOverlayNodeName(nodeName), PoolOrderOffset, 0) + bounded
+    End Function
+
+    ''' <summary>Offset del pool magic en <see cref="CompositeOrderKey"/>: <c>Integer.MaxValue \ 2</c>.
+    ''' <para>⛔ ERA <c>1 &lt;&lt; 30</c>, (este comentario decia que eso es <c>MaxValue + 1</c> y es FALSO: es <c>MaxValue \ 2 + 1</c> — la
+    ''' conclusion de abajo era correcta, la cuenta escrita no), y ese +1 hacía que el extremo del pool magic
+    ''' (<c>offset + offset-1</c>) diera EXACTAMENTE <c>Integer.MaxValue</c> — el centinela de "sin índice, al
+    ''' final". Efecto observable nulo (los dos ordenan último y OrderBy es estable), pero es una colisión de
+    ''' dominios: el valor que significa "no tiene índice" pasaba a ser también un índice válido. Con MaxValue
+    ''' el tope del magic queda en MaxValue-2 y el centinela vuelve a ser inalcanzable.</para></summary>
+    Private ReadOnly PoolOrderOffset As Integer = Integer.MaxValue \ 2
+
+    ''' <summary>The FACE overlays the FOLD owns — node filter only, no texture requirement.
     ''' Callers pass THIS to the composers; each composer then keeps what it can actually consume (the diffuse
     ''' composer wants <c>DiffusePath</c>, the normal composer wants <c>NormalPath</c>). Filtering on a texture
-    ''' at the CALLER is what dropped normal-only face overlays.</summary>
+    ''' at the CALLER is what dropped normal-only face overlays.
+    ''' <para>⛔ EXCLUYE el pool magic (<see cref="IsFoldableFaceOverlay"/>): un <c>Face [SOvl{n}]</c> NO se
+    ''' hornea nunca — se dibuja como decal vivo y viaja por el apply-script. Ver la ley completa en
+    ''' <see cref="IsFoldableFaceOverlay"/>.</para></summary>
     Public Function FaceOverlaysOnly(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As List(Of RaceMenuJslot.JslotOverlayNode)
         If overlays Is Nothing Then Return New List(Of RaceMenuJslot.JslotOverlayNode)()
-        Return overlays.Where(AddressOf IsFaceOverlay).ToList()
+        Return overlays.Where(AddressOf IsFoldableFaceOverlay).ToList()
     End Function
 
     ''' <summary>True iff <paramref name="overlays"/> has at least one FACE overlay with a diffuse texture AND
@@ -848,7 +956,7 @@ Public Module SseOverlayCompositor
     Public Function HasBakeableFaceOverlays(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As Boolean
         If overlays Is Nothing Then Return False
         For Each ov In overlays
-            If IsFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.DiffusePath) AndAlso OverlayIsVisible(ov) Then Return True
+            If IsFoldableFaceOverlay(ov) AndAlso Not String.IsNullOrEmpty(ov.DiffusePath) AndAlso OverlayIsVisible(ov) Then Return True
         Next
         Return False
     End Function
@@ -914,15 +1022,25 @@ Public Module SseOverlayCompositor
     End Function
 
     ''' <summary>Índice del nodo <c>[Ovl{n}]</c> / <c>[SOvl{n}]</c> (n entero) o Integer.MaxValue si no matchea
-    ''' (los sin índice van al final). Es el orden de composición de skee (OverlayInterface for i=0..N).</summary>
+    ''' (los sin índice van al final). Es el ÍNDICE DENTRO DE SU POOL; el orden total entre pools lo da
+    ''' <see cref="CompositeOrderKey"/>.
+    ''' <para>⛔⛔ ESTO ESTABA ROTO PARA EL POOL MAGIC, y el comentario afirmaba lo contrario ("salta '[Ovl' o
+    ''' '[SOvl'"). El buscado era el literal <c>"[Ovl"</c>, que NO es substring de <c>"[SOvl0]"</c> —entre el
+    ''' corchete y la <c>O</c> hay una <c>S</c>— así que TODO nodo <c>[SOvl{n}]</c> caía en el
+    ''' <c>open &lt; 0</c> y devolvía MaxValue. Consecuencias medidas por el gate: el índice del pool magic era
+    ''' siempre −1/MaxValue, con lo cual (a) el orden dentro del pool magic era arbitrario, (b) buscar el primer
+    ''' slot libre daba 0 siempre —dos overlays magic autorados en el MISMO nodo, uno pisando al otro— y (c) el
+    ''' Up/Down no podía reordenarlos. El "salta hasta el primer dígito" de abajo era correcto y nunca se
+    ''' ejecutaba para el caso que decía cubrir.</para></summary>
     Public Function ParseOvlIndex(nodeName As String) As Integer
         If String.IsNullOrEmpty(nodeName) Then Return Integer.MaxValue
-        Dim open = nodeName.IndexOf("[Ovl", StringComparison.OrdinalIgnoreCase)
+        Dim open = FindOvlTagStart(nodeName)
         If open < 0 Then Return Integer.MaxValue
         Dim close = nodeName.IndexOf("]"c, open)
         If close < 0 Then Return Integer.MaxValue
-        ' Salta "[Ovl" o "[SOvl": avanza hasta el primer dígito.
-        Dim i = open + 4
+        ' Salta el tag ("Ovl" o "SOvl") hasta el primer dígito. Arranca en open+1 (no en open+4) para no asumir
+        ' el largo del tag: es lo que hace que los dos pools entren por el mismo camino.
+        Dim i = open + 1
         While i < close AndAlso Not Char.IsDigit(nodeName(i))
             i += 1
         End While

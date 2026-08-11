@@ -40,10 +40,13 @@ Public Enum FaceTintSseTintSortKey
 End Enum
 
 ''' <summary>Claves de orden para los OVERLAYS de SSE (Face[Ovl], = análogo SSE de los SWAPS de FO4). El
-''' orden skee/RaceMenu = el índice del nodo Ovl{n} ascendente (OverlayInterface for i=0..N). Default =
-''' [Ovl_Index asc] = identidad = orden skee (byte-idéntico a hoy).</summary>
+''' orden skee/RaceMenu = <see cref="SseOverlayCompositor.CompositeOrderKey"/> (el índice del nodo ascendente
+''' DENTRO de su pool, y el pool magic entero encima). Default = [Ovl_Index asc] = identidad = orden skee
+''' (byte-idéntico: los TRES callers de SortFaceOverlays —los dos composers CPU y el builder de capas GPU—
+''' filtran el pool magic ANTES, porque el magic no se
+''' pliega, así que para los datos que pasan por acá la clave coincide con el índice pelado).</summary>
 Public Enum FaceTintSseOverlaySortKey
-    Ovl_Index = 0     ' índice del nodo Ovl{n} — DEFAULT, orden skee/RaceMenu
+    Ovl_Index = 0     ' índice del nodo dentro de su pool — DEFAULT, orden skee/RaceMenu
     Alpha = 1         ' opacidad (key8 / .Alpha)
     Has_Tint = 2      ' el overlay lleva tint (color) vs solo textura
 End Enum

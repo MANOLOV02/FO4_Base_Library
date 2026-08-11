@@ -3241,6 +3241,22 @@ Public Class FO4UnifiedMaterial_Class
         Return If(IsSkShader(shad), 0UI, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Hair))
     End Function
 
+    Private Shared Function SkinTintFlagValue(shad As INiShader) As UInteger
+        ' FO4-only: Fallout4ShaderPropertyFlags1.Skin_Tint (1<<21).
+        ' ⛔ El 0 en SK NO es porque el bit no exista ni signifique otra cosa: SK 1<<21 es
+        ' FaceGen_RGB_Tint, que es el equivalente exacto. Es porque en SK ese bit lo maneja el bloque
+        ' tipo→flag de Save_To_Shader (~:3845), que por diseño es ASSERT-ON: nunca apaga nada. Un
+        ' SetFlagSF1 con Mat.SkinTint=False lo APAGARÍA, y eso es un cambio de comportamiento en SSE
+        ' que este fix no tiene por qué traer. No-op acá ⇒ SSE queda byte-idéntico por construcción.
+        Return If(IsSkShader(shad), 0UI, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Skin_Tint))
+    End Function
+
+    Private Shared Function FacegenFlagValue(shad As INiShader) As UInteger
+        ' FO4-only: Fallout4ShaderPropertyFlags1.Face (1<<10). Mismo criterio que SkinTintFlagValue:
+        ' SK 1<<10 es Facegen_Detail_Map (el equivalente), pero allá lo asserta el bloque tipo→flag.
+        Return If(IsSkShader(shad), 0UI, CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Face))
+    End Function
+
     Private Shared Function ZBufferWriteFlagValue(shad As INiShader) As UInteger
         ' SK ZBuffer_Write (1<<0) == FO4 ZBuffer_Write (1<<0).
         Return If(IsSkShader(shad),
@@ -3916,6 +3932,21 @@ Public Class FO4UnifiedMaterial_Class
         ShaderHelper.SetFlagSF1(shad, RefractionFlagValue(shad), Mat.Refraction)
         ShaderHelper.SetFlagSF2(shad, AnisotropicLightingFlagValue(shad), Mat.AnisoLighting)
         ShaderHelper.SetFlagSF1(shad, HairFlagValue(shad), Mat.Hair)
+        ' ⭐ Skin_Tint y Face CIERRAN la asimetría lector/escritor: Create_From_Shader los LEE del flag
+        ' F4SPF1 (~:3349/:3351) y hasta acá nadie los ESCRIBÍA, así que el bit sobrevivía del bloque
+        ' destino en vez de salir del material. Con el shape todavía nombrando su .bgsm eso era inerte
+        ' (el motor reemplaza el material entero, 0x142169BB0); pero en cuanto se corta el nombre —bake de
+        ' FaceGen y export a NIF, los dos— el shader inline pasa a ser LEY y el bit rancio manda.
+        ' Se veía con una fuente MODDEADA que delega en su BGSM: su NIF trae Skin_Tint apagado inline
+        ' (al autor no le importa, el BGSM lo pisa), el BGSM trae bSkinTint=True, y el shape exportado
+        ' salía con ShaderType=SkinTint y el flag en 0 ⇒ el cuerpo no se tintaba mientras manos y nuca
+        ' —mallas VANILLA, que sí traen el bit inline— sí. Por eso el corpus vanilla nunca lo exhibió:
+        ' ahí el valor rancio COINCIDE con el correcto.
+        ' Son los 2 únicos huecos: de los 5 bools que derivan el ShaderType horneado (Glowmap, Facegen,
+        ' SkinTint, Hair, EnvironmentMapping), Glowmap/EnvMapping viajan por accessor propio de NiflySharp
+        ' y Hair ya tenía su helper; estos dos no tenían ninguno de los dos y quedaron afuera.
+        ShaderHelper.SetFlagSF1(shad, SkinTintFlagValue(shad), Mat.SkinTint)
+        ShaderHelper.SetFlagSF1(shad, FacegenFlagValue(shad), Mat.Facegen)
         ShaderHelper.SetFlagSF1(shad, EyeEnvironmentMappingFlagValue(shad), Mat.EnvironmentMappingEye)
 
         If Not IsSkShader(shad) Then
