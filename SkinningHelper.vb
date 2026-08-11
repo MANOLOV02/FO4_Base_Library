@@ -1513,6 +1513,73 @@ Public Class SkinningHelper
         geo.WorldCacheValid = True
     End Sub
 
+    ''' <summary>El AABB de mundo SIN materializar el cache: transforma solo POSICIONES y acumula min/max.
+    ''' <para>⭐ Existe porque el AABB no lee las normales, y en <see cref="ComputeWorldSpaceCache"/> las
+    ''' normales son la parte cara: por vertice, una <c>Create_Normal_Matrix</c> (inversa + transpuesta de
+    ''' una 3x3) mas un TransformNormal y una normalizacion, contra UNA multiplicacion para la posicion.
+    ''' Y ademas evita las dos <c>Vector3d()</c> por malla por frame, que en el camino de dibujo son basura
+    ''' de GC.</para>
+    ''' <para>⛔ NO deja el cache valido, a proposito: quien necesite normales de mundo (picking, export,
+    ''' el raytracer de oclusion) lo va a pedir y lo va a computar entero. Lo que no se puede es dejarlo
+    ''' MEDIO lleno, con posiciones nuevas y normales viejas.</para>
+    ''' <para>El resultado es identico al de <see cref="ComputeWorldBounds"/>: la misma matriz por vertice,
+    ''' el mismo TransformPosition, el mismo min/max en Double. Es la misma cuenta sin la parte que sobra.
+    ''' </para></summary>
+    Public Shared Sub ComputeWorldBoundsSinNormales(ByRef geo As SkinnedGeometry)
+        ' ⛔⭐ SI EL CACHE YA ESTA VIVO, NO SE RECALCULA NADA. Sin esta salida, el camino FUERA DE PLAY hacia
+        ' DOS pasadas O(vertices): RecomputeGPUBoneMatrices invalida el cache y —con updateWorldCache=True,
+        ' que es justo lo que vale fuera de play— llama a ComputeWorldBounds, que lo reconstruye ENTERO y lo
+        ' marca valido; y despues ComputeBounds volvia a transformar todos los vertices ignorandolo. O sea
+        ' que el ahorro que esta funcion busca en play se pagaba de mas en cada slider de morph, cada cambio
+        ' de pose y cada toggle de shape. El caso que si sirve —play con Option B— llega con el cache frio y
+        ' no toca esta rama.
+        If geo.WorldCacheValid AndAlso geo.CachedWorldVertices IsNot Nothing Then
+            ComputeWorldBounds(geo)
+            Exit Sub
+        End If
+        EnsurePerVertexSkinMatrix(geo)   ' Option B: recompone PerVertexSkinMatrix si pass-2 se salteo
+        Dim count = geo.Vertices.Length
+        If count = 0 Then Exit Sub
+        Dim localVerts = geo.Vertices
+        Dim localMats = geo.PerVertexSkinMatrix
+
+        ' Chunks explicitos en vez de RangosDe: hace falta INDEXAR los rangos para el scatter->gather, y
+        ' RangosDe devuelve un Partitioner, que no se indexa.
+        Dim chunk As Integer = Math.Max(4096, count \ Math.Max(1, Environment.ProcessorCount * 4))
+        Dim nChunks As Integer = (count + chunk - 1) \ chunk
+        Dim mins(nChunks - 1) As Vector3d
+        Dim maxs(nChunks - 1) As Vector3d
+        ' ⛔ SCATTER->GATHER, no un acumulador compartido: cada chunk escribe SU celda y despues se pliegan
+        ' en serie. Un min/max compartido entre hilos es una carrera. (El pliegue es exacto en cualquier
+        ' orden —min y max sobre Double no redondean—, asi que el resultado es determinista igual.)
+        Parallel.For(0, nChunks,
+            Sub(r As Integer)
+                Dim mn As New Vector3d(Double.MaxValue)
+                Dim mx As New Vector3d(Double.MinValue)
+                Dim i1 = Math.Min(r * chunk + chunk, count)
+                For i = r * chunk To i1 - 1
+                    Dim w = Vector3d.TransformPosition(localVerts(i), localMats(i))
+                    If w.X < mn.X Then mn.X = w.X
+                    If w.Y < mn.Y Then mn.Y = w.Y
+                    If w.Z < mn.Z Then mn.Z = w.Z
+                    If w.X > mx.X Then mx.X = w.X
+                    If w.Y > mx.Y Then mx.Y = w.Y
+                    If w.Z > mx.Z Then mx.Z = w.Z
+                Next
+                mins(r) = mn : maxs(r) = mx
+            End Sub)
+
+        Dim minV As New Vector3d(Double.MaxValue)
+        Dim maxV As New Vector3d(Double.MinValue)
+        For r = 0 To nChunks - 1
+            minV = Vector3d.ComponentMin(minV, mins(r))
+            maxV = Vector3d.ComponentMax(maxV, maxs(r))
+        Next
+        geo.Boundingcenter = (minV + maxV) * 0.5
+        geo.Minv = minV
+        geo.Maxv = maxV
+    End Sub
+
     Public Shared Sub InvalidateWorldCache(ByRef geo As SkinnedGeometry)
         geo.WorldCacheValid = False
         geo.CachedWorldVertices = Nothing

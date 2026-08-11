@@ -32,8 +32,16 @@ Public Structure PreviewShadowSettings
     ''' que es justo lo que se le pide a un centinela (ver memoria 10-stack-json-structure-defaults).</summary>
     Public Property MapSize As Integer
 
-    ''' <summary>Radio del PCF en TEXELES del mapa. 0 = un solo tap (lo que hace el forward de FO4).
-    ''' El kernel es (2r+1)^2 con r = redondeo de este valor, acotado en MaxPcfRadius.</summary>
+    ''' <summary>Radio del kernel de PCF, en texeles del mapa. Fraccionario: la parte entera es la
+    ''' cantidad de taps y el sobrante viaja en el ESPACIADO, asi que el desenfoque es continuo.
+    ''' <para>⛔ El default es 2,0 y no 1,5, y el cambio no es de gusto. Decia 1,5 pero CORRIA como 2,0: el
+    ''' radio salia de <c>CInt(Math.Round(SoftnessTexels))</c> y el redondeo BANCARIO de .NET manda 1,5 al
+    ''' 2 (par) — que ademas hacia que 1,5 y 2,5 fueran el mismo valor y la perilla tuviera un tramo
+    ''' muerto. Toda la feature, incluido el A/B que se aprobo mirando, se vio siempre con 2,0. Ahora que
+    ''' 1,5 significa 1,5 de verdad, dejarlo daria una sombra mas dura que la aprobada: medido, 10.974 px
+    ''' contra 21.615 en la escena del arnes. Se deja el numero que describe lo que se vio.</para>
+    ''' <para>⛔ El comentario vive ACA y no adentro del <c>{ }</c> de Defaults(): VB no acepta una linea de
+    ''' comentario entre los elementos de un inicializador de objeto (BC30201).</para></summary>
     Public Property SoftnessTexels As Single
 
     ''' <summary>Cuanto oscurece la sombra: `factor = 1 - Intensity*(1-crudo)`. 1 = la key se apaga del
@@ -50,6 +58,12 @@ Public Structure PreviewShadowSettings
     ''' unidades de profundidad con el rango del mapa). Tapa el residuo de cuantizacion del depth.</summary>
     Public Property DepthBiasTexels As Single
 
+    ''' <summary>Dibuja la silueta del personaje sobre el plano del piso (el "shadow catcher"). DEFAULT OFF. Es el
+    ''' indicio mas legible de todos —sin el, el modelo flota—, pero NO es gratis: obliga a agrandar el
+    ''' encuadre del mapa para que la sombra proyectada quepa (ver ShadowMapMath.ExpandForGroundShadow),
+    ''' o sea texeles mas grandes en el personaje. Por eso es una opcion aparte y no parte de Enabled.</summary>
+    Public Property GroundShadow As Boolean
+
     ''' <summary>Tope del radio de PCF. No es configurable: acota el costo del kernel en el fragment.</summary>
     Public Const MaxPcfRadius As Integer = 4
 
@@ -57,10 +71,11 @@ Public Structure PreviewShadowSettings
         Return New PreviewShadowSettings With {
             .Enabled = True,
             .MapSize = 2048,
-            .SoftnessTexels = 1.5F,
+            .SoftnessTexels = 2.0F,
             .Intensity = 1.0F,
             .NormalBiasTexels = 2.0F,
-            .DepthBiasTexels = 1.5F}
+            .DepthBiasTexels = 1.5F,
+            .GroundShadow = False}
     End Function
 
     ''' <summary>Copia con los valores acotados al rango que el render sabe ejecutar. Lo llama el render
@@ -103,6 +118,24 @@ End Structure
 ''' adentro del binario. Ver memoria 00-reglas-self-tests-no-van-en-el-binario.</para></summary>
 Friend Module ShadowMapMath
 
+    ''' <summary>Cuanto MAS GRANDE que su huella se dibuja el quad receptor. El margen existe para que
+    ''' el desvanecido del borde tenga donde ocurrir SIN comerse la sombra.
+    ''' <para>Fue 1,25 y bajo a 1,05. El fade es INERTE por construccion —la sombra nunca entra en la banda,
+    ''' porque la huella es exactamente 1/margen del quad— asi que el margen no compra nitidez: compra
+    ''' seguro. A 1,25 ese seguro costaba 1,25^2 = 56 % mas de fragmentos del quad, cada uno pagando el PCF
+    ''' completo. A 1,05 cuesta 10 % y sigue habiendo banda.</para></summary>
+    Friend Const GroundQuadMargin As Single = 1.05F
+
+    ''' <summary>Donde arranca el desvanecido, en coordenadas locales del quad ([-1..1] por eje).
+    ''' <para>⛔ ES EXACTAMENTE <c>1 / GroundQuadMargin</c>, y esa igualdad ES el invariante: la huella
+    ''' ocupa <c>1/margen</c> del quad, asi que empezar a desvanecer justo ahi garantiza que TODA la
+    ''' sombra se dibuja a intensidad plena y el degrade cae en el margen, donde nunca hay sombra.</para>
+    ''' <para>⛔ El valor esta ADEMAS escrito a mano en el GLSL (<c>#define GROUND_FADE_START</c>): un
+    ''' Const de VB no se puede concatenar dentro de un Const String. El gate `ground-catcher` compara
+    ''' los dos, porque si se separan el sintoma es una sombra recortada y nadie lo relaciona con esto.
+    ''' </para></summary>
+    Friend Const GroundFadeStart As Single = 1.0F / GroundQuadMargin
+
     ''' <summary>El encuadre resuelto: las dos matrices, la combinada que consume el fragment, y el
     ''' tamano de un texel en unidades de mundo (que es lo que escala los dos bias).</summary>
     Friend Structure LightFit
@@ -125,9 +158,14 @@ Friend Module ShadowMapMath
     ''' <summary>Encuadra la luz sobre el AABB de la escena.
     '''
     ''' <para>⭐ EL EXTENT SALE DE LA ESFERA ENVOLVENTE, no del AABB proyectado. La esfera es INVARIANTE A
-    ''' LA ROTACION, asi que el ortho no cambia de tamano cuando la luz gira — y aca la luz gira todo el
-    ''' tiempo, porque las direcciones del rig se derivan de la camara (PreviewLight.Direction usa
-    ''' cam.Forward). Con un extent que se re-ajusta por frame, la sombra "hierve" al orbitar.</para>
+    ''' LA ROTACION, asi que el ortho no cambia de tamano cuando la luz gira. Desde que las luces son fijas
+    ''' al mundo el usuario ya no las mueve al orbitar, pero SI al arrastrar un slider del rig, y ademas el
+    ''' AABB se mueve solo en cada frame de una animacion: en los dos casos un extent que se re-ajusta hace
+    ''' que el borde de la sombra "hierva".</para>
+    ''' <para>⚠️ Esto vale para el mapa AJUSTADO. El mapa ANCHO del receptor de suelo NO es invariante a la
+    ''' rotacion: su AABB sale de proyectar la escena sobre el plano a lo largo de la luz
+    ''' (<see cref="ExpandForGroundShadow"/>), asi que mover la key le cambia el radio y con el la grilla
+    ''' del snap. Es aceptable porque solo pasa mientras se arrastra un slider del rig, no al orbitar.</para>
     '''
     ''' <para>⭐ Y el centro se SNAPEA a multiplos de texel en espacio de luz por la misma razon: sin eso
     ''' el borde de la sombra parpadea un texel para adelante y para atras en cada frame.</para></summary>
@@ -191,6 +229,122 @@ Friend Module ShadowMapMath
         r.Valid = True
         Return r
     End Function
+
+    ''' <summary>Agranda el AABB para que quepa TAMBIEN la sombra proyectada sobre el plano del suelo.
+    '''
+    ''' <para>⛔ SIN ESTO EL RECEPTOR DE SUELO SALE CORTADO, y el sintoma no apunta al encuadre: la sombra
+    ''' de la cabeza cae LEJOS del personaje —a <c>altura / tan(elevacion)</c> del pie— y con el mapa
+    ''' ajustado a la esfera del cuerpo eso cae afuera, donde la textura devuelve el borde blanco = "sin
+    ''' ocluir". Resultado: una sombra que se corta en seco a media distancia.</para>
+    '''
+    ''' <para>Se proyectan las 8 esquinas del AABB sobre el plano a lo largo de <c>-lightDir</c> y se une
+    ''' todo. El costo es un radio mayor —o sea texeles mas grandes—, por eso solo se llama cuando el
+    ''' receptor de suelo esta encendido.</para>
+    '''
+    ''' <para>Devuelve el AABB sin tocar si la luz esta en el horizonte o por debajo (<c>L.Z</c> chico o
+    ''' negativo): ahi la sombra se va al infinito y no hay encuadre finito que la contenga. El receptor
+    ''' de suelo se apaga solo en ese caso, via <paramref name="valid"/>.</para></summary>
+    Friend Sub ExpandForGroundShadow(ByRef sceneMin As Vector3, ByRef sceneMax As Vector3,
+                                     lightDir As Vector3, groundZ As Single, ByRef valid As Boolean)
+        valid = False
+        If Not (IsFinite(sceneMin) AndAlso IsFinite(sceneMax)) Then Exit Sub
+        If sceneMax.X < sceneMin.X OrElse sceneMax.Y < sceneMin.Y OrElse sceneMax.Z < sceneMin.Z Then Exit Sub
+        If lightDir.LengthSquared < 0.000001F Then Exit Sub
+        Dim L = Vector3.Normalize(lightDir)
+        ' Elevacion minima: por debajo de ~11 grados (sin = 0.2) la sombra se estira tanto que el mapa
+        ' pierde toda la resolucion util. Es un corte de calidad, no de correccion.
+        If L.Z < 0.2F Then Exit Sub
+
+        Dim mn = sceneMin, mx = sceneMax
+        ' Los 8 vertices sin `For Each {…}`: en VB ese literal materializa un array POR ENTRADA al bucle
+        ' (1 + 2 + 4 = 7 por frame). Son bytes, pero este metodo corre en el camino de dibujo y la politica
+        ' de este mismo archivo es no dejar basura de GC ahi (ver _shadowCasters en Render.vb).
+        For i = 0 To 7
+            Dim cx As Single = If((i And 1) = 0, sceneMin.X, sceneMax.X)
+            Dim cy As Single = If((i And 2) = 0, sceneMin.Y, sceneMax.Y)
+            Dim cz As Single = If((i And 4) = 0, sceneMin.Z, sceneMax.Z)
+            ' Un punto p proyecta su sombra sobre z = groundZ recorriendo -L hasta el plano.
+            Dim t As Single = (cz - groundZ) / L.Z
+            If t <= 0.0F Then Continue For          ' ya esta en el plano o por debajo
+            Dim px As Single = cx - L.X * t
+            Dim py As Single = cy - L.Y * t
+            mn.X = Math.Min(mn.X, px) : mx.X = Math.Max(mx.X, px)
+            mn.Y = Math.Min(mn.Y, py) : mx.Y = Math.Max(mx.Y, py)
+        Next
+        mn.Z = Math.Min(mn.Z, groundZ)
+        mx.Z = Math.Max(mx.Z, groundZ)
+
+        If Not (IsFinite(mn) AndAlso IsFinite(mx)) Then Exit Sub
+        sceneMin = mn
+        sceneMax = mx
+        valid = True
+    End Sub
+
+    ''' <summary>Resolucion del mapa ANCHO del receptor de suelo, a partir de los dos radios.
+    ''' <para>El radio del encuadre del suelo depende de la ELEVACION de la key —la sombra mide
+    ''' <c>altura / tan(elev)</c>—, asi que una fraccion fija de <paramref name="mapSize"/> hacia variar el
+    ''' texel del suelo ~2x entre presets: Studio 0,36 u y Portrait 0,73, o sea que el preset que MAS
+    ''' muestra la sombra en el piso era el que peor la dibujaba. Aca se apunta a una relacion de texeles
+    ''' constante contra el mapa del personaje.</para>
+    ''' <para>⛔ ES PURA, y vive aca y no en el render, porque tiene dos trampas que un gate SI puede
+    ''' cubrir y un A/B de pixeles no: (1) el minimo no puede ser mayor que el maximo —<c>Sanitized()</c>
+    ''' deja pasar <c>MapSize = 256</c>, y un <c>Math.Clamp(x, 512, 256)</c> tira ArgumentException en el
+    ''' camino de dibujo, cada frame; (2) el producto tiene que caber en un Integer, y una shape
+    ''' degenerada da un radio de personaje de 1e-4 contra uno proyectado de cientos de unidades.</para>
+    ''' <para>⛔⭐ SIN HISTERESIS, Y ES UNA DECISION. Tuvo una: conservaba el tamano vigente mientras
+    ''' estuviera adentro de un factor 2 del pedido, para que un ratio parado cerca del punto medio entre
+    ''' dos potencias de dos no hiciera que <c>Ensure</c> destruyera y recreara la textura y el FBO en cada
+    ''' frame de animacion. El precio era inaceptable: el resultado pasaba a depender de la HISTORIA. La
+    ''' misma escena con la misma config se dibujaba con dos nitideces de sombra de suelo distintas segun de
+    ''' que preset se viniera —cambiar de Studio a Portrait conservaba 2048 para siempre, porque nada libera
+    ''' el target al cambiar de luces— y eso invalida cualquier A/B de pixeles sobre el receptor. Un frame
+    ''' tiene que ser funcion de (escena, config) y nada mas. Ademas duplicaba de hecho la relacion de
+    ''' texeles que el Const de abajo documenta.
+    ''' <para>⚠️ RIESGO RESIDUAL, ABIERTO Y CUANTIFICADO. Sin banda muerta, el recrear-por-frame vuelve a
+    ''' ser posible: con <c>MapSize = 2048</c> las salidas son {512, 1024, 2048} y las fronteras caen en
+    ''' ratio 1,7688 y 3,5364, asi que un ratio parado ahi cruza con una variacion relativa del 0,03 %. Cada
+    ''' cruce es <c>Release()</c> + <c>TexImage2D</c> + <c>CheckFramebufferStatus</c>, o sea dos puntos de
+    ''' sincronizacion con el driver en el camino de dibujo. Se ve como un tiron. Los dos gestos que lo
+    ''' disparan: una animacion en loop cuyo ratio ronde una frontera, y arrastrar el slider de elevacion de
+    ''' la key parado sobre una. Mitiga que el ratio es mucho mas estable que cualquiera de los dos radios
+    ''' (numerador y denominador salen del mismo AABB y se mueven juntos) y que las fronteras estan a un
+    ''' factor 2 una de otra, o sea que hay que estar JUSTO encima.
+    ''' <para>Se elige convivir con eso: la alternativa era la histeresis, y un resultado que depende de por
+    ''' donde pasaste no se ve de ninguna forma, ni en pantalla ni en un gate. Un tiron ocasional si.</para>
+    ''' </para></summary>
+    Friend Function GroundMapSize(charRadius As Single, groundRadius As Single, mapSize As Integer) As Integer
+        If mapSize <= 0 Then Return 0
+        Dim minimo As Integer = Math.Min(512, mapSize)
+        ' ⛔ El IsNaN va DESPUES del Clamp: Math.Clamp propaga NaN en Single, asi que chequear antes no
+        ' cubre el NaN que puede nacer de la division.
+        Dim ratio As Single = Math.Clamp(groundRadius / Math.Max(charRadius, 0.0001F), 1.0F, 64.0F)
+        If Single.IsNaN(ratio) Then ratio = 1.0F
+        Dim pedido As Integer = PreviewShadowSettings.RoundToPowerOfTwo(CInt(mapSize * ratio / GroundTexelRatioTarget))
+        Return Math.Clamp(pedido, minimo, mapSize)
+    End Function
+
+    ''' <summary>Relacion de texeles a la que se apunta entre el mapa del suelo y el del personaje.
+    ''' ⛔ Es un OBJETIVO, no una cota: RoundToPowerOfTwo redondea al mas cercano, asi que la relacion real
+    ''' puede llegar a 5*raiz(2) = 7,07. Redondear hacia arriba la acotaria de verdad, al precio de
+    ''' duplicar la VRAM del mapa ancho en la mitad de los casos.</summary>
+    Friend Const GroundTexelRatioTarget As Single = 5.0F
+
+    ''' <summary>De la huella que devuelve <see cref="ExpandForGroundShadow"/> al quad receptor:
+    ''' centro en el plano del piso y semi-extensiones POR EJE, con el margen del desvanecido.
+    ''' <para>Vive aca y no en el render para que el gate `ground-catcher` ejercite exactamente la
+    ''' cuenta que corre en el frame. Un gate que re-implementa la formula que quiere verificar solo
+    ''' comprueba que sabe copiar.</para></summary>
+    Friend Sub GroundQuadFromFootprint(fpMin As Vector3, fpMax As Vector3, groundZ As Single,
+                                       ByRef center As Vector3, ByRef half As Vector2)
+        center = New Vector3((fpMin.X + fpMax.X) * 0.5F, (fpMin.Y + fpMax.Y) * 0.5F, groundZ)
+        half = New Vector2((fpMax.X - fpMin.X) * 0.5F, (fpMax.Y - fpMin.Y) * 0.5F) * GroundQuadMargin
+        ' ⛔ PISO POSITIVO EN LOS DOS EJES. Una escena plana en un eje (una sola shape degenerada, o un
+        ' plano) da semi-extension 0: el quad no dibujaba nada, pero recien DESPUES de que el pase de
+        ' profundidad ancho ya habia corrido y de dejar el programa del suelo bindeado. Y el gate dividia
+        ' por esa semi-extension, con lo cual su comparacion daba NaN y NaN > 0.8 es False: verde.
+        half.X = Math.Max(half.X, 0.0001F)
+        half.Y = Math.Max(half.Y, 0.0001F)
+    End Sub
 
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function IsFinite(v As Vector3) As Boolean
@@ -273,14 +427,14 @@ Friend Class ShadowMapTarget
         Return True
     End Function
 
-    ''' <summary>Bindea el FBO y deja el viewport en el tamano del mapa. Devuelve el FBO previo para que
-    ''' el caller lo restaure (el compositor de FaceTint tambien bindea FBOs: asumir 0 esta mal).</summary>
-    Friend Function BindForWrite() As Integer
-        Dim prevFbo As Integer = GL.GetInteger(GetPName.FramebufferBinding)
+    ''' <summary>Bindea el FBO y deja el viewport en el tamano del mapa. NO consulta el estado previo:
+    ''' el caller lo captura UNA vez antes del primer mapa y lo restaura despues del ultimo, asi que un
+    ''' glGet por pase seria un resultado que se descarta. Y los glGet de framebuffer son justo los que
+    ''' fuerzan a varios drivers a vaciar la lista de comandos diferida.</summary>
+    Friend Sub BindForWrite()
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
         GL.Viewport(0, 0, _size, _size)
-        Return prevFbo
-    End Function
+    End Sub
 
     Friend Sub Release()
         If _fbo > 0 Then
@@ -292,6 +446,97 @@ Friend Class ShadowMapTarget
             _tex = 0
         End If
         _size = 0
+    End Sub
+
+    Public Sub Dispose() Implements IDisposable.Dispose
+        Release()
+        GC.SuppressFinalize(Me)
+    End Sub
+
+End Class
+
+
+''' <summary>El quad del receptor de suelo. Dos triangulos y nada mas: toda la logica esta en el
+''' fragment (ver <see cref="GroundShadowShaderSource"/>).
+''' <para>⛔ Se dibuja DESPUES de opaco/cutout/decal y ANTES de blended: asi el personaje lo tapa por
+''' depth-test donde corresponde, y lo blended (pelo alpha-blend, ojos) compone encima. Con
+''' <c>DepthMask(False)</c>, porque un plano gigante escribiendo profundidad arruinaria el orden del
+''' pase blended que viene despues.</para></summary>
+Friend Class GroundShadowQuad
+    Implements IDisposable
+
+    Private _vao As Integer
+    Private _vbo As Integer
+
+    ''' <summary>Quad unitario en XY, dos triangulos. Las coordenadas van de -1 a 1 y el vertex shader las
+    ''' escala; asi el buffer nunca cambia aunque la escena si.</summary>
+    Private Shared ReadOnly Corners As Single() = {
+        -1.0F, -1.0F, 1.0F, -1.0F, 1.0F, 1.0F,
+        -1.0F, -1.0F, 1.0F, 1.0F, -1.0F, 1.0F}
+
+    Private Sub EnsureBuffers()
+        If _vao > 0 Then Return
+        _vao = GL.GenVertexArray()
+        _vbo = GL.GenBuffer()
+        GL.BindVertexArray(_vao)
+        GL.BindBuffer(BufferTarget.ArrayBuffer, _vbo)
+        GL.BufferData(BufferTarget.ArrayBuffer, Corners.Length * 4, Corners, BufferUsageHint.StaticDraw)
+        GL.EnableVertexAttribArray(0)
+        GL.VertexAttribPointer(0, 2, VertexAttribPointerType.Float, False, 0, 0)
+        GL.BindVertexArray(0)
+        GL.BindBuffer(BufferTarget.ArrayBuffer, 0)
+    End Sub
+
+    ''' <param name="viewProj">`view * projection` de la CAMARA, en la convencion del render.</param>
+    ''' <param name="center">Centro del quad en mundo (con Z = el plano del suelo).</param>
+    ''' <param name="half">Semi-extensiones en X e Y, en unidades de mundo.</param>
+    ''' <summary>Dibuja el receptor. <paramref name="half"/> son las semi-extensiones EN X e Y por
+    ''' separado, no un radio.
+    ''' <para>⛔⭐ ANTES ERA UN ESCALAR, Y RECORTABA LA CABEZA. Se le pasaba <c>LightFit.Radius</c>, que
+    ''' es la media diagonal de la esfera envolvente 3D — o sea que la ALTURA de la escena entraba en el
+    ''' tamano de un quad que vive en el plano XY. Con el preset Studio (key a 25,88 grados) un cuerpo de
+    ''' 180 u proyecta una sombra de ~430 u: la punta caia a 0,90 del radio, el desvanecido arrancaba en
+    ''' 0,72 y la sombra de la CABEZA se dibujaba al ~28 %, apagandose antes de terminar. Justo el
+    ''' sintoma que ExpandForGroundShadow dice haber arreglado, reintroducido dos capas mas abajo.</para>
+    ''' <para>La huella es MUY anisotropa (~430 x 100 en ese mismo caso): un solo numero no puede
+    ''' describirla sin sobrar en un eje y faltar en el otro.</para></summary>
+    Friend Sub Render(shader As Shader_Base_Class, viewProj As Matrix4, center As Vector3, half As Vector2)
+        If shader Is Nothing OrElse half.X <= 0.0F OrElse half.Y <= 0.0F Then Exit Sub
+        EnsureBuffers()
+        If _vao = 0 Then Exit Sub
+
+        shader.Use()
+        shader.SetMatrix4("matViewProj", viewProj)
+        shader.SetVector3("uGroundCenter", center)
+        shader.SetVector2("uGroundHalf", half)
+
+        GL.Enable(EnableCap.DepthTest)
+        GL.DepthMask(False)
+        GL.Disable(EnableCap.CullFace)      ' visible desde arriba y desde abajo
+        GL.Enable(EnableCap.Blend)
+        ' MULTIPLICATIVO: resultado = destino x fuente. Ver el doc del fragment.
+        GL.BlendFunc(BlendingFactor.Zero, BlendingFactor.SrcColor)
+
+        GL.BindVertexArray(_vao)
+        GL.DrawArrays(PrimitiveType.Triangles, 0, 6)
+        GL.BindVertexArray(0)
+
+        GL.Disable(EnableCap.Blend)
+        GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
+        GL.DepthMask(True)
+        GL.Enable(EnableCap.CullFace)
+        GL.CullFace(TriangleFace.Back)
+    End Sub
+
+    Friend Sub Release()
+        If _vbo > 0 Then
+            Try : GL.DeleteBuffer(_vbo) : Catch : End Try
+            _vbo = 0
+        End If
+        If _vao > 0 Then
+            Try : GL.DeleteVertexArray(_vao) : Catch : End Try
+            _vao = 0
+        End If
     End Sub
 
     Public Sub Dispose() Implements IDisposable.Dispose

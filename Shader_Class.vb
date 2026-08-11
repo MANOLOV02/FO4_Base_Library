@@ -397,25 +397,7 @@ in vec4 vColor;
 in vec2 vUV;
 in vec3 vWorldPos;
 
-// =============================== SHADOWS ===============================
-// ONE orthographic shadow map, for the KEY light only. The measurements that put this term exactly
-// where it is (and nowhere else) live in ShadowMap.vb; the short version is that in BOTH engines the
-// shadow multiplies the DIRECTIONAL light's diffuse AND specular and NEVER the ambient:
-//   FO4 forward rec1498 -> L142/L154 (whole per-light accumulator), L193 (specular), and L281 adds
-//   the ambient AFTERWARDS.  SSE DEFSHADOW -> `mul r2.yzw, r4.xxxx, cb2[1].xxyz` and the ambient
-//   (`dp4 cb2[11..13].vec4(N,1)`) is likewise added after.
-// That is why the factor is applied by scaling the KEY's `diffuse` before directionalLight() instead
-// of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission, subsurface)
-// plus the specular get it, and hemiAmbient() does not.
-uniform sampler2DShadow texShadowMap;
-uniform mat4 matShadowViewProj;   // world -> light clip space
-uniform bool bShadows;            // false = the whole feature is inert (factor is never computed)
-uniform float uShadowIntensity;   // 1 = the key goes fully dark in shadow (what the engine does)
-uniform float uShadowNormalBias;  // WORLD units (already scaled by the map texel size on the CPU)
-uniform float uShadowDepthBias;   // normalized-depth units
-uniform int uShadowPcfRadius;     // kernel is (2r+1)^2 taps; 0 = single tap, like the FO4 forward
-uniform vec2 uShadowTexelUV;      // 1/mapSize on both axes
-
+" & ShadowDepthShaderSource.SharedUniformsGlsl & "
 out vec4 fragColor;
 
 // El engine RENORMALIZA el vector de vista POR PIXEL. Los 18 PS de BSLighting de FO4 (la poblacion
@@ -793,41 +775,7 @@ vec3 hemiAmbient(in vec3 nrm)
 }
 
 // 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true.
-float shadowFactor(in vec3 worldNrm)
-{
-	// NORMAL OFFSET is the primary anti-acne: displacing the sample point along the surface normal by
-	// about one texel kills the self-shadowing of surfaces at a grazing angle to the light WITHOUT the
-	// peter-panning a large constant depth bias causes. It arrives in world units already multiplied by
-	// the texel's world size, so changing the map resolution does not require re-tuning the knob.
-	vec4 lc = matShadowViewProj * vec4(vWorldPos + worldNrm * uShadowNormalBias, 1.0);
-	vec3 p = lc.xyz / lc.w;
-	p = p * 0.5 + 0.5;   // NDC -> [0,1]
-
-	// Past the far plane of the map there is nothing that could occlude. The XY case is NOT handled
-	// here on purpose: it is handled by the texture border (CLAMP_TO_BORDER with a white border), so a
-	// PCF kernel straddling the edge still reads 'lit' without a per-tap branch.
-	if (p.z > 1.0)
-		return 1.0;
-
-	float refDepth = p.z - uShadowDepthBias;
-
-	// Hardware PCF: the sampler is in COMPARE_REF_TO_TEXTURE, so every texture() call already returns
-	// the bilinear average of four depth comparisons. The loop widens that to (2r+1)^2 taps.
-	float sum = 0.0;
-	float n = 0.0;
-	for (int y = -uShadowPcfRadius; y <= uShadowPcfRadius; ++y)
-	{
-		for (int x = -uShadowPcfRadius; x <= uShadowPcfRadius; ++x)
-		{
-			sum += texture(texShadowMap, vec3(p.xy + vec2(float(x), float(y)) * uShadowTexelUV, refDepth));
-			n += 1.0;
-		}
-	}
-
-	// uShadowIntensity < 1 lifts the shadow. NOT engine-faithful (the engine's factor is a hard 0/1);
-	// it exists because a previewer has to let you read the texture on the dark side.
-	return 1.0 - uShadowIntensity * (1.0 - sum / max(n, 1.0));
-}
+" & ShadowDepthShaderSource.SharedLookupGlsl & "
 
 void main(void)
 {
@@ -1085,7 +1033,7 @@ void main(void)
 			// the factor, while hemiAmbient() below stays untouched. See the SHADOWS uniform block.
 			DirectionalLight keyLight = frontal;
 			if (bShadows)
-				keyLight.diffuse *= shadowFactor(toWorldDir(normal));
+				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(normal));
 
 			directionalLight(keyLight, lightFrontal, true, outDiffuse, outSpecular);   // key = la direccional del motor
 			directionalLight(directional0, lightDirectional0, false, outDiffuse, outSpecular);
@@ -1942,25 +1890,7 @@ in vec4 vColor;
 in vec2 vUV;
 in vec3 vWorldPos;
 
-// =============================== SHADOWS ===============================
-// ONE orthographic shadow map, for the KEY light only. The measurements that put this term exactly
-// where it is (and nowhere else) live in ShadowMap.vb; the short version is that in BOTH engines the
-// shadow multiplies the DIRECTIONAL light's diffuse AND specular and NEVER the ambient:
-//   FO4 forward rec1498 -> L142/L154 (whole per-light accumulator), L193 (specular), and L281 adds
-//   the ambient AFTERWARDS.  SSE DEFSHADOW -> `mul r2.yzw, r4.xxxx, cb2[1].xxyz` and the ambient
-//   (`dp4 cb2[11..13].vec4(N,1)`) is likewise added after.
-// That is why the factor is applied by scaling the KEY's `diffuse` before directionalLight() instead
-// of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission, subsurface)
-// plus the specular get it, and hemiAmbient() does not.
-uniform sampler2DShadow texShadowMap;
-uniform mat4 matShadowViewProj;   // world -> light clip space
-uniform bool bShadows;            // false = the whole feature is inert (factor is never computed)
-uniform float uShadowIntensity;   // 1 = the key goes fully dark in shadow (what the engine does)
-uniform float uShadowNormalBias;  // WORLD units (already scaled by the map texel size on the CPU)
-uniform float uShadowDepthBias;   // normalized-depth units
-uniform int uShadowPcfRadius;     // kernel is (2r+1)^2 taps; 0 = single tap, like the FO4 forward
-uniform vec2 uShadowTexelUV;      // 1/mapSize on both axes
-
+" & ShadowDepthShaderSource.SharedUniformsGlsl & "
 out vec4 fragColor;
 
 // El engine RENORMALIZA el vector de vista POR PIXEL, no confia en el interpolado: todos los PS de
@@ -2228,41 +2158,7 @@ vec3 hemiAmbient(in vec3 nrm)
 }
 
 // 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true.
-float shadowFactor(in vec3 worldNrm)
-{
-	// NORMAL OFFSET is the primary anti-acne: displacing the sample point along the surface normal by
-	// about one texel kills the self-shadowing of surfaces at a grazing angle to the light WITHOUT the
-	// peter-panning a large constant depth bias causes. It arrives in world units already multiplied by
-	// the texel's world size, so changing the map resolution does not require re-tuning the knob.
-	vec4 lc = matShadowViewProj * vec4(vWorldPos + worldNrm * uShadowNormalBias, 1.0);
-	vec3 p = lc.xyz / lc.w;
-	p = p * 0.5 + 0.5;   // NDC -> [0,1]
-
-	// Past the far plane of the map there is nothing that could occlude. The XY case is NOT handled
-	// here on purpose: it is handled by the texture border (CLAMP_TO_BORDER with a white border), so a
-	// PCF kernel straddling the edge still reads 'lit' without a per-tap branch.
-	if (p.z > 1.0)
-		return 1.0;
-
-	float refDepth = p.z - uShadowDepthBias;
-
-	// Hardware PCF: the sampler is in COMPARE_REF_TO_TEXTURE, so every texture() call already returns
-	// the bilinear average of four depth comparisons. The loop widens that to (2r+1)^2 taps.
-	float sum = 0.0;
-	float n = 0.0;
-	for (int y = -uShadowPcfRadius; y <= uShadowPcfRadius; ++y)
-	{
-		for (int x = -uShadowPcfRadius; x <= uShadowPcfRadius; ++x)
-		{
-			sum += texture(texShadowMap, vec3(p.xy + vec2(float(x), float(y)) * uShadowTexelUV, refDepth));
-			n += 1.0;
-		}
-	}
-
-	// uShadowIntensity < 1 lifts the shadow. NOT engine-faithful (the engine's factor is a hard 0/1);
-	// it exists because a previewer has to let you read the texture on the dark side.
-	return 1.0 - uShadowIntensity * (1.0 - sum / max(n, 1.0));
-}
+" & ShadowDepthShaderSource.SharedLookupGlsl & "
 
 void main(void)
 {
@@ -2460,7 +2356,7 @@ void main(void)
 			// Only the KEY casts -- the fills keep the shadow side readable.
 			DirectionalLight keyLight = frontal;
 			if (bShadows)
-				keyLight.diffuse *= shadowFactor(toWorldDir(normal));
+				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(normal));
 
 			directionalLight(keyLight, lightFrontal, outDiffuse, outSpecular);
 			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
@@ -2882,6 +2778,72 @@ End Class
 ''' es legal en GLSL y es el precio de no duplicar el skinning.</para></summary>
 Friend Module ShadowDepthShaderSource
 
+    ''' <summary>⛔ UNA SOLA DEFINICION del lookup de sombra, concatenada dentro de los TRES fragments que
+    ''' la usan (FO4, SSE y el receptor de suelo). Antes estaba copiada en el de FO4 y el de SSE: dos
+    ''' copias de una convencion —el normal-offset, el signo del bias, el kernel del PCF— es exactamente
+    ''' el modo de falla que documenta el SYNC del vertex shader, y ademas el suelo habria sido la tercera.
+    ''' <para>El bloque de uniforms va separado del de la funcion porque en los fragments iluminados los
+    ''' uniforms tienen que quedar arriba, junto al resto de los varyings, y la funcion abajo, despues de
+    ''' <c>matModel</c>/<c>matModelViewInverse</c>.</para></summary>
+    Friend Const SharedUniformsGlsl As String = "// =============================== SHADOWS ===============================
+// ONE orthographic shadow map, for the KEY light only. The measurements that put this term exactly
+// where it is (and nowhere else) live in ShadowMap.vb; the short version is that in BOTH engines the
+// shadow multiplies the DIRECTIONAL light's diffuse AND specular and NEVER the ambient:
+//   FO4 forward rec1498 -> L142/L154 (whole per-light accumulator), L193 (specular), and L281 adds
+//   the ambient AFTERWARDS.  SSE DEFSHADOW -> `mul r2.yzw, r4.xxxx, cb2[1].xxyz` and the ambient
+//   (`dp4 cb2[11..13].vec4(N,1)`) is likewise added after.
+// That is why the factor is applied by scaling the KEY's `diffuse` before directionalLight() instead
+// of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission, subsurface)
+// plus the specular get it, and hemiAmbient() does not.
+uniform sampler2DShadow texShadowMap;
+uniform mat4 matShadowViewProj;   // world -> light clip space
+uniform bool bShadows;            // false = the whole feature is inert (factor is never computed)
+uniform float uShadowIntensity;   // 1 = the key goes fully dark in shadow (what the engine does)
+uniform float uShadowNormalBias;  // WORLD units (already scaled by the map texel size on the CPU)
+uniform float uShadowDepthBias;   // normalized-depth units
+uniform int uShadowPcfRadius;     // kernel is (2r+1)^2 taps; 0 = single tap, like the FO4 forward
+uniform vec2 uShadowTexelUV;      // PCF tap STEP in UV: (softness / radius) / mapSize"
+
+    ''' <summary>El lookup. Toma la posicion de mundo EXPLICITA (no un varying) porque los tres
+    ''' consumidores la obtienen distinto: los iluminados por <c>vWorldPos</c> del vertex shader, el suelo
+    ''' construyendola en el propio VS del quad.</summary>
+    Friend Const SharedLookupGlsl As String = "// 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true.
+float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm)
+{
+	// NORMAL OFFSET is the primary anti-acne: displacing the sample point along the surface normal by
+	// about one texel kills the self-shadowing of surfaces at a grazing angle to the light WITHOUT the
+	// peter-panning a large constant depth bias causes. It arrives in world units already multiplied by
+	// the texel's world size, so changing the map resolution does not require re-tuning the knob.
+	vec4 lc = matShadowViewProj * vec4(worldPos + worldNrm * uShadowNormalBias, 1.0);
+	vec3 p = lc.xyz / lc.w;
+	p = p * 0.5 + 0.5;   // NDC -> [0,1]
+
+	// Past the far plane of the map there is nothing that could occlude. The XY case is NOT handled
+	// here on purpose: it is handled by the texture border (CLAMP_TO_BORDER with a white border), so a
+	// PCF kernel straddling the edge still reads 'lit' without a per-tap branch.
+	if (p.z > 1.0)
+		return 1.0;
+
+	float refDepth = p.z - uShadowDepthBias;
+
+	// Hardware PCF: the sampler is in COMPARE_REF_TO_TEXTURE, so every texture() call already returns
+	// the bilinear average of four depth comparisons. The loop widens that to (2r+1)^2 taps. The tap
+	// count is computed, not accumulated: it is known from the radius.
+	float sum = 0.0;
+	for (int y = -uShadowPcfRadius; y <= uShadowPcfRadius; ++y)
+	{
+		for (int x = -uShadowPcfRadius; x <= uShadowPcfRadius; ++x)
+		{
+			sum += texture(texShadowMap, vec3(p.xy + vec2(float(x), float(y)) * uShadowTexelUV, refDepth));
+		}
+	}
+	float side = float(2 * uShadowPcfRadius + 1);
+
+	// uShadowIntensity < 1 lifts the shadow. NOT engine-faithful (the engine's factor is a hard 0/1);
+	// it exists because a previewer has to let you read the texture on the dark side.
+	return 1.0 - uShadowIntensity * (1.0 - sum / (side * side));
+}"
+
     Friend Const Fragment_ShadowDepth As String = "
 #version 430
 
@@ -2917,6 +2879,91 @@ void main(void)
 }
 "
 End Module
+
+''' <summary>Receptor de sombra del SUELO ("shadow catcher"): un quad en el plano del piso que NO pinta
+''' superficie, solo OSCURECE lo que ya haya detras segun la sombra que le llega.
+'''
+''' <para>⛔ EL BLEND ES MULTIPLICATIVO (<c>ZERO, SRC_COLOR</c> ⇒ <c>resultado = destino x fuente</c>), no
+''' alpha sobre negro. La diferencia importa: el previewer no tiene suelo real, asi que detras del quad
+''' puede haber el color de fondo, la grilla, o nada — pintar "negro con alpha" tine el fondo de un color
+''' que el usuario eligio. Multiplicar lo OSCURECE sea cual sea, que es lo que hace una sombra.</para>
+'''
+''' <para>El quad se desvanece en el borde (<c>smoothstep</c> sobre el radio) para que no se lea como una
+''' chapa rectangular apoyada en el aire.</para></summary>
+Friend Module GroundShadowShaderSource
+
+    Friend Const Vertex_Ground As String = "
+#version 430
+layout(location = 0) in vec2 aCorner;   // unit quad, [-1..1] on both axes
+
+uniform mat4 matViewProj;      // camera view * projection (same convention as the rest of the render)
+uniform vec3 uGroundCenter;    // world-space centre of the catcher
+uniform vec2 uGroundHalf;      // world-space half-extents, per axis
+
+out vec3 gWorldPos;
+out vec2 gLocal;
+
+void main(void)
+{
+	gLocal = aCorner;
+	gWorldPos = uGroundCenter + vec3(aCorner * uGroundHalf, 0.0);
+	gl_Position = matViewProj * vec4(gWorldPos, 1.0);
+}
+"
+
+    Friend Const Fragment_Ground As String = "
+#version 430
+
+" & ShadowDepthShaderSource.SharedUniformsGlsl & "
+
+in vec3 gWorldPos;
+in vec2 gLocal;
+
+// What the ground keeps when the KEY is occluded, per channel: (everything else) / (everything).
+// Derived from the live rig on the CPU, NOT a hand-picked constant -- see PreviewModel.GroundShadowTint.
+// Without it the catcher came out PURE BLACK (factor 1 -> dst*0), which no real shadow is: the ambient
+// and the unshadowed fills still light the ground.
+uniform vec3 uGroundShadowTint;
+
+out vec4 fragColor;
+
+" & ShadowDepthShaderSource.SharedLookupGlsl & "
+
+void main(void)
+{
+	if (!bShadows)
+		discard;
+
+	// Fade so the catcher has no hard edge. PER AXIS (Chebyshev), not radial: the footprint is a
+	// rectangle, and a circular fade over a rectangle cuts the corners of what it must cover. With
+	// uGroundHalf = footprint * GROUND_MARGIN, the whole footprint sits inside |gLocal| <= 1/MARGIN,
+	// so the fade band only ever covers ground that has no shadow on it.
+	// GROUND_FADE_START must stay equal to 1 / ShadowMapMath.GroundQuadMargin -- gate `ground-catcher`.
+	#define GROUND_FADE_START 0.952380952
+	float edge = 1.0 - smoothstep(GROUND_FADE_START, 1.0, max(abs(gLocal.x), abs(gLocal.y)));
+	if (edge <= 0.0)
+		discard;
+
+	// The plane's normal is world +Z, so the normal-offset of the lookup pushes the sample straight up.
+	float lit = shadowFactorAt(gWorldPos, vec3(0.0, 0.0, 1.0));
+	float a = (1.0 - lit) * edge;
+	if (a <= 0.002)
+		discard;
+
+	// Multiplicative blend: the caller sets ZERO / SRC_COLOR, so this value MULTIPLIES the framebuffer.
+	// Fully shadowed (a = 1) leaves exactly the tint; fully lit leaves white = the background untouched.
+	fragColor = vec4(mix(vec3(1.0), uGroundShadowTint, a), 1.0);
+}
+"
+End Module
+
+''' <summary>Programa del receptor de suelo.</summary>
+Public Class Ground_Shadow_Shader_Class
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(GroundShadowShaderSource.Vertex_Ground, GroundShadowShaderSource.Fragment_Ground)
+    End Sub
+End Class
 
 ''' <summary>Programa de profundidad para assets FO4: Vertex_FO4 + el fragment de sombra.</summary>
 Public Class Shadow_Depth_Shader_Fo4

@@ -219,9 +219,15 @@ Public Class PreviewControl
     ''' <see cref="ShadowDepthShaderSource"/>. Ver Shadow_Depth_Shader_Fo4.</summary>
     Public SharedShadowFO4Shader As Shadow_Depth_Shader_Fo4
     Public SharedShadowSSEShader As Shadow_Depth_Shader_SSE
+    ''' <summary>Programa del receptor de sombra del suelo. Ver GroundShadowShaderSource.</summary>
+    Public SharedGroundShadowShader As Ground_Shadow_Shader_Class
     ''' <summary>El FBO + textura de profundidad. Se crea perezosamente en el primer frame con sombras
     ''' encendidas y se libera en Clean; con la opcion apagada nunca se asigna un byte de GPU.</summary>
     Friend ShadowTarget As ShadowMapTarget
+    ''' <summary>El segundo mapa, ANCHO y a media resolucion, que consume unicamente el receptor de suelo.
+    ''' Existe para que meter la sombra en el piso no le robe nitidez a la del personaje. Ver
+    ''' PreviewModel.RenderShadowPass.</summary>
+    Friend GroundShadowTarget As ShadowMapTarget
     ''' <summary>Raised when user toggles GPU/CPU skinning mode. Consumers handle this to rerender with their pipeline.</summary>
     Public Event SkinningModeToggled(sender As PreviewControl)
     Public ReadOnly Property CurrentShader As Shader_Base_Class
@@ -634,6 +640,98 @@ Public Class PreviewControl
     '  Pull-based unified pipeline
     ' ------------------------------------------------------------------
 
+    ''' <summary>Los ajustes que gobiernan la GEOMETRIA, tal como los uso la ULTIMA recarga completa.
+    ''' <para>⛔⭐ SE SELLA EN LA RECARGA, no en el diálogo. La primera version guardaba el valor dentro de
+    ''' <see cref="ApplyRenderSettingsFromConfig"/> y por eso el PRIMER cambio de skinning de la sesion se
+    ''' tragaba el evento: sin valor previo no habia con que comparar, y el gesto mas obvio —abrir el
+    ''' dialogo y destildar GPU skinning— era justo el que no avisaba, dejando la cara oscura. Sellando lo
+    ''' que uso el ultimo frame reconstruido, la comparacion es contra lo que hay EN PANTALLA, que es lo
+    ''' que importa, y no depende de por donde se haya tocado la config (el menu de la camara tambien la
+    ''' escribe).</para></summary>
+    Private Structure AjustesDeGeometria
+        Public Gpu As Boolean
+        Public Recalc As Boolean
+        Public SingleBone As Boolean
+        Public Tbn As RecalcTBN.TBNOptions
+    End Structure
+
+    Private _geomAplicada As AjustesDeGeometria?
+
+    Private Shared Function LeerGeomDeConfig() As AjustesDeGeometria
+        Return New AjustesDeGeometria With {
+            .Gpu = Config_App.Current.Setting_GPUSkinning,
+            .Recalc = Config_App.Current.Setting_RecalculateNormals,
+            .SingleBone = Config_App.Current.Setting_SingleBoneSkinning,
+            .Tbn = Config_App.Current.Setting_TBN}
+    End Function
+
+    ''' <summary>Empuja al PreviewModel VIVO los ajustes de render de Config_App y re-corre el pipeline.
+    '''
+    ''' <para>Existe porque esos ajustes NO se leen de Config_App en el camino de dibujo: viven duplicados
+    ''' como estado del modelo (<c>Model.RecalculateNormals</c>, <c>Model.SingleBoneSkinning</c>) y del
+    ''' Floor (Enabled/Size/StepSize/Color). Cambiar la config sin empujarlos no hace nada visible, y el
+    ''' usuario ve una casilla que "no funciona".</para>
+    '''
+    ''' <para>⛔ Vive ACA y no en cada app: hasta ahora esto lo hacia a mano el boton "Apply to rendered
+    ''' project" de Config_Form de Wardrobe Manager, y FO4_NPC_Manager —que comparte la misma libreria y
+    ''' la misma config— no tenia equivalente. Con el dialogo de render compartido, la copia se volvia
+    ''' dos.</para>
+    '''
+    ''' <para>⛔ Marca <c>Force</c> —que es una RECARGA COMPLETA: Clean, esqueleto, LoadShapesParallel,
+    ''' TBN, welding, morphs y subida a GPU— SOLO si cambio algo que la geometria mira. Antes la marcaba
+    ''' siempre, y como el diálogo escribe en cada <c>ValueChanged</c>, tipear "500" en el tamano del piso
+    ''' costaba TRES recargas completas de un NPC con outfit. La camara y la grilla no tocan geometria.
+    ''' Tampoco se llama <c>Floor.Rebuild()</c> de prepo: recrea VAO/VBO y arma ~1000 floats.</para>
+    ''' <para>No marca <c>Camera</c>: mover la camara del usuario sin que lo pida es una molestia.</para>
+    ''' </summary>
+    Public Sub ApplyRenderSettingsFromConfig()
+        If _isTearingDown OrElse Me.IsDisposed Then Exit Sub
+        Dim m = Me.Model
+        If m Is Nothing Then Exit Sub
+
+        m.RecalculateNormals = Config_App.Current.Setting_RecalculateNormals
+        m.SingleBoneSkinning = Config_App.Current.Setting_SingleBoneSkinning
+
+        Dim ahora = LeerGeomDeConfig()
+        ' Sin recarga previa no hay nada en pantalla que corregir, y la que venga ya va a usar los valores
+        ' nuevos: ni evento ni Force.
+        Dim geomCambio As Boolean = _geomAplicada.HasValue AndAlso Not _geomAplicada.Value.Equals(ahora)
+        Dim cambioSkinning As Boolean = _geomAplicada.HasValue AndAlso _geomAplicada.Value.Gpu <> ahora.Gpu
+
+        ' ⛔⭐ EL CAMBIO DE SKINNING TIENE QUE AVISAR, no alcanza con ensuciar la geometria. La libreria
+        ' re-corre la GEOMETRIA y nada mas; el diffuse plegado se queda pegado en el diccionario de
+        ' texturas mientras el MaterialData nuevo pierde su estado per-mesh (SkinToneBaked,
+        ' FaceTintOverlay_ID) y la cara sale OSCURA. FO4_NPC_Manager engancha SkinningModeToggled justo
+        ' para re-armar su hook de post-texture-upload; sin el evento no se arma nada. Es el mismo modo de
+        ' falla que ya cerraba HookSkinningToggleRefresh para el menu contextual de la camara — este
+        ' camino nuevo, el de la pestana Rendering del dialogo compartido, lo habia reabierto.
+        If cambioSkinning Then RaiseEvent SkinningModeToggled(Me)
+
+        If m.Floor IsNot Nothing Then
+            Dim g = Config_App.Current.Settings_RenderGrid
+            Dim col = Config_App.Current.RenderGridColor()
+            ' Solo el tamano y el paso son GEOMETRIA de la grilla. Enabled y Color no: el primero es un
+            ' `If` en el draw y el segundo es un uniform por draw. Rebuild borra y recrea VAO/VBO.
+            Dim reconstruir As Boolean = m.Floor.Size <> CSng(g.Size) OrElse m.Floor.StepSize <> CSng(g.StepSize)
+            m.Floor.Enabled = g.Enabled
+            m.Floor.Size = CSng(g.Size)
+            m.Floor.StepSize = CSng(g.StepSize)
+            m.Floor.Color = col
+            If reconstruir Then m.Floor.Rebuild()
+        End If
+
+        If geomCambio Then
+            Intent.MarkDirty(RenderDirtyFlags.Force)
+            InvalidateRender()
+        Else
+            ' ⛔ REPINTAR SIEMPRE, no solo cuando cambio el piso. Setting_DrawHiddenSegments se lee en el
+            ' camino de dibujo detras de un gate de sucio, asi que le alcanza un repaint — pero sin este
+            ' Else no habia ninguno y la casilla no mostraba nada hasta el latido de seguridad de ~1 s.
+            ' El boton "Apply to rendered project" que esto reemplaza era inmediato.
+            UpdateRequired = True
+        End If
+    End Sub
+
     ''' <summary>
     ''' Signal that the render intent has pending work and execute the pipeline immediately.
     ''' If called multiple times between frames, dirty flags accumulate via OR before execution.
@@ -691,6 +789,10 @@ Public Class PreviewControl
             _lastLoadedShapesSource = Nothing
             _skeletonPreparedForShapes = Nothing
             intent.TexturePrefetchAction = Nothing
+            ' ⛔ El sello describe lo que hay EN PANTALLA. Con la escena vacia no hay nada que corregir, y
+            ' dejarlo con valor hacia que el siguiente cambio de skinning levantara SkinningModeToggled
+            ' contra un modelo recien limpiado (en NPC Manager eso re-arma el hook de post-texture-upload).
+            _geomAplicada = Nothing
             Model.Processing_Status_GL(If(String.IsNullOrEmpty(intent.EmptyStatusText), "Empty", intent.EmptyStatusText))
             intent.ClearDirty()
             Return
@@ -698,6 +800,9 @@ Public Class PreviewControl
 
         Dim flags = intent.DirtyFlags
         Dim needsFullReload = (flags And (RenderDirtyFlags.Shapes Or RenderDirtyFlags.Force)) <> 0
+        ' Sellar ANTES de recargar: lo que la recarga esta por usar es, desde ya, lo que va a estar en
+        ' pantalla. Ver AjustesDeGeometria.
+        If needsFullReload Then _geomAplicada = LeerGeomDeConfig()
         Dim needsPoseUpdate = (flags And RenderDirtyFlags.Pose) <> 0
         Dim needsMorphUpdate = (flags And RenderDirtyFlags.Morphs) <> 0
         Dim needsTextureUpdate = (flags And RenderDirtyFlags.Textures) <> 0
@@ -820,7 +925,23 @@ Public Class PreviewControl
             '   Pasada 2 = GL (MakeCurrent + BufferSubData) → serial en el hilo del contexto.
             Dim cpuSkinMode As Boolean = Not Config_App.Current.Setting_GPUSkinning
             Dim playingNow As Boolean = PlayingAnimation
-            Dim computeBoundsThisFrame As Boolean = (Not playingNow) OrElse needsMorphUpdate
+            ' ⛔⭐ CON SOMBRAS ENCENDIDAS LOS BOUNDS SE RECALCULAN TAMBIEN EN PLAY. Congelarlos durante la
+            ' animacion es una optimizacion vieja cuyo unico consumidor era el frustum culling, donde el
+            ' peor caso es que una malla popee. El shadow map los usa para OTRA cosa: ShadowMapMath.Fit
+            ' encuadra el ortho sobre ese AABB, y la pasada 1 del skinning (matrices -> SSBO) SI corre en
+            ' cada frame de play. O sea que el vertice se mueve y la caja no: un brazo que se levanta por
+            ' encima de la cabeza sale del encuadre, su silueta NO se escribe en el mapa, y el receptor lee
+            ' el borde blanco = "iluminado". La sombra del brazo desaparece a mitad de camino.
+            ' El margen que habia era el de la esfera envolvente sobre el AABB: para un cuerpo de 60x40x180
+            ' son ~7,5 u por encima de la cabeza, o sea que cualquier brazo levantado lo pasa.
+            ' El costo es la pasada O(vertices) que Option B salteaba, y MEDIDO sobre las 11 mallas del
+            ' arnes (37.321 vertices) son 1,5 ms por frame — no los 8-10 ms que costaba antes de que
+            ' ComputeBounds dejara de materializar el cache de mundo entero. La diferencia son las normales
+            ' de mundo, que un AABB no lee: ver RenderableMesh.ComputeBounds. Sin ese arreglo previo esta
+            ' correccion no era viable y habia que elegir entre sombra correcta y animacion fluida.
+            ' Con la feature apagada no cambia nada.
+            Dim sombrasEncendidas As Boolean = Config_App.Current.ActiveShadows().Enabled
+            Dim computeBoundsThisFrame As Boolean = (Not playingNow) OrElse needsMorphUpdate OrElse sombrasEncendidas
 
             ' Memoización #3: construir la cache de global transforms UNA vez por SkeletonInstance única
             ' (BFS parent-first), ANTES del Parallel.ForEach. Compartida read-only por todos los meshes de
@@ -877,6 +998,15 @@ Public Class PreviewControl
                     Dim keepBounds As Boolean =
                         (mesh.MeshData.Material IsNot Nothing AndAlso mesh.MeshData.Material.HasAlphaBlend) OrElse
                         (mesh.MeshData.Shape IsNot Nothing AndAlso mesh.MeshData.Shape.Wireframe)
+                    ' ⛔ ACA NO VA `OrElse sombrasEncendidas`, aunque parezca que si. Lo tuvo un rato, con el
+                    ' argumento de "computar el cache de mundo eager para que ComputeBounds sea un min/max
+                    ' barato". Es falso: RecomputeGPUBoneMatrices invalida el cache SIEMPRE (SkinningHelper,
+                    ' InvalidateWorldCache) y despues, con updateWorldCache=True, llama a ComputeWorldBounds,
+                    ' que entra por GetWorldVertices y dispara ComputeWorldSpaceCache lo mismo. O sea que la
+                    ' pasada cara corre en los dos casos; lo unico que agregaba el OrElse era un SEGUNDO
+                    ' recorrido O(vertices) de min/max y una segunda escritura de Minv/Maxv pisando la
+                    ' primera. Lo que si cierra el defecto de la sombra es `computeBoundsThisFrame` mas
+                    ' arriba: GetSceneBounds lee Minv/Maxv, y quien los escribe es mesh.ComputeBounds.
                     Dim updateWorldCache As Boolean = (Not playingNow) OrElse keepBounds
                     Dim updatePerVertexSkin As Boolean = cpuSkinMode OrElse updateWorldCache
                     ' Pose is implicit in the SkeletonInstance: the caller applied it via ApplyPose.
@@ -1079,6 +1209,7 @@ Public Class PreviewControl
         ' compilar GLSL en medio de un frame la primera vez que alguien prende la opcion.
         SharedShadowFO4Shader = New Shadow_Depth_Shader_Fo4
         SharedShadowSSEShader = New Shadow_Depth_Shader_SSE
+        SharedGroundShadowShader = New Ground_Shadow_Shader_Class
 
         ' 1) Aseguramos que el contexto GL está activo
         Me.EnsureContextCurrent()
@@ -1111,8 +1242,9 @@ Public Class PreviewControl
         If Me.IsInDesignMode Then Return
         MyBase.OnLocationChanged(e)
     End Sub
-    Private lastW As Integer = -1
-    Private lastH As Integer = -1
+    ' Friend y no Private: RenderShadowPass los usa para restaurar el viewport sin un glGet por frame.
+    Friend lastW As Integer = -1
+    Friend lastH As Integer = -1
     Protected Overrides Sub OnResize(e As EventArgs)
         If Me.IsInDesignMode Then Return
         MyBase.OnResize(e)
@@ -1445,6 +1577,9 @@ Public Class PreviewControl
         AddHandler toggleSkinning.Click, Sub()
                                              Config_App.Current.Setting_GPUSkinning = toggleSkinning.Checked
                                              RaiseEvent SkinningModeToggled(Me)
+                                             ' El sellado lo hace la recarga de abajo (MarkDirty Shapes Or
+                                             ' Force -> needsFullReload), asi que este camino y el del
+                                             ' dialogo comparten el mismo espejo y no se pisan.
                                              ' Forzamos full reload preservando el Intent actual (MorphResolver,
                                              ' GeometryModifiers, Shapes, Pose) que seteo el ultimo Update_Render.
                                              ' NO usamos RenderShapes(shapes, pose) porque ese overload wipea
@@ -1680,6 +1815,7 @@ Public Class PreviewControl
                 _Model.Floor.Dispose()
                 _Model.Floor = Nothing
             End If
+            _Model.DisposeShadowResources()
             _Model = Nothing
         End If
 
@@ -1708,9 +1844,19 @@ Public Class PreviewControl
             SharedShadowSSEShader = Nothing
         End If
 
+        If SharedGroundShadowShader IsNot Nothing Then
+            SharedGroundShadowShader.Dispose()
+            SharedGroundShadowShader = Nothing
+        End If
+
         If ShadowTarget IsNot Nothing Then
             ShadowTarget.Dispose()
             ShadowTarget = Nothing
+        End If
+
+        If GroundShadowTarget IsNot Nothing Then
+            GroundShadowTarget.Dispose()
+            GroundShadowTarget = Nothing
         End If
         If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
@@ -2541,7 +2687,8 @@ Public Class PreviewModel
                     ' Also recompute bounds after full update — SALVO cuando el caller ya los maneja.
                     ' En el pose path los computa la línea gateada del pass 1 ('If computeBoundsThisFrame
                     ' Then mesh.ComputeBounds()'); incondicional acá bypasseaba ese gate Y Option B en CPU
-                    ' (ComputeBounds→GetWorldVertices = pasada per-vértice a mundo, 8.9ms/frame medido).
+                    ' (ComputeBounds = pasada per-vértice a mundo; medido 6,9-8,5 ms/frame sobre las 11
+                    ' mallas del arnés, y ya SIN las normales de mundo, que salieron de ese camino).
                     If recomputeBounds Then Me.ComputeBounds()
                     If _instr Then
                         ParentModel.ParentControl._skinBoundsMs += _swSkinPhase.Elapsed.TotalMilliseconds
@@ -3002,40 +3149,45 @@ Public Class PreviewModel
 
         ''' <summary>
         ''' O3.3: Compute axis-aligned bounding box from world-space vertex positions for frustum culling.
-        ''' Uses the world-space cache (GPU skinning: Vertices are local-space, so we need world-space for correct bounds).
-        ''' </summary>
+        ''' (GPU skinning: Vertices are local-space, so we need world-space for correct bounds.)
+        ''' <para>⭐ NO MATERIALIZA EL CACHE DE MUNDO. Antes llamaba a <c>GetWorldVertices</c>, que con el
+        ''' cache invalidado —que es SIEMPRE en este punto: RecomputeGPUBoneMatrices lo invalida un par de
+        ''' lineas antes— construia el cache ENTERO, o sea tambien las normales de mundo: una
+        ''' <c>Create_Normal_Matrix</c> (inversa + transpuesta 3x3) por vertice, mas dos arrays
+        ''' <c>Vector3d()</c> por malla por frame. Un AABB no lee ni una de esas normales. Medido sobre las
+        ''' 11 mallas del arnes (37.321 vertices), invalidando tambien <c>PerVertexMatrixValid</c> —que es
+        ''' como llega el frame de play— el cache completo cuesta 10,4-13,2 ms y esta variante 6,9-8,5 ms:
+        ''' <b>~35 % menos</b>. NO 86 %: esa cifra salio de una medicion que dejaba
+        ''' <c>PerVertexSkinMatrix</c> valida, con lo cual ninguna de las dos pagaba el blend de 4 huesos por
+        ''' vertice, que es lo que domina. El ahorro real es solo la parte de las normales.</para>
+        ''' <para>Quien necesite normales de mundo (picking, exportador, raytracer de oclusion) sigue
+        ''' pidiendolas por <c>GetWorldVertices</c> y las computa en ese momento. Lo que no puede pasar es
+        ''' dejar el cache MEDIO lleno, y por eso la variante sin normales no lo marca valido.</para>
+        ''' <para>Efecto lateral deseable: <c>Minv/Maxv/Boundingcenter</c> quedan en Double exacto. Antes se
+        ''' derivaban de <c>BoundsMin/Max</c>, que son Single, asi que la clave de orden del bucket BLENDED
+        ''' pasaba por un redondeo que no hacia falta.</para></summary>
         Public Sub ComputeBounds()
-            BoundsMin = New Vector3(Single.MaxValue)
-            BoundsMax = New Vector3(Single.MinValue)
-            Dim wv = SkinningHelper.GetWorldVertices(MeshData.Meshgeometry)
-            For Each v In wv
-                Dim vf = New Vector3(CSng(v.X), CSng(v.Y), CSng(v.Z))
-                BoundsMin = Vector3.ComponentMin(BoundsMin, vf)
-                BoundsMax = Vector3.ComponentMax(BoundsMax, vf)
-            Next
-            ' Keep SkinnedGeometry world-space bounds in sync with RenderableMesh bounds.
-            ' Meshgeometry.Minv/Maxv are used by GetSceneBounds (camera centering).
-            ' Meshgeometry.Boundingcenter is used for blended-mesh depth sorting in RenderAll.
-            ' Without this, those values stay frozen at ExtractSkinnedGeometry time and become
-            ' stale after any morph, pose, or shape update that changes world-space geometry.
-            If wv.Length > 0 Then
-                Dim bmin3 As New Vector3d(BoundsMin.X, BoundsMin.Y, BoundsMin.Z)
-                Dim bmax3 As New Vector3d(BoundsMax.X, BoundsMax.Y, BoundsMax.Z)
-                MeshData.Meshgeometry.Minv = bmin3
-                MeshData.Meshgeometry.Maxv = bmax3
-                MeshData.Meshgeometry.Boundingcenter = (bmin3 + bmax3) * 0.5
+            If MeshData.Meshgeometry.Vertices Is Nothing OrElse MeshData.Meshgeometry.Vertices.Length = 0 Then
+                BoundsMin = New Vector3(Single.MaxValue)
+                BoundsMax = New Vector3(Single.MinValue)
+                Exit Sub
             End If
+            SkinningHelper.ComputeWorldBoundsSinNormales(MeshData.Meshgeometry)
+            Dim mn = MeshData.Meshgeometry.Minv
+            Dim mx = MeshData.Meshgeometry.Maxv
+            ' BoundsMin/Max son Single (los consume el culling de frustum). Se REDONDEAN HACIA AFUERA: hacia
+            ' adentro, un AABB que ya toca el borde podria descartar una malla visible por un ulp.
+            BoundsMin = New Vector3(MathF.BitDecrement(CSng(mn.X)), MathF.BitDecrement(CSng(mn.Y)), MathF.BitDecrement(CSng(mn.Z)))
+            BoundsMax = New Vector3(MathF.BitIncrement(CSng(mx.X)), MathF.BitIncrement(CSng(mx.Y)), MathF.BitIncrement(CSng(mx.Z)))
         End Sub
 
-        ''' <summary>
-        ''' O3.3: Test AABB against view-projection frustum using Gribb-Hartmann plane extraction.
-        ''' Returns True if the AABB is at least partially inside the frustum.
-        ''' </summary>
-        Public Shared Function IsAABBInFrustum(bmin As Vector3, bmax As Vector3, vp As Matrix4) As Boolean
-            ' Extract 6 frustum planes from the view-projection matrix (Gribb-Hartmann method)
+        ''' <summary>Extrae los 6 planos del frustum de una view-projection (Gribb-Hartmann). Separado de
+        ''' <see cref="IsAABBInFrustum"/> porque los planos son CONSTANTES para todo un pase: extraerlos por
+        ''' malla alocaba un array de 6 Vector4 por llamada, y los dos pases de sombra multiplicaron esa
+        ''' cuenta. Se extraen una vez y se pasan.</summary>
+        Public Shared Sub ExtractFrustumPlanes(vp As Matrix4, planes As Vector4())
             ' vp is row-major in OpenTK: Row0..Row3
             ' Plane normals point inward; a point is inside when dot+w >= 0 for all planes
-            Dim planes(5) As Vector4
             ' Left
             planes(0) = New Vector4(vp.M14 + vp.M11, vp.M24 + vp.M21, vp.M34 + vp.M31, vp.M44 + vp.M41)
             ' Right
@@ -3048,7 +3200,19 @@ Public Class PreviewModel
             planes(4) = New Vector4(vp.M14 + vp.M13, vp.M24 + vp.M23, vp.M34 + vp.M33, vp.M44 + vp.M43)
             ' Far
             planes(5) = New Vector4(vp.M14 - vp.M13, vp.M24 - vp.M23, vp.M34 - vp.M33, vp.M44 - vp.M43)
+        End Sub
 
+        ''' <summary>⛔ NO USAR EN EL CAMINO DE DIBUJO: aloca los 6 planos en cada llamada. Queda como
+        ''' conveniencia para un call site suelto; los bucles de RenderAll y el pase de sombra usan la
+        ''' sobrecarga de abajo con un array reusado (_framePlanes / _shadowPlanes). Hoy no la llama
+        ''' nadie.</summary>
+        Public Shared Function IsAABBInFrustum(bmin As Vector3, bmax As Vector3, vp As Matrix4) As Boolean
+            Dim planes(5) As Vector4
+            ExtractFrustumPlanes(vp, planes)
+            Return IsAABBInFrustum(bmin, bmax, planes)
+        End Function
+
+        Public Shared Function IsAABBInFrustum(bmin As Vector3, bmax As Vector3, planes As Vector4()) As Boolean
             For Each plane In planes
                 ' Pick the vertex most in the direction of the plane normal (p-vertex)
                 Dim px As Single = If(plane.X >= 0, bmax.X, bmin.X)
@@ -3228,7 +3392,7 @@ Public Class PreviewModel
         ''' lo tocan (el primero multiplica por un vec4 con w=1, el segundo es <c>.rgb</c>), asi que no
         ''' hace falta subirlos. Lo demas que se sube es lo que decide la POSICION (matrices + skinning) y
         ''' el recorte (zap + alpha-test).</para></summary>
-        Friend Sub RenderDepthOnly(shadowShader As Shader_Base_Class, lightView As Matrix4, lightProj As Matrix4)
+        Friend Sub RenderDepthOnly(shadowShader As Shader_Base_Class, lightView As Matrix4)
             If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
 
@@ -3237,40 +3401,41 @@ Public Class PreviewModel
             ' sombra proyectada desde otro lado que la luz que la ilumina.
             Dim modelView As Matrix4 = lightView * model
 
-            shadowShader.Use()
-            shadowShader.SetMatrix4("matProjection", lightProj)
-            shadowShader.SetMatrix4("matView", lightView)
+            ' ⛔ matProjection / matView los sube el CALLER una sola vez por pase (son de la luz, no de la
+            ' malla). Aca solo va lo que cambia POR MALLA.
+            ' ⛔ mv_normalMatrix NO SE SUBE, a proposito. Solo alimenta varyings que este fragment ni
+            ' declara (mv_tbn, v_msnMatrix): no puede tocar gl_Position ni vColor.a, que es lo unico que
+            ' decide la salida de este pase. La version anterior lo calculaba con un Matrix3.Invert() +
+            ' Transpose() POR MALLA Y POR FRAME para un uniform que nadie lee.
             shadowShader.SetMatrix4("matModel", model)
             shadowShader.SetMatrix4("matModelView", modelView)
-
-            ' mv_normalMatrix solo alimenta varyings que este fragment no lee (TBN/MSN). Se sube igual y
-            ' coherente con la luz: dejar el uniform con el valor del draw anterior es la clase de estado
-            ' colgado que despues cuesta horas de diagnosticar.
-            Dim normalMatrix As New OpenTK.Mathematics.Matrix3(modelView)
-            normalMatrix.Invert()
-            normalMatrix.Transpose()
-            shadowShader.SetMatrix3("mv_normalMatrix", normalMatrix)
 
             Dim materialBase = MeshData.Material.MaterialBase
             shadowShader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
 
             Dim shape = MeshData.Shape
             shadowShader.SetBool("bApplyZap", shape.ApplyZaps)
-            shadowShader.SetBool("bShowVertexAlpha", MeshData.Material.UseVertexAlpha)
-            shadowShader.SetBool("bShowTexture", shape.ShowTexture)
             ' bShowMask / bShowWeight / bWireframe / bShowVertexColor NO se suben: no afectan ni
             ' gl_Position ni vColor.a, que es todo lo que este pase mira.
 
-            shadowShader.SetBool("bAlphaTest", MeshData.Material.HasAlphaTest)
-            shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
-            If materialBase IsNot Nothing Then
-                shadowShader.SetVector2("uvOffset", New Vector2(materialBase.UOffset, materialBase.VOffset))
-                shadowShader.SetVector2("uvScale", New Vector2(materialBase.UScale, materialBase.VScale))
-            Else
-                shadowShader.SetVector2("uvOffset", Vector2.Zero)
-                shadowShader.SetVector2("uvScale", Vector2.One)
+            ' El alpha-test y TODO lo que lo alimenta (uv, textura, vColor.a) se suben SOLO si va a correr.
+            ' Para una malla opaca —la mayoria— esto ahorra un bind de textura (ActiveTexture+BindTexture+
+            ' uniform) y cuatro uniforms por malla y por frame.
+            Dim doAlphaTest As Boolean = MeshData.Material.HasAlphaTest AndAlso shape.ShowTexture
+            shadowShader.SetBool("bAlphaTest", doAlphaTest)
+            shadowShader.SetBool("bShowTexture", doAlphaTest)
+            shadowShader.SetBool("bShowVertexAlpha", doAlphaTest AndAlso MeshData.Material.UseVertexAlpha)
+            If doAlphaTest Then
+                shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
+                If materialBase IsNot Nothing Then
+                    shadowShader.SetVector2("uvOffset", New Vector2(materialBase.UOffset, materialBase.VOffset))
+                    shadowShader.SetVector2("uvScale", New Vector2(materialBase.UScale, materialBase.VScale))
+                Else
+                    shadowShader.SetVector2("uvOffset", Vector2.Zero)
+                    shadowShader.SetVector2("uvScale", Vector2.One)
+                End If
+                shadowShader.BindTexture("texDiffuse", MeshData.Material.DiffuseTexture_ID, TextureUnit.Texture0)
             End If
-            shadowShader.BindTexture("texDiffuse", MeshData.Material.DiffuseTexture_ID, TextureUnit.Texture0)
 
             shadowShader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
             Dim boneCount As Integer = If(MeshData.Meshgeometry.GPUBoneMatrices IsNot Nothing, MeshData.Meshgeometry.GPUBoneMatrices.Length, 0)
@@ -3709,34 +3874,11 @@ Public Class PreviewModel
             shader.SetVector3("directional2.diffuse", lights.BackDiffuse)
             shader.SetVector3("directional2.direction", lights.BackDir)
 
-            '===============================
-            ' ?? SOMBRAS (solo la KEY)
-            '===============================
-            ' El estado lo resolvio RenderShadowPass una vez para todo el frame. Si no hay mapa valido se
-            ' sube bShadows = False y el fragment ni entra a shadowFactor(): el resultado es, bit a bit, el
-            ' de antes de que existiera esta feature.
-            If Me.ParentModel.ShadowActive Then
-                Dim sfit = Me.ParentModel.ShadowFit
-                Dim scfg = Me.ParentModel.ShadowSettings
-                Dim starget = Me.ParentModel.ParentControl.ShadowTarget
-                shader.SetBool("bShadows", True)
-                shader.SetMatrix4("matShadowViewProj", sfit.ViewProj)
-                shader.SetFloat("uShadowIntensity", scfg.Intensity)
-                ' Los dos bias se autoran en TEXELES y se convierten aca, que es donde se conoce el tamano
-                ' real del texel: asi cambiar MapSize no obliga a re-tunearlos.
-                shader.SetFloat("uShadowNormalBias", scfg.NormalBiasTexels * sfit.TexelWorld)
-                shader.SetFloat("uShadowDepthBias",
-                                If(sfit.DepthRange > 0.0F, scfg.DepthBiasTexels * sfit.TexelWorld / sfit.DepthRange, 0.0F))
-                shader.SetInt("uShadowPcfRadius",
-                              Math.Clamp(CInt(Math.Round(scfg.SoftnessTexels)), 0, PreviewShadowSettings.MaxPcfRadius))
-                Dim invSize As Single = If(starget IsNot Nothing AndAlso starget.Size > 0, 1.0F / starget.Size, 0.0F)
-                shader.SetVector2("uShadowTexelUV", New Vector2(invSize, invSize))
-                ' Unidad 14: espeja el t14 del motor en los dos juegos, y esta libre (el render usa
-                ' 0..8 y 10). GL 4.3 garantiza 16 unidades de textura en el fragment.
-                If starget IsNot Nothing Then shader.BindTexture("texShadowMap", starget.Texture, TextureUnit.Texture14)
-            Else
-                shader.SetBool("bShadows", False)
-            End If
+            ' ⛔ LOS UNIFORMS DE SOMBRA NO SE SUBEN ACA. Son constantes de FRAME (matriz de la luz, bias,
+            ' radio del PCF, la textura), no de malla: los sube PreviewModel.UploadShadowUniforms una sola
+            ' vez, justo despues del pase de profundidad. Subirlos por malla costaba ocho uniforms + un
+            ' bind de textura por draw, y ademas copiaba una LightFit (tres Matrix4) en cada acceso a la
+            ' propiedad. Es el mismo criterio que ya tiene el rig de luces con _frameLights.
 
             '===============================
             ' ?? TEXTURAS (Sample BINDs)
@@ -4752,6 +4894,11 @@ Public Class PreviewModel
             mesh.Clean()
         Next
         ' Borra Meshes
+        ' Los casters van con ellos: RenderAll sale antes del pase de sombra con la escena vacia, asi que
+        ' esta lista es lo unico que quedaria referenciando las mallas del NPC anterior.
+        _shadowCasters.Clear()
+        _shadowActive = False
+        _groundActive = False
         meshes.Clear()
         OpaqueMeshes.Clear()
         CutoutMeshes.Clear()
@@ -4789,8 +4936,8 @@ Public Class PreviewModel
     End Structure
 
     ''' <summary>Rig resuelto para el frame en curso. Lo llena <see cref="RenderAll"/> antes de dibujar y lo
-    ''' consume ApplyMaterial. Depende SÓLO de (rig activo, cámara), constantes durante el frame: el rig es un
-    ''' setting de UI y la cámara es un parámetro de RenderAll. Antes esto se recalculaba POR MALLA — 18
+    ''' consume ApplyMaterial. Depende SÓLO del rig activo (un setting de UI): desde que las luces son fijas
+    ''' al mundo YA NO depende de la cámara, así que orbitar no cambia una sola dirección. Antes esto se recalculaba POR MALLA — 18
     ''' Math.Pow + 4 Direction() idénticos, y otra vuelta por cada overlay layer.</summary>
     Private _frameLights As LightRigUniforms
 
@@ -4800,20 +4947,20 @@ Public Class PreviewModel
         End Get
     End Property
 
-    Private Sub ResolveFrameLights(camera As OrbitCamera)
+    Private Sub ResolveFrameLights()
         ' El rig sale de ActiveLights() = el set del JUEGO activo (FO4/SSE tienen el suyo).
         Dim rig = Config_App.Current.ActiveLights()
         _frameLights = New LightRigUniforms With {
             .AmbientSky = Shader_Base_Class.Vector_to_Linear(rig.AmbientSkyDiffuse()),
             .AmbientGround = Shader_Base_Class.Vector_to_Linear(rig.AmbientGroundDiffuse()),
             .KeyDiffuse = Shader_Base_Class.Vector_to_Linear(rig.KeyLight.Diffuse()),
-            .KeyDir = rig.KeyLight.Direction(camera),
+            .KeyDir = rig.KeyLight.Direction(),
             .Fill0Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillLeft.Diffuse()),
-            .Fill0Dir = rig.FillLeft.Direction(camera),
+            .Fill0Dir = rig.FillLeft.Direction(),
             .Fill1Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillRight.Diffuse()),
-            .Fill1Dir = rig.FillRight.Direction(camera),
+            .Fill1Dir = rig.FillRight.Direction(),
             .BackDiffuse = Shader_Base_Class.Vector_to_Linear(rig.BackLight.Diffuse()),
-            .BackDir = rig.BackLight.Direction(camera)
+            .BackDir = rig.BackLight.Direction()
         }
     End Sub
 
@@ -4824,6 +4971,84 @@ Public Class PreviewModel
     Private _shadowFit As ShadowMapMath.LightFit
     Private _shadowSettings As PreviewShadowSettings
     Private _shadowActive As Boolean
+    ''' <summary>Buffer REUTILIZADO de casters: el pase corre en cada frame que se repinta, asi que una
+    ''' List nueva por frame es basura de GC en el camino de dibujo — el mismo motivo por el que
+    ''' BlendedDepthBuffer es un campo y no un local.
+    ''' <para>⛔ Se limpia en <see cref="Clean"/>. RenderAll sale antes de RenderShadowPass cuando la escena
+    ''' queda vacia, asi que sin eso la lista seguia referenciando cada RenderableMesh del ultimo NPC —y con
+    ''' ellos su MeshData y su SkinnedGeometry— por toda la vida del control. Con la List local de antes
+    ''' morian con el frame; convertirla en campo para no alocar por frame trajo esto de regalo.</para>
+    ''' </summary>
+    Private ReadOnly _shadowCasters As New List(Of RenderableMesh)
+    ''' <summary>Los 6 planos del frustum de la LUZ, reusados. Mismo motivo que _shadowCasters: el pase
+    ''' corre por frame y por mapa, y los planos son constantes dentro de cada pase.</summary>
+    Private ReadOnly _shadowPlanes(5) As Vector4
+    ''' <summary>Los 6 planos del frustum de la CAMARA, reusados por los cinco bucles de RenderAll. Mismo
+    ''' motivo que <see cref="_shadowPlanes"/>: la sobrecarga que toma una Matrix4 aloca un Vector4(5) por
+    ''' llamada, o sea por malla y por bucket.</summary>
+    Private ReadOnly _framePlanes(5) As Vector4
+    ''' <summary>Lo que le QUEDA al suelo cuando la key esta ocluida, por canal: (todo lo demas) / (todo).
+    '''
+    ''' <para>⛔ NO ES UNA CONSTANTE ELEGIDA A OJO, y esa es la diferencia entre una sombra y una calcomania.
+    ''' La primera version multiplicaba por <c>1 - a</c>, o sea que con Intensity = 1 el suelo quedaba en
+    ''' NEGRO PURO — y ningun suelo en sombra es negro: le siguen llegando el ambiente y los tres fills,
+    ''' que no castean. Aca se evalua exactamente eso para un plano con normal +Z, con el MISMO rig que
+    ''' esta iluminando al personaje: <c>total = ambienteCielo + SUM(luz_i * max(dir_i.Z, 0))</c> y el
+    ''' resultado es <c>(total - aporte de la key) / total</c>. Consecuencia util: la sombra del suelo se
+    ''' aclara y se oscurece sola al mover el rig, sin ninguna perilla que mantener en sincronia.</para>
+    '''
+    ''' <para>El ambiente que se usa es el del hemisferio de ARRIBA porque la normal del plano es +Z, que
+    ''' es justo donde <c>hemiAmbient</c> devuelve <c>ambientSky</c> puro.</para></summary>
+    Private Function GroundShadowTint() As Vector3
+        Dim total As Vector3 = _frameLights.AmbientSky
+        Dim keyContrib As Vector3 = _frameLights.KeyDiffuse * Math.Max(_frameLights.KeyDir.Z, 0.0F)
+        total += keyContrib
+        total += _frameLights.Fill0Diffuse * Math.Max(_frameLights.Fill0Dir.Z, 0.0F)
+        total += _frameLights.Fill1Diffuse * Math.Max(_frameLights.Fill1Dir.Z, 0.0F)
+        total += _frameLights.BackDiffuse * Math.Max(_frameLights.BackDir.Z, 0.0F)
+
+        Dim rest As Vector3 = total - keyContrib
+        ' Un rig completamente apagado (total = 0) no puede producir sombra: devolver blanco = no oscurece,
+        ' que es lo correcto y ademas evita el 0/0.
+        ' ⛔⭐ Y SE CODIFICA A DISPLAY ANTES DE SALIR. La razon de arriba es de RADIANCIA (lineal), pero el
+        ' quad multiplica contra el framebuffer, que guarda valores YA codificados: los dos fragments
+        ' iluminados terminan en `pow(color, 1/2.2)` y nadie prende GL_FRAMEBUFFER_SRGB. Multiplicar un
+        ' cociente lineal contra un destino codificado deja la sombra del SUELO mas oscura que la del
+        ' CUERPO —que si se aplica en lineal, antes del encode— en el mismo frame. Con Studio el cociente
+        ' es 0,815 y el factor correcto en pantalla es 0,911: sobre un fondo de 128 la sombra salia 104 en
+        ' vez de 117.
+        ' ⭐ Y ES EXACTO, no aproximado, en el caso que realmente ocurre: el quad tiene DepthTest, asi que
+        ' donde el personaje esta delante no dibuja, y su destino es el ClearColor o la grilla del piso —
+        ' ninguno de los dos paso por el tonemap. Para un destino con gamma pura, el multiplicador en
+        ' espacio de display de un cociente lineal k es exactamente pow(k, 1/2.2), sin depender de la
+        ' luminancia.
+        Dim lin As New Vector3(SafeRatio(rest.X, total.X), SafeRatio(rest.Y, total.Y), SafeRatio(rest.Z, total.Z))
+        Const Inv As Single = 1.0F / 2.2F
+        Return New Vector3(MathF.Pow(lin.X, Inv), MathF.Pow(lin.Y, Inv), MathF.Pow(lin.Z, Inv))
+    End Function
+
+    Private Shared Function SafeRatio(rest As Single, total As Single) As Single
+        If total <= 0.0001F Then Return 1.0F
+        Return Math.Clamp(rest / total, 0.0F, 1.0F)
+    End Function
+
+    ''' <summary>Libera el VAO/VBO del receptor de suelo. Lo llama PreviewControl.Clean junto con el
+    ''' Floor, que es donde ya se libera la geometria propia del modelo.</summary>
+    Friend Sub DisposeShadowResources()
+        If _groundQuad IsNot Nothing Then
+            _groundQuad.Dispose()
+            _groundQuad = Nothing
+        End If
+    End Sub
+
+    ''' <summary>Plano del receptor de suelo (Z de mundo) y si este frame lo dibuja.</summary>
+    Private _groundZ As Single
+    Private _groundActive As Boolean
+    ''' <summary>Encuadre del mapa ANCHO, el que sólo usa el receptor de suelo. Ver RenderShadowPass.</summary>
+    Private _groundFit As ShadowMapMath.LightFit
+    Private _groundQuadCenter As Vector3
+    Private _groundQuadHalf As Vector2
+    Private _groundQuad As GroundShadowQuad
 
     ''' <summary>True si este frame tiene un shadow map dibujado y utilizable. False = ApplyMaterial sube
     ''' <c>bShadows = false</c> y el fragment ni calcula el factor.</summary>
@@ -4839,29 +5064,60 @@ Public Class PreviewModel
         End Get
     End Property
 
+    ''' <summary>Encuadre del mapa ANCHO del suelo, y si este frame lo dibujo. Los consume el arnes
+    ''' Tools/ShadowGate para verificar que prender el suelo NO le cambia el encuadre al personaje.</summary>
+    Friend ReadOnly Property GroundFit As ShadowMapMath.LightFit
+        Get
+            Return _groundFit
+        End Get
+    End Property
+
+    Friend ReadOnly Property GroundActive As Boolean
+        Get
+            Return _groundActive
+        End Get
+    End Property
+
     Friend ReadOnly Property ShadowSettings As PreviewShadowSettings
         Get
             Return _shadowSettings
         End Get
     End Property
 
+    ''' <summary>Suelta la VRAM de los dos shadow maps. Se llama desde CADA salida temprana del pase:
+    ''' con la feature apagada —por la opcion, por falta de shader, por falta de casters o por un encuadre
+    ''' degenerado— no queda un byte de GPU reservado.</summary>
+    Private Sub SoltarMapasDeSombra()
+        If ParentControl Is Nothing Then Exit Sub
+        ParentControl.ShadowTarget?.Release()
+        ParentControl.GroundShadowTarget?.Release()
+    End Sub
+
     ''' <summary>Dibuja el shadow map de la KEY. Cualquier salida temprana deja <c>_shadowActive</c> en
     ''' False, o sea el frame se dibuja exactamente como antes de que existiera esta feature — nunca a
     ''' medias contra un mapa viejo.
     '''
     ''' <para>⛔ ESTADO GL: este pase cambia framebuffer, viewport, culling y depth. Los devuelve TODOS
-    ''' antes de salir, y el viewport se LEE del driver en vez de suponer el tamano del control (el
-    ''' compositor de FaceTint tambien lo mueve). Si algo de esto se escapa, el frame entero sale
-    ''' escalado o sin depth y el sintoma no apunta para aca.</para></summary>
+    ''' antes de salir. El viewport se restaura de <c>lastW/lastH</c> y el framebuffer del 0: los dos son
+    ''' conocidos (RenderAll solo se alcanza desde RenderScene, que dibuja contra el default) y leerlos del
+    ''' driver costaba un glGet por frame. Si algo de esto se escapa, el frame entero sale escalado o sin
+    ''' depth y el sintoma no apunta para aca.</para></summary>
     Private Sub RenderShadowPass()
         _shadowActive = False
+        _groundActive = False
         If ParentControl Is Nothing Then Exit Sub
 
         Dim cfg = Config_App.Current.ActiveShadows().Sanitized()
-        If Not cfg.Enabled Then Exit Sub
+        ' ⛔ SOLTAR LA VRAM EN *TODOS* LOS CAMINOS DE APAGADO, no solo en el de la opcion del suelo. El
+        ' criterio "con la sombra apagada no se asigna un byte de GPU" tiene CINCO salidas —opcion apagada,
+        ' sin shader, sin casters, encuadre invalido y fallo de Ensure— y liberar en una sola es no
+        ' cumplirlo:
+        ' prender sombras + suelo y despues DESTILDAR sombras dejaba los dos mapas colgados hasta el Clean
+        ' (a 2048 + 1024 son ~16 MB; con MapSize 4096 y el suelo saturado, bastante mas).
+        If Not cfg.Enabled Then SoltarMapasDeSombra() : Exit Sub
 
         Dim depthShader = ParentControl.CurrentShadowShader
-        If depthShader Is Nothing Then Exit Sub
+        If depthShader Is Nothing Then SoltarMapasDeSombra() : Exit Sub
 
         ' CASTERS. El gate es CastShadows del material resuelto, que ya es game-aware (bit 9 de SF1 en
         ' FO4 y en SK; y en FO4 el BGSM PISA al NIF, ver 30-fo4-material-vs-nif). Sobre el corpus vanilla
@@ -4870,7 +5126,8 @@ Public Class PreviewModel
         ' eyelashes, eyewet, eyestearduct, stubble, el pelo *_8bit, beard_8bit* y synthtattoo — o sea los
         ' que proyectarian una barra negra sobre el ojo o un bloque solido en vez de mechones. Sus gemelos
         ' *_1bit (cutout) SI lo traen en True. Por eso no hay excepcion por bucket: alcanza el flag.
-        Dim casters As New List(Of RenderableMesh)
+        Dim casters = _shadowCasters
+        casters.Clear()
         For Each mesh In meshes
             If mesh Is Nothing OrElse mesh.MeshData Is Nothing OrElse mesh.MeshData.Shape Is Nothing Then Continue For
             If mesh.MeshData.Shape.RenderHide OrElse mesh.MeshData.Shape.Wireframe Then Continue For
@@ -4881,21 +5138,112 @@ Public Class PreviewModel
             If mb.Decal Then Continue For
             casters.Add(mesh)
         Next
-        If casters.Count = 0 Then Exit Sub
+        If casters.Count = 0 Then SoltarMapasDeSombra() : Exit Sub
 
         ' Encuadre sobre el AABB de TODO lo visible, no solo de los casters: asi cualquier receptor cae
         ' adentro del mapa. Lo que quede afuera lee el borde blanco de la textura = "iluminado".
         Dim bmin As Vector3, bmax As Vector3
         ParentControl.GetSceneBounds(bmin, bmax)
+        ' ⛔⭐ EL PLANO DEL RECEPTOR ES EL PISO DECLARADO POR LA APP, no el punto mas bajo del AABB. Antes
+        ' era `bmin.Z` y eso fallaba de tres formas distintas:
+        '  1. La grilla se dibuja en `FloorOffset + 0.01` con DepthMask activo y DepthFunc Lequal. Con el
+        '     receptor en z = 0 y la grilla en z = 0,01, la grilla GANA el test de profundidad en cada
+        '     linea: ~43 rayas brillantes sin sombrear atravesando la sombra, a Size=400/Step=10.
+        '  2. Wardrobe Manager pone `FloorOffset = -HighHeelHeight`: con un outfit de tacos el piso real y
+        '     el receptor quedaban separados por la altura del taco y la sombra flotaba.
+        '  3. GetSceneBounds saltea las shapes con RenderHide, asi que en un preview de UNA pieza (un
+        '     guante a z = 100) `bmin.Z` era 100 y la sombra salia como una losa colgada en el aire.
+        ' El +0,02 lo pone por ENCIMA del +0,01 de la grilla: el receptor gana el test contra la grilla, y
+        ' el personaje lo sigue tapando porque esta mas arriba todavia.
+        ' ⚠️ El desempate es de UN SOLO LADO: mirando desde ABAJO del plano (la camara llega casi a -90) la
+        ' grilla queda mas cerca y le vuelve a ganar al receptor, con las mismas rayas brillantes al reves.
+        ' Se deja asi a proposito: la alternativa —invertir el signo segun donde este la camara— mueve el
+        ' plano de la sombra mientras se orbita, que es peor que un artefacto en una vista donde el receptor
+        ' de suelo no significa nada.
+        _groundZ = CSng(FloorOffset) + 0.02F
+
+        ' ===================== MAPA 1: AJUSTADO AL PERSONAJE =====================
+        ' ⭐ DOS MAPAS, NO UNO. Con un solo mapa compartido, meter el receptor de suelo obligaba a agrandar
+        ' el encuadre hasta cubrir donde ATERRIZA la sombra —la cabeza esta a ~180 u y con la key a 26
+        ' grados su sombra cae a 180/tan(26) = 369 u de los pies— y como el mapa tiene un tamano FIJO, cada
+        ' texel pasaba a cubrir 2,4 veces mas mundo: la sombra sobre el PERSONAJE se volvia 2,4 veces mas
+        ' gruesa (medido: texel 0,077 -> 0,181 u). Con un mapa propio para el suelo, el del personaje
+        ' vuelve al encuadre ajustado y no se pierde nada de nitidez.
+        ' El del suelo va a MENOS resolucion a proposito: es una mancha grande y difusa, no necesita
+        ' filo. Cuanto menos lo decide GroundMapSize a partir de los dos radios, asi que el extra de VRAM
+        ' depende de la elevacion de la key: va de 1/16 del mapa del personaje a igualarlo.
         Dim fit = ShadowMapMath.Fit(_frameLights.KeyDir, bmin, bmax, cfg.MapSize)
-        If Not fit.Valid Then Exit Sub
+        If Not fit.Valid Then SoltarMapasDeSombra() : Exit Sub
 
         If ParentControl.ShadowTarget Is Nothing Then ParentControl.ShadowTarget = New ShadowMapTarget()
-        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize) Then Exit Sub
+        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize) Then SoltarMapasDeSombra() : Exit Sub
 
-        Dim prevViewport(3) As Integer
-        GL.GetInteger(GetPName.Viewport, prevViewport)
-        Dim prevFbo As Integer = ParentControl.ShadowTarget.BindForWrite()
+        ' ⛔ NI UN glGet NI UN ARRAY POR FRAME ACA. El doc de ShadowMapTarget.BindForWrite dice que los
+        ' glGet de framebuffer son los que fuerzan a varios drivers a vaciar la lista de comandos diferida
+        ' — y el caller hacia justo uno por frame, mas otro del viewport, mas un array de 4 Integer de
+        ' basura de GC en el camino de dibujo. Los dos valores ya se conocen: RenderAll solo es alcanzable
+        ' desde RenderScene, que dibuja contra el framebuffer 0, y el viewport es lastW/lastH (los fija
+        ' ResizeViewport y son los mismos con los que se armo la proyeccion de este frame).
+        Const prevFbo As Integer = 0
+
+        RenderDepthInto(ParentControl.ShadowTarget, fit, depthShader, casters)
+        _shadowFit = fit
+        _shadowSettings = cfg
+        _shadowActive = True
+
+        ' ===================== MAPA 2: ANCHO, SOLO PARA EL SUELO =====================
+        If Not cfg.GroundShadow Then
+            ' Apagada la opcion, el mapa ancho se SUELTA. Sin esto quedaban ~3 MB de VRAM colgados hasta
+            ' el Clean, contradiciendo el criterio del otro target ("con la opcion apagada nunca se asigna
+            ' un byte de GPU").
+            ParentControl.GroundShadowTarget?.Release()
+        Else
+            Dim gmin = bmin, gmax = bmax
+            Dim expanded As Boolean
+            ' Si la luz esta demasiado baja la sombra se va al infinito: el receptor se apaga solo.
+            ShadowMapMath.ExpandForGroundShadow(gmin, gmax, _frameLights.KeyDir, _groundZ, expanded)
+            ' Si la luz quedo demasiado baja el receptor se apaga SOLO, y entonces su mapa tambien sobra.
+            If Not expanded Then ParentControl.GroundShadowTarget?.Release()
+            If expanded Then
+                ' ⛔ EL TAMANO DEL MAPA ANCHO SALE DE SU RADIO, no de una fraccion fija del otro. El radio
+                ' del encuadre del suelo depende de la ELEVACION de la key —la sombra mide altura/tan(elev)—
+                ' asi que con `MapSize \ 2` fijo el texel del suelo variaba ~2x entre presets sin que nada
+                ' lo dijera: Studio (key a 25,9 grados) daba 0,36 u por texel y Portrait (15,4 grados) ~0,73,
+                ' o sea que el preset que MAS muestra la sombra en el piso era el que peor la dibujaba.
+                ' El TAMANO del mapa ancho es matematica pura y vive en ShadowMapMath: tiene dos trampas
+                ' (clamp invertido con MapSize 256, desborde del CInt con una escena degenerada) que un gate
+                ' de leyes cubre y un A/B de pixeles no. Ver GroundMapSize.
+                Dim gRadioTent = ShadowMapMath.Fit(_frameLights.KeyDir, gmin, gmax, cfg.MapSize).Radius
+                Dim gSize As Integer = ShadowMapMath.GroundMapSize(fit.Radius, gRadioTent, cfg.MapSize)
+                Dim gfit = ShadowMapMath.Fit(_frameLights.KeyDir, gmin, gmax, gSize)
+                If gfit.Valid Then
+                    If ParentControl.GroundShadowTarget Is Nothing Then ParentControl.GroundShadowTarget = New ShadowMapTarget()
+                    If ParentControl.GroundShadowTarget.Ensure(gSize) Then
+                        RenderDepthInto(ParentControl.GroundShadowTarget, gfit, depthShader, casters)
+                        _groundFit = gfit
+                        ' El quad NO se dimensiona con gfit.Radius: ese radio es la media diagonal de la
+                        ' esfera 3D e incluye la ALTURA. La huella real es gmin/gmax en XY. Ver
+                        ' GroundShadowQuad.Render.
+                        ShadowMapMath.GroundQuadFromFootprint(gmin, gmax, _groundZ, _groundQuadCenter, _groundQuadHalf)
+                        _groundActive = True
+                    End If
+                End If
+            End If
+        End If
+
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
+        GL.Viewport(0, 0, ParentControl.lastW, ParentControl.lastH)
+        GL.Enable(EnableCap.CullFace)
+        GL.CullFace(TriangleFace.Back)
+    End Sub
+
+    ''' <summary>Dibuja la silueta de <paramref name="casters"/> en un shadow map. Es el cuerpo compartido
+    ''' por los dos mapas (el ajustado al personaje y el ancho del suelo): el estado GL y el orden de los
+    ''' draws tienen que ser IDENTICOS en los dos o la sombra del piso no coincidiria con la del cuerpo.
+    ''' <para>NO restaura framebuffer ni viewport: lo hace el caller una sola vez despues del ultimo mapa.</para></summary>
+    Private Sub RenderDepthInto(target As ShadowMapTarget, fit As ShadowMapMath.LightFit,
+                                depthShader As Shader_Base_Class, casters As List(Of RenderableMesh))
+        target.BindForWrite()
 
         GL.Clear(ClearBufferMask.DepthBufferBit)
         GL.Enable(EnableCap.DepthTest)
@@ -4908,22 +5256,82 @@ Public Class PreviewModel
         GL.Disable(EnableCap.CullFace)
         GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
 
+        ' Las matrices de la LUZ son del pase, no de la malla: se suben una sola vez. Los planos del
+        ' frustum tampoco cambian adentro del pase.
+        RenderableMesh.ExtractFrustumPlanes(fit.ViewProj, _shadowPlanes)
+        depthShader.Use()
+        depthShader.SetMatrix4("matProjection", fit.Proj)
+        depthShader.SetMatrix4("matView", fit.View)
+
         For Each mesh In casters
             ' Cull por el frustum de la LUZ (no el de la camara): un caster fuera de pantalla puede
             ' proyectar adentro. Misma funcion y misma convencion (view * proj) que el pase iluminado.
-            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, fit.ViewProj) Then Continue For
-            mesh.RenderDepthOnly(depthShader, fit.View, fit.Proj)
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _shadowPlanes) Then Continue For
+            mesh.RenderDepthOnly(depthShader, fit.View)
         Next
 
         GL.BindVertexArray(0)
-        GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
-        GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
-        GL.Enable(EnableCap.CullFace)
-        GL.CullFace(TriangleFace.Back)
+    End Sub
 
-        _shadowFit = fit
-        _shadowSettings = cfg
-        _shadowActive = True
+    ''' <summary>Sube al shader ILUMINADO todo lo que necesita <c>shadowFactor()</c>. Se llama UNA vez por
+    ''' frame, no por malla: son constantes del frame y el programa es el mismo para todos los draws (y
+    ''' para el pase de overlays, que reusa CurrentShader).
+    ''' <para>Con <c>ShadowActive = False</c> sube <c>bShadows = false</c> y nada mas: el fragment ni
+    ''' calcula el factor, y el frame sale bit a bit igual al de antes de que existiera la feature — que es
+    ''' lo que verifica el A/B contra HEAD de Tools/ShadowGate.</para></summary>
+    Private Sub UploadShadowUniforms(shader As Shader_Base_Class, fit As ShadowMapMath.LightFit,
+                                     target As ShadowMapTarget, active As Boolean,
+                                     unit As TextureUnit, normalBiasTexels As Single,
+                                     depthBiasWorld As Single)
+        If shader Is Nothing Then Exit Sub
+        shader.Use()
+        If Not active OrElse target Is Nothing Then
+            shader.SetBool("bShadows", False)
+            Exit Sub
+        End If
+
+        shader.SetBool("bShadows", True)
+        shader.SetMatrix4("matShadowViewProj", fit.ViewProj)
+        shader.SetFloat("uShadowIntensity", _shadowSettings.Intensity)
+        ' Los dos bias se autoran en TEXELES y se convierten aca, que es donde se conoce el tamano real
+        ' del texel: asi cambiar MapSize no obliga a re-tunearlos, y los DOS mapas (que tienen texeles de
+        ' distinto tamano) quedan cada uno con el suyo.
+        ' | EL NORMAL-OFFSET ES CERO PARA EL RECEPTOR DE SUELO, y no es una omision. Su unica funcion es
+        ' matar el auto-sombreado de superficies rasantes, y el quad del piso NO ES CASTER (no entra en
+        ' _shadowCasters): no puede auto-sombrearse. En cambio SI paga el desvio: el mapa del suelo tiene
+        ' texeles ~5x mas grandes, asi que los 2 texeles del default son ~0,7 u de corrimiento a lo largo
+        ' de +Z, que con la key a 26 grados se traducen en ~1,5 u de sombra DESPEGADA del pie
+        ' (peter-panning). El uShadowDepthBias si se conserva: tapa la cuantizacion de 24 bits del caster
+        ' y actua a lo largo del rayo, no de costado.
+        shader.SetFloat("uShadowNormalBias", normalBiasTexels * fit.TexelWorld)
+        ' | EL BIAS DE PROFUNDIDAD ENTRA EN UNIDADES DE MUNDO. Estaba en texeles DEL MAPA, y el mapa del
+        ' suelo tiene texeles ~4,7x mas grandes: los 1,5 texeles del default eran 0,54 u de corrimiento a
+        ' lo largo del rayo, que con la key a 26 grados dan 1,11 u de sombra despegada del pie sobre un
+        ' pie de ~25 u. El bias tapa la cuantizacion de 24 bits del CASTER, que escala con el DepthRange y
+        ' no con el texel, asi que usar el texel del mapa ANGOSTO en los dos es lo correcto y ademas mas
+        ' chico. Ver el uShadowNormalBias de abajo, que es cero para el suelo por otro motivo.
+        shader.SetFloat("uShadowDepthBias",
+                        If(fit.DepthRange > 0.0F, depthBiasWorld / fit.DepthRange, 0.0F))
+        ' | LA SUAVIDAD ES CONTINUA. Estaba `CInt(Math.Round(SoftnessTexels))`, o sea que la perilla
+        ' colapsaba a 5 valores enteros Y, por el redondeo bancario de .NET, 1,5 y 2,5 daban los DOS 2:
+        ' mover el slider del default 1,5 a 2,0 no cambiaba un pixel y la perilla parecia rota. Ahora el
+        ' radio entero es el techo y el SOBRANTE viaja en el espaciado de los taps, que es lo que hace
+        ' continuo el desenfoque sin cambiar la cantidad de muestras.
+        Dim soft As Single = Math.Clamp(_shadowSettings.SoftnessTexels, 0.0F, PreviewShadowSettings.MaxPcfRadius)
+        Dim radio As Integer = CInt(Math.Ceiling(soft))
+        shader.SetInt("uShadowPcfRadius", radio)
+        Dim paso As Single = If(radio > 0, soft / radio, 1.0F)
+        Dim invSize As Single = If(target.Size > 0, paso / target.Size, 0.0F)
+        shader.SetVector2("uShadowTexelUV", New Vector2(invSize, invSize))
+        ' | LA UNIDAD ES UN PARAMETRO, y tiene que serlo. El sampler uniform es POR PROGRAMA, pero el
+        ' binding de la unidad de textura es ESTADO GLOBAL del contexto. El pase del suelo corre entre
+        ' DECAL y BLENDED; si usara la misma unidad que el pase iluminado, dejaria ahi el mapa ANCHO y las
+        ' mallas BLENDED (pelo alpha-blend, ojos) y el pase de OVERLAYS que vienen despues samplearian esa
+        ' textura con la matriz del encuadre AJUSTADO: coordenadas de un encuadre contra la textura de
+        ' otro. Se veria como que el cuerpo recibe sombra y el pelo no.
+        ' 14 espeja el t14 del motor para el pase iluminado; 15 queda para el suelo (el render usa 0..8 y
+        ' 10, asi que 11-13 y 15 estan libres). GL 4.3 garantiza 16 unidades en el fragment.
+        shader.BindTexture("texShadowMap", target.Texture, unit)
     End Sub
 
     Public Property FloorOffset As Double = -0.00F
@@ -4944,14 +5352,17 @@ Public Class PreviewModel
 
         ' Resolver el rig UNA vez por frame, antes de cualquier draw. Los dos consumidores de ApplyMaterial
         ' (Render y RenderOverlayLayer) sólo se alcanzan desde los loops de abajo, así que nunca lo leen stale.
-        ResolveFrameLights(camera)
+        ResolveFrameLights()
 
         ' SOMBRAS: el shadow map se dibuja ANTES de cualquier pase iluminado y DESPUES de resolver el rig,
         ' porque la direccion de la key sale de _frameLights.KeyDir — la MISMA que va a los uniforms del
         ' fragment. Tomarla de otro lado permitiria que la sombra se proyecte desde una direccion y la luz
         ' venga de otra.
-        ' ⚠️ El piso ya se dibujo arriba: hoy NO recibe sombra (es una grilla de LINEAS, no un plano).
         RenderShadowPass()
+        ' Y los uniforms que el fragment iluminado necesita, una sola vez para todos los draws del frame.
+        UploadShadowUniforms(ParentControl.CurrentShader, _shadowFit, ParentControl.ShadowTarget, _shadowActive,
+                             TextureUnit.Texture14, _shadowSettings.NormalBiasTexels,
+                             _shadowSettings.DepthBiasTexels * _shadowFit.TexelWorld)
 
         ' Note: ShapeDataLoaded is intentionally NOT checked here. Each mesh.Render() guards
         ' against null RelatedNifShape internally. Checking ShapeDataLoaded at this level would
@@ -5007,25 +5418,45 @@ Public Class PreviewModel
         ' O3.3: Compute view-projection matrix for frustum culling
         Dim viewMatrix = camera.GetViewMatrix()
         Dim vp As Matrix4 = viewMatrix * projection
+        ' Los planos del frustum de la camara: constantes para los cinco bucles de abajo.
+        RenderableMesh.ExtractFrustumPlanes(vp, _framePlanes)
 
         ' 1. OPAQUE — sin blending, depth write habilitado
         For Each mesh In OpaqueMeshes
             ' O3.3: Skip meshes whose AABB is entirely outside the view frustum
-            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
             mesh.Render(projection, camera)
         Next
 
         ' 2. CUTOUT — alpha test, sin blending, depth write habilitado
         For Each mesh In CutoutMeshes
-            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
             mesh.Render(projection, camera)
         Next
         ' 3. DECAL — overlay coplanar ocluido por depth de escena
         If DecalMeshes.Count > 0 Then
             For Each mesh In DecalMeshes
-                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
+                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
                 mesh.Render(projection, camera)
             Next
+        End If
+
+        ' 3b. RECEPTOR DE SUELO — la silueta del personaje sobre el plano del piso.
+        ' ⛔ EL ORDEN ES ESTE Y NO OTRO: despues de OPAQUE/CUTOUT/DECAL para que el personaje lo tape por
+        ' depth-test, y ANTES de BLENDED para que el pelo alpha-blend y los ojos compongan encima. Movido
+        ' arriba de todo taparia la sombra con el cuerpo; movido al final la sombra pisaria al pelo.
+        If _shadowActive AndAlso _groundActive Then
+            If _groundQuad Is Nothing Then _groundQuad = New GroundShadowQuad()
+            ' El quad usa OTRO programa, asi que necesita su propia copia de los uniforms de sombra
+            ' (los uniforms son por-programa, no globales).
+            ' El quad usa OTRO programa, asi que recibe su propia copia de los uniforms — y ahi esta el
+            ' truco de los dos mapas: MISMOS nombres de uniform, valores DISTINTOS (el encuadre ancho y su
+            ' textura). Por eso no hubo que tocar una linea de GLSL.
+            UploadShadowUniforms(ParentControl.SharedGroundShadowShader, _groundFit, ParentControl.GroundShadowTarget,
+                                 _groundActive, TextureUnit.Texture15, 0.0F,
+                                 _shadowSettings.DepthBiasTexels * _shadowFit.TexelWorld)
+            ParentControl.SharedGroundShadowShader?.SetVector3("uGroundShadowTint", GroundShadowTint())
+            _groundQuad.Render(ParentControl.SharedGroundShadowShader, vp, _groundQuadCenter, _groundQuadHalf)
         End If
 
         ' 4. BLENDED — requiere ordenamiento por profundidad.
@@ -5036,7 +5467,7 @@ Public Class PreviewModel
 
             For Each mesh In BlendedMeshes
                 ' O3.3: Frustum cull blended meshes too
-                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
+                If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
                 Dim viewPos = Vector3.TransformPosition(mesh.MeshData.Meshgeometry.Boundingcenter, viewMatrix)
                 BlendedDepthBuffer.Add(New MeshDepth With {.Mesh = mesh, .Depth = -viewPos.Z})
             Next
@@ -5055,7 +5486,7 @@ Public Class PreviewModel
             Dim layers = mesh.MeshData.Shape?.OverlayLayers
             If layers Is Nothing OrElse layers.Count = 0 Then Continue For
             ' Frustum-cull like the other passes (same AABB as the base shape — geometry is shared).
-            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, vp) Then Continue For
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, _framePlanes) Then Continue For
             ' List order = draw order (app pre-sorts by LooksMenu priority ascending).
             For Each layer In layers
                 mesh.RenderOverlayLayer(projection, camera, layer)

@@ -33,6 +33,27 @@ Public Module JsonConfigIO
         Return Nothing
     End Function
 
+    ''' <summary>Abre el archivo como JSON CRUDO para las migraciones que necesitan claves que el tipo
+    ''' actual ya no tiene. Devuelve Nothing si no existe o no parsea — el caller decide.
+    ''' <para>⛔ El <c>JsonDocument</c> es IDisposable: usarlo con <c>Using</c>.</para></summary>
+    Public Function TryOpenRaw(filePath As String) As System.Text.Json.JsonDocument
+        Try
+            If Not System.IO.File.Exists(filePath) Then Return Nothing
+            Return System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(filePath))
+        Catch
+            Return Nothing
+        End Try
+    End Function
+
+    Public Function TryGetSingle(root As System.Text.Json.JsonElement, name As String, ByRef value As Single) As Boolean
+        Dim el As System.Text.Json.JsonElement
+        If root.TryGetProperty(name, el) AndAlso el.ValueKind = System.Text.Json.JsonValueKind.Number Then
+            value = el.GetSingle()
+            Return True
+        End If
+        Return False
+    End Function
+
     Public Function TryGetString(root As System.Text.Json.JsonElement, name As String, ByRef value As String) As Boolean
         Dim el As System.Text.Json.JsonElement
         If root.TryGetProperty(name, el) AndAlso el.ValueKind = System.Text.Json.JsonValueKind.String Then
