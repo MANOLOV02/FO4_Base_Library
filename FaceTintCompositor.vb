@@ -510,7 +510,8 @@ Public Module FaceTintCompositor
             ("RENDER-FLOOR-VERTEX", Floor_Shader_Class.Vertex_Floor),
             ("RENDER-FLOOR-FRAGMENT", Floor_Shader_Class.Fragment_Floor),
             ("RENDER-SSE-VERTEX", Shader_Class_SSE.Vertex_SSE),
-            ("RENDER-SSE-FRAGMENT", Shader_Class_SSE.Fragment_SSE)}
+            ("RENDER-SSE-FRAGMENT", Shader_Class_SSE.Fragment_SSE),
+            ("SHADOW-DEPTH-FRAGMENT", ShadowDepthShaderSource.Fragment_ShadowDepth)}
     End Function
 
     ' ⛔ EL GATE `glsl-ascii` YA NO VIVE ACA. Se mudó a Tools/ParityGate (LawGates.ShaderSourceAsciiGate) el

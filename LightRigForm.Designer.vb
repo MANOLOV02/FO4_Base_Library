@@ -90,6 +90,14 @@ Partial Class LightRigForm
         lblIntensity = New Label()
         lblGroundLvl = New Label()
         grpBackground = New GroupBox()
+        grpShadows = New GroupBox()
+        chkShadows = New CheckBox()
+        lblShadowQuality = New Label()
+        cmbShadowQuality = New ComboBox()
+        lblShadowSoft = New Label()
+        tShadowSoft = New FO4_Base_Library.TinySliderTextBox()
+        lblShadowStrength = New Label()
+        tShadowStrength = New FO4_Base_Library.TinySliderTextBox()
         lblBackground = New Label()
         cmbBackground = New ColorComboBox()
         lblAmbSky = New Label()
@@ -131,6 +139,7 @@ Partial Class LightRigForm
         CType(nudB_D, ComponentModel.ISupportInitialize).BeginInit()
         GroupBox1.SuspendLayout()
         grpBackground.SuspendLayout()
+        grpShadows.SuspendLayout()
         grpPresets.SuspendLayout()
         SuspendLayout()
         '
@@ -897,6 +906,79 @@ Partial Class LightRigForm
         tGroundLevel.Size = New Size(300, 28)
         tGroundLevel.TabIndex = 1
         '
+        ' grpShadows -- sombras proyectadas del previewer. Ver ShadowMap.vb.
+        '
+        chkShadows.AutoSize = True
+        chkShadows.Location = New Point(11, 26)
+        chkShadows.Name = "chkShadows"
+        chkShadows.Size = New Size(110, 19)
+        chkShadows.TabIndex = 0
+        chkShadows.Text = "Cast shadows"
+        '
+        lblShadowQuality.AutoSize = True
+        lblShadowQuality.Location = New Point(158, 27)
+        lblShadowQuality.Name = "lblShadowQuality"
+        lblShadowQuality.Size = New Size(48, 15)
+        lblShadowQuality.Text = "Quality"
+        '
+        cmbShadowQuality.DropDownStyle = ComboBoxStyle.DropDownList
+        cmbShadowQuality.Location = New Point(228, 23)
+        cmbShadowQuality.Name = "cmbShadowQuality"
+        cmbShadowQuality.Size = New Size(170, 23)
+        cmbShadowQuality.TabIndex = 1
+        '
+        lblShadowSoft.AutoSize = True
+        lblShadowSoft.Location = New Point(11, 60)
+        lblShadowSoft.Name = "lblShadowSoft"
+        lblShadowSoft.Size = New Size(60, 15)
+        lblShadowSoft.Text = "Softness"
+        '
+        tShadowSoft.Location = New Point(98, 56)
+        tShadowSoft.Minimum = 0R
+        tShadowSoft.Maximum = 4R
+        tShadowSoft.DisplayFormat = "0.0"
+        tShadowSoft.InputScale = 1R
+        tShadowSoft.SmallChange = 0.5R
+        tShadowSoft.LargeChange = 1R
+        tShadowSoft.TickFrequency = 1R
+        tShadowSoft.ShowTicks = True
+        tShadowSoft.Name = "tShadowSoft"
+        tShadowSoft.Size = New Size(300, 28)
+        tShadowSoft.TabIndex = 2
+        '
+        lblShadowStrength.AutoSize = True
+        lblShadowStrength.Location = New Point(11, 92)
+        lblShadowStrength.Name = "lblShadowStrength"
+        lblShadowStrength.Size = New Size(60, 15)
+        lblShadowStrength.Text = "Strength"
+        '
+        tShadowStrength.Location = New Point(98, 88)
+        tShadowStrength.Minimum = 0R
+        tShadowStrength.Maximum = 1R
+        tShadowStrength.DisplayFormat = "0.00%"
+        tShadowStrength.InputScale = 0.01R
+        tShadowStrength.SmallChange = 0.05R
+        tShadowStrength.LargeChange = 0.1R
+        tShadowStrength.TickFrequency = 0.1R
+        tShadowStrength.ShowTicks = True
+        tShadowStrength.Name = "tShadowStrength"
+        tShadowStrength.Size = New Size(300, 28)
+        tShadowStrength.TabIndex = 3
+        '
+        grpShadows.Controls.Add(chkShadows)
+        grpShadows.Controls.Add(lblShadowQuality)
+        grpShadows.Controls.Add(cmbShadowQuality)
+        grpShadows.Controls.Add(lblShadowSoft)
+        grpShadows.Controls.Add(tShadowSoft)
+        grpShadows.Controls.Add(lblShadowStrength)
+        grpShadows.Controls.Add(tShadowStrength)
+        grpShadows.Location = New Point(436, 460)
+        grpShadows.Name = "grpShadows"
+        grpShadows.Size = New Size(418, 126)
+        grpShadows.TabIndex = 8
+        grpShadows.TabStop = False
+        grpShadows.Text = "Shadows"
+        '
         ' grpBackground
         '
         grpBackground.Controls.Add(lblBackground)
@@ -1028,9 +1110,10 @@ Partial Class LightRigForm
         AutoScaleDimensions = New SizeF(7.0F, 15.0F)
         AutoScaleMode = AutoScaleMode.Font
         AutoScroll = True
-        ClientSize = New Size(866, 487)
+        ClientSize = New Size(866, 598)
         Controls.Add(grpBackground)
         Controls.Add(GroupBox1)
+        Controls.Add(grpShadows)
         Controls.Add(grpPresets)
         Controls.Add(grpBack)
         Controls.Add(grpFillR)
@@ -1074,6 +1157,8 @@ Partial Class LightRigForm
         CType(nudB_B, ComponentModel.ISupportInitialize).EndInit()
         CType(nudB_L, ComponentModel.ISupportInitialize).EndInit()
         CType(nudB_D, ComponentModel.ISupportInitialize).EndInit()
+        grpShadows.ResumeLayout(False)
+        grpShadows.PerformLayout()
         GroupBox1.ResumeLayout(False)
         GroupBox1.PerformLayout()
         grpBackground.ResumeLayout(False)
@@ -1151,6 +1236,14 @@ Partial Class LightRigForm
     Friend WithEvents grpBackground As GroupBox
     Friend WithEvents lblBackground As Label
     Friend WithEvents cmbBackground As ColorComboBox
+    Friend WithEvents grpShadows As GroupBox
+    Friend WithEvents chkShadows As CheckBox
+    Friend WithEvents lblShadowQuality As Label
+    Friend WithEvents cmbShadowQuality As ComboBox
+    Friend WithEvents lblShadowSoft As Label
+    Friend WithEvents tShadowSoft As FO4_Base_Library.TinySliderTextBox
+    Friend WithEvents lblShadowStrength As Label
+    Friend WithEvents tShadowStrength As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblAmbSky As Label
     Friend WithEvents btnAmbSky As Button
     Friend WithEvents lblAmbGround As Label

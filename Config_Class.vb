@@ -212,6 +212,28 @@ Public Class Config_App
         End If
     End Sub
 
+    ' === Sombras proyectadas del previewer, POR JUEGO (misma convención que el rig de luces) ===
+    ' Nadie las lee directo: Render y LightRigForm van por ActiveShadows()/SetActiveShadows().
+    ' ⛔ Un config.json anterior a esta opción no trae la clave y PreviewShadowSettings es una Structure:
+    ' el deserializador la deja en cero. El repuesto está en LoadConfig con MapSize=0 de centinela.
+    Public Property Setting_PreviewShadows_FO4 As PreviewShadowSettings = PreviewShadowSettings.Defaults()
+    Public Property Setting_PreviewShadows_SSE As PreviewShadowSettings = PreviewShadowSettings.Defaults()
+
+    ''' <summary>Los ajustes de sombra del juego activo. Value-type: devuelve una COPIA (para escribir,
+    ''' <see cref="SetActiveShadows"/>).</summary>
+    Public Function ActiveShadows() As PreviewShadowSettings
+        Return If(Game = Game_Enum.Skyrim, Setting_PreviewShadows_SSE, Setting_PreviewShadows_FO4)
+    End Function
+
+    ''' <summary>Escribe los ajustes de sombra en el slot del juego activo.</summary>
+    Public Sub SetActiveShadows(s As PreviewShadowSettings)
+        If Game = Game_Enum.Skyrim Then
+            Setting_PreviewShadows_SSE = s
+        Else
+            Setting_PreviewShadows_FO4 = s
+        End If
+    End Sub
+
     Private _color As Color = Color.DarkGray
     Private _colorGrod As Color = Color.LightGray
 
@@ -279,6 +301,14 @@ Public Class Config_App
         If cfg IsNot Nothing Then
             Current = cfg
             If Current.Settings_RenderGrid.Size = 0 Then Current.Settings_RenderGrid = Default_RenderGrid_Settings()
+            ' ⛔ CENTINELA de las sombras. PreviewShadowSettings es una Structure y el config.json de todo
+            ' usuario existente NO trae la clave, así que el deserializador la deja entera en cero: las
+            ' sombras arrancarían apagadas Y con MapSize=0, o sea rotas si alguien las prendiera. Un mapa
+            ' de 0 texeles no es un valor legítimo, que es justo lo que se le pide a un centinela (un
+            ' Boolean no serviría: False-por-ausencia y False-por-decisión son indistinguibles).
+            ' Ver memoria 10-stack-json-structure-defaults.
+            If Current.Setting_PreviewShadows_FO4.MapSize <= 0 Then Current.Setting_PreviewShadows_FO4 = PreviewShadowSettings.Defaults()
+            If Current.Setting_PreviewShadows_SSE.MapSize <= 0 Then Current.Setting_PreviewShadows_SSE = PreviewShadowSettings.Defaults()
             ' ⛔ Un config.json ANTERIOR a la opcion de costuras no trae estas dos claves, y TBNOptions
             ' es una Structure: el deserializador la crea en CERO y solo asigna lo que encuentra, asi
             ' que el usuario existente arrancaria con el suavizado APAGADO y el angulo en 0 — o sea con

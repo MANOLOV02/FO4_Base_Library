@@ -133,16 +133,30 @@ Public Structure PreviewLightRig
     '''      lineal sumadas, ambient sky 1.0 / ground 0.22. Cada set se queda cerca de ese total y gasta
     '''      la diferencia en CONTRASTE (dónde está la luz y cuánto baja el ambiente), no en potencia.</summary>
     Public Shared Function Presets() As LightRigPreset()
+    ' ⛔ LA KEY DE STUDIO ESTABA A 0 GRADOS DE LA CAMARA (forward:=1 y nada mas), y una luz frontal
+    ' pura NO PROYECTA SOMBRA VISIBLE por construccion: lo que ocluye tapa exactamente su propia
+    ' sombra. MEDIDO con Tools/ShadowGate sobre cabeza+pelo+cuerpo vanilla: con el Studio viejo,
+    ' prender las sombras movia 6797 px (1,05 % de la pantalla) con un delta maximo de canal de 23
+    ' sobre 255 — o sea la feature estaba practicamente invisible en el preset por default.
+    ' El nuevo Studio pone la key a 3/4 (arriba y a un lado), que es donde la pone un estudio real,
+    ' y mantiene el PRESUPUESTO DE LUZ del set calibrado: la suma de las cuatro directas en
+    ' LINEAL sigue en ~0,63 (el viejo daba 0,62). El gate `studio-rig` de Tools/ParityGate verifica
+    ' las dos cosas —presupuesto y angulo— para que nadie devuelva la key al frente sin darse cuenta.
+    ' El ambiente baja de 1,00/0,50 a 0,92/0,45: apenas lo justo para que la sombra se lea sin
+    ' perder la lectura de textura, que es el proposito declarado de este preset.
+    ' ⚠️ Un usuario EXISTENTE no ve ningun cambio: su rig esta persistido en config.json y esto solo
+    ' cambia el preset (o sea lo que aplica Reset / lo que estrena un config nuevo). Efecto lateral
+    ' conocido: si su rig coincidia con el Studio viejo, el combo del dialogo ahora dice "Custom".
         Return New LightRigPreset() {
             New LightRigPreset("Studio",
-                "Neutral 3-point + rim. Even, colourless light: the default for judging textures and materials.",
+                "Neutral 3-point + rim. Colourless light for judging textures and materials, with the key off-axis so shaped shadows read.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.6F, up:=0, down:=0, left:=0, right:=0, forward:=1, back:=0),
-                    .FillLeft = New PreviewLight(0.4F, up:=0.7F, down:=0, left:=0, right:=0.7F, forward:=0.7F, back:=0),
-                    .FillRight = New PreviewLight(0.4F, up:=0.7F, down:=0, left:=0.7F, right:=0, forward:=0.7F, back:=0),
-                    .BackLight = New PreviewLight(0.2F, up:=0, down:=0, left:=0, right:=0, forward:=0, back:=1),
-                    .AmbientIntensity = 1.0F,
-                    .AmbientGroundLevel = 0.5F,
+                    .KeyLight = New PreviewLight(0.7F, up:=0.55F, down:=0, left:=0, right:=0.75F, forward:=0.85F, back:=0),
+                    .FillLeft = New PreviewLight(0.34F, up:=0.15F, down:=0, left:=0.85F, right:=0, forward:=0.6F, back:=0),
+                    .FillRight = New PreviewLight(0.18F, up:=0, down:=0, left:=0, right:=0.4F, forward:=0.5F, back:=0),
+                    .BackLight = New PreviewLight(0.28F, up:=0.5F, down:=0, left:=0.35F, right:=0, forward:=0, back:=1),
+                    .AmbientIntensity = 0.92F,
+                    .AmbientGroundLevel = 0.45F,
                     .AmbientSkyColor = RigColor.White,
                     .AmbientGroundColor = RigColor.White}),
             New LightRigPreset("Sunny day",

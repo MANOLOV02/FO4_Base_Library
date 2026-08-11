@@ -33,6 +33,14 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>ObtsBlockRoundtripProbe</_Parameter1>
     </AssemblyAttribute>
+    <!-- Tools/ShadowGate: arnes GL de las sombras del previewer. Es lo que SI depende del rig ajeno
+         (compilar el GLSL, dibujar el shadow map, medir ms/frame), asi que no puede ser un gate de
+         ParityGate; y es un probe, asi que tampoco entra al binario que se distribuye. Necesita llegar
+         a ShadowMapMath / ShadowMapTarget / PreviewModel.ShadowActive y al angulo de la camara, todos
+         Friend. NADA se vuelve Public por esto. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>ShadowGate</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <!-- Shared\ NO se compila dentro de esta lib: son fuentes que cada APP linkea a su propio ensamblado.

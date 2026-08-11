@@ -214,12 +214,30 @@ Public Class PreviewControl
     Public SharedActiveShader As Shader_Class_Fo4
     Public SharedSSEShader As Shader_Class_SSE
     Public SharedFloorShader As Floor_Shader_Class
+    ''' <summary>Programas del pase de profundidad del shadow map. Son el VS de cada juego (el MISMO que
+    ''' usa el pase iluminado, sin copia del skinning) + el fragment de alpha-test de
+    ''' <see cref="ShadowDepthShaderSource"/>. Ver Shadow_Depth_Shader_Fo4.</summary>
+    Public SharedShadowFO4Shader As Shadow_Depth_Shader_Fo4
+    Public SharedShadowSSEShader As Shadow_Depth_Shader_SSE
+    ''' <summary>El FBO + textura de profundidad. Se crea perezosamente en el primer frame con sombras
+    ''' encendidas y se libera en Clean; con la opcion apagada nunca se asigna un byte de GPU.</summary>
+    Friend ShadowTarget As ShadowMapTarget
     ''' <summary>Raised when user toggles GPU/CPU skinning mode. Consumers handle this to rerender with their pipeline.</summary>
     Public Event SkinningModeToggled(sender As PreviewControl)
     Public ReadOnly Property CurrentShader As Shader_Base_Class
         Get
             If Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso SharedSSEShader IsNot Nothing Then Return SharedSSEShader
             Return SharedActiveShader
+        End Get
+    End Property
+
+    ''' <summary>El programa de profundidad del juego activo. Mismo eje que <see cref="CurrentShader"/>:
+    ''' el shader elegido ES la fuente de verdad de que juego se esta dibujando, y los dos pases tienen
+    ''' que coincidir o el pase de sombra correria un VS con otra convencion de skinning.</summary>
+    Friend ReadOnly Property CurrentShadowShader As Shader_Base_Class
+        Get
+            If Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso SharedShadowSSEShader IsNot Nothing Then Return SharedShadowSSEShader
+            Return SharedShadowFO4Shader
         End Get
     End Property
     ''' <summary>Playback mode for fast pose ticks: suppresses camera/cursor-style UI churn
@@ -1056,6 +1074,11 @@ Public Class PreviewControl
         SharedActiveShader = New Shader_Class_Fo4
         SharedSSEShader = New Shader_Class_SSE
         SharedFloorShader = New Floor_Shader_Class
+        ' Los dos programas de profundidad se compilan SIEMPRE, aunque las sombras esten apagadas: el
+        ' costo es un link por juego al abrir el control, y tenerlos condicionados al setting significaria
+        ' compilar GLSL en medio de un frame la primera vez que alguien prende la opcion.
+        SharedShadowFO4Shader = New Shadow_Depth_Shader_Fo4
+        SharedShadowSSEShader = New Shadow_Depth_Shader_SSE
 
         ' 1) Aseguramos que el contexto GL está activo
         Me.EnsureContextCurrent()
@@ -1674,6 +1697,21 @@ Public Class PreviewControl
             SharedFloorShader.Dispose()
             SharedFloorShader = Nothing
         End If
+
+        If SharedShadowFO4Shader IsNot Nothing Then
+            SharedShadowFO4Shader.Dispose()
+            SharedShadowFO4Shader = Nothing
+        End If
+
+        If SharedShadowSSEShader IsNot Nothing Then
+            SharedShadowSSEShader.Dispose()
+            SharedShadowSSEShader = Nothing
+        End If
+
+        If ShadowTarget IsNot Nothing Then
+            ShadowTarget.Dispose()
+            ShadowTarget = Nothing
+        End If
         If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
         If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
         If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex)
@@ -2019,6 +2057,33 @@ Public Class PreviewModel
                 Get
                     If OverrideRelatedMaterial Is Nothing AndAlso IsNothing(ParentMeshData.Shape.ShapeMaterial) Then Return False
                     Return MaterialBase.AlphaTest
+                End Get
+            End Property
+
+            ''' <summary>El NIF trae color por vertice Y el usuario tiene el toggle prendido. Es el
+            ''' predicado del uniform <c>bShowVertexColor</c>.</summary>
+            Friend ReadOnly Property UseVertexColor As Boolean
+                Get
+                    Dim shp = ParentMeshData.Shape
+                    If shp Is Nothing OrElse Not shp.ShowVertexColor Then Return False
+                    ' Meshgeometry es una Structure (SkinnedGeometry): no admite `?.`, y no puede ser Nothing.
+                    Dim geom = ParentMeshData.Meshgeometry.Geometry
+                    Return geom IsNot Nothing AndAlso geom.HasVertexColors
+                End Get
+            End Property
+
+            ''' <summary>Idem, MENOS los TreeAnim: ahi el alpha de vertice es un parametro de viento, no
+            ''' transparencia. Es el predicado del uniform <c>bShowVertexAlpha</c>.
+            ''' <para>⛔ Existe como propiedad —y no inline en ApplyMaterial, que es de donde salio— porque
+            ''' el PASE DE SOMBRA necesita el MISMO valor: <c>vColor.a</c> es el lado izquierdo del
+            ''' alpha-test, y si los dos pases no coinciden la silueta que castea deja de ser la que se
+            ''' dibuja (un cutout casteando el quad entero).</para></summary>
+            Friend ReadOnly Property UseVertexAlpha As Boolean
+                Get
+                    If Not UseVertexColor Then Return False
+                    Dim mb = MaterialBase
+                    If mb Is Nothing Then Return True
+                    Return Not (mb.Tree OrElse mb.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim)
                 End Get
             End Property
             ' Resolve the GL blend factors for the active blend mode. Two cases mirror
@@ -3153,6 +3218,78 @@ Public Class PreviewModel
 
         End Sub
 
+        ''' <summary>Dibuja esta malla en el shadow map. Espejo REDUCIDO de <see cref="Render"/>: el MISMO
+        ''' VAO, el MISMO SSBO de huesos y el MISMO vertex shader — lo unico que cambia son las matrices
+        ''' (las de la luz en vez de las de la camara) y el fragment, que solo hace el alpha-test.
+        '''
+        ''' <para>⛔ QUE UNIFORMS HAY QUE SUBIR Y POR QUE ESOS. El unico dato del vertex shader que el
+        ''' fragment de profundidad consume es <c>vColor.a</c>, y en el VS ese canal depende de UNA sola
+        ''' cosa: <c>if (bShowVertexAlpha) vColor.a = vertexAlpha;</c>. Ni <c>color</c> ni <c>subColor</c>
+        ''' lo tocan (el primero multiplica por un vec4 con w=1, el segundo es <c>.rgb</c>), asi que no
+        ''' hace falta subirlos. Lo demas que se sube es lo que decide la POSICION (matrices + skinning) y
+        ''' el recorte (zap + alpha-test).</para></summary>
+        Friend Sub RenderDepthOnly(shadowShader As Shader_Base_Class, lightView As Matrix4, lightProj As Matrix4)
+            If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide Then Exit Sub
+            If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
+
+            Dim model As Matrix4 = MeshData.Transform
+            ' MISMO orden que el pase iluminado (`view * model`). Cambiarlo aca y no alla dejaria la
+            ' sombra proyectada desde otro lado que la luz que la ilumina.
+            Dim modelView As Matrix4 = lightView * model
+
+            shadowShader.Use()
+            shadowShader.SetMatrix4("matProjection", lightProj)
+            shadowShader.SetMatrix4("matView", lightView)
+            shadowShader.SetMatrix4("matModel", model)
+            shadowShader.SetMatrix4("matModelView", modelView)
+
+            ' mv_normalMatrix solo alimenta varyings que este fragment no lee (TBN/MSN). Se sube igual y
+            ' coherente con la luz: dejar el uniform con el valor del draw anterior es la clase de estado
+            ' colgado que despues cuesta horas de diagnosticar.
+            Dim normalMatrix As New OpenTK.Mathematics.Matrix3(modelView)
+            normalMatrix.Invert()
+            normalMatrix.Transpose()
+            shadowShader.SetMatrix3("mv_normalMatrix", normalMatrix)
+
+            Dim materialBase = MeshData.Material.MaterialBase
+            shadowShader.SetBool("bModelSpace", materialBase IsNot Nothing AndAlso materialBase.ModelSpaceNormals)
+
+            Dim shape = MeshData.Shape
+            shadowShader.SetBool("bApplyZap", shape.ApplyZaps)
+            shadowShader.SetBool("bShowVertexAlpha", MeshData.Material.UseVertexAlpha)
+            shadowShader.SetBool("bShowTexture", shape.ShowTexture)
+            ' bShowMask / bShowWeight / bWireframe / bShowVertexColor NO se suben: no afectan ni
+            ' gl_Position ni vColor.a, que es todo lo que este pase mira.
+
+            shadowShader.SetBool("bAlphaTest", MeshData.Material.HasAlphaTest)
+            shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
+            If materialBase IsNot Nothing Then
+                shadowShader.SetVector2("uvOffset", New Vector2(materialBase.UOffset, materialBase.VOffset))
+                shadowShader.SetVector2("uvScale", New Vector2(materialBase.UScale, materialBase.VScale))
+            Else
+                shadowShader.SetVector2("uvOffset", Vector2.Zero)
+                shadowShader.SetVector2("uvScale", Vector2.One)
+            End If
+            shadowShader.BindTexture("texDiffuse", MeshData.Material.DiffuseTexture_ID, TextureUnit.Texture0)
+
+            shadowShader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)
+            Dim boneCount As Integer = If(MeshData.Meshgeometry.GPUBoneMatrices IsNot Nothing, MeshData.Meshgeometry.GPUBoneMatrices.Length, 0)
+            shadowShader.SetInt("uBoneCount", boneCount)
+            If ssbo_BoneMatrices > 0 Then
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, ssbo_BoneMatrices)
+            End If
+
+            GL.BindVertexArray(vao)
+            ' Mismo filtro de indices que el pase iluminado: un triangulo zapeado no puede castear.
+            EnsureZapIndexBuffer()
+            GL.DrawElements(PrimitiveType.Triangles, indexCount, DrawElementsType.UnsignedInt, 0)
+
+            ' Idem Render(): desbindear el binding 0 para no contaminar a una malla sin SSBO propio.
+            If ssbo_BoneMatrices > 0 Then
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, 0)
+            End If
+        End Sub
+
         ' Per-layer transient MaterialData cache for the overlay render path. Built once per layer
         ' (keyed on the layer instance) so RenderOverlayLayer does not allocate a MaterialData every
         ' frame. Each entry has OverrideRelatedMaterial = layer.Material so MaterialBase + all the
@@ -3496,8 +3633,13 @@ Public Class PreviewModel
             ' that used to be Tree-only is now universal in the BGSM base path -- the engine decodes
             ' vColor for every BGSM, not just trees.)
             Dim isTreeAnim As Boolean = materialBase.Tree OrElse materialBase.NifShaderType = NiflySharp.Enums.BSLightingShaderType.TreeAnim
-            shader.SetBool("bShowVertexColor", shape.ShowVertexColor AndAlso hasVertexColorData)
-            shader.SetBool("bShowVertexAlpha", shape.ShowVertexColor AndAlso hasVertexColorData AndAlso Not isTreeAnim)
+            ' ⛔ Los dos predicados viven en MaterialData (UseVertexColor / UseVertexAlpha) porque el pase de
+            ' SOMBRA necesita el mismo bShowVertexAlpha — vColor.a es el lado izquierdo del alpha-test, y si
+            ' los dos pases discrepan la silueta que castea deja de ser la que se dibuja. Aca se leen de ahi;
+            ' `hasVertexColorData` e `isTreeAnim` siguen calculados arriba porque los usa el volcado de
+            ' diagnostico de mas abajo.
+            shader.SetBool("bShowVertexColor", material.UseVertexColor)
+            shader.SetBool("bShowVertexAlpha", material.UseVertexAlpha)
             ' [VCOLOR-DBG] Sonda diagnostica: reporta la distribucion real del vertex color del mesh para
             ' decidir si la divergencia app-vs-motor del orden del vColor (motor: post-softlight; app: en la
             ' base del softlight) es visible o inerte (vColor blanco => inerte). min/mean/max en 0..1 crudo.
@@ -3566,6 +3708,35 @@ Public Class PreviewModel
             ' Luz direccional 2
             shader.SetVector3("directional2.diffuse", lights.BackDiffuse)
             shader.SetVector3("directional2.direction", lights.BackDir)
+
+            '===============================
+            ' ?? SOMBRAS (solo la KEY)
+            '===============================
+            ' El estado lo resolvio RenderShadowPass una vez para todo el frame. Si no hay mapa valido se
+            ' sube bShadows = False y el fragment ni entra a shadowFactor(): el resultado es, bit a bit, el
+            ' de antes de que existiera esta feature.
+            If Me.ParentModel.ShadowActive Then
+                Dim sfit = Me.ParentModel.ShadowFit
+                Dim scfg = Me.ParentModel.ShadowSettings
+                Dim starget = Me.ParentModel.ParentControl.ShadowTarget
+                shader.SetBool("bShadows", True)
+                shader.SetMatrix4("matShadowViewProj", sfit.ViewProj)
+                shader.SetFloat("uShadowIntensity", scfg.Intensity)
+                ' Los dos bias se autoran en TEXELES y se convierten aca, que es donde se conoce el tamano
+                ' real del texel: asi cambiar MapSize no obliga a re-tunearlos.
+                shader.SetFloat("uShadowNormalBias", scfg.NormalBiasTexels * sfit.TexelWorld)
+                shader.SetFloat("uShadowDepthBias",
+                                If(sfit.DepthRange > 0.0F, scfg.DepthBiasTexels * sfit.TexelWorld / sfit.DepthRange, 0.0F))
+                shader.SetInt("uShadowPcfRadius",
+                              Math.Clamp(CInt(Math.Round(scfg.SoftnessTexels)), 0, PreviewShadowSettings.MaxPcfRadius))
+                Dim invSize As Single = If(starget IsNot Nothing AndAlso starget.Size > 0, 1.0F / starget.Size, 0.0F)
+                shader.SetVector2("uShadowTexelUV", New Vector2(invSize, invSize))
+                ' Unidad 14: espeja el t14 del motor en los dos juegos, y esta libre (el render usa
+                ' 0..8 y 10). GL 4.3 garantiza 16 unidades de textura en el fragment.
+                If starget IsNot Nothing Then shader.BindTexture("texShadowMap", starget.Texture, TextureUnit.Texture14)
+            Else
+                shader.SetBool("bShadows", False)
+            End If
 
             '===============================
             ' ?? TEXTURAS (Sample BINDs)
@@ -4646,6 +4817,115 @@ Public Class PreviewModel
         }
     End Sub
 
+    ' ===================== SOMBRAS =====================
+    ' Estado del shadow map de ESTE frame. Lo llena RenderShadowPass antes de cualquier draw iluminado y
+    ' lo consume ApplyMaterial, que es quien sube los uniforms. Igual que _frameLights: se resuelve una
+    ' vez por frame y depende solo de (rig activo, camara, geometria).
+    Private _shadowFit As ShadowMapMath.LightFit
+    Private _shadowSettings As PreviewShadowSettings
+    Private _shadowActive As Boolean
+
+    ''' <summary>True si este frame tiene un shadow map dibujado y utilizable. False = ApplyMaterial sube
+    ''' <c>bShadows = false</c> y el fragment ni calcula el factor.</summary>
+    Friend ReadOnly Property ShadowActive As Boolean
+        Get
+            Return _shadowActive
+        End Get
+    End Property
+
+    Friend ReadOnly Property ShadowFit As ShadowMapMath.LightFit
+        Get
+            Return _shadowFit
+        End Get
+    End Property
+
+    Friend ReadOnly Property ShadowSettings As PreviewShadowSettings
+        Get
+            Return _shadowSettings
+        End Get
+    End Property
+
+    ''' <summary>Dibuja el shadow map de la KEY. Cualquier salida temprana deja <c>_shadowActive</c> en
+    ''' False, o sea el frame se dibuja exactamente como antes de que existiera esta feature — nunca a
+    ''' medias contra un mapa viejo.
+    '''
+    ''' <para>⛔ ESTADO GL: este pase cambia framebuffer, viewport, culling y depth. Los devuelve TODOS
+    ''' antes de salir, y el viewport se LEE del driver en vez de suponer el tamano del control (el
+    ''' compositor de FaceTint tambien lo mueve). Si algo de esto se escapa, el frame entero sale
+    ''' escalado o sin depth y el sintoma no apunta para aca.</para></summary>
+    Private Sub RenderShadowPass()
+        _shadowActive = False
+        If ParentControl Is Nothing Then Exit Sub
+
+        Dim cfg = Config_App.Current.ActiveShadows().Sanitized()
+        If Not cfg.Enabled Then Exit Sub
+
+        Dim depthShader = ParentControl.CurrentShadowShader
+        If depthShader Is Nothing Then Exit Sub
+
+        ' CASTERS. El gate es CastShadows del material resuelto, que ya es game-aware (bit 9 de SF1 en
+        ' FO4 y en SK; y en FO4 el BGSM PISA al NIF, ver 30-fo4-material-vs-nif). Sobre el corpus vanilla
+        ' ese flag ya hace el filtrado correcto solo: medido sobre los 6616 BGSM de Fallout4 -
+        ' Materials.ba2, los materiales de actor alpha-blend que traen CastShadows=False son EXACTAMENTE
+        ' eyelashes, eyewet, eyestearduct, stubble, el pelo *_8bit, beard_8bit* y synthtattoo — o sea los
+        ' que proyectarian una barra negra sobre el ojo o un bloque solido en vez de mechones. Sus gemelos
+        ' *_1bit (cutout) SI lo traen en True. Por eso no hay excepcion por bucket: alcanza el flag.
+        Dim casters As New List(Of RenderableMesh)
+        For Each mesh In meshes
+            If mesh Is Nothing OrElse mesh.MeshData Is Nothing OrElse mesh.MeshData.Shape Is Nothing Then Continue For
+            If mesh.MeshData.Shape.RenderHide OrElse mesh.MeshData.Shape.Wireframe Then Continue For
+            Dim mb = mesh.MeshData.Material?.MaterialBase
+            If mb Is Nothing OrElse Not mb.CastShadows Then Continue For
+            ' Los DECAL son overlays coplanares sobre otra superficie: en un mapa de profundidad no
+            ' aportan silueta, solo z-fighting con la malla que ya esta abajo.
+            If mb.Decal Then Continue For
+            casters.Add(mesh)
+        Next
+        If casters.Count = 0 Then Exit Sub
+
+        ' Encuadre sobre el AABB de TODO lo visible, no solo de los casters: asi cualquier receptor cae
+        ' adentro del mapa. Lo que quede afuera lee el borde blanco de la textura = "iluminado".
+        Dim bmin As Vector3, bmax As Vector3
+        ParentControl.GetSceneBounds(bmin, bmax)
+        Dim fit = ShadowMapMath.Fit(_frameLights.KeyDir, bmin, bmax, cfg.MapSize)
+        If Not fit.Valid Then Exit Sub
+
+        If ParentControl.ShadowTarget Is Nothing Then ParentControl.ShadowTarget = New ShadowMapTarget()
+        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize) Then Exit Sub
+
+        Dim prevViewport(3) As Integer
+        GL.GetInteger(GetPName.Viewport, prevViewport)
+        Dim prevFbo As Integer = ParentControl.ShadowTarget.BindForWrite()
+
+        GL.Clear(ClearBufferMask.DepthBufferBit)
+        GL.Enable(EnableCap.DepthTest)
+        GL.DepthFunc(DepthFunction.Lequal)
+        GL.DepthMask(True)
+        GL.Disable(EnableCap.Blend)
+        ' SIN culling de caras, a proposito. El truco clasico contra el acne es cullear las frontales,
+        ' pero aca hay superficies ABIERTAS (cards de pelo, tela) y materiales TwoSided: descartar una
+        ' cara les abre huecos en la sombra. El acne se ataca con el normal-offset del fragment.
+        GL.Disable(EnableCap.CullFace)
+        GL.PolygonMode(TriangleFace.FrontAndBack, PolygonMode.Fill)
+
+        For Each mesh In casters
+            ' Cull por el frustum de la LUZ (no el de la camara): un caster fuera de pantalla puede
+            ' proyectar adentro. Misma funcion y misma convencion (view * proj) que el pase iluminado.
+            If Not RenderableMesh.IsAABBInFrustum(mesh.BoundsMin, mesh.BoundsMax, fit.ViewProj) Then Continue For
+            mesh.RenderDepthOnly(depthShader, fit.View, fit.Proj)
+        Next
+
+        GL.BindVertexArray(0)
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
+        GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
+        GL.Enable(EnableCap.CullFace)
+        GL.CullFace(TriangleFace.Back)
+
+        _shadowFit = fit
+        _shadowSettings = cfg
+        _shadowActive = True
+    End Sub
+
     Public Property FloorOffset As Double = -0.00F
     Public Sub RenderAll(projection As Matrix4, camera As OrbitCamera)
         ' O4.1: Process pending background texture uploads (Phase 2) each frame
@@ -4665,6 +4945,13 @@ Public Class PreviewModel
         ' Resolver el rig UNA vez por frame, antes de cualquier draw. Los dos consumidores de ApplyMaterial
         ' (Render y RenderOverlayLayer) sólo se alcanzan desde los loops de abajo, así que nunca lo leen stale.
         ResolveFrameLights(camera)
+
+        ' SOMBRAS: el shadow map se dibuja ANTES de cualquier pase iluminado y DESPUES de resolver el rig,
+        ' porque la direccion de la key sale de _frameLights.KeyDir — la MISMA que va a los uniforms del
+        ' fragment. Tomarla de otro lado permitiria que la sombra se proyecte desde una direccion y la luz
+        ' venga de otra.
+        ' ⚠️ El piso ya se dibujo arriba: hoy NO recibe sombra (es una grilla de LINEAS, no un plano).
+        RenderShadowPass()
 
         ' Note: ShapeDataLoaded is intentionally NOT checked here. Each mesh.Render() guards
         ' against null RelatedNifShape internally. Checking ShapeDataLoaded at this level would

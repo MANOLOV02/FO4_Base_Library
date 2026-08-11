@@ -136,6 +136,16 @@ Partial Public Class LightRigForm
         btnAmbSky.BackColor = rig.AmbientSkyColor.ToColor()
         btnAmbGround.BackColor = rig.AmbientGroundColor.ToColor()
 
+        ' Sombras. NO son parte del rig (viven en Setting_PreviewShadows_*), asi que se cargan y se
+        ' vuelcan por separado: mezclarlas en VolcarUIenModelo haria que tocar una sombra marque el combo
+        ' de presets como "Custom", que es exactamente lo que no significa.
+        Dim sh = Config_App.Current.ActiveShadows().Sanitized()
+        chkShadows.Checked = sh.Enabled
+        CargarCalidadSombra(sh.MapSize)
+        tShadowSoft.Value = sh.SoftnessTexels
+        tShadowStrength.Value = sh.Intensity
+        ActualizarHabilitadoSombras()
+
         ' Background color picker (handler is wired later in AddHandlers, so this init does not fire it)
         cmbBackground.Rellena()
         cmbBackground.SelectedColor = Config_App.Current.Setting_BackColor
@@ -160,6 +170,14 @@ Partial Public Class LightRigForm
             nudB_U, nudB_D, nudB_L, nudB_R, nudB_F, nudB_B}
             AddHandler nud.ValueChanged, nudChanged
         Next
+
+        AddHandler chkShadows.CheckedChanged, Sub(sender, e)
+                                                  ActualizarHabilitadoSombras()
+                                                  VolcarSombrasEnModelo()
+                                              End Sub
+        AddHandler cmbShadowQuality.SelectedIndexChanged, Sub(sender, e) VolcarSombrasEnModelo()
+        AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
+        AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
 
         AddHandler cmbBackground.SelectedIndexChanged, AddressOf BackgroundChanged
         AddHandler cmbPreset.SelectedIndexChanged, Sub(sender, e) ActualizarTooltipPreset()
@@ -211,6 +229,56 @@ Partial Public Class LightRigForm
         RaiseEvent LightsChanged()
     End Sub
 
+    ' ====== Sombras (UI <-> Config_App.Setting_PreviewShadows_*) ======
+
+    ''' <summary>Los tres tamanos de mapa que ofrece la UI. El valor es el LADO en texeles; el texto dice
+    ''' cuanto cuesta, que es lo que el usuario necesita para elegir.</summary>
+    Private Shared ReadOnly ShadowQualities As (Label As String, Size As Integer)() = {
+        ("Low (1024)", 1024), ("Medium (2048)", 2048), ("High (4096)", 4096)}
+
+    Private Sub CargarCalidadSombra(mapSize As Integer)
+        If cmbShadowQuality.Items.Count = 0 Then
+            For Each q In ShadowQualities
+                cmbShadowQuality.Items.Add(q.Label)
+            Next
+        End If
+        Dim idx = Array.FindIndex(ShadowQualities, Function(q) q.Size = mapSize)
+        ' Un tamano fuera de la lista (editado a mano en el config) NO se pisa en silencio: se elige el
+        ' mas cercano para que el combo diga algo cierto, y recien el proximo cambio del usuario lo escribe.
+        If idx < 0 Then
+            idx = 0
+            Dim best = Integer.MaxValue
+            For i = 0 To ShadowQualities.Length - 1
+                Dim d = Math.Abs(ShadowQualities(i).Size - mapSize)
+                If d < best Then best = d : idx = i
+            Next
+        End If
+        cmbShadowQuality.SelectedIndex = idx
+    End Sub
+
+    ''' <summary>Con las sombras apagadas, sus perillas no hacen nada: deshabilitarlas evita que alguien
+    ''' mueva Softness diez minutos preguntandose por que no pasa nada.</summary>
+    Private Sub ActualizarHabilitadoSombras()
+        Dim on_ = chkShadows.Checked
+        lblShadowQuality.Enabled = on_
+        cmbShadowQuality.Enabled = on_
+        lblShadowSoft.Enabled = on_
+        tShadowSoft.Enabled = on_
+        lblShadowStrength.Enabled = on_
+        tShadowStrength.Enabled = on_
+    End Sub
+
+    Private Sub VolcarSombrasEnModelo()
+        If _preventchanges Then Return
+        Dim sh = Config_App.Current.ActiveShadows().Sanitized()
+        sh.Enabled = chkShadows.Checked
+        If cmbShadowQuality.SelectedIndex >= 0 Then sh.MapSize = ShadowQualities(cmbShadowQuality.SelectedIndex).Size
+        sh.SoftnessTexels = CSng(tShadowSoft.Value)
+        sh.Intensity = CSng(tShadowStrength.Value)
+        Config_App.Current.SetActiveShadows(sh)
+        RaiseEvent LightsChanged()
+    End Sub
+
     Private Shared Function LeerLuz(strength As TinySliderTextBox, swatch As Button,
                                     up As NumericUpDown, down As NumericUpDown,
                                     left As NumericUpDown, right As NumericUpDown,
@@ -241,6 +309,9 @@ Partial Public Class LightRigForm
         ' Reset = preset Studio + background al default del config (DarkGray). CargarValoresIniciales
         ' recarga el combo de background desde Setting_BackColor; el VolcarUIenModelo final refresca el preview.
         Config_App.Current.Setting_BackColorName = Color.DarkGray.Name
+        ' Reset devuelve TODO el estado de iluminacion del preview, sombras incluidas: dejarlas afuera
+        ' hacia que "Reset" no reseteara la mitad del dialogo.
+        Config_App.Current.SetActiveShadows(PreviewShadowSettings.Defaults())
         AplicarRig(PreviewLightRig.Defaults())
     End Sub
 End Class

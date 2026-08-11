@@ -114,6 +114,11 @@ out vec3 weightColor;
 
 out vec4 vColor;
 out vec2 vUV;
+// WORLD-space position of the skinned vertex. Only consumer: the shadow lookup in the fragment.
+// matModel is Identity today (nobody ever writes MeshData.Transform), so this is skinnedPos verbatim
+// -- it is written as the full transform anyway so it stays correct if a per-shape transform is ever
+// introduced, which is the same thing hemiAmbient() does with the normal.
+out vec3 vWorldPos;
 
 vec3 colorRamp(in float value)
 {
@@ -236,6 +241,7 @@ void main(void)
 	// Eye-coordinate position of vertex (now using skinned position)
 	vec3 vPos = vec3(matModelView * vec4(skinnedPos, 1.0));
 	gl_Position = matProjection * vec4(vPos, 1.0);
+	vWorldPos = vec3(matModel * vec4(skinnedPos, 1.0));
 
 	// TBN in view space
 	vec3 mv_normal = mv_normalMatrix * skinnedNormal;
@@ -389,6 +395,26 @@ in vec3 weightColor;
 
 in vec4 vColor;
 in vec2 vUV;
+in vec3 vWorldPos;
+
+// =============================== SHADOWS ===============================
+// ONE orthographic shadow map, for the KEY light only. The measurements that put this term exactly
+// where it is (and nowhere else) live in ShadowMap.vb; the short version is that in BOTH engines the
+// shadow multiplies the DIRECTIONAL light's diffuse AND specular and NEVER the ambient:
+//   FO4 forward rec1498 -> L142/L154 (whole per-light accumulator), L193 (specular), and L281 adds
+//   the ambient AFTERWARDS.  SSE DEFSHADOW -> `mul r2.yzw, r4.xxxx, cb2[1].xxyz` and the ambient
+//   (`dp4 cb2[11..13].vec4(N,1)`) is likewise added after.
+// That is why the factor is applied by scaling the KEY's `diffuse` before directionalLight() instead
+// of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission, subsurface)
+// plus the specular get it, and hemiAmbient() does not.
+uniform sampler2DShadow texShadowMap;
+uniform mat4 matShadowViewProj;   // world -> light clip space
+uniform bool bShadows;            // false = the whole feature is inert (factor is never computed)
+uniform float uShadowIntensity;   // 1 = the key goes fully dark in shadow (what the engine does)
+uniform float uShadowNormalBias;  // WORLD units (already scaled by the map texel size on the CPU)
+uniform float uShadowDepthBias;   // normalized-depth units
+uniform int uShadowPcfRadius;     // kernel is (2r+1)^2 taps; 0 = single tap, like the FO4 forward
+uniform vec2 uShadowTexelUV;      // 1/mapSize on both axes
 
 out vec4 fragColor;
 
@@ -752,10 +778,55 @@ vec4 colorLookup(in float x, in float y)
 // synthesize it from two preview colors: sky from world-up (+Z), ground from world-down (-Z). The
 // shading normal is view-space; transform to world (reusing the envmap matrices) and blend by its
 // up (Z) component. Anchored to world up so the hemisphere stays put as the camera orbits.
+// VIEW-space direction -> WORLD. Extracted from hemiAmbient so the shadow lookup uses the SAME
+// expression: two copies of a view->world convention is exactly the kind of drift that shows up as a
+// hemisphere that rotates one way and a shadow that rotates the other.
+vec3 toWorldDir(in vec3 v)
+{
+	return normalize(vec3(matModel * (matModelViewInverse * vec4(v, 0.0))));
+}
+
 vec3 hemiAmbient(in vec3 nrm)
 {
-	vec3 nWS = normalize(vec3(matModel * (matModelViewInverse * vec4(nrm, 0.0))));
+	vec3 nWS = toWorldDir(nrm);
 	return mix(ambientGround, ambientSky, clamp(nWS.z * 0.5 + 0.5, 0.0, 1.0));
+}
+
+// 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true.
+float shadowFactor(in vec3 worldNrm)
+{
+	// NORMAL OFFSET is the primary anti-acne: displacing the sample point along the surface normal by
+	// about one texel kills the self-shadowing of surfaces at a grazing angle to the light WITHOUT the
+	// peter-panning a large constant depth bias causes. It arrives in world units already multiplied by
+	// the texel's world size, so changing the map resolution does not require re-tuning the knob.
+	vec4 lc = matShadowViewProj * vec4(vWorldPos + worldNrm * uShadowNormalBias, 1.0);
+	vec3 p = lc.xyz / lc.w;
+	p = p * 0.5 + 0.5;   // NDC -> [0,1]
+
+	// Past the far plane of the map there is nothing that could occlude. The XY case is NOT handled
+	// here on purpose: it is handled by the texture border (CLAMP_TO_BORDER with a white border), so a
+	// PCF kernel straddling the edge still reads 'lit' without a per-tap branch.
+	if (p.z > 1.0)
+		return 1.0;
+
+	float refDepth = p.z - uShadowDepthBias;
+
+	// Hardware PCF: the sampler is in COMPARE_REF_TO_TEXTURE, so every texture() call already returns
+	// the bilinear average of four depth comparisons. The loop widens that to (2r+1)^2 taps.
+	float sum = 0.0;
+	float n = 0.0;
+	for (int y = -uShadowPcfRadius; y <= uShadowPcfRadius; ++y)
+	{
+		for (int x = -uShadowPcfRadius; x <= uShadowPcfRadius; ++x)
+		{
+			sum += texture(texShadowMap, vec3(p.xy + vec2(float(x), float(y)) * uShadowTexelUV, refDepth));
+			n += 1.0;
+		}
+	}
+
+	// uShadowIntensity < 1 lifts the shadow. NOT engine-faithful (the engine's factor is a hard 0/1);
+	// it exists because a previewer has to let you read the texture on the dark side.
+	return 1.0 - uShadowIntensity * (1.0 - sum / max(n, 1.0));
 }
 
 void main(void)
@@ -1004,7 +1075,19 @@ void main(void)
 			// horneado por la pasada b12 FaceCustom. Si alguna vez se quiere cerrar si corresponde
 			// re-agregarla, hace falta un A/B in-app contra un render del juego: no se decide leyendo shaders.
 
-			directionalLight(frontal, lightFrontal, true, outDiffuse, outSpecular);   // key = la direccional del motor
+			// SHADOW. ONLY THE KEY CASTS, and that is the engine's own arrangement: the forward has
+			// exactly ONE shadowed directional plus an UNSHADOWED point-light loop (rec1498 reuses the
+			// shadow register as the loop counter at L194, so the value is already dead there), and the
+			// SSE mask packs the sun in a single channel. It is also how a real 3-point studio works:
+			// the fills are what keep the shadow side readable, so they must not be occluded too.
+			// Scaling `diffuse` here -- instead of the accumulators -- is what makes every term inside
+			// directionalLight (Oren-Nayar, thin rim, transmission, subsurface) AND the specular carry
+			// the factor, while hemiAmbient() below stays untouched. See the SHADOWS uniform block.
+			DirectionalLight keyLight = frontal;
+			if (bShadows)
+				keyLight.diffuse *= shadowFactor(toWorldDir(normal));
+
+			directionalLight(keyLight, lightFrontal, true, outDiffuse, outSpecular);   // key = la direccional del motor
 			directionalLight(directional0, lightDirectional0, false, outDiffuse, outSpecular);
 			directionalLight(directional1, lightDirectional1, false, outDiffuse, outSpecular);
 			directionalLight(directional2, lightDirectional2, false, outDiffuse, outSpecular);
@@ -1571,6 +1654,11 @@ out vec3 weightColor;
 
 out vec4 vColor;
 out vec2 vUV;
+// WORLD-space position of the skinned vertex. Only consumer: the shadow lookup in the fragment.
+// matModel is Identity today (nobody ever writes MeshData.Transform), so this is skinnedPos verbatim
+// -- it is written as the full transform anyway so it stays correct if a per-shape transform is ever
+// introduced, which is the same thing hemiAmbient() does with the normal.
+out vec3 vWorldPos;
 
 vec3 colorRamp(in float value)
 {
@@ -1696,6 +1784,7 @@ void main(void)
 	// Eye-coordinate position of vertex (now using skinned position)
 	vec3 vPos = vec3(matModelView * vec4(skinnedPos, 1.0));
 	gl_Position = matProjection * vec4(vPos, 1.0);
+	vWorldPos = vec3(matModel * vec4(skinnedPos, 1.0));
 
 	// TBN in view space
 	vec3 mv_normal = mv_normalMatrix * skinnedNormal;
@@ -1851,6 +1940,26 @@ in vec3 weightColor;
 
 in vec4 vColor;
 in vec2 vUV;
+in vec3 vWorldPos;
+
+// =============================== SHADOWS ===============================
+// ONE orthographic shadow map, for the KEY light only. The measurements that put this term exactly
+// where it is (and nowhere else) live in ShadowMap.vb; the short version is that in BOTH engines the
+// shadow multiplies the DIRECTIONAL light's diffuse AND specular and NEVER the ambient:
+//   FO4 forward rec1498 -> L142/L154 (whole per-light accumulator), L193 (specular), and L281 adds
+//   the ambient AFTERWARDS.  SSE DEFSHADOW -> `mul r2.yzw, r4.xxxx, cb2[1].xxyz` and the ambient
+//   (`dp4 cb2[11..13].vec4(N,1)`) is likewise added after.
+// That is why the factor is applied by scaling the KEY's `diffuse` before directionalLight() instead
+// of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission, subsurface)
+// plus the specular get it, and hemiAmbient() does not.
+uniform sampler2DShadow texShadowMap;
+uniform mat4 matShadowViewProj;   // world -> light clip space
+uniform bool bShadows;            // false = the whole feature is inert (factor is never computed)
+uniform float uShadowIntensity;   // 1 = the key goes fully dark in shadow (what the engine does)
+uniform float uShadowNormalBias;  // WORLD units (already scaled by the map texel size on the CPU)
+uniform float uShadowDepthBias;   // normalized-depth units
+uniform int uShadowPcfRadius;     // kernel is (2r+1)^2 taps; 0 = single tap, like the FO4 forward
+uniform vec2 uShadowTexelUV;      // 1/mapSize on both axes
 
 out vec4 fragColor;
 
@@ -2104,10 +2213,55 @@ vec4 colorLookup(in float x, in float y)
 // synthesize it from two preview colors: sky from world-up (+Z), ground from world-down (-Z). The
 // shading normal is view-space; transform to world (reusing the envmap matrices) and blend by its
 // up (Z) component. Anchored to world up so the hemisphere stays put as the camera orbits.
+// VIEW-space direction -> WORLD. Extracted from hemiAmbient so the shadow lookup uses the SAME
+// expression: two copies of a view->world convention is exactly the kind of drift that shows up as a
+// hemisphere that rotates one way and a shadow that rotates the other.
+vec3 toWorldDir(in vec3 v)
+{
+	return normalize(vec3(matModel * (matModelViewInverse * vec4(v, 0.0))));
+}
+
 vec3 hemiAmbient(in vec3 nrm)
 {
-	vec3 nWS = normalize(vec3(matModel * (matModelViewInverse * vec4(nrm, 0.0))));
+	vec3 nWS = toWorldDir(nrm);
 	return mix(ambientGround, ambientSky, clamp(nWS.z * 0.5 + 0.5, 0.0, 1.0));
+}
+
+// 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true.
+float shadowFactor(in vec3 worldNrm)
+{
+	// NORMAL OFFSET is the primary anti-acne: displacing the sample point along the surface normal by
+	// about one texel kills the self-shadowing of surfaces at a grazing angle to the light WITHOUT the
+	// peter-panning a large constant depth bias causes. It arrives in world units already multiplied by
+	// the texel's world size, so changing the map resolution does not require re-tuning the knob.
+	vec4 lc = matShadowViewProj * vec4(vWorldPos + worldNrm * uShadowNormalBias, 1.0);
+	vec3 p = lc.xyz / lc.w;
+	p = p * 0.5 + 0.5;   // NDC -> [0,1]
+
+	// Past the far plane of the map there is nothing that could occlude. The XY case is NOT handled
+	// here on purpose: it is handled by the texture border (CLAMP_TO_BORDER with a white border), so a
+	// PCF kernel straddling the edge still reads 'lit' without a per-tap branch.
+	if (p.z > 1.0)
+		return 1.0;
+
+	float refDepth = p.z - uShadowDepthBias;
+
+	// Hardware PCF: the sampler is in COMPARE_REF_TO_TEXTURE, so every texture() call already returns
+	// the bilinear average of four depth comparisons. The loop widens that to (2r+1)^2 taps.
+	float sum = 0.0;
+	float n = 0.0;
+	for (int y = -uShadowPcfRadius; y <= uShadowPcfRadius; ++y)
+	{
+		for (int x = -uShadowPcfRadius; x <= uShadowPcfRadius; ++x)
+		{
+			sum += texture(texShadowMap, vec3(p.xy + vec2(float(x), float(y)) * uShadowTexelUV, refDepth));
+			n += 1.0;
+		}
+	}
+
+	// uShadowIntensity < 1 lifts the shadow. NOT engine-faithful (the engine's factor is a hard 0/1);
+	// it exists because a previewer has to let you read the texture on the dark side.
+	return 1.0 - uShadowIntensity * (1.0 - sum / max(n, 1.0));
 }
 
 void main(void)
@@ -2300,7 +2454,15 @@ void main(void)
 				normal = -normal;
 			}
 
-			directionalLight(frontal, lightFrontal, outDiffuse, outSpecular);
+			// SHADOW. Same law and same placement as the FO4 fragment (see the SHADOWS uniform block):
+			// the SSE DEFSHADOW path multiplies the DIRECTIONAL by the mask and adds the ambient after,
+			// so scaling the key's `diffuse` here reproduces it and leaves hemiAmbient() alone.
+			// Only the KEY casts -- the fills keep the shadow side readable.
+			DirectionalLight keyLight = frontal;
+			if (bShadows)
+				keyLight.diffuse *= shadowFactor(toWorldDir(normal));
+
+			directionalLight(keyLight, lightFrontal, outDiffuse, outSpecular);
 			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
 			directionalLight(directional1, lightDirectional1, outDiffuse, outSpecular);
 			directionalLight(directional2, lightDirectional2, outDiffuse, outSpecular);
@@ -2709,12 +2871,85 @@ if (bHide)
         MyBase.New(Vertex_SSE, Fragment_SSE)
     End Sub
 End Class
+''' <summary>El fragment del pase de profundidad del shadow map. UNA sola fuente para los dos juegos:
+''' lo unico que hace es el alpha-test, y esa ley es la misma en FO4 y en SSE.
+''' <para>⛔⛔ NO LLEVA VERTEX SHADER PROPIO, y eso es el punto. El blend de skinning tiene CINCO sitios
+''' gemelos declarados en el SYNC de Vertex_FO4; un VS de sombra seria el SEXTO, y desincronizarlo no
+''' rompe el build ni tira: deja la sombra de una malla posada en la posicion de bind. En vez de eso el
+''' pase reusa Vertex_FO4 / Vertex_SSE tal cual y les entrega matView = lightView y matProjection =
+''' lightOrtho, con lo que su `gl_Position = matProjection * (matModelView * pos)` ya cae en clip-space
+''' de la luz. El VS calcula ademas varyings que este fragment no consume (TBN, direcciones de luz):
+''' es legal en GLSL y es el precio de no duplicar el skinning.</para></summary>
+Friend Module ShadowDepthShaderSource
+
+    Friend Const Fragment_ShadowDepth As String = "
+#version 430
+
+uniform sampler2D texDiffuse;
+uniform vec2 uvOffset;
+uniform vec2 uvScale;
+uniform float alphaThreshold;
+uniform bool bAlphaTest;
+uniform bool bShowTexture;
+uniform bool bApplyZap;
+
+in vec4 vColor;
+in vec2 vUV;
+flat in int ZappedVert;
+
+void main(void)
+{
+	if (bApplyZap && ZappedVert == 1)
+		discard;
+
+	// SAME left-hand side as the lit pass: texture alpha * vertex alpha, compared with a strict `<`
+	// (the engine KEEPS equality -- rec1498 L284 `mad r0.x, r1.w, v7.w, -cb2[3].x ; lt r0.x, l(0)`).
+	// Any divergence here and the shadow silhouette stops matching the shape that is drawn: a cutout
+	// hair card would cast the solid quad instead of the strands.
+	// The engine does alpha-test its own shadow pass too: BSUtilityShader RENDER_SHADOWMAP (technique
+	// bit 14) has a discard in 68 of its 91 permutations.
+	if (bAlphaTest && bShowTexture)
+	{
+		vec2 uv = vUV * uvScale + uvOffset;
+		if (texture(texDiffuse, uv).a * vColor.a < alphaThreshold)
+			discard;
+	}
+}
+"
+End Module
+
+''' <summary>Programa de profundidad para assets FO4: Vertex_FO4 + el fragment de sombra.</summary>
+Public Class Shadow_Depth_Shader_Fo4
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(Shader_Class_Fo4.Vertex_FO4, ShadowDepthShaderSource.Fragment_ShadowDepth)
+    End Sub
+End Class
+
+''' <summary>Programa de profundidad para assets SSE: Vertex_SSE + el MISMO fragment de sombra.</summary>
+Public Class Shadow_Depth_Shader_SSE
+    Inherits Shader_Base_Class
+    Sub New()
+        MyBase.New(Shader_Class_SSE.Vertex_SSE, ShadowDepthShaderSource.Fragment_ShadowDepth)
+    End Sub
+End Class
+
 Public MustInherit Class Shader_Base_Class
     Implements IDisposable
 
     Private disposedValue As Boolean
 
     Private program As Integer
+
+    ''' <summary>El id del programa GL. Friend y de SOLO LECTURA: lo consume el arnes Tools/ShadowGate
+    ''' para verificar que el GLSL LINKEO de verdad — un shader que no compila deja esto en 0 y el render
+    ''' se degrada en silencio (el error va por Logger, apagado en Release). No cambia la API distribuida.</summary>
+    Friend ReadOnly Property ProgramId As Integer
+        Get
+            Return program
+        End Get
+    End Property
+
     ' Método público para liberar recursos.
     Private ReadOnly UniformLocationCache As New Dictionary(Of String, Integer)
     Public Sub Dispose() Implements IDisposable.Dispose
