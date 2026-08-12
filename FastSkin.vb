@@ -85,7 +85,19 @@ Friend Module FastSkin
     ''' <para><b>El criterio.</b> Por Hadamard |det| &lt;= producto de las normas de fila, y esa cota vale
     ''' a lo sumo <c>(F2/3)^(3/2)</c> con <c>F2</c> = suma de los 9 cuadrados. El cociente
     ''' <c>|det| / (F2/3)^(3/2)</c> es ADIMENSIONAL, vale 1 para una matriz ortogonal y 0 para una
-    ''' singular, y no cambia si se reescala la matriz. Se compara contra <c>EpsDetRel</c>.</para>
+    ''' singular, y en ALGEBRA no cambia si se reescala la matriz. Se compara contra <c>EpsDetRel</c>.</para>
+    '''
+    ''' <para>⛔ LA INVARIANCIA DE ESCALA ES DEL ALGEBRA, NO DE SINGLE, y se rompe en las dos puntas. La
+    ''' decia sin reservas y eso es lo que autoriza al que sigue a no probar el regimen chico:</para>
+    ''' <list type="bullet">
+    ''' <item><c>t &lt; 1,4e-35</c> (entradas RMS &lt; ~2,2e-18): <c>eps^2 * t</c> hace underflow a 0 y el
+    ''' predicado degenera a <c>q*q &lt;= 0</c>, o sea al criterio ABSOLUTO "det = 0 exacto" que este cambio
+    ''' vino a matar. Se degrada en silencio.</item>
+    ''' <item><c>|det| &lt; 2,94e-39</c>: la reciproca desborda. Lo cubre la tercera guarda de
+    ''' <see cref="EsDegenerada"/>, con los numeros medidos.</item>
+    ''' </list>
+    ''' <para>Las dos bandas viven en escalas ≲1e-13, o sea fuera de cualquier rig real; lo que importa es
+    ''' que estan MEDIDAS y acotadas, y que el barrido del gate ahora baja hasta ahi.</para>
     '''
     ''' <para>El valor 1e-5 son ~10 veces el error relativo esperable del determinante en Single (unas
     ''' 10 operaciones a 1,2e-7 cada una). Una matriz con cociente menor tiene numero de condicion
@@ -139,7 +151,7 @@ Friend Module FastSkin
                  m21 * m21 + m22 * m22 + m23 * m23 +
                  m31 * m31 + m32 * m32 + m33 * m33
         Dim t = f2 * (1.0F / 3.0F)
-        ' ⛔⛔ DOS GUARDAS, Y LAS DOS SON NECESARIAS. Escritas como negaciones a proposito: asi un NaN
+        ' ⛔⛔ TRES GUARDAS, Y LAS TRES SON NECESARIAS. Escritas como negaciones a proposito: asi un NaN
         ' —que pierde TODA comparacion— cae del lado DEGENERADO, que es el correcto.
         '  · `t` no positivo: matriz nula (t = 0) o con algun NaN. La division daria NaN y el predicado
         '    diria "sana", que es justo el caso mas degenerado que existe.
@@ -148,8 +160,28 @@ Friend Module FastSkin
         '    lo ve. Sin esto: q = Inf, `Inf <= algo` es False ⇒ "sana" ⇒ r = 1/Inf = 0 ⇒ los nueve
         '    cofactores en CERO ⇒ la normal sale (0,0,0) o NaN al normalizar. La forma vieja con cubo
         '    daba Identidad ahi; esta tiene que hacer lo mismo.
+        '  · la RECIPROCA no finita. La guarda de arriba mira `det` HACIA ARRIBA; esta lo mira hacia
+        '    ABAJO, que es el otro lado del MISMO `s^3`. Con escala uniforme chica el determinante se
+        '    hunde y lo que desborda no es el, es `1/det` — y `1/det` es el numero que despues multiplica
+        '    los nueve cofactores. MEDIDO (Single, el mismo orden de operaciones del kernel):
+        '        s = 1,44e-13 -> det = 2,99e-39 -> 1/det = 3,35e38   ultimo sano
+        '        s = 1,43e-13 -> det = 2,92e-39 -> 1/det = +Inf      <- y las dos guardas decian SANA
+        '        s = 1e-15    -> det = 1,40e-45 -> 1/det = +Inf
+        '    En esa banda —s entre ~1e-15 y 1,43e-13— los cofactores nulos daban `0 * Inf = NaN` en las
+        '    seis entradas de fuera de la diagonal, `Rotar` sacaba `len2 = NaN`, la guarda de longitud
+        '    cero no muerde con NaN, y la normal salia (NaN,NaN,NaN) AL VBO. La matriz de ese ejemplo es
+        '    una rotacion pura escalada: numero de condicion 1, perfectamente sana en algebra — pero no
+        '    invertible EN SINGLE. Con precision: es un test de FINITUD de la reciproca, no de buen
+        '    condicionamiento — entre s = 2,28e-13 y s = 1,43e-13 el determinante ya es SUBNORMAL (pierde
+        '    mantisa) y el predicado todavia dice SANA. Es inofensivo en magnitud y esta fuera de cualquier
+        '    rig real, pero la frase no promete mas de lo que el codigo hace.
+        '    Se testea `1/det` y no un umbral porque `1/det` ES la cantidad que desborda: cualquier
+        '    constante que eligiera seria una discusion, y esto es una medicion.
+        ' ⛔ Ningun barrido las cubria: el gate `det-degenerado` escalaba SOLO hacia arriba
+        ' ({7e11, 7e12, 1e14}) y el oraculo se saltea por construccion todo |det| < 1e-9.
         If Not (t > 0.0F) Then Return True
         If Not (Math.Abs(det) <= Single.MaxValue) Then Return True
+        If Not (Math.Abs(1.0F / det) <= Single.MaxValue) Then Return True
         ' ⛔⛔ SE DIVIDE, NO SE ELEVA AL CUBO. La forma natural del criterio es
         ' `det^2 <= epsRel^2 * (F2/3)^3`, y esa DESBORDA en Single: con una rotacion pura escalada por
         ' 3e6, `t^3` = 7,3e38 > Single.MaxValue = 3,4e38 ⇒ +Inf en LOS DOS lados, y `Inf <= Inf` es True.
@@ -529,6 +561,9 @@ Friend Module FastSkin
         Dim untercio As New SN.Vector(Of Single)(1.0F / 3.0F)
         Dim uno = SN.Vector(Of Single).One
         Dim cero = SN.Vector(Of Single).Zero
+        ' Izado con los otros: es loop-invariant y el archivo declara la politica dos bloques arriba
+        ' ("LAS 12 SECCIONES SE TOMAN UNA VEZ, FUERA DEL BUCLE"). Estaba adentro del While.
+        Dim maxV As New SN.Vector(Of Single)(Single.MaxValue)
         Dim k = 0
         While k + W <= cuantos
             Dim m11 As New SN.Vector(Of Single)(a(0), k), m12 As New SN.Vector(Of Single)(a(1), k), m13 As New SN.Vector(Of Single)(a(2), k)
@@ -561,7 +596,7 @@ Friend Module FastSkin
                      m21 * m21 + m22 * m22 + m23 * m23 +
                      m31 * m31 + m32 * m32 + m33 * m33
             Dim tt = f2 * untercio
-            ' ⛔⛔ TRANSCRIPCION EXACTA DE `EsDegenerada`, INCLUIDAS LAS DOS GUARDAS. Y las guardas van
+            ' ⛔⛔ TRANSCRIPCION EXACTA DE `EsDegenerada`, INCLUIDAS LAS TRES GUARDAS. Y las guardas van
             ' como NEGACION de un `GreaterThan`, no como `LessThanOrEqual`: con NaN las dos comparaciones
             ' dan False, asi que `LessThanOrEqual(NaN, 0)` clasificaba el lane como SANO mientras el
             ' escalar —que usa `Not (t > 0)`— lo daba DEGENERADO. Esa divergencia es grave y no teorica:
@@ -570,11 +605,18 @@ Friend Module FastSkin
             ' indice mod W; y en una maquina sin aceleracion iba todo por el escalar ⇒ RENDER != BAKE
             ' segun el hardware del usuario.
             Dim qq = det / tt
+            Dim rec = uno / det
             Dim tSano = SN.Vector.GreaterThan(tt, SN.Vector(Of Single).Zero)
-            Dim detSano = SN.Vector.LessThanOrEqual(SN.Vector.Abs(det), New SN.Vector(Of Single)(Single.MaxValue))
+            Dim detSano = SN.Vector.LessThanOrEqual(SN.Vector.Abs(det), maxV)
+            ' ⛔ LA TERCERA GUARDA: `1/det` no finito. Ver la nota larga en `EsDegenerada` — mira el `s^3`
+            ' hacia ABAJO, donde el que desborda no es `det` sino su reciproca, o sea justo el factor de
+            ' los nueve cofactores. Va como un tercer `AndAlso` de la conjuncion sana, con la misma forma
+            ' negada que las otras dos para que el NaN caiga del lado degenerado.
+            Dim recSano = SN.Vector.LessThanOrEqual(SN.Vector.Abs(rec), maxV)
             Dim degen = SN.Vector.BitwiseOr(SN.Vector.LessThanOrEqual(qq * qq, epsRel2 * tt),
-                                            SN.Vector.OnesComplement(SN.Vector.BitwiseAnd(tSano, detSano)))
-            Dim r = SN.Vector.ConditionalSelect(degen, uno, uno / det)
+                                            SN.Vector.OnesComplement(
+                                                SN.Vector.BitwiseAnd(SN.Vector.BitwiseAnd(tSano, detSano), recSano)))
+            Dim r = SN.Vector.ConditionalSelect(degen, uno, rec)
             c11 = SN.Vector.ConditionalSelect(degen, uno, c11)
             c12 = SN.Vector.ConditionalSelect(degen, cero, c12)
             c13 = SN.Vector.ConditionalSelect(degen, cero, c13)
@@ -716,6 +758,18 @@ Friend Module FastSkin
                 mg.M11 = 10000000000000.0F : mg.M22 = 10000000000000.0F : mg.M33 = 10000000000000.0F
                 mg.M12 = 0.0F : mg.M13 = 0.0F : mg.M21 = 0.0F : mg.M23 = 0.0F : mg.M31 = 0.0F : mg.M32 = 0.0F
                 mats(i) = mg
+            ElseIf i Mod 71 = 2 Then
+                ' ⛔ MATRIZ DIMINUTA: el SIMETRICO de la de arriba, y NO ESTABA. El corpus tenia el caso
+                ' "s grande" y no su espejo, asi que la banda donde desborda la RECIPROCA —s entre ~1e-15
+                ' y 1,43e-13— no la ejercitaba nadie. Con s = 1e-13: det = 1e-39, las dos guardas viejas
+                ' decian SANA, `1/det` daba +Inf y la normal salia NaN al VBO.
+                ' Se eligen DOS escalas para cubrir las dos formas de romperse: 1e-13 desborda la
+                ' reciproca con det todavia representable, y 1e-19 ademas hace underflow en `eps^2 * t`.
+                Dim mp = mats(i)
+                Dim sChica = If(i Mod 142 = 2, 0.0000000000001F, 0.0000000000000000001F)
+                mp.M11 = sChica : mp.M22 = sChica : mp.M33 = sChica
+                mp.M12 = 0.0F : mp.M13 = 0.0F : mp.M21 = 0.0F : mp.M23 = 0.0F : mp.M31 = 0.0F : mp.M32 = 0.0F
+                mats(i) = mp
             End If
         Next
 
@@ -772,6 +826,35 @@ Friend Module FastSkin
                     Return $"msn={msn} vertice {i}: UnVertice (camino sparse del upload) no da lo mismo que " &
                            $"la referencia ({du})."
                 End If
+            Next
+
+            ' ⛔⛔⭐ ORACULO INDEPENDIENTE: ENTRADA FINITA ⇒ SALIDA FINITA.
+            ' Todo lo de arriba compara los CUATRO caminos entre si, y por construccion no puede ver un
+            ' defecto que los cuatro comparten. Asi se escapo el desborde de `1/det`: escalar y vectorial
+            ' coincidian perfectamente... los dos en NaN. Un gate que solo cruza implementaciones mide
+            ' consistencia, no correccion; hace falta al menos una afirmacion sobre el RESULTADO.
+            ' La ley es la mas debil que igual muerde: si la matriz y los vectores de entrada son finitos,
+            ' la normal, la tangente y la bitangente tienen que serlo. Con una matriz degenerada el kernel
+            ' cae a Identidad, y con una normal nula `Rotar` la devuelve tal cual — las dos salidas son
+            ' finitas, asi que la ley vale para TODO el corpus salvo los indices con NaN de entrada, donde
+            ' propagar el NaN es lo correcto.
+            For i = 0 To N - 1
+                ' ⛔ La POSICION entra a los dos lados. Estaba afuera y la ley declarada decia "la normal, la
+                ' tangente y la bitangente" — pero la posicion se escribe al MISMO VBO y un +Inf ahi manda el
+                ' vertice al infinito. Hoy no es alcanzable con este corpus, y la cuenta es: la traslacion
+                ' (m41..m43) SI se sortea en [-2,2) —el ctor de Matrix4 pone tres `sig()` en la cuarta fila,
+                ' y el kernel los suma— y `lv` tambien esta en [-2,2), asi que el peor caso es la clase de
+                ' escala 1e13: 2*1e13 + 2 ~ 2e13, comodamente finito. Es gratis cubrirlo antes de que
+                ' alguien amplie el corpus.
+                ' ⚠️ El comentario anterior afirmaba que "m41..m43 son 0". Era falso, y esa clase de
+                ' afirmacion sobre el corpus es la que hace que la guarda de al lado parezca suficiente.
+                If Not (FinitaM(mats(i)) AndAlso Finito3d(lv(i)) AndAlso Finito3(ln(i)) AndAlso
+                        Finito3(lt(i)) AndAlso Finito3(lb(i))) Then Continue For
+                If Finito3(pD(i)) AndAlso Finito3(nD(i)) AndAlso Finito3(tD(i)) AndAlso Finito3(bD(i)) Then Continue For
+                Return $"msn={msn} vertice {i}: con matriz y vectores de ENTRADA finitos, la salida NO es " &
+                       $"finita (p={pD(i)} n={nD(i)} t={tD(i)} b={bD(i)}). La matriz era " &
+                       $"[{mats(i).M11};{mats(i).M12};{mats(i).M13} | {mats(i).M21};{mats(i).M22};{mats(i).M23} | " &
+                       $"{mats(i).M31};{mats(i).M32};{mats(i).M33} | T {mats(i).M41};{mats(i).M42};{mats(i).M43}], det={DetPorPrimeraFila(mats(i).M11, mats(i).M12, mats(i).M13, mats(i).M21, mats(i).M22, mats(i).M23, mats(i).M31, mats(i).M32, mats(i).M33)}."
             Next
 
             ' ⭐ Y AHORA EL RANGO COMPLETO [0, N), con `pD` de referencia: es el unico que esta lleno en
@@ -1075,6 +1158,30 @@ Friend Module FastSkin
                    "coincidir con el render."
         End If
         Return Nothing
+    End Function
+
+    ''' <summary>Las tres componentes finitas. Para el oraculo "entrada finita ⇒ salida finita" del
+    ''' <see cref="SelfTest"/>.</summary>
+    Private Function Finito3(v As Vector3) As Boolean
+        Return Single.IsFinite(v.X) AndAlso Single.IsFinite(v.Y) AndAlso Single.IsFinite(v.Z)
+    End Function
+
+    ''' <summary>Idem para la posicion, que viene en Double.</summary>
+    Private Function Finito3d(v As Vector3d) As Boolean
+        Return Double.IsFinite(v.X) AndAlso Double.IsFinite(v.Y) AndAlso Double.IsFinite(v.Z)
+    End Function
+
+    ''' <summary>Las DOCE entradas que el kernel lee: la 3x3 y la TRASLACION.
+    ''' <para>⛔ Miraba solo nueve. La precondicion del oraculo dice "matriz de entrada finita" y la
+    ''' posicion usa `m41..m43`, asi que un `M41 = +Inf` en el corpus daba "entrada finita", posicion `+Inf`
+    ''' y ROJO FALSO — y el mensaje de diagnostico, que imprime solo M11..M33, ni siquiera mostraba la
+    ''' causa. Es exactamente el escenario que el cambio dice anticipar ("antes de que alguien amplie el
+    ''' corpus"), con la guarda incompleta para recibirlo.</para></summary>
+    Private Function FinitaM(m As Matrix4) As Boolean
+        Return Single.IsFinite(m.M11) AndAlso Single.IsFinite(m.M12) AndAlso Single.IsFinite(m.M13) AndAlso
+               Single.IsFinite(m.M21) AndAlso Single.IsFinite(m.M22) AndAlso Single.IsFinite(m.M23) AndAlso
+               Single.IsFinite(m.M31) AndAlso Single.IsFinite(m.M32) AndAlso Single.IsFinite(m.M33) AndAlso
+               Single.IsFinite(m.M41) AndAlso Single.IsFinite(m.M42) AndAlso Single.IsFinite(m.M43)
     End Function
 
     ''' <summary>Compara BIT a bit, no por tolerancia: dos NaN con distinto payload son distintos, y un

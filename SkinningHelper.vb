@@ -2480,35 +2480,24 @@ Public Class RecalcTBN
         ''' CERO y sólo asigna las claves que encuentra, así que una opción NUEVA queda en <c>False</c>
         ''' o en <c>0</c> para todo usuario que ya tenga un <c>config.json</c> — o sea que estrenaría la
         ''' opción APAGADA sin haberlo pedido. Este número dice con qué juego de opciones se escribió el
-        ''' archivo; <c>Config_App.LoadConfig</c> compara contra
-        ''' <see cref="VersionDeOpcionesTBN"/> y rellena SÓLO las que se agregaron después.
-        ''' Al agregar una opción: subir la constante y agregar su rama a la migración.
+        ''' archivo; <c>Config_App.RepararOpcionesTBN</c> compara contra
+        ''' <see cref="VersionDeOpcionesTBN"/> y, si el archivo declara una version ANTERIOR, repone los
+        ''' defaults COMPLETOS. NO hay ramas por version — se probaron y trajeron mas defectos que los que
+        ''' evitaban (una clave salteada dos versiones, un centinela invalido, una rama inalcanzable).
+        ''' ⛔ Al agregar una opcion: subir la constante Y darle su default en <c>DefaultTBNOptions</c>. El
+        ''' default es OBLIGATORIO: sin el, el campo queda en el cero de la Structure, que es justo el
+        ''' defecto que este mecanismo cierra.
         ''' </summary>
         Public Property OptionsVersion As Integer
     End Structure
 
-    ''' <summary>
-    ''' Versión del juego de opciones del TBN. Historia:
-    '''   0 — archivos anteriores al centinela (no traen la clave).
-    '''   1 — se agrega <see cref="TBNOptions.DeterministicOnCollapse"/>.
-    '''   2 — <see cref="TBNOptions.EpsilonPos"/> pasa a interpretarse como LONGITUD. No es una opción
-    '''       nueva: cambia el SIGNIFICADO de un número que el usuario ya tiene en disco, que es
-    '''       igual de invisible y por eso necesita su rama.
-    ''' </summary>
-    ''' <remarks>⛔ LA HISTORIA VA ACA Y HAY QUE MANTENERLA. Quien agregue la opcion siguiente necesita
-    ''' saber que introdujo cada version para no pisar una rama con otra; sin esta lista hay que ir a leer
-    ''' `Config_App.RepararOpcionesTBN` y deducirlo.
-    '''   0 — archivos anteriores al centinela (no traen la clave OptionsVersion).
-    '''   1 — DeterministicOnCollapse (opcion nueva) + los defaults CAMBIADOS de EpsilonPos y
-    '''       WeldByPositionOnly, que la version anterior habia escrito al disco.
-    '''   2 — EpsilonPos cambia de SIGNIFICADO (antes se comparaba contra LengthSquared): se le aplica la
-    '''       raiz para dejar el comportamiento igual al que el usuario tenia.
-    '''   3 — WeldPosEpsilon / WeldUVEpsilon, que nunca se habian migrado y quedaban en 0 (el 0 sirve de
-    '''       centinela porque el minimo de los dos NumericUpDown es 1e-12).
-    ''' ⚠️ SmoothSeamNormals, SmoothSeamNormalsAngle, NormalizeOutputs y RepairNaNs NO tienen rama y NO se
-    ''' les puede poner una a ciegas: ninguno admite centinela (0 y False son valores elegibles), asi que
-    ''' reponerles el default pisaria lo que el usuario eligio. Para cubrirlos habria que saber en que
-    ''' version se agrego cada uno — dato que no quedo registrado.</remarks>
+    ''' <summary>Version del juego de opciones de TBN con el que se escribio el config.
+    ''' <para>⭐ SUBIRLA ES TODO LO QUE HAY QUE HACER al agregar o cambiar una opcion: `RepararOpcionesTBN`
+    ''' repone los defaults COMPLETOS cuando el archivo declara una version anterior. No hay ramas por
+    ''' version que escribir — ni, por lo tanto, que olvidarse, que era de donde salian los defectos.</para>
+    ''' <para>⚠️ Eso PISA lo que el usuario hubiera elegido. Es una decision expresa suya: un cambio de
+    ''' version significa que los criterios cambiaron, y arrancar con los defaults nuevos es preferible a
+    ''' arrastrar una mezcla que nadie eligio.</para></summary>
     Public Const VersionDeOpcionesTBN As Integer = 3
 
     ''' <summary>
@@ -2549,11 +2538,19 @@ Public Class RecalcTBN
     ''' éste comparte la base entera, y por posición sola fusionaría vértices que están separados
     ''' justamente porque tienen UV distinta.
     ''' </summary>
+    ''' <remarks>⛔ <c>KeepExistingNormals</c> ESTABA FALTANDO, y era el UNICO de los doce sin default:
+    ''' vivia del cero de la Structure. Coincide con el valor correcto, asi que nunca hubo sintoma — pero
+    ''' desde que la migracion es "version anterior ⇒ <c>DefaultTBNOptions()</c> completo", este metodo es
+    ''' la UNICA fuente de los defaults, y un campo que no este aca no se repone: se estrena en el cero del
+    ''' deserializador. La regla nacio incumplida en el mismo cambio que la escribio.
+    ''' <para>Y el gate no lo veia: comparaba False (golden) contra False (cero de la Structure), o sea que
+    ''' pasaba por coincidencia. Ahora hay un valor DECLARADO detras de esa comparacion.</para></remarks>
     Public Shared Function DefaultTBNOptions() As TBNOptions
         Return New TBNOptions With {
                 .EpsilonPos = 0.0,
                 .NormalizeOutputs = True,
                 .RepairNaNs = True,
+                .KeepExistingNormals = False,
                 .SmoothSeamNormals = True,             ' canonico: smooth = true por defecto
                 .SmoothSeamNormalsAngle = 60.0,        ' canonico: SliderSetDefaultSmoothAngle
                 .DeterministicOnCollapse = True,       ' el canonico ahi amplifica ruido: ver la doc de la opcion

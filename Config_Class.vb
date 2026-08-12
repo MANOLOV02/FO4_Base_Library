@@ -406,15 +406,32 @@ Public Class Config_App
         Dim cfg = JsonConfigIO.Load(Of Config_App)(ConfigFilePath, "configuration")
         If cfg IsNot Nothing Then
             Current = cfg
-            If Current.Settings_RenderGrid.Size = 0 Then Current.Settings_RenderGrid = Default_RenderGrid_Settings()
+            ' - LOS CINCO REPAROS DE ESTE METODO SE PERSISTEN, no dos. `hayQueGrabar` se declara aca arriba
+            ' porque los tres centinelas de abajo (grilla y los dos de sombras) tambien MUTAN `Current` y
+            ' antes no tocaban el grabado: se salvaban de casualidad, por el mismo "grabado gratis" de la
+            ' rama de TBN que corria en cada arranque. Desde que esa rama es de UNA VEZ por version, un
+            ' usuario que ya migro las opciones se queda con la grilla y las sombras reparadas SOLO EN
+            ' MEMORIA, rehaciendo el mismo trabajo en cada arranque. Es el argumento que ya esta escrito
+            ' abajo para el rig, palabra por palabra.
+            Dim hayQueGrabar As Boolean = False
+            If Current.Settings_RenderGrid.Size = 0 Then
+                Current.Settings_RenderGrid = Default_RenderGrid_Settings()
+                hayQueGrabar = True
+            End If
             ' ⛔ CENTINELA de las sombras. PreviewShadowSettings es una Structure y el config.json de todo
             ' usuario existente NO trae la clave, así que el deserializador la deja entera en cero: las
             ' sombras arrancarían apagadas Y con MapSize=0, o sea rotas si alguien las prendiera. Un mapa
             ' de 0 texeles no es un valor legítimo, que es justo lo que se le pide a un centinela (un
             ' Boolean no serviría: False-por-ausencia y False-por-decisión son indistinguibles).
             ' Ver memoria 10-stack-json-structure-defaults.
-            If Current.Setting_PreviewShadows_FO4.MapSize <= 0 Then Current.Setting_PreviewShadows_FO4 = PreviewShadowSettings.Defaults()
-            If Current.Setting_PreviewShadows_SSE.MapSize <= 0 Then Current.Setting_PreviewShadows_SSE = PreviewShadowSettings.Defaults()
+            If Current.Setting_PreviewShadows_FO4.MapSize <= 0 Then
+                Current.Setting_PreviewShadows_FO4 = PreviewShadowSettings.Defaults()
+                hayQueGrabar = True
+            End If
+            If Current.Setting_PreviewShadows_SSE.MapSize <= 0 Then
+                Current.Setting_PreviewShadows_SSE = PreviewShadowSettings.Defaults()
+                hayQueGrabar = True
+            End If
 
             ' ⛔ MIGRACION DEL RIG A LUCES FIJAS AL MUNDO (esquema 0 -> 1). El esquema viejo guardaba SEIS
             ' multiplicadores por luz relativos a la CAMARA; el nuevo guarda azimut/elevacion de mundo. El
@@ -424,96 +441,61 @@ Public Class Config_App
             ' Se convierten LEYENDO EL JSON CRUDO, que es donde siguen estando los 6 multiplicadores. La
             ' conversion es exacta: en la vista por defecto la base de camara ES la del mundo (ver
             ' PreviewLight.FromCameraRelative), asi que el rig del usuario conserva su aspecto en esa vista.
+            ' ⛔ SE GRABA ACA. `MigrateLightRigsToWorldSpace` no persiste nada por si sola, y hasta ahora
+            ' le servia de grabado gratis la rama de TBN de abajo — que corria en cada arranque mientras la
+            ' migracion tuviera ramas. Desde que es de UNA SOLA VEZ por version, un usuario que ya migro
+            ' las opciones pero no el rig se queda con el rig convertido SOLO EN MEMORIA y volviendo a
+            ' convertirse en cada arranque. Es estable (relee el JSON crudo), pero es trabajo repetido para
+            ' siempre y una migracion a medio terminar en disco.
+            Dim rigVersionPrevia = {Current.Setting_PreviewLights_FO4.SchemaVersion,
+                                    Current.Setting_PreviewLights_SSE.SchemaVersion}
             MigrateLightRigsToWorldSpace(ConfigFilePath)
-            ' ⛔ Un config.json ANTERIOR a la opcion de costuras no trae estas dos claves, y TBNOptions
-            ' es una Structure: el deserializador la crea en CERO y solo asigna lo que encuentra, asi
-            ' que el usuario existente arrancaria con el suavizado APAGADO y el angulo en 0 — o sea con
-            ' la correccion desactivada sin haberlo pedido. El angulo 0 no es un valor legitimo (con
-            ' 0 grados no se promedia ningun companero), asi que sirve de centinela de "clave ausente".
-            If Current.Setting_TBN.SmoothSeamNormalsAngle <= 0.0 Then
-                ' ⛔ Los valores salen de DefaultTBNOptions, que es donde viven los defaults. Repetirlos
-                ' aca dejaba el default declarado en dos lugares y este pisaba al otro en silencio.
-                Dim d = RecalcTBN.DefaultTBNOptions()
-                Dim t = Current.Setting_TBN
-                t.SmoothSeamNormals = d.SmoothSeamNormals
-                t.SmoothSeamNormalsAngle = d.SmoothSeamNormalsAngle
-                Current.Setting_TBN = t
+            ' ⛔ UN SOLO GRABADO AL FINAL. Con un `SaveConfig()` aca y otro despues de la reparacion de
+            ' TBN, el arranque que migra las DOS cosas escribia el config dos veces — y la primera escritura
+            ' persistia las opciones de TBN TODAVIA sin migrar. Inocuo en el resultado, pero duplica la
+            ' exposicion a la falla de escritura (instalacion en Program Files, archivo de solo lectura).
+            If Current.Setting_PreviewLights_FO4.SchemaVersion <> rigVersionPrevia(0) OrElse
+               Current.Setting_PreviewLights_SSE.SchemaVersion <> rigVersionPrevia(1) Then
+                hayQueGrabar = True
             End If
-
             ' ⛔ MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
-            ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0.
-            ' O sea que la estrenaria APAGADA sin haberlo pedido, en silencio. `OptionsVersion` dice con
-            ' que juego de opciones se escribio el archivo y aca se rellenan SOLO las posteriores; lo
-            ' que el usuario si eligio no se toca. Al agregar una opcion: subir la constante en
-            ' RecalcTBN y agregar su rama.
-            ' La migracion en si es PURA y vive en RepararOpcionesTBN: aca solo se decide si hace
-            ' falta, se aplica y se graba. Separarla es lo que permite que el gate `weld-epsilon` la
-            ' pruebe sin tocar el config del usuario ni el disco.
+            ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0, o sea
+            ' que la estrenaria APAGADA sin haberlo pedido. Si el archivo declara una version anterior,
+            ' `RepararOpcionesTBN` repone los defaults COMPLETOS — SI, eso pisa lo que el usuario haya
+            ' elegido; es decision suya y esta explicada en el doc de esa funcion.
+            ' La migracion es PURA y vive alla: aca solo se decide si hace falta, se aplica y se graba.
+            ' Separarla es lo que permite que el gate `weld-epsilon` la pruebe sin tocar el config del
+            ' usuario ni el disco.
             If Current.Setting_TBN.OptionsVersion < RecalcTBN.VersionDeOpcionesTBN Then
                 Current.Setting_TBN = RepararOpcionesTBN(Current.Setting_TBN)
-                SaveConfig()
+                hayQueGrabar = True
             End If
+            If hayQueGrabar Then SaveConfig()
         End If
     End Sub
 
-    ''' <summary>⛔ MIGRACION POR VERSION DE OPCIONES, PURA. Una opcion NUEVA no esta en el config.json
-    ''' de un usuario existente, y <c>TBNOptions</c> es una Structure: el deserializador la deja en
-    ''' False/0. O sea que la estrenaria APAGADA sin haberlo pedido, en silencio.
-    ''' <c>OptionsVersion</c> dice con que juego de opciones se escribio el archivo y aca se rellenan SOLO
-    ''' las posteriores; lo que el usuario SI eligio no se toca.
-    ''' <para>Al agregar una opcion: subir <c>RecalcTBN.VersionDeOpcionesTBN</c>, agregar su rama, y sumar
-    ''' el caso al gate <c>weld-epsilon</c> de ParityGate.</para>
-    ''' <para>⛔ ES PURA A PROPOSITO: no lee ni escribe <c>Current</c> ni el disco. Estando enterrada
-    ''' adentro de LoadConfig no habia forma de probarla sin arrancar la app con un config fabricado, y
-    ''' por eso se le escaparon dos claves durante dos versiones.</para></summary>
+    ''' <summary>⭐ CONFIG VIEJO ⇒ DEFAULTS COMPLETOS. Sin ramas, sin centinelas, sin casos por campo.
+    '''
+    ''' <para><b>Decisión expresa del usuario (2026-08-12).</b> Antes esto eran tres ramas encadenadas
+    ''' (v&lt;1, v&lt;2, v&lt;3), cada una reponiendo unos campos y respetando otros, con un centinela distinto
+    ''' por campo. Eso trajo: dos claves que se saltearon durante dos versiones, un centinela inválido
+    ''' (el ángulo 0, que SÍ es elegible desde la UI) que revertía dos elecciones del usuario en
+    ''' silencio, una rama que no se ejecutaba nunca, y una discusión larga sobre qué campo admite
+    ''' centinela y cuál no. El costo de mantenerlo superaba lo que protegía.</para>
+    '''
+    ''' <para>La regla ahora es una línea: <b>si el archivo declara una versión anterior a la vigente, se
+    ''' reponen TODOS los defaults.</b> Sí, eso pisa lo que el usuario hubiera elegido en esos campos —
+    ''' es el precio, y está aceptado: un cambio de versión significa que los criterios cambiaron, y
+    ''' arrancar con los defaults nuevos es preferible a arrastrar una mezcla que nadie eligió.</para>
+    '''
+    ''' <para>⛔ Al agregar una opción: subir <c>RecalcTBN.VersionDeOpcionesTBN</c> y listo. No hay rama
+    ''' que escribir, así que tampoco hay rama que olvidarse — que era el defecto de origen.</para>
+    '''
+    ''' <para>⛔ ES PURA a propósito: no lee ni escribe <c>Current</c> ni el disco, así que el gate
+    ''' <c>weld-epsilon</c> la puede probar sin arrancar la app con un config fabricado.</para></summary>
     Friend Shared Function RepararOpcionesTBN(original As RecalcTBN.TBNOptions) As RecalcTBN.TBNOptions
-        Dim d = RecalcTBN.DefaultTBNOptions()
-        Dim t = original
-        If t.OptionsVersion >= RecalcTBN.VersionDeOpcionesTBN Then Return t
-                If t.OptionsVersion < 1 Then
-                    ' Opcion NUEVA: sin esto quedaria en False para todo usuario existente.
-                    t.DeterministicOnCollapse = d.DeterministicOnCollapse
-                    ' ⛔ Y los dos defaults que CAMBIARON. No alcanza con migrar las claves nuevas: la
-                    ' version anterior ESCRIBIO estos valores al disco, asi que un usuario existente
-                    ' los tiene como si los hubiera elegido, y los dos estan medidos como peores.
-                    '   EpsilonPos 1e-12 -> 0 : el 1e-12 EMPEORA (FO4 CBBE, bitangente de costura
-                    '     0,52 -> 0,85 grados y su maximo 153 -> 180) y en SSE es inerte.
-                    '   WeldByPositionOnly False -> True : con False el welding no agrupa nada y la
-                    '     opcion queda en un no-op (dispersion del marco en el grupo 84,13 vs 6,19
-                    '     grados). Solo se lee con EnableWelding puesta, que viene apagada.
-                    ' Los dos se pueden volver a poner desde la pantalla de configuracion.
-                    t.EpsilonPos = d.EpsilonPos
-                    t.WeldByPositionOnly = d.WeldByPositionOnly
-                End If
-                If t.OptionsVersion < 2 Then
-                    ' ⛔ NO es una opcion nueva: es la MISMA clave con otro significado. Hasta la v1 el
-                    ' numero se comparaba contra `LengthSquared`, o sea que el umbral EFECTIVO sobre la
-                    ' longitud era su raiz; desde la v2 el numero ES la longitud. Sin esta rama, un
-                    ' usuario que hubiera elegido un valor se encontraria con un filtro mil veces mas
-                    ' agresivo sin haber tocado nada. La raiz deja el comportamiento EXACTAMENTE igual
-                    ' al que tenia. Con el default 0 es un no-op (sqrt(0) = 0), que es el caso de
-                    ' practicamente todos: la migracion a v1 ya habia forzado EpsilonPos a 0.
-                    If t.EpsilonPos > 0.0 Then t.EpsilonPos = Math.Sqrt(t.EpsilonPos)
-                End If
-                If t.OptionsVersion < 3 Then
-                    ' ⛔ LOS DOS EPSILON DE WELDING NUNCA SE MIGRARON. `TBNOptions` es una Structure, asi
-                    ' que toda clave ausente en el JSON queda en el CERO DEL TIPO, no en su default. Las
-                    ' migraciones a v1 y v2 rellenaron DeterministicOnCollapse, EpsilonPos y
-                    ' WeldByPositionOnly, y a estas dos se las saltearon.
-                    ' Lo que hacia el 0: el dialogo lo ACOTA en silencio al minimo del control (1e-12) al
-                    ' mostrarlo, y despues, apenas el usuario toca CUALQUIER otra casilla de la pestana,
-                    ' `VolcarRenderEnModelo` reescribe las diez propiedades de una sola vez — o sea que el
-                    ' valor acotado se COMMITEA sin que nadie lo haya elegido. El mecanismo viejo de WM
-                    ' (`_cargaCompleta`) dejaba que la asignacion tirara y NO guardaba nada; al mudar la
-                    ' pestana al dialogo compartido se perdio esa proteccion.
-                    ' ⛔ El 0 sirve de CENTINELA porque NO es alcanzable desde la UI: el minimo de los dos
-                    ' NumericUpDown es 1e-12 (ver LightRigForm.Designer). Un 0 en el JSON solo puede venir
-                    ' de una clave que no estaba. Es el patron de 10-stack-json-structure-defaults.
-                    If t.WeldPosEpsilon <= 0.0 Then t.WeldPosEpsilon = d.WeldPosEpsilon
-                    If t.WeldUVEpsilon <= 0.0 Then t.WeldUVEpsilon = d.WeldUVEpsilon
-                End If
-        t.OptionsVersion = RecalcTBN.VersionDeOpcionesTBN
-        Return t
+        If original.OptionsVersion >= RecalcTBN.VersionDeOpcionesTBN Then Return original
+        Return RecalcTBN.DefaultTBNOptions()
     End Function
 
 

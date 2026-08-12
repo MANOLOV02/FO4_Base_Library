@@ -75,20 +75,51 @@ Partial Public Class LightRigForm
                                         VolcarRenderEnModelo()
                                     End Sub
         AddHandler Me.FormClosing, Sub(s2, e2)
-                                       ' ⛔⛔ PRIMERO FORZAR EL COMMIT DE LO QUE ESTÉ A MEDIO TIPEAR. Un
-                                       ' NumericUpDown NO parsea mientras se escribe: re-parsea al perder
-                                       ' el foco. Cerrando con la X o Esc sin salir del campo, el orden
-                                       ' real era FormClosing (con el timer APAGADO, así que el rescate de
-                                       ' abajo no hacía nada) → recién después el edit pierde el foco,
-                                       ' dispara ValueChanged y ARRANCA el timer → el host hace
-                                       ' RemoveHandler y Dispose → 400 ms más tarde el Tick corría igual.
-                                       ' `ValidateChildren` fuerza ese parseo ACÁ, mientras el form todavía
-                                       ' está vivo, así que el valor tipeado se aplica en vez de perderse.
+                                       ' ⛔⛔ HACEN FALTA LOS DOS MECANISMOS, uno por familia de control.
+                                       ' ⛔ `ValidateChildren()` SI SIRVE — para los 16 TinySliderTextBox
+                                       ' del diálogo (los 8 azimut/elevación, las 4 intensidades, ambiente,
+                                       ' ground level y los 2 de sombras): ésos commitean en
+                                       ' `_textBox.Validating`, que es exactamente lo que ValidateChildren
+                                       ' dispara. Lo saqué generalizando una medición que valía sólo para
+                                       ' NumericUpDown, y con eso rompí el commit de TODA la pestaña Lights:
+                                       ' tipear un azimut y cerrar con la X perdía el valor.
                                        Me.ValidateChildren()
+                                       ' ⛔ Y ADEMAS leer los `.Value`, porque para los NumericUpDown
+                                       ' ValidateChildren NO alcanza: `NumericUpDown` no sobrescribe
+                                       ' `OnValidating`, que es lo único que ValidateChildren dispara.
+                                       ' MEDIDO con un NUD real:
+                                       '     tras tipear      : currentValue=60 UserEdit=True ValueChanged=0
+                                       '     ValidateChildren : currentValue=60 UserEdit=True ValueChanged=0
+                                       '     leer .Value      : 13   currentValue=13  ValueChanged=1
+                                       ' El commit vive en OnLostFocus y en el GETTER de `.Value`. Leerlos
+                                       ' es lo que convierte el texto, dispara ValueChanged y deja el valor
+                                       ' donde `VolcarRenderEnModelo` lo va a encontrar.
+                                       ' ⚠️ Y sin esto el `_cerrando` de abajo EMPEORABA el caso: antes el
+                                       ' Tick corría 400 ms tarde y al menos escribía; con el flag, el
+                                       ' ValueChanged tardío se descarta y el valor se perdía SIEMPRE.
+                                       ' ⛔ LOS SEIS, no los cuatro de TBN. `nudFloorSize` y `nudFloorStep`
+                                       ' quedaban afuera, y su único camino de commit es `ValueChanged` —
+                                       ' que al cerrar con una edición pendiente NO se dispara nunca, ni
+                                       ' antes de FormClosed ni después de Dispose. O sea que el tamaño y
+                                       ' el paso del piso no se perdían "a veces": se perdían SIEMPRE.
+                                       Dim forzarCommit = nudSeamAngle.Value + nudWeldPos.Value +
+                                                          nudWeldUv.Value + nudEpsPos.Value +
+                                                          nudFloorSize.Value + nudFloorStep.Value
+                                       If forzarCommit < Decimal.MinValue Then Return   ' nunca; el compilador no elide la lectura
                                        If _demoraTbn.Enabled Then
                                            _demoraTbn.Stop()
                                            VolcarRenderEnModelo()
                                        End If
+                                       ' ⛔ SI EL CIERRE SE CANCELA, NO SE DESARMA NADA. Poner `_cerrando`
+                                       ' y disponer el Timer sin mirar `e2.Cancel` deja el diálogo vivo con
+                                       ' los cuatro NumericUpDown de TBN MUDOS para el resto de la sesión:
+                                       ' el handler de la demora arranca con `If _preventchanges OrElse
+                                       ' _cerrando Then Return`, así que nada de lo que la persona escriba
+                                       ' se aplica nunca, en silencio. Hoy no hay ningún cancelador (ni el
+                                       ' form ni los dos hosts tocan e.Cancel), pero el commit de arriba ya
+                                       ' corrió y es idempotente: cancelar tiene que dejar el diálogo
+                                       ' exactamente como estaba.
+                                       If e2.Cancel Then Return
                                        ' A partir de acá ningún ValueChanged tardío puede volver a
                                        ' arrancarlo, y el Timer se libera: NO está en `components`, así que
                                        ' el Dispose generado no lo alcanza.

@@ -2848,13 +2848,20 @@ Public Class PreviewModel
             End If
 
             ' Un solo bucle para escribir máscaras sucias
+            ' ⛔ EL BUFFER SE IZA FUERA DEL BUCLE. Adentro estaba `BitConverter.GetBytes(vertexMask(i))`,
+            ' que aloca un Byte(3) NUEVO por indice sucio, por malla, por tick de morph: con la malla
+            ' entera sucia son 130.500 arrays Gen0 en un solo frame, para copiar 4 bytes. El bucle hermano
+            ' de veinte lineas mas arriba ya lo resuelve asi (`Dim buf(2) As Single` izado + Marshal.Copy);
+            ' este quedo sin migrar. Mismos bytes escritos: `Marshal.Copy(Single(), ...)` mueve el patron
+            ' IEEE-754 tal cual, igual que GetBytes.
+            Dim mBuf(0) As Single
             For Each i As Integer In dirtyMaskIndices
                 If i < 0 OrElse i >= vertexMask.Length OrElse i >= dirtyMaskFlags.Length Then Continue For
 
                 Dim offsetBytes As Int64 = CLng(i) * maskSize
                 Dim baseM As IntPtr = ptrM + offsetBytes
-                Dim mBytes() As Byte = BitConverter.GetBytes(vertexMask(i))
-                Marshal.Copy(mBytes, 0, baseM, maskSize)
+                mBuf(0) = vertexMask(i)
+                Marshal.Copy(mBuf, 0, baseM, 1)
                 dirtyMaskFlags(i) = False
             Next
 
@@ -3421,20 +3428,35 @@ Public Class PreviewModel
             ' ⚠️ En vanilla esto casi no se veia porque los alpha-blend de actor (pelo *_8bit, pestanas,
             ' eyewet, synthtattoo) traen CastShadows=False y ni entran al pase. Los mods de pelo suelen
             ' dejarlo en True, y ahi salia la placa.
-            Dim doAlphaTest As Boolean = MeshData.Material.HasAlphaTest AndAlso shape.ShowTexture
-            ' Si el material tiene los DOS flags gana el test, igual que en el pase iluminado (ahi se
-            ' descarta por el umbral y despues se blendea lo que sobrevivio). Sin este `Not`, un cutout
-            ' con Alpha < 1 se recortaria dos veces.
-            Dim doAlphaBlend As Boolean = (Not doAlphaTest) AndAlso MeshData.Material.HasAlphaBlend AndAlso shape.ShowTexture
+            ' ⛔⛔ LOS DOS FLAGS SON INDEPENDIENTES, COMO EN EL PASE ILUMINADO. Antes el blend estaba
+            ' gateado por `Not doAlphaTest`, con el argumento de que "gana el test, igual que en el pase
+            ' iluminado (ahi se descarta por el umbral y despues se blendea lo que sobrevivio)". La primera
+            ' mitad de esa frase es cierta y la segunda tambien — pero de ESTE pase no se cumplia ninguna
+            ' de las dos: al ganar el cutout, `bAlphaBlend` quedaba en False y el superviviente entraba al
+            ' mapa OPACO, sin pasar nunca por el dither. Y no es un caso raro: `HasAlphaBlend` es
+            ' `AlphaBlendEnabled OrElse Alpha < 1`, o sea que TODO cutout con Alpha < 1 caia ahi. En
+            ' pantalla se dibuja al 30 % de opacidad y su sombra salia tan negra como la de una malla
+            ' solida. Ahora el fragment hace lo mismo que el iluminado: descarta por el umbral Y DESPUES
+            ' aplica el dither sobre lo que sobrevivio.
+            Dim doAlphaTest As Boolean = MeshData.Material.HasAlphaTest
+            Dim doAlphaBlend As Boolean = MeshData.Material.HasAlphaBlend
             Dim usaTextura As Boolean = doAlphaTest OrElse doAlphaBlend
             shadowShader.SetBool("bAlphaTest", doAlphaTest)
             shadowShader.SetBool("bAlphaBlend", doAlphaBlend)
-            shadowShader.SetBool("bShowTexture", usaTextura)
-            ' ⛔ EL GATE DEL ALPHA DE VERTICE DEPENDE DE LA FAMILIA DE SHADER, igual que la ley del test.
-            ' El pase iluminado, para un .bgem, gatea con `bShowVertexColor` (UseVertexColor) y le aplica
-            ' gamma 2.2; para un .bgsm gatea con UseVertexAlpha y lo usa lineal. Mandando siempre el
-            ' segundo, un BGEM con vertex colors pero sin el predicado de alpha llegaba al fragment con
-            ' vColor.a = 1.0 y la silueta de la sombra ignoraba el degrade que si se dibuja.
+            ' ⛔⛔ `bShowTexture` ES EL DEL SHAPE, EL MISMO QUE MANDA EL PASE ILUMINADO (`Render.vb`,
+            ' `shader.SetBool("bShowTexture", shape.ShowTexture)`). Antes se mandaba `usaTextura`, o sea
+            ' que el uniform tenia DOS significados distintos en dos programas, y ademas `doAlphaTest` y
+            ' `doAlphaBlend` llevaban `AndAlso shape.ShowTexture` — con lo cual, con la textura apagada,
+            ' este pase no hacia NINGUN descarte mientras el iluminado SI seguia descartando (su
+            ' `bAlphaTest` nunca estuvo gateado por la textura). Concretamente:
+            '  · .bgem de los dos juegos: el bloque BGEM del fragment iluminado es HERMANO del
+            '    `if (bShowTexture)`, no hijo, asi que `baseMap` se queda en su init `vec4(0.0)` y
+            '    `effAlpha` da 0 ⇒ la shape desaparece de pantalla... y proyectaba la card entera.
+            '  · .bgsm de SSE con Alpha = 0,3 y ref = 128: el escalar entra al test (0,3 < 0,502) ⇒ la
+            '    shape entera se descarta en pantalla... y proyectaba la card entera.
+            ' Es el mismo sintoma de placa negra flotando sin duenio que el dither vino a matar, entrando
+            ' por la puerta de un toggle de la UI.
+            shadowShader.SetBool("bShowTexture", shape.ShowTexture)
             Dim esEffectShader As Boolean = materialBase IsNot Nothing AndAlso materialBase.IsBGEM
             shadowShader.SetBool("bIsEffectShader", esEffectShader)
             ' ⛔ El fragment de profundidad es UNO para los dos juegos y la ley del alpha-test difiere en
@@ -3442,12 +3464,28 @@ Public Class PreviewModel
             ' para el .bgsm, SSE mete el escalar Alpha DENTRO del test y FO4 no. El juego lo decide ACA,
             ' que es el unico lugar que lo sabe.
             shadowShader.SetBool("bLeySse", Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
-            shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso
-                                 If(esEffectShader, MeshData.Material.UseVertexColor, MeshData.Material.UseVertexAlpha))
+            ' ⛔ EL GATE DEL ALPHA DE VERTICE ES `UseVertexAlpha` PARA LAS DOS FAMILIAS Y LOS DOS JUEGOS —
+            ' el MISMO que manda el pase iluminado a su vertex shader. Antes, para un .bgem, se mandaba
+            ' `UseVertexColor`, "porque el fragment de FO4 gatea el alpha del effect shader con
+            ' `bShowVertexColor`". Eso plegaba mal una ley de DOS pisos:
+            '   · el VS del pase iluminado gatea SIEMPRE con UseVertexAlpha (es el unico que escribe
+            '     vColor.a), y encima de eso
+            '   · el fragment de FO4 —solo el de FO4— vuelve a gatear con UseVertexColor.
+            ' O sea que el predicado neto de FO4 es `UseVertexAlpha AND UseVertexColor`, y como
+            ' `UseVertexAlpha` YA IMPLICA `UseVertexColor` (ver la propiedad), se reduce a UseVertexAlpha.
+            ' SSE no tiene el segundo piso: usa `vColor.a` crudo, gateado solo por el VS.
+            ' Mandando UseVertexColor, el caso Tree/TreeAnim —UseVertexColor True con UseVertexAlpha
+            ' False— divergia en FO4: el iluminado dejaba vColor.a en 1.0 y la sombra usaba el alpha real
+            ' del vertice. Era transplantar la nota de una ley a la otra, que es el error que este archivo
+            ' ya se comio dos veces con el falloff.
+            shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso MeshData.Material.UseVertexAlpha)
             If usaTextura Then
                 shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
-                ' El escalar Alpha del material. Solo lo mira la rama del dither; en la del cutout el
-                ' fragment ni lo lee, que es justamente la ley del pase iluminado.
+                ' El escalar Alpha del material. ⛔ LO MIRAN LAS DOS RAMAS, no solo el dither: el cutout
+                ' lo usa para todo .bgem (los dos juegos) y para el .bgsm de SSE, que mete el escalar
+                ' DENTRO del test. Este comentario decia que el cutout ni lo lee — falso desde que el
+                ' fragment carga las dos leyes, y era la clase de afirmacion que autoriza a mover esta
+                ' subida adentro del If del dither y dejar el cutout de SSE leyendo basura.
                 shadowShader.SetFloat("uMaterialAlpha", If(materialBase Is Nothing, 1.0F, materialBase.Alpha))
                 If materialBase IsNot Nothing Then
                     shadowShader.SetVector2("uvOffset", New Vector2(materialBase.UOffset, materialBase.VOffset))
@@ -3456,7 +3494,15 @@ Public Class PreviewModel
                     shadowShader.SetVector2("uvOffset", Vector2.Zero)
                     shadowShader.SetVector2("uvScale", Vector2.One)
                 End If
-                shadowShader.BindTexture("texDiffuse", MeshData.Material.DiffuseTexture_ID, TextureUnit.Texture0)
+                ' - EL MISMO FALLBACK QUE `texGreyscale` SEIS LINEAS ABAJO, y que el pase iluminado ya
+                ' tiene: sin diffuse va la BLANCA, no el ID 0. Hoy coinciden por casualidad (un sampler2D
+                ' sobre la textura 0, que esta incompleta, devuelve (0,0,0,1), o sea .a = 1 igual que la
+                ' blanca), pero eso es un default del driver, no una ley — y el pase iluminado no se apoya
+                ' en el. Dos pases que llegan al mismo alpha por mecanismos distintos es justo lo que el
+                ' contrato de sincronia prohibe.
+                Dim idDifuso = MeshData.Material.DiffuseTexture_ID
+                If idDifuso = 0 Then idDifuso = Me.ParentModel.ParentControl.defaultWhiteTex
+                shadowShader.BindTexture("texDiffuse", idDifuso, TextureUnit.Texture0)
 
                 ' ⭐ LOS DOS MODIFICADORES DEL ALPHA DEL EFFECT SHADER. Sin ellos, el pase de profundidad
                 ' testeaba una cantidad que el pase iluminado ni siquiera usa:
@@ -3492,7 +3538,15 @@ Public Class PreviewModel
                     shadowShader.SetVector4("effectFalloffParams",
                         New OpenTK.Mathematics.Vector4(materialBase.FalloffStartAngle, materialBase.FalloffStopAngle,
                                                        materialBase.FalloffStartOpacity, materialBase.FalloffStopOpacity))
-                    shadowShader.BindTexture("texGreyscale", MeshData.Material.GreyscaleTexture_ID, TextureUnit.Texture1)
+                    ' ⛔ EL MISMO FALLBACK QUE EL PASE ILUMINADO: sin textura de paleta va la BLANCA, no el
+                    ' ID 0. `bEffectGreyscaleAlpha` se sube sin el guard `<> 0` en los dos pases, asi que un
+                    ' .bgem con el flag y sin paleta llega al lookup en los dos. Hoy coincidian por
+                    ' casualidad —un sampler2D sobre la textura 0, que esta incompleta, devuelve (0,0,0,1),
+                    ' o sea .a = 1 igual que la blanca— pero es un default del driver, no una ley, y el
+                    ' canal RGB (`bGreyscaleColor`) si lleva el guard: la asimetria no era deliberada.
+                    Dim idPaleta = MeshData.Material.GreyscaleTexture_ID
+                    If idPaleta = 0 Then idPaleta = Me.ParentModel.ParentControl.defaultWhiteTex
+                    shadowShader.BindTexture("texGreyscale", idPaleta, TextureUnit.Texture1)
                 Else
                     shadowShader.SetBool("bEffectGreyscaleAlpha", False)
                     shadowShader.SetBool("bEffectFalloff", False)

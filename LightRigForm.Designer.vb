@@ -74,17 +74,17 @@ Partial Class LightRigForm
         chkDeterministic = New CheckBox()
         chkSmoothSeams = New CheckBox()
         lblSeamAngle = New Label()
-        nudSeamAngle = New NumericUpDown()
+        nudSeamAngle = New NumericUpDownCultura()
         grpWeld = New GroupBox()
         chkWelding = New CheckBox()
         rbWeldPosOnly = New RadioButton()
         rbWeldBoth = New RadioButton()
         lblWeldPos = New Label()
-        nudWeldPos = New NumericUpDown()
+        nudWeldPos = New NumericUpDownCultura()
         lblWeldUv = New Label()
-        nudWeldUv = New NumericUpDown()
+        nudWeldUv = New NumericUpDownCultura()
         lblEpsPos = New Label()
-        nudEpsPos = New NumericUpDown()
+        nudEpsPos = New NumericUpDownCultura()
         grpSkin = New GroupBox()
         chkGpuSkinning = New CheckBox()
         chkSingleBone = New CheckBox()
@@ -97,9 +97,9 @@ Partial Class LightRigForm
         btnResetRender = New Button()
         chkFloorEnabled = New CheckBox()
         lblFloorSize = New Label()
-        nudFloorSize = New NumericUpDown()
+        nudFloorSize = New NumericUpDownCultura()
         lblFloorStep = New Label()
-        nudFloorStep = New NumericUpDown()
+        nudFloorStep = New NumericUpDownCultura()
         lblFloorColor = New Label()
         cmbFloorColor = New ColorComboBox()
 
@@ -1230,17 +1230,17 @@ Partial Class LightRigForm
     Friend WithEvents chkDeterministic As CheckBox
     Friend WithEvents chkSmoothSeams As CheckBox
     Friend WithEvents lblSeamAngle As Label
-    Friend WithEvents nudSeamAngle As NumericUpDown
+    Friend WithEvents nudSeamAngle As NumericUpDownCultura
     Friend WithEvents grpWeld As GroupBox
     Friend WithEvents chkWelding As CheckBox
     Friend WithEvents rbWeldPosOnly As RadioButton
     Friend WithEvents rbWeldBoth As RadioButton
     Friend WithEvents lblWeldPos As Label
-    Friend WithEvents nudWeldPos As NumericUpDown
+    Friend WithEvents nudWeldPos As NumericUpDownCultura
     Friend WithEvents lblWeldUv As Label
-    Friend WithEvents nudWeldUv As NumericUpDown
+    Friend WithEvents nudWeldUv As NumericUpDownCultura
     Friend WithEvents lblEpsPos As Label
-    Friend WithEvents nudEpsPos As NumericUpDown
+    Friend WithEvents nudEpsPos As NumericUpDownCultura
     Friend WithEvents grpSkin As GroupBox
     Friend WithEvents chkGpuSkinning As CheckBox
     Friend WithEvents chkSingleBone As CheckBox
@@ -1253,9 +1253,9 @@ Partial Class LightRigForm
     Friend WithEvents btnResetRender As Button
     Friend WithEvents chkFloorEnabled As CheckBox
     Friend WithEvents lblFloorSize As Label
-    Friend WithEvents nudFloorSize As NumericUpDown
+    Friend WithEvents nudFloorSize As NumericUpDownCultura
     Friend WithEvents lblFloorStep As Label
-    Friend WithEvents nudFloorStep As NumericUpDown
+    Friend WithEvents nudFloorStep As NumericUpDownCultura
     Friend WithEvents lblFloorColor As Label
     Friend WithEvents cmbFloorColor As ColorComboBox
     Friend WithEvents grpShadows As GroupBox
