@@ -25,33 +25,29 @@ Partial Class LightRigForm
         components = New ComponentModel.Container()
         grpKey = New GroupBox()
         lblK_Str = New Label()
-        lblK_Tint = New Label()
-        nudK_Az = New NumericUpDown()
-        nudK_El = New NumericUpDown()
+        tK_Az = New FO4_Base_Library.TinySliderTextBox()
+        tK_El = New FO4_Base_Library.TinySliderTextBox()
         lblK_Az = New Label()
         lblK_El = New Label()
         tbKey = New FO4_Base_Library.TinySliderTextBox()
         grpFillL = New GroupBox()
         lblL_Str = New Label()
-        lblL_Tint = New Label()
-        nudL_Az = New NumericUpDown()
-        nudL_El = New NumericUpDown()
+        tL_Az = New FO4_Base_Library.TinySliderTextBox()
+        tL_El = New FO4_Base_Library.TinySliderTextBox()
         lblL_Az = New Label()
         lblL_El = New Label()
         tbFillL = New FO4_Base_Library.TinySliderTextBox()
         grpFillR = New GroupBox()
         lblR_Str = New Label()
-        lblR_Tint = New Label()
-        nudR_Az = New NumericUpDown()
-        nudR_El = New NumericUpDown()
+        tR_Az = New FO4_Base_Library.TinySliderTextBox()
+        tR_El = New FO4_Base_Library.TinySliderTextBox()
         lblR_Az = New Label()
         lblR_El = New Label()
         tbFillR = New FO4_Base_Library.TinySliderTextBox()
         grpBack = New GroupBox()
         lblB_Str = New Label()
-        lblB_Tint = New Label()
-        nudB_Az = New NumericUpDown()
-        nudB_El = New NumericUpDown()
+        tB_Az = New FO4_Base_Library.TinySliderTextBox()
+        tB_El = New FO4_Base_Library.TinySliderTextBox()
         lblB_Az = New Label()
         lblB_El = New Label()
         tbBack = New FO4_Base_Library.TinySliderTextBox()
@@ -67,6 +63,7 @@ Partial Class LightRigForm
         lblGroundLvl = New Label()
         grpBackground = New GroupBox()
         grpShadows = New GroupBox()
+        chkLightsFollowCamera = New CheckBox()
         TabsMain = New TabControl()
         TabLights = New TabPage()
         TabRender = New TabPage()
@@ -148,14 +145,6 @@ Partial Class LightRigForm
         ' pisa a todos, pero es una bomba: el dia que alguien agregue un `.Value =` o abra el form en el
         ' disenador de VS, el valor se clampea en silencio. Es el mismo error que ClampDec evita del otro
         ' lado. El Designer de VS los genera solo; este archivo se escribio a mano.
-        CType(nudK_Az, ComponentModel.ISupportInitialize).BeginInit()
-        CType(nudK_El, ComponentModel.ISupportInitialize).BeginInit()
-        CType(nudL_Az, ComponentModel.ISupportInitialize).BeginInit()
-        CType(nudL_El, ComponentModel.ISupportInitialize).BeginInit()
-        CType(nudR_Az, ComponentModel.ISupportInitialize).BeginInit()
-        CType(nudR_El, ComponentModel.ISupportInitialize).BeginInit()
-        CType(nudB_Az, ComponentModel.ISupportInitialize).BeginInit()
-        CType(nudB_El, ComponentModel.ISupportInitialize).BeginInit()
         CType(nudSeamAngle, ComponentModel.ISupportInitialize).BeginInit()
         CType(nudWeldPos, ComponentModel.ISupportInitialize).BeginInit()
         CType(nudWeldUv, ComponentModel.ISupportInitialize).BeginInit()
@@ -164,357 +153,390 @@ Partial Class LightRigForm
         CType(nudFloorStep, ComponentModel.ISupportInitialize).BeginInit()
         SuspendLayout()
         '
-        ' grpKey
+        ' ===================================================================================
+        ' PESTANA "Lights and shadows" -- REJILLA UNICA. Las dos columnas usan las MISMAS metricas y
+        ' terminan en la MISMA y, que es lo unico que hace que un dialogo se lea como una sola cosa:
+        '   columna izquierda x=12  ancho 418      columna derecha x=444  ancho 418
+        '   dentro de cada caja:  label x=11 w=70  ·  slider x=87 w=264  ·  swatch x=357 w=50
+        '   filas a y = 24 / 54 / 84 (paso 30, que es el alto del slider + 2)
+        ' Los 4 grupos de luz miden 118 y van cada 130; el grupo Ambient mide 118 IGUAL que ellos para
+        ' que las dos columnas arranquen parejas. El gate [ui-layout] del arnes verifica que nada se
+        ' pise ni se salga; si alguien mueve una caja sin recalcular el resto, ahi salta.
+        '
+        ' ⛔ AZIMUT Y ELEVACION SON SLIDERS, no NumericUpDown. Un angulo es una magnitud CONTINUA sobre
+        ' un rango cerrado y conocido (0..360 / -90..90): el control que lo dice es una regla, no una
+        ' cajita con flechas de 5 en 5. Ademas el NUD obligaba a un mecanismo aparte para no cuantizar
+        ' los presets a 0,1 grados (ver AnguloDesdeNud, ya eliminado): TinySliderTextBox guarda Double
+        ' sin redondear, asi que el angulo de 5 decimales del preset sobrevive intacto al viaje por la UI.
+        ' La elevacion usa FillMode.Center porque su cero es el HORIZONTE, no el extremo: la barra crece
+        ' hacia arriba o hacia abajo desde el medio, que es lo que la magnitud significa.
+        ' ===================================================================================
+        '
+        '
+        ' grpKey -- Strength / Azimuth / Elevation + la muestra de tinte, que ocupa las tres filas de alto
         '
         grpKey.Controls.Add(lblK_Str)
         grpKey.Controls.Add(tbKey)
-        grpKey.Controls.Add(lblK_Tint)
-        grpKey.Controls.Add(btnKeyColor)
-        grpKey.Controls.Add(nudK_Az)
-        grpKey.Controls.Add(nudK_El)
         grpKey.Controls.Add(lblK_Az)
+        grpKey.Controls.Add(tK_Az)
         grpKey.Controls.Add(lblK_El)
+        grpKey.Controls.Add(tK_El)
+        grpKey.Controls.Add(btnKeyColor)
         grpKey.Location = New Point(12, 12)
         grpKey.Name = "grpKey"
-        grpKey.Size = New Size(418, 110)
+        grpKey.Size = New Size(418, 118)
         grpKey.TabIndex = 0
         grpKey.TabStop = False
-        '
-        ' direccion de mundo de la luz: azimut + elevacion (reemplazo de la grilla de 6 NUD)
+        grpKey.Text = "Key Light"
         '
         lblK_Str.AutoSize = True
-        lblK_Str.Location = New Point(11, 34)
+        lblK_Str.Location = New Point(11, 30)
         lblK_Str.Name = "lblK_Str"
         lblK_Str.Text = "Strength"
         '
-        lblK_Tint.AutoSize = True
-        lblK_Tint.Location = New Point(311, 36)
-        lblK_Tint.Name = "lblK_Tint"
-        lblK_Tint.Text = "Tint"
-        '
-        lblK_Az.AutoSize = True
-        lblK_Az.Location = New Point(11, 78)
-        lblK_Az.Name = "lblK_Az"
-        lblK_Az.Size = New Size(54, 15)
-        lblK_Az.Text = "Azimuth"
-        '
-        nudK_Az.DecimalPlaces = 1
-        nudK_Az.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudK_Az.Location = New Point(118, 74)
-        nudK_Az.Maximum = New Decimal(New Integer() {360, 0, 0, 0})
-        nudK_Az.Minimum = New Decimal(New Integer() {0, 0, 0, 0})
-        nudK_Az.Name = "nudK_Az"
-        nudK_Az.Size = New Size(90, 23)
-        nudK_Az.TabIndex = 2
-        nudK_Az.TextAlign = HorizontalAlignment.Right
-        '
-        lblK_El.AutoSize = True
-        lblK_El.Location = New Point(208, 78)
-        lblK_El.Name = "lblK_El"
-        lblK_El.Size = New Size(60, 15)
-        lblK_El.Text = "Elevation"
-        '
-        nudK_El.DecimalPlaces = 1
-        nudK_El.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudK_El.Location = New Point(315, 74)
-        nudK_El.Maximum = New Decimal(New Integer() {90, 0, 0, 0})
-        nudK_El.Minimum = New Decimal(New Integer() {90, 0, 0, -2147483648})
-        nudK_El.Name = "nudK_El"
-        nudK_El.Size = New Size(90, 23)
-        nudK_El.TabIndex = 3
-        nudK_El.TextAlign = HorizontalAlignment.Right
-        grpKey.Text = "Key Light"
-        '
-        ' tbKey
-        '
-        tbKey.Location = New Point(75, 30)
+        tbKey.Location = New Point(87, 24)
+        tbKey.Size = New Size(264, 28)
         tbKey.Minimum = 0R
         tbKey.Maximum = 2R
         tbKey.DisplayFormat = "0.00%"
         tbKey.InputScale = 0.01R
         tbKey.SmallChange = 0.05R
         tbKey.LargeChange = 0.1R
-        tbKey.TickFrequency = 0.1R
+        tbKey.TickFrequency = 0.25R
         tbKey.ShowTicks = True
         tbKey.Name = "tbKey"
-        tbKey.Size = New Size(230, 28)
         tbKey.TabIndex = 0
         '
-        ' grpFillL
+        lblK_Az.AutoSize = True
+        lblK_Az.Location = New Point(11, 60)
+        lblK_Az.Name = "lblK_Az"
+        lblK_Az.Text = "Azimuth"
+        '
+        tK_Az.Location = New Point(87, 54)
+        tK_Az.Size = New Size(264, 28)
+        tK_Az.Minimum = 0R
+        tK_Az.Maximum = 360R
+        tK_Az.DisplayFormat = "0.0°"
+        tK_Az.InputScale = 1R
+        tK_Az.SmallChange = 1R
+        tK_Az.LargeChange = 15R
+        tK_Az.TickFrequency = 45R
+        tK_Az.ShowTicks = True
+        tK_Az.Name = "tK_Az"
+        tK_Az.TabIndex = 1
+        '
+        lblK_El.AutoSize = True
+        lblK_El.Location = New Point(11, 90)
+        lblK_El.Name = "lblK_El"
+        lblK_El.Text = "Elevation"
+        '
+        tK_El.Location = New Point(87, 84)
+        tK_El.Size = New Size(264, 28)
+        tK_El.Minimum = -90R
+        tK_El.Maximum = 90R
+        tK_El.DisplayFormat = "0.0°"
+        tK_El.InputScale = 1R
+        tK_El.SmallChange = 1R
+        tK_El.LargeChange = 15R
+        tK_El.TickFrequency = 30R
+        tK_El.ShowTicks = True
+        tK_El.FillMode = TinySliderFillMode.Center
+        tK_El.Name = "tK_El"
+        tK_El.TabIndex = 2
+        '
+        btnKeyColor.Location = New Point(357, 24)
+        btnKeyColor.Name = "btnKeyColor"
+        btnKeyColor.Size = New Size(50, 88)
+        btnKeyColor.TabIndex = 3
+        btnKeyColor.UseVisualStyleBackColor = False
+        '
+        ' grpFillL -- Strength / Azimuth / Elevation + la muestra de tinte, que ocupa las tres filas de alto
         '
         grpFillL.Controls.Add(lblL_Str)
         grpFillL.Controls.Add(tbFillL)
-        grpFillL.Controls.Add(lblL_Tint)
-        grpFillL.Controls.Add(btnFillLColor)
-        grpFillL.Controls.Add(nudL_Az)
-        grpFillL.Controls.Add(nudL_El)
         grpFillL.Controls.Add(lblL_Az)
+        grpFillL.Controls.Add(tL_Az)
         grpFillL.Controls.Add(lblL_El)
-        grpFillL.Location = New Point(12, 132)
+        grpFillL.Controls.Add(tL_El)
+        grpFillL.Controls.Add(btnFillLColor)
+        grpFillL.Location = New Point(12, 142)
         grpFillL.Name = "grpFillL"
-        grpFillL.Size = New Size(418, 110)
+        grpFillL.Size = New Size(418, 118)
         grpFillL.TabIndex = 1
         grpFillL.TabStop = False
-        '
-        ' direccion de mundo de la luz: azimut + elevacion (reemplazo de la grilla de 6 NUD)
+        grpFillL.Text = "Fill Left"
         '
         lblL_Str.AutoSize = True
-        lblL_Str.Location = New Point(11, 34)
+        lblL_Str.Location = New Point(11, 30)
         lblL_Str.Name = "lblL_Str"
         lblL_Str.Text = "Strength"
         '
-        lblL_Tint.AutoSize = True
-        lblL_Tint.Location = New Point(311, 36)
-        lblL_Tint.Name = "lblL_Tint"
-        lblL_Tint.Text = "Tint"
-        '
-        lblL_Az.AutoSize = True
-        lblL_Az.Location = New Point(11, 78)
-        lblL_Az.Name = "lblL_Az"
-        lblL_Az.Size = New Size(54, 15)
-        lblL_Az.Text = "Azimuth"
-        '
-        nudL_Az.DecimalPlaces = 1
-        nudL_Az.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudL_Az.Location = New Point(118, 74)
-        nudL_Az.Maximum = New Decimal(New Integer() {360, 0, 0, 0})
-        nudL_Az.Minimum = New Decimal(New Integer() {0, 0, 0, 0})
-        nudL_Az.Name = "nudL_Az"
-        nudL_Az.Size = New Size(90, 23)
-        nudL_Az.TabIndex = 2
-        nudL_Az.TextAlign = HorizontalAlignment.Right
-        '
-        lblL_El.AutoSize = True
-        lblL_El.Location = New Point(208, 78)
-        lblL_El.Name = "lblL_El"
-        lblL_El.Size = New Size(60, 15)
-        lblL_El.Text = "Elevation"
-        '
-        nudL_El.DecimalPlaces = 1
-        nudL_El.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudL_El.Location = New Point(315, 74)
-        nudL_El.Maximum = New Decimal(New Integer() {90, 0, 0, 0})
-        nudL_El.Minimum = New Decimal(New Integer() {90, 0, 0, -2147483648})
-        nudL_El.Name = "nudL_El"
-        nudL_El.Size = New Size(90, 23)
-        nudL_El.TabIndex = 3
-        nudL_El.TextAlign = HorizontalAlignment.Right
-        grpFillL.Text = "Fill Left"
-        '
-        ' tbFillL
-        '
-        tbFillL.Location = New Point(75, 30)
+        tbFillL.Location = New Point(87, 24)
+        tbFillL.Size = New Size(264, 28)
         tbFillL.Minimum = 0R
         tbFillL.Maximum = 2R
         tbFillL.DisplayFormat = "0.00%"
         tbFillL.InputScale = 0.01R
         tbFillL.SmallChange = 0.05R
         tbFillL.LargeChange = 0.1R
-        tbFillL.TickFrequency = 0.1R
+        tbFillL.TickFrequency = 0.25R
         tbFillL.ShowTicks = True
         tbFillL.Name = "tbFillL"
-        tbFillL.Size = New Size(230, 28)
         tbFillL.TabIndex = 0
         '
-        ' grpFillR
+        lblL_Az.AutoSize = True
+        lblL_Az.Location = New Point(11, 60)
+        lblL_Az.Name = "lblL_Az"
+        lblL_Az.Text = "Azimuth"
+        '
+        tL_Az.Location = New Point(87, 54)
+        tL_Az.Size = New Size(264, 28)
+        tL_Az.Minimum = 0R
+        tL_Az.Maximum = 360R
+        tL_Az.DisplayFormat = "0.0°"
+        tL_Az.InputScale = 1R
+        tL_Az.SmallChange = 1R
+        tL_Az.LargeChange = 15R
+        tL_Az.TickFrequency = 45R
+        tL_Az.ShowTicks = True
+        tL_Az.Name = "tL_Az"
+        tL_Az.TabIndex = 1
+        '
+        lblL_El.AutoSize = True
+        lblL_El.Location = New Point(11, 90)
+        lblL_El.Name = "lblL_El"
+        lblL_El.Text = "Elevation"
+        '
+        tL_El.Location = New Point(87, 84)
+        tL_El.Size = New Size(264, 28)
+        tL_El.Minimum = -90R
+        tL_El.Maximum = 90R
+        tL_El.DisplayFormat = "0.0°"
+        tL_El.InputScale = 1R
+        tL_El.SmallChange = 1R
+        tL_El.LargeChange = 15R
+        tL_El.TickFrequency = 30R
+        tL_El.ShowTicks = True
+        tL_El.FillMode = TinySliderFillMode.Center
+        tL_El.Name = "tL_El"
+        tL_El.TabIndex = 2
+        '
+        btnFillLColor.Location = New Point(357, 24)
+        btnFillLColor.Name = "btnFillLColor"
+        btnFillLColor.Size = New Size(50, 88)
+        btnFillLColor.TabIndex = 3
+        btnFillLColor.UseVisualStyleBackColor = False
+        '
+        ' grpFillR -- Strength / Azimuth / Elevation + la muestra de tinte, que ocupa las tres filas de alto
         '
         grpFillR.Controls.Add(lblR_Str)
         grpFillR.Controls.Add(tbFillR)
-        grpFillR.Controls.Add(lblR_Tint)
-        grpFillR.Controls.Add(btnFillRColor)
-        grpFillR.Controls.Add(nudR_Az)
-        grpFillR.Controls.Add(nudR_El)
         grpFillR.Controls.Add(lblR_Az)
+        grpFillR.Controls.Add(tR_Az)
         grpFillR.Controls.Add(lblR_El)
-        grpFillR.Location = New Point(12, 252)
+        grpFillR.Controls.Add(tR_El)
+        grpFillR.Controls.Add(btnFillRColor)
+        grpFillR.Location = New Point(12, 272)
         grpFillR.Name = "grpFillR"
-        grpFillR.Size = New Size(418, 110)
+        grpFillR.Size = New Size(418, 118)
         grpFillR.TabIndex = 2
         grpFillR.TabStop = False
-        '
-        ' direccion de mundo de la luz: azimut + elevacion (reemplazo de la grilla de 6 NUD)
+        grpFillR.Text = "Fill Right"
         '
         lblR_Str.AutoSize = True
-        lblR_Str.Location = New Point(11, 34)
+        lblR_Str.Location = New Point(11, 30)
         lblR_Str.Name = "lblR_Str"
         lblR_Str.Text = "Strength"
         '
-        lblR_Tint.AutoSize = True
-        lblR_Tint.Location = New Point(311, 36)
-        lblR_Tint.Name = "lblR_Tint"
-        lblR_Tint.Text = "Tint"
-        '
-        lblR_Az.AutoSize = True
-        lblR_Az.Location = New Point(11, 78)
-        lblR_Az.Name = "lblR_Az"
-        lblR_Az.Size = New Size(54, 15)
-        lblR_Az.Text = "Azimuth"
-        '
-        nudR_Az.DecimalPlaces = 1
-        nudR_Az.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudR_Az.Location = New Point(118, 74)
-        nudR_Az.Maximum = New Decimal(New Integer() {360, 0, 0, 0})
-        nudR_Az.Minimum = New Decimal(New Integer() {0, 0, 0, 0})
-        nudR_Az.Name = "nudR_Az"
-        nudR_Az.Size = New Size(90, 23)
-        nudR_Az.TabIndex = 2
-        nudR_Az.TextAlign = HorizontalAlignment.Right
-        '
-        lblR_El.AutoSize = True
-        lblR_El.Location = New Point(208, 78)
-        lblR_El.Name = "lblR_El"
-        lblR_El.Size = New Size(60, 15)
-        lblR_El.Text = "Elevation"
-        '
-        nudR_El.DecimalPlaces = 1
-        nudR_El.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudR_El.Location = New Point(315, 74)
-        nudR_El.Maximum = New Decimal(New Integer() {90, 0, 0, 0})
-        nudR_El.Minimum = New Decimal(New Integer() {90, 0, 0, -2147483648})
-        nudR_El.Name = "nudR_El"
-        nudR_El.Size = New Size(90, 23)
-        nudR_El.TabIndex = 3
-        nudR_El.TextAlign = HorizontalAlignment.Right
-        grpFillR.Text = "Fill Right"
-        '
-        ' tbFillR
-        '
-        tbFillR.Location = New Point(75, 30)
+        tbFillR.Location = New Point(87, 24)
+        tbFillR.Size = New Size(264, 28)
         tbFillR.Minimum = 0R
         tbFillR.Maximum = 2R
         tbFillR.DisplayFormat = "0.00%"
         tbFillR.InputScale = 0.01R
         tbFillR.SmallChange = 0.05R
         tbFillR.LargeChange = 0.1R
-        tbFillR.TickFrequency = 0.1R
+        tbFillR.TickFrequency = 0.25R
         tbFillR.ShowTicks = True
         tbFillR.Name = "tbFillR"
-        tbFillR.Size = New Size(230, 28)
         tbFillR.TabIndex = 0
         '
-        ' grpBack
+        lblR_Az.AutoSize = True
+        lblR_Az.Location = New Point(11, 60)
+        lblR_Az.Name = "lblR_Az"
+        lblR_Az.Text = "Azimuth"
+        '
+        tR_Az.Location = New Point(87, 54)
+        tR_Az.Size = New Size(264, 28)
+        tR_Az.Minimum = 0R
+        tR_Az.Maximum = 360R
+        tR_Az.DisplayFormat = "0.0°"
+        tR_Az.InputScale = 1R
+        tR_Az.SmallChange = 1R
+        tR_Az.LargeChange = 15R
+        tR_Az.TickFrequency = 45R
+        tR_Az.ShowTicks = True
+        tR_Az.Name = "tR_Az"
+        tR_Az.TabIndex = 1
+        '
+        lblR_El.AutoSize = True
+        lblR_El.Location = New Point(11, 90)
+        lblR_El.Name = "lblR_El"
+        lblR_El.Text = "Elevation"
+        '
+        tR_El.Location = New Point(87, 84)
+        tR_El.Size = New Size(264, 28)
+        tR_El.Minimum = -90R
+        tR_El.Maximum = 90R
+        tR_El.DisplayFormat = "0.0°"
+        tR_El.InputScale = 1R
+        tR_El.SmallChange = 1R
+        tR_El.LargeChange = 15R
+        tR_El.TickFrequency = 30R
+        tR_El.ShowTicks = True
+        tR_El.FillMode = TinySliderFillMode.Center
+        tR_El.Name = "tR_El"
+        tR_El.TabIndex = 2
+        '
+        btnFillRColor.Location = New Point(357, 24)
+        btnFillRColor.Name = "btnFillRColor"
+        btnFillRColor.Size = New Size(50, 88)
+        btnFillRColor.TabIndex = 3
+        btnFillRColor.UseVisualStyleBackColor = False
+        '
+        ' grpBack -- Strength / Azimuth / Elevation + la muestra de tinte, que ocupa las tres filas de alto
         '
         grpBack.Controls.Add(lblB_Str)
         grpBack.Controls.Add(tbBack)
-        grpBack.Controls.Add(lblB_Tint)
-        grpBack.Controls.Add(btnBackColor)
-        grpBack.Controls.Add(nudB_Az)
-        grpBack.Controls.Add(nudB_El)
         grpBack.Controls.Add(lblB_Az)
+        grpBack.Controls.Add(tB_Az)
         grpBack.Controls.Add(lblB_El)
-        grpBack.Location = New Point(12, 372)
+        grpBack.Controls.Add(tB_El)
+        grpBack.Controls.Add(btnBackColor)
+        grpBack.Location = New Point(12, 402)
         grpBack.Name = "grpBack"
-        grpBack.Size = New Size(418, 110)
+        grpBack.Size = New Size(418, 118)
         grpBack.TabIndex = 3
         grpBack.TabStop = False
-        '
-        ' direccion de mundo de la luz: azimut + elevacion (reemplazo de la grilla de 6 NUD)
+        grpBack.Text = "Back Light"
         '
         lblB_Str.AutoSize = True
-        lblB_Str.Location = New Point(11, 34)
+        lblB_Str.Location = New Point(11, 30)
         lblB_Str.Name = "lblB_Str"
         lblB_Str.Text = "Strength"
         '
-        lblB_Tint.AutoSize = True
-        lblB_Tint.Location = New Point(311, 36)
-        lblB_Tint.Name = "lblB_Tint"
-        lblB_Tint.Text = "Tint"
-        '
-        lblB_Az.AutoSize = True
-        lblB_Az.Location = New Point(11, 78)
-        lblB_Az.Name = "lblB_Az"
-        lblB_Az.Size = New Size(54, 15)
-        lblB_Az.Text = "Azimuth"
-        '
-        nudB_Az.DecimalPlaces = 1
-        nudB_Az.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudB_Az.Location = New Point(118, 74)
-        nudB_Az.Maximum = New Decimal(New Integer() {360, 0, 0, 0})
-        nudB_Az.Minimum = New Decimal(New Integer() {0, 0, 0, 0})
-        nudB_Az.Name = "nudB_Az"
-        nudB_Az.Size = New Size(90, 23)
-        nudB_Az.TabIndex = 2
-        nudB_Az.TextAlign = HorizontalAlignment.Right
-        '
-        lblB_El.AutoSize = True
-        lblB_El.Location = New Point(208, 78)
-        lblB_El.Name = "lblB_El"
-        lblB_El.Size = New Size(60, 15)
-        lblB_El.Text = "Elevation"
-        '
-        nudB_El.DecimalPlaces = 1
-        nudB_El.Increment = New Decimal(New Integer() {5, 0, 0, 0})
-        nudB_El.Location = New Point(315, 74)
-        nudB_El.Maximum = New Decimal(New Integer() {90, 0, 0, 0})
-        nudB_El.Minimum = New Decimal(New Integer() {90, 0, 0, -2147483648})
-        nudB_El.Name = "nudB_El"
-        nudB_El.Size = New Size(90, 23)
-        nudB_El.TabIndex = 3
-        nudB_El.TextAlign = HorizontalAlignment.Right
-        grpBack.Text = "Back Light"
-        '
-        ' tbBack
-        '
-        tbBack.Location = New Point(75, 30)
+        tbBack.Location = New Point(87, 24)
+        tbBack.Size = New Size(264, 28)
         tbBack.Minimum = 0R
         tbBack.Maximum = 2R
         tbBack.DisplayFormat = "0.00%"
         tbBack.InputScale = 0.01R
         tbBack.SmallChange = 0.05R
         tbBack.LargeChange = 0.1R
-        tbBack.TickFrequency = 0.1R
+        tbBack.TickFrequency = 0.25R
         tbBack.ShowTicks = True
         tbBack.Name = "tbBack"
-        tbBack.Size = New Size(230, 28)
         tbBack.TabIndex = 0
         '
-        ' grpPresets -- una sola fila: [Preset v] [Apply] [Reset]. Reemplaza al botón "Reset to default"
-        ' que ocupaba una banda de 418x49 él solo.
+        lblB_Az.AutoSize = True
+        lblB_Az.Location = New Point(11, 60)
+        lblB_Az.Name = "lblB_Az"
+        lblB_Az.Text = "Azimuth"
         '
+        tB_Az.Location = New Point(87, 54)
+        tB_Az.Size = New Size(264, 28)
+        tB_Az.Minimum = 0R
+        tB_Az.Maximum = 360R
+        tB_Az.DisplayFormat = "0.0°"
+        tB_Az.InputScale = 1R
+        tB_Az.SmallChange = 1R
+        tB_Az.LargeChange = 15R
+        tB_Az.TickFrequency = 45R
+        tB_Az.ShowTicks = True
+        tB_Az.Name = "tB_Az"
+        tB_Az.TabIndex = 1
+        '
+        lblB_El.AutoSize = True
+        lblB_El.Location = New Point(11, 90)
+        lblB_El.Name = "lblB_El"
+        lblB_El.Text = "Elevation"
+        '
+        tB_El.Location = New Point(87, 84)
+        tB_El.Size = New Size(264, 28)
+        tB_El.Minimum = -90R
+        tB_El.Maximum = 90R
+        tB_El.DisplayFormat = "0.0°"
+        tB_El.InputScale = 1R
+        tB_El.SmallChange = 1R
+        tB_El.LargeChange = 15R
+        tB_El.TickFrequency = 30R
+        tB_El.ShowTicks = True
+        tB_El.FillMode = TinySliderFillMode.Center
+        tB_El.Name = "tB_El"
+        tB_El.TabIndex = 2
+        '
+        btnBackColor.Location = New Point(357, 24)
+        btnBackColor.Name = "btnBackColor"
+        btnBackColor.Size = New Size(50, 88)
+        btnBackColor.TabIndex = 3
+        btnBackColor.UseVisualStyleBackColor = False
+        ' grpPresets -- fila 1: [Preset v] [Apply] [Reset]; fila 2: la casilla de anclaje del rig.
+        ' ⛔ AL AGRANDARLO 25 px HAY QUE MOVER LO DE ABAJO: la columna derecha llegaba a y=482 sobre un tab
+        ' de 494, o sea 12 px de margen. Se recuperan comprimiendo los huecos entre grupos (que eran de 19-20)
+        ' en vez de estirar el form, que obligaria a re-tunear la otra pestana. Nuevo reparto:
+        '   grpAmbient 12..142 · grpBackground 150..218 · grpPresets 226..317 · grpShadows 325..473.
+        ' El gate [ui-layout] del arnes verifica que nada se pise; si alguien vuelve a tocar esto, ahi salta.
         grpPresets.Controls.Add(lblPreset)
         grpPresets.Controls.Add(cmbPreset)
         grpPresets.Controls.Add(btnApplyPreset)
         grpPresets.Controls.Add(btnReset)
-        grpPresets.Location = New Point(436, 248)
+        grpPresets.Controls.Add(chkLightsFollowCamera)
+        grpPresets.Location = New Point(444, 224)
         grpPresets.Name = "grpPresets"
-        grpPresets.Size = New Size(418, 66)
-        grpPresets.TabIndex = 7
+        grpPresets.Size = New Size(418, 110)
+        grpPresets.TabIndex = 6
         grpPresets.TabStop = False
-        grpPresets.Text = "Presets"
+        grpPresets.Text = "Rig"
+        '
+        ' chkLightsFollowCamera
+        '
+        chkLightsFollowCamera.AutoSize = True
+        chkLightsFollowCamera.Location = New Point(11, 68)
+        chkLightsFollowCamera.Name = "chkLightsFollowCamera"
+        chkLightsFollowCamera.TabIndex = 3
+        chkLightsFollowCamera.Text = "Lights follow the camera"
         '
         ' lblPreset
         '
         lblPreset.AutoSize = True
-        lblPreset.Location = New Point(11, 31)
+        lblPreset.Location = New Point(11, 32)
         lblPreset.Name = "lblPreset"
-        lblPreset.Size = New Size(43, 15)
-        lblPreset.TabIndex = 0
         lblPreset.Text = "Set"
         '
         ' cmbPreset
         '
         cmbPreset.DropDownStyle = ComboBoxStyle.DropDownList
         cmbPreset.FormattingEnabled = True
-        cmbPreset.Location = New Point(56, 27)
+        cmbPreset.Location = New Point(87, 28)
         cmbPreset.Name = "cmbPreset"
-        cmbPreset.Size = New Size(186, 23)
-        cmbPreset.TabIndex = 1
+        cmbPreset.Size = New Size(190, 23)
+        cmbPreset.TabIndex = 0
         '
         ' btnApplyPreset
         '
-        btnApplyPreset.Location = New Point(252, 26)
+        btnApplyPreset.Location = New Point(283, 27)
         btnApplyPreset.Name = "btnApplyPreset"
-        btnApplyPreset.Size = New Size(72, 25)
-        btnApplyPreset.TabIndex = 2
+        btnApplyPreset.Size = New Size(58, 25)
+        btnApplyPreset.TabIndex = 1
         btnApplyPreset.Text = "Apply"
         btnApplyPreset.UseVisualStyleBackColor = True
         '
         ' btnReset
         '
-        btnReset.Location = New Point(332, 26)
+        btnReset.Location = New Point(349, 27)
         btnReset.Name = "btnReset"
-        btnReset.Size = New Size(74, 25)
-        btnReset.TabIndex = 3
+        btnReset.Size = New Size(58, 25)
+        btnReset.TabIndex = 2
         btnReset.Text = "Reset"
         btnReset.UseVisualStyleBackColor = True
         '
@@ -528,51 +550,49 @@ Partial Class LightRigForm
         grpAmbient.Controls.Add(btnAmbSky)
         grpAmbient.Controls.Add(lblAmbGround)
         grpAmbient.Controls.Add(btnAmbGround)
-        grpAmbient.Location = New Point(436, 12)
+        grpAmbient.Location = New Point(444, 12)
         grpAmbient.Name = "grpAmbient"
-        grpAmbient.Size = New Size(418, 130)
-        grpAmbient.TabIndex = 5
+        grpAmbient.Size = New Size(418, 118)
+        grpAmbient.TabIndex = 4
         grpAmbient.TabStop = False
         grpAmbient.Text = "Ambient"
         '
         ' tambient
         '
         lblIntensity.AutoSize = True
-        lblIntensity.Location = New Point(11, 32)
+        lblIntensity.Location = New Point(11, 30)
         lblIntensity.Name = "lblIntensity"
-        lblIntensity.Size = New Size(54, 15)
         lblIntensity.Text = "Intensity"
         '
-        tambient.Location = New Point(98, 28)
+        tambient.Location = New Point(87, 24)
+        tambient.Size = New Size(264, 28)
         tambient.Minimum = 0R
         tambient.Maximum = 2R
         tambient.DisplayFormat = "0.00%"
         tambient.InputScale = 0.01R
         tambient.SmallChange = 0.05R
         tambient.LargeChange = 0.1R
-        tambient.TickFrequency = 0.1R
+        tambient.TickFrequency = 0.25R
         tambient.ShowTicks = True
         tambient.Name = "tambient"
-        tambient.Size = New Size(300, 28)
         tambient.TabIndex = 0
         '
         lblGroundLvl.AutoSize = True
-        lblGroundLvl.Location = New Point(11, 64)
+        lblGroundLvl.Location = New Point(11, 60)
         lblGroundLvl.Name = "lblGroundLvl"
-        lblGroundLvl.Size = New Size(78, 15)
         lblGroundLvl.Text = "Ground level"
         '
-        tGroundLevel.Location = New Point(98, 60)
+        tGroundLevel.Location = New Point(87, 54)
+        tGroundLevel.Size = New Size(264, 28)
         tGroundLevel.Minimum = 0R
         tGroundLevel.Maximum = 1R
         tGroundLevel.DisplayFormat = "0.00%"
         tGroundLevel.InputScale = 0.01R
         tGroundLevel.SmallChange = 0.05R
         tGroundLevel.LargeChange = 0.1R
-        tGroundLevel.TickFrequency = 0.1R
+        tGroundLevel.TickFrequency = 0.25R
         tGroundLevel.ShowTicks = True
         tGroundLevel.Name = "tGroundLevel"
-        tGroundLevel.Size = New Size(300, 28)
         tGroundLevel.TabIndex = 1
         '
         ' grpShadows -- sombras proyectadas del previewer. Ver ShadowMap.vb.
@@ -580,36 +600,33 @@ Partial Class LightRigForm
         chkShadows.AutoSize = True
         chkShadows.Location = New Point(11, 26)
         chkShadows.Name = "chkShadows"
-        chkShadows.Size = New Size(110, 19)
         chkShadows.TabIndex = 0
         chkShadows.Text = "Cast shadows"
         '
         chkGroundShadow.AutoSize = True
-        chkGroundShadow.Location = New Point(11, 118)
+        chkGroundShadow.Location = New Point(11, 146)
         chkGroundShadow.Name = "chkGroundShadow"
-        chkGroundShadow.Size = New Size(150, 19)
         chkGroundShadow.TabIndex = 4
         chkGroundShadow.Text = "Shadow on the ground"
         '
         lblShadowQuality.AutoSize = True
-        lblShadowQuality.Location = New Point(158, 27)
+        lblShadowQuality.Location = New Point(11, 60)
         lblShadowQuality.Name = "lblShadowQuality"
-        lblShadowQuality.Size = New Size(48, 15)
         lblShadowQuality.Text = "Quality"
         '
         cmbShadowQuality.DropDownStyle = ComboBoxStyle.DropDownList
-        cmbShadowQuality.Location = New Point(228, 23)
+        cmbShadowQuality.Location = New Point(87, 56)
         cmbShadowQuality.Name = "cmbShadowQuality"
-        cmbShadowQuality.Size = New Size(170, 23)
+        cmbShadowQuality.Size = New Size(264, 23)
         cmbShadowQuality.TabIndex = 1
         '
         lblShadowSoft.AutoSize = True
-        lblShadowSoft.Location = New Point(11, 60)
+        lblShadowSoft.Location = New Point(11, 90)
         lblShadowSoft.Name = "lblShadowSoft"
-        lblShadowSoft.Size = New Size(60, 15)
         lblShadowSoft.Text = "Softness"
         '
-        tShadowSoft.Location = New Point(98, 56)
+        tShadowSoft.Location = New Point(87, 84)
+        tShadowSoft.Size = New Size(264, 28)
         tShadowSoft.Minimum = 0R
         tShadowSoft.Maximum = 4R
         tShadowSoft.DisplayFormat = "0.0"
@@ -619,26 +636,24 @@ Partial Class LightRigForm
         tShadowSoft.TickFrequency = 1R
         tShadowSoft.ShowTicks = True
         tShadowSoft.Name = "tShadowSoft"
-        tShadowSoft.Size = New Size(300, 28)
         tShadowSoft.TabIndex = 2
         '
         lblShadowStrength.AutoSize = True
-        lblShadowStrength.Location = New Point(11, 92)
+        lblShadowStrength.Location = New Point(11, 120)
         lblShadowStrength.Name = "lblShadowStrength"
-        lblShadowStrength.Size = New Size(60, 15)
         lblShadowStrength.Text = "Darkness"
         '
-        tShadowStrength.Location = New Point(98, 88)
+        tShadowStrength.Location = New Point(87, 114)
+        tShadowStrength.Size = New Size(264, 28)
         tShadowStrength.Minimum = 0R
         tShadowStrength.Maximum = 1R
         tShadowStrength.DisplayFormat = "0.00%"
         tShadowStrength.InputScale = 0.01R
         tShadowStrength.SmallChange = 0.05R
         tShadowStrength.LargeChange = 0.1R
-        tShadowStrength.TickFrequency = 0.1R
+        tShadowStrength.TickFrequency = 0.25R
         tShadowStrength.ShowTicks = True
         tShadowStrength.Name = "tShadowStrength"
-        tShadowStrength.Size = New Size(300, 28)
         tShadowStrength.TabIndex = 3
         '
         grpShadows.Controls.Add(chkShadows)
@@ -649,10 +664,10 @@ Partial Class LightRigForm
         grpShadows.Controls.Add(tShadowSoft)
         grpShadows.Controls.Add(lblShadowStrength)
         grpShadows.Controls.Add(tShadowStrength)
-        grpShadows.Location = New Point(436, 334)
+        grpShadows.Location = New Point(444, 346)
         grpShadows.Name = "grpShadows"
-        grpShadows.Size = New Size(418, 148)
-        grpShadows.TabIndex = 8
+        grpShadows.Size = New Size(418, 174)
+        grpShadows.TabIndex = 7
         grpShadows.TabStop = False
         grpShadows.Text = "Shadows"
         '
@@ -663,7 +678,15 @@ Partial Class LightRigForm
         chkRecalcNormals.Name = "chkRecalcNormals"
         chkRecalcNormals.Size = New Size(190, 19)
         chkRecalcNormals.TabIndex = 0
-        chkRecalcNormals.Text = "Recalculate normals on load"
+        ' ⛔ NO dice "on load": el flag NO es de carga. Gobierna TRES caminos, y el rotulo viejo invitaba a
+        ' creer que tocarlo solo afectaba a la proxima apertura de un NIF:
+        '   1) extraccion de geometria  - SkinningHelper.ExtractSkinnedGeometry (`If RecalculateNormals OrElse...`)
+        '   2) MORPHS/sliders           - MorphEngine: `soloTangentes = Not (recalculateNormals AndAlso huboCambioDePosicion)`,
+        '                                 o sea con el flag apagado un morph que mueve posiciones NO regenera normales
+        '   3) el BAKE                  - BuildingForm lo lee para hornear el NIF que se escribe a disco
+        ' Ademas el MISMO setting ya se llamaba "Recalculate Normals" en la barra de Wardrobe Manager y
+        ' "Recalculate normals" en su editor: tres rotulos para un flag es una invitacion a creer que son tres.
+        chkRecalcNormals.Text = "Recalculate normals"
         '
         chkRepairNaN.AutoSize = True
         chkRepairNaN.Location = New Point(11, 48)
@@ -831,7 +854,7 @@ Partial Class LightRigForm
         grpSkin.Controls.Add(chkGpuSkinning)
         grpSkin.Controls.Add(chkSingleBone)
         grpSkin.Controls.Add(chkHiddenSegments)
-        grpSkin.Location = New Point(436, 12)
+        grpSkin.Location = New Point(444, 12)
         grpSkin.Name = "grpSkin"
         grpSkin.Size = New Size(418, 120)
         grpSkin.TabIndex = 2
@@ -862,7 +885,7 @@ Partial Class LightRigForm
         grpCamera.Controls.Add(chkResetAngles)
         grpCamera.Controls.Add(chkResetZoom)
         grpCamera.Controls.Add(chkFreezeCamera)
-        grpCamera.Location = New Point(436, 144)
+        grpCamera.Location = New Point(444, 144)
         grpCamera.Name = "grpCamera"
         grpCamera.Size = New Size(418, 120)
         grpCamera.TabIndex = 3
@@ -925,7 +948,7 @@ Partial Class LightRigForm
         grpFloor.Controls.Add(nudFloorStep)
         grpFloor.Controls.Add(lblFloorColor)
         grpFloor.Controls.Add(cmbFloorColor)
-        grpFloor.Location = New Point(436, 276)
+        grpFloor.Location = New Point(444, 276)
         grpFloor.Name = "grpFloor"
         grpFloor.Size = New Size(418, 148)
         grpFloor.TabIndex = 4
@@ -942,7 +965,7 @@ Partial Class LightRigForm
         TabRender.Location = New Point(4, 24)
         TabRender.Name = "TabRender"
         TabRender.Padding = New Padding(3)
-        TabRender.Size = New Size(866, 494)
+        TabRender.Size = New Size(866, 540)
         TabRender.TabIndex = 1
         TabRender.Text = "Rendering"
         TabRender.AutoScroll = True
@@ -962,7 +985,7 @@ Partial Class LightRigForm
         TabLights.Location = New Point(4, 24)
         TabLights.Name = "TabLights"
         TabLights.Padding = New Padding(3)
-        TabLights.Size = New Size(866, 494)
+        TabLights.Size = New Size(866, 540)
         TabLights.TabIndex = 0
         TabLights.Text = "Lights and shadows"
         ' El AutoScroll del Form es inerte: su unico hijo es el TabControl con Dock=Fill. Con
@@ -976,14 +999,14 @@ Partial Class LightRigForm
         TabsMain.Location = New Point(0, 0)
         TabsMain.Name = "TabsMain"
         TabsMain.SelectedIndex = 0
-        TabsMain.Size = New Size(874, 522)
+        TabsMain.Size = New Size(874, 568)
         TabsMain.TabIndex = 0
         '
         ' grpBackground
         '
         grpBackground.Controls.Add(lblBackground)
         grpBackground.Controls.Add(cmbBackground)
-        grpBackground.Location = New Point(436, 161)
+        grpBackground.Location = New Point(444, 142)
         grpBackground.Name = "grpBackground"
         grpBackground.Size = New Size(418, 68)
         grpBackground.TabIndex = 6
@@ -993,21 +1016,17 @@ Partial Class LightRigForm
         ' lblBackground
         '
         lblBackground.AutoSize = True
-        lblBackground.Location = New Point(11, 34)
+        lblBackground.Location = New Point(11, 32)
         lblBackground.Name = "lblBackground"
-        lblBackground.Size = New Size(72, 15)
-        lblBackground.TabIndex = 0
         lblBackground.Text = "Color"
         '
         ' cmbBackground
         '
-        cmbBackground.DrawMode = DrawMode.OwnerDrawFixed
         cmbBackground.DropDownStyle = ComboBoxStyle.DropDownList
-        cmbBackground.FormattingEnabled = True
-        cmbBackground.Location = New Point(110, 30)
+        cmbBackground.Location = New Point(87, 28)
         cmbBackground.Name = "cmbBackground"
-        cmbBackground.Size = New Size(290, 24)
-        cmbBackground.TabIndex = 1
+        cmbBackground.Size = New Size(264, 23)
+        cmbBackground.TabIndex = 0
         '
         ' Tooltip
         '
@@ -1020,8 +1039,21 @@ Partial Class LightRigForm
         ToolTip1.SetToolTip(tbBack, "Strength of the back light. Separates the silhouette from the background; it never casts.")
 
         ToolTip1.SetToolTip(tambient, "Adjust ambient light intensity.")
+        ToolTip1.SetToolTip(tGroundLevel, "Brightness of the lower hemisphere as a fraction of the sky, in RADIANCE: 100% is a flat ambient, 0% a black ground. The tint beside it only colours that light, it does not brighten it.")
         ToolTip1.SetToolTip(btnApplyPreset, "Load the selected preset into every control below.")
-        ToolTip1.SetToolTip(btnReset, "Back to the Studio preset AND the default background color.")
+        ' ⛔ EL TOOLTIP DICE TODO LO QUE EL BOTON HACE. Decia solo "Studio preset AND the default background
+        ' color" mientras el handler ademas repone las SOMBRAS a Defaults() — o sea que las PRENDE, porque
+        ' Defaults().Enabled es True. Un boton que prende una feature sin anunciarlo es el que despues
+        ' aparece como "se me activaron las sombras solas".
+        ToolTip1.SetToolTip(btnReset, "Reset the whole lighting tab: Studio preset, default background color, " &
+                            "shadow settings back to their defaults (which turns shadows ON), and the light anchoring " &
+                            "back to its default.")
+        ToolTip1.SetToolTip(chkLightsFollowCamera, "Off: the lights sit in the WORLD. Orbiting turns the " &
+                            "character inside the light, so you see the back lit from behind -- this is what the game " &
+                            "does, and it is what you want when judging how a piece will look in-game." & vbCrLf &
+                            "On (default): the rig turns WITH the camera, like a mesh viewer. The model stays evenly lit from " &
+                            "every angle, which is what you want when inspecting geometry." & vbCrLf &
+                            "The shadow follows either way: it is cast from the same key direction the shader uses.")
         ToolTip1.SetToolTip(cmbBackground, "Select the preview background color.")
         ToolTip1.SetToolTip(btnAmbSky, "Ambient color when a surface faces UP (world +Z). Engine ambient is normal-dependent.")
         ToolTip1.SetToolTip(btnAmbGround, "Ambient color when a surface faces DOWN (world -Z) -- ground bounce.")
@@ -1033,20 +1065,20 @@ Partial Class LightRigForm
         ' The lights are FIXED TO THE WORLD, so the angles need saying out loud: nothing about them
         ' is obvious from the control, and they used to follow the camera.
         '
-        ToolTip1.SetToolTip(nudK_Az, "Compass direction the key light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
-        ToolTip1.SetToolTip(nudK_El, "Height of the key light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
-        ToolTip1.SetToolTip(nudL_Az, "Compass direction the left fill light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
-        ToolTip1.SetToolTip(nudL_El, "Height of the left fill light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
-        ToolTip1.SetToolTip(nudR_Az, "Compass direction the right fill light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
-        ToolTip1.SetToolTip(nudR_El, "Height of the right fill light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
-        ToolTip1.SetToolTip(nudB_Az, "Compass direction the back (rim) light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
-        ToolTip1.SetToolTip(nudB_El, "Height of the back (rim) light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
+        ToolTip1.SetToolTip(tK_Az, "Compass direction the key light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
+        ToolTip1.SetToolTip(tK_El, "Height of the key light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
+        ToolTip1.SetToolTip(tL_Az, "Compass direction the left fill light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
+        ToolTip1.SetToolTip(tL_El, "Height of the left fill light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
+        ToolTip1.SetToolTip(tR_Az, "Compass direction the right fill light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
+        ToolTip1.SetToolTip(tR_El, "Height of the right fill light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
+        ToolTip1.SetToolTip(tB_Az, "Compass direction the back (rim) light comes FROM, in degrees. Fixed to the world: orbiting the camera does not move it.")
+        ToolTip1.SetToolTip(tB_El, "Height of the back (rim) light above the horizon, in degrees. 0 is level with the model, 90 is straight overhead.")
         '
         ' Rendering tab -- migrated from Wardrobe Manager's Settings dialog together with the
         ' controls themselves. The text is the user's own documentation of each knob; dropping it on
         ' the way over would have made the shared dialog strictly worse than the screen it replaced.
         '
-        ToolTip1.SetToolTip(chkRecalcNormals, "Recalculate normals and the tangent basis for the preview, both when geometry is loaded and after morphs deform it. Without it a morphed mesh keeps the tangent basis of its un-morphed shape, which is the frame the shader reads the normal map in.")
+        ToolTip1.SetToolTip(chkRecalcNormals, "Recalculate normals and the tangent basis when geometry is loaded, after morphs deform it, and when building a NIF. Without it a morphed mesh keeps the tangent basis of its un-morphed shape, which is the frame the shader reads the normal map in — and the built NIF is written that way too.")
         ToolTip1.SetToolTip(chkRepairNaN, "Repair invalid NaN values found in recalculated tangent-space data.")
         ToolTip1.SetToolTip(chkNormalize, "Normalize recalculated tangent-space vectors.")
         ToolTip1.SetToolTip(chkDeterministic, "When the bitangent's Gram-Schmidt residual falls below single-precision noise, complete the basis from the normal and tangent instead of normalizing rounding noise. Turn off to reproduce BodySlide byte for byte.")
@@ -1067,53 +1099,25 @@ Partial Class LightRigForm
         ToolTip1.SetToolTip(nudFloorStep, "Distance between grid lines.")
         ToolTip1.SetToolTip(cmbFloorColor, "Color of the grid lines.")
         '
-        ' light color swatches (each one lives in its light group, beside the strength slider)
-        '
-        btnKeyColor.Location = New Point(345, 32)
-        btnKeyColor.Name = "btnKeyColor"
-        btnKeyColor.Size = New Size(60, 23)
-        btnKeyColor.TabIndex = 1
-        btnKeyColor.UseVisualStyleBackColor = False
-        '
-        btnFillLColor.Location = New Point(345, 32)
-        btnFillLColor.Name = "btnFillLColor"
-        btnFillLColor.Size = New Size(60, 23)
-        btnFillLColor.TabIndex = 1
-        btnFillLColor.UseVisualStyleBackColor = False
-        '
-        btnFillRColor.Location = New Point(345, 32)
-        btnFillRColor.Name = "btnFillRColor"
-        btnFillRColor.Size = New Size(60, 23)
-        btnFillRColor.TabIndex = 1
-        btnFillRColor.UseVisualStyleBackColor = False
-        '
-        btnBackColor.Location = New Point(345, 32)
-        btnBackColor.Name = "btnBackColor"
-        btnBackColor.Size = New Size(60, 23)
-        btnBackColor.TabIndex = 1
-        btnBackColor.UseVisualStyleBackColor = False
-        '
         lblAmbSky.AutoSize = True
-        lblAmbSky.Location = New Point(11, 102)
+        lblAmbSky.Location = New Point(11, 90)
         lblAmbSky.Name = "lblAmbSky"
-        lblAmbSky.Size = New Size(46, 15)
         lblAmbSky.Text = "Sky tint"
         '
-        btnAmbSky.Location = New Point(98, 98)
+        btnAmbSky.Location = New Point(87, 86)
         btnAmbSky.Name = "btnAmbSky"
-        btnAmbSky.Size = New Size(60, 23)
+        btnAmbSky.Size = New Size(50, 23)
         btnAmbSky.TabIndex = 2
         btnAmbSky.UseVisualStyleBackColor = False
         '
         lblAmbGround.AutoSize = True
-        lblAmbGround.Location = New Point(266, 102)
+        lblAmbGround.Location = New Point(287, 90)
         lblAmbGround.Name = "lblAmbGround"
-        lblAmbGround.Size = New Size(68, 15)
         lblAmbGround.Text = "Ground tint"
         '
-        btnAmbGround.Location = New Point(338, 98)
+        btnAmbGround.Location = New Point(357, 86)
         btnAmbGround.Name = "btnAmbGround"
-        btnAmbGround.Size = New Size(60, 23)
+        btnAmbGround.Size = New Size(50, 23)
         btnAmbGround.TabIndex = 3
         btnAmbGround.UseVisualStyleBackColor = False
         '
@@ -1123,7 +1127,7 @@ Partial Class LightRigForm
         AutoScaleMode = AutoScaleMode.Font
         AutoScroll = True
         Controls.Add(TabsMain)
-        ClientSize = New Size(874, 522)
+        ClientSize = New Size(874, 568)
         TabLights.Controls.Add(grpBackground)
         TabLights.Controls.Add(grpAmbient)
         TabLights.Controls.Add(grpShadows)
@@ -1167,14 +1171,6 @@ Partial Class LightRigForm
         grpBackground.PerformLayout()
         grpPresets.ResumeLayout(False)
         grpPresets.PerformLayout()
-        CType(nudK_Az, ComponentModel.ISupportInitialize).EndInit()
-        CType(nudK_El, ComponentModel.ISupportInitialize).EndInit()
-        CType(nudL_Az, ComponentModel.ISupportInitialize).EndInit()
-        CType(nudL_El, ComponentModel.ISupportInitialize).EndInit()
-        CType(nudR_Az, ComponentModel.ISupportInitialize).EndInit()
-        CType(nudR_El, ComponentModel.ISupportInitialize).EndInit()
-        CType(nudB_Az, ComponentModel.ISupportInitialize).EndInit()
-        CType(nudB_El, ComponentModel.ISupportInitialize).EndInit()
         CType(nudSeamAngle, ComponentModel.ISupportInitialize).EndInit()
         CType(nudWeldPos, ComponentModel.ISupportInitialize).EndInit()
         CType(nudWeldUv, ComponentModel.ISupportInitialize).EndInit()
@@ -1186,34 +1182,30 @@ Partial Class LightRigForm
     End Sub
 
     Friend WithEvents grpKey As GroupBox
-    Friend WithEvents nudK_Az As NumericUpDown
-    Friend WithEvents nudK_El As NumericUpDown
+    Friend WithEvents tK_Az As FO4_Base_Library.TinySliderTextBox
+    Friend WithEvents tK_El As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblK_Str As Label
-    Friend WithEvents lblK_Tint As Label
     Friend WithEvents lblK_Az As Label
     Friend WithEvents lblK_El As Label
     Friend WithEvents tbKey As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents grpFillL As GroupBox
-    Friend WithEvents nudL_Az As NumericUpDown
-    Friend WithEvents nudL_El As NumericUpDown
+    Friend WithEvents tL_Az As FO4_Base_Library.TinySliderTextBox
+    Friend WithEvents tL_El As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblL_Str As Label
-    Friend WithEvents lblL_Tint As Label
     Friend WithEvents lblL_Az As Label
     Friend WithEvents lblL_El As Label
     Friend WithEvents tbFillL As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents grpFillR As GroupBox
-    Friend WithEvents nudR_Az As NumericUpDown
-    Friend WithEvents nudR_El As NumericUpDown
+    Friend WithEvents tR_Az As FO4_Base_Library.TinySliderTextBox
+    Friend WithEvents tR_El As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblR_Str As Label
-    Friend WithEvents lblR_Tint As Label
     Friend WithEvents lblR_Az As Label
     Friend WithEvents lblR_El As Label
     Friend WithEvents tbFillR As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents grpBack As GroupBox
-    Friend WithEvents nudB_Az As NumericUpDown
-    Friend WithEvents nudB_El As NumericUpDown
+    Friend WithEvents tB_Az As FO4_Base_Library.TinySliderTextBox
+    Friend WithEvents tB_El As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblB_Str As Label
-    Friend WithEvents lblB_Tint As Label
     Friend WithEvents lblB_Az As Label
     Friend WithEvents lblB_El As Label
     Friend WithEvents tbBack As FO4_Base_Library.TinySliderTextBox
@@ -1269,6 +1261,7 @@ Partial Class LightRigForm
     Friend WithEvents grpShadows As GroupBox
     Friend WithEvents chkShadows As CheckBox
     Friend WithEvents chkGroundShadow As CheckBox
+    Friend WithEvents chkLightsFollowCamera As CheckBox
     Friend WithEvents lblShadowQuality As Label
     Friend WithEvents cmbShadowQuality As ComboBox
     Friend WithEvents lblShadowSoft As Label

@@ -575,7 +575,19 @@ Public Class TinySliderTextBox
         End Select
     End Sub
 
+    ''' <summary>⛔⭐ SI EL TEXTO ES EXACTAMENTE EL QUE ESCRIBIO ESTE CONTROL, NADIE LO EDITO: no se
+    ''' re-parsea. Sin este guard, el solo hecho de TABULAR por la cajita (Validating dispara al perder el
+    ''' foco, se haya tocado o no) cuantizaba el valor vivo al redondeo que muestra el formato, y eso solo
+    ''' puede PERDER informacion — el texto se genero desde el valor, parsearlo de vuelta jamas devuelve
+    ''' mas precision de la que ya hay.
+    ''' <para>Con <c>DisplayFormat = "0.0°"</c> y un angulo de preset de 41,42367 la cajita muestra
+    ''' "41,4 deg"; el re-parseo dejaba el modelo en 41,4 y el rig se reescribia cuantizado sin que el
+    ''' usuario tocara nada — el preset dejaba de coincidir consigo mismo, el combo se iba a "Custom" y el
+    ''' render cambiaba. Es el mismo modo de falla que el NumericUpDown obligaba a esquivar a mano en
+    ''' LightRigForm; aca se cierra en el control y vale para TODOS sus usos.</para></summary>
     Private Sub ApplyTextBoxValue()
+        If String.Equals(_textBox.Text, FormatValue(_value), StringComparison.Ordinal) Then Return
+
         Dim parsed As Double
         If TryParseFlexibleDouble(_textBox.Text, parsed) Then
             Value = parsed * _inputScale

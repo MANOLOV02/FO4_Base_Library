@@ -691,6 +691,16 @@ Public Class PreviewControl
 
         m.RecalculateNormals = Config_App.Current.Setting_RecalculateNormals
         m.SingleBoneSkinning = Config_App.Current.Setting_SingleBoneSkinning
+        ' ⛔⭐ EL ESPEJO SON TRES, NO DOS: Config -> Model -> Intent. `Model.RecalculateNormals` lo lee la
+        ' EXTRACCION de geometria (ExtractSkinnedGeometry) y `Intent.RecalculateNormals` lo lee el paso de
+        ' MORPHS (ApplyMorphPlan). Empujar solo el Model dejaba la casilla a medias: en una escena sin
+        ' morphs se veia el cambio —el full reload re-extrae— y en Wardrobe Manager, donde el cuerpo SIEMPRE
+        ' esta morfeado por el preset, no se veia NADA. Ese era el sintoma reportado: la casilla de la barra
+        ' principal funcionaba y la de este dialogo no, porque la de la barra pasa por Update_Render, que
+        ' refresca el Intent (`intent.RecalculateNormals = ctrl.Model.RecalculateNormals`), y este camino no.
+        ' ⛔ Una sonda que llame a ESTA funcion sobre un NIF sin morphs NO lo caza: da pixeles igual. El
+        ' chequeo que discrimina es el INVARIANTE de abajo (los tres espejos de acuerdo), no un conteo.
+        Intent.RecalculateNormals = Config_App.Current.Setting_RecalculateNormals
 
         Dim ahora = LeerGeomDeConfig()
         ' Sin recarga previa no hay nada en pantalla que corregir, y la que venga ya va a usar los valores
@@ -2587,63 +2597,14 @@ Public Class PreviewModel
                         ' del medio no), causando que las normales del medio usaran el nm3
                         ' del vertex 0. Se removio — ahora siempre per-vertex para coincidir
                         ' con el shader GPU que tambien computa skinNormalMat per-vertex.
-                        ' ⛔ Igual que el camino GPU de abajo: el cuerpo se despacha POR RANGO, no por
-                        ' vertice. Acá pesa aún más porque el cuerpo incluye una inversa 3x3 por
-                        ' vertice (NormalMatrixOrIdentity) y corre por malla POR FRAME.
-                        Dim body As Action(Of Integer) = Sub(i)
-                                                             Dim m = mats(i)
-                                                             Dim wp = Vector3d.TransformPosition(lv(i), SkinningHelper.AMatrix4d(m))
-                                                             posF(i) = New Vector3(CSng(wp.X), CSng(wp.Y), CSng(wp.Z))
-                                                             Dim nm3 As Matrix3d = SkinningHelper.NormalMatrixOrIdentity(m)
-                                                             If isMSN Then
-                                                                 ' MSN: pack nm3.Row0/1/2 en los tres VBOs. El shader los lee y
-                                                                 ' reconstruye via mat3(vertexNormal, vertexTangent, vertexBitangent).
-                                                                 ' GLSL column-major: col0=vertexNormal, col1=vertexTangent, col2=vertexBitangent.
-                                                                 ' Target del shader es mat3(m)^-1 (lo que tambien computa el GPU path).
-                                                                 ' Como nm3 = (m^-1)^T, tenemos nm3.Row_i = math Col_i de m^-1, osea
-                                                                 ' packear las filas de nm3 da exactamente las columnas del target GLSL.
-                                                                 nrmF(i) = New Vector3(CSng(nm3.Row0.X), CSng(nm3.Row0.Y), CSng(nm3.Row0.Z))
-                                                                 tanF(i) = New Vector3(CSng(nm3.Row1.X), CSng(nm3.Row1.Y), CSng(nm3.Row1.Z))
-                                                                 bitanF(i) = New Vector3(CSng(nm3.Row2.X), CSng(nm3.Row2.Y), CSng(nm3.Row2.Z))
-                                                             Else
-                                                                 ' Aplicar nm3 al normal/tangent/bitangent via dot products explicitos.
-                                                                 ' Convencion row-vector de OpenTK: result = v * nm3 donde
-                                                                 ' result.i = v.X*Row0.i + v.Y*Row1.i + v.Z*Row2.i
-                                                                 ' (dotted con las columnas matematicas de nm3).
-                                                                 Dim lnI = ln(i) : Dim ltI = lt(i) : Dim lbI = lb(i)
-                                                                 Dim r0 = nm3.Row0 : Dim r1 = nm3.Row1 : Dim r2 = nm3.Row2
-                                                                 Dim wn As New Vector3d(
-                                                                     lnI.X * r0.X + lnI.Y * r1.X + lnI.Z * r2.X,
-                                                                     lnI.X * r0.Y + lnI.Y * r1.Y + lnI.Z * r2.Y,
-                                                                     lnI.X * r0.Z + lnI.Y * r1.Z + lnI.Z * r2.Z)
-                                                                 wn = Vector3d.Normalize(wn)
-                                                                 nrmF(i) = New Vector3(CSng(wn.X), CSng(wn.Y), CSng(wn.Z))
-
-                                                                 Dim wt As New Vector3d(
-                                                                     ltI.X * r0.X + ltI.Y * r1.X + ltI.Z * r2.X,
-                                                                     ltI.X * r0.Y + ltI.Y * r1.Y + ltI.Z * r2.Y,
-                                                                     ltI.X * r0.Z + ltI.Y * r1.Z + ltI.Z * r2.Z)
-                                                                 wt = Vector3d.Normalize(wt)
-                                                                 tanF(i) = New Vector3(CSng(wt.X), CSng(wt.Y), CSng(wt.Z))
-
-                                                                 Dim wb As New Vector3d(
-                                                                     lbI.X * r0.X + lbI.Y * r1.X + lbI.Z * r2.X,
-                                                                     lbI.X * r0.Y + lbI.Y * r1.Y + lbI.Z * r2.Y,
-                                                                     lbI.X * r0.Z + lbI.Y * r1.Z + lbI.Z * r2.Z)
-                                                                 wb = Vector3d.Normalize(wb)
-                                                                 bitanF(i) = New Vector3(CSng(wb.X), CSng(wb.Y), CSng(wb.Z))
-                                                             End If
-                                                         End Sub
-                        If vertexCount >= 500 Then
-                            Parallel.ForEach(SkinningHelper.RangosDe(vertexCount),
-                                Sub(rango As Tuple(Of Integer, Integer))
-                                    For i = rango.Item1 To rango.Item2 - 1
-                                        body(i)
-                                    Next
-                                End Sub)
-                        Else
-                            For i = 0 To vertexCount - 1 : body(i) : Next
-                        End If
+                        ' ⭐⛔ EL BUCLE SE FUE A FastSkin. Era el que dominaba un frame de animacion con
+                        ' skinning por CPU: una inversa 3x3 POR VERTICE, POR MALLA, POR FRAME, escalar y en
+                        ' Double. Medido sobre 130.500 vertices, 9,3 ms de un frame de ~20 — contra 1,3 ms
+                        ' de las cuatro subidas de VBO que vienen despues.
+                        ' Alla la ley esta escrita UNA vez con dos implementaciones (escalar y vectorial)
+                        ' que un gate compara BIT A BIT, y a los dos anchos de vector. Ver FastSkin.
+                        SkinningHelper.FastSkinTransformar(mats, lv, ln, lt, lb, isMSN, vertexCount,
+                                                           posF, nrmF, tanF, bitanF)
                     Else
                         ' GPU skinning: upload local-space as-is
                         Dim gv = MeshData.Meshgeometry.Vertices
@@ -2764,56 +2725,25 @@ Public Class PreviewModel
                     Dim baseP As IntPtr = ptrP + offsetBytes
 
                     If cpuSkin Then
-                        Dim m = sparseMats(i)
-                        Dim nm3 As Matrix3d = SkinningHelper.NormalMatrixOrIdentity(m)
-
-                        Dim wp = Vector3d.TransformPosition(MeshData.Meshgeometry.Vertices(i), SkinningHelper.AMatrix4d(m))
-                        buf(0) = CSng(wp.X) : buf(1) = CSng(wp.Y) : buf(2) = CSng(wp.Z)
+                        ' ⛔⭐ LA MISMA LEY QUE EL CAMINO DENSO, no una copia. Este bucle escribe por
+                        ' Marshal.Copy a un buffer mapeado, indice por indice, asi que no puede llamar a
+                        ' FastSkin.TransformarDirecto — pero si a la ley de UN vertice. Tenerla duplicada
+                        ' hacia que la misma malla saliera con una ley u otra segun cuantos vecinos se
+                        ' hubieran ensuciado ese frame (el umbral del 60 % de mas arriba).
+                        Dim pS As Vector3, nS As Vector3, tS As Vector3, bS As Vector3
+                        SkinningHelper.FastSkinUnVertice(sparseMats(i), MeshData.Meshgeometry.Vertices(i),
+                                                         MeshData.Meshgeometry.Normals(i),
+                                                         MeshData.Meshgeometry.Tangents(i),
+                                                         MeshData.Meshgeometry.Bitangents(i),
+                                                         sparseIsMSN, pS, nS, tS, bS)
+                        buf(0) = pS.X : buf(1) = pS.Y : buf(2) = pS.Z
                         Marshal.Copy(buf, 0, baseP, 3)
-
-                        If sparseIsMSN Then
-                            ' MSN: packear las FILAS de nm3 en los VBOs. El shader reconstruye
-                            ' mat3(vertexNormal, vertexTangent, vertexBitangent) con convencion
-                            ' column-major, y como nm3.Row_i corresponde a la math Col_i del
-                            ' target mat3(m)^-1, queda correcto. Coincide con el GPU path.
-                            buf(0) = CSng(nm3.Row0.X) : buf(1) = CSng(nm3.Row0.Y) : buf(2) = CSng(nm3.Row0.Z)
-                            Marshal.Copy(buf, 0, baseN, 3)
-                            buf(0) = CSng(nm3.Row1.X) : buf(1) = CSng(nm3.Row1.Y) : buf(2) = CSng(nm3.Row1.Z)
-                            Marshal.Copy(buf, 0, baseT, 3)
-                            buf(0) = CSng(nm3.Row2.X) : buf(1) = CSng(nm3.Row2.Y) : buf(2) = CSng(nm3.Row2.Z)
-                            Marshal.Copy(buf, 0, baseB, 3)
-                        Else
-                            ' Convencion row-vector de OpenTK: result = v * nm3 donde
-                            ' result.i = v.X*Row0.i + v.Y*Row1.i + v.Z*Row2.i
-                            Dim lnI = MeshData.Meshgeometry.Normals(i)
-                            Dim ltI = MeshData.Meshgeometry.Tangents(i)
-                            Dim lbI = MeshData.Meshgeometry.Bitangents(i)
-                            Dim r0 = nm3.Row0 : Dim r1 = nm3.Row1 : Dim r2 = nm3.Row2
-
-                            Dim wn As New Vector3d(
-                                lnI.X * r0.X + lnI.Y * r1.X + lnI.Z * r2.X,
-                                lnI.X * r0.Y + lnI.Y * r1.Y + lnI.Z * r2.Y,
-                                lnI.X * r0.Z + lnI.Y * r1.Z + lnI.Z * r2.Z)
-                            wn = Vector3d.Normalize(wn)
-                            buf(0) = CSng(wn.X) : buf(1) = CSng(wn.Y) : buf(2) = CSng(wn.Z)
-                            Marshal.Copy(buf, 0, baseN, 3)
-
-                            Dim wt As New Vector3d(
-                                ltI.X * r0.X + ltI.Y * r1.X + ltI.Z * r2.X,
-                                ltI.X * r0.Y + ltI.Y * r1.Y + ltI.Z * r2.Y,
-                                ltI.X * r0.Z + ltI.Y * r1.Z + ltI.Z * r2.Z)
-                            wt = Vector3d.Normalize(wt)
-                            buf(0) = CSng(wt.X) : buf(1) = CSng(wt.Y) : buf(2) = CSng(wt.Z)
-                            Marshal.Copy(buf, 0, baseT, 3)
-
-                            Dim wb As New Vector3d(
-                                lbI.X * r0.X + lbI.Y * r1.X + lbI.Z * r2.X,
-                                lbI.X * r0.Y + lbI.Y * r1.Y + lbI.Z * r2.Y,
-                                lbI.X * r0.Z + lbI.Y * r1.Z + lbI.Z * r2.Z)
-                            wb = Vector3d.Normalize(wb)
-                            buf(0) = CSng(wb.X) : buf(1) = CSng(wb.Y) : buf(2) = CSng(wb.Z)
-                            Marshal.Copy(buf, 0, baseB, 3)
-                        End If
+                        buf(0) = nS.X : buf(1) = nS.Y : buf(2) = nS.Z
+                        Marshal.Copy(buf, 0, baseN, 3)
+                        buf(0) = tS.X : buf(1) = tS.Y : buf(2) = tS.Z
+                        Marshal.Copy(buf, 0, baseT, 3)
+                        buf(0) = bS.X : buf(1) = bS.Y : buf(2) = bS.Z
+                        Marshal.Copy(buf, 0, baseB, 3)
                     Else
                         Dim v = MeshData.Meshgeometry.Vertices(i)
                         buf(0) = v.X : buf(1) = v.Y : buf(2) = v.Z
@@ -3451,15 +3381,32 @@ Public Class PreviewModel
             ' bShowMask / bShowWeight / bWireframe / bShowVertexColor NO se suben: no afectan ni
             ' gl_Position ni vColor.a, que es todo lo que este pase mira.
 
-            ' El alpha-test y TODO lo que lo alimenta (uv, textura, vColor.a) se suben SOLO si va a correr.
-            ' Para una malla opaca —la mayoria— esto ahorra un bind de textura (ActiveTexture+BindTexture+
-            ' uniform) y cuatro uniforms por malla y por frame.
+            ' ⛔⭐ DOS CAMINOS DE RECORTE, Y EL SEGUNDO NO EXISTIA.
+            '  · CUTOUT (`AlphaTest`): umbral duro con el `AlphaTestRef` del material. Es lo que ya habia.
+            '  · TRANSLUCIDO (`AlphaBlend` sin test): antes NO SE RECORTABA NADA — el gate era `HasAlphaTest`
+            '    a secas, asi que un material alpha-blend entraba al pase sin un solo `discard` y proyectaba
+            '    la CARD ENTERA. Sintoma concreto y reportado: pelo fino que tira sombra de placa negra.
+            '    Ahora va por el camino estocastico del fragment (dither ordenado 4x4 contra la opacidad
+            '    real), que necesita ADEMAS el escalar Alpha del material — el mismo que el pase iluminado
+            '    multiplica despues del test para el blend.
+            ' ⚠️ En vanilla esto casi no se veia porque los alpha-blend de actor (pelo *_8bit, pestanas,
+            ' eyewet, synthtattoo) traen CastShadows=False y ni entran al pase. Los mods de pelo suelen
+            ' dejarlo en True, y ahi salia la placa.
             Dim doAlphaTest As Boolean = MeshData.Material.HasAlphaTest AndAlso shape.ShowTexture
+            ' Si el material tiene los DOS flags gana el test, igual que en el pase iluminado (ahi se
+            ' descarta por el umbral y despues se blendea lo que sobrevivio). Sin este `Not`, un cutout
+            ' con Alpha < 1 se recortaria dos veces.
+            Dim doAlphaBlend As Boolean = (Not doAlphaTest) AndAlso MeshData.Material.HasAlphaBlend AndAlso shape.ShowTexture
+            Dim usaTextura As Boolean = doAlphaTest OrElse doAlphaBlend
             shadowShader.SetBool("bAlphaTest", doAlphaTest)
-            shadowShader.SetBool("bShowTexture", doAlphaTest)
-            shadowShader.SetBool("bShowVertexAlpha", doAlphaTest AndAlso MeshData.Material.UseVertexAlpha)
-            If doAlphaTest Then
+            shadowShader.SetBool("bAlphaBlend", doAlphaBlend)
+            shadowShader.SetBool("bShowTexture", usaTextura)
+            shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso MeshData.Material.UseVertexAlpha)
+            If usaTextura Then
                 shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
+                ' El escalar Alpha del material. Solo lo mira la rama del dither; en la del cutout el
+                ' fragment ni lo lee, que es justamente la ley del pase iluminado.
+                shadowShader.SetFloat("uMaterialAlpha", If(materialBase Is Nothing, 1.0F, materialBase.Alpha))
                 If materialBase IsNot Nothing Then
                     shadowShader.SetVector2("uvOffset", New Vector2(materialBase.UOffset, materialBase.VOffset))
                     shadowShader.SetVector2("uvScale", New Vector2(materialBase.UScale, materialBase.VScale))
@@ -4393,15 +4340,27 @@ Public Class PreviewModel
     Public Sub LoadShapesParallel(shapes As IEnumerable(Of IRenderableShape), Optional resolver As ISkeletonResolver = Nothing)
         If Not shapes.Any() Then Exit Sub
         LoadedShapes = shapes.ToList()
-        Dim result As New ConcurrentBag(Of RenderableMesh)
-        Parallel.ForEach(shapes, Sub(shape)
-                                     'For Each shape In shapes
-                                     Dim mesh = LoadShapeSafe(shape, resolver)
-
-                                     If mesh IsNot Nothing Then result.Add(mesh)
-                                     'Next
-                                 End Sub)
-        meshes.AddRange(result)
+        ' ⛔⛔ EL ORDEN DE `meshes` ES EL ORDEN DE `shapes`, Y NO ES COSMETICO. Aca habia un
+        ' `ConcurrentBag(Of RenderableMesh)` con `Parallel.ForEach` + `AddRange`, y un ConcurrentBag NO
+        ' TIENE ORDEN: su enumeracion depende de en que hilo termino cada shape. O sea que dos cargas de
+        ' la MISMA escena producian dos ordenes de dibujo distintos.
+        ' Eso importa porque EL ALPHA BLENDING NO ES CONMUTATIVO: dos shapes translucidas superpuestas
+        ' —el pelo sobre la cabeza es el caso de todos los dias— dan un color distinto segun cual se
+        ' dibuje primero.
+        ' ⭐ MEDIDO, no razonado: el A/A de recarga de Tools/ShadowGate encontro que re-extraer la misma
+        ' geometria cambiaba 11 px de 648.000 en ~3 de cada 8 recargas, siempre los mismos, siempre en el
+        ' bbox (332,75)-(387,152) = la silueta del pelo, con delta de canal 88. Se descarto el recalculo de
+        ' TBN (pasa igual apagado) y se confirmo registrando la secuencia de nombres: el orden cambiaba.
+        ' Consecuencia para el usuario: el preview podia dibujarse distinto en cada carga sin que nada
+        ' cambiara, que es exactamente lo que vuelve irreproducible un reporte de bug.
+        Dim lista = LoadedShapes
+        Dim porIndice(lista.Count - 1) As RenderableMesh
+        Parallel.For(0, lista.Count, Sub(i) porIndice(i) = LoadShapeSafe(lista(i), resolver))
+        ' `LoadShapeSafe` devuelve Nothing para una shape que no se pudo cargar: esos huecos se saltean, y
+        ' las que si cargaron conservan su posicion relativa.
+        For i = 0 To porIndice.Length - 1
+            If porIndice(i) IsNot Nothing Then meshes.Add(porIndice(i))
+        Next
         MarkRenderBucketsDirty()
     End Sub
 
@@ -4969,9 +4928,11 @@ Public Class PreviewModel
     End Structure
 
     ''' <summary>Rig resuelto para el frame en curso. Lo llena <see cref="RenderAll"/> antes de dibujar y lo
-    ''' consume ApplyMaterial. Depende SÓLO del rig activo (un setting de UI): desde que las luces son fijas
-    ''' al mundo YA NO depende de la cámara, así que orbitar no cambia una sola dirección. Antes esto se recalculaba POR MALLA — 18
-    ''' Math.Pow + 4 Direction() idénticos, y otra vuelta por cada overlay layer.</summary>
+    ''' consume ApplyMaterial. Antes esto se recalculaba POR MALLA — 18 Math.Pow + 4 Direction() idénticos, y
+    ''' otra vuelta por cada overlay layer.
+    ''' <para>Depende del rig activo y, SI <c>Setting_LightsFollowCamera</c> está prendido, también de la
+    ''' cámara. ⚠️ Ese flag viene en <b>True</b> por default (decisión del usuario), así que orbitar SÍ mueve
+    ''' las direcciones salvo que se apague. Con el flag apagado no cambia ni una.</para></summary>
     Private _frameLights As LightRigUniforms
 
     Friend ReadOnly Property FrameLights As LightRigUniforms
@@ -4980,20 +4941,57 @@ Public Class PreviewModel
         End Get
     End Property
 
-    Private Sub ResolveFrameLights()
+    ''' <summary>Lleva una dirección del marco del RIG al marco del MUNDO usando la base de la cámara.
+    ''' <para>⭐ NO HACE FALTA CONVERTIR LOS PRESETS, y esa es la razón por la que esto entra sin tocar nada
+    ''' más: la base de <see cref="OrbitCamera"/> en la vista por defecto (angleX = angleY = 0) es
+    ''' EXACTAMENTE la del mundo — <c>right = (1,0,0)</c>, <c>Forward = (0,1,0)</c>,
+    ''' <c>upPlane = (0,0,1)</c>, ver UpdateDirectionFromAngles— que es la misma base contra la que se
+    ''' convirtieron los presets viejos en <c>PreviewLight.FromCameraRelative</c>. O sea que un preset
+    ''' significa lo mismo en los dos modos mientras no orbites.</para>
+    ''' <para>`Forward` de la cámara apunta del foco HACIA el ojo (`eye = Focus + Forward*distance`), y
+    ''' <c>Direction()</c> devuelve superficie→luz. Los dos van en el mismo sentido, así que el componente Y
+    ''' del rig es "luz desde donde mira el observador" en los dos marcos. No hay que invertir nada.</para>
+    ''' </summary>
+    Private Shared Function ADireccionDeCamara(d As Vector3, cam As OrbitCamera) As Vector3
+        Return cam.right * d.X + cam.Forward * d.Y + cam.upPlane * d.Z
+    End Function
+
+    Private Sub ResolveFrameLights(cam As OrbitCamera)
         ' El rig sale de ActiveLights() = el set del JUEGO activo (FO4/SSE tienen el suyo).
         Dim rig = Config_App.Current.ActiveLights()
+        ' ⛔ LA RAMA APAGADA NO EJECUTA NADA NUEVO. No es `ADireccionDeCamara` con una base identidad: con la
+        ' base identidad la cuenta es `d.X*1 + d.Y*0 + d.Z*0`, que SUMA CEROS y convierte un -0,0 en +0,0.
+        ' Este repo ya se comió esa exacta trampa con ParentGlobalTransform. Con el If, el default es
+        ' bit-idéntico por construcción y no hay nada que verificar.
+        Dim seguir As Boolean = Config_App.Current.Setting_LightsFollowCamera AndAlso cam IsNot Nothing
+        Dim kd = rig.KeyLight.Direction()
+        Dim f0 = rig.FillLeft.Direction()
+        Dim f1 = rig.FillRight.Direction()
+        Dim bd = rig.BackLight.Direction()
+        If seguir Then
+            kd = ADireccionDeCamara(kd, cam)
+            f0 = ADireccionDeCamara(f0, cam)
+            f1 = ADireccionDeCamara(f1, cam)
+            bd = ADireccionDeCamara(bd, cam)
+        End If
+        ' ⛔ EL NIVEL DE SUELO MULTIPLICA DESPUES DEL POW, y no es un detalle de orden: el tinte es un COLOR
+        ' (se autora en perceptual y se decodea al subir) pero el nivel es un COCIENTE DE RADIANCIAS entre
+        ' los dos hemisferios, y el mix() del shader que lo consume opera en lineal. Adentro del pow la
+        ' perilla entregaba nivel^2.2 — el 0,45 del Studio valia 17,3 % del cielo, no 45 %.
+        ' Ver PreviewLightRig.AmbientGroundLevel para la medicion que lo destapo.
+        ' (El comentario va ACA y no en el inicializador: una linea de comentario entre dos miembros de un
+        '  `With {}` corta la continuacion implicita y el parser tira BC30370.)
         _frameLights = New LightRigUniforms With {
             .AmbientSky = Shader_Base_Class.Vector_to_Linear(rig.AmbientSkyDiffuse()),
-            .AmbientGround = Shader_Base_Class.Vector_to_Linear(rig.AmbientGroundDiffuse()),
+            .AmbientGround = Shader_Base_Class.Vector_to_Linear(rig.AmbientGroundDiffuse()) * rig.AmbientGroundLevel,
             .KeyDiffuse = Shader_Base_Class.Vector_to_Linear(rig.KeyLight.Diffuse()),
-            .KeyDir = rig.KeyLight.Direction(),
+            .KeyDir = kd,
             .Fill0Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillLeft.Diffuse()),
-            .Fill0Dir = rig.FillLeft.Direction(),
+            .Fill0Dir = f0,
             .Fill1Diffuse = Shader_Base_Class.Vector_to_Linear(rig.FillRight.Diffuse()),
-            .Fill1Dir = rig.FillRight.Direction(),
+            .Fill1Dir = f1,
             .BackDiffuse = Shader_Base_Class.Vector_to_Linear(rig.BackLight.Diffuse()),
-            .BackDir = rig.BackLight.Direction()
+            .BackDir = bd
         }
     End Sub
 
@@ -5208,6 +5206,11 @@ Public Class PreviewModel
         ' eyelashes, eyewet, eyestearduct, stubble, el pelo *_8bit, beard_8bit* y synthtattoo — o sea los
         ' que proyectarian una barra negra sobre el ojo o un bloque solido en vez de mechones. Sus gemelos
         ' *_1bit (cutout) SI lo traen en True. Por eso no hay excepcion por bucket: alcanza el flag.
+        ' ⛔ NO HAY OVERRIDE DE ESTE FILTRO, y hubo uno por unas horas. Se agrego una opcion "ignorar el
+        ' flag del material" para poder ver la sombra de mods que traen CastShadows=False — pero eso era
+        ' tapar con una perilla un DEFECTO DE LECTURA: el bit no se estaba leyendo del NIF para materiales
+        ' BGEM (ver FO4UnifiedMaterial_Class.CastShadows). Arreglada la lectura, la perilla sobra, y una
+        ' perilla que existe para compensar un bug es justo lo que la regla "nunca un modo legacy" prohibe.
         Dim casters = _shadowCasters
         casters.Clear()
         For Each mesh In meshes
@@ -5434,7 +5437,7 @@ Public Class PreviewModel
 
         ' Resolver el rig UNA vez por frame, antes de cualquier draw. Los dos consumidores de ApplyMaterial
         ' (Render y RenderOverlayLayer) sólo se alcanzan desde los loops de abajo, así que nunca lo leen stale.
-        ResolveFrameLights()
+        ResolveFrameLights(camera)
 
         ' SOMBRAS: el shadow map se dibuja ANTES de cualquier pase iluminado y DESPUES de resolver el rig,
         ' porque la direccion de la key sale de _frameLights.KeyDir — la MISMA que va a los uniforms del

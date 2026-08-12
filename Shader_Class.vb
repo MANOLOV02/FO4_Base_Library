@@ -219,8 +219,15 @@ void main(void)
 	    // Correct normal matrix: transpose of inverse of upper-left 3x3
 	    mat3 skinNormalMat = transpose(inverse(mat3(skinMatrix)));
 	    skinnedNormal = normalize(skinNormalMat * vertexNormal);
-	    skinnedTangent = normalize(skinNormalMat * vertexTangent);
-	    skinnedBitangent = normalize(skinNormalMat * vertexBitangent);
+	    // TANGENT AND BITANGENT GO WITH THE RAW MATRIX, not with the normal matrix. They are directions
+	    // ALONG the surface: they move the way the geometry moves. The inverse-transpose is the law of the
+	    // NORMAL and of nothing else -- applying it to the tangent pushes it out of the tangent plane as
+	    // soon as there is shear, and a blend of two different bone rotations ALWAYS has shear, which means
+	    // every vertex of an elbow, a knee or a shoulder.
+	    // This is the render half of the SkinningHelper.PorMatriz3x3 fix: the bake was corrected first and
+	    // the render kept the old law, which left RENDER==BAKE broken on TWO channels instead of one.
+	    skinnedTangent = normalize(mat3(skinMatrix) * vertexTangent);
+	    skinnedBitangent = normalize(mat3(skinMatrix) * vertexBitangent);
 	    // MSN: object->view normal matrix = (model->view normal) * (object->world skin normal matrix)
 	    v_msnMatrix = mv_normalMatrix * skinNormalMat;
 	} else {
@@ -1707,8 +1714,15 @@ void main(void)
 	    // Correct normal matrix: transpose of inverse of upper-left 3x3
 	    mat3 skinNormalMat = transpose(inverse(mat3(skinMatrix)));
 	    skinnedNormal = normalize(skinNormalMat * vertexNormal);
-	    skinnedTangent = normalize(skinNormalMat * vertexTangent);
-	    skinnedBitangent = normalize(skinNormalMat * vertexBitangent);
+	    // TANGENT AND BITANGENT GO WITH THE RAW MATRIX, not with the normal matrix. They are directions
+	    // ALONG the surface: they move the way the geometry moves. The inverse-transpose is the law of the
+	    // NORMAL and of nothing else -- applying it to the tangent pushes it out of the tangent plane as
+	    // soon as there is shear, and a blend of two different bone rotations ALWAYS has shear, which means
+	    // every vertex of an elbow, a knee or a shoulder.
+	    // This is the render half of the SkinningHelper.PorMatriz3x3 fix: the bake was corrected first and
+	    // the render kept the old law, which left RENDER==BAKE broken on TWO channels instead of one.
+	    skinnedTangent = normalize(mat3(skinMatrix) * vertexTangent);
+	    skinnedBitangent = normalize(mat3(skinMatrix) * vertexBitangent);
 
 	    // MSN: combined matrix local -> world -> view (per-vertex due to skinning)
 	    v_msnMatrix = mv_normalMatrix * skinNormalMat;
@@ -2852,6 +2866,8 @@ uniform vec2 uvOffset;
 uniform vec2 uvScale;
 uniform float alphaThreshold;
 uniform bool bAlphaTest;
+uniform bool bAlphaBlend;      // the material is drawn with blending (no cutout threshold to use)
+uniform float uMaterialAlpha;  // the material Alpha scalar, the one the lit pass multiplies in for the blend
 uniform bool bShowTexture;
 uniform bool bApplyZap;
 
@@ -2859,22 +2875,66 @@ in vec4 vColor;
 in vec2 vUV;
 flat in int ZappedVert;
 
+// ORDERED BAYER 4x4, pre-normalised to (v + 0.5) / 16 so the thresholds sit at the centre of each of the
+// 16 buckets. Used for the STOCHASTIC / SCREEN-DOOR path below.
+const float bayer4[16] = float[16](
+	 0.03125, 0.53125, 0.15625, 0.65625,
+	 0.78125, 0.28125, 0.90625, 0.40625,
+	 0.21875, 0.71875, 0.09375, 0.59375,
+	 0.96875, 0.46875, 0.84375, 0.34375);
+
 void main(void)
 {
 	if (bApplyZap && ZappedVert == 1)
 		discard;
 
-	// SAME left-hand side as the lit pass: texture alpha * vertex alpha, compared with a strict `<`
-	// (the engine KEEPS equality -- rec1498 L284 `mad r0.x, r1.w, v7.w, -cb2[3].x ; lt r0.x, l(0)`).
-	// Any divergence here and the shadow silhouette stops matching the shape that is drawn: a cutout
-	// hair card would cast the solid quad instead of the strands.
-	// The engine does alpha-test its own shadow pass too: BSUtilityShader RENDER_SHADOWMAP (technique
-	// bit 14) has a discard in 68 of its 91 permutations.
-	if (bAlphaTest && bShowTexture)
+	if ((bAlphaTest || bAlphaBlend) && bShowTexture)
 	{
 		vec2 uv = vUV * uvScale + uvOffset;
-		if (texture(texDiffuse, uv).a * vColor.a < alphaThreshold)
-			discard;
+		// SAME left-hand side as the lit pass: texture alpha * vertex alpha. The material Alpha scalar is
+		// NOT part of it -- the lit pass tests on this and multiplies the scalar in afterwards, for the
+		// blend. Any divergence here and the shadow silhouette stops matching the shape that is drawn.
+		float aTex = texture(texDiffuse, uv).a * vColor.a;
+
+		if (bAlphaTest)
+		{
+			// CUTOUT: a hard threshold, strict `<` so equality is KEPT.
+			if (aTex < alphaThreshold)
+				discard;
+		}
+		else
+		{
+			// TRANSLUCENT: there is no cutout threshold to use, so a hard test would be an invention --
+			// picking 0.5 turns a 20%-opaque veil into either a solid slab or nothing at all. That was the
+			// old behaviour by omission: an alpha-blended material had no discard AT ALL here and cast the
+			// full quad. Fine hair came out as a black plate.
+			//
+			// STOCHASTIC (screen-door) instead: keep the fragment with probability = its opacity, using an
+			// ordered pattern. One fragment is still binary, but the PCF kernel averages the neighbourhood
+			// and the result reads as a shadow proportional to the opacity. This is the reason it fits HERE
+			// specifically: the PCF is already there and already measured free (1 to 49 taps costs +0.10 ms),
+			// so the machinery that turns the noise into a grey level is paid for.
+			//
+			// The pattern is indexed by gl_FragCoord OF THE DEPTH PASS, i.e. by the SHADOW MAP TEXEL, not by
+			// anything in screen space -- a screen-space index would make the pattern crawl over the surface
+			// while orbiting.
+			// !! THAT ONLY HOLDS WITH THE LIGHTS FIXED TO THE WORLD. The map's frame comes from
+			// ShadowMapMath.Fit(_frameLights.KeyDir, ...), so with Setting_LightsFollowCamera ON -- which is
+			// the CURRENT DEFAULT -- KeyDir rotates with the camera, the texel grid rotates with it, and the
+			// Bayer pattern does sweep across the surface while orbiting. Fine hair will shimmer.
+			// Two features from the same batch that step on each other. There is no anchor that survives a
+			// rotating light: the texel grid IS the light's frame. Options if it turns out to matter:
+			// (a) index the pattern by a stable object-space quantity instead of the map texel, (b) blue
+			// noise instead of ordered Bayer (shimmers less and reads as grain, not as banding), or
+			// (c) accept it. NOT decided -- it is a visual-quality call, and those are the user's.
+			// Smaller, same family: TexelWorld = 2*Radius/mapSize and Radius comes from the scene AABB, which
+			// moves every frame during animation; and GroundMapSize snaps between 512/1024/2048, so the
+			// ground map's pattern re-indexes when it changes step.
+			float aBlend = aTex * uMaterialAlpha;
+			ivec2 p = ivec2(gl_FragCoord.xy) & 3;
+			if (aBlend < bayer4[p.y * 4 + p.x])
+				discard;
+		}
 	}
 }
 "

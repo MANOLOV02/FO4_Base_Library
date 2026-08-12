@@ -130,7 +130,20 @@ Public Structure PreviewLightRig
     ''' <summary>Intensidad global del ambient (0..2). Multiplica a los dos hemisferios.</summary>
     Public Property AmbientIntensity As Single
     ''' <summary>Brillo del suelo (normal hacia −Z) como fracción del cielo, 0..1. 1 = ambient plano;
-    ''' 0 = suelo negro. Independiente de la intensidad y de los tintes.</summary>
+    ''' 0 = suelo negro. Independiente de la intensidad y de los tintes.
+    ''' <para>⛔ SE APLICA EN LINEAL, DESPUES del pow 2.2, y por eso no vive dentro de
+    ''' <see cref="AmbientGroundDiffuse"/> sino en <c>Render.ResolveFrameLights</c>. Un TINTE se autora en
+    ''' espacio perceptual y se decodea al subir —es un color—; esto NO es un color, es un COCIENTE DE
+    ''' RADIANCIAS entre los dos hemisferios, y el <c>mix()</c> del shader que lo consume opera en lineal.
+    ''' <para>Estuvo del otro lado —multiplicando al color antes del pow— y ahi la perilla entregaba
+    ''' <c>nivel^2.2</c>: el 0,45 del Studio llegaba al shader como 17,3 % del cielo, no 45 %. MEDIDO con
+    ''' `ShadowGate --ambient` sobre la escena canonica: pintar el hemisferio de abajo de ROJO PURO movia
+    ''' 0,48/255 de promedio contra los 3,00 del MISMO gesto sobre el cielo (6,25x menos), y la mitad
+    ''' inferior del slider era indistinguible de cero (0,00 vs 0,20 = 0,14/255). O sea la perilla existia,
+    ''' llegaba al uniform, y no se sentia.</para>
+    ''' <para>⚠️ El cambio REINTERPRETA los configs existentes a proposito (decision del usuario, no se
+    ''' migro el esquema): un 0,45 guardado antes valia 17,3 % y ahora vale 45 %, o sea el suelo de todo rig
+    ''' ya guardado se aclara ~2,6x. Los presets tampoco se reexpresaron.</para></para></summary>
     Public Property AmbientGroundLevel As Single
     ''' <summary>TINTE del hemisferio de arriba (normal hacia world +Z). Blanco = neutro.</summary>
     Public Property AmbientSkyColor As RigColor
@@ -170,7 +183,11 @@ Public Structure PreviewLightRig
     '''      explícitamente coloreado, y que las otras luces lleven la temperatura CONTRARIA o neutra.
     '''   2. LA FUERZA NO ES LINEAL. strength 0.6 = 0.33 lineal, pero 1.35 = 1.94 = SEIS veces la key de
     '''      Studio -> quemado. Presupuesto de referencia (Studio, que es el calibrado): directas ≈ 0.62
-    '''      lineal sumadas, ambient sky 1.0 / ground 0.22. Cada set se queda cerca de ese total y gasta
+    '''      lineal sumadas, ambient sky 0.83 / ground 0.37. ⚠️ EL GROUND LINEAL CAMBIO SIN QUE SE TOCARA UN
+    '''      PRESET: el nivel dejo de ir adentro del pow (ver AmbientGroundLevel), asi que el 0.45 del Studio
+    '''      pasa de valer 0.14 lineal a valer 0.37. Los cinco sets se dejaron como estaban a proposito, o
+    '''      sea todos tienen hoy el suelo mas claro de lo que tenian cuando se calibraron. Cada set se
+    '''      queda cerca de ese total y gasta
     '''      la diferencia en CONTRASTE (dónde está la luz y cuánto baja el ambiente), no en potencia.</summary>
     Public Shared Function Presets() As LightRigPreset()
     ' ⛔ LA KEY DE STUDIO ESTABA A 0 GRADOS DE LA CAMARA (forward:=1 y nada mas), y una luz frontal
@@ -260,9 +277,14 @@ Public Structure PreviewLightRig
         Return AmbientSkyColor.ToVector3() * AmbientIntensity
     End Function
 
-    ''' <summary>Color del hemisferio de abajo: tinte × intensidad × nivel de suelo (sin linearizar).</summary>
+    ''' <summary>Color del hemisferio de abajo: tinte × intensidad (sin linearizar). SIMETRICA con
+    ''' <see cref="AmbientSkyDiffuse"/> a proposito — las dos devuelven color×intensidad y nada mas.
+    ''' <para>⛔ EL NIVEL DE SUELO NO ESTA ACA. Va aplicado despues del pow 2.2, en
+    ''' <c>Render.ResolveFrameLights</c>; ver <see cref="AmbientGroundLevel"/> para el por que y para lo
+    ''' que costo tenerlo del otro lado. Si algun dia esto vuelve a multiplicar por el nivel, la perilla
+    ''' se vuelve a apagar sola y no hay gate que lo cace.</para></summary>
     Public Function AmbientGroundDiffuse() As OpenTK.Mathematics.Vector3
-        Return AmbientGroundColor.ToVector3() * (AmbientIntensity * AmbientGroundLevel)
+        Return AmbientGroundColor.ToVector3() * AmbientIntensity
     End Function
 End Structure
 

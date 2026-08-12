@@ -23,7 +23,10 @@ Public Structure SkinnedGeometry
     ' vertice por frame durante una animacion: con 130.500 vertices son 16,7 MB de lectura por pasada, y el
     ' destino de todo eso es un VBO de floats. La precision extra no se usaba en ningun lado.
     ' Ver NormalMatrixOrIdentity, que se paso a Single por el mismo motivo y en el mismo movimiento.
-    Public PerVertexSkinMatrix() As Matrix4   ' per-vertex blended Mtot = GlobalTransform * skin
+    ''' <summary>Mtot per-vertice (GlobalTransform * skin), en SoA. Ver <see cref="SkinMatricesSoA"/>:
+    ''' se indexa igual que el <c>Matrix4()</c> que reemplaza —<c>mats(i)</c>, <c>mats.Length</c>— pero por
+    ''' dentro son 12 arrays planos, que es lo que el kernel necesita para vectorizar sin copiar.</summary>
+    Public PerVertexSkinMatrix As SkinMatricesSoA
     Public dirtyMaskIndices As HashSet(Of Integer)              ' Para dirty-tracking de máscara
     ' Set by MorphEngine.ApplyMorphPlan whenever it (re)computes the zap mask; consumed + cleared by
     ' Render.EnsureZapIndexBuffer to rebuild the filtered element buffer only when the zap set changed.
@@ -594,8 +597,8 @@ Public Class SkinningHelper
         ' 4) Aplicar skinning CPU
         ' Save NIF-local vertices BEFORE skinning (needed for correct morph-space application)
         Dim nifLocalVerts = rawVerts.ToArray()
-        ' Se guarda en Single: ver el campo PerVertexSkinMatrix.
-        Dim perVertexMtot(vertexCount - 1) As Matrix4
+        ' Se guarda en Single y en SoA: ver SkinMatricesSoA.
+        Dim perVertexMtot As New SkinMatricesSoA(vertexCount)
 
         ' O2.4: Parallel options — use regular For for small meshes, bound parallelism for large ones
         Dim useParallel As Boolean = vertexCount >= 500
@@ -698,7 +701,7 @@ Public Class SkinningHelper
             Case shape.IsSkinned AndAlso singleboneskinning AndAlso bones.Count > 0
                 ' Single-bone: pre-compute once — GPU path: do NOT transform rawVerts/N/T/B
                 Dim Mtot = GlobalTransform * matsPose(0)
-                Array.Fill(perVertexMtot, AMatrix4(Mtot))
+                perVertexMtot.Llenar(AMatrix4(Mtot))
 
                 ' GPU Skinning: single bone matrix for SSBO
                 gpuBoneMats = New Matrix4(0) {}
@@ -735,7 +738,7 @@ Public Class SkinningHelper
                     Mtot = Transform_Class.GetGlobalTransform(backing, shape.NifContent).ToMatrix4d()
                 End If
 
-                Array.Fill(perVertexMtot, AMatrix4(Mtot))
+                perVertexMtot.Llenar(AMatrix4(Mtot))
 
                 ' GPU Skinning: single bone matrix for SSBO
                 gpuBoneMats = New Matrix4(0) {}
@@ -865,25 +868,38 @@ Public Class SkinningHelper
         Return geo
     End Function
 
-    ''' <summary>Normal matrix (inverse-transpose de la parte lineal) tolerante a singularidad.
-    ''' Con un eje escalado a 0 — p.ej. Scale=0 en el editor de transforms — la 3×3 no tiene
-    ''' inversa: la geometría colapsa a un plano/punto y la normal queda matemáticamente
-    ''' indefinida. Devolvemos identidad en lugar de dejar que OpenTK tire
-    ''' InvalidOperationException ("Matrix is singular and cannot be inverted").</summary>
-    ''' <summary>Matriz de normales: la inversa transpuesta del 3x3, con Identidad si es degenerada.
-    ''' <para>⭐⛔ LA INVERSA SE EVALUA EN SINGLE, NO EN DOUBLE, Y ES A PROPOSITO. El vertex shader hace
-    ''' <c>transpose(inverse(mat3(skinMatrix)))</c> en float: calcularla en Double de este lado no era mas
-    ''' fiel, era OTRA cuenta, y parte de la divergencia CPU/GPU que mide el arnes salia de aca.</para>
-    ''' <para>⛔ EL CAMBIO ES GLOBAL A PROPOSITO. Acotarlo al camino de render habria dejado el preview
-    ''' calculando una cosa y el BAKE otra — que es exactamente la divergencia que la regla RENDER==BAKE
-    ''' existe para impedir. Los consumidores son el render (UpdateSkinBuffers_GL), la extraccion de
-    ''' geometria, el world-cache y el exportador de NIF, y todos tienen que ver la misma normal.</para>
-    ''' <para>⚠️ POR LO TANTO CAMBIA BYTES HORNEADOS Y EXPORTADOS. No es una optimizacion invisible: hay
-    ''' que correr el corpus de bake y mirar la diff. El motivo es que la precision extra no se usaba —
-    ''' el destino de todas estas normales es un buffer de floats o un NIF, que guarda floats.</para>
-    ''' <para>El resultado se devuelve en Matrix3d para no cambiar la firma ni los call sites; lo que
-    ''' viaja adentro es precision de Single. El corte por determinante queda en 1e-12, la misma
-    ''' constante de antes, para no mover QUE se considera degenerado.</para></summary>
+    ''' <summary>⛔ SOLO PARA MEDIR: apaga el camino vectorial del kernel. Ver FastSkin.ForzarEscalar.</summary>
+    Friend Shared Sub FastSkinForzarEscalar(v As Boolean)
+        FastSkin.ForzarEscalar = v
+    End Sub
+
+    ''' <summary>⛔ SOLO PARA MEDIR: elige el camino con staging+SIMD o el directo.</summary>
+    Friend Shared Sub FastSkinUsarStaging(v As Boolean)
+        FastSkin.UsarStaging = v
+    End Sub
+
+    ''' <summary>Puente para el camino SPARSE del upload. Ver FastSkin.UnVertice.</summary>
+    Friend Shared Sub FastSkinUnVertice(m As Matrix4, p As Vector3d, vn As Vector3, vt As Vector3, vb As Vector3,
+                                        msn As Boolean, ByRef pos As Vector3, ByRef nrm As Vector3,
+                                        ByRef tan As Vector3, ByRef bit As Vector3)
+        FastSkin.UnVertice(m, p, vn, vt, vb, msn, pos, nrm, tan, bit)
+    End Sub
+
+    ''' <summary>Puente al kernel de <see cref="FastSkin"/>. Existe para que Render.vb no tenga que
+    ''' conocer un Module aparte: el punto de entrada del skinning de CPU sigue siendo SkinningHelper.
+    ''' </summary>
+    Friend Shared Sub FastSkinTransformar(mats As SkinMatricesSoA, lv() As Vector3d,
+                                          ln() As Vector3, lt() As Vector3, lb() As Vector3,
+                                          msn As Boolean, n As Integer,
+                                          posOut() As Vector3, nrmOut() As Vector3,
+                                          tanOut() As Vector3, bitOut() As Vector3)
+        If FastSkin.UsarStaging Then
+            FastSkin.Transformar(mats, lv, ln, lt, lb, msn, n, posOut, nrmOut, tanOut, bitOut)
+        Else
+            FastSkin.TransformarDirecto(mats, lv, ln, lt, lb, msn, n, posOut, nrmOut, tanOut, bitOut)
+        End If
+    End Sub
+
     ''' <summary>Matrix4d -> Matrix4. Se usa al GUARDAR en <c>PerVertexSkinMatrix</c>: el blend sigue
     ''' evaluandose en Double (es la ley canonica, con su self-test SIMD bit a bit), y lo unico que baja
     ''' de precision es el ALMACENAMIENTO.</summary>
@@ -904,29 +920,127 @@ Public Class SkinningHelper
                             m.M41, m.M42, m.M43, m.M44)
     End Function
 
-    ''' <summary>Sobrecarga para la matriz de skin, que ahora se guarda en Single. Evita el viaje
-    ''' Single -> Double -> Single que haria pasar por la otra.</summary>
-    Public Shared Function NormalMatrixOrIdentity(Origen As Matrix4) As Matrix3d
+    ''' <summary>⛔⛔ ESTA SOBRECARGA NO TIENE UN SOLO CONSUMIDOR DE PRODUCCION. Existe para el ARNES, que
+    ''' la usa como opinion INDEPENDIENTE —el <c>Inverted().Transposed()</c> de OpenTK, otro algoritmo—
+    ''' contra la ley por cofactores de <see cref="FastSkin"/>. Es el lado (a) del check [cofactores].
+    ''' <para>⚠️ El doc anterior decia que "la usan el exportador de NIF y el world-cache". Es FALSO y se
+    ''' verifico call site por call site: los dos ensanchan a <c>Matrix4d</c> antes de llamar
+    ''' (<c>SceneNifExporter.vb:528</c> y <c>Create_Normal_Matrix</c>), o sea que resuelven a la OTRA
+    ''' sobrecarga. Desde que el render se mudo a FastSkin, esta no corre en ninguna app.</para>
+    ''' <para>Por eso es <c>Friend</c> y no <c>Public</c>: llega al arnes por <c>InternalsVisibleTo</c> y la
+    ''' superficie de API que se distribuye no crece con una funcion que nadie de afuera usa.</para>
+    ''' </summary>
+    Friend Shared Function NormalMatrixOrIdentity(Origen As Matrix4) As Matrix3d
         Dim L As New OpenTK.Mathematics.Matrix3(Origen.M11, Origen.M12, Origen.M13,
                                                 Origen.M21, Origen.M22, Origen.M23,
                                                 Origen.M31, Origen.M32, Origen.M33)
-        If Math.Abs(L.Determinant) < 0.000000000001F Then Return Matrix3d.Identity
+        ' ⛔ EL CORTE SALE DE `FastSkin.EpsDet`, NO DE UN LITERAL. Estaba escrito a mano aca y en la otra
+        ' sobrecarga, o sea el mismo umbral en tres lugares sin nada que los ate: mover uno separaba en
+        ' silencio la decision de DEGENERACION del render de la del bake y el exportador, y esa decision no
+        ' es un error de redondeo — es normal identidad contra normal transformada.
+        If Math.Abs(L.Determinant) < FastSkin.EpsDet Then Return Matrix3d.Identity
         Dim inv = L.Inverted().Transposed()
         Return New Matrix3d(inv.M11, inv.M12, inv.M13,
                             inv.M21, inv.M22, inv.M23,
                             inv.M31, inv.M32, inv.M33)
     End Function
 
+    ''' <summary>Normal matrix (inverse-transpose de la parte lineal) tolerante a singularidad.
+    ''' Con un eje escalado a 0 — p.ej. Scale=0 en el editor de transforms — la 3×3 no tiene
+    ''' inversa: la geometría colapsa a un plano/punto y la normal queda matemáticamente
+    ''' indefinida. Devolvemos identidad en lugar de dejar que OpenTK tire
+    ''' InvalidOperationException ("Matrix is singular and cannot be inverted").
+    ''' <para>⭐⛔ LA INVERSA SE EVALUA EN SINGLE, NO EN DOUBLE, Y ES A PROPOSITO. El vertex shader hace
+    ''' <c>transpose(inverse(mat3(skinMatrix)))</c> en float: calcularla en Double de este lado no era mas
+    ''' fiel, era OTRA cuenta, y parte de la divergencia CPU/GPU que mide el arnes salia de aca.</para>
+    ''' <para>⛔ EL CAMBIO ES GLOBAL A PROPOSITO. Acotarlo al camino de render habria dejado el preview
+    ''' calculando una cosa y el BAKE otra — que es exactamente la divergencia que la regla RENDER==BAKE
+    ''' existe para impedir. Consumidores: la extraccion de geometria, el world-cache, el bake (via
+    ''' <see cref="Create_Normal_Matrix"/>) y el exportador de NIF.</para>
+    ''' <para>⚠️ POR LO TANTO CAMBIA BYTES HORNEADOS Y EXPORTADOS. No es una optimizacion invisible: hay
+    ''' que correr el corpus de bake y mirar la diff. El motivo es que la precision extra no se usaba —
+    ''' el destino de todas estas normales es un buffer de floats o un NIF, que guarda floats.</para>
+    ''' <para>⛔ ESTADO ABIERTO — el render ya NO pasa por aca. Desde que el skinning de CPU se mudo a
+    ''' <see cref="FastSkin"/>, el render calcula la matriz de normales por cofactores inline y esta
+    ''' funcion quedo con los otros consumidores. Las dos leyes son la misma algebra y el gate [cofactores]
+    ''' mide en grados cuanto se apartan sobre geometria real y posada: 24.927 normales del actor canonico
+    ''' posado, desvio medio 0,0036 grados y PEOR 0,0296 grados — ruido de redondeo de Single, no forma.
+    ''' Mientras ese numero siga ahi, RENDER==BAKE se sostiene. Si algun dia deja de serlo, la salida es
+    ''' que el bake llame a FastSkin, no que el render vuelva aca.</para>
+    ''' <para>⛔ Y hay un defecto PRE-EXISTENTE encima: <c>Vector3d.TransformNormal</c> invierte la matriz
+    ''' por dentro, asi que los call sites que le pasan el resultado de <see cref="Create_Normal_Matrix"/>
+    ''' terminan aplicando la matriz CRUDA a la normal. No se toca sin decision expresa porque mueve bytes
+    ''' horneados; ver la nota de memoria del proyecto.</para>
+    ''' <para>El resultado se devuelve en Matrix3d para no cambiar la firma ni los call sites; lo que
+    ''' viaja adentro es precision de Single. El corte por determinante queda en 1e-12, la misma
+    ''' constante de antes, para no mover QUE se considera degenerado.</para></summary>
     Public Shared Function NormalMatrixOrIdentity(Origen As Matrix4d) As Matrix3d
         ' Matrix3 es ambiguo: NiflySharp.Structs tambien define uno. Se califica.
         Dim L As New OpenTK.Mathematics.Matrix3(CSng(Origen.M11), CSng(Origen.M12), CSng(Origen.M13),
                              CSng(Origen.M21), CSng(Origen.M22), CSng(Origen.M23),
                              CSng(Origen.M31), CSng(Origen.M32), CSng(Origen.M33))
-        If Math.Abs(L.Determinant) < 0.000000000001F Then Return Matrix3d.Identity
+        If Math.Abs(L.Determinant) < FastSkin.EpsDet Then Return Matrix3d.Identity   ' ver la otra sobrecarga
         Dim inv = L.Inverted().Transposed()
         Return New Matrix3d(inv.M11, inv.M12, inv.M13,
                             inv.M21, inv.M22, inv.M23,
                             inv.M31, inv.M32, inv.M33)
+    End Function
+
+    ''' <summary>Direccion x la parte 3x3 de la matriz, TAL CUAL. No invierte, no transpone, no
+    ''' normaliza: aplica lo que se le da.
+    ''' <para>⛔⛔ EXISTE PORQUE <c>Vector3d.TransformNormal</c> INVIERTE LA MATRIZ POR DENTRO.
+    ''' OpenTK define <c>TransformNormal(v, M) = v · (M⁻¹)ᵀ</c>: espera la matriz ORIGINAL y hace la
+    ''' inversa-transpuesta el solo. Todos los call sites de este archivo le pasaban
+    ''' <c>NormalsMat = (A⁻¹)ᵀ</c> — la matriz de normales YA calculada— con lo cual el resultado era
+    ''' <c>v · (((A⁻¹)ᵀ)⁻¹)ᵀ = v · A</c>: <b>la matriz CRUDA aplicada a la normal</b>,
+    ''' que es exactamente lo que la inversa-transpuesta existe para evitar. Y al reves con la tangente:
+    ''' <c>TransformNormal(T, totalSkinMat)</c> daba <c>T · A⁻ᵀ</c>, o sea la ley de la NORMAL aplicada
+    ''' a una direccion de la SUPERFICIE. Los comentarios de al lado declaraban la intencion correcta
+    ''' y el codigo hacia lo contrario, en los cuatro sitios.</para>
+    ''' <para>⭐ Magnitud MEDIDA contra OpenTK 4.9.3: con rotacion pura el error es <b>0,000 grados</b>
+    ''' (una rotacion es ortogonal, <c>A⁻ᵀ = A</c>) y con SHEAR —el blend de dos rotaciones distintas,
+    ''' o sea todo vertice con 2+ influencias: codo, rodilla, hombro— es de <b>36,44 grados</b>. Por eso
+    ''' sobrevivio tanto: N, T y B quedan sheareados IGUAL entre si, la base TBN sigue coherente, y el
+    ''' resultado es un sesgo suave de iluminacion en vez de un artefacto duro.</para>
+    ''' <para>⛔ EL ARREGLO NO ES INTERCAMBIAR LOS ARGUMENTOS. Pasarle <c>NormalsMat</c> a la tangente
+    ''' daria el resultado correcto, pero haria que OpenTK INVIERTA UNA 4x4 POR VERTICE sobre una
+    ''' matriz que ya es una inversa — trabajo tirado y precision perdida. Se aplica cada matriz
+    ''' directamente: la normal con <c>NormalsMat</c>, la tangente y la bitangente con la matriz total.
+    ''' Ademas se ahorra una inversion 4x4 por vertice y por canal.</para>
+    ''' <para>⚠️ ESTO MUEVE BYTES HORNEADOS Y EXPORTADOS, en toda malla con vertices de 2+ influencias.
+    ''' Se hizo con autorizacion expresa del usuario el 2026-08-11.</para></summary>
+    ''' <summary>⭐⭐ LA LEY DEL BAKE SOBRE UN VERTICE, escrita UNA sola vez.
+    ''' <para>⛔⛔ EXISTE PORQUE ESTABA CUATRO VECES Y ESO LA VOLVIA INCUBRIBLE. La decision que
+    ''' importa no es como se calcula la matriz de normales —eso ya lo cubre el gate [cofactores]—
+    ''' sino QUE MATRIZ RECIBE CADA CANAL, y esa decision vivia repetida en cuatro call sites. Un gate
+    ''' que ejercitara la primitiva daba verde con las matrices cruzadas: verificado, cruzarlas en los
+    ''' tres bloques del bake dejaba ParityGate en 21/21.</para>
+    ''' <para>LA LEY: la POSICION y las direcciones SOBRE la superficie (T y B) van con la matriz
+    ''' total; la NORMAL va con la inversa-transpuesta. Es la misma que corre el render
+    ''' (<see cref="FastSkin"/> y los dos vertex shaders), y esa igualdad ES la regla RENDER==BAKE.</para>
+    ''' <para>⛔ Nunca <c>Vector3d.TransformNormal</c>: invierte la matriz por dentro. Ver
+    ''' <see cref="PorMatriz3x3"/>.</para></summary>
+    Friend Shared Sub BakearVertice(ByRef v As Vector3d, ByRef n As Vector3, ByRef t As Vector3, ByRef b As Vector3,
+                                    total As Matrix4d, normales As Matrix4d)
+        v = Vector3d.TransformPosition(v, total)
+        n = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(PorMatriz3x3(RecalcTBN.ADbl(n), normales)))
+        t = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(PorMatriz3x3(RecalcTBN.ADbl(t), total)))
+        b = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(PorMatriz3x3(RecalcTBN.ADbl(b), total)))
+    End Sub
+
+    ''' <summary>Public y no Friend: el exportador de NIF vive en FO4_NPC_Manager, que es otro assembly.</summary>
+    ''' <summary>El corte por determinante degenerado del kernel, expuesto para que el arnes no lo
+    ''' transcriba. Ver FastSkin.EpsDet.</summary>
+    Friend Shared ReadOnly Property EpsDetDelKernel As Single
+        Get
+            Return FastSkin.EpsDet
+        End Get
+    End Property
+
+    Public Shared Function PorMatriz3x3(v As Vector3d, m As Matrix4d) As Vector3d
+        Return New Vector3d(v.X * m.M11 + v.Y * m.M21 + v.Z * m.M31,
+                            v.X * m.M12 + v.Y * m.M22 + v.Z * m.M32,
+                            v.X * m.M13 + v.Y * m.M23 + v.Z * m.M33)
     End Function
 
     Private Shared Function Create_Normal_Matrix(Origen As Matrix4d) As Matrix4d
@@ -1018,7 +1132,7 @@ Public Class SkinningHelper
         End If
 
         ' ⚠️ Son LA MISMA referencia que geom.Normals/Tangents/Bitangents y se transforman IN PLACE.
-        ' El transform sigue en Double (ADbl -> TransformNormal -> Normalize) y solo redondea al
+        ' El transform sigue en Double (ADbl -> PorMatriz3x3 -> Normalize) y solo redondea al
         ' guardar; la entrada ya venia redondeada de RecalcTBN, asi que el unico cambio respecto de
         ' antes es que el valor intermedio no se arrastra en Double entre los dos pasos.
         Dim worldN() As Vector3 = geom.Normals
@@ -1072,10 +1186,7 @@ Public Class SkinningHelper
                                 firma = SkinFirma.Desde(skinFlatIdx, skinFlatWgt, i * skinWpv, skinWpv)
                                 Dim listo As MatricesDeVertice = Nothing
                                 If memo.TryGetValue(firma, listo) Then
-                                    worldV(i) = Vector3d.TransformPosition(worldV(i), listo.Total)
-                                    worldN(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldN(i)), listo.Normales)))
-                                    worldT(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldT(i)), listo.Total)))
-                                    worldB(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldB(i)), listo.Total)))
+                                    BakearVertice(worldV(i), worldN(i), worldT(i), worldB(i), listo.Total, listo.Normales)
                                     ' ⛔⛔ `Continue For`, NUNCA `Return`. Esto vive dentro de un
                                     ' Sub(rango) de Parallel.ForEach sobre Partitioner.Create(0, n):
                                     ' un `Return` sale del SUB y abandona el RANGO ENTERO. Medido
@@ -1136,13 +1247,7 @@ Public Class SkinningHelper
                             End If
 
                             ' Bake (local -> new-local)
-                            worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                            worldN(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldN(i)), NormalsMat)))
-                            ' T y B van con la MATRIZ, no con la inversa-transpuesta:
-                            ' son direcciones SOBRE la superficie. La
-                            ' inversa-transpuesta es la ley de la NORMAL.
-                            worldT(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldT(i)), totalSkinMat)))
-                            worldB(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldB(i)), totalSkinMat)))
+                            BakearVertice(worldV(i), worldN(i), worldT(i), worldB(i), totalSkinMat, NormalsMat)
                         Next
                     End Sub)
 
@@ -1164,13 +1269,7 @@ Public Class SkinningHelper
                     Sub(rango As Tuple(Of Integer, Integer))
                         For i = rango.Item1 To rango.Item2 - 1
                             ' Bake (local -> new-local)
-                            worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                            worldN(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldN(i)), NormalsMat)))
-                            ' T y B van con la MATRIZ, no con la inversa-transpuesta:
-                            ' son direcciones SOBRE la superficie. La
-                            ' inversa-transpuesta es la ley de la NORMAL.
-                            worldT(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldT(i)), totalSkinMat)))
-                            worldB(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldB(i)), totalSkinMat)))
+                            BakearVertice(worldV(i), worldN(i), worldT(i), worldB(i), totalSkinMat, NormalsMat)
                         Next
                     End Sub)
 
@@ -1186,13 +1285,7 @@ Public Class SkinningHelper
                 Parallel.ForEach(RangosDe(worldV.Length),
                     Sub(rango As Tuple(Of Integer, Integer))
                         For i = rango.Item1 To rango.Item2 - 1
-                            worldV(i) = Vector3d.TransformPosition(worldV(i), totalSkinMat)
-                            worldN(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldN(i)), NormalsMat)))
-                            ' T y B van con la MATRIZ, no con la inversa-transpuesta:
-                            ' son direcciones SOBRE la superficie. La
-                            ' inversa-transpuesta es la ley de la NORMAL.
-                            worldT(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldT(i)), totalSkinMat)))
-                            worldB(i) = RecalcTBN.ASng(RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(worldB(i)), totalSkinMat)))
+                            BakearVertice(worldV(i), worldN(i), worldT(i), worldB(i), totalSkinMat, NormalsMat)
                         Next
                     End Sub)
 
@@ -1520,7 +1613,7 @@ Public Class SkinningHelper
     ''' leían matrices viejas. Se detectó al factorizar, no antes: mirando los dos cuerpos por
     ''' separado la rama faltante no salta.</para>
     ''' </summary>
-    Friend Shared Sub FillPerVertexSkinMatrix(mats() As Matrix4, skinning As ShapeSkinningData, palette() As Matrix4d)
+    Friend Shared Sub FillPerVertexSkinMatrix(mats As SkinMatricesSoA, skinning As ShapeSkinningData, palette() As Matrix4d)
         If mats Is Nothing OrElse palette Is Nothing Then Return
         Dim vc = mats.Length
         If vc = 0 Then Return
@@ -1564,7 +1657,9 @@ Public Class SkinningHelper
                     ' El world-cache queda en Double: lo consumen bounds, picking, el
                     ' exportador y el raytracer de oclusion. Lo unico que cambia es que
                     ' la normal de ENTRADA ya viene redondeada a Single.
-                    wn(i) = RecalcTBN.NormalizaComoNifly(Vector3d.TransformNormal(RecalcTBN.ADbl(localNorms(i)), nm))
+                    ' `nm` YA es la matriz de normales: se aplica tal cual. TransformNormal la volvia a
+                    ' invertir y terminaba transformando la normal con la matriz cruda. Ver PorMatriz3x3.
+                    wn(i) = RecalcTBN.NormalizaComoNifly(PorMatriz3x3(RecalcTBN.ADbl(localNorms(i)), nm))
                 Next
             End Sub)
         geo.CachedWorldVertices = wv
@@ -1833,7 +1928,7 @@ Public Class SkinningHelper
                 CSng(Mtot.M21), CSng(Mtot.M22), CSng(Mtot.M23), CSng(Mtot.M24),
                 CSng(Mtot.M31), CSng(Mtot.M32), CSng(Mtot.M33), CSng(Mtot.M34),
                 CSng(Mtot.M41), CSng(Mtot.M42), CSng(Mtot.M43), CSng(Mtot.M44))
-            Array.Fill(geo.PerVertexSkinMatrix, AMatrix4(Mtot))
+            geo.PerVertexSkinMatrix.Llenar(AMatrix4(Mtot))
             geo.PerVertexMatrixValid = True   ' rama single-bone/unskinned: siempre se llena (barato)
         End If
 

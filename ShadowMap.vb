@@ -79,10 +79,30 @@ Public Structure PreviewShadowSettings
     End Function
 
     ''' <summary>Copia con los valores acotados al rango que el render sabe ejecutar. Lo llama el render
-    ''' en vez de confiar en el config: un MapSize absurdo cargado a mano no puede tirar la app.</summary>
+    ''' en vez de confiar en el config: un MapSize absurdo cargado a mano no puede tirar la app.
+    ''' <para>⛔⛔ ACOTA CAMPO POR CAMPO Y NO REEMPLAZA LA ESTRUCTURA. Antes, con <c>MapSize &lt;= 0</c>
+    ''' devolvia <c>Defaults()</c> ENTERO, y eso es otra cosa: <c>Defaults()</c> trae
+    ''' <c>Enabled = True</c>, asi que una estructura armada como
+    ''' <c>New PreviewShadowSettings With {.Enabled = False}</c> —que deja MapSize en 0 por ser el default
+    ''' del tipo— salia del sanitizado CON LAS SOMBRAS PRENDIDAS. Un brazo de A/B construido asi se dibuja
+    ''' con la feature que dice apagar, y el veredicto sale al reves sin que nada avise. Hoy ningun caller
+    ''' lo hace, pero la trampa estaba armada y el doc decia "acotados", que no era lo que pasaba.</para>
+    ''' <para>⚠️ EL CAMBIO AFECTA A LOS CINCO CAMPOS, no solo a Enabled y MapSize. Una estructura armada a
+    ''' mano como <c>New PreviewShadowSettings With {.Enabled = True}</c> antes salia con los defaults de
+    ''' TODO; ahora sale con <c>Intensity = 0</c> (o sea sombra invisible, porque Clamp(0,0,1) = 0) y con
+    ''' los dos bias en 0. Hoy no hay caller que construya asi —todos parten de Defaults()— pero un brazo
+    ''' de A/B futuro hecho de esa forma se dibujaria SIN sombra creyendo tenerla, que es el gemelo exacto
+    ''' de la trampa que este mismo doc dice haber cerrado.</para>
+    ''' <para>⚠️ Y hay un consumidor que NO sanitiza: <c>Render.vb</c> lee <c>ActiveShadows().Enabled</c>
+    ''' crudo para decidir si recalcula bounds en Play, mientras el pase de sombra lee
+    ''' <c>.Sanitized().Enabled</c>. Con la version vieja los dos discrepaban justo en ese caso y el pase
+    ''' corria con bounds congelados. Acotando en vez de reemplazar, <c>Enabled</c> ya no puede cambiar de
+    ''' valor al sanitizar y los dos coinciden por construccion.</para></summary>
     Public Function Sanitized() As PreviewShadowSettings
         Dim s = Me
-        If s.MapSize <= 0 Then Return Defaults()
+        ' MapSize 0 es el default del TIPO (una estructura recien construida), no una eleccion del usuario:
+        ' se lo lleva al default de la feature. `Enabled` y el resto se respetan tal como vinieron.
+        If s.MapSize <= 0 Then s.MapSize = Defaults().MapSize
         s.MapSize = Math.Clamp(RoundToPowerOfTwo(s.MapSize), 256, 8192)
         s.SoftnessTexels = Math.Clamp(s.SoftnessTexels, 0.0F, CSng(MaxPcfRadius))
         s.Intensity = Math.Clamp(s.Intensity, 0.0F, 1.0F)
@@ -244,6 +264,17 @@ Friend Module ShadowMapMath
     ''' <para>Devuelve el AABB sin tocar si la luz esta en el horizonte o por debajo (<c>L.Z</c> chico o
     ''' negativo): ahi la sombra se va al infinito y no hay encuadre finito que la contenga. El receptor
     ''' de suelo se apaga solo en ese caso, via <paramref name="valid"/>.</para></summary>
+    ''' <summary>Seno de la elevacion minima de la key para que el receptor de suelo tenga sentido. La UI
+    ''' la lee de aca: es la MISMA cantidad que decide el render, no una copia redondeada.</summary>
+    Friend Const SenoDeElevacionMinima As Single = 0.2F
+
+    ''' <summary>Esa misma elevacion, en grados, para mostrarla. Se calcula, no se transcribe.</summary>
+    Friend ReadOnly Property ElevacionMinimaGrados As Single
+        Get
+            Return CSng(Math.Asin(SenoDeElevacionMinima) * 180.0 / Math.PI)
+        End Get
+    End Property
+
     Friend Sub ExpandForGroundShadow(ByRef sceneMin As Vector3, ByRef sceneMax As Vector3,
                                      lightDir As Vector3, groundZ As Single, ByRef valid As Boolean)
         valid = False
@@ -251,9 +282,14 @@ Friend Module ShadowMapMath
         If sceneMax.X < sceneMin.X OrElse sceneMax.Y < sceneMin.Y OrElse sceneMax.Z < sceneMin.Z Then Exit Sub
         If lightDir.LengthSquared < 0.000001F Then Exit Sub
         Dim L = Vector3.Normalize(lightDir)
-        ' Elevacion minima: por debajo de ~11 grados (sin = 0.2) la sombra se estira tanto que el mapa
-        ' pierde toda la resolucion util. Es un corte de calidad, no de correccion.
-        If L.Z < 0.2F Then Exit Sub
+        ' Elevacion minima: por debajo de este corte la sombra se estira tanto que el mapa pierde toda la
+        ' resolucion util. Es un corte de calidad, no de correccion.
+        ' ⛔ LA CONSTANTE SE EXPONE (SenoDeElevacionMinima) porque el DIALOGO la necesita para deshabilitar
+        ' la casilla y para decir el numero en el texto. La tenia copiada como "11.54F  ' asin(0.2)", que es
+        ' 11,5370 redondeado PARA ARRIBA: quedaba una banda muerta en [11,5370 , 11,54) donde el motor si
+        ' dibuja y la casilla estaba gris, y el texto —formateado a un decimal— mostraba "11,5", un valor
+        ' con el que la propia casilla se deshabilita. Un literal duplicado y redondeado a mano.
+        If L.Z < SenoDeElevacionMinima Then Exit Sub
 
         Dim mn = sceneMin, mx = sceneMax
         ' Los 8 vertices sin `For Each {…}`: en VB ese literal materializa un array POR ENTRADA al bucle

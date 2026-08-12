@@ -51,6 +51,28 @@ Public Class Config_App
     ' per-segment occlusion (Pip-Boy 60/160 swap, head-part hiding) — see the "= False" there.
     Public Property Setting_DrawHiddenSegments As Boolean = True
     Public Property Setting_RecalculateNormals As Boolean = True
+
+    ''' <summary>El rig de luces gira CON la cámara en vez de quedar fijo al mundo.
+    ''' <para>⚠️ EL DEFAULT ES <b>True</b> — decisión del usuario, 2026-08-11. O sea que NO es el
+    ''' comportamiento histórico: un usuario existente cuyo config no traiga la clave va a ver el rig
+    ''' acompañar a la cámara la primera vez que abra esta versión. Es intencional; queda dicho acá porque
+    ''' es la clase de cambio que después se reporta como "se me movieron las luces solas".</para>
+    ''' <para>⭐ Son dos modelos y sirven para cosas distintas. <b>Fijo al mundo</b> (False) es lo que hace el
+    ''' motor: la luz está en la escena, orbitar gira al personaje DENTRO de la luz y le ves la espalda a
+    ''' contraluz — que es lo que hay que juzgar si querés saber cómo va a verse en el juego. <b>Pegado a la
+    ''' cámara</b> (True) es lo que hacen los visores de malla (Substance, Marmoset, el viewport de Blender):
+    ''' la luz te acompaña y el modelo se ve siempre igual de iluminado, que es lo que querés para inspeccionar
+    ''' una prenda. Por eso es una opción y no una decisión.</para>
+    ''' <para>⛔ CON FALSE NO SE EJECUTA UNA SOLA LÍNEA NUEVA. La rama que rota las direcciones está detrás de
+    ''' este flag en <c>ResolveFrameLights</c>, así que la paridad con el comportamiento anterior es EXACTA por
+    ''' construcción y no por redondeo — que importa, porque `right*d.X + Forward*d.Y + upPlane*d.Z` con la
+    ''' base identidad suma ceros y eso convierte un -0.0 en +0.0 (la trampa que ya documenta
+    ''' <c>ParentGlobalTransform</c>). El gate [luces-camara] verifica las dos ramas.</para>
+    ''' <para>La sombra lo sigue SOLA: <c>RenderShadowPass</c> se encuadra sobre <c>_frameLights.KeyDir</c>,
+    ''' que es la misma dirección que va a los uniforms. No hay una segunda ley que mantener en sincronía.</para>
+    ''' </summary>
+    Public Property Setting_LightsFollowCamera As Boolean = True
+
     Public Property Setting_KeepPhysics As Boolean = True
     Public Property theme As AppTheme = AppTheme.Light
 

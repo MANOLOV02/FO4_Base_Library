@@ -293,6 +293,15 @@ Public Class FO4UnifiedMaterial_Class
         End If
         copy._NifShaderType = _NifShaderType
         copy._EnvmapMaskPath = _EnvmapMaskPath
+        ' ⛔⛔ SIN ESTA LINEA UN BGEM CON Cast_Shadows QUEDA `IsDirty` DESDE LA CARGA. `ClearDirty` hace
+        ' `_cleanSnapshot = Clone()` y `IsDirty` compara por reflexion TODAS las propiedades publicas — y
+        ' `CastShadows` es publica y ya no lleva <BGSMOnly>. Si el clon no copia el respaldo, el original
+        ' dice True y el snapshot False: diff permanente, la app pide guardar un material que nadie toco, y
+        ' se cae el invariante del que depende Editor_Form ("un dirty implica una mutacion post-carga").
+        ' ⛔ Y peor: los clones que despues se ESCRIBEN (ShapeMaterialTranscriber, FaceTextureRepointer)
+        ' apagarian el bit en el NIF de salida, porque Save_To_Shader ahora si lo escribe. La misma linea
+        ' que arreglo la lectura convertiria una perdida silenciosa en una escritura destructiva.
+        copy._castShadowsDelNif = _castShadowsDelNif
         copy._alphaBlendEnabled = _alphaBlendEnabled
         copy._blendFunctionSource = _blendFunctionSource
         copy._blendFunctionDest = _blendFunctionDest
@@ -2460,16 +2469,40 @@ Public Class FO4UnifiedMaterial_Class
         End Set
     End Property
 
+    ''' <summary>Respaldo del bit <c>Cast_Shadows</c> (SF1 bit 9) del NIF, para los materiales que NO
+    ''' son BGSM.
+    ''' <para>⛔ EXISTE PORQUE EL CAMPO NO ESTA EN EL FORMATO BGEM. `Cast Shadows` es un campo del
+    ''' archivo .bgsm; el .bgem no lo tiene. Pero el BIT SI ESTA EN EL NIF, para cualquier
+    ''' BSShaderProperty — y antes se descartaba: el getter hacia
+    ''' <c>TryCast(Underlying_Material, BGSM)?.CastShadows</c> con fallback a <c>False</c>, o sea que
+    ''' TODO material de effect shader reportaba False sin mirar el NIF. Consecuencia: ninguna shape con
+    ''' BSEffectShaderProperty proyectaba sombra jamas, aunque el bit estuviera prendido.</para>
+    ''' <para>La regla que se respeta es la del proyecto: <b>en FO4 el material PISA al NIF</b> — pero
+    ''' solo para los campos que el material TIENE. Si el formato no lo tiene, manda el NIF.</para>
+    ''' </summary>
+    Private _castShadowsDelNif As Boolean = False
+
+    ''' <summary>Proyecta sombra. En BGSM sale del campo del material; en BGEM (que no tiene ese campo)
+    ''' sale del bit <c>Cast_Shadows</c> de SF1 del NIF, que es game-aware — SK y FO4 comparten el
+    ''' <c>1 &lt;&lt; 9</c>, ver <see cref="CastShadowsFlagValue"/>.
+    ''' <para>⛔ YA NO ES <c>&lt;BGSMOnly&gt;</c>: el property grid la ocultaba para BGEM, asi que el
+    ''' usuario no podia ni verla ni corregirla, y ademas leia False siempre. Ahora aplica a los dos.</para>
+    ''' </summary>
     <Category("Rendering")>
-    <BGSMOnly()>
     <DefaultValue(False)>
     Public Property CastShadows As Boolean
         Get
-            Return If(TryCast(Underlying_Material, BGSM)?.CastShadows, False)
+            Dim bgsm = TryCast(Underlying_Material, BGSM)
+            If bgsm IsNot Nothing Then Return bgsm.CastShadows
+            Return _castShadowsDelNif
         End Get
         Set(value As Boolean)
             Dim bgsm = TryCast(Underlying_Material, BGSM)
             If bgsm IsNot Nothing Then bgsm.CastShadows = value
+            ' Se guarda SIEMPRE, no solo cuando no hay BGSM: asi el valor sobrevive si el material se
+            ' reemplaza por uno de otro tipo, y el camino de escritura del effect shader tiene de donde
+            ' sacarlo sin preguntar por el tipo.
+            _castShadowsDelNif = value
         End Set
     End Property
 
@@ -3186,6 +3219,23 @@ Public Class FO4UnifiedMaterial_Class
         End If
     End Sub
 
+    ''' <summary>Lee el bit Cast_Shadows de SF1 de un shader, con el vocabulario del juego que
+    ''' corresponda. Existe como punto de entrada para que el gate `castshadows-bgem` pruebe la FUNCION
+    ''' REAL en vez de una maqueta: es la misma que usan Create_From_Shader y Deserialize.</summary>
+    Public Shared Function LeerCastShadowsDeShader(shad As INiShader) As Boolean
+        If shad Is Nothing Then Return False
+        Return ShaderHelper.HasFlagSF1(shad, CastShadowsFlagValue(shad))
+    End Function
+
+    ''' <summary>Escribe ese mismo bit. El parametro `fo4` elige el vocabulario cuando el shader recien
+    ''' creado todavia no lo declara.</summary>
+    Public Shared Sub EscribirCastShadowsEnShader(shad As INiShader, valor As Boolean, fo4 As Boolean)
+        If shad Is Nothing Then Return
+        ShaderHelper.SetFlagSF1(shad, If(fo4,
+            CUInt(NiflySharp.Enums.Fallout4ShaderPropertyFlags1.Cast_Shadows),
+            CUInt(NiflySharp.Enums.SkyrimShaderPropertyFlags1.Cast_Shadows)), valor)
+    End Sub
+
     Private Shared Function CastShadowsFlagValue(shad As INiShader) As UInteger
         ' SK Cast_Shadows (1<<9) == FO4 Cast_Shadows (1<<9).
         Return If(IsSkShader(shad),
@@ -3527,6 +3577,10 @@ Public Class FO4UnifiedMaterial_Class
         Else
             mat = New BGEM
         End If
+        ' ⛔ EL BIT Cast_Shadows NO PUEDE IR EN EL `With`: el BGEM no tiene ese campo. Va al respaldo del
+        ' wrapper, que es de donde lo lee la propiedad cuando el material no es BGSM. Antes no se leia y
+        ' toda shape con effect shader quedaba en False — ninguna proyectaba sombra.
+        _castShadowsDelNif = shad IsNot Nothing AndAlso ShaderHelper.HasFlagSF1(shad, CastShadowsFlagValue(shad))
         mat.Version = DefaultMaterialVersionForNif(Nif)
         mat.AlphaTest = False
         mat.AlphaTestRef = 128
@@ -3590,6 +3644,10 @@ Public Class FO4UnifiedMaterial_Class
 
         ShaderHelper.SetFlagSF2(shad, WeaponBloodFlagValue(shad), Mat.BloodEnabled)
         ShaderHelper.SetFlagSF1(shad, SoftEffectFlagValue(shad), Mat.SoftEnabled)
+        ' ⛔ EL BIT SE ESCRIBE, y antes no se tocaba. No lo borraba —lo dejaba como venia— pero eso hacia
+        ' que la propiedad fuera de SOLO LECTURA en la practica para BGEM: editarla en el grid no llegaba
+        ' al archivo. Con esto el round-trip cierra: lo que se lee es lo que se escribe.
+        ShaderHelper.SetFlagSF1(shad, CastShadowsFlagValue(shad), Me.CastShadows)
         ShaderHelper.SetFlagSF1(shad, DecalFlagValue(shad), Mat.Decal)
         ShaderHelper.SetFlagSF2(shad, NoFadeFlagValue(shad), Mat.DecalNoFade)
         ShaderHelper.SetFlagSF2(shad, ZBufferWriteFlagValue(shad), Mat.ZBufferWrite)
@@ -4158,6 +4216,16 @@ Public Class FO4UnifiedMaterial_Class
         ' Required so the Unknown branch below can preserve the NIF state (BGSM Unknown can't
         ' carry the alpha state independently — the byte tuple is hardcoded to (0,6,7) by ME).
         ApplyAlphaPropertyFromNif(shap, Nif)
+        ' Step 1b: y el bit Cast_Shadows de SF1, por el MISMO motivo y con el mismo patron.
+        ' ⛔⛔ ESTE ES EL CAMINO QUE IMPORTA. Cuando el shader nombra un .bgem/.bgsm, GetRelatedMaterial
+        ' llama ACA y NUNCA a Create_From_Shader — o sea que sembrar el bit alla sola no alcanzaba, y para
+        ' todo material que viene de un archivo (que es el caso de cualquier mod) el respaldo quedaba en
+        ' False. Con un BGSM da igual —el getter usa el campo del material— pero el .bgem NO TIENE ese
+        ' campo, asi que sin esto ninguna shape con effect shader podia proyectar sombra.
+        Dim shadCast = Nif?.GetShader(shap)
+        If shadCast IsNot Nothing Then
+            _castShadowsDelNif = ShaderHelper.HasFlagSF1(shadCast, CastShadowsFlagValue(shadCast))
+        End If
         ' Step 2: deserialize the BGSM/BGEM payload. Reassigns Underlying_Material — anything
         ' Step 1 wrote into Underlying_Material (AlphaTest, AlphaBlendMode, etc.) is discarded;
         ' only the three private backing fields survive.

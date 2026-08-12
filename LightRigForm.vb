@@ -151,10 +151,10 @@ Partial Public Class LightRigForm
 
         ' Dirección de MUNDO de cada luz: azimut + elevación (antes eran 6 multiplicadores relativos
         ' a la cámara; ver PreviewLight). Los NUD ya vienen acotados por el Designer.
-        CargarAngulo(nudK_Az, rig.KeyLight.AzimuthDeg) : CargarAngulo(nudK_El, rig.KeyLight.ElevationDeg)
-        CargarAngulo(nudL_Az, rig.FillLeft.AzimuthDeg) : CargarAngulo(nudL_El, rig.FillLeft.ElevationDeg)
-        CargarAngulo(nudR_Az, rig.FillRight.AzimuthDeg) : CargarAngulo(nudR_El, rig.FillRight.ElevationDeg)
-        CargarAngulo(nudB_Az, rig.BackLight.AzimuthDeg) : CargarAngulo(nudB_El, rig.BackLight.ElevationDeg)
+        CargarAngulo(tK_Az, rig.KeyLight.AzimuthDeg) : CargarAngulo(tK_El, rig.KeyLight.ElevationDeg)
+        CargarAngulo(tL_Az, rig.FillLeft.AzimuthDeg) : CargarAngulo(tL_El, rig.FillLeft.ElevationDeg)
+        CargarAngulo(tR_Az, rig.FillRight.AzimuthDeg) : CargarAngulo(tR_El, rig.FillRight.ElevationDeg)
+        CargarAngulo(tB_Az, rig.BackLight.AzimuthDeg) : CargarAngulo(tB_El, rig.BackLight.ElevationDeg)
 
         ' Ambient = 3 perillas independientes: intensidad, hemisferio (ground level) y tintes.
         tambient.Value = rig.AmbientIntensity
@@ -168,6 +168,11 @@ Partial Public Class LightRigForm
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         chkShadows.Checked = sh.Enabled
         chkGroundShadow.Checked = sh.GroundShadow
+        ' Anclaje del rig. Vive en Config_App como el resto de las preferencias del visor y NO en
+        ' PreviewLightRig: no es parte del set calibrado —no cambia una sola intensidad ni un angulo— sino
+        ' de COMO se interpreta. Metiendolo en el rig habria que versionar el schema y ademas tocarlo
+        ' marcaria el combo de presets como "Custom", que no es lo que significa.
+        chkLightsFollowCamera.Checked = Config_App.Current.Setting_LightsFollowCamera
         CargarCalidadSombra(sh.MapSize)
         tShadowSoft.Value = sh.SoftnessTexels
         tShadowStrength.Value = sh.Intensity
@@ -233,9 +238,13 @@ Partial Public Class LightRigForm
     ''' <summary>Repone TODA la pestana Rendering a sus defaults. Es el reemplazo del boton que Wardrobe
     ''' Manager tenia en su pantalla de Settings y que se perdio al migrar la pestana; btnReset, el de la
     ''' otra pestana, no toca nada de esto.
-    ''' <para>⛔ `Setting_DrawHiddenSegments` se repone SOLO si esta app lo edita. El default de Wardrobe
-    ''' Manager es True (es su ayuda de inspeccion) y el de la libreria False, asi que un reset ciego se lo
-    ''' prenderia a FO4_NPC_Manager, que depende de la oclusion por segmento. Ver AllowHiddenSegments.</para>
+    ''' <para>⛔ `Setting_DrawHiddenSegments` se repone SOLO si esta app lo edita. El default declarado en
+    ''' <c>Config_Class.vb</c> es True —es la ayuda de inspeccion de Wardrobe Manager— asi que un reset
+    ''' ciego se lo PRENDERIA a FO4_NPC_Manager, que depende de la oclusion por segmento y no expone la
+    ''' casilla. Ver AllowHiddenSegments.
+    ''' <para>⚠️ Este doc decia "y el de la libreria False". Es al reves: el default de la libreria ES True
+    ''' (Config_Class.vb:52). Quien lo leyera para decidir si el guard de NPC Manager seguia haciendo falta
+    ''' concluia justo lo contrario.</para></para>
     ''' </summary>
     Private Sub BtnResetRender_Click(sender As Object, e As EventArgs) Handles btnResetRender.Click
         If MessageBox.Show("Reset every setting on the Rendering tab to its default?",
@@ -279,11 +288,16 @@ Partial Public Class LightRigForm
     ''' tiene la key a -22,29, o sea que la casilla estaba tildada y no pasaba nada, sin una palabra.
     ''' Se dice en el propio texto de la casilla, que es donde el usuario esta mirando.</summary>
     Private Sub ActualizarAvisoDeSuelo()
-        Const ElevacionMinima As Single = 11.54F     ' asin(0.2) en grados: el corte de ExpandForGroundShadow
+        ' ⛔ EL CORTE SE LEE DEL RENDER, no se transcribe. Estaba como `Const ElevacionMinima = 11.54F`
+        ' comentado "asin(0.2)", y asin(0,2) es 11,5370: redondeado PARA ARRIBA dejaba una banda muerta en
+        ' [11,5370 , 11,54) donde el motor si dibuja la sombra y la casilla estaba gris. Y el texto, con
+        ' formato "0.#", mostraba "11,5" — un valor con el que la casilla se deshabilita, o sea que el
+        ' mensaje contradecia a su propio gate. Se muestra con dos decimales por lo mismo.
+        Dim ElevacionMinima As Single = ShadowMapMath.ElevacionMinimaGrados
         Dim elev = Config_App.Current.ActiveLights().KeyLight.ElevationDeg
         Dim puede = elev >= ElevacionMinima
         chkGroundShadow.Text = If(puede, "Shadow on the ground",
-                                  $"Shadow on the ground (needs the key above {ElevacionMinima:0.#} deg)")
+                                  $"Shadow on the ground (needs the key above {ElevacionMinima:0.00} deg)")
         chkGroundShadow.Enabled = puede AndAlso chkShadows.Checked
     End Sub
 
@@ -307,9 +321,9 @@ Partial Public Class LightRigForm
 
         Dim nudChanged As EventHandler = Sub(sender, e) VolcarUIenModelo()
 
-        For Each nud In New NumericUpDown() {
-            nudK_Az, nudK_El, nudL_Az, nudL_El,
-            nudR_Az, nudR_El, nudB_Az, nudB_El}
+        For Each nud In New TinySliderTextBox() {
+            tK_Az, tK_El, tL_Az, tL_El,
+            tR_Az, tR_El, tB_Az, tB_El}
             AddHandler nud.ValueChanged, nudChanged
         Next
 
@@ -318,7 +332,21 @@ Partial Public Class LightRigForm
                                                   VolcarSombrasEnModelo()
                                               End Sub
         AddHandler chkGroundShadow.CheckedChanged, Sub(sender, e) VolcarSombrasEnModelo()
-        AddHandler cmbShadowQuality.SelectedIndexChanged, Sub(sender, e) VolcarSombrasEnModelo()
+        AddHandler chkLightsFollowCamera.CheckedChanged, Sub(sender, e)
+                                                             If _preventchanges Then Return
+                                                             Config_App.Current.Setting_LightsFollowCamera = chkLightsFollowCamera.Checked
+                                                             ' Redibuja: cambia la direccion de las 4 luces
+                                                             ' y, con ella, el encuadre del shadow map.
+                                                             RaiseEvent LightsChanged()
+                                                         End Sub
+        AddHandler cmbShadowQuality.SelectedIndexChanged, Sub(sender, e)
+                                                              ' Elegir a mano en el combo ES renunciar al
+                                                              ' tamano custom: recien ahi se descarta.
+                                                              ' Con `_preventchanges` esto viene de la carga,
+                                                              ' que no es una eleccion del usuario.
+                                                              If Not _preventchanges Then _mapSizeFueraDeLista = 0
+                                                              VolcarSombrasEnModelo()
+                                                          End Sub
         AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
         AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
 
@@ -391,10 +419,10 @@ Partial Public Class LightRigForm
         ' El rig vivo entra como referencia para que los angulos sobrevivan al redondeo del NUD.
         Dim ant = Config_App.Current.ActiveLights()
         Dim rig As New PreviewLightRig With {
-            .KeyLight = LeerLuz(tbKey, btnKeyColor, nudK_Az, nudK_El, ant.KeyLight),
-            .FillLeft = LeerLuz(tbFillL, btnFillLColor, nudL_Az, nudL_El, ant.FillLeft),
-            .FillRight = LeerLuz(tbFillR, btnFillRColor, nudR_Az, nudR_El, ant.FillRight),
-            .BackLight = LeerLuz(tbBack, btnBackColor, nudB_Az, nudB_El, ant.BackLight),
+            .KeyLight = LeerLuz(tbKey, btnKeyColor, tK_Az, tK_El, ant.KeyLight),
+            .FillLeft = LeerLuz(tbFillL, btnFillLColor, tL_Az, tL_El, ant.FillLeft),
+            .FillRight = LeerLuz(tbFillR, btnFillRColor, tR_Az, tR_El, ant.FillRight),
+            .BackLight = LeerLuz(tbBack, btnBackColor, tB_Az, tB_El, ant.BackLight),
             .AmbientIntensity = CSng(tambient.Value),
             .AmbientGroundLevel = CSng(tGroundLevel.Value),
             .AmbientSkyColor = RigColor.FromColor(btnAmbSky.BackColor),
@@ -422,9 +450,16 @@ Partial Public Class LightRigForm
             Next
         End If
         Dim idx = Array.FindIndex(ShadowQualities, Function(q) q.Size = mapSize)
-        ' Un tamano fuera de la lista (editado a mano en el config) NO se pisa en silencio: se elige el
-        ' mas cercano para que el combo diga algo cierto, y recien el proximo cambio del usuario lo escribe.
+        ' ⛔⛔ UN TAMANO FUERA DE LA LISTA NO SE PISA EN SILENCIO — y hasta ahora SI SE PISABA, contra lo que
+        ' decia este mismo comentario. `VolcarSombrasEnModelo` es el handler de TODAS las perillas de sombra
+        ' (la casilla, el suelo, suavidad, intensidad) y escribia `sh.MapSize` desde el combo cada vez. O sea
+        ' que un usuario con MapSize = 8192 —legitimo: Sanitized() lo permite y hay un gate que lo prueba—
+        ' lo perdia apenas movia el slider de Darkness, sin tocar la calidad.
+        ' Se recuerda el valor original y se sigue escribiendo ESE hasta que el usuario cambie el combo a
+        ' proposito. El combo, mientras tanto, muestra el mas cercano para no mentir.
+        _mapSizeFueraDeLista = 0
         If idx < 0 Then
+            _mapSizeFueraDeLista = mapSize
             idx = 0
             Dim best = Integer.MaxValue
             For i = 0 To ShadowQualities.Length - 1
@@ -449,12 +484,21 @@ Partial Public Class LightRigForm
         ActualizarAvisoDeSuelo()
     End Sub
 
+    ''' <summary>MapSize del config cuando NO esta entre las opciones del combo (0 = esta en la lista).
+    ''' Ver el comentario de la carga: sin esto, mover cualquier otra perilla de sombra lo pisaba.</summary>
+    Private _mapSizeFueraDeLista As Integer = 0
+
     Private Sub VolcarSombrasEnModelo()
         If _preventchanges Then Return
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         sh.Enabled = chkShadows.Checked
         sh.GroundShadow = chkGroundShadow.Checked
-        If cmbShadowQuality.SelectedIndex >= 0 Then sh.MapSize = ShadowQualities(cmbShadowQuality.SelectedIndex).Size
+        If _mapSizeFueraDeLista > 0 Then
+            ' El usuario tiene un tamano propio y todavia no eligio uno de la lista: se conserva.
+            sh.MapSize = _mapSizeFueraDeLista
+        ElseIf cmbShadowQuality.SelectedIndex >= 0 Then
+            sh.MapSize = ShadowQualities(cmbShadowQuality.SelectedIndex).Size
+        End If
         sh.SoftnessTexels = CSng(tShadowSoft.Value)
         sh.Intensity = CSng(tShadowStrength.Value)
         Config_App.Current.SetActiveShadows(sh)
@@ -505,8 +549,12 @@ Partial Public Class LightRigForm
     ''' <summary>Carga un angulo en su NUD y DEJA ANOTADO lo que quedo mostrando, en el Tag. Ver
     ''' <see cref="AnguloDesdeNud"/>: esa anotacion es la que distingue "el control redondeo" de "el
     ''' usuario escribio".</summary>
-    Private Shared Sub CargarAngulo(nud As NumericUpDown, grados As Single)
-        nud.Value = Math.Clamp(CDec(grados), nud.Minimum, nud.Maximum)
+    ''' <para>⚠️ Migrado de <c>NumericUpDown</c> a <see cref="TinySliderTextBox"/>: el control nuevo expone
+    ''' <c>Value</c> como Double, no como Decimal, asi que la anotacion del Tag pasa a ser Double. La
+    ''' comparacion sigue siendo por IGUALDAD EXACTA y eso sigue siendo correcto — se compara contra el
+    ''' valor que este mismo metodo escribio, no contra una cuenta.</para></summary>
+    Private Shared Sub CargarAngulo(nud As TinySliderTextBox, grados As Single)
+        nud.Value = Math.Clamp(CDbl(grados), nud.Minimum, nud.Maximum)
         nud.Tag = nud.Value
     End Sub
 
@@ -520,26 +568,29 @@ Partial Public Class LightRigForm
     ''' <para>La alternativa —mostrar 5 decimales— hace una UI ilegible para ganar una precision que
     ''' nadie va a tipear. Si lo que el control muestra sigue siendo el redondeo del valor vivo,
     ''' entonces el usuario NO lo cambio y el modelo manda.</para></summary>
-    Private Shared Function AnguloDesdeNud(nud As NumericUpDown, actual As Single) As Single
+    Private Shared Function AnguloDesdeNud(nud As TinySliderTextBox, actual As Single) As Single
         ' ⛔ LA COMPARACION ES CONTRA LO QUE SE CARGO, NO CONTRA UNA TOLERANCIA. La primera version
         ' conservaba el valor del modelo cuando distaba menos de medio paso de pantalla (0,05 grados) del
         ' mostrado — y eso descarta en silencio una edicion TIPEADA adentro de esa banda: el usuario
         ' escribe 41,45 sobre un modelo de 41,42367, el NUD queda mostrando 41,5 y el modelo no se entera.
         ' Con el valor cargado anotado en el Tag la pregunta se contesta exacta: si el control muestra
         ' todavia lo que se le puso, nadie lo toco.
-        If TypeOf nud.Tag Is Decimal AndAlso DirectCast(nud.Tag, Decimal) = nud.Value Then Return actual
+        If TypeOf nud.Tag Is Double AndAlso DirectCast(nud.Tag, Double) = nud.Value Then Return actual
         ' ⛔⭐ LA ANOTACION SE ANULA APENAS EL CONTROL SE MOVIO UNA VEZ. Sin esto la condicion de arriba deja
         ' de significar "nadie lo toco" y pasa a significar "justo ahora muestra lo que se cargo", que no es
         ' lo mismo: con Increment = 5, subir una flecha y bajarla vuelve EXACTAMENTE al valor cargado (es
         ' aritmetica Decimal, no hay error), el Tag matchea de nuevo y el modelo se queda con el angulo
         ' nudgeado mientras el NUD muestra el original. Tres estados en desacuerdo —control, modelo y combo
         ' de presets— y ninguna forma de volver.
+        ' ⚠️ El argumento de arriba hablaba de `Increment = 5` del NumericUpDown; con TinySliderTextBox el
+        ' equivalente es `SmallChange`/`LargeChange`, y el razonamiento no cambia: cualquier gesto que
+        ' devuelva el control a su valor de partida haria matchear el Tag otra vez.
         nud.Tag = Nothing
         Return CSng(nud.Value)
     End Function
 
     Private Shared Function LeerLuz(strength As TinySliderTextBox, swatch As Button,
-                                    azimuth As NumericUpDown, elevation As NumericUpDown,
+                                    azimuth As TinySliderTextBox, elevation As TinySliderTextBox,
                                     actual As PreviewLight) As PreviewLight
         Return New PreviewLight(CSng(strength.Value),
                                 azimuthDeg:=AnguloDesdeNud(azimuth, actual.AzimuthDeg),
@@ -569,6 +620,13 @@ Partial Public Class LightRigForm
         ' Reset devuelve TODO el estado de iluminacion del preview, sombras incluidas: dejarlas afuera
         ' hacia que "Reset" no reseteara la mitad del dialogo.
         Config_App.Current.SetActiveShadows(PreviewShadowSettings.Defaults())
+        ' El anclaje del rig tambien: vive en este mismo grupo, al lado del boton, asi que dejarlo afuera
+        ' seria la misma inconsistencia.
+        ' ⛔ Vuelve al DEFAULT DECLARADO en Config_App, no a un literal. Escribir False aca haria que Reset
+        ' contradiga al default el dia que alguien lo cambie — y ya se cambio una vez.
+        Dim anclajeDefault = New Config_App().Setting_LightsFollowCamera
+        Config_App.Current.Setting_LightsFollowCamera = anclajeDefault
+        chkLightsFollowCamera.Checked = anclajeDefault
         AplicarRig(PreviewLightRig.Defaults())
     End Sub
 End Class
