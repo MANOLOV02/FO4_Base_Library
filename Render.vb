@@ -2668,10 +2668,16 @@ Public Class PreviewModel
                         _swSkinPhase.Restart()
                     End If
 
-                    ' Clear all dirty flags since everything was updated
-                    For Each i As Integer In MeshData.Meshgeometry.dirtyVertexIndices
-                        MeshData.Meshgeometry.dirtyVertexFlags(i) = False
-                    Next
+                    ' Clear all dirty flags since everything was updated.
+                    ' ⛔ `Array.Clear` Y NO UN BUCLE POR INDICE. Para entrar a esta rama hacen falta MAS DEL
+                    ' 60 % de los vertices sucios, o sea que la lista trae ~78.000 indices sobre el Serena
+                    ' Battle Suit: recorrerla es 78.000 lecturas de la lista mas 78.000 escrituras DISPERSAS
+                    ' al array de flags. `Array.Clear` es un memset contiguo sobre el array entero.
+                    ' ⛔ Es equivalente y no "de mas": esta rama sube TODOS los vertices, asi que al salir
+                    ' ninguno queda sucio — poner en False los que ya estaban en False no cambia nada.
+                    If MeshData.Meshgeometry.dirtyVertexFlags IsNot Nothing Then
+                        Array.Clear(MeshData.Meshgeometry.dirtyVertexFlags, 0, MeshData.Meshgeometry.dirtyVertexFlags.Length)
+                    End If
                     MeshData.Meshgeometry.dirtyVertexIndices.Clear()
                     If _instr Then
                         ParentModel.ParentControl._skinDirtyMs += _swSkinPhase.Elapsed.TotalMilliseconds

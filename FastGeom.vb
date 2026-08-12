@@ -96,6 +96,136 @@ Public Module FastGeom
     End Function
 
     ''' <summary>Arma la paleta plana de una lista de matrices. UNA vez por shape.</summary>
+    ''' <summary>Elementos por matriz en la paleta de SINGLE. Son 16 y no 12 a proposito: 12 no es
+    ''' divisible por 8 (el ancho de <c>Vector(Of Single)</c> con AVX2) y el bucle llevaria cola, que
+    ''' es justo lo que este layout existe para evitar. 16 divide a 16/8/4/2/1.</summary>
+    Public Const MatSingles As Integer = 16
+
+    ''' <summary>Lanes de SINGLE del ancho que eligio el runtime. El doble que en Double.</summary>
+    Public ReadOnly Property LaneCountS As Integer
+        Get
+            Return Vector(Of Single).Count
+        End Get
+    End Property
+
+    ''' <summary>⭐⭐ La paleta de huesos en SINGLE y plana. Es la version que usa el blend.
+    ''' <para>⛔ POR QUE SINGLE. Con <c>Matrix4d</c> la paleta ocupa 128 B por hueso; el Serena Battle
+    ''' Suit tiene 293 huesos = <b>37,5 KB</b>, o sea que NO ENTRA EN L1 (32 KB). Cada vertice hace 4
+    ''' accesos dispersos y cada uno cruza dos lineas de cache: el blend termina limitado por memoria
+    ''' y no por aritmetica. En Single son 64 B por hueso = <b>18,7 KB</b>, entra holgado, y ademas el
+    ''' vector procesa 8 lanes en vez de 4.</para>
+    ''' <para>⚠️ CAMBIA BYTES HORNEADOS. La paleta se redondea a Single ANTES del blend y la
+    ''' acumulacion pasa a Single, asi que el resultado difiere en el ultimo bit de la mantisa. El
+    ''' destino final siempre fue un Single —<c>SkinMatricesSoA</c> guarda floats y el VBO tambien—
+    ''' pero el redondeo ahora ocurre antes. Hecho con autorizacion expresa del usuario.</para>
+    ''' </summary>
+    Public Function BuildFlatPaletteS(mats As Matrix4d()) As Single()
+        If mats Is Nothing OrElse mats.Length = 0 Then Return Array.Empty(Of Single)()
+        Dim flat(mats.Length * MatSingles - 1) As Single
+        For k As Integer = 0 To mats.Length - 1
+            Dim m = mats(k)
+            Dim o = k * MatSingles
+            flat(o) = CSng(m.M11) : flat(o + 1) = CSng(m.M12) : flat(o + 2) = CSng(m.M13) : flat(o + 3) = CSng(m.M14)
+            flat(o + 4) = CSng(m.M21) : flat(o + 5) = CSng(m.M22) : flat(o + 6) = CSng(m.M23) : flat(o + 7) = CSng(m.M24)
+            flat(o + 8) = CSng(m.M31) : flat(o + 9) = CSng(m.M32) : flat(o + 10) = CSng(m.M33) : flat(o + 11) = CSng(m.M34)
+            flat(o + 12) = CSng(m.M41) : flat(o + 13) = CSng(m.M42) : flat(o + 14) = CSng(m.M43) : flat(o + 15) = CSng(m.M44)
+        Next
+        Return flat
+    End Function
+
+    ''' <summary>El kernel en SINGLE. Misma ley que <see cref="BlendInto"/> — chunk afuera, slot
+    ''' adentro— con el doble de lanes.</summary>
+    ''' <param name="escala">Se aplica al acumulador ANTES de guardarlo. 1 = sin escalar.
+    ''' <para>⭐ ESTA FUSIONADO A PROPOSITO. Antes el caller llamaba <c>ScaleAccS</c> despues, y eso era una
+    ''' SEGUNDA PASADA completa sobre el acumulador: releer 16 floats, multiplicar, reescribir 16. MEDIDO
+    ''' sobre el Serena Battle Suit: ese paso solo costaba <b>0,68 ms</b> de un blend de 5,2, o sea el 13 %,
+    ''' por multiplicar 16 numeros. Fusionado, el escalado ocurre con el acumulador todavia en registro.</para>
+    ''' <para>⛔ MISMOS BITS: la suma se completa igual y recien despues se multiplica, exactamente como
+    ''' hacia el par BlendInto+ScaleAcc. No es un FMA ni un reordenamiento.</para></param>
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Public Sub BlendIntoS(flatPal As Single(), idxBuf As Integer(), wBuf As Single(), nUsed As Integer, accBuf As Single(),
+                          Optional escala As Single = 1.0F)
+        If Not AcceleratedS Then
+            BlendIntoScalarS(flatPal, idxBuf, wBuf, nUsed, accBuf, escala)
+            Return
+        End If
+        Dim n As Integer = Vector(Of Single).Count
+        Dim vs As New Vector(Of Single)(escala)
+        Dim escalar As Boolean = (escala <> 1.0F)
+        Dim e As Integer = 0
+        Do While e < MatSingles
+            Dim acc As Vector(Of Single) = Vector(Of Single).Zero
+            For j As Integer = 0 To nUsed - 1
+                Dim vm As New Vector(Of Single)(flatPal, idxBuf(j) * MatSingles + e)
+                Dim vw As New Vector(Of Single)(wBuf(j))
+                ' ⛔ multiply-then-add EXPLICITO. No cambiar por Vector.FusedMultiplyAdd: el JIT no
+                ' contrae `a + b*c` solo, asi que esto es bit a bit lo mismo que el escalar de abajo.
+                acc = acc + vm * vw
+            Next
+            If escalar Then acc = acc * vs
+            acc.CopyTo(accBuf, e)
+            e += n
+        Loop
+    End Sub
+
+    ''' <summary>Referencia escalar de <see cref="BlendIntoS"/>. Es el otro lado del gate.</summary>
+    Public Sub BlendIntoScalarS(flatPal As Single(), idxBuf As Integer(), wBuf As Single(), nUsed As Integer, accBuf As Single(),
+                                Optional escala As Single = 1.0F)
+        Dim escalar As Boolean = (escala <> 1.0F)
+        For e As Integer = 0 To MatSingles - 1
+            Dim acc As Single = 0.0F
+            For j As Integer = 0 To nUsed - 1
+                acc += flatPal(idxBuf(j) * MatSingles + e) * wBuf(j)
+            Next
+            If escalar Then acc = acc * escala
+            accBuf(e) = acc
+        Next
+    End Sub
+
+    ''' <summary><c>accBuf *= s</c> en Single.</summary>
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Public Sub ScaleAccS(accBuf As Single(), s As Single)
+        If Not AcceleratedS Then
+            For q As Integer = 0 To MatSingles - 1
+                accBuf(q) = accBuf(q) * s
+            Next
+            Return
+        End If
+        Dim n As Integer = Vector(Of Single).Count
+        Dim vs As New Vector(Of Single)(s)
+        Dim e As Integer = 0
+        Do While e < MatSingles
+            Dim va As New Vector(Of Single)(accBuf, e)
+            Dim vr As Vector(Of Single) = va * vs
+            vr.CopyTo(accBuf, e)
+            e += n
+        Loop
+    End Sub
+
+    ''' <summary>⛔ SOLO PARA EL GATE: apaga el camino vectorial del blend. Antes el self-test forzaba el
+    ''' escalar pasando <c>flatPal:=Nothing</c>, lo que hacia caer en un camino que acumulaba en Matrix4d
+    ''' (Double) — o sea que comparaba dos LEYES distintas, no dos implementaciones de una. Con la paleta en
+    ''' Single ese contraste dejo de ser valido y el toggle es la forma correcta: los dos caminos leen los
+    ''' MISMOS datos y tienen que dar bit a bit lo mismo.</summary>
+    Public Property ForzarEscalarS As Boolean = False
+
+    ''' <summary>Igual que <see cref="Accelerated"/> pero para el ancho de Single.</summary>
+    Public ReadOnly Property AcceleratedS As Boolean
+        Get
+            Dim n = Vector(Of Single).Count
+            Return Not ForzarEscalarS AndAlso Vector.IsHardwareAccelerated AndAlso n >= 2 AndAlso
+                   n <= MatSingles AndAlso (MatSingles Mod n) = 0
+        End Get
+    End Property
+
+    ''' <summary>Lee una Matrix4d desde un acumulador de Single.</summary>
+    Public Function LoadMatrixS(buf As Single(), o As Integer) As Matrix4d
+        Return New Matrix4d(buf(o), buf(o + 1), buf(o + 2), buf(o + 3),
+                            buf(o + 4), buf(o + 5), buf(o + 6), buf(o + 7),
+                            buf(o + 8), buf(o + 9), buf(o + 10), buf(o + 11),
+                            buf(o + 12), buf(o + 13), buf(o + 14), buf(o + 15))
+    End Function
+
     Public Function BuildFlatPalette(mats As Matrix4d()) As Double()
         If mats Is Nothing OrElse mats.Length = 0 Then Return Array.Empty(Of Double)()
         Dim flat(mats.Length * MatDoubles - 1) As Double

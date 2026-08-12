@@ -196,71 +196,143 @@ Public Class SkinningHelper
     ''' (<c>SkinBakeMath</c> y <c>FaceGenBuildPipeline.BlendMtot</c>), así que el gate
     ''' <c>skin-blend</c> —que dice "el bake usa esta misma ley"— probaba una función que el bake no
     ''' llamaba. Ahora la llaman: una ley, un lugar, y el gate cubre lo que dice cubrir.</para>
-    Public Shared Function BlendBoneMatrices(boneWeights As System.Half(), boneIndices As Byte(), baseIdx As Integer, wpv As Integer, precomputed() As Matrix4d,
-                                              Optional flatPal As Double() = Nothing) As Matrix4d
-        If boneWeights Is Nothing OrElse boneIndices Is Nothing OrElse precomputed.Length = 0 OrElse wpv <= 0 Then
-            Return If(precomputed.Length > 0, precomputed(0), Matrix4d.Identity)
-        End If
-        Dim sumW As Double = 0
+    ''' <summary>⭐ El blend dejando el resultado EN EL SCRATCH (16 Single), sin construir una
+    ''' <c>Matrix4d</c>. Devuelve el scratch, o <c>Nothing</c> si el caso cae en una rama de
+    ''' excepcion que devuelve una matriz de la paleta tal cual (sin peso, pesos nulos, wpv 0).
+    ''' <para>⛔ NO DUPLICA LA LEY: las guardas y la normalizacion son LAS MISMAS lineas que
+    ''' <see cref="BlendBoneMatrices"/> — de hecho esa funcion ahora llama a esta y solo agrega el
+    ''' armado de la Matrix4d para sus consumidores (bake, exportador, gate). Si hubiera dos copias de
+    ''' las guardas, el render y el bake podrian divergir en QUE peso se descarta, que es peor que una
+    ''' diferencia de redondeo.</para>
+    ''' <para>Cuando devuelve el scratch, <c>sc.Acc</c> tiene los 16 elementos ya escalados.</para>
+    ''' </summary>
+    Private Shared Function BlendEnScratch(boneWeights As System.Half(), boneIndices As Byte(), baseIdx As Integer,
+                                           wpv As Integer, precomputed() As Matrix4d, flatPal As Single(),
+                                           sc As BlendScratch) As BlendScratch
+        If flatPal Is Nothing Then Return Nothing
+        If boneWeights Is Nothing OrElse boneIndices Is Nothing OrElse precomputed.Length = 0 OrElse wpv <= 0 Then Return Nothing
         Dim available As Integer = Math.Min(wpv, Math.Min(boneWeights.Length - baseIdx, boneIndices.Length - baseIdx))
-
-        ' ⭐ Las GUARDAS se recorren UNA sola vez y dejan los pares (indice, peso) validos en el
-        ' scratch, EN EL MISMO ORDEN en que el escalar los sumaria. Recien despues se decide con que
-        ' camino acumular (ver AccumulateBlend). Antes de esto la guarda estaba pegada a la suma y
-        ' habia que duplicarla para tener dos caminos; asi hay una sola copia de la ley.
-        ' ⛔ Las guardas quedan ESCALARES a proposito: no hay una sola mascara por lane en el camino
-        ' vectorial, y por eso las trampas #4 (orden de los selects) y #5 (NaN) no aplican acá.
-        Dim sc = GetBlendScratch(Math.Max(available, EngineSkinWeightNormalization.Slots))
         Dim nUsed As Integer = 0
 
-        ' Normalizacion de pesos del MOTOR — ver el overload de arriba. Gate apagado ⇒ bit-idéntico al historico.
-        Dim ckW(EngineSkinWeightNormalization.Slots - 1) As Single
-        If available >= EngineSkinWeightNormalization.Slots AndAlso EngineSkinWeightNormalization.TryComputeWeights(boneWeights, baseIdx, wpv, ckW) Then
+        ' ⛔ SIN Array.Clear. `TryComputeWeights` llena `ckW` cuando devuelve True, y cuando devuelve False
+        ' el contenido no se lee: limpiarlo por vertice eran 130.500 clears por frame de un buffer que o se
+        ' sobrescribe entero o se ignora.
+        ' ⛔ EL GATE DEL CK SE PREGUNTA ANTES DE LLAMAR. `TryComputeWeights` arranca con
+        ' `If Not Enabled Then Return False`, y `Enabled` es False por default: sin este corto-circuito se
+        ' pagaba UNA LLAMADA NO INLINEADA POR VERTICE —130.500 por frame— para que devolviera False en la
+        ' primera linea. El `AndAlso` garantiza que ni se evalue.
+        Dim ckW = sc.CkW
+        If EngineSkinWeightNormalization.Enabled AndAlso available >= EngineSkinWeightNormalization.Slots AndAlso
+           EngineSkinWeightNormalization.TryComputeWeights(boneWeights, baseIdx, wpv, ckW) Then
             For j = 0 To EngineSkinWeightNormalization.Slots - 1
                 If ckW(j) > 0.0F Then
                     Dim idxc = boneIndices(baseIdx + j)
                     If idxc >= 0 AndAlso idxc < precomputed.Length Then
-                        sc.Idx(nUsed) = CInt(idxc) : sc.W(nUsed) = CDbl(ckW(j)) : nUsed += 1
+                        sc.Idx(nUsed) = CInt(idxc) : sc.W(nUsed) = ckW(j) : nUsed += 1
+                    End If
+                End If
+            Next
+            FastGeom.BlendIntoS(flatPal, sc.Idx, sc.W, nUsed, sc.Acc)
+            Return sc
+        End If
+
+        Dim sumW As Double = 0
+        For j = 0 To available - 1
+            ' ⛔ UNA sola conversion. Estaba Half → Double → Single: `CType(h, Double)` y despues `CSng(w)`.
+            ' Half tiene 11 bits de mantisa y Single 24, asi que ir por Double es EXACTO y volver tambien —
+            ' `CSng(CDbl(h))` y `CSng(h)` dan el mismo bit. Lo que cambia es que ahora hay una conversion
+            ' por slot en vez de dos. `sumW` sigue acumulando en Double, que es la ley del divisor.
+            Dim wS = CSng(boneWeights(baseIdx + j))
+            sumW += CDbl(wS)
+            Dim idx = boneIndices(baseIdx + j)
+            If idx >= 0 AndAlso idx < precomputed.Length Then
+                sc.Idx(nUsed) = CInt(idx) : sc.W(nUsed) = wS : nUsed += 1
+            End If
+        Next
+        ' sumW = 0 devuelve una matriz de la paleta TAL CUAL, sin sumar: esa rama no pasa por el
+        ' acumulador y la resuelve el camino largo.
+        If sumW = 0 Then Return Nothing
+        ' El escalado va FUSIONADO en el kernel: ver el parametro `escala` de BlendIntoS. Como paso aparte
+        ' costaba 0,68 ms de un blend de 5,2 por recorrer el acumulador una segunda vez.
+        FastGeom.BlendIntoS(flatPal, sc.Idx, sc.W, nUsed, sc.Acc, CSng(1.0 / sumW))
+        Return sc
+    End Function
+
+    ''' <summary>El blend de un vertice, devolviendo la matriz. La usan el BAKE, el exportador y el
+    ''' gate; el render va por <see cref="BlendEnScratch"/>, que evita construir la Matrix4d.
+    ''' <para>⛔⛔ LAS GUARDAS ESTAN UNA SOLA VEZ. Este metodo delega en <c>BlendEnScratch</c> y solo
+    ''' agrega el armado de la <c>Matrix4d</c> y las ramas de excepcion. Tenerlas duplicadas seria
+    ''' peor que una diferencia de redondeo: render y bake podrian discrepar en QUE peso se descarta
+    ''' o en cual es el divisor, que es una diferencia de FORMA. Ver la regla RENDER==BAKE.</para>
+    ''' <para>⛔ Las guardas quedan ESCALARES a proposito: no hay una sola mascara por lane en el
+    ''' camino vectorial, y por eso las trampas #4 (orden de los selects) y #5 (NaN) no aplican.</para>
+    ''' </summary>
+    Public Shared Function BlendBoneMatrices(boneWeights As System.Half(), boneIndices As Byte(), baseIdx As Integer, wpv As Integer, precomputed() As Matrix4d,
+                                              Optional flatPal As Single() = Nothing) As Matrix4d
+        If boneWeights Is Nothing OrElse boneIndices Is Nothing OrElse precomputed.Length = 0 OrElse wpv <= 0 Then
+            Return If(precomputed.Length > 0, precomputed(0), Matrix4d.Identity)
+        End If
+        Dim available As Integer = Math.Min(wpv, Math.Min(boneWeights.Length - baseIdx, boneIndices.Length - baseIdx))
+        Dim sc = GetBlendScratch(Math.Max(available, EngineSkinWeightNormalization.Slots))
+
+        If flatPal IsNot Nothing Then
+            Dim listo = BlendEnScratch(boneWeights, boneIndices, baseIdx, wpv, precomputed, flatPal, sc)
+            If listo IsNot Nothing Then Return FastGeom.LoadMatrixS(listo.Acc, 0)
+            ' `Nothing` = una de las ramas de excepcion: se resuelven abajo, con la MISMA ley.
+        End If
+
+        ' Camino sin paleta plana (y las ramas de excepcion). Acumula en Matrix4d desde `precomputed`.
+        ' ⚠️ NO es bit-comparable con el camino de arriba: son precisiones distintas. El gate compara
+        ' vectorial contra escalar DENTRO del camino de la paleta, con FastGeom.ForzarEscalarS.
+        Dim nUsed As Integer = 0
+        Dim ckW = sc.CkW
+        If EngineSkinWeightNormalization.Enabled AndAlso available >= EngineSkinWeightNormalization.Slots AndAlso
+           EngineSkinWeightNormalization.TryComputeWeights(boneWeights, baseIdx, wpv, ckW) Then
+            For j = 0 To EngineSkinWeightNormalization.Slots - 1
+                If ckW(j) > 0.0F Then
+                    Dim idxc = boneIndices(baseIdx + j)
+                    If idxc >= 0 AndAlso idxc < precomputed.Length Then
+                        sc.Idx(nUsed) = CInt(idxc) : sc.W(nUsed) = ckW(j) : nUsed += 1
                     End If
                 End If
             Next
             Return AccumulateBlend(precomputed, flatPal, sc, nUsed)
         End If
 
+        Dim sumW As Double = 0
         For j = 0 To available - 1
-            Dim w = CType(boneWeights(baseIdx + j), Double)
-            ' ⛔ sumW acumula TODOS los pesos, tambien los de indice fuera de rango: es la ley
-            ' historica y mover eso cambiaria el divisor.
-            sumW += w
+            Dim wS = CSng(boneWeights(baseIdx + j))
+            ' ⛔ sumW acumula TODOS los pesos, tambien los de indice fuera de rango: es la ley historica
+            ' y mover eso cambiaria el divisor.
+            sumW += CDbl(wS)
             Dim idx = boneIndices(baseIdx + j)
             If idx >= 0 AndAlso idx < precomputed.Length Then
-                sc.Idx(nUsed) = CInt(idx) : sc.W(nUsed) = w : nUsed += 1
+                sc.Idx(nUsed) = CInt(idx) : sc.W(nUsed) = wS : nUsed += 1
             End If
         Next
         If sumW = 0 Then
             Dim idx0 As Byte = If(available > 0, boneIndices(baseIdx), CByte(0))
             Return precomputed(Math.Max(0, Math.Min(CInt(idx0), precomputed.Length - 1)))
         End If
-        Return AccumulateBlend(precomputed, flatPal, sc, nUsed, 1.0 / sumW)
+        Return AccumulateBlend(precomputed, flatPal, sc, nUsed, CSng(1.0 / sumW))
     End Function
-
-    ''' <summary>
-    ''' Buffers de trabajo del blend, UNO POR HILO. Se reusan entre vertices: alocarlos por vertice
-    ''' seria una allocation Gen0 en el bucle mas caliente del skinning.
-    ''' <para>⛔ Cada hilo construye EL SUYO (ver <see cref="GetBlendScratch"/>). No repetir el bug de
-    ''' RecalcTBN, donde la fabrica del ThreadLocal devolvia SIEMPRE EL MISMO array y los "locales"
-    ''' no eran locales de nadie ⇒ carrera silenciosa y build no reproducible. Acá además el scratch
-    ''' se escribe y se lee dentro de UNA sola llamada, sin cruzar hilos ni iteraciones.</para>
-    ''' </summary>
     Private NotInheritable Class BlendScratch
         Public Idx() As Integer
-        Public W() As Double
-        Public ReadOnly Acc(FastGeom.MatDoubles - 1) As Double
+        ''' <summary>Pesos, en Single: la paleta plana tambien lo es. Ver FastGeom.BuildFlatPaletteS.</summary>
+        Public W() As Single
+        ''' <summary>Pesos normalizados del CK, reusados entre vertices. Ver el call site en
+        ''' <see cref="BlendBoneMatrices"/>: ahi se alocaba uno nuevo por vertice.</summary>
+        Public CkW() As Single
+        Public ReadOnly Acc(FastGeom.MatSingles - 1) As Single
         Public Sub New(slots As Integer)
             Grow(slots)
         End Sub
         Public Sub Grow(slots As Integer)
             Dim n = Math.Max(1, slots)
+            ' CkW siempre tiene al menos los slots del CK: el call site lo indexa por esos, no por `slots`.
+            If CkW Is Nothing OrElse CkW.Length < EngineSkinWeightNormalization.Slots Then
+                ReDim CkW(EngineSkinWeightNormalization.Slots - 1)
+            End If
             If Idx Is Nothing OrElse Idx.Length < n Then
                 ReDim Idx(n - 1)
                 ReDim W(n - 1)
@@ -291,18 +363,28 @@ Public Class SkinningHelper
     ''' de siempre. Los dos recorren los pares en el MISMO orden ⇒ el resultado es bit-identico, y eso
     ''' es lo que verifica <c>SkinningSimdSelfTest</c> sobre la funcion real, no sobre una maqueta.</para>
     ''' </summary>
-    Private Shared Function AccumulateBlend(precomputed() As Matrix4d, flatPal As Double(), sc As BlendScratch, nUsed As Integer,
-                                            Optional postScale As Double = 1.0) As Matrix4d
-        If flatPal IsNot Nothing AndAlso FastGeom.Accelerated Then
-            FastGeom.BlendInto(flatPal, sc.Idx, sc.W, nUsed, sc.Acc)
-            If postScale <> 1.0 Then FastGeom.ScaleAcc(sc.Acc, postScale)
-            Return FastGeom.LoadMatrix(sc.Acc, 0)
+    ''' <summary>⛔ UN SOLO ORIGEN DE DATOS: la paleta PLANA en Single. `BlendIntoS` elige adentro entre
+    ''' vectorial y escalar, y los dos leen exactamente lo mismo — por eso pueden compararse bit a bit.
+    ''' <para>Antes habia un segundo camino que acumulaba `precomputed(idx) * w` en `Matrix4d`, o sea en
+    ''' Double y desde OTRO array. El self-test lo usaba como "referencia escalar" pasando
+    ''' `flatPal:=Nothing`, pero eso comparaba dos LEYES distintas, no dos implementaciones de una. Con la
+    ''' paleta en Single ese contraste dejo de tener sentido y el escalar se fuerza con
+    ''' <c>FastGeom.ForzarEscalarS</c>.</para>
+    ''' <para>El fallback a `precomputed` queda SOLO para cuando no hay paleta plana (llamadas que no la
+    ''' construyen), y se declara como lo que es: un camino de compatibilidad que NO es bit-comparable con
+    ''' el principal.</para></summary>
+    Private Shared Function AccumulateBlend(precomputed() As Matrix4d, flatPal As Single(), sc As BlendScratch, nUsed As Integer,
+                                            Optional postScale As Single = 1.0F) As Matrix4d
+        If flatPal IsNot Nothing Then
+            FastGeom.BlendIntoS(flatPal, sc.Idx, sc.W, nUsed, sc.Acc)
+            If postScale <> 1.0F Then FastGeom.ScaleAccS(sc.Acc, postScale)
+            Return FastGeom.LoadMatrixS(sc.Acc, 0)
         End If
         Dim result As Matrix4d = Matrix4d.Zero
         For j = 0 To nUsed - 1
-            result += precomputed(sc.Idx(j)) * sc.W(j)
+            result += precomputed(sc.Idx(j)) * CDbl(sc.W(j))
         Next
-        If postScale <> 1.0 Then result = result * postScale
+        If postScale <> 1.0F Then result = result * CDbl(postScale)
         Return result
     End Function
 
@@ -344,7 +426,7 @@ Public Class SkinningHelper
             m = FastGeom.LoadMatrix(tmp, 0)
             precomputed(k) = m
         Next
-        Dim flatPal = FastGeom.BuildFlatPalette(precomputed)
+        Dim flatPal = FastGeom.BuildFlatPaletteS(precomputed)
 
         ' Pesos "interesantes": el cero exacto y el negativo disparan ramas distintas del guard, y el
         ' NaN prueba que las dos ramas lo tratan igual (el guard es escalar y compartido, asi que
@@ -368,8 +450,20 @@ Public Class SkinningHelper
             Next
             Dim baseIdx As Integer = CInt(NextB() Mod 3UL) * wpv
 
-            Dim mEsc = BlendBoneMatrices(wgt, idx, baseIdx, wpv, precomputed)
+            ' ⛔⛔ LOS DOS LADOS USAN LA PALETA PLANA. Antes el lado "escalar" se forzaba pasando
+            ' `flatPal:=Nothing`, y eso caia en un camino que acumulaba `precomputed(idx) * w` en Matrix4d,
+            ' o sea en DOUBLE y desde otro array: comparaba dos LEYES, no dos implementaciones. Mientras la
+            ' ley fue Double en los dos lados eso paso desapercibido; al migrar la paleta a Single el gate
+            ' salto con `escalar=0,14812919066753238 vectorial=0,1481291949748993` — que es exactamente la
+            ' diferencia Double/Single y NO un bug del vectorial. El toggle compara lo que hay que comparar.
             Dim mVec = BlendBoneMatrices(wgt, idx, baseIdx, wpv, precomputed, flatPal)
+            Dim mEsc As Matrix4d
+            FastGeom.ForzarEscalarS = True
+            Try
+                mEsc = BlendBoneMatrices(wgt, idx, baseIdx, wpv, precomputed, flatPal)
+            Finally
+                FastGeom.ForzarEscalarS = False
+            End Try
             FastGeom.StoreMatrix(mEsc, a, 0)
             FastGeom.StoreMatrix(mVec, b2, 0)
             For e = 0 To FastGeom.MatDoubles - 1
@@ -382,7 +476,7 @@ Public Class SkinningHelper
 
         ' Degenerados que tienen que devolver LO MISMO por los dos caminos sin tirar.
         Dim vacio() As Matrix4d = Array.Empty(Of Matrix4d)()
-        Dim palVacia = FastGeom.BuildFlatPalette(vacio)
+        Dim palVacia = FastGeom.BuildFlatPaletteS(vacio)
         Dim m1 = BlendBoneMatrices(wgt, idx, 0, 4, vacio)
         Dim m2 = BlendBoneMatrices(wgt, idx, 0, 4, vacio, palVacia)
         FastGeom.StoreMatrix(m1, a, 0) : FastGeom.StoreMatrix(m2, b2, 0)
@@ -415,8 +509,16 @@ Public Class SkinningHelper
                     idx(s) = CByte(NextB() Mod CULng(nBones + 2))
                 Next
                 Dim baseIdx As Integer = CInt(NextB() Mod 3UL) * 4
-                Dim gEsc = BlendBoneMatrices(wgt, idx, baseIdx, 4, precomputed)
+                ' Mismo criterio que el bucle de arriba: los dos lados con la paleta plana, el escalar
+                ' forzado con el toggle. Ver el comentario de alla.
                 Dim gVec = BlendBoneMatrices(wgt, idx, baseIdx, 4, precomputed, flatPal)
+                Dim gEsc As Matrix4d
+                FastGeom.ForzarEscalarS = True
+                Try
+                    gEsc = BlendBoneMatrices(wgt, idx, baseIdx, 4, precomputed, flatPal)
+                Finally
+                    FastGeom.ForzarEscalarS = False
+                End Try
                 FastGeom.StoreMatrix(gEsc, a, 0) : FastGeom.StoreMatrix(gVec, b2, 0)
                 For e = 0 To FastGeom.MatDoubles - 1
                     If BitConverter.DoubleToInt64Bits(a(e)) <> BitConverter.DoubleToInt64Bits(b2(e)) Then
@@ -622,7 +724,7 @@ Public Class SkinningHelper
                 Dim precomputedBoneMatrices = BuildPosePalette(matsPose, GlobalTransform)
                 ' Paleta plana para el blend vectorial. Se arma UNA vez por shape (20-60 matrices),
                 ' no por vertice: la copia no esta en el camino caliente. Ver FastGeom.
-                Dim flatPalette = FastGeom.BuildFlatPalette(precomputedBoneMatrices)
+                Dim flatPalette = FastGeom.BuildFlatPaletteS(precomputedBoneMatrices)
 
                 ' GPU Skinning: compute float-precision bone matrices for SSBO upload
                 gpuBoneMats = New Matrix4(bones.Count - 1) {}
@@ -642,7 +744,16 @@ Public Class SkinningHelper
                 Dim skinWpv = If(shapeSkin.WeightsPerVertex > 0, shapeSkin.WeightsPerVertex, 4)
                 Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso shapeSkin.VertexCount = vertexCount)
 
-                Dim skinningBody As Action(Of Integer) = Sub(i)
+                ' ⛔⛔ MISMOS PATRONES QUE EL BLEND, Y ESTABAN TODOS ACA TAMBIEN. Este bucle NO corre por
+                ' frame —corre al re-extraer geometria: cambiar un morph, un preset, un outfit— pero es lo
+                ' que el usuario siente como "tarda en responder". MEDIDO sobre el Serena Battle Suit:
+                ' 116-120 ms por re-extraccion antes de tocarlo.
+                ' Los cuatro patrones, ya probados en FillPerVertexSkinMatrix:
+                '   1. delegate por vertice -> se llama desde un bucle por RANGOS
+                '   2. `Dim ckWg(3) As Single` adentro = alocacion en heap POR VERTICE -> al scratch por hilo
+                '   3. `TryComputeWeights` sin corto-circuito de `Enabled` (que es False por default)
+                '   4. `AMatrix4(Mtot)` -> Matrix4 intermedia -> indexador -> 12 escrituras
+                Dim skinningBody As Action(Of Integer, BlendScratch) = Sub(i, scE)
                                                              Dim Mtot As Matrix4d
                                                              Dim baseIdx = i * 4
 
@@ -655,8 +766,9 @@ Public Class SkinningHelper
                                                                  ' alcanza con subir acá los pesos de la ley (w3 = 1−Σ, y 0 en vez de descartar, que es
                                                                  ' lo mismo porque el shader saltea los ≤0) para que el GPU quede igual que el CPU.
                                                                  ' Gate apagado (default) ⇒ se toma la rama normalizada de siempre, bit-idéntica.
-                                                                 Dim ckWg(EngineSkinWeightNormalization.Slots - 1) As Single
-                                                                 If EngineSkinWeightNormalization.TryComputeWeights(skinFlatWgt, baseSkin, skinWpv, ckWg) Then
+                                                                 Dim ckWg = scE.CkW
+                                                                 If EngineSkinWeightNormalization.Enabled AndAlso
+                                                                    EngineSkinWeightNormalization.TryComputeWeights(skinFlatWgt, baseSkin, skinWpv, ckWg) Then
                                                                      For j = 0 To 3
                                                                          gpuBoneIdx(baseIdx + j) = skinFlatIdx(baseSkin + j)
                                                                          gpuBoneWgt(baseIdx + j) = If(ckWg(j) > 0.0F, ckWg(j), 0.0F)
@@ -686,15 +798,24 @@ Public Class SkinningHelper
                                                                  gpuBoneIdx(baseIdx + 3) = 0 : gpuBoneWgt(baseIdx + 3) = 0.0F
                                                              End If
 
-                                                             ' Store double-precision Mtot for world-space cache / bake
-                                                             perVertexMtot(i) = AMatrix4(Mtot)
+                                                             ' Mtot va DIRECTO a las 12 secciones: `AMatrix4(Mtot)` construia una Matrix4
+                                                             ' de 64 B que el indexador desarmaba con 12 escrituras. Mismos bits.
+                                                             perVertexMtot.EstablecerDesde(i, Mtot)
                                                          End Sub
 
                 If useParallel Then
-                    Parallel.For(0, vertexCount, parallelOpts, skinningBody)
+                    ' Por RANGOS: el scratch se toma una vez por rango en vez de alocar por vertice.
+                    Parallel.ForEach(RangosDe(vertexCount),
+                        Sub(rango As Tuple(Of Integer, Integer))
+                            Dim scE = GetBlendScratch(Math.Max(skinWpv, EngineSkinWeightNormalization.Slots))
+                            For i = rango.Item1 To rango.Item2 - 1
+                                skinningBody(i, scE)
+                            Next
+                        End Sub)
                 Else
+                    Dim scE = GetBlendScratch(Math.Max(skinWpv, EngineSkinWeightNormalization.Slots))
                     For i As Integer = 0 To vertexCount - 1
-                        skinningBody(i)
+                        skinningBody(i, scE)
                     Next
                 End If
 
@@ -761,7 +882,8 @@ Public Class SkinningHelper
         Dim minV As New Vector3d(Double.MaxValue)
         Dim maxV As New Vector3d(Double.MinValue)
         For i As Integer = 0 To rawVerts.Length - 1
-            Dim wv = Vector3d.TransformPosition(rawVerts(i), AMatrix4d(perVertexMtot(i)))
+            ' Sin la Matrix4 ni la Matrix4d intermedias: ver SkinMatricesSoA.TransformarPosicion.
+            Dim wv = perVertexMtot.TransformarPosicion(i, rawVerts(i))
             If wv.X < minV.X Then minV.X = wv.X
             If wv.Y < minV.Y Then minV.Y = wv.Y
             If wv.Z < minV.Z Then minV.Z = wv.Z
@@ -1147,8 +1269,8 @@ Public Class SkinningHelper
         Dim hasSkin = (skinFlatIdx IsNot Nothing AndAlso skinFlatWgt IsNot Nothing AndAlso geom.Skinning.VertexCount = worldV.Length)
         ' Paletas planas para el blend vectorial: UNA vez por shape (20-60 matrices), no por vértice.
         ' Acá son DOS porque el blend de este camino mezcla pose y bind a la vez.
-        Dim flatPalPose = FastGeom.BuildFlatPalette(matsPose)
-        Dim flatPalBind = FastGeom.BuildFlatPalette(matsBind)
+        Dim flatPalPose = FastGeom.BuildFlatPaletteS(matsPose)
+        Dim flatPalBind = FastGeom.BuildFlatPaletteS(matsBind)
 
         'A - REVIERTE Skinning y Bakea
         ' Per-vertex linear blend (arithmetic mean) of matsBind y matsPose — coincide
@@ -1613,6 +1735,15 @@ Public Class SkinningHelper
     ''' leían matrices viejas. Se detectó al factorizar, no antes: mirando los dos cuerpos por
     ''' separado la rama faltante no salta.</para>
     ''' </summary>
+    ''' <summary>⛔ SOLO PARA MEDIR: el mismo cuerpo que FillPerVertexSkinMatrix pero recibiendo los
+    ''' atributos sueltos, para que el arnes pueda cronometrarlo sin montar una ShapeSkinningData.</summary>
+    Friend Shared Sub FillParaMedir(mats As SkinMatricesSoA, idx As Byte(), wgt As System.Half(),
+                                    wpv As Integer, palette() As Matrix4d)
+        Dim sk As New ShapeSkinningData With {.BoneIndices = idx, .BoneWeights = wgt,
+                                              .WeightsPerVertex = wpv, .VertexCount = mats.Length}
+        FillPerVertexSkinMatrix(mats, sk, palette)
+    End Sub
+
     Friend Shared Sub FillPerVertexSkinMatrix(mats As SkinMatricesSoA, skinning As ShapeSkinningData, palette() As Matrix4d)
         If mats Is Nothing OrElse palette Is Nothing Then Return
         Dim vc = mats.Length
@@ -1623,19 +1754,61 @@ Public Class SkinningHelper
         Dim hasSkin = (flatIdx IsNot Nothing AndAlso flatWgt IsNot Nothing AndAlso skinning.VertexCount = vc)
         Dim sinSkin = If(palette.Length > 0, palette(0), Matrix4d.Identity)
         ' Paleta plana para el blend vectorial: una vez por shape, no por vértice. Ver FastGeom.
-        Dim flatPalette = FastGeom.BuildFlatPalette(palette)
-        Dim body As Action(Of Integer) =
-            Sub(i)
+        Dim flatPalette = FastGeom.BuildFlatPaletteS(palette)
+        ' ⛔⛔ SE RECORRE POR RANGOS, NO POR INDICE. Aca habia `Parallel.For(0, vc, body)` con `body` como
+        ' `Action(Of Integer)`: una INVOCACION DE DELEGATE POR VERTICE — 130.500 llamadas indirectas por
+        ' frame sobre el Serena Battle Suit, y cada una impide el inline de todo lo de adentro. Este mismo
+        ' repo ya habia sacado ese patron de `UpdateSkinBuffers_GL` (Partitioner + For interno,
+        ' byte-identico) y aca habia quedado.
+        ' ⛔ Y el resultado se escribe DIRECTO a las 12 secciones con `EstablecerDesde`, sin pasar por
+        ' Matrix4d → AMatrix4 → Matrix4 → indexador: eran dos copias de struct (128 B y 64 B) por vertice
+        ' para terminar guardando los mismos 12 Single. Bit a bit identico — es el mismo CSng sobre el
+        ' mismo Double.
+        Dim cuerpo As Action(Of Tuple(Of Integer, Integer)) =
+            Sub(rango)
                 If hasSkin Then
-                    mats(i) = AMatrix4(BlendBoneMatrices(flatWgt, flatIdx, i * wpv, wpv, palette, flatPalette))
+                    ' ⭐⭐ CAMINO FUSIONADO. `BlendEnScratch` deja los 16 Single ya blendeados en el scratch
+                    ' y de ahi se copian los 12 utiles a las secciones. El camino largo construia una
+                    ' `Matrix4d` de 128 B con `LoadMatrixS` para que `EstablecerDesde` la desarmara con 12
+                    ' `CSng` — un ida y vuelta por vertice sobre datos que ya estaban en el formato final.
+                    ' ⛔ MEDIDO antes de escribir esto (blend-bench, Serena Battle Suit, 130.180 vertices):
+                    ' el blend completo costaba 8,95 ms de los cuales el trabajo REAL —blend 1,63 +
+                    ' escritura 1,26— era 2,89. Los otros 6,06 ms (68 %) eran esta clase de envoltorio.
+                    ' ⛔ El scratch se toma UNA vez por RANGO. `GetBlendScratch` es un acceso ThreadStatic
+                    ' con una guarda de tamano, y hacerlo por vertice son 130.500 lookups por frame para
+                    ' devolver siempre el mismo objeto: el rango entero corre en un solo hilo.
+                    Dim scR = GetBlendScratch(Math.Max(wpv, EngineSkinWeightNormalization.Slots))
+                    ' ⛔ SIN MEMO POR VERTICE PREVIO — se implemento, se MIDIO y se saco.
+                    ' La idea: si la tupla (indices, pesos) es identica a la del vertice anterior el blend
+                    ' da lo mismo y alcanza con copiar 12 floats. El corpus la respaldaba: 14,0 % de los
+                    ' vertices del Serena Battle Suit repiten la tupla del vecino (18.205 de 130.180).
+                    ' MEDIDO igual, 5 corridas del bench comparando el bucle con y sin memo:
+                    '   -0,08 · +0,21 · +0,07 · +0,03 · -0,20  ⇒ promedio +0,03 ms
+                    ' O sea NEUTRO, con tendencia a costar: las 8 comparaciones que se pagan en el 100 % de
+                    ' los vertices se comen el ahorro del 14 %. Se saco porque codigo que no paga es
+                    ' complejidad gratis — y ademas obligaba a apagar el memo en las ramas de excepcion,
+                    ' que era una fuente de error silencioso.
+                    ' ⚠️ Un memo por FIRMA (hash) es peor todavia: ahorraria 33 % pero paga hash + lookup
+                    ' en el 100 %, ~3,9 ms contra 1,75 de ahorro.
+                    For i = rango.Item1 To rango.Item2 - 1
+                        Dim b = i * wpv
+                        Dim sc = BlendEnScratch(flatWgt, flatIdx, b, wpv, palette, flatPalette, scR)
+                        If sc Is Nothing Then
+                            mats.EstablecerDesde(i, BlendBoneMatrices(flatWgt, flatIdx, b, wpv, palette, flatPalette))
+                        Else
+                            mats.CopiarDeAcumulador(i, sc.Acc)
+                        End If
+                    Next
                 Else
-                    mats(i) = AMatrix4(sinSkin)
+                    For i = rango.Item1 To rango.Item2 - 1
+                        mats.EstablecerDesde(i, sinSkin)
+                    Next
                 End If
             End Sub
         If vc >= 500 Then
-            Parallel.For(0, vc, body)
+            Parallel.ForEach(RangosDe(vc), cuerpo)
         Else
-            For i = 0 To vc - 1 : body(i) : Next
+            cuerpo(Tuple.Create(0, vc))
         End If
     End Sub
 
@@ -1650,9 +1823,21 @@ Public Class SkinningHelper
         Dim wn(count - 1) As Vector3d
         Parallel.ForEach(RangosDe(count),
             Sub(rango As Tuple(Of Integer, Integer))
+                ' Idem que en ComputeWorldBoundsSinNormales: las secciones se leen directo, sin reconstruir
+                ' la Matrix4 y ensancharla a Matrix4d por vertice. `md` se arma UNA vez por vertice porque
+                ' Create_Normal_Matrix la necesita entera; lo que se evita es la pasada del indexador.
+                Dim t0 = localMats.Secciones(0), t3 = localMats.Secciones(3), t6 = localMats.Secciones(6), t9 = localMats.Secciones(9)
+                Dim t1 = localMats.Secciones(1), t4 = localMats.Secciones(4), t7 = localMats.Secciones(7), t10 = localMats.Secciones(10)
+                Dim t2 = localMats.Secciones(2), t5 = localMats.Secciones(5), t8 = localMats.Secciones(8), t11 = localMats.Secciones(11)
                 For i = rango.Item1 To rango.Item2 - 1
-                    Dim md = AMatrix4d(localMats(i))
-                    wv(i) = Vector3d.TransformPosition(localVerts(i), md)
+                    Dim md As New Matrix4d(t0(i), t1(i), t2(i), 0.0,
+                                           t3(i), t4(i), t5(i), 0.0,
+                                           t6(i), t7(i), t8(i), 0.0,
+                                           t9(i), t10(i), t11(i), 1.0)
+                    Dim lv2 = localVerts(i)
+                    wv(i) = New Vector3d(lv2.X * t0(i) + lv2.Y * t3(i) + lv2.Z * t6(i) + t9(i),
+                                         lv2.X * t1(i) + lv2.Y * t4(i) + lv2.Z * t7(i) + t10(i),
+                                         lv2.X * t2(i) + lv2.Y * t5(i) + lv2.Z * t8(i) + t11(i))
                     Dim nm = Create_Normal_Matrix(md)
                     ' El world-cache queda en Double: lo consumen bounds, picking, el
                     ' exportador y el raytracer de oclusion. Lo unico que cambia es que
@@ -1711,8 +1896,21 @@ Public Class SkinningHelper
                 Dim mn As New Vector3d(Double.MaxValue)
                 Dim mx As New Vector3d(Double.MinValue)
                 Dim i1 = Math.Min(r * chunk + chunk, count)
+                ' ⛔ SIN Matrix4 NI Matrix4d POR VERTICE. `AMatrix4d(localMats(i))` hacia dos pasadas:
+                ' el indexador reconstruia una Matrix4 (64 B) desde las 12 secciones y despues se ensanchaba
+                ' a Matrix4d (128 B) — dos structs para usar 12 floats. Se leen las secciones directo.
+                ' ⛔ BIT A BIT IDENTICO: `TransformPosition` acumula en Double, y `Single -> Double` es
+                ' exacto, asi que multiplicar `v.X * CDbl(s0(i))` da el mismo bit que el camino largo.
+                ' ⭐ Este bucle es el que corre POR FRAME cuando hay sombras (es el `bounds-en-play` que
+                ' mide 9-13 ms sobre el Serena Battle Suit), asi que es donde mas duele la pasada de mas.
+                Dim s0 = localMats.Secciones(0), s3 = localMats.Secciones(3), s6 = localMats.Secciones(6), s9 = localMats.Secciones(9)
+                Dim s1 = localMats.Secciones(1), s4 = localMats.Secciones(4), s7 = localMats.Secciones(7), s10 = localMats.Secciones(10)
+                Dim s2 = localMats.Secciones(2), s5 = localMats.Secciones(5), s8 = localMats.Secciones(8), s11 = localMats.Secciones(11)
                 For i = r * chunk To i1 - 1
-                    Dim w = Vector3d.TransformPosition(localVerts(i), AMatrix4d(localMats(i)))
+                    Dim lv = localVerts(i)
+                    Dim w As New Vector3d(lv.X * s0(i) + lv.Y * s3(i) + lv.Z * s6(i) + s9(i),
+                                          lv.X * s1(i) + lv.Y * s4(i) + lv.Z * s7(i) + s10(i),
+                                          lv.X * s2(i) + lv.Y * s5(i) + lv.Z * s8(i) + s11(i))
                     If w.X < mn.X Then mn.X = w.X
                     If w.Y < mn.Y Then mn.Y = w.Y
                     If w.Z < mn.Z Then mn.Z = w.Z

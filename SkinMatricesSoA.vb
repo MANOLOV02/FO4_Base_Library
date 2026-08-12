@@ -77,6 +77,79 @@ Public NotInheritable Class SkinMatricesSoA
         End Set
     End Property
 
+    ''' <summary>Escribe las 12 secciones DIRECTO desde una <c>Matrix4d</c>, sin materializar la
+    ''' <c>Matrix4</c> intermedia.
+    ''' <para>⭐ Lo usa el BLEND, que es el bucle mas caliente del skinning de CPU (11,85 ms de un frame de
+    ''' 17,4 sobre el Serena Battle Suit). El camino largo era <c>Matrix4d</c> (128 B, devuelta por valor)
+    ''' → <c>AMatrix4</c> → <c>Matrix4</c> (64 B) → indexador → 12 escrituras: dos copias de struct por
+    ''' vertice para terminar guardando los mismos 12 Single.</para>
+    ''' <para>⛔ BIT A BIT IDENTICO: es el mismo <c>CSng</c> sobre los mismos Double. Lo unico que cambia es
+    ''' cuantas veces se copia el struct por el camino.</para>
+    ''' <para>⚠️ EL <c>AggressiveInlining</c> DE ACA NO APORTO NADA — medido. Con y sin el atributo, el
+    ''' blend completo da 5,07/5,08/5,08 contra 5,11/5,13 ms: 0,04 ms de diferencia, o sea ruido. Se deja
+    ''' porque no molesta y porque este comentario es mas util que el atributo: el JIT ya inlineaba estos
+    ''' cuerpos, y el envoltorio que queda NO es la llamada a estos metodos. Quien busque los ~2,4 ms que
+    ''' faltan tiene que mirar el batching, no esto.</para></summary>
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Public Sub EstablecerDesde(i As Integer, m As Matrix4d)
+        Secciones(0)(i) = CSng(m.M11) : Secciones(1)(i) = CSng(m.M12) : Secciones(2)(i) = CSng(m.M13)
+        Secciones(3)(i) = CSng(m.M21) : Secciones(4)(i) = CSng(m.M22) : Secciones(5)(i) = CSng(m.M23)
+        Secciones(6)(i) = CSng(m.M31) : Secciones(7)(i) = CSng(m.M32) : Secciones(8)(i) = CSng(m.M33)
+        Secciones(9)(i) = CSng(m.M41) : Secciones(10)(i) = CSng(m.M42) : Secciones(11)(i) = CSng(m.M43)
+    End Sub
+
+    ''' <summary>Copia los 12 elementos utiles desde un acumulador plano de 16 Single (el layout de
+    ''' <c>FastGeom.MatSingles</c>). Es el camino corto del blend: los datos YA estan en Single y en el
+    ''' orden correcto, asi que no hay conversion ni struct intermedio.
+    ''' <para>El mapeo salta las columnas 4 (indices 3, 7, 11, 15), que son la parte proyectiva y no se
+    ''' guarda — la matriz de skin es afin, y eso lo verifica el check [matriz-afin] del arnes.</para>
+    ''' </summary>
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Friend Sub CopiarDeAcumulador(i As Integer, acc As Single())
+        Secciones(0)(i) = acc(0) : Secciones(1)(i) = acc(1) : Secciones(2)(i) = acc(2)
+        Secciones(3)(i) = acc(4) : Secciones(4)(i) = acc(5) : Secciones(5)(i) = acc(6)
+        Secciones(6)(i) = acc(8) : Secciones(7)(i) = acc(9) : Secciones(8)(i) = acc(10)
+        Secciones(9)(i) = acc(12) : Secciones(10)(i) = acc(13) : Secciones(11)(i) = acc(14)
+    End Sub
+
+    ''' <summary>Copia la matriz del vertice <paramref name="desde"/> al <paramref name="i"/>.
+    ''' <para>⭐ Lo usa el memo por vertice-previo del blend: cuando dos vertices consecutivos tienen la
+    ''' misma tupla (indices, pesos) el resultado es identico por construccion —el blend es funcion pura de
+    ''' esa tupla y de la paleta— y copiar 12 floats sale mucho mas barato que rehacerlo.</para></summary>
+    <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
+    Friend Sub CopiarDeVertice(i As Integer, desde As Integer)
+        Secciones(0)(i) = Secciones(0)(desde) : Secciones(1)(i) = Secciones(1)(desde) : Secciones(2)(i) = Secciones(2)(desde)
+        Secciones(3)(i) = Secciones(3)(desde) : Secciones(4)(i) = Secciones(4)(desde) : Secciones(5)(i) = Secciones(5)(desde)
+        Secciones(6)(i) = Secciones(6)(desde) : Secciones(7)(i) = Secciones(7)(desde) : Secciones(8)(i) = Secciones(8)(desde)
+        Secciones(9)(i) = Secciones(9)(desde) : Secciones(10)(i) = Secciones(10)(desde) : Secciones(11)(i) = Secciones(11)(desde)
+    End Sub
+
+    ''' <summary>Posicion transformada por la matriz del vertice <paramref name="i"/>, SIN construir
+    ''' ninguna matriz.
+    ''' <para>⛔ REEMPLAZA A <c>Vector3d.TransformPosition(v, AMatrix4d(mats(i)))</c>, que hacia DOS
+    ''' pasadas: el indexador reconstruia una <c>Matrix4</c> de 64 B desde las 12 secciones y despues se
+    ''' ensanchaba a <c>Matrix4d</c> de 128 B — dos structs para usar 12 floats.</para>
+    ''' <para>⛔ BIT A BIT IDENTICO: <c>TransformPosition</c> acumula en Double y <c>Single → Double</c> es
+    ''' exacto, asi que el producto da el mismo bit. Mismo orden de acumulacion, ademas.</para>
+    ''' <para>Existe como metodo publico —y no exponiendo <c>Secciones</c>— porque el exportador de NIF
+    ''' vive en otro assembly y no deberia conocer el layout interno.</para></summary>
+    Public Function TransformarPosicion(i As Integer, v As Vector3d) As Vector3d
+        Return New Vector3d(v.X * Secciones(0)(i) + v.Y * Secciones(3)(i) + v.Z * Secciones(6)(i) + Secciones(9)(i),
+                            v.X * Secciones(1)(i) + v.Y * Secciones(4)(i) + v.Z * Secciones(7)(i) + Secciones(10)(i),
+                            v.X * Secciones(2)(i) + v.Y * Secciones(5)(i) + v.Z * Secciones(8)(i) + Secciones(11)(i))
+    End Function
+
+    ''' <summary>La matriz del vertice como <c>Matrix4d</c>, armada DIRECTO desde las secciones.
+    ''' <para>Para los consumidores que necesitan la matriz entera (el exportador la pasa a
+    ''' <c>NormalMatrixOrIdentity</c> y a <c>PorMatriz3x3</c>). Ahorra la <c>Matrix4</c> intermedia del
+    ''' indexador; la <c>Matrix4d</c> se construye una sola vez en vez de dos structs.</para></summary>
+    Public Function ComoMatrix4d(i As Integer) As Matrix4d
+        Return New Matrix4d(Secciones(0)(i), Secciones(1)(i), Secciones(2)(i), 0.0,
+                            Secciones(3)(i), Secciones(4)(i), Secciones(5)(i), 0.0,
+                            Secciones(6)(i), Secciones(7)(i), Secciones(8)(i), 0.0,
+                            Secciones(9)(i), Secciones(10)(i), Secciones(11)(i), 1.0)
+    End Function
+
     ''' <summary>Reemplaza a <c>Array.Fill</c>: todos los vertices con la misma matriz.</summary>
     Public Sub Llenar(m As Matrix4)
         For i = 0 To Count - 1
