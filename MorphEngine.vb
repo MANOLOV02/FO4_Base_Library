@@ -490,10 +490,8 @@ Public Class MorphEngine
 
         ' Optimize: if >60% dirty, mark all dirty
         If geom.dirtyVertexIndices.Count > count * 0.6 Then
-            geom.dirtyVertexIndices = New HashSet(Of Integer)(Enumerable.Range(0, count))
-            For i = 0 To count - 1
-                geom.dirtyVertexFlags(i) = True
-            Next
+            geom.dirtyVertexIndices.MarcarTodos(count)
+            Array.Fill(geom.dirtyVertexFlags, True, 0, count)
         End If
 
         geom.Vertices = verts

@@ -27,14 +27,20 @@ Public Structure SkinnedGeometry
     ''' se indexa igual que el <c>Matrix4()</c> que reemplaza —<c>mats(i)</c>, <c>mats.Length</c>— pero por
     ''' dentro son 12 arrays planos, que es lo que el kernel necesita para vectorizar sin copiar.</summary>
     Public PerVertexSkinMatrix As SkinMatricesSoA
-    Public dirtyMaskIndices As HashSet(Of Integer)              ' Para dirty-tracking de máscara
+    ''' <summary>Vertices cuya MASCARA (zap/oclusion) cambio desde la ultima subida. Mismo tipo y por
+    ''' el mismo motivo que <see cref="dirtyVertexIndices"/>: ver <see cref="ConjuntoDeSucios"/>.</summary>
+    Public dirtyMaskIndices As ConjuntoDeSucios
     ' Set by MorphEngine.ApplyMorphPlan whenever it (re)computes the zap mask; consumed + cleared by
     ' Render.EnsureZapIndexBuffer to rebuild the filtered element buffer only when the zap set changed.
     ' Initialized True in ExtractSkinnedGeometry so the first draw filters (a Structure can't have an
     ' instance field initializer in VB — BC31049 — so the default is set at construction instead).
     ' (See render-zap-clean-cpu-index-filter.)
     Public ZapTopologyDirty As Boolean
-    Public dirtyVertexIndices As HashSet(Of Integer)
+    ''' <summary>Vertices cuya posicion/normal cambio desde la ultima subida a la GPU. Ver
+    ''' <see cref="ConjuntoDeSucios"/>: se usa igual que el <c>HashSet(Of Integer)</c> que reemplaza
+    ''' —<c>.Count</c>, <c>.Add</c>, <c>.Clear</c>, <c>For Each</c>— pero marcar "todos" es O(1) en vez
+    ''' de hashear un entero por vertice en cada frame de animacion.</summary>
+    Public dirtyVertexIndices As ConjuntoDeSucios
     Public dirtyMaskFlags() As Boolean
     Public dirtyVertexFlags() As Boolean
     ''' <summary>
@@ -458,11 +464,15 @@ Public Class SkinningHelper
             ' diferencia Double/Single y NO un bug del vectorial. El toggle compara lo que hay que comparar.
             Dim mVec = BlendBoneMatrices(wgt, idx, baseIdx, wpv, precomputed, flatPal)
             Dim mEsc As Matrix4d
+            ' Se restaura el valor PREVIO, no un False fijo: si un arnes dejo el toggle encendido para
+            ' medir, correr el self-test se lo apagaba en silencio y la medicion pasaba a ser del camino
+            ' vectorial sin que nada avisara.
+            Dim previoM = FastGeom.ForzarEscalarS
             FastGeom.ForzarEscalarS = True
             Try
                 mEsc = BlendBoneMatrices(wgt, idx, baseIdx, wpv, precomputed, flatPal)
             Finally
-                FastGeom.ForzarEscalarS = False
+                FastGeom.ForzarEscalarS = previoM
             End Try
             FastGeom.StoreMatrix(mEsc, a, 0)
             FastGeom.StoreMatrix(mVec, b2, 0)
@@ -513,11 +523,12 @@ Public Class SkinningHelper
                 ' forzado con el toggle. Ver el comentario de alla.
                 Dim gVec = BlendBoneMatrices(wgt, idx, baseIdx, 4, precomputed, flatPal)
                 Dim gEsc As Matrix4d
+                Dim previoG = FastGeom.ForzarEscalarS
                 FastGeom.ForzarEscalarS = True
                 Try
                     gEsc = BlendBoneMatrices(wgt, idx, baseIdx, 4, precomputed, flatPal)
                 Finally
-                    FastGeom.ForzarEscalarS = False
+                    FastGeom.ForzarEscalarS = previoG
                 End Try
                 FastGeom.StoreMatrix(gEsc, a, 0) : FastGeom.StoreMatrix(gVec, b2, 0)
                 For e = 0 To FastGeom.MatDoubles - 1
@@ -946,8 +957,8 @@ Public Class SkinningHelper
             .Geometry = shapeGeom,
             .Skinning = shapeSkin,
             .VertexMask = vtxMask,
-            .dirtyVertexIndices = New HashSet(Of Integer)(Enumerable.Range(0, vertexCount)),
-            .dirtyMaskIndices = New HashSet(Of Integer)(Enumerable.Range(0, vertexCount)),
+            .dirtyVertexIndices = ConjuntoDeSucios.Todos(vertexCount),
+            .dirtyMaskIndices = ConjuntoDeSucios.Todos(vertexCount),
             .dirtyMaskFlags = dirtyMFlags,
             .dirtyVertexFlags = dirtyVFlags,
              .Boundingcenter = center,
@@ -1056,11 +1067,15 @@ Public Class SkinningHelper
         Dim L As New OpenTK.Mathematics.Matrix3(Origen.M11, Origen.M12, Origen.M13,
                                                 Origen.M21, Origen.M22, Origen.M23,
                                                 Origen.M31, Origen.M32, Origen.M33)
-        ' ⛔ EL CORTE SALE DE `FastSkin.EpsDet`, NO DE UN LITERAL. Estaba escrito a mano aca y en la otra
-        ' sobrecarga, o sea el mismo umbral en tres lugares sin nada que los ate: mover uno separaba en
-        ' silencio la decision de DEGENERACION del render de la del bake y el exportador, y esa decision no
-        ' es un error de redondeo — es normal identidad contra normal transformada.
-        If Math.Abs(L.Determinant) < FastSkin.EpsDet Then Return Matrix3d.Identity
+        ' ⛔ EL PREDICADO SALE DE `FastSkin.EsDegenerada`, NO DE UN LITERAL NI DE UNA COPIA. Estaba
+        ' escrito a mano aca y en la otra sobrecarga, o sea la misma decision en tres lugares sin nada que
+        ' los ate: mover uno separaba en silencio la decision de DEGENERACION del render de la del bake y
+        ' el exportador, y esa decision no es un error de redondeo — es normal identidad contra normal
+        ' transformada.
+        ' ⛔ Ademas es RELATIVO a la escala de la matriz: un corte absoluto sobre un determinante en Single
+        ' no distingue "matriz chica" de "matriz singular". Ver el doc de FastSkin.EpsDetRel.
+        If FastSkin.EsDegenerada(FastSkin.DetPorPrimeraFila(L.M11, L.M12, L.M13, L.M21, L.M22, L.M23, L.M31, L.M32, L.M33),
+                                 L.M11, L.M12, L.M13, L.M21, L.M22, L.M23, L.M31, L.M32, L.M33) Then Return Matrix3d.Identity
         Dim inv = L.Inverted().Transposed()
         Return New Matrix3d(inv.M11, inv.M12, inv.M13,
                             inv.M21, inv.M22, inv.M23,
@@ -1094,14 +1109,18 @@ Public Class SkinningHelper
     ''' terminan aplicando la matriz CRUDA a la normal. No se toca sin decision expresa porque mueve bytes
     ''' horneados; ver la nota de memoria del proyecto.</para>
     ''' <para>El resultado se devuelve en Matrix3d para no cambiar la firma ni los call sites; lo que
-    ''' viaja adentro es precision de Single. El corte por determinante queda en 1e-12, la misma
-    ''' constante de antes, para no mover QUE se considera degenerado.</para></summary>
+    ''' viaja adentro es precision de Single. ⛔ El corte por determinante es RELATIVO a la escala de la
+    ''' matriz (<see cref="FastSkin.EsDegenerada"/>) y NO la constante absoluta de 1e-12 que habia antes:
+    ''' esa venia de cuando el determinante se calculaba en Double, y al pasar a Single quedo por debajo
+    ''' del ruido de la propia cantidad — dejaba pasar matrices EXACTAMENTE singulares. Cambiar esto SI
+    ''' mueve que se considera degenerado, que es justamente el defecto que arregla.</para></summary>
     Public Shared Function NormalMatrixOrIdentity(Origen As Matrix4d) As Matrix3d
         ' Matrix3 es ambiguo: NiflySharp.Structs tambien define uno. Se califica.
         Dim L As New OpenTK.Mathematics.Matrix3(CSng(Origen.M11), CSng(Origen.M12), CSng(Origen.M13),
                              CSng(Origen.M21), CSng(Origen.M22), CSng(Origen.M23),
                              CSng(Origen.M31), CSng(Origen.M32), CSng(Origen.M33))
-        If Math.Abs(L.Determinant) < FastSkin.EpsDet Then Return Matrix3d.Identity   ' ver la otra sobrecarga
+        If FastSkin.EsDegenerada(FastSkin.DetPorPrimeraFila(L.M11, L.M12, L.M13, L.M21, L.M22, L.M23, L.M31, L.M32, L.M33),
+                                 L.M11, L.M12, L.M13, L.M21, L.M22, L.M23, L.M31, L.M32, L.M33) Then Return Matrix3d.Identity   ' ver la otra sobrecarga
         Dim inv = L.Inverted().Transposed()
         Return New Matrix3d(inv.M11, inv.M12, inv.M13,
                             inv.M21, inv.M22, inv.M23,
@@ -1151,13 +1170,26 @@ Public Class SkinningHelper
     End Sub
 
     ''' <summary>Public y no Friend: el exportador de NIF vive en FO4_NPC_Manager, que es otro assembly.</summary>
-    ''' <summary>El corte por determinante degenerado del kernel, expuesto para que el arnes no lo
-    ''' transcriba. Ver FastSkin.EpsDet.</summary>
-    Friend Shared ReadOnly Property EpsDetDelKernel As Single
+    ''' <summary>El PREDICADO de degeneracion del kernel, expuesto para que el arnes no lo transcriba.
+    ''' <para>⛔ Antes esto exponia una CONSTANTE (<c>EpsDetKernel As Single</c>) y el arnes escribia el
+    ''' <c>Math.Abs(det) &lt; eps</c> por su cuenta. Eso alcanzaba mientras el corte era un numero, pero
+    ''' ahora la decision depende TAMBIEN de la escala de la matriz: exportar el umbral y dejar que el
+    ''' llamador arme la comparacion volveria a partir la decision en dos. Ver FastSkin.EsDegenerada.</para></summary>
+    ''' <summary>El eps RELATIVO del kernel, para que el camino vectorial del arnes pueda armar su
+    ''' mascara. ⛔ Un llamador que use esto tiene que transcribir el predicado COMPLETO —cuadrados
+    ''' contra la cota de Hadamard—, no comparar el determinante pelado contra este numero.</summary>
+    Friend Shared ReadOnly Property EpsDetRelDelKernel As Single
         Get
-            Return FastSkin.EpsDet
+            Return FastSkin.EpsDetRel
         End Get
     End Property
+
+    Friend Shared Function EsDegeneradaDelKernel(det As Single,
+                                                 m11 As Single, m12 As Single, m13 As Single,
+                                                 m21 As Single, m22 As Single, m23 As Single,
+                                                 m31 As Single, m32 As Single, m33 As Single) As Boolean
+        Return FastSkin.EsDegenerada(det, m11, m12, m13, m21, m22, m23, m31, m32, m33)
+    End Function
 
     Public Shared Function PorMatriz3x3(v As Vector3d, m As Matrix4d) As Vector3d
         Return New Vector3d(v.X * m.M11 + v.Y * m.M21 + v.Z * m.M31,
@@ -2463,7 +2495,21 @@ Public Class RecalcTBN
     '''       nueva: cambia el SIGNIFICADO de un número que el usuario ya tiene en disco, que es
     '''       igual de invisible y por eso necesita su rama.
     ''' </summary>
-    Public Const VersionDeOpcionesTBN As Integer = 2
+    ''' <remarks>⛔ LA HISTORIA VA ACA Y HAY QUE MANTENERLA. Quien agregue la opcion siguiente necesita
+    ''' saber que introdujo cada version para no pisar una rama con otra; sin esta lista hay que ir a leer
+    ''' `Config_App.RepararOpcionesTBN` y deducirlo.
+    '''   0 — archivos anteriores al centinela (no traen la clave OptionsVersion).
+    '''   1 — DeterministicOnCollapse (opcion nueva) + los defaults CAMBIADOS de EpsilonPos y
+    '''       WeldByPositionOnly, que la version anterior habia escrito al disco.
+    '''   2 — EpsilonPos cambia de SIGNIFICADO (antes se comparaba contra LengthSquared): se le aplica la
+    '''       raiz para dejar el comportamiento igual al que el usuario tenia.
+    '''   3 — WeldPosEpsilon / WeldUVEpsilon, que nunca se habian migrado y quedaban en 0 (el 0 sirve de
+    '''       centinela porque el minimo de los dos NumericUpDown es 1e-12).
+    ''' ⚠️ SmoothSeamNormals, SmoothSeamNormalsAngle, NormalizeOutputs y RepairNaNs NO tienen rama y NO se
+    ''' les puede poner una a ciegas: ninguno admite centinela (0 y False son valores elegibles), asi que
+    ''' reponerles el default pisaria lo que el usuario eligio. Para cubrirlos habria que saber en que
+    ''' version se agrego cada uno — dato que no quedo registrado.</remarks>
+    Public Const VersionDeOpcionesTBN As Integer = 3
 
     ''' <summary>
     ''' ⛔ ÚNICA fuente de los defaults del TBN. No re-declararlos en ningún otro lado: el centinela de

@@ -495,9 +495,10 @@ Public Module FaceTintCompositor
     ''' <para>La regla "GLSL ASCII puro" ya estaba escrita; lo que faltaba era algo que la hiciera cumplir.</para></summary>
     ''' <summary>Todos los shaders GLSL que el gate tiene que revisar. ⛔ NO sólo los dos de este compositor:
     ''' el fallo es igual de mudo en los del RENDER, y cubrir dos de ocho daba una falsa sensación de gate.
-    ''' <para>⚠️ Los dos del <c>TextOverlayRenderer</c> (Render.vb) quedan afuera porque son variables LOCALES
-    ''' dentro de un <c>Private Sub</c>: para incluirlos habría que izarlos a constantes. Es el overlay de
-    ''' TEXTO, no un camino de cara; se deja anotado en vez de refactorizar de prepo.</para></summary>
+    ''' <para>✅ Los dos del <c>TextOverlayRenderer</c> (Render.vb) YA ESTAN: eran variables locales dentro
+    ''' de un <c>Private Sub</c> —invisibles tanto para esta lista como para el barrido por reflexion del
+    ''' gate, porque una local no es un campo— y se izaron a <c>Friend Const</c> el 2026-08-12. Lo destapo
+    ''' un revisor: quedaba un shader de produccion que NINGUN gate cubria.</para></summary>
     ''' <remarks>`Friend` y no `Private` para que el gate de BUILD (Tools/ParityGate, `glsl-ascii`) pueda
     ''' barrer los ocho fuentes. El gate SALIO de esta lib el 2026-08-08: es lexico sobre strings constantes,
     ''' da lo mismo en toda maquina ⇒ no tiene nada que hacer corriendo en el proceso del usuario.</remarks>
@@ -511,7 +512,13 @@ Public Module FaceTintCompositor
             ("RENDER-FLOOR-FRAGMENT", Floor_Shader_Class.Fragment_Floor),
             ("RENDER-SSE-VERTEX", Shader_Class_SSE.Vertex_SSE),
             ("RENDER-SSE-FRAGMENT", Shader_Class_SSE.Fragment_SSE),
-            ("SHADOW-DEPTH-FRAGMENT", ShadowDepthShaderSource.Fragment_ShadowDepth)}
+            ("SHADOW-DEPTH-FRAGMENT", ShadowDepthShaderSource.Fragment_ShadowDepth),
+            ("SHADOW-UNIFORMS", ShadowDepthShaderSource.SharedUniformsGlsl),
+            ("SHADOW-LOOKUP", ShadowDepthShaderSource.SharedLookupGlsl),
+            ("GROUND-VERTEX", GroundShadowShaderSource.Vertex_Ground),
+            ("GROUND-FRAGMENT", GroundShadowShaderSource.Fragment_Ground),
+            ("OVERLAY-VERTEX", TextOverlayRenderer.VertexOverlaySrc),
+            ("OVERLAY-FRAGMENT", TextOverlayRenderer.FragmentOverlaySrc)}
     End Function
 
     ' ⛔ EL GATE `glsl-ascii` YA NO VIVE ACA. Se mudó a Tools/ParityGate (LawGates.ShaderSourceAsciiGate) el

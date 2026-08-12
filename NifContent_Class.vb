@@ -286,6 +286,21 @@ Public Class Nifcontent_Class_Manolo
                 ' are hardcoded by MaterialLib). The renderer (OS/NifSkope) reads from
                 ' NiAlphaProperty, so we must sync the shape-local alpha state here too.
                 mat.WriteAlphaPropertyToShape(shap, Me)
+
+                ' ⛔⛔ Y EL BIT Cast_Shadows, POR EL MISMO MOTIVO QUE EL ALPHA: es shape-local y el archivo
+                ' de material NO puede llevarlo. Sin esto el flag se LEIA del NIF (Deserialize lo siembra en
+                ' `_castShadowsDelNif`) y no se ESCRIBIA NUNCA en Fallout 4 — el usuario lo cambiaba en la
+                ' UI, guardaba, y al recargar volvia el valor viejo. Lector sin escritor: ver
+                ' 00-reglas-paridad-canonica-como-no-cagarla.
+                '
+                ' ⛔ SOLO PARA EL EFFECT SHADER (.bgem), a proposito. Un .bgsm SI tiene el campo
+                ' CastShadows y es su duenio —el material es reemplazo total del NIF—, asi que escribir
+                ' ademas el bit del shader duplicaria la sede del dato y moveria bytes de todo NIF con
+                ' BGSM sin que nadie lo haya pedido. El .bgem no tiene ese campo: para el, el bit del NIF
+                ' es la UNICA sede posible, que es justamente por lo que se abrio este camino.
+                If TypeOf shad Is BSEffectShaderProperty Then
+                    FO4UnifiedMaterial_Class.EscribirCastShadowsEnShader(shad, mat.CastShadows, fo4:=True)
+                End If
             Case Config_App.Game_Enum.Skyrim
                 Dim saveAction As Action
                 Select Case shad.GetType

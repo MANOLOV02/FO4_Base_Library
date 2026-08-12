@@ -5,6 +5,30 @@ Imports OpenTK.Mathematics
 
 Public Class Floor_Shader_Class
     Inherits Shader_Base_Class
+    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA — LEER ANTES DE TOCAR ESTE SHADER.
+    '''
+    ''' <para>El shadow map se dibuja con OTRO programa (<c>ShadowDepthShaderSource</c>), y ese programa
+    ''' tiene que decidir <b>que fragmento existe</b> exactamente igual que este. Si los dos no coinciden,
+    ''' la SILUETA de la sombra deja de ser la del objeto que se ve: aparece sombra de geometria que en
+    ''' pantalla esta descartada, o falta la de algo que si se dibuja. No hay forma de que eso se note como
+    ''' un error — se ve como "la sombra esta rara".</para>
+    '''
+    ''' <para><b>Lo que hay que mirar al cambiar CUALQUIERA de estas cosas acá:</b></para>
+    ''' <para>· el <b>alpha test</b> (que cantidad se compara y contra que umbral),</para>
+    ''' <para>· como entra el <b>alpha de vertice</b> (con gamma o lineal, y con que predicado se gatea),</para>
+    ''' <para>· el <b>escalar Alpha</b> del material y en que momento se multiplica,</para>
+    ''' <para>· el <b>descarte por zap</b>,</para>
+    ''' <para>· el <b>skinning</b> (si un vertice va a parar a otro lado, su sombra tambien),</para>
+    ''' <para>· las <b>UV</b> (offset/scale) con las que se muestrea el diffuse.</para>
+    '''
+    ''' <para>⚠️ Y son DOS leyes, no una: el lighting shader (.bgsm) y el effect shader (.bgem) testean
+    ''' cantidades distintas. El fragment de profundidad las tiene las dos, gateadas por
+    ''' <c>bIsEffectShader</c>. Ya paso una vez que solo estuviera la primera.</para>
+    '''
+    ''' <para>⛔ El GLSL va en <b>ASCII PURO</b>, comentarios incluidos. Un solo caracter fuera de ASCII y
+    ''' el driver corta la compilacion con "syntax error, unexpected $end" — un mensaje que no apunta ni
+    ''' remotamente al caracter. El gate <c>glsl-ascii</c> de ParityGate lo cubre; si agregas una fuente
+    ''' nueva, sumala a <c>FaceTintCompositor.AllShaderSources()</c> o queda sin cubrir.</para></summary>
     Friend Const Vertex_Floor As String =
 "#version 430
 layout(location = 0) in vec3 vertexPosition;
@@ -34,6 +58,30 @@ End Class
 
 Public Class Shader_Class_Fo4
     Inherits Shader_Base_Class
+    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA — LEER ANTES DE TOCAR ESTE SHADER.
+    '''
+    ''' <para>El shadow map se dibuja con OTRO programa (<c>ShadowDepthShaderSource</c>), y ese programa
+    ''' tiene que decidir <b>que fragmento existe</b> exactamente igual que este. Si los dos no coinciden,
+    ''' la SILUETA de la sombra deja de ser la del objeto que se ve: aparece sombra de geometria que en
+    ''' pantalla esta descartada, o falta la de algo que si se dibuja. No hay forma de que eso se note como
+    ''' un error — se ve como "la sombra esta rara".</para>
+    '''
+    ''' <para><b>Lo que hay que mirar al cambiar CUALQUIERA de estas cosas acá:</b></para>
+    ''' <para>· el <b>alpha test</b> (que cantidad se compara y contra que umbral),</para>
+    ''' <para>· como entra el <b>alpha de vertice</b> (con gamma o lineal, y con que predicado se gatea),</para>
+    ''' <para>· el <b>escalar Alpha</b> del material y en que momento se multiplica,</para>
+    ''' <para>· el <b>descarte por zap</b>,</para>
+    ''' <para>· el <b>skinning</b> (si un vertice va a parar a otro lado, su sombra tambien),</para>
+    ''' <para>· las <b>UV</b> (offset/scale) con las que se muestrea el diffuse.</para>
+    '''
+    ''' <para>⚠️ Y son DOS leyes, no una: el lighting shader (.bgsm) y el effect shader (.bgem) testean
+    ''' cantidades distintas. El fragment de profundidad las tiene las dos, gateadas por
+    ''' <c>bIsEffectShader</c>. Ya paso una vez que solo estuviera la primera.</para>
+    '''
+    ''' <para>⛔ El GLSL va en <b>ASCII PURO</b>, comentarios incluidos. Un solo caracter fuera de ASCII y
+    ''' el driver corta la compilacion con "syntax error, unexpected $end" — un mensaje que no apunta ni
+    ''' remotamente al caracter. El gate <c>glsl-ascii</c> de ParityGate lo cubre; si agregas una fuente
+    ''' nueva, sumala a <c>FaceTintCompositor.AllShaderSources()</c> o queda sin cubrir.</para></summary>
     Friend Const Vertex_FO4 As String = "
 #version 430
 uniform mat4 matProjection;
@@ -904,6 +952,16 @@ void main(void)
 			else
 				normal = normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
 
+			// GEOMETRIC normal, kept before the normal map perturbs `normal`. Used ONLY for the shadow
+			// normal-offset. Passing the normal-mapped one there was a defect: the offset is meant to push
+			// the sample point OFF THE SURFACE by about a texel, and a strong normal map (cloth, leather,
+			// hair) tilts it 30-45 degrees, which turns a big part of that push into a LATERAL slide along
+			// the surface and shrinks what is left along the real normal. The visible result is acne on the
+			// terminator whose speckle pattern follows the TEXTURE detail -- it moves when the UVs or the
+			// map change, not when the geometry does -- plus micro-leaks where the perturbed normal leans
+			// toward the light. Shading still uses the perturbed `normal`; only the offset changes.
+			vec3 geoNormal = normal;
+
 			if (bShowTexture)
 			{
 				if (bNormalMap)
@@ -956,10 +1014,20 @@ void main(void)
 				}
 			}
 
+			// !! EN MODEL-SPACE NORMALS, `geoNormal` NO SIRVE: la semilla de arriba es el eje +Z del
+			// OBJETO llevado a vista (v_msnMatrix * (0,0,1)), o sea una direccion CONSTANTE por shape,
+			// no la normal del fragmento. Usarla para el normal-offset empujaba toda la malla en la
+			// misma direccion y en la mitad opuesta el offset apuntaba HACIA ADENTRO de la superficie:
+			// acne solido. En MSN la normal del mapa ES la normal de la geometria (el mapa guarda la
+			// normal de objeto, no una perturbacion tangente), asi que es la correcta para el offset.
+			if (bModelSpace)
+				geoNormal = normal;
+
 			// Double-sided: flip normal for back faces
 			if (bDoubleSided && !gl_FrontFacing)
 			{
 				normal = -normal;
+				geoNormal = -geoNormal;
 			}
 
 			// Engine skin tint = the DEFERRED path the body actually renders through
@@ -1040,7 +1108,7 @@ void main(void)
 			// the factor, while hemiAmbient() below stays untouched. See the SHADOWS uniform block.
 			DirectionalLight keyLight = frontal;
 			if (bShadows)
-				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(normal));
+				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(geoNormal));
 
 			directionalLight(keyLight, lightFrontal, true, outDiffuse, outSpecular);   // key = la direccional del motor
 			directionalLight(directional0, lightDirectional0, false, outDiffuse, outSpecular);
@@ -1528,6 +1596,30 @@ End Class
 
 Public Class Shader_Class_SSE
     Inherits Shader_Base_Class
+    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA — LEER ANTES DE TOCAR ESTE SHADER.
+    '''
+    ''' <para>El shadow map se dibuja con OTRO programa (<c>ShadowDepthShaderSource</c>), y ese programa
+    ''' tiene que decidir <b>que fragmento existe</b> exactamente igual que este. Si los dos no coinciden,
+    ''' la SILUETA de la sombra deja de ser la del objeto que se ve: aparece sombra de geometria que en
+    ''' pantalla esta descartada, o falta la de algo que si se dibuja. No hay forma de que eso se note como
+    ''' un error — se ve como "la sombra esta rara".</para>
+    '''
+    ''' <para><b>Lo que hay que mirar al cambiar CUALQUIERA de estas cosas acá:</b></para>
+    ''' <para>· el <b>alpha test</b> (que cantidad se compara y contra que umbral),</para>
+    ''' <para>· como entra el <b>alpha de vertice</b> (con gamma o lineal, y con que predicado se gatea),</para>
+    ''' <para>· el <b>escalar Alpha</b> del material y en que momento se multiplica,</para>
+    ''' <para>· el <b>descarte por zap</b>,</para>
+    ''' <para>· el <b>skinning</b> (si un vertice va a parar a otro lado, su sombra tambien),</para>
+    ''' <para>· las <b>UV</b> (offset/scale) con las que se muestrea el diffuse.</para>
+    '''
+    ''' <para>⚠️ Y son DOS leyes, no una: el lighting shader (.bgsm) y el effect shader (.bgem) testean
+    ''' cantidades distintas. El fragment de profundidad las tiene las dos, gateadas por
+    ''' <c>bIsEffectShader</c>. Ya paso una vez que solo estuviera la primera.</para>
+    '''
+    ''' <para>⛔ El GLSL va en <b>ASCII PURO</b>, comentarios incluidos. Un solo caracter fuera de ASCII y
+    ''' el driver corta la compilacion con "syntax error, unexpected $end" — un mensaje que no apunta ni
+    ''' remotamente al caracter. El gate <c>glsl-ascii</c> de ParityGate lo cubre; si agregas una fuente
+    ''' nueva, sumala a <c>FaceTintCompositor.AllShaderSources()</c> o queda sin cubrir.</para></summary>
     Friend Const Vertex_SSE As String = "
 #version 430
 // SSE vertex shader with model-space normal (MSN) support
@@ -2273,6 +2365,12 @@ void main(void)
 				normal = normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
 			}
 
+			// GEOMETRIC normal, captured before the normal map perturbs `normal`. Used ONLY for the
+			// shadow normal-offset -- shading keeps using the perturbed one. Same reason as in the FO4
+			// fragment: offsetting along a normal-mapped direction turns part of the push into a lateral
+			// slide along the surface and leaves acne that follows the TEXTURE detail.
+			vec3 geoNormal = normal;
+
 			if (bShowTexture)
 			{
 				if (bNormalMap)
@@ -2358,10 +2456,20 @@ void main(void)
 				albedo = albedo * (1.0 - ov.a) + ov.rgb;
 			}
 
+			// !! EN MODEL-SPACE NORMALS, `geoNormal` NO SIRVE: la semilla de arriba es el eje +Z del
+			// OBJETO llevado a vista (v_msnMatrix * (0,0,1)), o sea una direccion CONSTANTE por shape,
+			// no la normal del fragmento. Usarla para el normal-offset empujaba toda la malla en la
+			// misma direccion y en la mitad opuesta el offset apuntaba HACIA ADENTRO de la superficie:
+			// acne solido. En MSN la normal del mapa ES la normal de la geometria (el mapa guarda la
+			// normal de objeto, no una perturbacion tangente), asi que es la correcta para el offset.
+			if (bModelSpace)
+				geoNormal = normal;
+
 			// Double-sided: flip normal for back faces
 			if (bDoubleSided && !gl_FrontFacing)
 			{
 				normal = -normal;
+				geoNormal = -geoNormal;
 			}
 
 			// SHADOW. Same law and same placement as the FO4 fragment (see the SHADOWS uniform block):
@@ -2370,7 +2478,7 @@ void main(void)
 			// Only the KEY casts -- the fills keep the shadow side readable.
 			DirectionalLight keyLight = frontal;
 			if (bShadows)
-				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(normal));
+				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(geoNormal));
 
 			directionalLight(keyLight, lightFrontal, outDiffuse, outSpecular);
 			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
@@ -2782,7 +2890,7 @@ if (bHide)
     End Sub
 End Class
 ''' <summary>El fragment del pase de profundidad del shadow map. UNA sola fuente para los dos juegos:
-''' lo unico que hace es el alpha-test, y esa ley es la misma en FO4 y en SSE.
+''' lo unico que hace es el alpha-test, y esa ley NO es la misma en FO4 y en SSE (ver bLeySse).
 ''' <para>⛔⛔ NO LLEVA VERTEX SHADER PROPIO, y eso es el punto. El blend de skinning tiene CINCO sitios
 ''' gemelos declarados en el SYNC de Vertex_FO4; un VS de sombra seria el SEXTO, y desincronizarlo no
 ''' rompe el build ni tira: deja la sombra de una malla posada en la posicion de bind. En vez de eso el
@@ -2858,6 +2966,30 @@ float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm)
 	return 1.0 - uShadowIntensity * (1.0 - sum / (side * side));
 }"
 
+    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA — LEER ANTES DE TOCAR ESTE SHADER.
+    '''
+    ''' <para>El shadow map se dibuja con OTRO programa (<c>ShadowDepthShaderSource</c>), y ese programa
+    ''' tiene que decidir <b>que fragmento existe</b> exactamente igual que este. Si los dos no coinciden,
+    ''' la SILUETA de la sombra deja de ser la del objeto que se ve: aparece sombra de geometria que en
+    ''' pantalla esta descartada, o falta la de algo que si se dibuja. No hay forma de que eso se note como
+    ''' un error — se ve como "la sombra esta rara".</para>
+    '''
+    ''' <para><b>Lo que hay que mirar al cambiar CUALQUIERA de estas cosas acá:</b></para>
+    ''' <para>· el <b>alpha test</b> (que cantidad se compara y contra que umbral),</para>
+    ''' <para>· como entra el <b>alpha de vertice</b> (con gamma o lineal, y con que predicado se gatea),</para>
+    ''' <para>· el <b>escalar Alpha</b> del material y en que momento se multiplica,</para>
+    ''' <para>· el <b>descarte por zap</b>,</para>
+    ''' <para>· el <b>skinning</b> (si un vertice va a parar a otro lado, su sombra tambien),</para>
+    ''' <para>· las <b>UV</b> (offset/scale) con las que se muestrea el diffuse.</para>
+    '''
+    ''' <para>⚠️ Y son DOS leyes, no una: el lighting shader (.bgsm) y el effect shader (.bgem) testean
+    ''' cantidades distintas. El fragment de profundidad las tiene las dos, gateadas por
+    ''' <c>bIsEffectShader</c>. Ya paso una vez que solo estuviera la primera.</para>
+    '''
+    ''' <para>⛔ El GLSL va en <b>ASCII PURO</b>, comentarios incluidos. Un solo caracter fuera de ASCII y
+    ''' el driver corta la compilacion con "syntax error, unexpected $end" — un mensaje que no apunta ni
+    ''' remotamente al caracter. El gate <c>glsl-ascii</c> de ParityGate lo cubre; si agregas una fuente
+    ''' nueva, sumala a <c>FaceTintCompositor.AllShaderSources()</c> o queda sin cubrir.</para></summary>
     Friend Const Fragment_ShadowDepth As String = "
 #version 430
 
@@ -2870,10 +3002,38 @@ uniform bool bAlphaBlend;      // the material is drawn with blending (no cutout
 uniform float uMaterialAlpha;  // the material Alpha scalar, the one the lit pass multiplies in for the blend
 uniform bool bShowTexture;
 uniform bool bApplyZap;
+// !! ESTE FRAGMENT ES UNO SOLO PARA LOS DOS JUEGOS (Shader_Class arma dos programas, con Vertex_FO4 y
+// con Vertex_SSE, sobre ESTE mismo fragment), y la ley del effect shader NO es la misma:
+// EFFECT SHADER (.bgem):
+//   FO4 : effAlpha = diffuse.a * pow(vColor.a, 2.2) * BaseColor.a   (gamma)
+//   SSE : color.a  = BaseColor.a * vColor.a * effTexAlpha           (LINEAL)
+// LIGHTING SHADER (.bgsm) -- y esta rama es la del 95 % de los materiales:
+//   FO4 : testea diffuse.a * vColor.a  y multiplica el escalar Alpha DESPUES (solo para el blend)
+//   SSE : multiplica el escalar Alpha ANTES del test (cb2[3].z), o sea que ENTRA al lado izquierdo
+// El llamador manda cual juego corre. Poner la ley de FO4 para los dos ALEJABA la silueta en SSE en vez
+// de acercarla, en las dos ramas.
+uniform bool bLeySse;
+// El material es un EFFECT SHADER (.bgem). Su ley de alpha en el pase iluminado NO es la del lighting
+// shader, asi que el test de esta pasada tiene que cambiar con el. Ver el bloque de `aTex`.
+uniform bool bIsEffectShader;
 
 in vec4 vColor;
 in vec2 vUV;
 flat in int ZappedVert;
+// El pase de profundidad REUSA los vertex shaders completos (Vertex_FO4 / Vertex_SSE), asi que estos
+// varyings ya vienen calculados y no hay que agregar nada al VS. Se usan para el FALLOFF del effect
+// shader, que depende del angulo entre la normal y la direccion de vista.
+in mat3 mv_tbn;
+in mat3 v_msnMatrix;
+
+// --- effect shader: los dos modificadores del alpha que faltaban ---------------------------------
+uniform bool bModelSpace;
+uniform bool bShowVertexColor;
+uniform bool bEffectGreyscaleAlpha;   // el alpha se REEMPLAZA por un lookup de paleta
+uniform bool bEffectFalloff;          // el alpha se MULTIPLICA por el factor angular
+uniform bool bEffectFalloffColor;     // (solo importa porque tambien enciende el calculo del factor)
+uniform vec4 effectFalloffParams;     // x=start y=stop z=startOpacity w=stopOpacity
+uniform sampler2D texGreyscale;
 
 // ORDERED BAYER 4x4, pre-normalised to (v + 0.5) / 16 so the thresholds sit at the centre of each of the
 // 16 buckets. Used for the STOCHASTIC / SCREEN-DOOR path below.
@@ -2891,10 +3051,106 @@ void main(void)
 	if ((bAlphaTest || bAlphaBlend) && bShowTexture)
 	{
 		vec2 uv = vUV * uvScale + uvOffset;
-		// SAME left-hand side as the lit pass: texture alpha * vertex alpha. The material Alpha scalar is
-		// NOT part of it -- the lit pass tests on this and multiplies the scalar in afterwards, for the
-		// blend. Any divergence here and the shadow silhouette stops matching the shape that is drawn.
-		float aTex = texture(texDiffuse, uv).a * vColor.a;
+		// SAME left-hand side as the lit pass -- and the lit pass has TWO laws, one per shader family.
+		// Any divergence here and the shadow silhouette stops matching the shape that is drawn.
+		//
+		//  - LIGHTING (.bgsm): tests `diffuse.a * vColor.a`, and multiplies the material Alpha scalar in
+		//    AFTERWARDS, only for the blend. So the scalar is NOT part of the left-hand side.
+		//  - EFFECT (.bgem): tests `effAlpha = diffuse.a * pow(vColor.a, 2.2) * BaseColor.a`, and does NOT
+		//    apply the scalar again afterwards (`if (!bIsEffectShader) fragColor.a *= alpha;`). So here the
+		//    scalar IS part of the left-hand side, the vertex alpha carries GAMMA 2.2, and the gate is the
+		//    vertex-COLOR one, not the vertex-alpha one (the caller already sends it that way).
+		//
+		// !! Sin esto, con un BGEM de Alpha = 0.5 y AlphaTestRef = 128 el iluminado conservaba solo
+		// diffuse.a >= 1.0 y esta pasada conservaba diffuse.a >= 0.5: la sombra dibujaba geometria que en
+		// pantalla estaba descartada.
+		float aTex;
+		if (bIsEffectShader)
+		{
+			// * FALLOFF. El pase iluminado lo evalua contra la CAMARA; aca la camara ES LA LUZ, y eso es
+			// lo correcto: lo que decide cuanta luz BLOQUEA un material es el angulo con el que la LUZ lo
+			// atraviesa, no con el que lo mira el usuario. Un material que se desvanece en incidencia
+			// rasante deja pasar luz, y su sombra tiene que aclararse igual.
+			// Sin esto, un .bgem con falloff proyectaba la card ENTERA a opacidad plena mientras en
+			// pantalla su borde se desvanecia -- el mismo sintoma de placa negra que el dither vino a
+			// matar, por otra puerta.
+			float effFalloff = 1.0;
+			if (bEffectFalloff || bEffectFalloffColor)
+			{
+				// !!!! LA DIRECCION DE VISTA DE ESTE PASE ES UNA CONSTANTE, NO `viewDirRaw`.
+				// Lo escribi con `normalize(-vPos)` razonando que 'la camara es la luz'. Es falso: la
+				// view de la luz se ancla al ORIGEN DEL MUNDO (ShadowMapMath.Fit) y la proyeccion es
+				// ORTOGRAFICA, asi que `-vPos` es una direccion de tipo perspectiva sobre una camara sin
+				// posicion fisica. Un fragmento a 120 unidades de altura daba una direccion PURAMENTE
+				// LATERAL, y una card mirando de frente a la luz obtenia NdotV = 0 en vez de 1: el
+				// falloff tomaba StartOpacity justo donde el material bloquea MAS luz.
+				// En un ortho todos los rayos son paralelos: en espacio de vista de la luz la direccion
+				// es (0,0,1) exacta, o sea que NdotV es |nGeo.z| y no hay nada que normalizar.
+				vec3 nGeo = bModelSpace ? normalize(v_msnMatrix * vec3(0.0, 0.0, 1.0))
+				                        : normalize(mv_tbn * vec3(0.0, 0.0, 0.5));
+				float NdotV = abs(nGeo.z);
+				if (bLeySse)
+				{
+					// SSE: smoothstep del lenguaje y clamps sobre las dos opacidades.
+					float ftS = smoothstep(effectFalloffParams.x, effectFalloffParams.y, NdotV);
+					effFalloff = mix(max(effectFalloffParams.z, 0.0), min(effectFalloffParams.w, 1.0), ftS);
+				}
+				else
+				{
+					// FO4: el smoothstep escrito a mano, sin clamps en z/w.
+					float ft = clamp((NdotV - effectFalloffParams.x) / (effectFalloffParams.y - effectFalloffParams.x), 0.0, 1.0);
+					ft = ft * ft * (3.0 - 2.0 * ft);
+					effFalloff = mix(effectFalloffParams.z, effectFalloffParams.w, ft);
+				}
+			}
+			// FO4 aplica gamma al alpha de vertice; SSE lo usa lineal.
+			float vcA = bLeySse ? vColor.a : pow(max(vColor.a, 0.0), 2.2);
+			aTex = texture(texDiffuse, uv).a * vcA * uMaterialAlpha;
+
+			// * GREYSCALE-TO-PALETTE (ALPHA). No modifica el alpha: lo REEMPLAZA por una fila de la
+			// paleta. Sin esto, un .bgem con este flag dibujaba opaco y su sombra se disolvia en el
+			// dither (o al reves), porque las dos pasadas miraban numeros sin relacion.
+			if (bEffectGreyscaleAlpha)
+			{
+				float vcRecolorA = bShowVertexColor ? max(vColor.a, 0.0) : 1.0;
+				if (bLeySse)
+				{
+					// SSE: el alpha de textura se descarta (effTexAlpha = 1) y el lookup toma
+					// U = diffuse.a, V = el alpha acumulado hasta aca.
+					// !! LA V LLEVA EL FALLOFF. Fragment_SSE hace `color.a *= effFalloff` ANTES del
+					// lookup (su propio comentario: Falloff calculated early, needed for greyscale), asi que
+					// omitirlo aca muestreaba OTRA FILA de la paleta: con effFalloff = 0,104 el
+					// iluminado lee V = 0,104 y la sombra leia V = 1,0.
+					aTex = texture(texGreyscale, vec2(clamp(texture(texDiffuse, uv).a, 0.0, 1.0),
+					                                  clamp(uMaterialAlpha * vColor.a * effFalloff, 0.0, 1.0))).a;
+				}
+				else
+				{
+					// FO4: U = diffuse.a crudo; V = pow(BaseColor.a, 1/2.2) * vColor.a CRUDO * falloff.
+					float palUa = texture(texDiffuse, uv).a;
+					float palVa = pow(max(uMaterialAlpha, 0.0), 1.0 / 2.2) * vcRecolorA * effFalloff;
+					aTex = texture(texGreyscale, vec2(clamp(palUa, 0.0, 1.0), clamp(palVa, 0.0, 1.0))).a;
+				}
+			}
+
+			// !!!! EL FALLOFF SOBRE EL ALPHA VA SIEMPRE, TAMBIEN CON RECOLOR. Le puse un
+			// `&& !bEffectGreyscaleAlpha` copiando la nota del canal RGB, y ESE GATE NO EXISTE en el
+			// canal alpha: Fragment_FO4 mete el falloff en la V de la paleta Y ADEMAS lo multiplica
+			// despues, sin condicion (`if (bEffectFalloff) effAlpha *= effFalloff;`) -- o sea falloff^2,
+			// a proposito, replicando al motor. Con el gate de mas, la sombra lo aplicaba CERO veces y
+			// conservaba geometria que en pantalla se descarta.
+			if (bEffectFalloff) aTex *= effFalloff;
+		}
+		else
+		{
+			// !! EN SSE EL ESCALAR ENTRA AL TEST; EN FO4 NO. Lo dice el propio Fragment_SSE: SSE
+			// multiplica el alpha del material ANTES del test (cb2[3].z), y ahi difiere de FO4, que
+			// testea sin el. Con Alpha = 0,5, ref = 128 y diffuse.a = 0,9, el iluminado de SSE
+			// descarta (0,45 < 0,502) y esta pasada conservaba (0,9 >= 0,502): la sombra proyectaba
+			// geometria que en pantalla no esta. Es el mismo defecto que se cerro para el .bgem, en la
+			// rama que usan casi todos los materiales.
+			aTex = texture(texDiffuse, uv).a * vColor.a * (bLeySse ? uMaterialAlpha : 1.0);
+		}
 
 		if (bAlphaTest)
 		{
@@ -2923,14 +3179,23 @@ void main(void)
 			// the CURRENT DEFAULT -- KeyDir rotates with the camera, the texel grid rotates with it, and the
 			// Bayer pattern does sweep across the surface while orbiting. Fine hair will shimmer.
 			// Two features from the same batch that step on each other. There is no anchor that survives a
-			// rotating light: the texel grid IS the light's frame. Options if it turns out to matter:
-			// (a) index the pattern by a stable object-space quantity instead of the map texel, (b) blue
-			// noise instead of ordered Bayer (shimmers less and reads as grain, not as banding), or
-			// (c) accept it. NOT decided -- it is a visual-quality call, and those are the user's.
+			// rotating light: the texel grid IS the light's frame.
+			//
+			// !!! DECIDED 2026-08-12 BY THE USER: option (c), ACCEPT IT. Do not 'fix' this without asking.
+			// The alternatives were (a) index the pattern by a stable object-space quantity instead of the
+			// map texel, and (b) blue noise instead of ordered Bayer (shimmers less, reads as grain rather
+			// than banding). Both change how the shadow of a translucent material LOOKS, and that is a
+			// visual-quality call the user owns -- it was put to them and they chose to keep the current
+			// look. The shimmer only shows on fine alpha-blended hair while actively dragging the camera,
+			// and only with CastShadows left on (vanilla ships those materials with it off).
+			// If it ever does become a problem, (a) and (b) are still the two ways out.
 			// Smaller, same family: TexelWorld = 2*Radius/mapSize and Radius comes from the scene AABB, which
 			// moves every frame during animation; and GroundMapSize snaps between 512/1024/2048, so the
 			// ground map's pattern re-indexes when it changes step.
-			float aBlend = aTex * uMaterialAlpha;
+			// El escalar ya entro en `aTex` para el effect shader (los dos juegos) y para el lighting
+			// shader de SSE; volver a multiplicarlo lo aplicaria AL CUADRADO y la sombra saldria mas
+			// transparente de lo que se dibuja.
+			float aBlend = (bIsEffectShader || bLeySse) ? aTex : (aTex * uMaterialAlpha);
 			ivec2 p = ivec2(gl_FragCoord.xy) & 3;
 			if (aBlend < bayer4[p.y * 4 + p.x])
 				discard;
@@ -2952,6 +3217,30 @@ End Module
 ''' chapa rectangular apoyada en el aire.</para></summary>
 Friend Module GroundShadowShaderSource
 
+    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA — LEER ANTES DE TOCAR ESTE SHADER.
+    '''
+    ''' <para>El shadow map se dibuja con OTRO programa (<c>ShadowDepthShaderSource</c>), y ese programa
+    ''' tiene que decidir <b>que fragmento existe</b> exactamente igual que este. Si los dos no coinciden,
+    ''' la SILUETA de la sombra deja de ser la del objeto que se ve: aparece sombra de geometria que en
+    ''' pantalla esta descartada, o falta la de algo que si se dibuja. No hay forma de que eso se note como
+    ''' un error — se ve como "la sombra esta rara".</para>
+    '''
+    ''' <para><b>Lo que hay que mirar al cambiar CUALQUIERA de estas cosas acá:</b></para>
+    ''' <para>· el <b>alpha test</b> (que cantidad se compara y contra que umbral),</para>
+    ''' <para>· como entra el <b>alpha de vertice</b> (con gamma o lineal, y con que predicado se gatea),</para>
+    ''' <para>· el <b>escalar Alpha</b> del material y en que momento se multiplica,</para>
+    ''' <para>· el <b>descarte por zap</b>,</para>
+    ''' <para>· el <b>skinning</b> (si un vertice va a parar a otro lado, su sombra tambien),</para>
+    ''' <para>· las <b>UV</b> (offset/scale) con las que se muestrea el diffuse.</para>
+    '''
+    ''' <para>⚠️ Y son DOS leyes, no una: el lighting shader (.bgsm) y el effect shader (.bgem) testean
+    ''' cantidades distintas. El fragment de profundidad las tiene las dos, gateadas por
+    ''' <c>bIsEffectShader</c>. Ya paso una vez que solo estuviera la primera.</para>
+    '''
+    ''' <para>⛔ El GLSL va en <b>ASCII PURO</b>, comentarios incluidos. Un solo caracter fuera de ASCII y
+    ''' el driver corta la compilacion con "syntax error, unexpected $end" — un mensaje que no apunta ni
+    ''' remotamente al caracter. El gate <c>glsl-ascii</c> de ParityGate lo cubre; si agregas una fuente
+    ''' nueva, sumala a <c>FaceTintCompositor.AllShaderSources()</c> o queda sin cubrir.</para></summary>
     Friend Const Vertex_Ground As String = "
 #version 430
 layout(location = 0) in vec2 aCorner;   // unit quad, [-1..1] on both axes
@@ -3217,4 +3506,3 @@ Public MustInherit Class Shader_Base_Class
         SetInt(uniformName, unit - TextureUnit.Texture0)
     End Sub
 End Class
-

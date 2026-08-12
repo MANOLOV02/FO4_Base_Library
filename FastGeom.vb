@@ -207,7 +207,33 @@ Public Module FastGeom
     ''' (Double) — o sea que comparaba dos LEYES distintas, no dos implementaciones de una. Con la paleta en
     ''' Single ese contraste dejo de ser valido y el toggle es la forma correcta: los dos caminos leen los
     ''' MISMOS datos y tienen que dar bit a bit lo mismo.</summary>
-    Public Property ForzarEscalarS As Boolean = False
+    ''' <summary>Fuerza el camino escalar del kernel de Single. ⛔ SOLO PARA COMPARAR el vectorial contra
+    ''' el escalar; no es un modo de la app.
+    '''
+    ''' <para>⛔⛔ ES POR HILO (<c>ThreadStatic</c>), Y ESO NO ES UN DETALLE. Quien la enciende es
+    ''' <c>SkinningHelper.SkinningSimdSelfTest</c>, que corre EN EL PROCESO DEL USUARIO: el gate
+    ''' <c>skin-blend</c> antes de un bake de FaceGen y <c>EnsureSkinSimdGate</c> antes del primer NIF de
+    ''' Wardrobe Manager. Son ~1500 encendidos y apagados. Siendo una global de proceso, cualquier OTRO
+    ''' hilo que estuviera blendeando en esa ventana —el <c>Parallel.ForEach</c> de
+    ''' <c>FillPerVertexSkinMatrix</c>, o el hilo de UI dibujando el preview mientras el bake corre en
+    ''' background— se iba al camino escalar sin que nadie se lo pidiera. Por hilo, el self-test solo se
+    ''' afecta a si mismo.</para>
+    '''
+    ''' <para>Funciona porque el self-test llama a <c>BlendBoneMatrices</c> DIRECTO, un vertice por vez, en
+    ''' su propio hilo: no hay pool que tenga que ver el flag. ⛔ Si algun dia alguien la enciende
+    ''' alrededor de un bucle paralelo, los workers NO la van a ver — y eso es lo correcto, pero hay que
+    ''' saberlo.</para></summary>
+    <ThreadStatic>
+    Private _forzarEscalarS As Boolean
+
+    Public Property ForzarEscalarS As Boolean
+        Get
+            Return _forzarEscalarS
+        End Get
+        Set(value As Boolean)
+            _forzarEscalarS = value
+        End Set
+    End Property
 
     ''' <summary>Igual que <see cref="Accelerated"/> pero para el ancho de Single.</summary>
     Public ReadOnly Property AcceleratedS As Boolean
@@ -442,6 +468,79 @@ Public Module FastGeom
             BlendIntoScalar(palEsp, idxBuf, wBuf, nUsed, accS)
             Dim bad = FirstBitDiff(accV, accS)
             If bad >= 0 Then Return $"[geom-blend-especiales] iter {iter} nUsed={nUsed}: elemento {bad} difiere ({WidthInfo})"
+        Next
+
+        ' ===========================================================================================
+        ' EL MISMO BARRIDO, SOBRE EL KERNEL DE SINGLE — QUE ES EL QUE SE HORNEA.
+        '
+        ' ⛔⛔ TODO LO DE ARRIBA PRUEBA CODIGO QUE YA NO TIENE CONSUMIDOR. `BuildFlatPalette`,
+        ' `BlendInto`, `BlendIntoScalar` y `ScaleAcc` son el kernel de DOUBLE, y desde que la paleta paso
+        ' a Single produccion va por `BuildFlatPaletteS` -> `BlendEnScratch` -> `BlendIntoS`. O sea que el
+        ' corpus de valores especiales de arriba —el cero NEGATIVO, los denormales, el overflow— no tocaba
+        ' NI UNA VEZ el kernel que de verdad escribe bytes en un NIF. El gate quedaba en verde probando
+        ' otra cosa.
+        '
+        ' Lo que se perdia no era simetria: era COBERTURA. Justamente en esos valores es donde un FMA
+        ' colado por el JIT, o un reordenamiento de la suma, separa el camino vectorial del escalar — y
+        ' este self-test viaja en el binario y ABORTA UN BAKE cuando falla, asi que su veredicto tiene que
+        ' ser sobre el kernel que hornea.
+        ' ===========================================================================================
+        Dim valsS As Single() = {0.0F, -0.0F, 1.0F, -1.0F, Single.Epsilon, -Single.Epsilon, 1.0E+38F, 1.0E-38F}
+        Dim pesosS As Single() = {0.0F, -0.0F, 1.0F, -1.0F, 0.5F, 1.0E-38F, 1.0E+38F, 3.0F}
+
+        Dim palEspS(nMats * MatSingles - 1) As Single
+        For k As Integer = 0 To nMats - 1
+            For e As Integer = 0 To MatSingles - 1
+                palEspS(k * MatSingles + e) = valsS((e + k) Mod valsS.Length)
+            Next
+        Next
+
+        Dim accVS(MatSingles - 1) As Single
+        Dim accSS(MatSingles - 1) As Single
+        Dim wBufS(7) As Single
+        ' ⛔ Buffer de indices PROPIO: el `idxBuf` de mas arriba es de 4 elementos y estos dos bucles
+        ' piden hasta 5 huesos. Reusarlo daba IndexOutOfRange en la primera corrida.
+        Dim idxBufS(7) As Integer
+        For iter As Integer = 0 To 199
+            Dim nUsed As Integer = CInt(NextBits() Mod 5UL)
+            For j As Integer = 0 To nUsed - 1
+                idxBufS(j) = CInt(NextBits() Mod CULng(nMats))
+                wBufS(j) = pesosS(CInt(NextBits() Mod CULng(pesosS.Length)))
+            Next
+            ' Los dos con la MISMA escala, para que la unica diferencia posible sea el camino.
+            BlendIntoS(palEspS, idxBufS, wBufS, nUsed, accVS)
+            BlendIntoScalarS(palEspS, idxBufS, wBufS, nUsed, accSS)
+            For e As Integer = 0 To MatSingles - 1
+                If BitConverter.SingleToInt32Bits(accVS(e)) <> BitConverter.SingleToInt32Bits(accSS(e)) Then
+                    Return $"[geom-blendS-especiales] iter {iter} nUsed={nUsed}: elemento {e} difiere " &
+                           $"(vectorial {accVS(e)} contra escalar {accSS(e)}) ({WidthInfo})"
+                End If
+            Next
+        Next
+
+        ' Y con una ESCALA fusionada distinta de 1, que es como corre produccion (`BlendIntoS(..., escala)`
+        ' con escala = 1/sumW). El escalado va DENTRO del kernel, asi que es parte de la ley a comparar.
+        For iter As Integer = 0 To 199
+            Dim nUsed As Integer = CInt(NextBits() Mod 5UL) + 1
+            Dim sumW As Single = 0.0F
+            For j As Integer = 0 To nUsed - 1
+                idxBufS(j) = CInt(NextBits() Mod CULng(nMats))
+                wBufS(j) = pesosS(CInt(NextBits() Mod CULng(pesosS.Length)))
+                sumW += wBufS(j)
+            Next
+            If sumW = 0.0F OrElse Single.IsNaN(sumW) OrElse Single.IsInfinity(sumW) Then Continue For
+            Dim escala As Single = 1.0F / sumW
+            BlendIntoS(palEspS, idxBufS, wBufS, nUsed, accVS, escala)
+            BlendIntoScalarS(palEspS, idxBufS, wBufS, nUsed, accSS)
+            ScaleAccS(accSS, escala)
+            For e As Integer = 0 To MatSingles - 1
+                If BitConverter.SingleToInt32Bits(accVS(e)) <> BitConverter.SingleToInt32Bits(accSS(e)) Then
+                    Return $"[geom-blendS-escala] iter {iter} nUsed={nUsed}: elemento {e} difiere " &
+                           $"(fusionado {accVS(e)} contra escalar+ScaleAccS {accSS(e)}) ({WidthInfo}). " &
+                           "La escala fusionada en BlendIntoS tiene que dar EXACTAMENTE lo mismo que " &
+                           "escalar despues: la suma se completa y recien ahi se multiplica."
+                End If
+            Next
         Next
 
         Return ""

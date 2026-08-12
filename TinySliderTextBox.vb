@@ -755,92 +755,92 @@ Public Class TinySliderTextBox
         Return Not Double.IsNaN(value) AndAlso Not Double.IsInfinity(value)
     End Function
 
-    Private Shared Function TryParseFlexibleDouble(text As String, ByRef result As Double) As Boolean
+    ''' <summary>Parsea aceptando coma O punto como separador decimal, sea cual sea el locale.
+    '''
+    ''' <para>⛔⛔ SIN <c>AllowThousands</c>, Y ESO ES EL PUNTO DEL METODO. Con esa bandera, en un
+    ''' Windows es-AR (decimal ",", grupo ".") tipear <c>41.4</c> NO falla: .NET se come el punto como
+    ''' SEPARADOR DE MILES —no valida el tamanio de los grupos— y devuelve <b>414</b>. Como devuelve
+    ''' True, el intento invariante de abajo nunca corre. El 414 entra a <c>NormalizeValue</c>, que lo
+    ''' CLAMPEA EN SILENCIO al maximo del control: el azimut escrito como 41.4 termina en 360, la
+    ''' suavidad de sombra escrita como 2.5 termina en 4, y la intensidad de la key escrita como 70.5
+    ''' termina en 2. El usuario ve saltar el valor y no hay forma de que entienda por que.</para>
+    '''
+    ''' <para>Sin la bandera, <c>41.4</c> simplemente no parsea con es-AR, cae al intento invariante y
+    ''' da 41,4 — que es lo que la persona quiso decir. Ningun control de este archivo muestra
+    ''' separador de miles (los rangos son 0..360, 0..4, 0..2 y los formatos son <c>"0.0"</c>), asi que
+    ''' no se pierde nada: lo unico que desaparece es la lectura silenciosamente equivocada.</para>
+    '''
+    ''' <para>El teclado numerico latinoamericano emite ".", asi que este no es un caso de borde: es lo
+    ''' que pasa al tipear un decimal con el pad numerico en la maquina donde corre la app.</para></summary>
+    ''' <remarks><c>Friend</c> y no <c>Private</c> sólo para que el gate <c>slider-cultura</c> de
+    ''' ParityGate pueda ejercitarlo con la cultura cambiada; no tiene otros consumidores.</remarks>
+    Friend Shared Function TryParseFlexibleDouble(text As String, ByRef result As Double) As Boolean
         result = 0.0R
         If String.IsNullOrEmpty(text) Then Return False
 
-        Dim trimmed As String = text.Trim()
-        If Double.TryParse(trimmed,
-                           NumberStyles.Float Or NumberStyles.AllowThousands,
-                           CultureInfo.CurrentCulture,
-                           result) Then Return True
-        If Double.TryParse(trimmed,
-                           NumberStyles.Float Or NumberStyles.AllowThousands,
-                           CultureInfo.InvariantCulture,
-                           result) Then Return True
-
-        Dim numericOnly As String = ExtractFirstNumber(trimmed)
+        Dim numericOnly As String = ExtractFirstNumber(text.Trim())
         If numericOnly.Length = 0 Then Return False
 
-        If Double.TryParse(numericOnly,
-                           NumberStyles.Float Or NumberStyles.AllowThousands,
-                           CultureInfo.CurrentCulture,
-                           result) Then Return True
-        Return Double.TryParse(numericOnly,
-                               NumberStyles.Float Or NumberStyles.AllowThousands,
-                               CultureInfo.InvariantCulture,
-                               result)
+        ' El ULTIMO separador que aparece es el decimal; cualquier otro era de miles y se descarta. Con
+        ' eso "41.4", "41,4", "1.234,5" y "1,234.5" dan todos lo mismo, y despues se parsea SIEMPRE con
+        ' InvariantCulture — o sea que el resultado ya no depende del locale de la maquina.
+        Dim iPunto = numericOnly.LastIndexOf("."c)
+        Dim iComa = numericOnly.LastIndexOf(","c)
+        Dim iDec = Math.Max(iPunto, iComa)
+        If iDec >= 0 Then
+            Dim entera = numericOnly.Substring(0, iDec).Replace(".", "").Replace(",", "")
+            Dim fraccion = numericOnly.Substring(iDec + 1).Replace(".", "").Replace(",", "")
+            numericOnly = entera & "." & fraccion
+        End If
+
+        Return Double.TryParse(numericOnly, NumberStyles.Float, CultureInfo.InvariantCulture, result)
     End Function
 
+    ''' <summary>Toma el primer numero del texto SIN interpretar los separadores: conserva el signo,
+    ''' los digitos, los <c>.</c> y <c>,</c> y el exponente tal como se tipearon.
+    '''
+    ''' <para>⛔⛔ NEUTRAL A LA CULTURA A PROPOSITO. La version anterior consultaba
+    ''' <c>NumberFormat.NumberGroupSeparator</c> y DESCARTABA lo que pareciera separador de miles: en
+    ''' es-AR el separador de grupo es "." y por lo tanto <c>41.4</c> salia de aca como <c>"414"</c>.
+    ''' El numero ya venia arruinado y ninguna correccion posterior podia recuperarlo, porque el punto
+    ''' ya no estaba. Decidir CUAL separador es el decimal es trabajo de
+    ''' <see cref="TryParseFlexibleDouble"/>, que aplica la regla del ULTIMO separador y por lo tanto no
+    ''' depende del locale de la maquina.</para></summary>
     Private Shared Function ExtractFirstNumber(text As String) As String
         Dim sb As New System.Text.StringBuilder()
-        Dim startedDigits As Boolean = False
-        Dim decimalSeen As Boolean = False
-        Dim signSeen As Boolean = False
-        Dim expSeen As Boolean = False
-        Dim culture = CultureInfo.CurrentCulture
-        Dim decimalSep As String = culture.NumberFormat.NumberDecimalSeparator
-        Dim groupSep As String = culture.NumberFormat.NumberGroupSeparator
+        Dim empezaronDigitos As Boolean = False
+        Dim vioSigno As Boolean = False
+        Dim vioExponente As Boolean = False
 
         For i As Integer = 0 To text.Length - 1
             Dim c As Char = text(i)
 
             If Char.IsDigit(c) Then
                 sb.Append(c)
-                startedDigits = True
+                empezaronDigitos = True
                 Continue For
             End If
 
-            If Not startedDigits Then
-                If (c = "-"c OrElse c = "+"c) AndAlso Not signSeen Then
-                    sb.Append(c)
-                    signSeen = True
-                    Continue For
-                End If
-                If MatchesAt(text, i, decimalSep) Then
-                    sb.Append(decimalSep)
-                    decimalSeen = True
-                    startedDigits = True
-                    i += decimalSep.Length - 1
-                    Continue For
-                End If
-                If c = "."c OrElse c = ","c Then
-                    sb.Append(decimalSep)
-                    decimalSeen = True
-                    startedDigits = True
-                    Continue For
-                End If
-                Continue For
-            End If
-
-            If MatchesAt(text, i, decimalSep) AndAlso Not decimalSeen AndAlso Not expSeen Then
-                sb.Append(decimalSep)
-                decimalSeen = True
-                i += decimalSep.Length - 1
-                Continue For
-            End If
-            If MatchesAt(text, i, groupSep) AndAlso Not decimalSeen AndAlso Not expSeen Then
-                i += groupSep.Length - 1
-                Continue For
-            End If
-            If (c = "."c OrElse c = ","c) AndAlso Not decimalSeen AndAlso Not expSeen Then
-                sb.Append(decimalSep)
-                decimalSeen = True
-                Continue For
-            End If
-            If (c = "e"c OrElse c = "E"c) AndAlso Not expSeen Then
+            If c = "."c OrElse c = ","c Then
+                ' Se copia TAL CUAL, sin decidir si es decimal o de miles.
                 sb.Append(c)
-                expSeen = True
+                empezaronDigitos = True
+                Continue For
+            End If
+
+            If Not empezaronDigitos Then
+                ' Antes del primer digito solo se acepta un signo; el resto (unidades, espacios,
+                ' etiquetas) se saltea, que es lo que este metodo siempre hizo.
+                If (c = "-"c OrElse c = "+"c) AndAlso Not vioSigno Then
+                    sb.Append(c)
+                    vioSigno = True
+                End If
+                Continue For
+            End If
+
+            If (c = "e"c OrElse c = "E"c) AndAlso Not vioExponente Then
+                sb.Append(c)
+                vioExponente = True
                 If i + 1 < text.Length AndAlso (text(i + 1) = "+"c OrElse text(i + 1) = "-"c) Then
                     sb.Append(text(i + 1))
                     i += 1
@@ -852,12 +852,6 @@ Public Class TinySliderTextBox
         Next
 
         Return sb.ToString()
-    End Function
-
-    Private Shared Function MatchesAt(text As String, index As Integer, token As String) As Boolean
-        If String.IsNullOrEmpty(token) Then Return False
-        If index + token.Length > text.Length Then Return False
-        Return String.CompareOrdinal(text, index, token, 0, token.Length) = 0
     End Function
 
     Private Sub DrawTicks(g As Graphics, track As Rectangle, centerY As Single)

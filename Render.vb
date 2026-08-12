@@ -125,8 +125,16 @@ Public Class TextOverlayRenderer
         GL.BindVertexArray(0)
     End Sub
 
-    Private Sub CompileShaders()
-        Dim vertexShaderSrc As String =
+    ''' <summary>Las dos fuentes GLSL del overlay de texto, IZADAS A CONSTANTES.
+    ''' <para>⛔ Eran variables LOCALES dentro de este mismo <c>Sub</c>, y eso las dejaba fuera del gate
+    ''' <c>glsl-ascii</c> por partida doble: no estaban en <c>FaceTintCompositor.AllShaderSources()</c> y
+    ''' el barrido por reflexion no puede verlas —una variable local no es un campo, por definicion—.
+    ''' O sea que un solo caracter no-ASCII en un comentario de estas dos dejaba el shader sin compilar
+    ''' con el fallo MUDO en Release que ese gate existe para impedir, y ningun gate lo veia.
+    ''' La exclusion estaba anotada en el doc de <c>AllShaderSources</c> diciendo "habria que izarlos a
+    ''' constantes"; esto es eso. Al ser <c>Const</c>, la reflexion las descubre sola y el gate exige
+    ''' ademas que esten registradas.</para></summary>
+    Friend Const VertexOverlaySrc As String =
 "#version 330 core
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aTexCoord;
@@ -145,7 +153,8 @@ void main()
     gl_Position = vec4(ndc, 0.0, 1.0);
     TexCoord = aTexCoord;
 }"
-        Dim fragmentShaderSrc As String =
+
+    Friend Const FragmentOverlaySrc As String =
 "#version 330 core
 in vec2 TexCoord;
 out vec4 FragColor;
@@ -156,6 +165,10 @@ void main()
 {
     FragColor = texture(uTexture, TexCoord);
 }"
+
+    Private Sub CompileShaders()
+        Dim vertexShaderSrc As String = VertexOverlaySrc
+        Dim fragmentShaderSrc As String = FragmentOverlaySrc
 
         Dim vertexShader = GL.CreateShader(ShaderType.VertexShader)
         Dim fragmentShader = GL.CreateShader(ShaderType.FragmentShader)
@@ -1025,8 +1038,14 @@ Public Class PreviewControl
                         Model.SingleBoneSkinning, meshSkel, updateWorldCache, updatePerVertexSkin, meshGlobalCache)
 
                     If cpuSkinMode Then
-                        mesh.MeshData.Meshgeometry.dirtyVertexIndices =
-                            New HashSet(Of Integer)(Enumerable.Range(0, mesh.MeshData.Meshgeometry.Vertices.Length))
+                        ' ⭐ ESTA ES LA LINEA CALIENTE del conjunto de sucios: corre por frame y por malla
+                        ' mientras dura la animacion. Construir aca un `HashSet(Of Integer)` con
+                        ' `Enumerable.Range(0, n)` costaba 1,16 ms/frame MEDIDOS sobre el Serena Battle
+                        ' Suit (130.500 vertices en 26 mallas) —el 10 % del frame CPU— para armar un
+                        ' conjunto cuyo contenido despues NO se lee: con todos sucios la subida es
+                        ' completa y solo se mira `.Count`. Ver ConjuntoDeSucios.
+                        mesh.MeshData.Meshgeometry.dirtyVertexIndices.MarcarTodos(
+                            mesh.MeshData.Meshgeometry.Vertices.Length)
                         Array.Fill(mesh.MeshData.Meshgeometry.dirtyVertexFlags, True)
                     End If
 
@@ -2556,7 +2575,7 @@ Public Class PreviewModel
             If gpuMode <> _lastUploadWasGPU Then
                 _lastUploadWasGPU = gpuMode
                 If MeshData.Meshgeometry.Vertices IsNot Nothing AndAlso MeshData.Meshgeometry.Vertices.Length > 0 Then
-                    MeshData.Meshgeometry.dirtyVertexIndices = New HashSet(Of Integer)(Enumerable.Range(0, MeshData.Meshgeometry.Vertices.Length))
+                    MeshData.Meshgeometry.dirtyVertexIndices.MarcarTodos(MeshData.Meshgeometry.Vertices.Length)
                     Array.Fill(MeshData.Meshgeometry.dirtyVertexFlags, True)
                 End If
             End If
@@ -3372,10 +3391,14 @@ Public Class PreviewModel
 
             ' ⛔ matProjection / matView los sube el CALLER una sola vez por pase (son de la luz, no de la
             ' malla). Aca solo va lo que cambia POR MALLA.
-            ' ⛔ mv_normalMatrix NO SE SUBE, a proposito. Solo alimenta varyings que este fragment ni
-            ' declara (mv_tbn, v_msnMatrix): no puede tocar gl_Position ni vColor.a, que es lo unico que
-            ' decide la salida de este pase. La version anterior lo calculaba con un Matrix3.Invert() +
-            ' Transpose() POR MALLA Y POR FRAME para un uniform que nadie lee.
+            ' ⛔⛔ `mv_normalMatrix` SE SUBE, Y SOLO PARA EL EFFECT SHADER. Este comentario decia "NO SE
+            ' SUBE, a proposito: solo alimenta varyings que este fragment ni declara (mv_tbn,
+            ' v_msnMatrix)", y dejo de ser cierto cuando el fragment paso a declararlos para calcular el
+            ' FALLOFF del .bgem. Sin subirlo, esos dos varyings valen la mat3 CERO (el valor inicial por
+            ' spec de GL): `mv_tbn * vec3(0,0,0.5)` da el vector nulo, `normalize` de eso es NaN, y el
+            ' falloff sale indefinido — con StartOpacity 0 el material entero se descarta y no castea nada.
+            ' ⭐ Se calcula SOLO si hace falta: es un Invert + Transpose por malla y por frame, y la unica
+            ' rama que lo lee es la del effect shader. Para un .bgsm no se toca.
             shadowShader.SetMatrix4("matModel", model)
             shadowShader.SetMatrix4("matModelView", modelView)
 
@@ -3407,7 +3430,20 @@ Public Class PreviewModel
             shadowShader.SetBool("bAlphaTest", doAlphaTest)
             shadowShader.SetBool("bAlphaBlend", doAlphaBlend)
             shadowShader.SetBool("bShowTexture", usaTextura)
-            shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso MeshData.Material.UseVertexAlpha)
+            ' ⛔ EL GATE DEL ALPHA DE VERTICE DEPENDE DE LA FAMILIA DE SHADER, igual que la ley del test.
+            ' El pase iluminado, para un .bgem, gatea con `bShowVertexColor` (UseVertexColor) y le aplica
+            ' gamma 2.2; para un .bgsm gatea con UseVertexAlpha y lo usa lineal. Mandando siempre el
+            ' segundo, un BGEM con vertex colors pero sin el predicado de alpha llegaba al fragment con
+            ' vColor.a = 1.0 y la silueta de la sombra ignoraba el degrade que si se dibuja.
+            Dim esEffectShader As Boolean = materialBase IsNot Nothing AndAlso materialBase.IsBGEM
+            shadowShader.SetBool("bIsEffectShader", esEffectShader)
+            ' ⛔ El fragment de profundidad es UNO para los dos juegos y la ley del alpha-test difiere en
+            ' LAS DOS ramas: para el .bgem, FO4 aplica gamma 2.2 al alpha de vertice y SSE lo usa lineal;
+            ' para el .bgsm, SSE mete el escalar Alpha DENTRO del test y FO4 no. El juego lo decide ACA,
+            ' que es el unico lugar que lo sabe.
+            shadowShader.SetBool("bLeySse", Config_App.Current.Game = Config_App.Game_Enum.Skyrim)
+            shadowShader.SetBool("bShowVertexAlpha", usaTextura AndAlso
+                                 If(esEffectShader, MeshData.Material.UseVertexColor, MeshData.Material.UseVertexAlpha))
             If usaTextura Then
                 shadowShader.SetFloat("alphaThreshold", If(materialBase Is Nothing, 0.5F, materialBase.AlphaTestRef / 255.0F))
                 ' El escalar Alpha del material. Solo lo mira la rama del dither; en la del cutout el
@@ -3421,6 +3457,47 @@ Public Class PreviewModel
                     shadowShader.SetVector2("uvScale", Vector2.One)
                 End If
                 shadowShader.BindTexture("texDiffuse", MeshData.Material.DiffuseTexture_ID, TextureUnit.Texture0)
+
+                ' ⭐ LOS DOS MODIFICADORES DEL ALPHA DEL EFFECT SHADER. Sin ellos, el pase de profundidad
+                ' testeaba una cantidad que el pase iluminado ni siquiera usa:
+                '  · GreyscaleToPaletteAlpha REEMPLAZA el alpha por una fila de la paleta; con un diffuse
+                '    de alpha 0,2 y una fila que devuelve 0,9 el objeto se dibuja opaco y la sombra se
+                '    disolvia en el dither.
+                '  · Falloff lo MULTIPLICA por un factor angular; sin el, un .bgem con falloff proyectaba
+                '    la card ENTERA a opacidad plena mientras su borde se desvanecia en pantalla.
+                ' El falloff del pase de sombra se evalua contra la LUZ (que es la camara de ese pase), que
+                ' es lo correcto: lo que decide cuanta luz BLOQUEA el material es el angulo con el que la
+                ' luz lo atraviesa.
+                If esEffectShader Then
+                    ' ⛔⛔ HAY QUE SUBIR `mv_normalMatrix`. El fragment de profundidad ahora LEE `mv_tbn` y
+                    ' `v_msnMatrix` (para el falloff), y los dos salen de ese uniform en el vertex shader.
+                    ' Sin subirlo vale la mat3 CERO por spec de GL: `mv_tbn * vec3(0,0,0.5)` da el vector
+                    ' nulo, `normalize` de eso es NaN, y el falloff sale indefinido — con StartOpacity 0
+                    ' el material entero se descarta y NO castea sombra ninguna.
+                    ' El comentario de mas abajo decia "NO SE SUBE, a proposito: solo alimenta varyings que
+                    ' este fragment ni declara". Dejo de ser cierto al declararlos.
+                    ' La MISMA construccion que el pase iluminado (Invert + Transpose de la 3x3 del
+                    ' model-view), pero con el model-view DE LA LUZ, que es el de este pase.
+                    Dim nm3 As New Matrix3(modelView.M11, modelView.M12, modelView.M13,
+                                           modelView.M21, modelView.M22, modelView.M23,
+                                           modelView.M31, modelView.M32, modelView.M33)
+                    nm3.Invert()
+                    nm3.Transpose()
+                    shadowShader.SetMatrix3("mv_normalMatrix", nm3)
+                    shadowShader.SetBool("bModelSpace", materialBase.ModelSpaceNormals)
+                    shadowShader.SetBool("bShowVertexColor", MeshData.Material.UseVertexColor)
+                    shadowShader.SetBool("bEffectGreyscaleAlpha", materialBase.GrayscaleToPaletteAlpha)
+                    shadowShader.SetBool("bEffectFalloff", materialBase.FalloffEnabled)
+                    shadowShader.SetBool("bEffectFalloffColor", materialBase.FalloffColorEnabled)
+                    shadowShader.SetVector4("effectFalloffParams",
+                        New OpenTK.Mathematics.Vector4(materialBase.FalloffStartAngle, materialBase.FalloffStopAngle,
+                                                       materialBase.FalloffStartOpacity, materialBase.FalloffStopOpacity))
+                    shadowShader.BindTexture("texGreyscale", MeshData.Material.GreyscaleTexture_ID, TextureUnit.Texture1)
+                Else
+                    shadowShader.SetBool("bEffectGreyscaleAlpha", False)
+                    shadowShader.SetBool("bEffectFalloff", False)
+                    shadowShader.SetBool("bEffectFalloffColor", False)
+                End If
             End If
 
             shadowShader.SetBool("bGPUSkinning", ssbo_BoneMatrices > 0 AndAlso Config_App.Current.Setting_GPUSkinning)

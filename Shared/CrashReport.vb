@@ -77,7 +77,14 @@ Friend Module CrashReport
         ' reporte ilegible no se pega. Lo que puede traer no-ASCII es el mensaje de la excepción, que viene del
         ' sistema — para eso el archivo se escribe con BOM (ver TryWrite).
         sb.AppendLine("================================================================================")
-        sb.AppendLine($"{app} - fatal error   {Date.Now:yyyy-MM-dd HH:mm:ss} local / {Date.UtcNow:yyyy-MM-dd HH:mm:ss}Z")
+        ' ⛔ FECHA EN CULTURA INVARIANTE. La interpolación de VB usa CurrentCulture, y con un calendario no
+        ' gregoriano (ar-SA usa UmAlQura por default en .NET 5+, th-TH el budista) un crash de 2026-08-12 se
+        ' escribe "1448-01-28" o "2569-08-12". La fecha es el primer dato que se cruza contra otra evidencia
+        ' —el visor de eventos, el log de la app, lo que el usuario dice que estaba haciendo— y ahí no cruza
+        ' con nada. La cultura del usuario va MÁS ABAJO como un campo del reporte, que es donde sirve.
+        sb.AppendLine($"{app} - fatal error   " &
+                      Date.Now.ToString("yyyy-MM-dd HH:mm:ss", Globalization.CultureInfo.InvariantCulture) & " local / " &
+                      Date.UtcNow.ToString("yyyy-MM-dd HH:mm:ss", Globalization.CultureInfo.InvariantCulture) & "Z")
         sb.AppendLine($"  origin  : {origin}")
         AppendSafe(sb, "  app dir ", Function() AppContext.BaseDirectory)
         AppendSafe(sb, "  args    ", Function() String.Join(" ", Environment.GetCommandLineArgs().Skip(1)))

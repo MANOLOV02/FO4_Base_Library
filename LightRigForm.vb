@@ -48,9 +48,54 @@ Partial Public Class LightRigForm
 
     Private ReadOnly _presets As LightRigPreset() = PreviewLightRig.Presets()
 
+    ''' <summary>Demora para los cuatro NumericUpDown de TBN, cuyo cambio cuesta una recarga COMPLETA de
+    ''' geometría del proyecto en pantalla. Ver dónde se enganchan, en <c>AddHandlers</c>.
+    ''' <para>⛔ <c>System.Windows.Forms.Timer</c> a propósito: su Tick corre en el hilo de UI, que es el único
+    ''' desde el que se puede tocar <c>Config_App</c> y disparar el re-render. Con un
+    ''' <c>Threading.Timer</c> habría que hacer Invoke y se abre una carrera con el cierre del diálogo.</para>
+    ''' <para>400 ms: más corto y una pulsación normal ya dispara; más largo y se siente colgado.</para></summary>
+    Private ReadOnly _demoraTbn As New System.Windows.Forms.Timer With {.Interval = 400}
+
+    ''' <summary>El diálogo ya entró en FormClosing. Corta los ValueChanged tardíos —los que dispara un
+    ''' NumericUpDown al perder el foco DURANTE el cierre— para que no vuelvan a arrancar la demora sobre
+    ''' un formulario que se está destruyendo.</summary>
+    Private _cerrando As Boolean = False
+
     Public Sub New()
 
         InitializeComponent()
+
+        ' ⛔ Y si el diálogo se cierra con un cambio todavía en la demora, hay que APLICARLO: si no, el
+        ' usuario escribe un epsilon, cierra, y su valor se pierde sin que nada lo diga.
+        AddHandler _demoraTbn.Tick, Sub(s2, e2)
+                                        _demoraTbn.Stop()
+                                        ' ⛔ Si el diálogo ya se cerró, este Tick leería DIEZ CONTROLES YA
+                                        ' DISPUESTOS y escribiría Config_App desde un formulario muerto.
+                                        If _cerrando OrElse IsDisposed Then Return
+                                        VolcarRenderEnModelo()
+                                    End Sub
+        AddHandler Me.FormClosing, Sub(s2, e2)
+                                       ' ⛔⛔ PRIMERO FORZAR EL COMMIT DE LO QUE ESTÉ A MEDIO TIPEAR. Un
+                                       ' NumericUpDown NO parsea mientras se escribe: re-parsea al perder
+                                       ' el foco. Cerrando con la X o Esc sin salir del campo, el orden
+                                       ' real era FormClosing (con el timer APAGADO, así que el rescate de
+                                       ' abajo no hacía nada) → recién después el edit pierde el foco,
+                                       ' dispara ValueChanged y ARRANCA el timer → el host hace
+                                       ' RemoveHandler y Dispose → 400 ms más tarde el Tick corría igual.
+                                       ' `ValidateChildren` fuerza ese parseo ACÁ, mientras el form todavía
+                                       ' está vivo, así que el valor tipeado se aplica en vez de perderse.
+                                       Me.ValidateChildren()
+                                       If _demoraTbn.Enabled Then
+                                           _demoraTbn.Stop()
+                                           VolcarRenderEnModelo()
+                                       End If
+                                       ' A partir de acá ningún ValueChanged tardío puede volver a
+                                       ' arrancarlo, y el Timer se libera: NO está en `components`, así que
+                                       ' el Dispose generado no lo alcanza.
+                                       _cerrando = True
+                                       _demoraTbn.Stop()
+                                       _demoraTbn.Dispose()
+                                   End Sub
         'ThemeManager.SetTheme(Config_App.Current.theme, Me)
 
         ' El rig es por juego: decirlo en el título, que si no dos sets distintos parecen el mismo diálogo.
@@ -294,10 +339,30 @@ Partial Public Class LightRigForm
         ' formato "0.#", mostraba "11,5" — un valor con el que la casilla se deshabilita, o sea que el
         ' mensaje contradecia a su propio gate. Se muestra con dos decimales por lo mismo.
         Dim ElevacionMinima As Single = ShadowMapMath.ElevacionMinimaGrados
+
+        ' ⛔⛔ CON LAS LUCES SIGUIENDO A LA CAMARA, ESTE AVISO NO PUEDE PREDECIR NADA — Y NO DEBE GRISAR.
+        ' El render no decide con la elevacion del RIG: decide con `_frameLights.KeyDir.Z`, que cuando
+        ' `Setting_LightsFollowCamera` esta prendido (el default) es la direccion de la key YA ROTADA POR
+        ' LA CAMARA. Son dos cantidades distintas y solo coinciden con la opcion apagada.
+        ' Los dos sintomas que provocaba comparar la equivocada:
+        '   · preset con la key a 30 grados: casilla habilitada y tildada, el usuario baja la camara, el
+        '     KeyDir efectivo cae bajo el corte y el receptor deja de dibujarse sin una palabra.
+        '   · preset Dungeon (key a -22 grados): casilla PERMANENTEMENTE gris, aunque orbitando hacia
+        '     arriba la key efectiva quede muy por encima del corte y el motor la dibujaria perfecto.
+        ' Este dialogo no conoce la camara y no tiene por que conocerla: lo honesto es NO decidir por el
+        ' usuario cuando el resultado depende de algo que va a cambiar en cuanto mueva la vista.
+        Dim sigueALaCamara = Config_App.Current.Setting_LightsFollowCamera
         Dim elev = Config_App.Current.ActiveLights().KeyLight.ElevationDeg
-        Dim puede = elev >= ElevacionMinima
-        chkGroundShadow.Text = If(puede, "Shadow on the ground",
-                                  $"Shadow on the ground (needs the key above {ElevacionMinima:0.00} deg)")
+        Dim puede = sigueALaCamara OrElse elev >= ElevacionMinima
+        If sigueALaCamara Then
+            ' ⛔ CORTO: el gate `ui-layout` del ShadowGate mide el ancho real del control contra el interior
+            ' del grupo, y un texto de una linea mas largo que el original lo saca del recuadro. Ya me paso
+            ' con "(follows the camera: shows when the light is high enough)" — 458 px contra 418.
+            chkGroundShadow.Text = "Shadow on the ground (follows the camera)"
+        Else
+            chkGroundShadow.Text = If(puede, "Shadow on the ground",
+                                      $"Shadow on the ground (needs the key above {ElevacionMinima:0.00} deg)")
+        End If
         chkGroundShadow.Enabled = puede AndAlso chkShadows.Checked
     End Sub
 
@@ -335,6 +400,13 @@ Partial Public Class LightRigForm
         AddHandler chkLightsFollowCamera.CheckedChanged, Sub(sender, e)
                                                              If _preventchanges Then Return
                                                              Config_App.Current.Setting_LightsFollowCamera = chkLightsFollowCamera.Checked
+                                                             ' ⛔ Esta casilla cambia CON QUE cantidad decide
+                                                             ' el render si dibuja el receptor de suelo, asi
+                                                             ' que el aviso de al lado queda obsoleto en el
+                                                             ' acto. Sin esto, apagarla dejaba el texto
+                                                             ' "follows the camera" y la casilla habilitada
+                                                             ' con la key por debajo del corte.
+                                                             ActualizarAvisoDeSuelo()
                                                              ' Redibuja: cambia la direccion de las 4 luces
                                                              ' y, con ella, el encuadre del shadow map.
                                                              RaiseEvent LightsChanged()
@@ -375,8 +447,27 @@ Partial Public Class LightRigForm
                                              If DirectCast(sender, RadioButton).Checked Then VolcarRenderEnModelo()
                                          End Sub
         Next
-        For Each nud In New NumericUpDown() {nudSeamAngle, nudWeldPos, nudWeldUv, nudEpsPos,
-                                             nudFloorSize, nudFloorStep}
+        ' ⛔⛔ LOS CUATRO DE TBN VAN CON DEMORA; LOS DOS DEL PISO, AL TOQUE. No es lo mismo:
+        ' `AjustesDeGeometria` INCLUYE `.Tbn`, asi que cualquier cambio en seam angle o en los epsilons
+        ' marca `RenderDirtyFlags.Force` = Clean + esqueleto + LoadShapesParallel + TBN + welding + morphs
+        ' + subida a GPU. Y los tres epsilons tienen `DecimalPlaces = 12`: escribir "0,000000000005" a mano
+        ' son ~14 `ValueChanged`, o sea ~14 RECARGAS COMPLETAS del proyecto en pantalla encoladas mientras
+        ' el usuario todavia esta tipeando. Cada flechita del seam angle, una mas.
+        ' Este mismo archivo ya documenta el caso hermano: sacaron camara y grilla de `AjustesDeGeometria`
+        ' porque "tipear '500' en el tamano del piso costaba TRES recargas completas de un NPC con outfit".
+        ' El problema quedo abierto justo en los campos donde la recarga es mas cara.
+        ' ⛔ El anterior mecanismo de WM era un boton "Apply to rendered project" explicito; al mudar la
+        ' pestana a este dialogo compartido se perdio y quedaron todos en vivo.
+        For Each nud In New NumericUpDown() {nudSeamAngle, nudWeldPos, nudWeldUv, nudEpsPos}
+            AddHandler nud.ValueChanged, Sub(sender, e)
+                                             If _preventchanges OrElse _cerrando Then Return
+                                             ' Reiniciar la cuenta en cada tecla: se aplica cuando el
+                                             ' usuario PARA, no mientras escribe.
+                                             _demoraTbn.Stop()
+                                             _demoraTbn.Start()
+                                         End Sub
+        Next
+        For Each nud In New NumericUpDown() {nudFloorSize, nudFloorStep}
             AddHandler nud.ValueChanged, Sub(sender, e) VolcarRenderEnModelo()
         Next
         AddHandler cmbFloorColor.SelectedIndexChanged, Sub(sender, e) VolcarRenderEnModelo()

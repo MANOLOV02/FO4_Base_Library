@@ -1,5 +1,6 @@
 Imports SN = System.Numerics
 Imports OpenTK.Mathematics
+Imports System.Runtime.CompilerServices
 
 ''' <summary>⭐ El kernel del SKINNING DE CPU: de matriz per-vertice a posicion, normal, tangente y
 ''' bitangente de MUNDO. Es el bucle que domina un frame de animacion con skinning por CPU (medido: 9,3 ms
@@ -49,16 +50,117 @@ Friend Module FastSkin
     ''' subirlo no compra nada.</summary>
     Friend Const Bloque As Integer = 1024
 
-    ''' <summary>Corte por determinante degenerado.
-    ''' <para>⚠️ La CONSTANTE es la misma que usaba <c>NormalMatrixOrIdentity</c>, pero la CANTIDAD a la que
-    ''' se aplica no: alla el determinante lo calculaba <c>OpenTK.Matrix3.Determinant</c> y aca sale de la
-    ''' expansion por la primera fila. Son sumatorias distintas y discrepan en el borde — medido sobre un
-    ''' corpus sintetico de matrices exactamente singulares, 5 de 28 se clasifican distinto. Por eso importa
-    ''' que TODOS los caminos del render usen ESTA, y no que la constante coincida.</para>
-    ''' <para>En Single, con entradas de orden 1, el ruido de redondeo del propio determinante es ~1e-7, asi
-    ''' que este corte es en la practica "det exactamente 0" (una fila nula, o sea escala 0 en un eje). Para
-    ''' una matriz con escala uniforme s el determinante es s^3 y el corte pide s &lt; 1e-4.</para></summary>
-    Friend Const EpsDet As Single = 0.000000000001F
+    ''' <summary>⭐⛔ Corte por determinante degenerado, RELATIVO a la escala de la matriz. Un
+    ''' determinante no se puede juzgar con un numero absoluto: <c>det</c> escala como el CUBO de la
+    ''' matriz, asi que el mismo umbral significa cosas distintas segun las unidades.
+    '''
+    ''' <para><b>El defecto que esto arregla.</b> El corte era absoluto (<c>1e-12</c>) y venia de cuando
+    ''' el determinante se calculaba en <b>Double</b>. Al pasar el kernel a <b>Single</b>, la cantidad
+    ''' juzgada cambio de precision y el umbral quedo ~5 decadas POR DEBAJO del ruido de redondeo del
+    ''' propio determinante (~1e-7 con entradas de orden 1). Resultado MEDIDO sobre 2000 matrices
+    ''' <b>exactamente singulares</b> (fila 3 = 2 x fila 1): en Double se detectan las 2000; en Single
+    ''' solo 713. Las otras <b>1287 pasaban la guarda</b>, tomaban <c>r = 1/det</c> con |det| ~7,5e-8
+    ''' —o sea r ~1,3e7— y salian con una matriz de normales multiplicada por eso.
+    ''' ⛔ El comentario viejo YA DECIA que en Single el corte era "det exactamente 0"; lo que faltaba
+    ''' era sacar la conclusion de que entonces ya no detectaba lo que tenia que detectar.</para>
+    '''
+    ''' <para>⚠️⚠️ <b>LO QUE ESTE CAMBIO NO ARREGLA, MEDIDO.</b> Sobre el corpus real
+    ''' (SG172_Serena_BattleSuit, 130.500 vertices) NO mueve NADA: antes y despues el arnes reporta las
+    ''' mismas <b>59</b> matrices degeneradas y los mismos <b>59</b> valores no finitos que salen del
+    ''' camino de produccion. O sea que las degeneradas que aparecen en contenido real son del tipo que
+    ''' el corte absoluto SI atrapaba (fila nula / escala 0 en un eje), no del tipo "una fila es
+    ''' combinacion lineal de las otras". <b>Los 59 no finitos tienen OTRA causa y siguen abiertos</b>:
+    ''' el sospechoso es la normalizacion de <see cref="Rotar"/>, que hace <c>1/sqrt(0)</c> cuando el
+    ''' vector de entrada es nulo — no el determinante. ⛔ No atribuirle a este corte un defecto que no
+    ''' es suyo: yo lo hice y la medicion me desmintio.</para>
+    '''
+    ''' <para>⇒ Este cambio es de ROBUSTEZ: cubre un caso que el corpus no ejercita. Por eso mismo su
+    ''' riesgo de mover bytes horneados, sobre el contenido medido, resulto ser NULO.</para>
+    '''
+    ''' <para><b>Por que no alcanzaba con subir la constante.</b> Se probo: con el corte absoluto en
+    ''' 1e-3 se mandan a Identidad matrices perfectamente sanas (esta anotado mas abajo, en el oraculo).
+    ''' Con escala uniforme s el determinante es s^3, asi que CUALQUIER absoluto confunde "matriz chica"
+    ''' con "matriz degenerada": una rotacion pura escalada por 0,001 tiene det = 1e-9 y es sana.</para>
+    '''
+    ''' <para><b>El criterio.</b> Por Hadamard |det| &lt;= producto de las normas de fila, y esa cota vale
+    ''' a lo sumo <c>(F2/3)^(3/2)</c> con <c>F2</c> = suma de los 9 cuadrados. El cociente
+    ''' <c>|det| / (F2/3)^(3/2)</c> es ADIMENSIONAL, vale 1 para una matriz ortogonal y 0 para una
+    ''' singular, y no cambia si se reescala la matriz. Se compara contra <c>EpsDetRel</c>.</para>
+    '''
+    ''' <para>El valor 1e-5 son ~10 veces el error relativo esperable del determinante en Single (unas
+    ''' 10 operaciones a 1,2e-7 cada una). Una matriz con cociente menor tiene numero de condicion
+    ''' &gt;1e5: invertirla en Single da basura igual, asi que mandarla a Identidad es lo correcto.</para>
+    '''
+    ''' <para>⛔ Verificado sobre 3000 matrices de cada clase: el criterio relativo clasifica bien las
+    ''' seis (singular por combinacion lineal, singular por fila nula, rotacion pura, rotacion x 0,001,
+    ''' rotacion x 100, y shear fuerte); el absoluto se equivoca en 1970 de 3000 de la primera.</para>
+    '''
+    ''' <para>⚠️ Sigue importando que TODOS los caminos usen ESTE mismo predicado y no una transcripcion.
+    ''' En cambio, sobre el DETERMINANTE la nota vieja estaba equivocada: decia que la expansion por
+    ''' primera fila y <c>OpenTK.Matrix3.Determinant</c> "son sumatorias distintas y discrepan en el
+    ''' borde". MEDIDO sobre 200.000 matrices perturbadas al borde del corte: <b>cero</b> diferencias, ni
+    ''' siquiera de bits. Son la MISMA expansion con los signos redistribuidos
+    ''' (<c>-m12*(m21*m33 - m23*m31)</c> contra <c>+m12*(m23*m31 - m21*m33)</c>) y en IEEE-754 la negacion
+    ''' es exacta. La medicion vieja comparaba un determinante en Double contra uno en Single, que es
+    ''' otra cosa. Igual los dos caminos pasan hoy por <see cref="DetPorPrimeraFila"/>: es gratis y saca
+    ''' la dependencia de un detalle interno de OpenTK.</para></summary>
+    Friend Const EpsDetRel As Single = 0.00001F
+
+    ''' <summary>El predicado de degeneracion, escrito UNA vez. Ver <see cref="EpsDetRel"/>.
+    ''' <para>⛔ Sin raiz cuadrada a proposito: se comparan los CUADRADOS, que es lo mismo porque los dos
+    ''' lados son no negativos, y asi el camino caliente no paga un <c>sqrt</c> por vertice.</para>
+    ''' <para>⛔ La comparacion es <c>&lt;=</c> y no <c>&lt;</c> para que la matriz NULA (F2 = 0, det = 0,
+    ''' cota = 0) caiga del lado degenerado. Con <c>&lt;</c> se escaparia justo el caso mas degenerado
+    ''' que existe.</para></summary>
+    ''' <summary>El determinante EXACTAMENTE como lo calcula el kernel: expansion por la PRIMERA fila.
+    ''' <para>⛔⛔ EXISTE PARA QUE NO HAYA DOS. <c>OpenTK.Matrix3.Determinant</c> es otra sumatoria (seis
+    ''' terminos contra tres productos de cofactor) y en Single discrepan en el borde. Mientras el bake
+    ''' usaba el de OpenTK y el render este, una matriz podia caer de lados OPUESTOS del corte: normal
+    ''' IDENTIDAD en el preview y normal TRANSFORMADA en el NIF horneado. Eso no es un redondeo, es
+    ''' RENDER != BAKE — la regla que este proyecto no puede violar.</para>
+    ''' <para>Lo destapo un revisor mirando el gate, no el codigo: el gate alimentaba el predicado con su
+    ''' propia transcripcion y por eso no podia ver la divergencia.</para></summary>
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function DetPorPrimeraFila(m11 As Single, m12 As Single, m13 As Single,
+                                      m21 As Single, m22 As Single, m23 As Single,
+                                      m31 As Single, m32 As Single, m33 As Single) As Single
+        Dim c11 = m22 * m33 - m23 * m32
+        Dim c12 = m23 * m31 - m21 * m33
+        Dim c13 = m21 * m32 - m22 * m31
+        Return m11 * c11 + m12 * c12 + m13 * c13
+    End Function
+
+    <MethodImpl(MethodImplOptions.AggressiveInlining)>
+    Friend Function EsDegenerada(det As Single,
+                                 m11 As Single, m12 As Single, m13 As Single,
+                                 m21 As Single, m22 As Single, m23 As Single,
+                                 m31 As Single, m32 As Single, m33 As Single) As Boolean
+        Dim f2 = m11 * m11 + m12 * m12 + m13 * m13 +
+                 m21 * m21 + m22 * m22 + m23 * m23 +
+                 m31 * m31 + m32 * m32 + m33 * m33
+        Dim t = f2 * (1.0F / 3.0F)
+        ' ⛔⛔ DOS GUARDAS, Y LAS DOS SON NECESARIAS. Escritas como negaciones a proposito: asi un NaN
+        ' —que pierde TODA comparacion— cae del lado DEGENERADO, que es el correcto.
+        '  · `t` no positivo: matriz nula (t = 0) o con algun NaN. La division daria NaN y el predicado
+        '    diria "sana", que es justo el caso mas degenerado que existe.
+        '  · `det` no finito: con una rotacion escalada por ~7e12 el DETERMINANTE (que va como s^3)
+        '    desborda a +Inf cuatro decadas ANTES que f2 (que va como s^2), asi que la guarda de `t` no
+        '    lo ve. Sin esto: q = Inf, `Inf <= algo` es False ⇒ "sana" ⇒ r = 1/Inf = 0 ⇒ los nueve
+        '    cofactores en CERO ⇒ la normal sale (0,0,0) o NaN al normalizar. La forma vieja con cubo
+        '    daba Identidad ahi; esta tiene que hacer lo mismo.
+        If Not (t > 0.0F) Then Return True
+        If Not (Math.Abs(det) <= Single.MaxValue) Then Return True
+        ' ⛔⛔ SE DIVIDE, NO SE ELEVA AL CUBO. La forma natural del criterio es
+        ' `det^2 <= epsRel^2 * (F2/3)^3`, y esa DESBORDA en Single: con una rotacion pura escalada por
+        ' 3e6, `t^3` = 7,3e38 > Single.MaxValue = 3,4e38 ⇒ +Inf en LOS DOS lados, y `Inf <= Inf` es True.
+        ' O sea que toda matriz con entradas RMS por encima de ~1,5e6 se clasificaba como DEGENERADA
+        ' fuera cual fuera su determinante, y su normal salia sin transformar. Dividiendo primero, el
+        ' cociente `det/t` tiene la magnitud de la escala (no de su cubo) y no hay nada que desborde.
+        ' ⭐ Es algebraicamente lo mismo —dividir los dos lados por t^2— y sigue sin pagar un `sqrt` por
+        ' vertice. Verificado sobre las ocho clases de matriz, incluidas las dos que desbordaban.
+        Dim q = det / t
+        Return q * q <= (EpsDetRel * EpsDetRel) * t
+    End Function
 
     ''' <summary>⛔ SOLO PARA MEDIR. Apaga el camino vectorial para poder compararlo contra el escalar EN EL
     ''' MISMO PROCESO: entre corridas esta maquina varia hasta 2x, asi que un A/B entre builds no puede
@@ -146,7 +248,7 @@ Friend Module FastSkin
         Dim c32 = m.M13 * m.M21 - m.M11 * m.M23
         Dim c33 = m.M11 * m.M22 - m.M12 * m.M21
         Dim r As Single = 1.0F / det
-        If Math.Abs(det) < EpsDet Then
+        If EsDegenerada(det, m.M11, m.M12, m.M13, m.M21, m.M22, m.M23, m.M31, m.M32, m.M33) Then
             c11 = 1.0F : c12 = 0.0F : c13 = 0.0F
             c21 = 0.0F : c22 = 1.0F : c23 = 0.0F
             c31 = 0.0F : c32 = 0.0F : c33 = 1.0F
@@ -227,7 +329,7 @@ Friend Module FastSkin
                     Dim c32 = m13 * m21 - m11 * m23
                     Dim c33 = m11 * m22 - m12 * m21
                     Dim r As Single = 1.0F / det
-                    If Math.Abs(det) < EpsDet Then
+                    If EsDegenerada(det, m11, m12, m13, m21, m22, m23, m31, m32, m33) Then
                         c11 = 1.0F : c12 = 0.0F : c13 = 0.0F
                         c21 = 0.0F : c22 = 1.0F : c23 = 0.0F
                         c31 = 0.0F : c32 = 0.0F : c33 = 1.0F
@@ -359,7 +461,7 @@ Friend Module FastSkin
             Dim c33 = m11 * m22 - m12 * m21
 
             Dim r As Single = 1.0F / det
-            If Math.Abs(det) < EpsDet Then
+            If EsDegenerada(det, m11, m12, m13, m21, m22, m23, m31, m32, m33) Then
                 ' Degenerada -> Identidad, que es lo que devolvia NormalMatrixOrIdentity.
                 c11 = 1.0F : c12 = 0.0F : c13 = 0.0F
                 c21 = 0.0F : c22 = 1.0F : c23 = 0.0F
@@ -397,7 +499,18 @@ Friend Module FastSkin
         Dim vx = vx0 * e11 + vy0 * e21 + vz0 * e31
         Dim vy = vx0 * e12 + vy0 * e22 + vz0 * e32
         Dim vz = vx0 * e13 + vy0 * e23 + vz0 * e33
-        Dim inv = 1.0F / MathF.Sqrt(vx * vx + vy * vy + vz * vz)
+        ' ⛔⛔ LONGITUD CERO: SE DEVUELVE EL VECTOR TAL CUAL, igual que el canonico. `1/sqrt(0)` es +Inf
+        ' y `0 * Inf` es NaN, asi que sin esta guarda un vertice con normal NULA salia con la normal en
+        ' NaN al VBO. MEDIDO sobre el Serena Battle Suit: los 59 valores no finitos que el arnes venia
+        ' reportando eran EXACTAMENTE esto —59 de 59, causa "normal de ENTRADA nula"— y no el corte por
+        ' determinante, que es a lo que se los habia atribuido sin medir.
+        ' ⭐ Y ES RENDER != BAKE, con el bake del lado correcto: `SkinningHelper.NormalizaComoNifly` YA
+        ' hace esto (`If l = 0 Then Return v`) porque nifly lo hace, y su doc lo explica: una normal nula
+        ' no es basura ni un caso imposible —el CBBEBody.nif de CBBE trae 14— y el canonico la CONSERVA.
+        ' El render era el unico que la convertia en NaN.
+        Dim len2 = vx * vx + vy * vy + vz * vz
+        If len2 = 0.0F Then Return New Vector3(vx, vy, vz)
+        Dim inv = 1.0F / MathF.Sqrt(len2)
         Return New Vector3(vx * inv, vy * inv, vz * inv)
     End Function
 
@@ -410,7 +523,10 @@ Friend Module FastSkin
         Dim W = SN.Vector(Of Single).Count
         If cuantos < W Then Return 0
         Dim a = sc.A
-        Dim eps As New SN.Vector(Of Single)(EpsDet)
+        ' El mismo predicado que EsDegenerada, en lanes: se comparan los CUADRADOS contra la cota de
+        ' Hadamard escalada. `epsRel2` y `untercio` son los dos escalares que hacen falta.
+        Dim epsRel2 As New SN.Vector(Of Single)(EpsDetRel * EpsDetRel)
+        Dim untercio As New SN.Vector(Of Single)(1.0F / 3.0F)
         Dim uno = SN.Vector(Of Single).One
         Dim cero = SN.Vector(Of Single).Zero
         Dim k = 0
@@ -439,7 +555,25 @@ Friend Module FastSkin
             ' ⛔ La rama del escalar se vuelve una MASCARA. La division corre igual en los lanes
             ' degenerados —da infinito— pero el select la descarta, y en punto flotante dividir por cero
             ' no lanza. Es lo que permite que no haya rama.
-            Dim degen = SN.Vector.LessThan(SN.Vector.Abs(det), eps)
+            ' ⛔ TRANSCRIPCION LANE A LANE DE `EsDegenerada`. Si se toca alla, se toca aca: el
+            ' SelfTest compara las dos formas justo sobre matrices degeneradas, que es donde se separan.
+            Dim f2 = m11 * m11 + m12 * m12 + m13 * m13 +
+                     m21 * m21 + m22 * m22 + m23 * m23 +
+                     m31 * m31 + m32 * m32 + m33 * m33
+            Dim tt = f2 * untercio
+            ' ⛔⛔ TRANSCRIPCION EXACTA DE `EsDegenerada`, INCLUIDAS LAS DOS GUARDAS. Y las guardas van
+            ' como NEGACION de un `GreaterThan`, no como `LessThanOrEqual`: con NaN las dos comparaciones
+            ' dan False, asi que `LessThanOrEqual(NaN, 0)` clasificaba el lane como SANO mientras el
+            ' escalar —que usa `Not (t > 0)`— lo daba DEGENERADO. Esa divergencia es grave y no teorica:
+            ' `Transformar` manda el prefijo alineado al camino vectorial y la COLA del mismo bloque al
+            ' escalar, asi que dentro de la MISMA malla el mismo vertice se clasificaba distinto segun su
+            ' indice mod W; y en una maquina sin aceleracion iba todo por el escalar ⇒ RENDER != BAKE
+            ' segun el hardware del usuario.
+            Dim qq = det / tt
+            Dim tSano = SN.Vector.GreaterThan(tt, SN.Vector(Of Single).Zero)
+            Dim detSano = SN.Vector.LessThanOrEqual(SN.Vector.Abs(det), New SN.Vector(Of Single)(Single.MaxValue))
+            Dim degen = SN.Vector.BitwiseOr(SN.Vector.LessThanOrEqual(qq * qq, epsRel2 * tt),
+                                            SN.Vector.OnesComplement(SN.Vector.BitwiseAnd(tSano, detSano)))
             Dim r = SN.Vector.ConditionalSelect(degen, uno, uno / det)
             c11 = SN.Vector.ConditionalSelect(degen, uno, c11)
             c12 = SN.Vector.ConditionalSelect(degen, cero, c12)
@@ -498,8 +632,14 @@ Friend Module FastSkin
         Dim vx = vx0 * e11 + vy0 * e21 + vz0 * e31
         Dim vy = vx0 * e12 + vy0 * e22 + vz0 * e32
         Dim vz = vx0 * e13 + vy0 * e23 + vz0 * e33
-        Dim inv = SN.Vector(Of Single).One / SN.Vector.SquareRoot(vx * vx + vy * vy + vz * vz)
-        rx = vx * inv : ry = vy * inv : rz = vz * inv
+        ' Misma guarda que el escalar: con longitud CERO el vector se devuelve tal cual. Sin ConditionalSelect
+        ' los lanes nulos salian en NaN y divergian del escalar (que ahora los conserva).
+        Dim len2 = vx * vx + vy * vy + vz * vz
+        Dim nulo = SN.Vector.Equals(len2, SN.Vector(Of Single).Zero)
+        Dim inv = SN.Vector(Of Single).One / SN.Vector.SquareRoot(len2)
+        rx = SN.Vector.ConditionalSelect(nulo, vx, vx * inv)
+        ry = SN.Vector.ConditionalSelect(nulo, vy, vy * inv)
+        rz = SN.Vector.ConditionalSelect(nulo, vz, vz * inv)
     End Sub
 
     ''' <summary>⭐ Corre LA FUNCION REAL por los dos caminos —vectorial y escalar— sobre los mismos datos
@@ -550,6 +690,33 @@ Friend Module FastSkin
             ln(i) = New Vector3(sig(), sig(), sig())
             lt(i) = New Vector3(sig(), sig(), sig())
             lb(i) = New Vector3(sig(), sig(), sig())
+
+            ' ⛔⛔ VALORES QUE NO SON NUMEROS NORMALES. El corpus sorteaba SOLO entradas en [-2, 2], asi que
+            ' las guardas —la de normal NULA en `Rotar`, y las de NaN / no-finito en `EsDegenerada`— no se
+            ' ejercitaban NUNCA, y este SelfTest es justo el que compara el camino escalar contra el
+            ' vectorial. Ya costo caro: la guarda vectorial estaba escrita como `LessThanOrEqual(t, 0)`,
+            ' que con NaN da False, mientras la escalar `Not (t > 0)` da True — o sea que el MISMO vertice
+            ' se clasificaba distinto segun cayera en el prefijo vectorial o en la cola escalar, y en una
+            ' maquina sin aceleracion iba todo por el escalar. RENDER != BAKE segun el hardware, con este
+            ' gate en verde.
+            ' Van cada 53 y cada 71 —primos entre si y con 37— para que las tres clases se crucen y ningun
+            ' indice quede siempre en el mismo camino.
+            If i Mod 53 = 0 Then
+                ' NORMAL NULA: la fuente las trae de verdad (el CBBEBody.nif de CBBE tiene 14). Sin la
+                ' guarda de `Rotar`, `1/sqrt(0)` = Inf y la normal sale NaN.
+                ln(i) = New Vector3(0.0F, 0.0F, 0.0F)
+            ElseIf i Mod 71 = 0 Then
+                ' MATRIZ CON NaN: prueba que las dos guardas de EsDegenerada coinciden lane a lane.
+                Dim mn = mats(i)
+                mn.M22 = Single.NaN
+                mats(i) = mn
+            ElseIf i Mod 71 = 1 Then
+                ' MATRIZ ENORME: el determinante desborda a +Inf mucho antes que f2.
+                Dim mg = mats(i)
+                mg.M11 = 10000000000000.0F : mg.M22 = 10000000000000.0F : mg.M33 = 10000000000000.0F
+                mg.M12 = 0.0F : mg.M13 = 0.0F : mg.M21 = 0.0F : mg.M23 = 0.0F : mg.M31 = 0.0F : mg.M32 = 0.0F
+                mats(i) = mg
+            End If
         Next
 
         For Each msn In New Boolean() {False, True}

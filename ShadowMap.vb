@@ -178,14 +178,19 @@ Friend Module ShadowMapMath
     ''' <summary>Encuadra la luz sobre el AABB de la escena.
     '''
     ''' <para>⭐ EL EXTENT SALE DE LA ESFERA ENVOLVENTE, no del AABB proyectado. La esfera es INVARIANTE A
-    ''' LA ROTACION, asi que el ortho no cambia de tamano cuando la luz gira. Desde que las luces son fijas
-    ''' al mundo el usuario ya no las mueve al orbitar, pero SI al arrastrar un slider del rig, y ademas el
-    ''' AABB se mueve solo en cada frame de una animacion: en los dos casos un extent que se re-ajusta hace
-    ''' que el borde de la sombra "hierva".</para>
+    ''' LA ROTACION, asi que el ortho no cambia de tamano cuando la luz gira. Eso importa en TRES gestos:
+    ''' arrastrar un slider del rig, cada frame de una animacion (el AABB se mueve solo), y —⭐ desde que
+    ''' <c>Setting_LightsFollowCamera</c> es el default— <b>ORBITAR</b>, que rota las cuatro luces. En los
+    ''' tres, un extent que se re-ajusta hace que el borde de la sombra "hierva".
+    ''' ⛔ Este parrafo decia "desde que las luces son fijas al mundo el usuario ya no las mueve al
+    ''' orbitar". Era cierto cuando se escribio y dejo de serlo con el default nuevo, sin que nada lo
+    ''' avisara: un comentario que describe una configuracion que cambio miente igual que un codigo mal.</para>
     ''' <para>⚠️ Esto vale para el mapa AJUSTADO. El mapa ANCHO del receptor de suelo NO es invariante a la
     ''' rotacion: su AABB sale de proyectar la escena sobre el plano a lo largo de la luz
     ''' (<see cref="ExpandForGroundShadow"/>), asi que mover la key le cambia el radio y con el la grilla
-    ''' del snap. Es aceptable porque solo pasa mientras se arrastra un slider del rig, no al orbitar.</para>
+    ''' del snap. ⛔⭐ Y ORBITAR MUEVE LA KEY: con el default de luces-siguen-camara este caso pasa en
+    ''' cada frame de un arrastre de camara, no solo al tocar un slider. Ver el analisis cuantificado en
+    ''' <see cref="GroundMapSize"/>, que tambien tenia esta omision.</para>
     '''
     ''' <para>⭐ Y el centro se SNAPEA a multiplos de texel en espacio de luz por la misma razon: sin eso
     ''' el borde de la sombra parpadea un texel para adelante y para atras en cada frame.</para></summary>
@@ -340,11 +345,25 @@ Friend Module ShadowMapMath
     ''' ser posible: con <c>MapSize = 2048</c> las salidas son {512, 1024, 2048} y las fronteras caen en
     ''' ratio 1,7688 y 3,5364, asi que un ratio parado ahi cruza con una variacion relativa del 0,03 %. Cada
     ''' cruce es <c>Release()</c> + <c>TexImage2D</c> + <c>CheckFramebufferStatus</c>, o sea dos puntos de
-    ''' sincronizacion con el driver en el camino de dibujo. Se ve como un tiron. Los dos gestos que lo
-    ''' disparan: una animacion en loop cuyo ratio ronde una frontera, y arrastrar el slider de elevacion de
-    ''' la key parado sobre una. Mitiga que el ratio es mucho mas estable que cualquiera de los dos radios
-    ''' (numerador y denominador salen del mismo AABB y se mueven juntos) y que las fronteras estan a un
-    ''' factor 2 una de otra, o sea que hay que estar JUSTO encima.
+    ''' sincronizacion con el driver en el camino de dibujo. Se ve como un tiron. Los gestos que lo
+    ''' disparan: una animacion en loop cuyo ratio ronde una frontera, arrastrar el slider de elevacion de
+    ''' la key parado sobre una, y —⭐ EL QUE FALTABA EN ESTE ANALISIS— <b>ORBITAR</b>.
+    ''' <para>⛔⭐ ORBITAR ES HOY EL GESTO QUE MAS MUEVE EL RATIO, y este doc lo omitia porque se escribio
+    ''' cuando las luces eran fijas al mundo. Con <c>Setting_LightsFollowCamera</c> —que ES EL DEFAULT— la
+    ''' direccion de la key la rota la camara, asi que <c>ExpandForGroundShadow</c> proyecta con un
+    ''' <c>L.Z</c> que cambia en CADA FRAME del arrastre. Barriendo L.Z de 0,87 a 0,21 sobre un cuerpo de
+    ''' 180 u la huella pasa de ~104 a ~850 u y el ratio recorre ~1 a ~4,5: cruza LAS DOS fronteras
+    ''' (1,7688 y 3,5364) en un solo gesto, o sea varios Release + TexImage2D por arrastre. Y al pasar
+    ''' L.Z por debajo de 0,2 el receptor se apaga solo y suelta el FBO, con lo que la sombra de suelo
+    ''' aparece y desaparece mientras se orbita. La mitigacion que este doc invocaba —"el ratio es mucho
+    ''' mas estable que los radios porque salen del mismo AABB"— NO aplica a este caso: aca el numerador
+    ''' lo mueve la camara y el denominador no.</para>
+    ''' <para>⚠️ SIGUE SIN HISTERESIS igual, y a proposito: el argumento de arriba (un frame tiene que ser
+    ''' funcion de (escena, config), no de por donde pasaste) no cambia porque haya un gesto mas que lo
+    ''' dispare. La mitigacion que NO costaria determinismo seria reservar siempre la textura del maximo y
+    ''' dibujar adentro con un viewport del tamano logico —misma rasterizacion, misma imagen, sin recrear
+    ''' nada—, al precio de VRAM constante y de escalar las UV en el muestreo. No esta hecho: queda
+    ''' anotado aca para que la proxima vuelta parta de esto y no de "no tiene solucion sin historia".</para>
     ''' <para>Se elige convivir con eso: la alternativa era la histeresis, y un resultado que depende de por
     ''' donde pasaste no se ve de ninguna forma, ni en pantalla ni en un gate. Un tiron ocasional si.</para>
     ''' </para></summary>

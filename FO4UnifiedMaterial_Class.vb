@@ -235,6 +235,37 @@ Public Class FO4UnifiedMaterial_Class
     ' comparación quiere ver el tipo de shader. Hoy solo el shader type; ampliar con evidencia.
     Public Shared ReadOnly NifShaderOnlyPropertyNames As String() = {NameOf(NifShaderType)}
 
+    ''' <summary>Los campos solo-NIF PARA ESTE material. Es <see cref="NifShaderOnlyPropertyNames"/> más
+    ''' <c>CastShadows</c> cuando el material es un <b>.bgem</b>.
+    '''
+    ''' <para>⛔⛔ POR QUE NO PUEDE SER UNA LISTA FIJA. <c>CastShadows</c> vive en el ARCHIVO si el material
+    ''' es un .bgsm, pero el .bgem NO TIENE ese campo: ahí el único lugar donde el dato existe es el bit
+    ''' <c>Cast_Shadows</c> del shader del NIF. O sea que "esta propiedad se persiste con el material o con
+    ''' el NIF" depende del TIPO de material, y una constante compartida no puede expresar eso.</para>
+    '''
+    ''' <para><b>El defecto que arregla.</b> Al dejar de ser <c>&lt;BGSMOnly&gt;</c>, la casilla CastShadows
+    ''' pasó a verse también sobre un .bgem. Tildarla dejaba el editor de Wardrobe Manager en un estado SIN
+    ''' SALIDA: <c>Revisa_Material</c> reconstruía el material desde el archivo, <c>Deserialize</c> volvía a
+    ''' sembrar el bit desde el NIF (que todavía no lo tenía), <c>AreEqualToMaterialFile</c> veía la
+    ''' diferencia y abortaba el guardado del proyecto con "Must save materials modification first" — un
+    ''' pedido que el usuario no podía satisfacer por ningún camino, porque grabar el .bgem no persiste un
+    ''' campo que el .bgem no tiene. La única salida era destildar la casilla.</para></summary>
+    ''' <para>⛔⛔ ES UNA FUNCION Y NO UNA PROPIEDAD, Y ESO NO ES ESTILO. <see cref="GetDifferences"/>
+    ''' compara TODA propiedad publica de instancia sin indexar, por reflexion. Declarada como propiedad,
+    ''' esta se comparaba A SI MISMA: devuelve un <c>String()</c> nuevo en cada llamada, dos arrays
+    ''' distintos nunca son iguales, y el resultado era que TODO material difiere de TODO material — o sea
+    ''' el mismo bloqueo que venia a arreglar, ahora para los dos tipos. Lo destapo el gate
+    ''' <c>castshadows-editor</c>, que fallo con el fix ya aplicado.
+    ''' <para>⚠️ REGLA GENERAL PARA ESTA CLASE: agregar una propiedad publica la mete automaticamente en
+    ''' la comparacion de materiales. Si lo que se agrega no es un dato del material, tiene que ser una
+    ''' Function, un campo, o entrar en la lista de exclusion.</para></para>
+    Public Function CamposSoloDelNif() As String()
+        If Underlying_Material IsNot Nothing AndAlso Underlying_Material.GetType() Is GetType(BGEM) Then
+            Return NifShaderOnlyPropertyNames.Concat({NameOf(CastShadows)}).ToArray()
+        End If
+        Return NifShaderOnlyPropertyNames
+    End Function
+
     Public Sub ClearDirty()
         _cleanSnapshot = Clone()
     End Sub
@@ -250,7 +281,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' NIF, no al .bgsm) no debe encenderlos.</summary>
     Public Function IsMaterialFileDirty() As Boolean
         If _cleanSnapshot Is Nothing Then Return False
-        Return GetDifferences(Me, _cleanSnapshot, NifShaderOnlyPropertyNames).Count > 0
+        Return GetDifferences(Me, _cleanSnapshot, CamposSoloDelNif()).Count > 0
     End Function
 
     ''' <summary>Diagnóstico: la lista COMPLETA de propiedades que difieren del snapshot de carga
@@ -4190,6 +4221,22 @@ Public Class FO4UnifiedMaterial_Class
 
     End Sub
     Public Sub Deserialize(Memory As Byte(), type As Type, shap As INiShape, Nif As Nifcontent_Class_Manolo)
+        ' ⛔⛔ LA SIEMBRA DEL BIT VA PRIMERO, ANTES DE TODO `Exit Sub`/`Return` DE ESTE METODO.
+        ' Este dato NO viene del payload del material: viene del SHADER DEL NIF. Ponerlo despues de un
+        ' early-return lo convierte en un LECTOR CON GUARDA contra un ESCRITOR SIN GUARDA
+        ' (`Save_To_Shader` escribe el bit SIEMPRE), y esa asimetria no deja el valor viejo: lo APAGA.
+        ' Los dos caminos concretos que lo saltean:
+        '   1. `Memory.Length = 0` — material presente pero vacio.
+        '   2. el guard de payload JSON de mas abajo: los 5 BGEM vanilla de `Fallout4 - Startup.ba2`
+        '      estan guardados como texto JSON. Entraban al guard, salian por su `Return` con
+        '      `_castShadowsDelNif` en su default False, y el export de escena —que en FO4 transcribe
+        '      TODA shape— les borraba el bit 9 que el NIF traia encendido.
+        ' Es la misma clase de defecto que este archivo ya documenta para los tres campos de alpha,
+        ' vuelta a aparecer por otra puerta. Ver 00-reglas-paridad-canonica-como-no-cagarla.
+        Dim shadCast = Nif?.GetShader(shap)
+        If shadCast IsNot Nothing Then
+            _castShadowsDelNif = ShaderHelper.HasFlagSF1(shadCast, CastShadowsFlagValue(shadCast))
+        End If
         If Memory.Length = 0 Then Exit Sub
         ' P5 — JSON payload guard. A handful of vanilla materials (5 BGEM in Fallout4 - Startup.ba2)
         ' are stored as JSON text, not the binary BGSM/BGEM layout. MaterialLib's binary Deserialize
@@ -4216,16 +4263,10 @@ Public Class FO4UnifiedMaterial_Class
         ' Required so the Unknown branch below can preserve the NIF state (BGSM Unknown can't
         ' carry the alpha state independently — the byte tuple is hardcoded to (0,6,7) by ME).
         ApplyAlphaPropertyFromNif(shap, Nif)
-        ' Step 1b: y el bit Cast_Shadows de SF1, por el MISMO motivo y con el mismo patron.
-        ' ⛔⛔ ESTE ES EL CAMINO QUE IMPORTA. Cuando el shader nombra un .bgem/.bgsm, GetRelatedMaterial
-        ' llama ACA y NUNCA a Create_From_Shader — o sea que sembrar el bit alla sola no alcanzaba, y para
-        ' todo material que viene de un archivo (que es el caso de cualquier mod) el respaldo quedaba en
-        ' False. Con un BGSM da igual —el getter usa el campo del material— pero el .bgem NO TIENE ese
-        ' campo, asi que sin esto ninguna shape con effect shader podia proyectar sombra.
-        Dim shadCast = Nif?.GetShader(shap)
-        If shadCast IsNot Nothing Then
-            _castShadowsDelNif = ShaderHelper.HasFlagSF1(shadCast, CastShadowsFlagValue(shadCast))
-        End If
+        ' (El bit Cast_Shadows se sembro AL TOPE del metodo, antes de los early-returns: ver el bloque
+        ' de arriba. Cuando el shader nombra un .bgem/.bgsm, GetRelatedMaterial llama ACA y NUNCA a
+        ' Create_From_Shader, asi que sembrarlo solo alla no alcanzaba; y el .bgem no tiene el campo,
+        ' con lo cual el bit del NIF es su UNICA sede.)
         ' Step 2: deserialize the BGSM/BGEM payload. Reassigns Underlying_Material — anything
         ' Step 1 wrote into Underlying_Material (AlphaTest, AlphaBlendMode, etc.) is discarded;
         ' only the three private backing fields survive.
@@ -4686,7 +4727,7 @@ Public Class FO4UnifiedMaterial_Class
     ''' "grabar el material" cuando el único cambio es el shader type (que vive en el NIF).</summary>
     Public Function AreEqualToMaterialFile(b As FO4UnifiedMaterial_Class) As Boolean
         If Me Is Nothing OrElse b Is Nothing Then Return Me Is b
-        Return GetDifferences(Me, b, NifShaderOnlyPropertyNames).Count = 0
+        Return GetDifferences(Me, b, CamposSoloDelNif()).Count = 0
     End Function
 
     ' --- ShouldSerialize / Reset for Color properties (PropertyGrid bold detection) ---

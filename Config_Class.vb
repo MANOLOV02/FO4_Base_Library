@@ -446,9 +446,30 @@ Public Class Config_App
             ' que juego de opciones se escribio el archivo y aca se rellenan SOLO las posteriores; lo
             ' que el usuario si eligio no se toca. Al agregar una opcion: subir la constante en
             ' RecalcTBN y agregar su rama.
+            ' La migracion en si es PURA y vive en RepararOpcionesTBN: aca solo se decide si hace
+            ' falta, se aplica y se graba. Separarla es lo que permite que el gate `weld-epsilon` la
+            ' pruebe sin tocar el config del usuario ni el disco.
             If Current.Setting_TBN.OptionsVersion < RecalcTBN.VersionDeOpcionesTBN Then
-                Dim d = RecalcTBN.DefaultTBNOptions()
-                Dim t = Current.Setting_TBN
+                Current.Setting_TBN = RepararOpcionesTBN(Current.Setting_TBN)
+                SaveConfig()
+            End If
+        End If
+    End Sub
+
+    ''' <summary>⛔ MIGRACION POR VERSION DE OPCIONES, PURA. Una opcion NUEVA no esta en el config.json
+    ''' de un usuario existente, y <c>TBNOptions</c> es una Structure: el deserializador la deja en
+    ''' False/0. O sea que la estrenaria APAGADA sin haberlo pedido, en silencio.
+    ''' <c>OptionsVersion</c> dice con que juego de opciones se escribio el archivo y aca se rellenan SOLO
+    ''' las posteriores; lo que el usuario SI eligio no se toca.
+    ''' <para>Al agregar una opcion: subir <c>RecalcTBN.VersionDeOpcionesTBN</c>, agregar su rama, y sumar
+    ''' el caso al gate <c>weld-epsilon</c> de ParityGate.</para>
+    ''' <para>⛔ ES PURA A PROPOSITO: no lee ni escribe <c>Current</c> ni el disco. Estando enterrada
+    ''' adentro de LoadConfig no habia forma de probarla sin arrancar la app con un config fabricado, y
+    ''' por eso se le escaparon dos claves durante dos versiones.</para></summary>
+    Friend Shared Function RepararOpcionesTBN(original As RecalcTBN.TBNOptions) As RecalcTBN.TBNOptions
+        Dim d = RecalcTBN.DefaultTBNOptions()
+        Dim t = original
+        If t.OptionsVersion >= RecalcTBN.VersionDeOpcionesTBN Then Return t
                 If t.OptionsVersion < 1 Then
                     ' Opcion NUEVA: sin esto quedaria en False para todo usuario existente.
                     t.DeterministicOnCollapse = d.DeterministicOnCollapse
@@ -474,12 +495,27 @@ Public Class Config_App
                     ' practicamente todos: la migracion a v1 ya habia forzado EpsilonPos a 0.
                     If t.EpsilonPos > 0.0 Then t.EpsilonPos = Math.Sqrt(t.EpsilonPos)
                 End If
-                t.OptionsVersion = RecalcTBN.VersionDeOpcionesTBN
-                Current.Setting_TBN = t
-                SaveConfig()
-            End If
-        End If
-    End Sub
+                If t.OptionsVersion < 3 Then
+                    ' ⛔ LOS DOS EPSILON DE WELDING NUNCA SE MIGRARON. `TBNOptions` es una Structure, asi
+                    ' que toda clave ausente en el JSON queda en el CERO DEL TIPO, no en su default. Las
+                    ' migraciones a v1 y v2 rellenaron DeterministicOnCollapse, EpsilonPos y
+                    ' WeldByPositionOnly, y a estas dos se las saltearon.
+                    ' Lo que hacia el 0: el dialogo lo ACOTA en silencio al minimo del control (1e-12) al
+                    ' mostrarlo, y despues, apenas el usuario toca CUALQUIER otra casilla de la pestana,
+                    ' `VolcarRenderEnModelo` reescribe las diez propiedades de una sola vez — o sea que el
+                    ' valor acotado se COMMITEA sin que nadie lo haya elegido. El mecanismo viejo de WM
+                    ' (`_cargaCompleta`) dejaba que la asignacion tirara y NO guardaba nada; al mudar la
+                    ' pestana al dialogo compartido se perdio esa proteccion.
+                    ' ⛔ El 0 sirve de CENTINELA porque NO es alcanzable desde la UI: el minimo de los dos
+                    ' NumericUpDown es 1e-12 (ver LightRigForm.Designer). Un 0 en el JSON solo puede venir
+                    ' de una clave que no estaba. Es el patron de 10-stack-json-structure-defaults.
+                    If t.WeldPosEpsilon <= 0.0 Then t.WeldPosEpsilon = d.WeldPosEpsilon
+                    If t.WeldUVEpsilon <= 0.0 Then t.WeldUVEpsilon = d.WeldUVEpsilon
+                End If
+        t.OptionsVersion = RecalcTBN.VersionDeOpcionesTBN
+        Return t
+    End Function
+
 
     Public Shared Function Check_FOFolder() As Boolean
         If IO.File.Exists(Current.FO4ExePath) = False Then Return False
