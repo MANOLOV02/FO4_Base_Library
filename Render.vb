@@ -5675,7 +5675,9 @@ Public Class PreviewModel
                 ' RESERVA FIJA: mismo lado que el mapa del personaje, mismas capas. Los dos numeros salen
                 ' de la config, asi que Ensure devuelve True sin recrear nada mientras el usuario no toque
                 ' la calidad ni las casillas.
-                If Not ParentControl.GroundShadowTarget.Ensure(cfg.MapSize, _shadowCount) Then
+                ' `media:=True` = 16 bits de profundidad: la MITAD de VRAM en este array. Va aca y no en el
+                ' del personaje, y el porque esta medido en el doc de Ensure.
+                If Not ParentControl.GroundShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=True) Then
                     ' El target no se pudo reservar: este frame no hay receptor, y los encuadres del frame
                     ' anterior no valen. Misma razon que la rama de arriba.
                     OlvidarEncuadresDeSuelo()
