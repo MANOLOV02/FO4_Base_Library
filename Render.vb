@@ -802,13 +802,23 @@ Public Class PreviewControl
     ''' loop de upload (UpdateSkinBuffers_GL + UpdateBoneMatricesSSBO) cuesta. El guard con
     ''' Context.IsCurrent es 100% equivalente (el contexto queda current igual) y evita el switch
     ''' redundante. Fallback a MakeCurrent si IsCurrent falla → peor caso = comportamiento actual.</summary>
-    Public Sub EnsureContextCurrent()
+    ''' <returns>True si el contexto quedó current. ⛔ DEVUELVE Boolean porque los llamadores que
+    ''' BORRAN handles necesitan saberlo: los nombres de GL son por contexto y borrar creyendo que se hizo
+    ''' current, cuando no se pudo, mata texturas de OTRO preview.</returns>
+    ''' <remarks>⛔ `MakeCurrent()` estaba FUERA del `Try`: el `Catch` sólo cubría el chequeo de
+    ''' `IsCurrent`. Sobre un control ya dispuesto —el caso normal en un teardown— tiraba
+    ''' `ObjectDisposedException('PreviewControl')` y escapaba. Ahora todo el cuerpo está protegido y el
+    ''' control dispuesto se responde con False, que es la verdad: no hay contexto que hacer current.</remarks>
+    Public Function EnsureContextCurrent() As Boolean
         Try
-            If Context IsNot Nothing AndAlso Context.IsCurrent Then Return
+            If IsDisposed OrElse Disposing Then Return False
+            If Context IsNot Nothing AndAlso Context.IsCurrent Then Return True
+            MakeCurrent()
+            Return True
         Catch
+            Return False
         End Try
-        MakeCurrent()
-    End Sub
+    End Function
 
     ''' <summary>
     ''' The single hot path. Reads Intent.DirtyFlags and executes the minimum work needed.

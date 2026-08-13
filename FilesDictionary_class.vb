@@ -260,23 +260,33 @@ Public Class FilesDictionary_class
         For Each kvp In _archivePool
             Dim bag = kvp.Value
             Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
-            ' ⛔ SE DEVUELVE EL VIVO EN EL ACTO, NO AL FINAL. Antes se drenaba la bag ENTERA a una lista y
-            ' recién después se re-agregaban los vivos: durante toda esa ventana la bag está VACÍA, y un
-            ' `LeaseReader` concurrente ve vacío y construye un `BethesdaReader` nuevo — el parseo completo
-            ' de la tabla del archive que este pool existe para evitar. Poniéndolo de vuelta enseguida, la
-            ' ventana baja a UNA entrada.
-            ' El loop se acota al conteo INICIAL: sin eso, un vivo re-agregado se puede volver a tomar y el
-            ' While no termina nunca.
-            Dim aRevisar = bag.Count
-            For i As Integer = 1 To aRevisar
-                If Not bag.TryTake(entry) Then Exit For
-                If (ahora - entry.DevueltoEn) < umbral AndAlso bag.Count < MaxPooledReadersPerArchive Then
-                    bag.Add(entry)             ' se usó recién y hay lugar: vuelve al pool YA
+            ' ⛔⛔ SE DRENA LA BAG ENTERA Y RECIEN DESPUES SE DEVUELVEN LOS VIVOS.
+            ' Probe a devolverlos EN EL ACTO para achicar la ventana en que la bag queda vacia, y esta MAL:
+            ' `ConcurrentBag` mantiene una lista POR HILO y `TryTake` saca de la del hilo actual antes de
+            ' robarle a otro. El timer corre en un hilo del pool con lista local vacia, asi que al re-agregar
+            ' el reader fresco quedaba en SU propia lista y el `TryTake` siguiente devolvia EL MISMO: las
+            ' demas entradas no se examinaban nunca y ningun reader ocioso se liberaba mientras hubiera uno
+            ' fresco encima. Peor que el problema que queria evitar — retiene el FileStream y la tabla de
+            ' entradas (~100k nombres en un BSA) por archive, para siempre.
+            ' La ventana con la bag vacia es el precio y es corto; que un LeaseReader concurrente construya
+            ' un reader de mas es barato al lado de no liberar nunca.
+            Dim aConservar As New List(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long))()
+            While bag.TryTake(entry)
+                If (ahora - entry.DevueltoEn) < umbral Then
+                    aConservar.Add(entry)
                 Else
-                    ' Ocioso, o el cap ya está cubierto. `ReturnReader` chequea el cap antes de agregar, así
-                    ' que sin este chequeo acá los dos juntos podían dejar el pool POR ENCIMA del máximo.
                     Try : entry.Reader.Dispose() : Catch : End Try
                     Try : entry.Stream.Dispose() : Catch : End Try
+                End If
+            End While
+            ' El cap se respeta tambien acá: `ReturnReader` lo chequea antes de agregar, asi que sin esto
+            ' los dos juntos podian dejar el pool POR ENCIMA del maximo.
+            For Each vivo In aConservar
+                If bag.Count < MaxPooledReadersPerArchive Then
+                    bag.Add(vivo)
+                Else
+                    Try : vivo.Reader.Dispose() : Catch : End Try
+                    Try : vivo.Stream.Dispose() : Catch : End Try
                 End If
         Next
         Next

@@ -54,7 +54,7 @@ Public NotInheritable Class RaceBehaviorResolver
     ' El único que se escribe DESPUÉS de publicar los mapas ⇒ tiene que ser concurrente de por sí.
     Private Shared _rbCache As Concurrent.ConcurrentDictionary(Of UInteger, ResolvedRaceBehavior)
     Private Shared _kwMapsPm As PluginManager                          ' pm con el que se construyeron (rebuild si cambia)
-    ' Los otros cuatro son de sólo-lectura una vez construidos: se arman bajo este lock y se publican con
+    ' Los otros TRES son de sólo-lectura una vez construidos: se arman bajo este lock y se publican con
     ' `_kwMapsPm` ÚLTIMO y con escritura volátil, que es la barrera que hace visible al resto.
     Private Shared ReadOnly _mapsLock As New Object()
 
@@ -102,7 +102,7 @@ Public NotInheritable Class RaceBehaviorResolver
         End If
             Threading.Volatile.Write(_kwType, kt)
             Threading.Volatile.Write(_raceIdentityKw, ident)
-            _parsedIdles = idles
+            Threading.Volatile.Write(_parsedIdles, idles)
             Threading.Volatile.Write(_rbCache, New Concurrent.ConcurrentDictionary(Of UInteger, ResolvedRaceBehavior)())  ' nuevo pm → invalida el cache
             ' ⛔ ÚLTIMO Y CON BARRERA: es lo que hace visibles a los cuatro de arriba. Si se publicara
             ' antes (o sin `Volatile.Write`, que permite reordenar), otro hilo podría ver el pm nuevo y
@@ -207,8 +207,11 @@ Public NotInheritable Class RaceBehaviorResolver
     ''' que incluye los alcanzados por hkbBehaviorReferenceGenerator). Acá solo gatea por condiciones GetIsRace (CTDA).
     ''' Categoría = el evento ENAM del propio record (campo autoritativo, sin manipular strings del filename).</summary>
     Private Shared Sub ResolveRaceIdles(rb As ResolvedRaceBehavior)
-        If _parsedIdles Is Nothing Then Return
-        For Each idle In _parsedIdles   ' parseados 1×/pm en EnsureKeywordMaps — acá SOLO se filtra por raza (barato)
+        ' ⛔ UNA sola lectura, con barrera. Era el unico de los cinco campos sin `Volatile` y ademas se
+        ' leia DOS veces del campo: el `Is Nothing` podia mirar una instancia y el `For Each` otra.
+        Dim idles = Threading.Volatile.Read(_parsedIdles)
+        If idles Is Nothing Then Return
+        For Each idle In idles   ' parseados 1×/pm en EnsureKeywordMaps — acá SOLO se filtra por raza (barato)
             ' GetIsRace: si hay condiciones positivas, alguna debe ser esta raza; si hay una negativa para esta raza, excluir.
             If idle.RaceConditions.Count > 0 Then
                 Dim pos = idle.RaceConditions.Where(Function(c) c.Positive).ToList()
