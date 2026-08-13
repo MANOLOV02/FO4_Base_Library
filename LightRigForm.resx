@@ -125,6 +125,9 @@
 On (default): the rig turns WITH the camera, like a mesh viewer. The model stays evenly lit from every angle, which is what you want when inspecting geometry.
 Shadows follow either way: every casting light projects from the very same direction the shader lights it with.</value>
   </data>
+  <data name="chkDepth16.ToolTip" xml:space="preserve">
+    <value>Half-precision depth: halves the VRAM shown above. This map is orthographic with a short depth range, so 16 bits still resolve about 30x finer than one texel -- measured, 244 pixels out of 648000 differ by 1/255. Off (24-bit) is the default so the render stays identical to previous versions.</value>
+  </data>
   <data name="chkRecalcNormals.ToolTip" xml:space="preserve">
     <value>Recalculate normals and the tangent basis when geometry is loaded, after morphs deform it, and when building a NIF. Without it a morphed mesh keeps the tangent basis of its un-morphed shape, which is the frame the shader reads the normal map in — and the built NIF is written that way too.</value>
   </data>

@@ -5597,7 +5597,7 @@ Public Class PreviewModel
         ' que el ARNES lee, y en un frame que no dibujo ni un mapa reportaba "2 casters". Dos checks
         ' (`strength-cero` y `sin-casters`) se apoyan justo en ese numero: quedaban midiendo contra un valor
         ' que describe una intencion, no lo que se dibujo.
-        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=True) Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
+        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=cfg.Depth16) Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
 
         ' ⛔ NI UN glGet NI UN ARRAY POR FRAME ACA. El doc de ShadowMapTarget.BindForWrite dice que los
         ' glGet de framebuffer son los que fuerzan a varios drivers a vaciar la lista de comandos diferida
@@ -5675,9 +5675,8 @@ Public Class PreviewModel
                 ' RESERVA FIJA: mismo lado que el mapa del personaje, mismas capas. Los dos numeros salen
                 ' de la config, asi que Ensure devuelve True sin recrear nada mientras el usuario no toque
                 ' la calidad ni las casillas.
-                ' `media:=True` = 16 bits de profundidad: la MITAD de VRAM en este array. Va aca y no en el
-                ' del personaje, y el porque esta medido en el doc de Ensure.
-                If Not ParentControl.GroundShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=True) Then
+                ' Misma precision que el mapa del personaje: es UNA perilla para toda la feature, no dos.
+                If Not ParentControl.GroundShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=cfg.Depth16) Then
                     ' El target no se pudo reservar: este frame no hay receptor, y los encuadres del frame
                     ' anterior no valen. Misma razon que la rama de arriba.
                     OlvidarEncuadresDeSuelo()

@@ -32,6 +32,7 @@ Partial Class LightRigForm
         lblK_El = New Label()
         tK_El = New TinySliderTextBox()
         btnKeyColor = New Button()
+        chkCastKey = New CheckBox()
         grpFillL = New GroupBox()
         lblL_Str = New Label()
         tbFillL = New TinySliderTextBox()
@@ -40,6 +41,7 @@ Partial Class LightRigForm
         lblL_El = New Label()
         tL_El = New TinySliderTextBox()
         btnFillLColor = New Button()
+        chkCastFillL = New CheckBox()
         grpFillR = New GroupBox()
         lblR_Str = New Label()
         tbFillR = New TinySliderTextBox()
@@ -48,6 +50,7 @@ Partial Class LightRigForm
         lblR_El = New Label()
         tR_El = New TinySliderTextBox()
         btnFillRColor = New Button()
+        chkCastFillR = New CheckBox()
         grpBack = New GroupBox()
         lblB_Str = New Label()
         tbBack = New TinySliderTextBox()
@@ -56,6 +59,7 @@ Partial Class LightRigForm
         lblB_El = New Label()
         tB_El = New TinySliderTextBox()
         btnBackColor = New Button()
+        chkCastBack = New CheckBox()
         grpPresets = New GroupBox()
         lblPreset = New Label()
         cmbPreset = New ComboBox()
@@ -76,11 +80,8 @@ Partial Class LightRigForm
         cmbBackground = New ColorComboBox()
         grpShadows = New GroupBox()
         chkShadows = New CheckBox()
-        chkCastKey = New CheckBox()
-        chkCastFillL = New CheckBox()
-        chkCastFillR = New CheckBox()
-        chkCastBack = New CheckBox()
         lblShadowVram = New Label()
+        chkDepth16 = New CheckBox()
         chkGroundShadow = New CheckBox()
         lblShadowQuality = New Label()
         cmbShadowQuality = New ComboBox()
@@ -196,9 +197,6 @@ Partial Class LightRigForm
         tbKey.ThumbColor = SystemColors.HotTrack
         tbKey.ThumbRadius = 4F
         tbKey.TickFrequency = 0.25R
-        ' ⛔ ESTE TEXTO DECIA "and the only one that casts shadows" Y DEJO DE SER CIERTO al pasar a una
-        ' casilla de casteo POR LUZ. Peor: la casilla que lo desmiente quedo a 34 px del slider, adentro del
-        ' mismo grupo. Un tooltip que contradice al control de al lado es un defecto, no ruido.
         ToolTip1.SetToolTip(tbKey, "Strength of the KEY light: the main one, and the one that stands in for the engine's single directional. Whether it casts is the Shadows box.")
         tbKey.TrackColor = SystemColors.ControlDark
         ' 
@@ -263,26 +261,24 @@ Partial Class LightRigForm
         tK_El.TrackColor = SystemColors.ControlDark
         ' 
         ' btnKeyColor
-        '
+        ' 
         btnKeyColor.Location = New Point(317, 24)
         btnKeyColor.Name = "btnKeyColor"
         btnKeyColor.Size = New Size(90, 28)
         btnKeyColor.TabIndex = 3
         ToolTip1.SetToolTip(btnKeyColor, "Tint of the key light. Strength is the slider on the left.")
         btnKeyColor.UseVisualStyleBackColor = False
-        '
+        ' 
         ' chkCastKey
-        '
+        ' 
         chkCastKey.AutoSize = True
         chkCastKey.Location = New Point(317, 58)
         chkCastKey.Name = "chkCastKey"
+        chkCastKey.Size = New Size(73, 19)
         chkCastKey.TabIndex = 4
         chkCastKey.Text = "Shadows"
-        ' Las cuatro casillas comparten el mismo tooltip a proposito: dicen el COSTO, que es lo unico que el
-        ' usuario no puede deducir mirando la pantalla. Sin esto, la casilla nueva era el unico control del
-        ' dialogo sin explicacion, justo el que reserva 16 MB por click.
         ToolTip1.SetToolTip(chkCastKey, "This light writes its own shadow map: more VRAM and one PCF lookup per pixel. Only the key casts by default.")
-        '
+        ' 
         ' grpFillL
         ' 
         grpFillL.Controls.Add(lblL_Str)
@@ -392,23 +388,24 @@ Partial Class LightRigForm
         tL_El.TrackColor = SystemColors.ControlDark
         ' 
         ' btnFillLColor
-        '
+        ' 
         btnFillLColor.Location = New Point(317, 24)
         btnFillLColor.Name = "btnFillLColor"
         btnFillLColor.Size = New Size(90, 28)
         btnFillLColor.TabIndex = 3
         ToolTip1.SetToolTip(btnFillLColor, "Tint of the left fill light.")
         btnFillLColor.UseVisualStyleBackColor = False
-        '
+        ' 
         ' chkCastFillL
-        '
+        ' 
         chkCastFillL.AutoSize = True
         chkCastFillL.Location = New Point(317, 58)
         chkCastFillL.Name = "chkCastFillL"
+        chkCastFillL.Size = New Size(73, 19)
         chkCastFillL.TabIndex = 4
         chkCastFillL.Text = "Shadows"
         ToolTip1.SetToolTip(chkCastFillL, "This light writes its own shadow map: more VRAM and one PCF lookup per pixel. Only the key casts by default.")
-        '
+        ' 
         ' grpFillR
         ' 
         grpFillR.Controls.Add(lblR_Str)
@@ -518,23 +515,24 @@ Partial Class LightRigForm
         tR_El.TrackColor = SystemColors.ControlDark
         ' 
         ' btnFillRColor
-        '
+        ' 
         btnFillRColor.Location = New Point(317, 24)
         btnFillRColor.Name = "btnFillRColor"
         btnFillRColor.Size = New Size(90, 28)
         btnFillRColor.TabIndex = 3
         ToolTip1.SetToolTip(btnFillRColor, "Tint of the right fill light.")
         btnFillRColor.UseVisualStyleBackColor = False
-        '
+        ' 
         ' chkCastFillR
-        '
+        ' 
         chkCastFillR.AutoSize = True
         chkCastFillR.Location = New Point(317, 58)
         chkCastFillR.Name = "chkCastFillR"
+        chkCastFillR.Size = New Size(73, 19)
         chkCastFillR.TabIndex = 4
         chkCastFillR.Text = "Shadows"
         ToolTip1.SetToolTip(chkCastFillR, "This light writes its own shadow map: more VRAM and one PCF lookup per pixel. Only the key casts by default.")
-        '
+        ' 
         ' grpBack
         ' 
         grpBack.Controls.Add(lblB_Str)
@@ -644,23 +642,24 @@ Partial Class LightRigForm
         tB_El.TrackColor = SystemColors.ControlDark
         ' 
         ' btnBackColor
-        '
+        ' 
         btnBackColor.Location = New Point(317, 24)
         btnBackColor.Name = "btnBackColor"
         btnBackColor.Size = New Size(90, 28)
         btnBackColor.TabIndex = 3
         ToolTip1.SetToolTip(btnBackColor, "Tint of the back light.")
         btnBackColor.UseVisualStyleBackColor = False
-        '
+        ' 
         ' chkCastBack
-        '
+        ' 
         chkCastBack.AutoSize = True
         chkCastBack.Location = New Point(317, 58)
         chkCastBack.Name = "chkCastBack"
+        chkCastBack.Size = New Size(73, 19)
         chkCastBack.TabIndex = 4
         chkCastBack.Text = "Shadows"
         ToolTip1.SetToolTip(chkCastBack, "This light writes its own shadow map: more VRAM and one PCF lookup per pixel. Only the key casts by default.")
-        '
+        ' 
         ' grpPresets
         ' 
         grpPresets.Controls.Add(lblPreset)
@@ -874,6 +873,7 @@ Partial Class LightRigForm
         ' 
         grpShadows.Controls.Add(chkShadows)
         grpShadows.Controls.Add(lblShadowVram)
+        grpShadows.Controls.Add(chkDepth16)
         grpShadows.Controls.Add(chkGroundShadow)
         grpShadows.Controls.Add(lblShadowQuality)
         grpShadows.Controls.Add(cmbShadowQuality)
@@ -897,22 +897,23 @@ Partial Class LightRigForm
         chkShadows.TabIndex = 0
         chkShadows.Text = "Cast shadows"
         ' 
-        ' ⛔ LAS CUATRO CASILLAS DE CASTEO VIVEN EN SU PROPIO GRUPO DE LUZ, no aca. Estuvieron un rato en
-        ' esta fila porque los grupos de luz no tenian lugar: sus tres filas estaban llenas y la muestra de
-        ' color ocupaba las tres de alto. La salida no fue agrandar el dialogo —la columna derecha ya termina
-        ' en y=520 sobre un ClientSize de 568— sino ACHICAR la muestra a una sola fila, que es todo lo que
-        ' necesita para mostrar un color, y usar la fila que quedo libre debajo. Asi cada luz tiene junto lo
-        ' que le pertenece: su fuerza, su direccion, su tinte y si castea.
-        ' Lo que SI se queda aca es el cartel de VRAM: es la consecuencia AGREGADA de las cuatro casillas,
-        ' y vive al lado de la calidad, que es el otro factor de esa cuenta.
-        '
         ' lblShadowVram
-        '
+        ' 
         lblShadowVram.AutoSize = True
         lblShadowVram.Location = New Point(317, 60)
         lblShadowVram.Name = "lblShadowVram"
         lblShadowVram.Size = New Size(0, 15)
         lblShadowVram.TabIndex = 5
+        ' 
+        ' chkDepth16
+        ' 
+        chkDepth16.AutoSize = True
+        chkDepth16.Location = New Point(251, 60)
+        chkDepth16.Name = "chkDepth16"
+        chkDepth16.Size = New Size(57, 19)
+        chkDepth16.TabIndex = 9
+        chkDepth16.Text = "16-bit"
+        ToolTip1.SetToolTip(chkDepth16, resources.GetString("chkDepth16.ToolTip"))
         ' 
         ' chkGroundShadow
         ' 
@@ -937,7 +938,7 @@ Partial Class LightRigForm
         cmbShadowQuality.DropDownStyle = ComboBoxStyle.DropDownList
         cmbShadowQuality.Location = New Point(87, 56)
         cmbShadowQuality.Name = "cmbShadowQuality"
-        cmbShadowQuality.Size = New Size(224, 23)
+        cmbShadowQuality.Size = New Size(158, 23)
         cmbShadowQuality.TabIndex = 1
         ' 
         ' lblShadowSoft
@@ -1566,6 +1567,7 @@ Partial Class LightRigForm
     Friend WithEvents chkCastFillR As CheckBox
     Friend WithEvents chkCastBack As CheckBox
     Friend WithEvents lblShadowVram As Label
+    Friend WithEvents chkDepth16 As CheckBox
     Friend WithEvents chkGroundShadow As CheckBox
     Friend WithEvents chkLightsFollowCamera As CheckBox
     Friend WithEvents lblShadowQuality As Label

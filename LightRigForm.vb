@@ -1,4 +1,4 @@
-Imports FO4_Base_Library.Config_App
+﻿Imports FO4_Base_Library.Config_App
 
 ''' <summary>
 ''' Editor del rig de luces del previewer. Opera SIEMPRE sobre el rig del JUEGO ACTIVO
@@ -256,6 +256,7 @@ Partial Public Class LightRigForm
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         chkShadows.Checked = sh.Enabled
         chkGroundShadow.Checked = sh.GroundShadow
+        chkDepth16.Checked = sh.Depth16
         ' Anclaje del rig. Vive en Config_App como el resto de las preferencias del visor y NO en
         ' PreviewLightRig: no es parte del set calibrado —no cambia una sola intensidad ni un angulo— sino
         ' de COMO se interpreta. Metiendolo en el rig habria que versionar el schema y ademas tocarlo
@@ -409,14 +410,28 @@ Partial Public Class LightRigForm
                 End If
             Next
         End If
+        ' ⛔ NINGUNA DE LAS DOS CASILLAS ANUNCIA "(follows the camera)" EN SU TEXTO — decision del usuario.
+        ' La del suelo lo decia cuando `Setting_LightsFollowCamera` estaba prendido, para explicar por que
+        ' seguia habilitada aunque la elevacion AUTORADA del rig fuera baja: con el rig pegado a la camara la
+        ' direccion efectiva la decide el arrastre, asi que el corte no se puede evaluar de antemano y la
+        ' casilla se deja habilitada siempre.
+        ' Esa razon SIGUE VIVA y por eso no se borro: se movio al TOOLTIP. El rotulo se leia mal —parecia una
+        ' propiedad del receptor de suelo cuando en realidad describe al rig entero— y encima crecia justo en
+        ' el control mas ancho del grupo.
         If sigueALaCamara Then
+            chkGroundShadow.Text = "Shadow on the ground"
+            ToolTip1.SetToolTip(chkGroundShadow,
+                "The rig follows the camera, so each light's effective elevation depends on where you drag: " &
+                "the ground catcher stays available and simply does not draw for a light that ends up too low.")
+        Else
             ' ⛔ CORTO: el gate `ui-layout` del ShadowGate mide el ancho real del control contra el interior
             ' del grupo, y un texto de una linea mas largo que el original lo saca del recuadro. Ya me paso
             ' con "(follows the camera: shows when the light is high enough)" — 458 px contra 418.
-            chkGroundShadow.Text = "Shadow on the ground (follows the camera)"
-        Else
             chkGroundShadow.Text = If(puede, "Shadow on the ground",
                                       $"Shadow on the ground (needs a casting light above {ElevacionMinima:0.00} deg)")
+            ToolTip1.SetToolTip(chkGroundShadow,
+                $"Draws the character's silhouette on the floor plane. Needs at least one casting light above " &
+                $"{ElevacionMinima:0.00} deg: below that the projected shadow has no finite framing.")
         End If
         chkGroundShadow.Enabled = puede AndAlso chkShadows.Checked
         ' ⛔ Y EL CARTEL DE VRAM SE REFRESCA ACA, que es el unico lugar donde se decide `chkGroundShadow.Enabled`
@@ -473,6 +488,11 @@ Partial Public Class LightRigForm
                                                        VolcarSombrasEnModelo()
                                                        ActualizarCartelDeVram()
                                                    End Sub
+        ' La precision parte la cuenta de VRAM al medio, asi que el cartel se refresca con ella.
+        AddHandler chkDepth16.CheckedChanged, Sub(sender, e)
+                                                  VolcarSombrasEnModelo()
+                                                  ActualizarCartelDeVram()
+                                              End Sub
         AddHandler chkLightsFollowCamera.CheckedChanged, Sub(sender, e)
                                                              If _preventchanges Then Return
                                                              Config_App.Current.Setting_LightsFollowCamera = chkLightsFollowCamera.Checked
@@ -648,6 +668,7 @@ Partial Public Class LightRigForm
         ActualizarCartelDeVram()
         lblShadowQuality.Enabled = on_
         cmbShadowQuality.Enabled = on_
+        chkDepth16.Enabled = on_
         lblShadowSoft.Enabled = on_
         tShadowSoft.Enabled = on_
         lblShadowStrength.Enabled = on_
@@ -692,11 +713,13 @@ Partial Public Class LightRigForm
         ' alguno vuelve a 24 y esto no se actualiza, el cartel miente — y un cartel que miente sobre bytes es
         ' peor que no tenerlo.
         Dim conSuelo As Boolean = chkGroundShadow.Checked AndAlso chkGroundShadow.Enabled
-        Dim bytesPorTexel As Double = 2.0 + If(conSuelo, 2.0, 0.0)
+        ' 24 bits los guarda el driver en 32 = 4 B por texel; 16 bits son 2. Por array.
+        Dim bytesPorArray As Double = If(chkDepth16.Checked, 2.0, 4.0)
+        Dim bytesPorTexel As Double = bytesPorArray * If(conSuelo, 2.0, 1.0)
         Dim mb As Double = CDbl(lado) * lado * bytesPorTexel * n / (1024.0 * 1024.0)
         lblShadowVram.Text = $"{mb:0} MB"
         ToolTip1.SetToolTip(lblShadowVram,
-            $"{n} shadow map(s) of {lado}x{lado} at 16-bit depth" &
+            $"{n} shadow map(s) of {lado}x{lado} at {If(chkDepth16.Checked, 16, 24)}-bit depth" &
             If(conSuelo, $", plus {n} more for the ground catcher.", "."))
     End Sub
 
@@ -709,6 +732,7 @@ Partial Public Class LightRigForm
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         sh.Enabled = chkShadows.Checked
         sh.GroundShadow = chkGroundShadow.Checked
+        sh.Depth16 = chkDepth16.Checked
         If _mapSizeFueraDeLista > 0 Then
             ' El usuario tiene un tamano propio y todavia no eligio uno de la lista: se conserva.
             sh.MapSize = _mapSizeFueraDeLista

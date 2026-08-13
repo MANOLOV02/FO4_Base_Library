@@ -84,6 +84,29 @@ Public Structure PreviewShadowSettings
     ''' O sea que habia un gate verde probando que este comentario era falso.</para></summary>
     Public Property GroundShadow As Boolean
 
+    ''' <summary>16 bits de profundidad en vez de 24 ⇒ **la MITAD de VRAM** en los dos arrays. Default
+    ''' **False** (24 bits).
+    '''
+    ''' <para>⭐ POR QUE ES DEFENDIBLE Y ESTA MEDIDO: la cuantizacion no la fija la precision del formato
+    ''' sino el RANGO. Este ortho abarca ~161 u, asi que 16 bits dan 161/65536 = <b>0,0025 u</b> de escalon
+    ''' contra un TEXEL de <b>0,0748 u</b> a 2048 — 30 veces mas fino que la huella del texel, y todavia 15
+    ''' veces mas fino a 4096. Lo que arruina un mapa de 16 bits en un juego es la NO LINEALIDAD del depth
+    ''' en proyeccion PERSPECTIVA; un ortho de rango corto no la tiene.</para>
+    ''' <para>Medido: en el mapa del SUELO no mueve un solo pixel. En el del PERSONAJE mueve <b>244 px de
+    ''' 648.000 (0,038 %) con delta exactamente 1</b> — el bit menos significativo del encode, en la banda
+    ''' de PCF.</para>
+    ''' <para>⭐ Y lo que compra no es "menos memoria" sino poder gastarla en RESOLUCION, que es lo unico
+    ''' que se ve en el borde: 16 bits a 4096 (texel 0,0374 u) contra 24 a 2048 (texel 0,0748 u) cuesta el
+    ''' doble y se ve el doble de fino; 16 a 4096 se ve igual que 24 a 4096 por la MITAD.</para>
+    ''' <para>⛔ DEFAULT 24 A PROPOSITO, aunque 16 sea lo tecnicamente indicado para este ortho: asi el
+    ''' render por default queda BIT A BIT identico al anterior y el check `ab-default` del arnes puede
+    ''' seguir exigiendo 0 px, que es el instrumento mas fuerte del paquete. Quien quiera la mitad de VRAM
+    ''' la tilda.</para>
+    ''' <para>⚠️ Structure: un config guardado ANTES de que existiera este campo lo deserializa en False —
+    ''' que es JUSTO el default deseado. Coincidencia afortunada, no diseno: si algun dia el default pasara
+    ''' a True, haria falta un centinela o renombrar la clave (ver Config_App.Setting_ShadowMaps_*).</para></summary>
+    Public Property Depth16 As Boolean
+
     ''' <summary>Tope del radio de PCF. No es configurable: acota el costo del kernel en el fragment.</summary>
     Public Const MaxPcfRadius As Integer = 4
 
