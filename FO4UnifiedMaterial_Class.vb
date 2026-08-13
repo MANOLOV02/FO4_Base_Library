@@ -4658,9 +4658,26 @@ Public Class FO4UnifiedMaterial_Class
             Return diffs
         End If
 
+        ' ⛔⛔ ESTE DIFF SE ARMA POR REFLEXIÓN SOBRE LAS PROPIEDADES **PUBLIC** DE ESTA CLASE.
+        ' O sea: `Public` acá NO es decoración de superficie, es lo que hace que un campo se COMPARE.
+        ' Demotar una propiedad a `Friend` no rompe la compilación — la saca de esta enumeración y el
+        ' diff deja de mirarla, en silencio, devolviendo "no hay diferencias" sobre un campo que cambió.
+        ' Es el peor modo de falla posible para un comparador: un gate que no puede ponerse rojo.
+        ' ⇒ NO demotar propiedades de FO4UnifiedMaterial_Class sin cambiar ANTES este mecanismo.
         Dim tipo As Type = GetType(FO4UnifiedMaterial_Class)
         Dim props = tipo.GetProperties(BindingFlags.Public Or BindingFlags.Instance) _
-                       .Where(Function(p) p.GetIndexParameters().Length = 0)
+                       .Where(Function(p) p.GetIndexParameters().Length = 0).ToList()
+        ' ⚠️ ESTA RED NO CUBRE EL CASO CONTRA EL QUE SE ESCRIBIÓ, y conviene decirlo en vez de dar una
+        ' sensación falsa: sólo salta si desaparecen TODAS las propiedades públicas, y el escenario real
+        ' —demotar UNA a Friend— deja el contador alto, el gate verde y el comparador ciego a ese campo.
+        ' Un gate que no puede ponerse rojo por su propio defecto (00-reglas-epistemica §9).
+        ' La protección de verdad es la de arriba: NO demotar propiedades de esta clase. Esto es sólo un
+        ' cable-trampa para el colapso total (p.ej. si alguien cambia el tipo sobre el que se reflexiona).
+        If props.Count = 0 Then
+            Throw New InvalidOperationException(
+                "FO4UnifiedMaterial_Class no expone propiedades públicas de instancia: el diff por reflexión " &
+                "no puede comparar nada. Si alguien las demotó a Friend, este comparador quedó ciego.")
+        End If
 
         For Each prop In props
             If ignoreNames IsNot Nothing AndAlso ignoreNames.Contains(prop.Name) Then Continue For

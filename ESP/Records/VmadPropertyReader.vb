@@ -26,12 +26,12 @@ Imports System.Text
 ''' Note the Flags byte is ALWAYS present per the spec (it is not version-gated).
 '''
 ''' Object FormIDs are plugin-LOCAL and are resolved to GLOBAL here, exactly like every other parsed reference.</summary>
-Public NotInheritable Class VmadPropertyReader
+Friend NotInheritable Class VmadPropertyReader
 
     Private Sub New()
     End Sub
 
-    Public Enum PropKind
+    Friend Enum PropKind
         Unsupported = 0
         Obj = 1
         Str = 2
@@ -40,25 +40,25 @@ Public NotInheritable Class VmadPropertyReader
         Bool = 5
     End Enum
 
-    Public Class PropValue
-        Public Kind As PropKind = PropKind.Unsupported
+    Friend Class PropValue
+        Friend Kind As PropKind = PropKind.Unsupported
         ''' <summary>Resolved GLOBAL FormID for <see cref="PropKind.Obj"/>. 0 = None (property left unbound).</summary>
-        Public FormID As UInteger
-        Public StringValue As String = ""
-        Public IntValue As Integer
-        Public FloatValue As Single
-        Public BoolValue As Boolean
+        Friend FormID As UInteger
+        Friend StringValue As String = ""
+        Friend IntValue As Integer
+        Friend FloatValue As Single
+        Friend BoolValue As Boolean
     End Class
 
-    Public Class ScriptEntry
-        Public Name As String = ""
-        Public Properties As New Dictionary(Of String, PropValue)(StringComparer.OrdinalIgnoreCase)
+    Friend Class ScriptEntry
+        Friend Name As String = ""
+        Friend Properties As New Dictionary(Of String, PropValue)(StringComparer.OrdinalIgnoreCase)
     End Class
 
     ''' <summary>The scripts attached to <paramref name="rec"/> with their properties. Empty when the record has no
     ''' VMAD; on a malformed payload it returns whatever parsed cleanly before the break (a broken mod script must
     ''' not take the load down). <paramref name="game"/> selects the property-type set (FO4 has struct types).</summary>
-    Public Shared Function ReadScripts(rec As PluginRecord, pluginManager As PluginManager,
+    Friend Shared Function ReadScripts(rec As PluginRecord, pluginManager As PluginManager,
                                        game As Config_App.Game_Enum) As List(Of ScriptEntry)
         Dim result As New List(Of ScriptEntry)
         If rec Is Nothing OrElse rec.Subrecords Is Nothing Then Return result

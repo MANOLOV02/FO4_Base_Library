@@ -34,8 +34,8 @@ Option Explicit On
 Imports System.Collections.Generic
 Imports System.Linq
 
-Public NotInheritable Class HclStructuredGraphParser_Class
-    Public Shared Function ParseSimClothData(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class,
+Friend NotInheritable Class HclStructuredGraphParser_Class
+    Friend Shared Function ParseSimClothData(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class,
                                              Optional collidableCache As Dictionary(Of Integer, HclCollidableDetail_Class) = Nothing) As HclSimClothDataDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimClothData", StringComparison.OrdinalIgnoreCase) Then Return Nothing
@@ -77,7 +77,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseClothState(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclClothStateDetail_Class
+    Friend Shared Function ParseClothState(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclClothStateDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclClothState", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -195,7 +195,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseBufferDefinition(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBufferDefinitionDetail_Class
+    Friend Shared Function ParseBufferDefinition(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBufferDefinitionDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclBufferDefinition", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -210,7 +210,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         }
     End Function
 
-    Public Shared Function ParseScratchBufferDefinition(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclScratchBufferDefinitionDetail_Class
+    Friend Shared Function ParseScratchBufferDefinition(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclScratchBufferDefinitionDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclScratchBufferDefinition", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -225,7 +225,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         }
     End Function
 
-    Public Shared Function ParseMoveParticlesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclMoveParticlesOperatorDetail_Class
+    Friend Shared Function ParseMoveParticlesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclMoveParticlesOperatorDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclMoveParticlesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -237,7 +237,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         }
     End Function
 
-    Public Shared Function ParseSimulateOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclSimulateOperatorDetail_Class
+    Friend Shared Function ParseSimulateOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclSimulateOperatorDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclSimulateOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -252,7 +252,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         }
     End Function
 
-    Public Shared Function ParseCopyVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCopyVerticesOperatorDetail_Class
+    Friend Shared Function ParseCopyVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCopyVerticesOperatorDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclCopyVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -269,7 +269,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         }
     End Function
 
-    Public Shared Function ParseGatherAllVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclGatherAllVerticesOperatorDetail_Class
+    Friend Shared Function ParseGatherAllVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclGatherAllVerticesOperatorDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclGatherAllVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -296,7 +296,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
     '     (multi-elemento) sobre DC Guard / Residents 6Suit / Institute Lab Coat. Todo a campos tipados.
 
     ' hclBendLinkConstraintSet — stride 20: {u16 particleA, u16 particleB, 4×float}. (DC Guard)
-    Public Shared Function ParseBendLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBendLinkConstraintSetDetail_Class
+    Friend Shared Function ParseBendLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBendLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclBendLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
         Dim result As New HclBendLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
@@ -313,7 +313,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
     End Function
 
     ' hclCompressibleLinkConstraintSet — stride 16: {u16 particleA, u16 particleB, 3×float}. (Institute Lab Coat)
-    Public Shared Function ParseCompressibleLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCompressibleLinkConstraintSetDetail_Class
+    Friend Shared Function ParseCompressibleLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCompressibleLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclCompressibleLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
         Dim result As New HclCompressibleLinkConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
@@ -329,7 +329,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
     End Function
 
     ' hclBonePlanesConstraintSet — stride 32: {plane normal(3f)+dist(f), boneIndex(u16), index1(u16), weight(f), 2×f}. (Residents 6Suit)
-    Public Shared Function ParseBonePlanesConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBonePlanesConstraintSetDetail_Class
+    Friend Shared Function ParseBonePlanesConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBonePlanesConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclBonePlanesConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
         Dim result As New HclBonePlanesConstraintSetDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
@@ -347,7 +347,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
     End Function
 
     ' hclGatherSomeVerticesOperator — stride 4: pares {u16 source, u16 target} de remap de vértices. (Institute Lab Coat)
-    Public Shared Function ParseGatherSomeVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclGatherSomeVerticesOperatorDetail_Class
+    Friend Shared Function ParseGatherSomeVerticesOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclGatherSomeVerticesOperatorDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) OrElse Not source.ClassName.Equals("hclGatherSomeVerticesOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
         Dim h = graph.ReadArrayHeader(source.RelativeOffset + &H20)
         Dim result As New HclGatherSomeVerticesOperatorDetail_Class With {.SourceObject = source, .Name = graph.ResolveLocalString(source.RelativeOffset + &H10)}
@@ -373,7 +373,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseCapsuleShape(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCapsuleShapeDetail_Class
+    Friend Shared Function ParseCapsuleShape(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclCapsuleShapeDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         Dim className = If(source.ClassName, String.Empty)
         If Not className.Equals("hclCapsuleShape", StringComparison.OrdinalIgnoreCase) AndAlso
@@ -429,7 +429,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
     ' parse (verificado: ningún sitio muta un CollidableDetail después de construirlo), así que compartir la
     ' instancia entre package.Collidables y sim.CollidableDetails da comportamiento idéntico con menos
     ' parses/allocs. Sin cache (Nothing) el comportamiento es el de antes.
-    Public Shared Function ParseCollidable(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class,
+    Friend Shared Function ParseCollidable(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class,
                                            Optional collidableCache As Dictionary(Of Integer, HclCollidableDetail_Class) = Nothing) As HclCollidableDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclCollidable", StringComparison.OrdinalIgnoreCase) Then Return Nothing
@@ -455,7 +455,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         If collidableCache IsNot Nothing Then collidableCache(source.RelativeOffset) = result
         Return result
     End Function
-    Public Shared Function ParseStandardLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclStandardLinkConstraintSetDetail_Class
+    Friend Shared Function ParseStandardLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclStandardLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclStandardLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -468,7 +468,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseStretchLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclStretchLinkConstraintSetDetail_Class
+    Friend Shared Function ParseStretchLinkConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclStretchLinkConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclStretchLinkConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -481,7 +481,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseBendStiffnessConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBendStiffnessConstraintSetDetail_Class
+    Friend Shared Function ParseBendStiffnessConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclBendStiffnessConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclBendStiffnessConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -494,7 +494,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseLocalRangeConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclLocalRangeConstraintSetDetail_Class
+    Friend Shared Function ParseLocalRangeConstraintSet(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclLocalRangeConstraintSetDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclLocalRangeConstraintSet", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -513,7 +513,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseVolumeConstraintMx(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclVolumeConstraintMxDetail_Class
+    Friend Shared Function ParseVolumeConstraintMx(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclVolumeConstraintMxDetail_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclVolumeConstraintMx", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -1092,7 +1092,7 @@ Public NotInheritable Class HclStructuredGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseConstraintObject(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As Object
+    Friend Shared Function ParseConstraintObject(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As Object
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
 
         Select Case source.ClassName.ToLowerInvariant()
@@ -1538,7 +1538,11 @@ Public Class HclSimulateOperatorConfigGraph_Class
     Public Property Value As UInteger
     Public Property ConstraintIndex As Integer = -1
     Public Property IsTerminator As Boolean
-    Public Property ResolvedConstraint As Object
+    ''' <summary>⛔ Friend A PROPOSITO. Es un handle `Object` sobre un grafo que ahora es `Friend`, y con
+    ''' `Option Strict Off` un `cfg.ResolvedConstraint.Name` desde otro ensamblado COMPILA LIMPIO y tira
+    ''' `MissingMemberException` recien en produccion. Los consumidores externos leen
+    ''' `ResolvedConstraintName`/`ResolvedConstraintType`, que son String y siguen publicos.</summary>
+    Friend Property ResolvedConstraint As Object
     Public Property ResolvedConstraintName As String
     Public Property ResolvedConstraintType As String
 End Class
@@ -1565,48 +1569,48 @@ Public Class HclGatherAllVerticesOperatorDetail_Class
 End Class
 
 ' --- Cloth-menores: detalles TIPADOS (cero bytes crudos), structs verificados por --dump multi-elemento.
-Public Class HclBendLink_Class
-    Public Property ParticleA As Integer
-    Public Property ParticleB As Integer
-    Public Property Value0 As Single
-    Public Property Value1 As Single
-    Public Property Value2 As Single
-    Public Property Value3 As Single
+Friend Class HclBendLink_Class
+    Friend Property ParticleA As Integer
+    Friend Property ParticleB As Integer
+    Friend Property Value0 As Single
+    Friend Property Value1 As Single
+    Friend Property Value2 As Single
+    Friend Property Value3 As Single
 End Class
-Public Class HclBendLinkConstraintSetDetail_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Name As String
-    Public ReadOnly Property Links As New List(Of HclBendLink_Class)
-End Class
-
-Public Class HclCompressibleLink_Class
-    Public Property ParticleA As Integer
-    Public Property ParticleB As Integer
-    Public Property Value0 As Single
-    Public Property Value1 As Single
-    Public Property Value2 As Single
-End Class
-Public Class HclCompressibleLinkConstraintSetDetail_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Name As String
-    Public ReadOnly Property Links As New List(Of HclCompressibleLink_Class)
+Friend Class HclBendLinkConstraintSetDetail_Class
+    Friend Property SourceObject As HkxVirtualObjectGraph_Class
+    Friend Property Name As String
+    Friend ReadOnly Property Links As New List(Of HclBendLink_Class)
 End Class
 
-Public Class HclBonePlaneConstraint_Class
-    Public Property NormalX As Single
-    Public Property NormalY As Single
-    Public Property NormalZ As Single
-    Public Property PlaneDistance As Single
-    Public Property BoneIndex As Integer
-    Public Property Index1 As Integer
-    Public Property Weight As Single
-    Public Property Value0 As Single
-    Public Property Value1 As Single
+Friend Class HclCompressibleLink_Class
+    Friend Property ParticleA As Integer
+    Friend Property ParticleB As Integer
+    Friend Property Value0 As Single
+    Friend Property Value1 As Single
+    Friend Property Value2 As Single
 End Class
-Public Class HclBonePlanesConstraintSetDetail_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Name As String
-    Public ReadOnly Property Constraints As New List(Of HclBonePlaneConstraint_Class)
+Friend Class HclCompressibleLinkConstraintSetDetail_Class
+    Friend Property SourceObject As HkxVirtualObjectGraph_Class
+    Friend Property Name As String
+    Friend ReadOnly Property Links As New List(Of HclCompressibleLink_Class)
+End Class
+
+Friend Class HclBonePlaneConstraint_Class
+    Friend Property NormalX As Single
+    Friend Property NormalY As Single
+    Friend Property NormalZ As Single
+    Friend Property PlaneDistance As Single
+    Friend Property BoneIndex As Integer
+    Friend Property Index1 As Integer
+    Friend Property Weight As Single
+    Friend Property Value0 As Single
+    Friend Property Value1 As Single
+End Class
+Friend Class HclBonePlanesConstraintSetDetail_Class
+    Friend Property SourceObject As HkxVirtualObjectGraph_Class
+    Friend Property Name As String
+    Friend ReadOnly Property Constraints As New List(Of HclBonePlaneConstraint_Class)
 End Class
 
 Public Class HclVertexGatherPair_Class
@@ -1653,15 +1657,15 @@ Public Class HclCapsuleShapeDetail_Class
     Public Property ExtraVector1 As HkxVector4Graph_Class
 End Class
 
-Public Class HclVolumeConstraintBridgeSlot_Class
-    Public Property TargetSlot As HclVolumeConstraintQuadSlot_Class
-    Public Property FirstSourceSlot As HclVolumeConstraintQuadSlot_Class
-    Public Property SecondSourceSlot As HclVolumeConstraintQuadSlot_Class
-    Public ReadOnly Property SharedParticlesFirst As New List(Of Integer)
-    Public ReadOnly Property SharedParticlesSecond As New List(Of Integer)
-    Public ReadOnly Property OuterParticlesFirst As New List(Of Integer)
-    Public ReadOnly Property OuterParticlesSecond As New List(Of Integer)
-    Public ReadOnly Property BridgeParticles As New List(Of Integer)
+Friend Class HclVolumeConstraintBridgeSlot_Class
+    Friend Property TargetSlot As HclVolumeConstraintQuadSlot_Class
+    Friend Property FirstSourceSlot As HclVolumeConstraintQuadSlot_Class
+    Friend Property SecondSourceSlot As HclVolumeConstraintQuadSlot_Class
+    Friend ReadOnly Property SharedParticlesFirst As New List(Of Integer)
+    Friend ReadOnly Property SharedParticlesSecond As New List(Of Integer)
+    Friend ReadOnly Property OuterParticlesFirst As New List(Of Integer)
+    Friend ReadOnly Property OuterParticlesSecond As New List(Of Integer)
+    Friend ReadOnly Property BridgeParticles As New List(Of Integer)
 End Class
 
 Public Class HclStandardLinkConstraintSetDetail_Class
@@ -1676,48 +1680,48 @@ Public Class HclStretchLinkConstraintSetDetail_Class
     Public ReadOnly Property LinkDetails As New List(Of HclDistanceConstraintGraph_Class)
 End Class
 
-Public Class HclVolumeConstraintQuadSlot_Class
-    Public Property RawStructEntryIndex As Integer
-    Public Property SlotIndex As Integer
-    Public Property ByteOffset As Integer
-    Public Property ParticleA As Integer
-    Public Property ParticleB As Integer
-    Public Property ParticleC As Integer
-    Public Property ParticleD As Integer
-    Public ReadOnly Property Particles As New List(Of Integer)
-    Public Property IsAllZero As Boolean
+Friend Class HclVolumeConstraintQuadSlot_Class
+    Friend Property RawStructEntryIndex As Integer
+    Friend Property SlotIndex As Integer
+    Friend Property ByteOffset As Integer
+    Friend Property ParticleA As Integer
+    Friend Property ParticleB As Integer
+    Friend Property ParticleC As Integer
+    Friend Property ParticleD As Integer
+    Friend ReadOnly Property Particles As New List(Of Integer)
+    Friend Property IsAllZero As Boolean
 End Class
 
-Public Class HclVolumeConstraintVectorEntry_Class
-    Public Property EntryIndex As Integer
-    Public Property Pivot As HkxVector4Graph_Class
-    Public Property Parameters As HkxVector4Graph_Class
+Friend Class HclVolumeConstraintVectorEntry_Class
+    Friend Property EntryIndex As Integer
+    Friend Property Pivot As HkxVector4Graph_Class
+    Friend Property Parameters As HkxVector4Graph_Class
 End Class
 
-Public Class HclVolumeConstraintPivotMatch_Class
-    Public Property EntryIndex As Integer
-    Public Property MatchedEntryIndex As Integer
+Friend Class HclVolumeConstraintPivotMatch_Class
+    Friend Property EntryIndex As Integer
+    Friend Property MatchedEntryIndex As Integer
 End Class
 
-Public Class HclVolumeConstraintLane_Class
-    Public Property LaneIndex As Integer
-    Public Property QuadSlot As HclVolumeConstraintQuadSlot_Class
-    Public Property ParameterVector As HkxVector4Graph_Class
-    Public ReadOnly Property CoefficientVectors As New List(Of HkxVector4Graph_Class)
+Friend Class HclVolumeConstraintLane_Class
+    Friend Property LaneIndex As Integer
+    Friend Property QuadSlot As HclVolumeConstraintQuadSlot_Class
+    Friend Property ParameterVector As HkxVector4Graph_Class
+    Friend ReadOnly Property CoefficientVectors As New List(Of HkxVector4Graph_Class)
 End Class
 
-Public Class HclVolumeConstraintBatch_Class
-    Public Property EntryIndex As Integer
-    Public Property VectorBlock As HkxVectorStructBlockGraph_Class
-    Public ReadOnly Property AllVectors As New List(Of HkxVector4Graph_Class)
-    Public ReadOnly Property PreQuadVectors As New List(Of HkxVector4Graph_Class)
-    Public ReadOnly Property MidVectors As New List(Of HkxVector4Graph_Class)
-    Public ReadOnly Property PostQuadVectors As New List(Of HkxVector4Graph_Class)
-    Public Property MidVectorsLookZeroish As Boolean
-    Public Property UniformLaneParameter As Single?
-    Public Property LaneParameterIsUniform As Boolean
-    Public ReadOnly Property QuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
-    Public ReadOnly Property Lanes As New List(Of HclVolumeConstraintLane_Class)
+Friend Class HclVolumeConstraintBatch_Class
+    Friend Property EntryIndex As Integer
+    Friend Property VectorBlock As HkxVectorStructBlockGraph_Class
+    Friend ReadOnly Property AllVectors As New List(Of HkxVector4Graph_Class)
+    Friend ReadOnly Property PreQuadVectors As New List(Of HkxVector4Graph_Class)
+    Friend ReadOnly Property MidVectors As New List(Of HkxVector4Graph_Class)
+    Friend ReadOnly Property PostQuadVectors As New List(Of HkxVector4Graph_Class)
+    Friend Property MidVectorsLookZeroish As Boolean
+    Friend Property UniformLaneParameter As Single?
+    Friend Property LaneParameterIsUniform As Boolean
+    Friend ReadOnly Property QuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
+    Friend ReadOnly Property Lanes As New List(Of HclVolumeConstraintLane_Class)
 End Class
 
 Public Class HclBendStiffnessConstraintSetDetail_Class
@@ -1744,79 +1748,79 @@ Public Class HclLocalRangeConstraintSetDetail_Class
     Public Property ParticleReferenceIdentityCount As Integer
 End Class
 
-Public Class HclVolumeConstraintMxDetail_Class
-    Public Property SourceObject As HkxVirtualObjectGraph_Class
-    Public Property Name As String
-    Public Property Field20VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
-    Public Property Field30VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
-    Public Property Field40VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
-    Public Property Field50VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
-    Public ReadOnly Property Field20Batches As New List(Of HclVolumeConstraintBatch_Class)
-    Public ReadOnly Property Field20QuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
-    Public ReadOnly Property Field30Entries As New List(Of HclVolumeConstraintVectorEntry_Class)
-    Public ReadOnly Property Field40Batches As New List(Of HclVolumeConstraintBatch_Class)
-    Public ReadOnly Property Field40QuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
-    Public ReadOnly Property Field40BridgeSlots As New List(Of HclVolumeConstraintBridgeSlot_Class)
-    Public ReadOnly Property Field40TerminalQuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
-    Public ReadOnly Property Field20BridgeSourceQuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
-    Public ReadOnly Property Field20NonBridgeQuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
-    Public ReadOnly Property Field40BridgeSourceChain As New List(Of HclVolumeConstraintQuadSlot_Class)
-    Public ReadOnly Property Field30ParameterValues As New List(Of Single)
-    Public ReadOnly Property Field50ParameterValues As New List(Of Single)
-    Public ReadOnly Property Field50ToField30PivotMatches As New List(Of HclVolumeConstraintPivotMatch_Class)
-    Public Property Field20MidVectorsLookZeroish As Boolean
-    Public Property Field40MidVectorsLookZeroish As Boolean
-    Public Property Field20BatchUniformParameter As Single?
-    Public Property Field40BatchUniformParameter As Single?
-    Public Property Field20LaneParametersUniformAcrossBatches As Boolean
-    Public Property Field40LaneParametersUniformAcrossBatches As Boolean
-    Public Property Field30UniformParameter As Single?
-    Public Property Field50UniformParameter As Single?
-    Public Property Field20BatchParameterMatchesField30Parameter As Boolean
-    Public Property Field40BatchParameterMatchesField50Parameter As Boolean
-    Public Property Field20AndField40ParametersDistinct As Boolean
-    Public Property HasDistinctParameterGroups As Boolean
-    Public Property Field50PivotReuseOffset As Integer?
-    Public Property Field50PivotReuseCount As Integer
-    Public Property Field40BridgeCountMatchesField50Count As Boolean
-    Public Property Field40BridgeSlotsExact As Boolean
-    Public Property Field40BridgeFormsSequentialChain As Boolean
-    Public Property Field40TerminalExtendsBridgeChain As Boolean
-    Public Property Field40TerminalSharedParticleCount As Integer
-    Public Property Field40TerminalAddedParticleCount As Integer
-    Public Property Field40BridgeSourceChainCount As Integer
-    Public Property Field30LeadCountMatchesField20ExtraActiveQuadCount As Boolean
-    Public Property Field30TailCountMatchesField40BridgeSourceChainCount As Boolean
-    Public Property Field50EntryCountMatchesField40BridgeSourceChainCount As Boolean
-    Public Property Field40NonZeroQuadCount As Integer
-    Public Property Field40ExactBridgeCount As Integer
-    Public Property Field50PivotTailStartIndex As Integer?
-    Public Property Field50MatchesField30Tail As Boolean
-    Public Property Field20NonZeroQuadCount As Integer
-    Public Property Field20NonZeroQuadCountMatchesField30Count As Boolean
-    Public Property Field40NonZeroQuadCountMatchesField50Count As Boolean
-    Public Property Field30LeadEntryCount As Integer
-    Public Property Field30TailEntryCount As Integer
-    Public Property Field40TerminalQuadCount As Integer
-    Public Property Field20ExtraActiveQuadCount As Integer
-    Public Property Field20BridgeSourceQuadCount As Integer
-    Public Property Field20NonBridgeQuadCount As Integer
-    Public Property Field50TailSourceEntryCount As Integer
-    Public Property Field20BridgeSourceAndNonBridgePartitionMatchesActiveQuads As Boolean
-    Public Property Field40BridgeAndTerminalPartitionMatchesActiveQuads As Boolean
-    Public Property Field40BridgeSourceChainMatchesField20BridgeSourceCount As Boolean
-    Public Property Field50TailSourceCountMatchesField50EntryCount As Boolean
-    Public Property Field50TailSourceCountMatchesField30TailEntryCount As Boolean
-    Public ReadOnly Property Field50Entries As New List(Of HclVolumeConstraintVectorEntry_Class)
-    Public ReadOnly Property Field30LeadEntries As New List(Of HclVolumeConstraintVectorEntry_Class)
-    Public ReadOnly Property Field30TailEntries As New List(Of HclVolumeConstraintVectorEntry_Class)
-    Public ReadOnly Property Field50TailSourceEntries As New List(Of HclVolumeConstraintVectorEntry_Class)
+Friend Class HclVolumeConstraintMxDetail_Class
+    Friend Property SourceObject As HkxVirtualObjectGraph_Class
+    Friend Property Name As String
+    Friend Property Field20VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
+    Friend Property Field30VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
+    Friend Property Field40VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
+    Friend Property Field50VectorBlocks As List(Of HkxVectorStructBlockGraph_Class)
+    Friend ReadOnly Property Field20Batches As New List(Of HclVolumeConstraintBatch_Class)
+    Friend ReadOnly Property Field20QuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
+    Friend ReadOnly Property Field30Entries As New List(Of HclVolumeConstraintVectorEntry_Class)
+    Friend ReadOnly Property Field40Batches As New List(Of HclVolumeConstraintBatch_Class)
+    Friend ReadOnly Property Field40QuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
+    Friend ReadOnly Property Field40BridgeSlots As New List(Of HclVolumeConstraintBridgeSlot_Class)
+    Friend ReadOnly Property Field40TerminalQuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
+    Friend ReadOnly Property Field20BridgeSourceQuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
+    Friend ReadOnly Property Field20NonBridgeQuadSlots As New List(Of HclVolumeConstraintQuadSlot_Class)
+    Friend ReadOnly Property Field40BridgeSourceChain As New List(Of HclVolumeConstraintQuadSlot_Class)
+    Friend ReadOnly Property Field30ParameterValues As New List(Of Single)
+    Friend ReadOnly Property Field50ParameterValues As New List(Of Single)
+    Friend ReadOnly Property Field50ToField30PivotMatches As New List(Of HclVolumeConstraintPivotMatch_Class)
+    Friend Property Field20MidVectorsLookZeroish As Boolean
+    Friend Property Field40MidVectorsLookZeroish As Boolean
+    Friend Property Field20BatchUniformParameter As Single?
+    Friend Property Field40BatchUniformParameter As Single?
+    Friend Property Field20LaneParametersUniformAcrossBatches As Boolean
+    Friend Property Field40LaneParametersUniformAcrossBatches As Boolean
+    Friend Property Field30UniformParameter As Single?
+    Friend Property Field50UniformParameter As Single?
+    Friend Property Field20BatchParameterMatchesField30Parameter As Boolean
+    Friend Property Field40BatchParameterMatchesField50Parameter As Boolean
+    Friend Property Field20AndField40ParametersDistinct As Boolean
+    Friend Property HasDistinctParameterGroups As Boolean
+    Friend Property Field50PivotReuseOffset As Integer?
+    Friend Property Field50PivotReuseCount As Integer
+    Friend Property Field40BridgeCountMatchesField50Count As Boolean
+    Friend Property Field40BridgeSlotsExact As Boolean
+    Friend Property Field40BridgeFormsSequentialChain As Boolean
+    Friend Property Field40TerminalExtendsBridgeChain As Boolean
+    Friend Property Field40TerminalSharedParticleCount As Integer
+    Friend Property Field40TerminalAddedParticleCount As Integer
+    Friend Property Field40BridgeSourceChainCount As Integer
+    Friend Property Field30LeadCountMatchesField20ExtraActiveQuadCount As Boolean
+    Friend Property Field30TailCountMatchesField40BridgeSourceChainCount As Boolean
+    Friend Property Field50EntryCountMatchesField40BridgeSourceChainCount As Boolean
+    Friend Property Field40NonZeroQuadCount As Integer
+    Friend Property Field40ExactBridgeCount As Integer
+    Friend Property Field50PivotTailStartIndex As Integer?
+    Friend Property Field50MatchesField30Tail As Boolean
+    Friend Property Field20NonZeroQuadCount As Integer
+    Friend Property Field20NonZeroQuadCountMatchesField30Count As Boolean
+    Friend Property Field40NonZeroQuadCountMatchesField50Count As Boolean
+    Friend Property Field30LeadEntryCount As Integer
+    Friend Property Field30TailEntryCount As Integer
+    Friend Property Field40TerminalQuadCount As Integer
+    Friend Property Field20ExtraActiveQuadCount As Integer
+    Friend Property Field20BridgeSourceQuadCount As Integer
+    Friend Property Field20NonBridgeQuadCount As Integer
+    Friend Property Field50TailSourceEntryCount As Integer
+    Friend Property Field20BridgeSourceAndNonBridgePartitionMatchesActiveQuads As Boolean
+    Friend Property Field40BridgeAndTerminalPartitionMatchesActiveQuads As Boolean
+    Friend Property Field40BridgeSourceChainMatchesField20BridgeSourceCount As Boolean
+    Friend Property Field50TailSourceCountMatchesField50EntryCount As Boolean
+    Friend Property Field50TailSourceCountMatchesField30TailEntryCount As Boolean
+    Friend ReadOnly Property Field50Entries As New List(Of HclVolumeConstraintVectorEntry_Class)
+    Friend ReadOnly Property Field30LeadEntries As New List(Of HclVolumeConstraintVectorEntry_Class)
+    Friend ReadOnly Property Field30TailEntries As New List(Of HclVolumeConstraintVectorEntry_Class)
+    Friend ReadOnly Property Field50TailSourceEntries As New List(Of HclVolumeConstraintVectorEntry_Class)
 End Class
 
-Public Class HkxVectorStructBlockGraph_Class
-    Public Property EntryIndex As Integer
-    Public Property EntryRelativeOffset As Integer
-    Public Property Vectors As List(Of HkxVector4Graph_Class)
+Friend Class HkxVectorStructBlockGraph_Class
+    Friend Property EntryIndex As Integer
+    Friend Property EntryRelativeOffset As Integer
+    Friend Property Vectors As List(Of HkxVector4Graph_Class)
 End Class
 
 

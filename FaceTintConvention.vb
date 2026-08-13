@@ -124,7 +124,8 @@ Public Module FaceTintConvention
     ''' color/cobertura de la capa ANTES del blend. Verificado en los .fx (switch(type)): Normal = tex×color
     ''' (RGBA), Mask = (color.rgb, tex.R×color.a), Color = color sólido. FO4 facegen no lo usa (queda en el
     ''' default histórico vía el layer-kind); lo consume el loader MASKT/TintData de skee.</summary>
-    Public Enum FaceTintLayerType
+    ' ⛔ Sin un solo consumidor; su propio doc admite que "FO4 facegen no lo usa".
+    Friend Enum FaceTintLayerType
         Normal = 0      ' b = layerTex * color
         Mask = 1        ' b = (color.rgb, layerTex.r * color.a)
         Color = 2       ' b = color (sólido)

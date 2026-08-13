@@ -227,7 +227,7 @@ End Class
 
 Public Module QuestRecordParsers
 
-    Public Function ParseQUST(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As QUST_Data
+    Public Function ParseQUST(rec As PluginRecord, pluginManager As PluginManager) As QUST_Data
         Dim q As New QUST_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -344,7 +344,7 @@ Public Module QuestRecordParsers
         Return q
     End Function
 
-    Public Function ParseDIAL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DIAL_Data
+    Public Function ParseDIAL(rec As PluginRecord, pluginManager As PluginManager) As DIAL_Data
         Dim d As New DIAL_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -382,7 +382,7 @@ Public Module QuestRecordParsers
         Return d
     End Function
 
-    Public Function ParseINFO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As INFO_Data
+    Public Function ParseINFO(rec As PluginRecord, pluginManager As PluginManager) As INFO_Data
         Dim info As New INFO_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -440,7 +440,7 @@ Public Module QuestRecordParsers
         Return info
     End Function
 
-    Public Function ParsePACK(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As PACK_Data
+    Public Function ParsePACK(rec As PluginRecord, pluginManager As PluginManager) As PACK_Data
         Dim p As New PACK_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -485,7 +485,7 @@ Public Module QuestRecordParsers
         Return p
     End Function
 
-    Public Function ParseSCEN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SCEN_Data
+    Public Function ParseSCEN(rec As PluginRecord, pluginManager As PluginManager) As SCEN_Data
         Dim s As New SCEN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -515,7 +515,7 @@ Public Module QuestRecordParsers
         Return s
     End Function
 
-    Public Function ParseIDLE(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As IDLE_Data
+    Public Function ParseIDLE(rec As PluginRecord, pluginManager As PluginManager) As IDLE_Data
         Dim idle As New IDLE_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -569,7 +569,7 @@ Public Module QuestRecordParsers
         Return idle
     End Function
 
-    Public Function ParseDLBR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DLBR_Data
+    Public Function ParseDLBR(rec As PluginRecord, pluginManager As PluginManager) As DLBR_Data
         Dim d As New DLBR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -591,7 +591,7 @@ Public Module QuestRecordParsers
         Return d
     End Function
 
-    Public Function ParseDLVW(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DLVW_Data
+    Public Function ParseDLVW(rec As PluginRecord, pluginManager As PluginManager) As DLVW_Data
         Dim d As New DLVW_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -611,7 +611,7 @@ Public Module QuestRecordParsers
         Return d
     End Function
 
-    Public Function ParseSMBN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SMBN_Data
+    Public Function ParseSMBN(rec As PluginRecord, pluginManager As PluginManager) As SMBN_Data
         Dim s As New SMBN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -633,7 +633,7 @@ Public Module QuestRecordParsers
         Return s
     End Function
 
-    Public Function ParseSMEN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SMEN_Data
+    Public Function ParseSMEN(rec As PluginRecord, pluginManager As PluginManager) As SMEN_Data
         Dim s As New SMEN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -659,7 +659,7 @@ Public Module QuestRecordParsers
         Return s
     End Function
 
-    Public Function ParseSMQN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SMQN_Data
+    Public Function ParseSMQN(rec As PluginRecord, pluginManager As PluginManager) As SMQN_Data
         Dim s As New SMQN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

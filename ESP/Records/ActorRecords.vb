@@ -300,7 +300,7 @@ End Class
 
 Public Module ActorRecordParsers
 
-    Public Function ParseFACT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As FACT_Data
+    Public Function ParseFACT(rec As PluginRecord, pluginManager As PluginManager) As FACT_Data
         Dim f As New FACT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -376,7 +376,7 @@ Public Module ActorRecordParsers
         Return f
     End Function
 
-    Public Function ParseCLAS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CLAS_Data
+    Public Function ParseCLAS(rec As PluginRecord, pluginManager As PluginManager) As CLAS_Data
         Dim c As New CLAS_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -400,7 +400,7 @@ Public Module ActorRecordParsers
         Return c
     End Function
 
-    Public Function ParseEYES(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As EYES_Data
+    Public Function ParseEYES(rec As PluginRecord, pluginManager As PluginManager) As EYES_Data
         Dim e As New EYES_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -443,7 +443,7 @@ Public Module ActorRecordParsers
     '''     NAM2 (Collar TextureSet FormID → TXST)
     '''     DNAM (Twist Variable Prefix string)
     ''' MODT/MODC/MODS/MODF y NAM5 se descartan (texture hash structs, no relevantes).</summary>
-    Public Function ParseBPTD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As BPTD_Data
+    Public Function ParseBPTD(rec As PluginRecord, pluginManager As PluginManager) As BPTD_Data
         Dim b As New BPTD_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -580,7 +580,7 @@ Public Module ActorRecordParsers
     End Function
 
 
-    Public Function ParseMOVT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MOVT_Data
+    Public Function ParseMOVT(rec As PluginRecord, pluginManager As PluginManager) As MOVT_Data
         Dim m As New MOVT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -615,7 +615,7 @@ Public Module ActorRecordParsers
         Return m
     End Function
 
-    Public Function ParseCSTY(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CSTY_Data
+    Public Function ParseCSTY(rec As PluginRecord, pluginManager As PluginManager) As CSTY_Data
         Dim c As New CSTY_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -652,7 +652,7 @@ Public Module ActorRecordParsers
         Return c
     End Function
 
-    Public Function ParseVTYP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As VTYP_Data
+    Public Function ParseVTYP(rec As PluginRecord, pluginManager As PluginManager) As VTYP_Data
         Dim v As New VTYP_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -667,7 +667,7 @@ Public Module ActorRecordParsers
         Return v
     End Function
 
-    Public Function ParseRELA(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As RELA_Data
+    Public Function ParseRELA(rec As PluginRecord, pluginManager As PluginManager) As RELA_Data
         Dim r As New RELA_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

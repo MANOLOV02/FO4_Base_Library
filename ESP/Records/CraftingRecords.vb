@@ -241,7 +241,7 @@ End Class
 
 Public Module CraftingRecordParsers
 
-    Public Function ParseOMOD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As OMOD_Data
+    Public Function ParseOMOD(rec As PluginRecord, pluginManager As PluginManager) As OMOD_Data
         Dim o As New OMOD_Data With {
             .FormID = rec.Header.FormID,
             .RecordFlags = rec.Header.Flags,
@@ -376,7 +376,7 @@ Public Module CraftingRecordParsers
     '''   +20 float Step
     ''' Used by ParseOMOD_DATA (OMOD record's Properties array) and by ParseOBTSPayload
     ''' (Properties array embedded in an OBTS combination payload — same 24-byte layout).</summary>
-    Friend Function ParseObjectModProperty(d As Byte(), offset As Integer, rec As PluginRecord, pm As PluginManager) As OMOD_Property
+    Public Function ParseObjectModProperty(d As Byte(), offset As Integer, rec As PluginRecord, pm As PluginManager) As OMOD_Property
         Dim prop As New OMOD_Property With {
             .ValueType = CType(d(offset), OMOD_ValueType),
             .FunctionType = d(offset + 4),
@@ -398,7 +398,7 @@ Public Module CraftingRecordParsers
         Return prop
     End Function
 
-    Public Function ParseINNR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As INNR_Data
+    Public Function ParseINNR(rec As PluginRecord, pluginManager As PluginManager) As INNR_Data
         Dim n As New INNR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -455,7 +455,7 @@ Public Module CraftingRecordParsers
         Return n
     End Function
 
-    Public Function ParseCOBJ(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As COBJ_Data
+    Public Function ParseCOBJ(rec As PluginRecord, pluginManager As PluginManager) As COBJ_Data
         Dim c As New COBJ_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -501,7 +501,7 @@ Public Module CraftingRecordParsers
         Return c
     End Function
 
-    Public Function ParseCMPO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CMPO_Data
+    Public Function ParseCMPO(rec As PluginRecord, pluginManager As PluginManager) As CMPO_Data
         Dim c As New CMPO_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -527,7 +527,7 @@ Public Module CraftingRecordParsers
         Return c
     End Function
 
-    Public Function ParseMATT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MATT_Data
+    Public Function ParseMATT(rec As PluginRecord, pluginManager As PluginManager) As MATT_Data
         Dim m As New MATT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

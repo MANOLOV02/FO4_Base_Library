@@ -405,7 +405,12 @@ Public Class PreviewControl
         Dim texID As Integer = GL.GenTexture()
         GL.BindTexture(TextureTarget.Texture2D, texID)
 
-        ' Alineación segura
+        ' Alineación segura para ESTA subida, y despues se devuelve. Antes se dejaba el UNPACK_ALIGNMENT
+        ' global en 1 para toda la vida del contexto: como esto corre en GenerateDefaultTextures (OnLoad),
+        ' el default del contexto pasaba a ser 1, y el `Finally` del loader de DDS —que restauraba el valor
+        ' que habia leido— terminaba restaurando algo que ya no era el default de OpenGL.
+        Dim alineacionPrevia As Integer = 4
+        GL.GetInteger(CType(&HCF5, GetPName), alineacionPrevia)   ' GL_UNPACK_ALIGNMENT
         GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
 
         GL.TexImage2D(TextureTarget.Texture2D,
@@ -431,6 +436,7 @@ Public Class PreviewControl
             GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToEdge))
         End If
 
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, alineacionPrevia)
         GL.BindTexture(TextureTarget.Texture2D, 0)
         Return texID
     End Function
@@ -490,6 +496,16 @@ Public Class PreviewControl
             TextureTarget.TextureCubeMapPositiveZ,
             TextureTarget.TextureCubeMapNegativeZ
         }
+        ' ⛔ Este loop NO fija UNPACK_ALIGNMENT y venia viviendo del 1 que dejaba `CreateColorTexture` (que
+        ' lo ponia y no lo devolvia). Al arreglar aquello, acá queda el 4 por default — y funciona igual de
+        ' pura casualidad: 4 px × RGBA son 16 bytes por fila, multiplo de 4. Con un ancho o un formato que
+        ' no cierre en 4 bytes, las caras saldrian corridas. Se fija explicito para no depender de eso.
+        ' ⛔ Y SE CAPTURA EL PREVIO, no se asume el default. Doce lineas mas arriba `CreateColorTexture` acaba
+        ' de documentar por que asumirlo esta mal, y esta funcion lo restauraba al literal 4: si el llamador
+        ' entraba con 1, 2 u 8, salia con 4. Es la misma trampa, re-sembrada en el archivo que la sacaba.
+        Dim alineacionPreviaCube As Integer = 4
+        GL.GetInteger(CType(&HCF5, GetPName), alineacionPreviaCube)   ' GL_UNPACK_ALIGNMENT
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
         For Each face In faces
             GL.TexImage2D(face,
                           level:=0,
@@ -500,6 +516,7 @@ Public Class PreviewControl
                           type:=PixelType.UnsignedByte,
                           pixels:=faceData)
         Next
+        GL.PixelStore(PixelStoreParameter.UnpackAlignment, alineacionPreviaCube)   ' el que habia, no el default
 
         ' Filtros y wrap para cubemap
         GL.TexParameter(TextureTarget.TextureCubeMap, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
@@ -512,7 +529,8 @@ Public Class PreviewControl
     End Sub
 
 
-    Public Class VerticesAffectedEventArgs
+    ' ⛔ Sin consumidor fuera de este ensamblado (única referencia: su propia declaración).
+    Friend Class VerticesAffectedEventArgs
         Inherits EventArgs
         Public ReadOnly Property Affected As New Dictionary(Of IRenderableShape, HashSet(Of Integer))
         Public Sub New(d As Dictionary(Of IRenderableShape, HashSet(Of Integer)))
@@ -1379,11 +1397,29 @@ Public Class PreviewControl
         Dim bmp As New Bitmap(Me.Width, Me.Height, Imaging.PixelFormat.Format32bppArgb)
         Dim rect As New Rectangle(0, 0, bmp.Width, bmp.Height)
         Dim data As BitmapData = bmp.LockBits(rect, ImageLockMode.WriteOnly, Imaging.PixelFormat.Format32bppArgb)
+        ' ⛔ Se CAPTURA lo que habia, no se asume. Restaurar el literal `Back` es correcto solo mientras el
+        ' llamador entre con el framebuffer por defecto bindeado; con un FBO bindeado el valor previo es un
+        ' COLOR_ATTACHMENTi y "restaurar Back" seria dejarlo peor que antes. Lo mismo con PackAlignment: se
+        ' pisa a 4 dos lineas mas abajo y hay que devolver el que habia, no el default de GL.
+        Dim prevReadBuffer As Integer = CInt(ReadBufferMode.Back)
+        Dim prevPackAlignment As Integer = 4
+        Try
+            GL.GetInteger(GetPName.ReadBuffer, prevReadBuffer)
+            GL.GetInteger(GetPName.PackAlignment, prevPackAlignment)
+        Catch
+        End Try
         Try
             GL.ReadBuffer(ReadBufferMode.Front)
             GL.PixelStore(PixelStoreParameter.PackAlignment, 4)
             GL.ReadPixels(0, 0, bmp.Width, bmp.Height, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, data.Scan0)
         Finally
+            ' ⛔ DEVOLVER el ReadBuffer. Quedaba en Front para siempre, asi que cualquier ReadPixels o
+            ' CopyTexImage posterior contra el framebuffer por defecto leia el buffer equivocado. Es el bug
+            ' que "solo se ve a veces": el sintoma depende de si el frame ya se presento.
+            GL.ReadBuffer(CType(prevReadBuffer, ReadBufferMode))
+            GL.PixelStore(PixelStoreParameter.PackAlignment, prevPackAlignment)
+            Dim rb = prevReadBuffer, pa = prevPackAlignment
+            Logger.LogLazy(Function() $"[AUDIT-CAPTURE] tras la captura se devuelven ReadBuffer=0x{rb:X} y PackAlignment={pa}")
             bmp.UnlockBits(data)
         End Try
 
@@ -1887,14 +1923,33 @@ Public Class PreviewControl
             GroundShadowTarget.Dispose()
             GroundShadowTarget = Nothing
         End If
-        If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex)
-        If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex)
-        If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex)
-        If defaultFacegenTintTex <> 0 Then GL.DeleteTexture(defaultFacegenTintTex)
-        If defaultSseMsnSpecTex <> 0 Then GL.DeleteTexture(defaultSseMsnSpecTex)
-        If defaultSseEngineGenericTex <> 0 Then GL.DeleteTexture(defaultSseEngineGenericTex)
-        If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex)
-        If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap)
+        ' ⛔⛔ PONER EL CAMPO EN 0 DESPUES DE BORRAR. Estas ocho lineas borraban y NO anulaban, a
+        ' diferencia del resto de este metodo (que si hace `= Nothing`). Y `Clean` corre DOS veces en el
+        ' cierre normal: `MainForm` llama `Clean()` y enseguida `Dispose()`, que vuelve a llamar `Clean()`.
+        ' En la segunda pasada `_Model` ya es Nothing, asi que NADIE hace current el contexto —el unico
+        ' `EnsureContextCurrent` del camino vive adentro de `Model.Clean`— y estos ocho `DeleteTexture` se
+        ' disparan con ids viejos contra EL CONTEXTO QUE ESTE CURRENT EN ESE HILO, que puede ser el de otro
+        ' PreviewControl vivo. Los nombres GL son por contexto: alla esos ids son texturas en uso.
+        ' [AUDIT-CLEAN] valida el arreglo del doble-delete: en la SEGUNDA pasada de Clean() los ocho
+        ' tienen que venir ya en 0. Si alguno viene distinto de 0 dos veces seguidas, el bug sigue.
+        ' ⚠️ ANULAR NO ES GRATIS DEL TODO: despues del primer Clean(), un `BindTexture(..., defaultWhiteTex)`
+        ' bindea 0, que en GL es NEGRO, no blanco. Hoy no se dispara porque `BeginTeardown` levanta
+        ' `_isTearingDown` y `RenderScene`/`OnPaint` salen antes de dibujar — o sea que esto es una red que
+        ' depende de OTRA red. Si alguna vez se dibuja despues de un Clean(), el sintoma va a ser un modelo
+        ' negro, y el causante es esta linea, no el shader.
+        If Logger.Enabled Then
+            Dim a1 = defaultWhiteTex, a2 = defaultNormalTex, a3 = defaultFacegenDetailTex, a4 = defaultFacegenTintTex
+            Dim a5 = defaultSseMsnSpecTex, a6 = defaultSseEngineGenericTex, a7 = defaultFacegenSubsurfaceTex, a8 = defaultCubeMap
+            Logger.LogLazy(Function() $"[AUDIT-CLEAN] ids de defaults al entrar: {a1},{a2},{a3},{a4},{a5},{a6},{a7},{a8}")
+        End If
+        If defaultWhiteTex <> 0 Then GL.DeleteTexture(defaultWhiteTex) : defaultWhiteTex = 0
+        If defaultNormalTex <> 0 Then GL.DeleteTexture(defaultNormalTex) : defaultNormalTex = 0
+        If defaultFacegenDetailTex <> 0 Then GL.DeleteTexture(defaultFacegenDetailTex) : defaultFacegenDetailTex = 0
+        If defaultFacegenTintTex <> 0 Then GL.DeleteTexture(defaultFacegenTintTex) : defaultFacegenTintTex = 0
+        If defaultSseMsnSpecTex <> 0 Then GL.DeleteTexture(defaultSseMsnSpecTex) : defaultSseMsnSpecTex = 0
+        If defaultSseEngineGenericTex <> 0 Then GL.DeleteTexture(defaultSseEngineGenericTex) : defaultSseEngineGenericTex = 0
+        If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex) : defaultFacegenSubsurfaceTex = 0
+        If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap) : defaultCubeMap = 0
 #If DEBUG Then
         GL.DebugMessageCallback(Nothing, IntPtr.Zero)
 #End If
@@ -4390,7 +4445,8 @@ Public Class PreviewModel
             Return v
         End Function
 
-        Public Sub ExportMeshToOBJ(rutaArchivo As String)
+        ' ⛔ Sin consumidor fuera de este ensamblado (única referencia: su propia declaración).
+        Friend Sub ExportMeshToOBJ(rutaArchivo As String)
             Using sw As New StreamWriter(rutaArchivo, False, Encoding.UTF8)
 
                 sw.WriteLine("# Exportado por ExportMeshToOBJ")
@@ -4615,6 +4671,42 @@ Public Class PreviewModel
     ''' <see cref="MaxTextureUploadAttempts"/> the path is added to <see cref="Last_Loaded_Textures"/>
     ''' so <see cref="Process_Textures_GL"/> stops re-enqueuing it. Below the cap the path stays
     ''' eligible for retry on the next Process_Textures_GL pass.</summary>
+    ''' <summary>Saca una textura del diccionario LIBERANDO su handle GL.
+    ''' <para>⛔ Los dos caminos de fallo de subida hacian `Textures_Dictionary.Remove(path)` a secas. Si esa
+    ''' clave ya tenia una textura VIVA —una instalada por el compositor, o una subida anterior— el handle
+    ''' quedaba huerfano: fuera del diccionario, asi que `CleanTextures` no lo encuentra nunca mas. No es
+    ''' memoria reciclable, es VRAM perdida hasta que muere el proceso.</para></summary>
+    ''' <summary>Saca <paramref name="path"/> del diccionario tras una subida FALLIDA, liberando el handle
+    ''' que hubiera quedado colgado. Sin esto la entrada se borraba y el nombre de GL quedaba huerfano.
+    ''' <para>⛔⛔ NO TOCA una entrada que sea del COMPOSITOR. Es la misma ley que
+    ''' <c>NpcFaceTintResolver.InstallTexture</c>: el gate es <see cref="PreviewModel.Texture_Loaded_Class.OwnedByComposer"/>
+    ''' y no "id &lt;&gt; 0". Este helper lo llama el camino de fallo del LOADER, y el loader puede fallar sobre
+    ''' una clave que el compositor ya repinto: el editor de cara encola el path de la cara, el usuario mueve
+    ''' un slider, <c>NpcSkinLivePreview</c> instala la textura compuesta en esa misma clave, y recien ahi
+    ''' vuelve el lote con error. Borrar ahi mata la textura VIVA del preview, y como
+    ''' <c>DirectXDDSLoader</c> marca fallidas TODAS las entradas del lote cuando revienta una sola, un DDS
+    ''' malo alcanzaba para llevarse varias. <c>GenTexture</c> recicla el nombre y otro sampler pasa a leer
+    ''' pixeles ajenos, sin un solo error de GL.</para>
+    ''' <para>La entrada del compositor es la AUTORIDAD: un upload del loader que fallo sobre esa clave ya no
+    ''' es relevante, asi que se deja como esta. La que se limpia es la del loader, donde el handle no lo
+    ''' conserva nadie mas (el diccionario tiene UNA entrada por path).</para></summary>
+    Private Sub OlvidarTexturaLiberandoHandle(path As String)
+        Dim previa As PreviewModel.Texture_Loaded_Class = Nothing
+        If Textures_Dictionary.TryGetValue(path, previa) AndAlso previa IsNot Nothing Then
+            If previa.OwnedByComposer Then
+                Dim cId = previa.Texture_ID, cP = path
+                Logger.LogLazy(Function() $"[AUDIT-ORPHAN] subida fallida sobre '{cP}', pero la clave la tiene el COMPOSITOR (handle {cId}): NO se toca")
+                Return                              ' ni se borra el handle ni se saca la entrada
+            End If
+            If previa.Texture_ID <> 0 Then
+                Dim aId = previa.Texture_ID, aP = path
+                Logger.LogLazy(Function() $"[AUDIT-ORPHAN] subida fallida sobre una clave con textura viva del loader: se libera el handle {aId} de '{aP}'")
+                Try : GL.DeleteTexture(previa.Texture_ID) : Catch : End Try
+            End If
+        End If
+        Textures_Dictionary.Remove(path)
+    End Sub
+
     Private Sub RegisterUploadFailure(path As String, reason As String)
         Dim count As Integer = 0
         _uploadFailureCount.TryGetValue(path, count)
@@ -4814,12 +4906,12 @@ Public Class PreviewModel
                             Last_Loaded_Textures.Add(path)
                             _uploadFailureCount.Remove(path)
                         Else
-                            Textures_Dictionary.Remove(path)
+                            OlvidarTexturaLiberandoHandle(path)
                             RegisterUploadFailure(path, "silent")
                         End If
                     Catch ex As Exception
                         Logger.LogLazy(Function() $"[Render] GL upload failed for '{path}': {ex.Message}")
-                        Textures_Dictionary.Remove(path)
+                        OlvidarTexturaLiberandoHandle(path)
                         RegisterUploadFailure(path, ex.Message)
                     End Try
 
@@ -5082,9 +5174,9 @@ Public Class PreviewModel
     ''' <para>⭐ NO HACE FALTA CONVERTIR LOS PRESETS, y esa es la razón por la que esto entra sin tocar nada
     ''' más: la base de <see cref="OrbitCamera"/> en la vista por defecto (angleX = angleY = 0) es
     ''' EXACTAMENTE la del mundo — <c>right = (1,0,0)</c>, <c>Forward = (0,1,0)</c>,
-    ''' <c>upPlane = (0,0,1)</c>, ver UpdateDirectionFromAngles— que es la misma base contra la que se
-    ''' convirtieron los presets viejos en <c>PreviewLight.FromCameraRelative</c>. O sea que un preset
-    ''' significa lo mismo en los dos modos mientras no orbites.</para>
+    ''' <c>upPlane = (0,0,1)</c>, ver UpdateDirectionFromAngles— que es la misma base en la que están
+    ''' autorados los presets. O sea que un preset significa lo mismo en los dos modos mientras no
+    ''' orbites.</para>
     ''' <para>`Forward` de la cámara apunta del foco HACIA el ojo (`eye = Focus + Forward*distance`), y
     ''' <c>Direction()</c> devuelve superficie→luz. Los dos van en el mismo sentido, así que el componente Y
     ''' del rig es "luz desde donde mira el observador" en los dos marcos. No hay que invertir nada.</para>

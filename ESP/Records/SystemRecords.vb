@@ -239,7 +239,7 @@ End Class
 
 Public Module SystemRecordParsers
 
-    Public Function ParseCOLL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As COLL_Data
+    Public Function ParseCOLL(rec As PluginRecord, pluginManager As PluginManager) As COLL_Data
         Dim c As New COLL_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -260,7 +260,7 @@ Public Module SystemRecordParsers
         Return c
     End Function
 
-    Public Function ParseDFOB(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DFOB_Data
+    Public Function ParseDFOB(rec As PluginRecord, pluginManager As PluginManager) As DFOB_Data
         Dim d As New DFOB_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "DATA" Then d.ObjectFormID = ResolveFID(rec, sr, pluginManager)
@@ -268,7 +268,7 @@ Public Module SystemRecordParsers
         Return d
     End Function
 
-    Public Function ParseDOBJ(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DOBJ_Data
+    Public Function ParseDOBJ(rec As PluginRecord, pluginManager As PluginManager) As DOBJ_Data
         Dim d As New DOBJ_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "DNAM" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
@@ -283,7 +283,7 @@ Public Module SystemRecordParsers
         Return d
     End Function
 
-    Public Function ParseAACT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As AACT_Data
+    Public Function ParseAACT(rec As PluginRecord, pluginManager As PluginManager) As AACT_Data
         Dim a As New AACT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -301,7 +301,7 @@ Public Module SystemRecordParsers
         Return a
     End Function
 
-    Public Function ParseASPC(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ASPC_Data
+    Public Function ParseASPC(rec As PluginRecord, pluginManager As PluginManager) As ASPC_Data
         Dim a As New ASPC_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -319,7 +319,7 @@ Public Module SystemRecordParsers
         Return a
     End Function
 
-    Public Function ParseASTP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ASTP_Data
+    Public Function ParseASTP(rec As PluginRecord, pluginManager As PluginManager) As ASTP_Data
         Dim a As New ASTP_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -336,7 +336,7 @@ Public Module SystemRecordParsers
         Return a
     End Function
 
-    Public Function ParseAORU(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As AORU_Data
+    Public Function ParseAORU(rec As PluginRecord, pluginManager As PluginManager) As AORU_Data
         Dim a As New AORU_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "AOR2" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 16 Then
@@ -350,7 +350,7 @@ Public Module SystemRecordParsers
         Return a
     End Function
 
-    Public Function ParseBNDS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As BNDS_Data
+    Public Function ParseBNDS(rec As PluginRecord, pluginManager As PluginManager) As BNDS_Data
         Dim b As New BNDS_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "DNAM" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 28 Then
@@ -364,7 +364,7 @@ Public Module SystemRecordParsers
         Return b
     End Function
 
-    Public Function ParseDUAL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DUAL_Data
+    Public Function ParseDUAL(rec As PluginRecord, pluginManager As PluginManager) As DUAL_Data
         Dim d As New DUAL_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "DATA" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 24 Then
@@ -379,7 +379,7 @@ Public Module SystemRecordParsers
         Return d
     End Function
 
-    Public Function ParseZOOM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ZOOM_Data
+    Public Function ParseZOOM(rec As PluginRecord, pluginManager As PluginManager) As ZOOM_Data
         Dim z As New ZOOM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "GNAM" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 24 Then
@@ -394,7 +394,7 @@ Public Module SystemRecordParsers
         Return z
     End Function
 
-    Public Function ParseAMDL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As AMDL_Data
+    Public Function ParseAMDL(rec As PluginRecord, pluginManager As PluginManager) As AMDL_Data
         Dim a As New AMDL_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "DNAM" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 20 Then
@@ -414,7 +414,7 @@ Public Module SystemRecordParsers
         Return a
     End Function
 
-    Public Function ParseTRNS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TRNS_Data
+    Public Function ParseTRNS(rec As PluginRecord, pluginManager As PluginManager) As TRNS_Data
         Dim t As New TRNS_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "DATA" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 28 Then
@@ -434,7 +434,7 @@ Public Module SystemRecordParsers
         Return t
     End Function
 
-    Public Function ParseRFGP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As RFGP_Data
+    Public Function ParseRFGP(rec As PluginRecord, pluginManager As PluginManager) As RFGP_Data
         Dim r As New RFGP_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -446,7 +446,7 @@ Public Module SystemRecordParsers
         Return r
     End Function
 
-    Public Function ParseLAYR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LAYR_Data
+    Public Function ParseLAYR(rec As PluginRecord, pluginManager As PluginManager) As LAYR_Data
         Dim l As New LAYR_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "PNAM" Then l.ParentLayerFormID = ResolveFID(rec, sr, pluginManager)
@@ -454,7 +454,7 @@ Public Module SystemRecordParsers
         Return l
     End Function
 
-    Public Function ParseSCCO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SCCO_Data
+    Public Function ParseSCCO(rec As PluginRecord, pluginManager As PluginManager) As SCCO_Data
         Dim s As New SCCO_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -465,7 +465,7 @@ Public Module SystemRecordParsers
         Return s
     End Function
 
-    Public Function ParseLAND(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LAND_Data
+    Public Function ParseLAND(rec As PluginRecord, pluginManager As PluginManager) As LAND_Data
         Dim l As New LAND_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "DATA" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
@@ -478,7 +478,7 @@ Public Module SystemRecordParsers
         Return l
     End Function
 
-    Public Function ParseNAVI(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As NAVI_Data
+    Public Function ParseNAVI(rec As PluginRecord, pluginManager As PluginManager) As NAVI_Data
         Return New NAVI_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID,
@@ -486,7 +486,7 @@ Public Module SystemRecordParsers
         }
     End Function
 
-    Public Function ParseFSTP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As FSTP_Data
+    Public Function ParseFSTP(rec As PluginRecord, pluginManager As PluginManager) As FSTP_Data
         Dim f As New FSTP_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -497,7 +497,7 @@ Public Module SystemRecordParsers
         Return f
     End Function
 
-    Public Function ParseFSTS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As FSTS_Data
+    Public Function ParseFSTS(rec As PluginRecord, pluginManager As PluginManager) As FSTS_Data
         Dim f As New FSTS_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             If sr.Signature = "XCNT" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 20 Then
@@ -511,7 +511,7 @@ Public Module SystemRecordParsers
         Return f
     End Function
 
-    Public Function ParseIDLM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As IDLM_Data
+    Public Function ParseIDLM(rec As PluginRecord, pluginManager As PluginManager) As IDLM_Data
         Dim i As New IDLM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature

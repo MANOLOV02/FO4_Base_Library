@@ -281,7 +281,40 @@ Public Module PluginEncodingSettings
         End SyncLock
     End Sub
 
-    ''' <summary>Manual override for Translatable encoding. Mirror of xeInit.pas -cp-trans / -cp command-line param.</summary>
+    ''' <summary>⭐ Override ACOTADO de la encoding Translatable: la fija y la DEVUELVE al salir del
+    ''' <c>Using</c>. Es el que tiene que usar cualquier camino interactivo.
+    ''' <para>⛔ EXISTE PORQUE <see cref="SetTranslatableOverride"/> NO SE RESTAURA NUNCA y no hay un solo
+    ''' sitio en el árbol que lo devuelva. El diálogo de Save ESP lo llamaba con la elección del combo, que
+    ''' es una decisión TRANSITORIA de escritura, y esa elección quedaba de global para el resto de la
+    ''' sesión. El daño concreto: guardás el NPC A en cp1251 y después abrís Save para el NPC B en un
+    ''' plugin UTF-8 — la opción "Auto" hereda cp1251, el sniff de SNAM/CNAM auto-detecta mal y
+    ''' <c>EmitLString</c> escribe cp1251 adentro de un plugin UTF-8. El resultado del segundo guardado
+    ''' dependía del primero.</para>
+    ''' <para>Un <c>codePageOrName</c> vacío o no reconocido NO cambia nada, pero el scope igual es válido
+    ''' (restaura lo mismo que había) — así el llamador no necesita una rama para el caso "Auto".</para></summary>
+    Public Function PushTranslatableOverride(codePageOrName As String) As IDisposable
+        EnsureInitialized()
+        Dim enc = ParseEncoding(codePageOrName)
+        Dim previa As Encoding
+        SyncLock _syncRoot
+            previa = _translatable
+            If enc IsNot Nothing Then _translatable = enc
+        End SyncLock
+        Return New TranslatableOverrideScope(previa)
+    End Function
+
+    ''' <summary>Devuelve <c>_translatable</c> a un valor previo. Sólo para <see cref="TranslatableOverrideScope"/>.</summary>
+    Friend Sub RestoreTranslatable(previa As Encoding)
+        SyncLock _syncRoot
+            _translatable = previa
+        End SyncLock
+    End Sub
+
+    ''' <summary>Manual override for Translatable encoding. Mirror of xeInit.pas -cp-trans / -cp command-line param.
+    ''' <para>⛔ NO SE RESTAURA: es el equivalente del parámetro de línea de comandos, o sea una decisión
+    ''' de arranque para toda la corrida. Cualquier uso TRANSITORIO (un diálogo, un guardado puntual) tiene
+    ''' que ir por <see cref="PushTranslatableOverride"/>, o la elección se filtra a todo lo que venga
+    ''' después.</para></summary>
     Public Sub SetTranslatableOverride(codePageOrName As String)
         EnsureInitialized()
         Dim enc = ParseEncoding(codePageOrName)
@@ -638,7 +671,11 @@ Public Module PluginEncodingSettings
 
     Private Sub EnsureInitialized()
         If _initialized Then Return
-        InitializeForGame(Config_App.Game_Enum.Fallout4)
+        ' ⛔ EL JUEGO SALE DE LA CONFIG, NO HARDCODEADO. Estaba fijo en Fallout4: el PRIMERO que tocara
+        ' cualquier getter fijaba el mapa de idiomas de FO4 y marcaba `_initialized`, así que en una sesión
+        ' de Skyrim el `SetLanguage("english")` posterior fallaba el lookup y caía a UTF-8 — un default
+        ' silencioso que decide cómo se DECODIFICA todo el plugin.
+        InitializeForGame(Config_App.Current.Game)
     End Sub
 
     ''' <summary>
@@ -690,3 +727,25 @@ Public Module PluginEncodingSettings
     End Function
 
 End Module
+
+''' <summary>Scope que devuelve la encoding Translatable al salir. Lo crea
+''' <see cref="PluginEncodingSettings.PushTranslatableOverride"/>.
+''' <para>Vive FUERA del Module a propósito: un Module de VB no puede declarar tipos anidados.</para>
+''' <para>Idempotente ante un Dispose doble — un <c>Using</c> anidado con el mismo scope no debe
+''' restaurar dos veces.</para></summary>
+Friend NotInheritable Class TranslatableOverrideScope
+    Implements IDisposable
+
+    Private ReadOnly _previa As System.Text.Encoding
+    Private _liberado As Boolean = False
+
+    Friend Sub New(previa As System.Text.Encoding)
+        _previa = previa
+    End Sub
+
+    Public Sub Dispose() Implements IDisposable.Dispose
+        If _liberado Then Return
+        _liberado = True
+        PluginEncodingSettings.RestoreTranslatable(_previa)
+    End Sub
+End Class

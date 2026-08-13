@@ -10,41 +10,41 @@ Imports System.Text
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 CELL record - Cell.</summary>
-Public Class CELL_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public CellFlags As UShort
-    Public LightingTemplateFormID As UInteger
-    Public WaterHeight As Single
-    Public WaterFormID As UInteger
-    Public LocationFormID As UInteger
-    Public EncounterZoneFormID As UInteger
-    Public MusicFormID As UInteger
-    Public ImageSpaceFormID As UInteger
-    Public AcousticSpaceFormID As UInteger
-    Public GodRaysFormID As UInteger
-    Public SkyWeatherRegionFormID As UInteger
+Friend Class CELL_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend CellFlags As UShort
+    Friend LightingTemplateFormID As UInteger
+    Friend WaterHeight As Single
+    Friend WaterFormID As UInteger
+    Friend LocationFormID As UInteger
+    Friend EncounterZoneFormID As UInteger
+    Friend MusicFormID As UInteger
+    Friend ImageSpaceFormID As UInteger
+    Friend AcousticSpaceFormID As UInteger
+    Friend GodRaysFormID As UInteger
+    Friend SkyWeatherRegionFormID As UInteger
 
     ' XCLL Lighting data (simplified)
-    Public AmbientColor As Color = Color.Empty
-    Public DirectionalColor As Color = Color.Empty
-    Public FogNearColor As Color = Color.Empty
-    Public FogNear As Single
-    Public FogFar As Single
-    Public FogPower As Single
+    Friend AmbientColor As Color = Color.Empty
+    Friend DirectionalColor As Color = Color.Empty
+    Friend FogNearColor As Color = Color.Empty
+    Friend FogNear As Single
+    Friend FogFar As Single
+    Friend FogPower As Single
 
     ' Grid coordinates (for exterior cells)
-    Public GridX As Integer
-    Public GridY As Integer
+    Friend GridX As Integer
+    Friend GridY As Integer
 
-    Public ReadOnly Property IsInterior As Boolean
+    Friend ReadOnly Property IsInterior As Boolean
         Get
             Return (CellFlags And &H1US) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property HasWater As Boolean
+    Friend ReadOnly Property HasWater As Boolean
         Get
             Return (CellFlags And &H2US) <> 0
         End Get
@@ -55,7 +55,7 @@ Public Class CELL_Data
     ''' (probablemente port heredado de Skyrim). En FO4 vanilla no existe un flag explícito
     ''' "Player CantFastTravel"; este flag SÓLO afecta a followers (companions), no al player.
     ''' Si el consumer necesitaba "player fast-travel disabled" debe revisar su lógica de negocio.</summary>
-    Public ReadOnly Property CantFastTravel As Boolean
+    Friend ReadOnly Property CantFastTravel As Boolean
         Get
             Return (CellFlags And &H2000US) <> 0
         End Get
@@ -63,67 +63,67 @@ Public Class CELL_Data
 End Class
 
 ''' <summary>Fallout 4 WRLD record - Worldspace.</summary>
-Public Class WRLD_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ParentWorldFormID As UInteger
-    Public ClimateFormID As UInteger
-    Public WaterFormID As UInteger
-    Public LocationFormID As UInteger
-    Public EncounterZoneFormID As UInteger
-    Public MusicFormID As UInteger
-    Public LightingTemplateFormID As UInteger
-    Public MapImagePath As String = ""
-    Public HDLODDiffuseTexture As String = ""
-    Public HDLODNormalTexture As String = ""
-    Public WaterEnvironmentMap As String = ""
-    Public InheritanceFlags As UShort
-    Public WorldFlags As Byte
-    Public DistantLODMultiplier As Single = 1.0F
+Friend Class WRLD_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ParentWorldFormID As UInteger
+    Friend ClimateFormID As UInteger
+    Friend WaterFormID As UInteger
+    Friend LocationFormID As UInteger
+    Friend EncounterZoneFormID As UInteger
+    Friend MusicFormID As UInteger
+    Friend LightingTemplateFormID As UInteger
+    Friend MapImagePath As String = ""
+    Friend HDLODDiffuseTexture As String = ""
+    Friend HDLODNormalTexture As String = ""
+    Friend WaterEnvironmentMap As String = ""
+    Friend InheritanceFlags As UShort
+    Friend WorldFlags As Byte
+    Friend DistantLODMultiplier As Single = 1.0F
 End Class
 
 ''' <summary>Fallout 4 LCTN record - Location.</summary>
-Public Class LCTN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ParentLocationFormID As UInteger
-    Public MusicFormID As UInteger
-    Public UnreportedCrimeFactionFormID As UInteger
-    Public WorldLocMarkerRefFormID As UInteger
-    Public WorldLocRadius As Single
-    Public ActorFadeMult As Single = 1.0F
-    Public LocationColor As Color = Color.Empty
-    Public KeywordFormIDs As New List(Of UInteger)
+Friend Class LCTN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ParentLocationFormID As UInteger
+    Friend MusicFormID As UInteger
+    Friend UnreportedCrimeFactionFormID As UInteger
+    Friend WorldLocMarkerRefFormID As UInteger
+    Friend WorldLocRadius As Single
+    Friend ActorFadeMult As Single = 1.0F
+    Friend LocationColor As Color = Color.Empty
+    Friend KeywordFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Fallout 4 NAVM record - Navmesh (simplified).</summary>
-Public Class NAVM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public HasData As Boolean
+Friend Class NAVM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend HasData As Boolean
     ' Navmesh geometry is complex binary data - store raw for specialized use
-    Public RawNVNM As Byte()
+    Friend RawNVNM As Byte()
 End Class
 
 ''' <summary>Fallout 4 ECZN record - Encounter Zone.</summary>
-Public Class ECZN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public OwnerFormID As UInteger
-    Public LocationFormID As UInteger
-    Public Rank As SByte
-    Public MinLevel As SByte
-    Public Flags As Byte
+Friend Class ECZN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend OwnerFormID As UInteger
+    Friend LocationFormID As UInteger
+    Friend Rank As SByte
+    Friend MinLevel As SByte
+    Friend Flags As Byte
 
-    Public ReadOnly Property NeverResets As Boolean
+    Friend ReadOnly Property NeverResets As Boolean
         Get
             Return (Flags And &H1) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property MatchPCBelowMin As Boolean
+    Friend ReadOnly Property MatchPCBelowMin As Boolean
         Get
             Return (Flags And &H2) <> 0
         End Get
@@ -131,42 +131,42 @@ Public Class ECZN_Data
 End Class
 
 ''' <summary>REGN weather entry.</summary>
-Public Class REGN_WeatherEntry
-    Public WeatherFormID As UInteger
-    Public Chance As UInteger
-    Public GlobalFormID As UInteger
+Friend Class REGN_WeatherEntry
+    Friend WeatherFormID As UInteger
+    Friend Chance As UInteger
+    Friend GlobalFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 REGN record - Region.</summary>
-Public Class REGN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public MapColor As Color = Color.Empty
-    Public WorldspaceFormID As UInteger
-    Public MusicFormID As UInteger
-    Public MapName As String = ""
-    Public WeatherTypes As New List(Of REGN_WeatherEntry)
+Friend Class REGN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend MapColor As Color = Color.Empty
+    Friend WorldspaceFormID As UInteger
+    Friend MusicFormID As UInteger
+    Friend MapName As String = ""
+    Friend WeatherTypes As New List(Of REGN_WeatherEntry)
 End Class
 
 ''' <summary>Fallout 4 WATR record - Water Type.</summary>
-Public Class WATR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public WaterFlags As Byte
-    Public ConsumeSpellFormID As UInteger
-    Public ContactSpellFormID As UInteger
-    Public ImageSpaceFormID As UInteger
-    Public OpenSoundFormID As UInteger
+Friend Class WATR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend WaterFlags As Byte
+    Friend ConsumeSpellFormID As UInteger
+    Friend ContactSpellFormID As UInteger
+    Friend ImageSpaceFormID As UInteger
+    Friend OpenSoundFormID As UInteger
 
     ' Visual properties (from DNAM, simplified)
-    Public Opacity As Single
-    Public ShallowColor As Color = Color.Empty
-    Public DeepColor As Color = Color.Empty
-    Public ReflectionColor As Color = Color.Empty
-    Public DepthAmount As Single
+    Friend Opacity As Single
+    Friend ShallowColor As Color = Color.Empty
+    Friend DeepColor As Color = Color.Empty
+    Friend ReflectionColor As Color = Color.Empty
+    Friend DepthAmount As Single
 
-    Public ReadOnly Property IsDangerous As Boolean
+    Friend ReadOnly Property IsDangerous As Boolean
         Get
             Return (WaterFlags And &H1) <> 0
         End Get
@@ -174,98 +174,98 @@ Public Class WATR_Data
 End Class
 
 ''' <summary>WTHR sound entry.</summary>
-Public Class WTHR_SoundEntry
-    Public SoundFormID As UInteger
-    Public SoundType As UInteger
+Friend Class WTHR_SoundEntry
+    Friend SoundFormID As UInteger
+    Friend SoundType As UInteger
 End Class
 
 ''' <summary>Fallout 4 WTHR record - Weather.</summary>
-Public Class WTHR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public PrecipitationTypeFormID As UInteger
-    Public VisualEffectFormID As UInteger
-    Public SunGlareLensFlareFormID As UInteger
-    Public MaxCloudLayers As UInteger = 16
+Friend Class WTHR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend PrecipitationTypeFormID As UInteger
+    Friend VisualEffectFormID As UInteger
+    Friend SunGlareLensFlareFormID As UInteger
+    Friend MaxCloudLayers As UInteger = 16
 
     ' DATA
-    Public WindSpeed As Single
-    Public TransDelta As Single
-    Public SunGlare As Single
-    Public SunDamage As Single
-    Public WeatherFlags As UInteger
-    Public VolatilityMult As Single = 1.0F
-    Public VisibilityMult As Single = 1.0F
+    Friend WindSpeed As Single
+    Friend TransDelta As Single
+    Friend SunGlare As Single
+    Friend SunDamage As Single
+    Friend WeatherFlags As UInteger
+    Friend VolatilityMult As Single = 1.0F
+    Friend VisibilityMult As Single = 1.0F
 
     ' Cloud textures
-    Public CloudTextures As New List(Of String)
+    Friend CloudTextures As New List(Of String)
 
     ' Sounds
-    Public Sounds As New List(Of WTHR_SoundEntry)
+    Friend Sounds As New List(Of WTHR_SoundEntry)
 
     ' Image spaces (Dawn, Day, Dusk, Night)
-    Public ImageSpaceFormIDs As New List(Of UInteger)
+    Friend ImageSpaceFormIDs As New List(Of UInteger)
     ' God rays
-    Public GodRayFormIDs As New List(Of UInteger)
+    Friend GodRayFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>CLMT weather entry.</summary>
-Public Class CLMT_WeatherEntry
-    Public WeatherFormID As UInteger
-    Public Chance As Integer
-    Public GlobalFormID As UInteger
+Friend Class CLMT_WeatherEntry
+    Friend WeatherFormID As UInteger
+    Friend Chance As Integer
+    Friend GlobalFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 CLMT record - Climate.</summary>
-Public Class CLMT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public SunTexture As String = ""
-    Public SunGlareTexture As String = ""
-    Public SkyModelPath As String = ""
-    Public WeatherTypes As New List(Of CLMT_WeatherEntry)
+Friend Class CLMT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend SunTexture As String = ""
+    Friend SunGlareTexture As String = ""
+    Friend SkyModelPath As String = ""
+    Friend WeatherTypes As New List(Of CLMT_WeatherEntry)
 End Class
 
 ''' <summary>Fallout 4 LGTM record - Lighting Template.</summary>
-Public Class LGTM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class LGTM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 
     ' DATA - lighting parameters
-    Public AmbientColor As Color = Color.Empty
-    Public DirectionalColor As Color = Color.Empty
-    Public FogNearColor As Color = Color.Empty
-    Public FogFarColor As Color = Color.Empty
-    Public FogNear As Single
-    Public FogFar As Single
-    Public FogMax As Single
-    Public FogPower As Single
-    Public DirectionalRotationXY As Single
-    Public DirectionalRotationZ As Single
-    Public DirectionalFade As Single
-    Public LightFadeBegin As Single
-    Public LightFadeEnd As Single
+    Friend AmbientColor As Color = Color.Empty
+    Friend DirectionalColor As Color = Color.Empty
+    Friend FogNearColor As Color = Color.Empty
+    Friend FogFarColor As Color = Color.Empty
+    Friend FogNear As Single
+    Friend FogFar As Single
+    Friend FogMax As Single
+    Friend FogPower As Single
+    Friend DirectionalRotationXY As Single
+    Friend DirectionalRotationZ As Single
+    Friend DirectionalFade As Single
+    Friend LightFadeBegin As Single
+    Friend LightFadeEnd As Single
 End Class
 
 ''' <summary>Fallout 4 LTEX record - Landscape Texture.</summary>
-Public Class LTEX_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public TextureSetFormID As UInteger
-    Public MaterialTypeFormID As UInteger
-    Public HavokFriction As Byte = 30
-    Public HavokRestitution As Byte = 30
-    Public TextureSpecularExponent As Byte = 30
-    Public GrassFormIDs As New List(Of UInteger)
+Friend Class LTEX_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend TextureSetFormID As UInteger
+    Friend MaterialTypeFormID As UInteger
+    Friend HavokFriction As Byte = 30
+    Friend HavokRestitution As Byte = 30
+    Friend TextureSpecularExponent As Byte = 30
+    Friend GrassFormIDs As New List(Of UInteger)
 End Class
 
 #End Region
 
 #Region "Parsers"
 
-Public Module WorldRecordParsers
+Friend Module WorldRecordParsers
 
-    Public Function ParseCELL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CELL_Data
+    Friend Function ParseCELL(rec As PluginRecord, pluginManager As PluginManager) As CELL_Data
         Dim c As New CELL_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -325,7 +325,7 @@ Public Module WorldRecordParsers
         If d.Length >= 36 Then c.FogPower = BitConverter.ToSingle(d, 32)
     End Sub
 
-    Public Function ParseWRLD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As WRLD_Data
+    Friend Function ParseWRLD(rec As PluginRecord, pluginManager As PluginManager) As WRLD_Data
         Dim w As New WRLD_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -375,7 +375,7 @@ Public Module WorldRecordParsers
         Return w
     End Function
 
-    Public Function ParseLCTN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LCTN_Data
+    Friend Function ParseLCTN(rec As PluginRecord, pluginManager As PluginManager) As LCTN_Data
         Dim l As New LCTN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -413,7 +413,7 @@ Public Module WorldRecordParsers
         Return l
     End Function
 
-    Public Function ParseNAVM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As NAVM_Data
+    Friend Function ParseNAVM(rec As PluginRecord, pluginManager As PluginManager) As NAVM_Data
         Dim n As New NAVM_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -430,7 +430,7 @@ Public Module WorldRecordParsers
         Return n
     End Function
 
-    Public Function ParseECZN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ECZN_Data
+    Friend Function ParseECZN(rec As PluginRecord, pluginManager As PluginManager) As ECZN_Data
         Dim e As New ECZN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -451,7 +451,7 @@ Public Module WorldRecordParsers
         Return e
     End Function
 
-    Public Function ParseREGN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As REGN_Data
+    Friend Function ParseREGN(rec As PluginRecord, pluginManager As PluginManager) As REGN_Data
         Dim r As New REGN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -485,7 +485,7 @@ Public Module WorldRecordParsers
         Return r
     End Function
 
-    Public Function ParseWATR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As WATR_Data
+    Friend Function ParseWATR(rec As PluginRecord, pluginManager As PluginManager) As WATR_Data
         Dim w As New WATR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -516,7 +516,7 @@ Public Module WorldRecordParsers
         Return w
     End Function
 
-    Public Function ParseWTHR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As WTHR_Data
+    Friend Function ParseWTHR(rec As PluginRecord, pluginManager As PluginManager) As WTHR_Data
         Dim w As New WTHR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -558,7 +558,7 @@ Public Module WorldRecordParsers
         Return w
     End Function
 
-    Public Function ParseCLMT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CLMT_Data
+    Friend Function ParseCLMT(rec As PluginRecord, pluginManager As PluginManager) As CLMT_Data
         Dim c As New CLMT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -590,7 +590,7 @@ Public Module WorldRecordParsers
         Return c
     End Function
 
-    Public Function ParseLGTM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LGTM_Data
+    Friend Function ParseLGTM(rec As PluginRecord, pluginManager As PluginManager) As LGTM_Data
         Dim l As New LGTM_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -617,7 +617,7 @@ Public Module WorldRecordParsers
         Return l
     End Function
 
-    Public Function ParseLTEX(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LTEX_Data
+    Friend Function ParseLTEX(rec As PluginRecord, pluginManager As PluginManager) As LTEX_Data
         Dim l As New LTEX_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

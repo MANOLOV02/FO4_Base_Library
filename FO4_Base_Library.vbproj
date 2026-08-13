@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -40,6 +40,16 @@
          Friend. NADA se vuelve Public por esto. -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>ShadowGate</_Parameter1>
+    </AssemblyAttribute>
+    <!-- Tools/TexCodecPerfProbe: arnes del codec de texturas. Mide (depende de la maquina: nucleos y
+         ancho SIMD) y ademas es el GATE DE BYTES del encode/decode. Necesita llegar a
+         EmpaquetarPixeles / CanalesDelFormatoDecodificado / EsBgra8, que son `Friend`.
+         ⚠️ El atributo SI viaja en los metadatos del DLL distribuido y no es gratis del todo: como el
+         ensamblado no esta firmado, CUALQUIER assembly que se llame `TexCodecPerfProbe` entra a los
+         `Friend`. Lo que no cambia es la superficie PUBLICA ni el costo en runtime; el arnes en si no se
+         distribuye. Ver 00-reglas-scope-y-libreria y 00-reglas-self-tests-no-van-en-el-binario. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>TexCodecPerfProbe</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 

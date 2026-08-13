@@ -66,8 +66,20 @@ Public Module DirectXDDSLoader
         Dim bmp = New Bitmap(lvl.Width, lvl.Height, Imaging.PixelFormat.Format32bppArgb)
         Dim bd = bmp.LockBits(New Rectangle(0, 0, lvl.Width, lvl.Height),
                               ImageLockMode.WriteOnly, Imaging.PixelFormat.Format32bppArgb)
-        Marshal.Copy(lvl.Data, 0, bd.Scan0, lvl.Data.Length)
-        bmp.UnlockBits(bd)
+        Try
+            ' ⛔ El destino es memoria NATIVA de GDI+: copiar sin comparar contra su tamaño real no da una
+            ' excepción, da corrupción de heap. `Marshal.Copy` sólo mira el array de origen.
+            Dim capacidad As Long = CLng(Math.Abs(bd.Stride)) * bd.Height
+            If lvl.Data.Length > capacidad Then
+                Throw New InvalidDataException(
+                    $"El nivel 0 trae {lvl.Data.Length} bytes y el bitmap GDI+ sólo admite {capacidad}.")
+            End If
+            Marshal.Copy(lvl.Data, 0, bd.Scan0, lvl.Data.Length)
+        Finally
+            ' ⛔ Sin este Finally, una excepción en el copy dejaba el bitmap BLOQUEADO y sus bytes nativos
+            ' —67 MB en un 4096²— colgados hasta el finalizador, fuera del heap administrado.
+            bmp.UnlockBits(bd)
+        End Try
         For Each lvl In tex.Levels
             lvl.Data = Nothing         ' rompe la referencia al Byte()
         Next
@@ -187,8 +199,20 @@ Public Module DirectXDDSLoader
 
         Dim target = If(tex.IsCubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D)
         Dim texID As Integer = 0
-        Dim pbo As Integer = 0
+        ' ⛔ El alineamiento previo se lee ACÁ, ANTES del Try. Estaba leído adentro, así que cualquier
+        ' excepción anterior a esa línea hacía que el Finally "restaurara" el literal 4 de la
+        ' inicialización — y 4 NO es lo que hay: `CreateColorTexture` deja el UNPACK_ALIGNMENT global en 1
+        ' y no lo devuelve. O sea que el camino de error cambiaba estado global del contexto en silencio.
+        ' ⛔ Y va con su propio Try: al sacarla del Try grande tambien la saqué del `Catch` que convertía
+        ' TODA esta función en `Return 0`. Sin esto, una excepción de GL acá escapa a `UploadTextureToGL` y
+        ' a `Load_And_GenerateOpenGLTextures_Memory`, que NO la atrapan — o sea, ensanchar el radio para
+        ' arreglar un alineamiento. Si no se puede leer, 4 (el default de GL) es la respuesta correcta.
         Dim prevUnpackAlignment As Integer = 4
+        Try
+            GL.GetInteger(CType(GL_UNPACK_ALIGNMENT, GetPName), prevUnpackAlignment)
+        Catch
+            prevUnpackAlignment = 4
+        End Try
 
         Dim glInternal As Integer = CInt(tex.GlInternalFormat)
         Dim glFormat As Integer = CInt(tex.GlPixelFormat)
@@ -440,7 +464,6 @@ Public Module DirectXDDSLoader
 
             ApplySamplingState(target, mipLevels, useNearest, tex.IsCubemap)
 
-            GL.GetInteger(CType(GL_UNPACK_ALIGNMENT, GetPName), prevUnpackAlignment)
             GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1)
 
             GL.TexStorage2D(
@@ -453,40 +476,30 @@ Public Module DirectXDDSLoader
             ' Contrato asumido del wrapper:
             ' tex.Levels esta ordenado mip-major:
             ' mip0-face0, mip0-face1, ..., mip1-face0, mip1-face1, ...
-            Dim totalBytes As Integer = 0
-            Dim offsets(expectedImages - 1) As Integer
-
             For m As Integer = 0 To mipLevels - 1
                 For f As Integer = 0 To faces - 1
                     Dim idx = m * faces + f
                     Dim lvl = tex.Levels(idx)
-
                     If lvl Is Nothing OrElse lvl.Data Is Nothing Then
                         Throw New InvalidOperationException("Invalid texture level at idx=" & idx.ToString())
                     End If
-
-                    offsets(idx) = totalBytes
-                    totalBytes += lvl.Data.Length
                 Next
             Next
 
-            pbo = GL.GenBuffer()
-            GL.BindBuffer(BufferTarget.PixelUnpackBuffer, pbo)
-            GL.BufferData(BufferTarget.PixelUnpackBuffer, totalBytes, IntPtr.Zero, BufferUsageHint.StreamDraw)
-
-            Dim basePtr = GL.MapBuffer(BufferTarget.PixelUnpackBuffer, BufferAccess.WriteOnly)
-            If basePtr = IntPtr.Zero Then
-                Throw New InvalidOperationException("GL.MapBuffer returned IntPtr.Zero for PixelUnpackBuffer.")
-            End If
-
-            For i As Integer = 0 To expectedImages - 1
-                Dim lvl = tex.Levels(i)
-                Marshal.Copy(lvl.Data, 0, IntPtr.Add(basePtr, offsets(i)), lvl.Data.Length)
-            Next
-
-            If GL.UnmapBuffer(BufferTarget.PixelUnpackBuffer) = False Then
-                Throw New InvalidOperationException("GL.UnmapBuffer returned False for PixelUnpackBuffer.")
-            End If
+            ' ⛔⛔ ACA VIVIA UN PBO Y NO COMPRABA NADA.
+            ' El sentido de un Pixel Buffer Object es la transferencia ASINCRONA: se llena, se sigue
+            ' trabajando, y el driver la consume cuando puede. Este se creaba, se llenaba, se consumia y se
+            ' borraba DENTRO DE LA MISMA LLAMADA, sin fence y sin reuso entre texturas. El driver tenia que
+            ' terminar la transferencia igual, y encima costaba:
+            '   1. un `Marshal.Copy` del contenido ENTERO de la textura (administrado -> PBO), y
+            '   2. un `BufferData(totalBytes)` que reserva y libera esa misma cantidad de memoria DEL
+            '      DRIVER por textura — ~22 MB por un diffuse 4096² BC7 con mips.
+            ' Subiendo directo desde `lvl.Data` queda UNA sola copia, la que hace el driver hacia la
+            ' textura, y cero asignaciones intermedias. Si algun dia se quiere el beneficio asincrono de
+            ' verdad, eso es un PBO PERSISTENTE por contexto con fence, no uno por textura.
+            ' ⛔ Desbindear explicitamente: con un PBO bindeado, el argumento de datos de TexSubImage2D se
+            ' interpreta como un OFFSET dentro del buffer y no como un puntero al array.
+            GL.BindBuffer(BufferTarget.PixelUnpackBuffer, 0)
 
             Dim faceTargets() As TextureTarget = {
             TextureTarget.TextureCubeMapPositiveX, TextureTarget.TextureCubeMapNegativeX,
@@ -499,24 +512,27 @@ Public Module DirectXDDSLoader
                     Dim idx = m * faces + f
                     Dim lvl = tex.Levels(idx)
                     Dim subTarget = If(tex.IsCubemap, faceTargets(f), TextureTarget.Texture2D)
-                    Dim offsetPtr = New IntPtr(offsets(idx))
 
                     If tex.IsCompressedGL Then
-                        GL.CompressedTexSubImage2D(
+                        ' ⛔ El overload que toma `PixelFormat` está marcado Obsolete en OpenTK 4
+                        ' ("Use InternalFormat overload instead") ⇒ BC40000 en un build que estaba limpio.
+                        ' Es el mismo GLenum por el cable: `glInternal` SIEMPRE fue un formato interno
+                        ' (GL_COMPRESSED_*), nunca un PixelFormat — el cast viejo mentía sobre el tipo.
+                        GL.CompressedTexSubImage2D(Of Byte)(
                         subTarget,
                         m, 0, 0,
                         lvl.Width, lvl.Height,
-                        CType(glInternal, InternalFormat),
+                        CType(glInternal, OpenTK.Graphics.OpenGL4.InternalFormat),
                         lvl.Data.Length,
-                        offsetPtr)
+                        lvl.Data)
                     Else
-                        GL.TexSubImage2D(
+                        GL.TexSubImage2D(Of Byte)(
                         subTarget,
                         m, 0, 0,
                         lvl.Width, lvl.Height,
                         CType(glFormat, OpenTK.Graphics.OpenGL4.PixelFormat),
                         CType(glType, PixelType),
-                        offsetPtr)
+                        lvl.Data)
                     End If
                 Next
             Next
@@ -533,7 +549,22 @@ Public Module DirectXDDSLoader
             ' Certify upload success. A silent GL error here means the texture is allocated
             ' but its contents are undefined (driver typically zeros it = solid black). We
             ' refuse to return a poisoned ID so the caller can retry instead of caching it.
-            If Not CheckGlOk("CreateOpenGL_FromTextureLoaded_PBO upload, DXGI=" & tex.DxgiCodeFinal.ToString()) Then
+            Dim subidaOk = CheckGlOk("CreateOpenGL_FromTextureLoaded_PBO upload, DXGI=" & tex.DxgiCodeFinal.ToString())
+
+            ' [AUDIT-UPLOAD] valida la ELIMINACION DEL PBO: ahora se sube directo desde el array
+            ' administrado. Una linea por textura con todo lo que hace falta para decir si anduvo.
+            If Logger.Enabled Then
+                Dim aDxgi = tex.DxgiCodeFinal, aInt = glInternal, aFmt = glFormat, aTyp = glType
+                Dim aComp = tex.IsCompressedGL, aCube = tex.IsCubemap, aMips = mipLevels, aFaces = faces
+                Dim aW = baseW, aH = baseH, aOk = subidaOk
+                Dim aBytes As Long = 0
+                For Each l In tex.Levels
+                    If l IsNot Nothing AndAlso l.Data IsNot Nothing Then aBytes += l.Data.Length
+                Next
+                Logger.LogLazy(Function() $"[AUDIT-UPLOAD] {aW}x{aH} dxgi={aDxgi} glInternal=0x{Hex(aInt)} glFormat=0x{Hex(aFmt)} glType=0x{Hex(aTyp)} comp={aComp} cube={aCube} mips={aMips} faces={aFaces} bytes={aBytes} => {If(aOk, "OK", "FALLO")}")
+            End If
+
+            If Not subidaOk Then
                 GL.DeleteTexture(texID)
                 Return 0
             End If
@@ -548,12 +579,9 @@ Public Module DirectXDDSLoader
             End If
 
         Finally
+            ' Se deja el PIXEL_UNPACK_BUFFER desbindeado: es la precondicion de la subida directa, y
+            ' dejarlo asi evita que un PBO ajeno convierta el puntero de datos en un offset.
             GL.BindBuffer(BufferTarget.PixelUnpackBuffer, 0)
-
-            If pbo <> 0 Then
-                GL.DeleteBuffer(pbo)
-            End If
-
             GL.PixelStore(PixelStoreParameter.UnpackAlignment, prevUnpackAlignment)
             GL.BindTexture(target, 0)
         End Try

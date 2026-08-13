@@ -318,88 +318,27 @@ Public Class Config_App
         JsonConfigIO.Save(Current, ConfigFilePath, "configuration")
     End Sub
 
-    ''' <summary>Convierte los rigs guardados con el esquema VIEJO (6 multiplicadores relativos a la
-    ''' camara) al nuevo (azimut/elevacion de mundo). Idempotente: un rig ya migrado trae
-    ''' <c>SchemaVersion &gt;= 1</c> y no se toca.
-    ''' <para>⛔ Si el JSON no trae las claves viejas tampoco (config nuevo, o rig recortado a mano) se
-    ''' repone el preset por default para ESE rig, y se dice por Logger. Lo que NO se hace es dejarlo en
-    ''' cero: cuatro luces apuntando al mismo lado no es un estado que nadie haya elegido.</para></summary>
-    Private Shared Sub MigrateLightRigsToWorldSpace(path As String)
-        If Current.Setting_PreviewLights_FO4.SchemaVersion >= PreviewLightRig.CurrentSchemaVersion AndAlso
-           Current.Setting_PreviewLights_SSE.SchemaVersion >= PreviewLightRig.CurrentSchemaVersion Then Return
-
-        ' ⛔⭐ SE PASA EL JsonDocument, NO UN `JsonElement?`. Estaba
-        '     Dim root As JsonElement? = If(doc Is Nothing, Nothing, doc.RootElement)
-        ' y en VB ese ternario unifica al TIPO DE VALOR, no al Nullable: con doc = Nothing devuelve un
-        ' JsonElement por default ENVUELTO, o sea HasValue = True. El guard `Not root.HasValue` de abajo
-        ' era codigo muerto —la rama de fallback documentada nunca corria— y la primera llamada a
-        ' TryGetProperty sobre ese elemento hueco tira InvalidOperationException desde LoadConfig: crash
-        ' de arranque, antes de que exista el Logger. Verificado compilando el caso aparte.
-        Using doc = JsonConfigIO.TryOpenRaw(path)
-            If Current.Setting_PreviewLights_FO4.SchemaVersion < PreviewLightRig.CurrentSchemaVersion Then
-                Current.Setting_PreviewLights_FO4 = MigrateOneRig(doc, "Setting_PreviewLights_FO4")
-            End If
-            If Current.Setting_PreviewLights_SSE.SchemaVersion < PreviewLightRig.CurrentSchemaVersion Then
-                Current.Setting_PreviewLights_SSE = MigrateOneRig(doc, "Setting_PreviewLights_SSE")
-            End If
-        End Using
-    End Sub
-
-    Friend Shared Function MigrateOneRig(doc As System.Text.Json.JsonDocument, key As String) As PreviewLightRig
-        Dim rigEl As System.Text.Json.JsonElement
-        If doc Is Nothing OrElse Not doc.RootElement.TryGetProperty(key, rigEl) OrElse
-           rigEl.ValueKind <> System.Text.Json.JsonValueKind.Object Then
-            Logger.Log($"[RIG-MIGRA] '{key}' no estaba en el config.json: se repone el preset por default.")
-            Return PreviewLightRig.Defaults()
+    ''' <summary>⭐ RIG DE ESQUEMA VIEJO ⇒ PRESET POR DEFAULT. Sin conversion, sin lectura del JSON crudo,
+    ''' sin ramas por campo. Devuelve el rig que hay que usar y, por <paramref name="pisado"/>, si lo cambio.
+    '''
+    ''' <para>⛔⛔ ESTO PISA LO QUE EL USUARIO HAYA ELEGIDO, incluido un rig personalizado, y es una
+    ''' DECISION SUYA (2026-08-12: <i>"se pisan directo y el custom si lo tiene se olvida"</i>). La
+    ''' alternativa —arrastrar un lector del formato anterior por cada bump de esquema— es exactamente el
+    ''' modo legacy que este proyecto no tiene. Reemplaza a la conversion de los 6 multiplicadores
+    ''' relativos a la camara (esquema 0 → 1), que se borro entera junto con
+    ''' <c>PreviewLight.FromCameraRelative</c>.</para>
+    '''
+    ''' <para>El centinela es <see cref="PreviewLightRig.SchemaVersion"/>: un config.json anterior no trae
+    ''' la clave y el deserializador la deja en 0, y uno del esquema 1 trae un 1. Los dos son &lt; 2 ⇒ los
+    ''' dos se reponen. Es PURA a proposito —no toca <c>Current</c> ni el disco— para que el gate
+    ''' <c>rig-esquema-viejo</c> la pueda probar sin config de por medio.</para></summary>
+    Friend Shared Function RepararRigDeEsquemaViejo(rig As PreviewLightRig, ByRef pisado As Boolean) As PreviewLightRig
+        If rig.SchemaVersion >= PreviewLightRig.CurrentSchemaVersion Then
+            pisado = False
+            Return rig
         End If
-
-        ' El resto del rig (ambiente, colores, strengths) lo deserializo bien el tipo actual: sus claves no
-        ' cambiaron. Solo hay que reconstruir las CUATRO direcciones.
-        Dim rig = If(key.EndsWith("_SSE", StringComparison.Ordinal), Current.Setting_PreviewLights_SSE, Current.Setting_PreviewLights_FO4)
-        ' ⛔ EL RESGUARDO ES POR LUZ, NO POR RIG. `anyConverted` era uno solo: si UNA sola luz traia los
-        ' multiplicadores viejos, las otras tres se quedaban con lo que dio el deserializador —azimut 0,
-        ' elevacion 0, o sea las cuatro apuntando horizontal desde +Y— y el rig se marcaba migrado, con lo
-        ' cual no se reintentaba nunca. El doc de arriba dice justo que eso no es un estado que nadie haya
-        ' elegido; cubrirlo solo en el caso todo-o-nada es no cubrirlo.
-        Dim def = PreviewLightRig.Defaults()
-        Dim anyConverted As Boolean = False
-        rig.KeyLight = MigrateOneLight(rigEl, "KeyLight", rig.KeyLight, def.KeyLight, anyConverted)
-        rig.FillLeft = MigrateOneLight(rigEl, "FillLeft", rig.FillLeft, def.FillLeft, anyConverted)
-        rig.FillRight = MigrateOneLight(rigEl, "FillRight", rig.FillRight, def.FillRight, anyConverted)
-        rig.BackLight = MigrateOneLight(rigEl, "BackLight", rig.BackLight, def.BackLight, anyConverted)
-
-        If Not anyConverted Then
-            Logger.Log($"[RIG-MIGRA] '{key}' no traia los multiplicadores viejos: se repone el preset por default.")
-            Return PreviewLightRig.Defaults()
-        End If
-        rig.SchemaVersion = PreviewLightRig.CurrentSchemaVersion
-        Logger.Log($"[RIG-MIGRA] '{key}' convertido a luces fijas al mundo.")
-        Return rig
-    End Function
-
-    Private Shared Function MigrateOneLight(rigEl As System.Text.Json.JsonElement, name As String,
-                                            current As PreviewLight, fallback As PreviewLight,
-                                            ByRef anyConverted As Boolean) As PreviewLight
-        ' Sin direccion vieja que convertir se toma la del PRESET, no la del deserializador: esta ultima es
-        ' (0, 0) y dejaria la luz apuntando al horizonte. Strength y Color del usuario se conservan.
-        Dim sinDireccion = fallback
-        sinDireccion.Strength = current.Strength
-        sinDireccion.Color = current.Color
-        Dim el As System.Text.Json.JsonElement
-        If Not rigEl.TryGetProperty(name, el) OrElse el.ValueKind <> System.Text.Json.JsonValueKind.Object Then Return sinDireccion
-        Dim up, dn, le, ri, fw, bk As Single
-        Dim got As Boolean = JsonConfigIO.TryGetSingle(el, "Up", up)
-        got = JsonConfigIO.TryGetSingle(el, "Down", dn) OrElse got
-        got = JsonConfigIO.TryGetSingle(el, "Left", le) OrElse got
-        got = JsonConfigIO.TryGetSingle(el, "Right", ri) OrElse got
-        got = JsonConfigIO.TryGetSingle(el, "Forward", fw) OrElse got
-        got = JsonConfigIO.TryGetSingle(el, "Back", bk) OrElse got
-        If Not got Then Return sinDireccion
-        anyConverted = True
-        ' Strength y Color ya vienen bien del deserializador: solo se reemplaza la DIRECCION.
-        Dim conv = PreviewLight.FromCameraRelative(current.Strength, up, dn, le, ri, fw, bk)
-        conv.Color = current.Color
-        Return conv
+        pisado = True
+        Return PreviewLightRig.Defaults()
     End Function
 
     Public Shared Sub LoadConfig()
@@ -433,31 +372,27 @@ Public Class Config_App
                 hayQueGrabar = True
             End If
 
-            ' ⛔ MIGRACION DEL RIG A LUCES FIJAS AL MUNDO (esquema 0 -> 1). El esquema viejo guardaba SEIS
-            ' multiplicadores por luz relativos a la CAMARA; el nuevo guarda azimut/elevacion de mundo. El
-            ' deserializador ignora las claves viejas y deja las nuevas en CERO, o sea que sin esto todo
-            ' usuario existente arrancaria con las cuatro luces apuntando al mismo lado (azim 0, elev 0) y
-            ' el preview cambiado, en silencio.
-            ' Se convierten LEYENDO EL JSON CRUDO, que es donde siguen estando los 6 multiplicadores. La
-            ' conversion es exacta: en la vista por defecto la base de camara ES la del mundo (ver
-            ' PreviewLight.FromCameraRelative), asi que el rig del usuario conserva su aspecto en esa vista.
-            ' ⛔ SE GRABA ACA. `MigrateLightRigsToWorldSpace` no persiste nada por si sola, y hasta ahora
-            ' le servia de grabado gratis la rama de TBN de abajo — que corria en cada arranque mientras la
-            ' migracion tuviera ramas. Desde que es de UNA SOLA VEZ por version, un usuario que ya migro
-            ' las opciones pero no el rig se queda con el rig convertido SOLO EN MEMORIA y volviendo a
-            ' convertirse en cada arranque. Es estable (relee el JSON crudo), pero es trabajo repetido para
-            ' siempre y una migracion a medio terminar en disco.
-            Dim rigVersionPrevia = {Current.Setting_PreviewLights_FO4.SchemaVersion,
-                                    Current.Setting_PreviewLights_SSE.SchemaVersion}
-            MigrateLightRigsToWorldSpace(ConfigFilePath)
-            ' ⛔ UN SOLO GRABADO AL FINAL. Con un `SaveConfig()` aca y otro despues de la reparacion de
-            ' TBN, el arranque que migra las DOS cosas escribia el config dos veces — y la primera escritura
-            ' persistia las opciones de TBN TODAVIA sin migrar. Inocuo en el resultado, pero duplica la
-            ' exposicion a la falla de escritura (instalacion en Program Files, archivo de solo lectura).
-            If Current.Setting_PreviewLights_FO4.SchemaVersion <> rigVersionPrevia(0) OrElse
-               Current.Setting_PreviewLights_SSE.SchemaVersion <> rigVersionPrevia(1) Then
-                hayQueGrabar = True
-            End If
+            ' ⛔ RIG DE ESQUEMA VIEJO: SE PISA CON EL PRESET POR DEFAULT, no se convierte. Un config.json
+            ' anterior a las luces fijas al mundo no trae SchemaVersion (queda en 0) y uno del esquema 1
+            ' trae un 1; los dos son menores que el actual y los dos se reponen. Sin esto, el
+            ' deserializador dejaria las direcciones en CERO —las cuatro luces apuntando horizontal desde
+            ' +Y— y el preview cambiaria en silencio.
+            ' La decision de PISAR (y de perder un rig personalizado) es del usuario y esta argumentada en
+            ' RepararRigDeEsquemaViejo. Antes habia una conversion que leia los 6 multiplicadores del JSON
+            ' crudo; se borro entera con el bump a esquema 2, porque los presets se re-autoraron y
+            ' convertir un rig viejo lo dejaria fuera del set nuevo igual.
+            ' ⛔ SE GRABA ACA. La reparacion no persiste por si sola, y hasta ahora le servia de grabado
+            ' gratis la rama de TBN de abajo — que corre UNA SOLA VEZ por version. Sin marcar `hayQueGrabar`
+            ' un usuario que ya migro las opciones se queda con el rig repuesto SOLO EN MEMORIA, repitiendo
+            ' el mismo trabajo en cada arranque y con el config a medio terminar en disco.
+            ' ⛔ UN SOLO GRABADO AL FINAL, no un SaveConfig() aca: con dos escrituras, la primera persiste
+            ' las opciones de TBN TODAVIA sin reparar y se duplica la exposicion a la falla de escritura
+            ' (instalacion en Program Files, archivo de solo lectura).
+            Dim rigPisado As Boolean
+            Current.Setting_PreviewLights_FO4 = RepararRigDeEsquemaViejo(Current.Setting_PreviewLights_FO4, rigPisado)
+            If rigPisado Then hayQueGrabar = True
+            Current.Setting_PreviewLights_SSE = RepararRigDeEsquemaViejo(Current.Setting_PreviewLights_SSE, rigPisado)
+            If rigPisado Then hayQueGrabar = True
             ' ⛔ MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
             ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0, o sea
             ' que la estrenaria APAGADA sin haberlo pedido. Si el archivo declara una version anterior,

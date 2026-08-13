@@ -6,13 +6,13 @@ Imports System.Text
 ' Returns the parsed data object, or Nothing for unsupported types.
 ' ============================================================================
 
-Public Module RecordDispatcher
+Friend Module RecordDispatcher
 
     ''' <summary>
     ''' Parse any Fallout 4 record into its strongly-typed data object.
     ''' Returns Nothing if the signature is not supported or parsing fails.
     ''' </summary>
-    Public Function ParseRecord(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As Object
+    Friend Function ParseRecord(rec As PluginRecord, pluginManager As PluginManager) As Object
         If rec Is Nothing Then Return Nothing
 
         Try
@@ -210,7 +210,7 @@ Public Module RecordDispatcher
     ''' <summary>
     ''' Get the list of all supported record type signatures.
     ''' </summary>
-    Public ReadOnly Property SupportedSignatures As HashSet(Of String) = New HashSet(Of String)(
+    Friend ReadOnly Property SupportedSignatures As HashSet(Of String) = New HashSet(Of String)(
         {"NPC_", "RACE", "ARMO", "ARMA", "OTFT", "HDPT", "TXST", "CLFM", "LVLN", "LVLI", "FLST", "MSWP",
          "WEAP", "AMMO", "ALCH", "MISC", "BOOK", "KEYM", "LIGH", "INGR", "CONT", "FLOR", "NOTE",
          "ENCH", "SPEL", "MGEF", "PERK", "LVSP", "KYWD", "EQUP", "GLOB", "GMST", "AVIF", "DMGT",

@@ -10,95 +10,95 @@ Imports System.Text
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 IMGS record - Image Space.</summary>
-Public Class IMGS_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public LUTTexture As String = ""
+Friend Class IMGS_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend LUTTexture As String = ""
 
     ' HNAM HDR
-    Public EyeAdaptSpeed As Single
-    Public BloomThreshold As Single
-    Public BloomScale As Single
-    Public TargetLum As Single
-    Public SunlightScale As Single
-    Public SkyScale As Single
+    Friend EyeAdaptSpeed As Single
+    Friend BloomThreshold As Single
+    Friend BloomScale As Single
+    Friend TargetLum As Single
+    Friend SunlightScale As Single
+    Friend SkyScale As Single
 
     ' CNAM Cinematic
-    Public Saturation As Single
-    Public Brightness As Single
-    Public Contrast As Single
+    Friend Saturation As Single
+    Friend Brightness As Single
+    Friend Contrast As Single
 
     ' TNAM Tint
-    Public TintAmount As Single
-    Public TintColor As Color = Color.Empty
+    Friend TintAmount As Single
+    Friend TintColor As Color = Color.Empty
 
     ' DNAM DoF
-    Public DoFStrength As Single
-    Public DoFDistance As Single
-    Public DoFRange As Single
+    Friend DoFStrength As Single
+    Friend DoFDistance As Single
+    Friend DoFRange As Single
 End Class
 
 ''' <summary>Fallout 4 IMAD record - Image Space Adapter (simplified).</summary>
-Public Class IMAD_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public IsAnimatable As Boolean
-    Public Duration As Single
-    Public IsRadialBlur As Boolean
-    Public IsDoF As Boolean
+Friend Class IMAD_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend IsAnimatable As Boolean
+    Friend Duration As Single
+    Friend IsRadialBlur As Boolean
+    Friend IsDoF As Boolean
     ' IMAD contains extensive animation curves - raw data stored for specialized use
-    Public HasData As Boolean
+    Friend HasData As Boolean
 End Class
 
 ''' <summary>Fallout 4 EFSH record - Effect Shader.</summary>
-Public Class EFSH_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FillTexture As String = ""
-    Public ParticleShaderTexture As String = ""
-    Public HolesTexture As String = ""
-    Public MembranePaletteTexture As String = ""
-    Public ParticlePaletteTexture As String = ""
-    Public HasData As Boolean
+Friend Class EFSH_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FillTexture As String = ""
+    Friend ParticleShaderTexture As String = ""
+    Friend HolesTexture As String = ""
+    Friend MembranePaletteTexture As String = ""
+    Friend ParticlePaletteTexture As String = ""
+    Friend HasData As Boolean
 End Class
 
 ''' <summary>Fallout 4 PROJ record - Projectile.</summary>
-Public Class PROJ_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public MuzzleFlashModelPath As String = ""
+Friend Class PROJ_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend MuzzleFlashModelPath As String = ""
 
     ' DNAM
-    Public ProjectileFlags As UShort
-    Public ProjectileType As UShort  ' 1=Missile, 2=Lobber, 4=Beam, 8=Flame, 16=Cone, 32=Barrier, 64=Arrow
-    Public Gravity As Single
-    Public Speed As Single = 1000.0F
-    Public Range As Single = 4000.0F
-    Public LightFormID As UInteger
-    Public MuzzleFlashLightFormID As UInteger
-    Public ExplosionProximity As Single
-    Public ExplosionTimer As Single
-    Public ExplosionFormID As UInteger
-    Public SoundFormID As UInteger
-    Public MuzzleFlashDuration As Single
-    Public FadeDuration As Single
-    Public ImpactForce As Single
-    Public CountdownSoundFormID As UInteger
-    Public DisableSoundFormID As UInteger
-    Public DefaultWeaponSourceFormID As UInteger
-    Public ConeSpread As Single
-    Public CollisionRadius As Single = 10.0F
-    Public Lifetime As Single
-    Public RelaunchInterval As Single = 0.25F
-    Public DecalDataFormID As UInteger
-    Public CollisionLayerFormID As UInteger
-    Public VATSProjectileFormID As UInteger
+    Friend ProjectileFlags As UShort
+    Friend ProjectileType As UShort  ' 1=Missile, 2=Lobber, 4=Beam, 8=Flame, 16=Cone, 32=Barrier, 64=Arrow
+    Friend Gravity As Single
+    Friend Speed As Single = 1000.0F
+    Friend Range As Single = 4000.0F
+    Friend LightFormID As UInteger
+    Friend MuzzleFlashLightFormID As UInteger
+    Friend ExplosionProximity As Single
+    Friend ExplosionTimer As Single
+    Friend ExplosionFormID As UInteger
+    Friend SoundFormID As UInteger
+    Friend MuzzleFlashDuration As Single
+    Friend FadeDuration As Single
+    Friend ImpactForce As Single
+    Friend CountdownSoundFormID As UInteger
+    Friend DisableSoundFormID As UInteger
+    Friend DefaultWeaponSourceFormID As UInteger
+    Friend ConeSpread As Single
+    Friend CollisionRadius As Single = 10.0F
+    Friend Lifetime As Single
+    Friend RelaunchInterval As Single = 0.25F
+    Friend DecalDataFormID As UInteger
+    Friend CollisionLayerFormID As UInteger
+    Friend VATSProjectileFormID As UInteger
 
-    Public SoundLevelEnum As UInteger
+    Friend SoundLevelEnum As UInteger
 
-    Public ReadOnly Property TypeName As String
+    Friend ReadOnly Property TypeName As String
         Get
             Select Case ProjectileType
                 Case 1 : Return "Missile"
@@ -115,162 +115,162 @@ Public Class PROJ_Data
 End Class
 
 ''' <summary>Fallout 4 EXPL record - Explosion.</summary>
-Public Class EXPL_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public ImageSpaceModFormID As UInteger
+Friend Class EXPL_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend ImageSpaceModFormID As UInteger
 
     ' DATA
-    Public LightFormID As UInteger
-    Public Sound1FormID As UInteger
-    Public Sound2FormID As UInteger
-    Public ImpactDataSetFormID As UInteger
-    Public PlacedObjectFormID As UInteger
-    Public SpawnProjectileFormID As UInteger
-    Public Force As Single
-    Public Damage As Single
-    Public InnerRadius As Single
-    Public OuterRadius As Single
-    Public ISRadius As Single
-    Public VerticalOffsetMult As Single
-    Public ExplosionFlags As UInteger
-    Public SoundLevelEnum As UInteger
-    Public Stagger As UInteger
+    Friend LightFormID As UInteger
+    Friend Sound1FormID As UInteger
+    Friend Sound2FormID As UInteger
+    Friend ImpactDataSetFormID As UInteger
+    Friend PlacedObjectFormID As UInteger
+    Friend SpawnProjectileFormID As UInteger
+    Friend Force As Single
+    Friend Damage As Single
+    Friend InnerRadius As Single
+    Friend OuterRadius As Single
+    Friend ISRadius As Single
+    Friend VerticalOffsetMult As Single
+    Friend ExplosionFlags As UInteger
+    Friend SoundLevelEnum As UInteger
+    Friend Stagger As UInteger
 End Class
 
 ''' <summary>Fallout 4 HAZD record - Hazard.</summary>
-Public Class HAZD_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public ImageSpaceModFormID As UInteger
+Friend Class HAZD_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend ImageSpaceModFormID As UInteger
 
     ' DNAM
-    Public Limit As UInteger
-    Public Radius As Single
-    Public Lifetime As Single
-    Public ImageSpaceRadius As Single
-    Public TargetInterval As Single = 0.3F
-    Public HazardFlags As UInteger
-    Public EffectFormID As UInteger
-    Public LightFormID As UInteger
-    Public ImpactDataSetFormID As UInteger
-    Public SoundFormID As UInteger
+    Friend Limit As UInteger
+    Friend Radius As Single
+    Friend Lifetime As Single
+    Friend ImageSpaceRadius As Single
+    Friend TargetInterval As Single = 0.3F
+    Friend HazardFlags As UInteger
+    Friend EffectFormID As UInteger
+    Friend LightFormID As UInteger
+    Friend ImpactDataSetFormID As UInteger
+    Friend SoundFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 CAMS record - Camera Shot.</summary>
-Public Class CAMS_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ModelPath As String = ""
-    Public ImageSpaceModFormID As UInteger
+Friend Class CAMS_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ModelPath As String = ""
+    Friend ImageSpaceModFormID As UInteger
 
     ' DATA
-    Public Action As UInteger    ' 0=Shoot, 1=Fly, 2=Hit, 3=Zoom
-    Public Location As UInteger  ' 0=Attacker, 1=Projectile, 2=Target, 3=LeadActor
-    Public Target As UInteger
-    Public CameraFlags As UInteger
-    Public TimeMultPlayer As Single
-    Public TimeMultTarget As Single
-    Public TimeMultGlobal As Single
-    Public MaxTime As Single
-    Public MinTime As Single
-    Public TargetPctBetweenActors As Single
+    Friend Action As UInteger    ' 0=Shoot, 1=Fly, 2=Hit, 3=Zoom
+    Friend Location As UInteger  ' 0=Attacker, 1=Projectile, 2=Target, 3=LeadActor
+    Friend Target As UInteger
+    Friend CameraFlags As UInteger
+    Friend TimeMultPlayer As Single
+    Friend TimeMultTarget As Single
+    Friend TimeMultGlobal As Single
+    Friend MaxTime As Single
+    Friend MinTime As Single
+    Friend TargetPctBetweenActors As Single
 End Class
 
 ''' <summary>Fallout 4 CPTH record - Camera Path.</summary>
-Public Class CPTH_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ParentFormID As UInteger
-    Public PreviousFormID As UInteger
-    Public CameraFlags As Byte
-    Public CameraShotFormIDs As New List(Of UInteger)
+Friend Class CPTH_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ParentFormID As UInteger
+    Friend PreviousFormID As UInteger
+    Friend CameraFlags As Byte
+    Friend CameraShotFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Fallout 4 RFCT record - Visual Effect.</summary>
-Public Class RFCT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public EffectArtFormID As UInteger
-    Public ShaderFormID As UInteger
-    Public EffectFlags As UInteger
+Friend Class RFCT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend EffectArtFormID As UInteger
+    Friend ShaderFormID As UInteger
+    Friend EffectFlags As UInteger
 End Class
 
 ''' <summary>Fallout 4 SPGD record - Shader Particle Geometry.</summary>
-Public Class SPGD_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ParticleTexture As String = ""
-    Public GravityVelocity As Single
-    Public RotationVelocity As Single
-    Public ParticleSizeX As Single
-    Public ParticleSizeY As Single
-    Public BoxSize As UInteger = 4096
-    Public ParticleDensity As Single
+Friend Class SPGD_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ParticleTexture As String = ""
+    Friend GravityVelocity As Single
+    Friend RotationVelocity As Single
+    Friend ParticleSizeX As Single
+    Friend ParticleSizeY As Single
+    Friend BoxSize As UInteger = 4096
+    Friend ParticleDensity As Single
 End Class
 
 ''' <summary>Fallout 4 GDRY record - God Rays.</summary>
-Public Class GDRY_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Intensity As Single = 1.0F
-    Public AirColorScale As Single = 3.0F
-    Public BackColorScale As Single = 2.0F
-    Public FwdColorScale As Single = 4.0F
-    Public BackPhase As Single
+Friend Class GDRY_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Intensity As Single = 1.0F
+    Friend AirColorScale As Single = 3.0F
+    Friend BackColorScale As Single = 2.0F
+    Friend FwdColorScale As Single = 4.0F
+    Friend BackPhase As Single
 End Class
 
 ''' <summary>Fallout 4 LENS record - Lens Flare.</summary>
-Public Class LENS_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ColorInfluence As Single
-    Public FadeDistanceRadiusScale As Single = 1.0F
-    Public SpriteCount As UInteger
+Friend Class LENS_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ColorInfluence As Single
+    Friend FadeDistanceRadiusScale As Single = 1.0F
+    Friend SpriteCount As UInteger
 End Class
 
 ''' <summary>Fallout 4 ARTO record - Art Object.</summary>
-Public Class ARTO_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ModelPath As String = ""
-    Public ArtType As UInteger  ' 0=Magic Casting, 1=Magic Hit Effect, 2=Enchantment Effect
+Friend Class ARTO_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ModelPath As String = ""
+    Friend ArtType As UInteger  ' 0=Magic Casting, 1=Magic Hit Effect, 2=Enchantment Effect
 End Class
 
 ''' <summary>Fallout 4 IPCT record - Impact.</summary>
-Public Class IPCT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ModelPath As String = ""
-    Public EffectDuration As Single = 0.25F
-    Public AngleThreshold As Single = 15.0F
-    Public Orientation As UInteger
+Friend Class IPCT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ModelPath As String = ""
+    Friend EffectDuration As Single = 0.25F
+    Friend AngleThreshold As Single = 15.0F
+    Friend Orientation As UInteger
 End Class
 
 ''' <summary>IPDS material-to-impact mapping entry.</summary>
-Public Class IPDS_Entry
-    Public MaterialFormID As UInteger
-    Public ImpactFormID As UInteger
+Friend Class IPDS_Entry
+    Friend MaterialFormID As UInteger
+    Friend ImpactFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 IPDS record - Impact Data Set.</summary>
-Public Class IPDS_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Entries As New List(Of IPDS_Entry)
+Friend Class IPDS_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Entries As New List(Of IPDS_Entry)
 End Class
 
 #End Region
 
 #Region "Parsers"
 
-Public Module VisualRecordParsers
+Friend Module VisualRecordParsers
 
-    Public Function ParseIMGS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As IMGS_Data
+    Friend Function ParseIMGS(rec As PluginRecord, pluginManager As PluginManager) As IMGS_Data
         Dim img As New IMGS_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -315,7 +315,7 @@ Public Module VisualRecordParsers
         Return img
     End Function
 
-    Public Function ParseIMAD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As IMAD_Data
+    Friend Function ParseIMAD(rec As PluginRecord, pluginManager As PluginManager) As IMAD_Data
         Dim i As New IMAD_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -332,7 +332,7 @@ Public Module VisualRecordParsers
         Return i
     End Function
 
-    Public Function ParseEFSH(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As EFSH_Data
+    Friend Function ParseEFSH(rec As PluginRecord, pluginManager As PluginManager) As EFSH_Data
         Dim e As New EFSH_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -358,7 +358,7 @@ Public Module VisualRecordParsers
         Return e
     End Function
 
-    Public Function ParsePROJ(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As PROJ_Data
+    Friend Function ParsePROJ(rec As PluginRecord, pluginManager As PluginManager) As PROJ_Data
         Dim p As New PROJ_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -419,7 +419,7 @@ Public Module VisualRecordParsers
         End If
     End Sub
 
-    Public Function ParseEXPL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As EXPL_Data
+    Friend Function ParseEXPL(rec As PluginRecord, pluginManager As PluginManager) As EXPL_Data
         Dim e As New EXPL_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -461,7 +461,7 @@ Public Module VisualRecordParsers
         Return e
     End Function
 
-    Public Function ParseHAZD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As HAZD_Data
+    Friend Function ParseHAZD(rec As PluginRecord, pluginManager As PluginManager) As HAZD_Data
         Dim h As New HAZD_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -499,7 +499,7 @@ Public Module VisualRecordParsers
         Return h
     End Function
 
-    Public Function ParseCAMS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CAMS_Data
+    Friend Function ParseCAMS(rec As PluginRecord, pluginManager As PluginManager) As CAMS_Data
         Dim c As New CAMS_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -533,7 +533,7 @@ Public Module VisualRecordParsers
         Return c
     End Function
 
-    Public Function ParseCPTH(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CPTH_Data
+    Friend Function ParseCPTH(rec As PluginRecord, pluginManager As PluginManager) As CPTH_Data
         Dim c As New CPTH_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -558,7 +558,7 @@ Public Module VisualRecordParsers
         Return c
     End Function
 
-    Public Function ParseRFCT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As RFCT_Data
+    Friend Function ParseRFCT(rec As PluginRecord, pluginManager As PluginManager) As RFCT_Data
         Dim r As New RFCT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -575,7 +575,7 @@ Public Module VisualRecordParsers
         Return r
     End Function
 
-    Public Function ParseSPGD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SPGD_Data
+    Friend Function ParseSPGD(rec As PluginRecord, pluginManager As PluginManager) As SPGD_Data
         Dim s As New SPGD_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -600,7 +600,7 @@ Public Module VisualRecordParsers
         Return s
     End Function
 
-    Public Function ParseGDRY(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As GDRY_Data
+    Friend Function ParseGDRY(rec As PluginRecord, pluginManager As PluginManager) As GDRY_Data
         Dim g As New GDRY_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -616,7 +616,7 @@ Public Module VisualRecordParsers
         Return g
     End Function
 
-    Public Function ParseLENS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LENS_Data
+    Friend Function ParseLENS(rec As PluginRecord, pluginManager As PluginManager) As LENS_Data
         Dim l As New LENS_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -642,7 +642,7 @@ Public Module VisualRecordParsers
         Return l
     End Function
 
-    Public Function ParseARTO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ARTO_Data
+    Friend Function ParseARTO(rec As PluginRecord, pluginManager As PluginManager) As ARTO_Data
         Dim a As New ARTO_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -662,7 +662,7 @@ Public Module VisualRecordParsers
         Return a
     End Function
 
-    Public Function ParseIPCT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As IPCT_Data
+    Friend Function ParseIPCT(rec As PluginRecord, pluginManager As PluginManager) As IPCT_Data
         Dim i As New IPCT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -684,7 +684,7 @@ Public Module VisualRecordParsers
         Return i
     End Function
 
-    Public Function ParseIPDS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As IPDS_Data
+    Friend Function ParseIPDS(rec As PluginRecord, pluginManager As PluginManager) As IPDS_Data
         Dim i As New IPDS_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

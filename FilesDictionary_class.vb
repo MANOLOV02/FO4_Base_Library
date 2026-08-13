@@ -126,7 +126,7 @@ Public Class FilesDictionary_class
             Else
                 ' O1.2: Use archive reader pool instead of opening/closing each time
                 Dim archivePath = IO.Path.Combine(FO4Path, Me.BA2File)
-                Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream) = Nothing
+                Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
                 Dim returned As Boolean = False
                 Try
                     leased = FilesDictionary_class.LeaseReader(archivePath)
@@ -175,7 +175,17 @@ Public Class FilesDictionary_class
     Private Shared ReadOnly _bytesCache As New ConcurrentDictionary(Of String, WeakReference(Of Byte()))(StringComparer.OrdinalIgnoreCase)
 
     ' O1.2: Archive reader pool — reuses BethesdaReader instances to avoid repeated open/close
-    Private Shared ReadOnly _archivePool As New ConcurrentDictionary(Of String, ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream)))(StringComparer.OrdinalIgnoreCase)
+    ' ⛔ El pool guarda ADEMAS el instante en que cada reader volvio. Sin eso `DisposeIdleReaders` no
+    ' podia distinguir un reader ocioso de uno que se acababa de usar, y vaciaba el pool ENTERO cada 30 s.
+    ' Reconstruir un `BethesdaReader` no es gratis: su constructor hace `ListEntries()`, o sea PARSEA LA
+    ' TABLA DE ARCHIVOS COMPLETA del BA2 (un BSA de Skyrim son ~100k nombres leidos byte a byte). En un
+    ' bake de una hora eso son >=120 re-parseos forzados de cada archivo tocado, en el medio del trabajo.
+    Private Shared ReadOnly _archivePool As New ConcurrentDictionary(Of String, ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Periodo del timer de limpieza, en ms. Es TAMBIEN el umbral de ocio: un reader devuelto
+    ''' hace menos que esto se considera en uso y no se toca. No es una constante elegida a ojo — es el
+    ''' mismo numero que ya gobierna la limpieza.</summary>
+    Private Const PoolCleanupPeriodMs As Integer = 30000
     Private Shared ReadOnly MaxPooledReadersPerArchive As Integer = 2
     Private Shared _poolCleanupTimer As System.Timers.Timer
 
@@ -193,19 +203,19 @@ Public Class FilesDictionary_class
 
     Private Shared Sub InitPoolCleanupTimer()
         If _poolCleanupTimer IsNot Nothing Then Return
-        _poolCleanupTimer = New System.Timers.Timer(30000) ' 30 seconds
+        _poolCleanupTimer = New System.Timers.Timer(PoolCleanupPeriodMs)
         AddHandler _poolCleanupTimer.Elapsed, Sub(sender, e) DisposeIdleReaders()
         _poolCleanupTimer.AutoReset = True
         _poolCleanupTimer.Start()
     End Sub
 
     ''' <summary>Lease a BethesdaReader from the pool, or create a new one if pool is empty.</summary>
-    Private Shared Function LeaseReader(archivePath As String) As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream)
+    Private Shared Function LeaseReader(archivePath As String) As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)
         ' Lazy-init the pool cleanup timer on first use
         InitPoolCleanupTimer()
 
-        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream)) = Nothing
-        Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream) = Nothing
+        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)) = Nothing
+        Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
 
         If _archivePool.TryGetValue(archivePath, bag) Then
             If bag.TryTake(entry) Then
@@ -216,14 +226,15 @@ Public Class FilesDictionary_class
         ' Create new reader
         Dim fs As FileStream = File.OpenRead(archivePath)
         Dim reader As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
-        Return (reader, fs)
+        Return (reader, fs, Stopwatch.GetTimestamp())
     End Function
 
     ''' <summary>Return a reader to the pool if below cap, otherwise dispose it.</summary>
-    Private Shared Sub ReturnReader(archivePath As String, entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream))
-        Dim bag = _archivePool.GetOrAdd(archivePath, Function(key) New ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream))())
+    Private Shared Sub ReturnReader(archivePath As String, entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long))
+        Dim bag = _archivePool.GetOrAdd(archivePath, Function(key) New ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long))())
 
         If bag.Count < MaxPooledReadersPerArchive Then
+            entry.DevueltoEn = Stopwatch.GetTimestamp()
             bag.Add(entry)
         Else
             ' Over capacity — dispose
@@ -238,21 +249,36 @@ Public Class FilesDictionary_class
         End If
     End Sub
 
-    ''' <summary>Dispose all pooled readers. Called by the 30-second cleanup timer.</summary>
+    ''' <summary>Suelta los readers OCIOSOS del pool (los devueltos hace mas de un periodo del timer) y
+    ''' purga el cache de bytes muerto. La llama el timer de limpieza.
+    ''' <para>⛔ Antes vaciaba el pool ENTERO cada vez, sin mirar si algo estaba en uso — el nombre decia
+    ''' "Idle" y el codigo no lo miraba. Como el constructor de `BethesdaReader` parsea la tabla de
+    ''' archivos completa, durante un bake eso forzaba a re-indexar cada BA2 tocado cada 30 s.</para></summary>
     Private Shared Sub DisposeIdleReaders()
+        Dim umbral As Long = CLng(Stopwatch.Frequency) * PoolCleanupPeriodMs \ 1000L
+        Dim ahora As Long = Stopwatch.GetTimestamp()
         For Each kvp In _archivePool
             Dim bag = kvp.Value
-            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream) = Nothing
-            While bag.TryTake(entry)
-                Try
-                    entry.Reader.Dispose()
-                Catch
-                End Try
-                Try
-                    entry.Stream.Dispose()
-                Catch
-                End Try
-            End While
+            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
+            ' ⛔ SE DEVUELVE EL VIVO EN EL ACTO, NO AL FINAL. Antes se drenaba la bag ENTERA a una lista y
+            ' recién después se re-agregaban los vivos: durante toda esa ventana la bag está VACÍA, y un
+            ' `LeaseReader` concurrente ve vacío y construye un `BethesdaReader` nuevo — el parseo completo
+            ' de la tabla del archive que este pool existe para evitar. Poniéndolo de vuelta enseguida, la
+            ' ventana baja a UNA entrada.
+            ' El loop se acota al conteo INICIAL: sin eso, un vivo re-agregado se puede volver a tomar y el
+            ' While no termina nunca.
+            Dim aRevisar = bag.Count
+            For i As Integer = 1 To aRevisar
+                If Not bag.TryTake(entry) Then Exit For
+                If (ahora - entry.DevueltoEn) < umbral AndAlso bag.Count < MaxPooledReadersPerArchive Then
+                    bag.Add(entry)             ' se usó recién y hay lugar: vuelve al pool YA
+                Else
+                    ' Ocioso, o el cap ya está cubierto. `ReturnReader` chequea el cap antes de agregar, así
+                    ' que sin este chequeo acá los dos juntos podían dejar el pool POR ENCIMA del máximo.
+                    Try : entry.Reader.Dispose() : Catch : End Try
+                    Try : entry.Stream.Dispose() : Catch : End Try
+                End If
+        Next
         Next
 
         ' Purge dead WeakReference entries from _bytesCache
@@ -374,7 +400,7 @@ Public Class FilesDictionary_class
 
         ' Read directly from the archive, bypassing _bytesCache. Reuse the reader pool.
         Dim archivePath = IO.Path.Combine(FO4Path, entry.BA2File)
-        Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream) = Nothing
+        Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
         Dim returned As Boolean = False
         Try
             leased = LeaseReader(archivePath)
@@ -1332,9 +1358,9 @@ Public Class FilesDictionary_class
         Next
 
         ' Drop pooled readers for this archive (their backing FileStream may be invalid after rewrite).
-        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream)) = Nothing
+        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)) = Nothing
         If _archivePool.TryRemove(absolutePath, bag) Then
-            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream) = Nothing
+            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
             While bag.TryTake(entry)
                 Try : entry.Reader.Dispose() : Catch : End Try
                 Try : entry.Stream.Dispose() : Catch : End Try

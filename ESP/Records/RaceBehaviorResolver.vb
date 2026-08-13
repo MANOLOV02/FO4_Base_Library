@@ -33,25 +33,40 @@ Public NotInheritable Class RaceBehaviorResolver
     ' ── KYWD.TNAM Type (wbDefinitionsFO4.pas:5213 wbKeywordTypeEnum) — discriminador AUTORITATIVO de los SAKD.
     '    'None'(0) = keyword de IDENTIDAD (ej 'Anims<X>Race', 'ActorType<X>'); 'Anim Injured'(17)/'Anim Archetype'(7)/
     '    'Anim Flavor'(13)/'Anim Gender'(14)/'Anim Face'(15) = EJES DE ESTADO runtime. NO se filtra por string.
-    Friend Const KwTypeNone As UInteger = 0UI
-    Friend Const KwTypeAnimGender As UInteger = 14UI
+    Public Const KwTypeNone As UInteger = 0UI
+    Public Const KwTypeAnimGender As UInteger = 14UI
     Private Shared ReadOnly KeywordTypeNames As String() = {
         "None", "Component Tech Level", "Attach Point", "Component Property", "Instantiation Filter",
         "Mod Association", "Sound", "Anim Archetype", "Function Call", "Recipe Filter", "Attraction Type",
         "Dialogue Subtype", "Quest Target", "Anim Flavor", "Anim Gender", "Anim Face", "Quest Group",
         "Anim Injured", "Dispel Effect"}
 
+    ' ⛔⛔ ESTOS CINCO SE ESCRIBEN DESDE DOS HILOS. `MainForm` corre `ResolveNpcBehavior` dentro de un
+    ' `Task.Run` sobre todos los NPC (preload) y LA MISMA función en el hilo de UI cuando el usuario
+    ' selecciona uno — y el preload arranca justo después de armar el árbol, que es cuando el usuario
+    ' clickea. Un `Dictionary` de .NET escrito concurrentemente no se "ensucia": deja la cadena de buckets
+    ' rota y `TryGetValue` se puede colgar en un loop infinito, o pierde entradas y la raza cae al fallback.
+    ' El caché de la capa de ARRIBA (`MainForm._animRaceCache`) ya era `ConcurrentDictionary`: se protegió
+    ' el de al lado y se olvidó el de la librería que lo alimenta.
     Private Shared _kwType As Dictionary(Of UInteger, UInteger)        ' KYWD FormID → TNAM Type
     Private Shared _raceIdentityKw As HashSet(Of UInteger)             ' keywords None-typed declaradas en ALGUNA KWDA de RACE
     Private Shared _parsedIdles As List(Of IDLE_Data)                  ' TODOS los IDLE parseados UNA vez (tabla global, race-independiente)
-    Private Shared _rbCache As Dictionary(Of UInteger, ResolvedRaceBehavior)  ' ResolveRaceBehavior cacheado por raceFormID
+    ' El único que se escribe DESPUÉS de publicar los mapas ⇒ tiene que ser concurrente de por sí.
+    Private Shared _rbCache As Concurrent.ConcurrentDictionary(Of UInteger, ResolvedRaceBehavior)
     Private Shared _kwMapsPm As PluginManager                          ' pm con el que se construyeron (rebuild si cambia)
+    ' Los otros cuatro son de sólo-lectura una vez construidos: se arman bajo este lock y se publican con
+    ' `_kwMapsPm` ÚLTIMO y con escritura volátil, que es la barrera que hace visible al resto.
+    Private Shared ReadOnly _mapsLock As New Object()
 
     ''' <summary>Construye (una vez por pm) el mapa KYWD→tipo y el set de keywords de IDENTIDAD de raza (None-typed
     ''' ∧ presentes en la KWDA de alguna RACE). Idempotente; rebuild si cambia el pm. Llamado por ResolveRaceBehavior.</summary>
-    Friend Shared Sub EnsureKeywordMaps(pm As PluginManager)
+    Public Shared Sub EnsureKeywordMaps(pm As PluginManager)
         If pm Is Nothing Then Return
-        If _kwMapsPm Is pm AndAlso _kwType IsNot Nothing Then Return
+        ' Camino rápido sin lock: `_kwMapsPm` se publica ÚLTIMO y con barrera, así que verlo igual a `pm`
+        ' implica que los otros cuatro campos ya están completos y visibles.
+        If Threading.Volatile.Read(_kwMapsPm) Is pm AndAlso _kwType IsNot Nothing Then Return
+        SyncLock _mapsLock
+            If Threading.Volatile.Read(_kwMapsPm) Is pm AndAlso _kwType IsNot Nothing Then Return
         Dim kt As New Dictionary(Of UInteger, UInteger)
         For Each rec In pm.GetRecordsOfType("KYWD")
             Dim t As UInteger = 0
@@ -85,15 +100,26 @@ Public NotInheritable Class RaceBehaviorResolver
                 If idle IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(idle.AnimationFile) Then idles.Add(idle)
             Next
         End If
-        _kwType = kt : _raceIdentityKw = ident : _parsedIdles = idles
-        _rbCache = New Dictionary(Of UInteger, ResolvedRaceBehavior)   ' nuevo pm → invalida el cache de rb
-        _kwMapsPm = pm
+            Threading.Volatile.Write(_kwType, kt)
+            Threading.Volatile.Write(_raceIdentityKw, ident)
+            _parsedIdles = idles
+            Threading.Volatile.Write(_rbCache, New Concurrent.ConcurrentDictionary(Of UInteger, ResolvedRaceBehavior)())  ' nuevo pm → invalida el cache
+            ' ⛔ ÚLTIMO Y CON BARRERA: es lo que hace visibles a los cuatro de arriba. Si se publicara
+            ' antes (o sin `Volatile.Write`, que permite reordenar), otro hilo podría ver el pm nuevo y
+            ' los mapas todavía a medio construir.
+            Threading.Volatile.Write(_kwMapsPm, pm)
+        End SyncLock
     End Sub
 
     ''' <summary>Tipo (TNAM) de una keyword; 0 ('None') si no se conoce. Requiere EnsureKeywordMaps previo.</summary>
     Public Shared Function KeywordType(fid As UInteger) As UInteger
         Dim t As UInteger = 0
-        If _kwType IsNot Nothing Then _kwType.TryGetValue(fid, t)
+        ' ⛔ LECTURA VOLATIL, igual que la publicacion. `_kwType` se arma en otro hilo y se publica con
+        ' `Volatile.Write(_kwMapsPm, pm)` DESPUES de asignarlo; leerlo plano acá no toma esa barrera, asi
+        ' que un hilo podia ver la referencia sin ver el contenido. Se captura UNA vez en un local: entre
+        ' el chequeo de Nothing y el TryGetValue la referencia no puede cambiar bajo los pies.
+        Dim mapa = Threading.Volatile.Read(_kwType)
+        If mapa IsNot Nothing Then mapa.TryGetValue(fid, t)
         Return t
     End Function
 
@@ -106,7 +132,8 @@ Public NotInheritable Class RaceBehaviorResolver
     ''' <summary>¿Es keyword de IDENTIDAD de raza? = None-typed ∧ declarada en la KWDA de alguna RACE. Solo estas
     ''' discriminan entre actores (ej 'AnimsProtectronRace'); las de estado ('Anim Injured'…) NUNCA excluyen.</summary>
     Public Shared Function IsRaceIdentityKeyword(fid As UInteger) As Boolean
-        Return _raceIdentityKw IsNot Nothing AndAlso _raceIdentityKw.Contains(fid)
+        Dim ident = Threading.Volatile.Read(_raceIdentityKw)
+        Return ident IsNot Nothing AndAlso ident.Contains(fid)
     End Function
 
     ''' <summary>NPC → behavior de su raza efectiva (resolviendo Use Traits/TPLT).</summary>
@@ -137,7 +164,12 @@ Public NotInheritable Class RaceBehaviorResolver
         EnsureKeywordMaps(pm)   ' mapas KYWD-type + identidades-de-raza + parse IDLE (1×/pm) listos para el filtro de EnumerateClips
         ' Cache por raza: ParseRACE (hasta 2601 subgraphs vía SRAC) + filtro IDLE se hacen UNA vez por raza, no por render.
         Dim cachedRb As ResolvedRaceBehavior = Nothing
-        If _rbCache IsNot Nothing AndAlso _rbCache.TryGetValue(raceFormID, cachedRb) Then Return cachedRb
+        ' ⛔ SE CAPTURA LA REFERENCIA UNA VEZ. `EnsureKeywordMaps` REASIGNA `_rbCache` al cambiar de pm; si
+        ' se leyera del campo dos veces, un hilo podia consultar el diccionario viejo y escribir en el nuevo
+        ' (o al reves), guardando entradas calculadas con los mapas del pm ANTERIOR. Con un local, cada
+        ' llamada usa un solo diccionario de punta a punta: si es el viejo, su resultado se descarta con el.
+        Dim cacheRb = Threading.Volatile.Read(_rbCache)
+        If cacheRb IsNot Nothing AndAlso cacheRb.TryGetValue(raceFormID, cachedRb) Then Return cachedRb
         Dim rec = pm.GetRecord(raceFormID)
         If IsNothing(rec) OrElse rec.Header.Signature <> "RACE" Then Return Nothing
         Dim race = RecordParsers.ParseRACE(rec, pm)
@@ -166,7 +198,7 @@ Public NotInheritable Class RaceBehaviorResolver
             result.SubgraphSource = (result.SubgraphSource & " +SADD:0x" & race.SubgraphAdditiveRaceFormID.ToString("X8")).Trim()
         End If
         ResolveRaceIdles(result)
-        If _rbCache IsNot Nothing Then _rbCache(raceFormID) = result
+        If cacheRb IsNot Nothing Then cacheRb(raceFormID) = result   ' el MISMO que se consulto arriba
         Return result
     End Function
 

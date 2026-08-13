@@ -20,76 +20,76 @@ Imports System.Text
 ' -------------------------------------------------------
 
 ''' <summary>Fallout 4 LCRT record - Location Reference Type.</summary>
-Public Class LCRT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Color As Color = Color.Empty
-    Public KeywordType As UInteger
+Friend Class LCRT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Color As Color = Color.Empty
+    Friend KeywordType As UInteger
 End Class
 
 ''' <summary>MATO directional material data.</summary>
-Public Class MATO_MaterialData
-    Public FalloffScale As Single
-    Public FalloffBias As Single
-    Public NoiseUVScale As Single
-    Public MaterialUVScale As Single
-    Public ProjectionVectorX As Single
-    Public ProjectionVectorY As Single
-    Public ProjectionVectorZ As Single
-    Public NormalDampener As Single
-    Public SinglePassColorR As Single
-    Public SinglePassColorG As Single
-    Public SinglePassColorB As Single
-    Public SinglePass As Boolean
-    Public IsSnow As Boolean
+Friend Class MATO_MaterialData
+    Friend FalloffScale As Single
+    Friend FalloffBias As Single
+    Friend NoiseUVScale As Single
+    Friend MaterialUVScale As Single
+    Friend ProjectionVectorX As Single
+    Friend ProjectionVectorY As Single
+    Friend ProjectionVectorZ As Single
+    Friend NormalDampener As Single
+    Friend SinglePassColorR As Single
+    Friend SinglePassColorG As Single
+    Friend SinglePassColorB As Single
+    Friend SinglePass As Boolean
+    Friend IsSnow As Boolean
 End Class
 
 ''' <summary>Fallout 4 / SSE MATO record - Material Object.</summary>
-Public Class MATO_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ModelPath As String = ""
-    Public PropertyData As Byte() = Nothing
-    Public MaterialData As New MATO_MaterialData
+Friend Class MATO_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ModelPath As String = ""
+    Friend PropertyData As Byte() = Nothing
+    Friend MaterialData As New MATO_MaterialData
 End Class
 
 ''' <summary>NOCM obstacle entry.</summary>
-Public Class NOCM_Entry
-    Public Index As UInteger
-    Public DataEntries As New List(Of Byte())
-    Public IntervalData As Byte() = Nothing
-    Public ModelPath As String = ""
+Friend Class NOCM_Entry
+    Friend Index As UInteger
+    Friend DataEntries As New List(Of Byte())
+    Friend IntervalData As Byte() = Nothing
+    Friend ModelPath As String = ""
 End Class
 
 ''' <summary>Fallout 4 NOCM record - Navigation Mesh Obstacle Manager.</summary>
-Public Class NOCM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Entries As New List(Of NOCM_Entry)
+Friend Class NOCM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Entries As New List(Of NOCM_Entry)
 End Class
 
 ''' <summary>OVIS object bounds entry.</summary>
-Public Class OVIS_Entry
-    Public ObjectFormID As UInteger
-    Public BoundsX1 As Single
-    Public BoundsY1 As Single
-    Public BoundsZ1 As Single
-    Public BoundsX2 As Single
-    Public BoundsY2 As Single
-    Public BoundsZ2 As Single
+Friend Class OVIS_Entry
+    Friend ObjectFormID As UInteger
+    Friend BoundsX1 As Single
+    Friend BoundsY1 As Single
+    Friend BoundsZ1 As Single
+    Friend BoundsX2 As Single
+    Friend BoundsY2 As Single
+    Friend BoundsZ2 As Single
 End Class
 
 ''' <summary>Fallout 4 OVIS record - Object Visibility Manager.</summary>
-Public Class OVIS_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Objects As New List(Of OVIS_Entry)
+Friend Class OVIS_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Objects As New List(Of OVIS_Entry)
 End Class
 
 ''' <summary>Fallout 4 PLYR record - Player Reference.</summary>
-Public Class PLYR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class PLYR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ' -------------------------------------------------------
@@ -97,161 +97,161 @@ End Class
 ' -------------------------------------------------------
 
 ''' <summary>SSE SCRL record - Scroll.</summary>
-Public Class SCRL_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public PickUpSoundFormID As UInteger
-    Public PutDownSoundFormID As UInteger
-    Public EquipTypeFormID As UInteger
-    Public MenuDisplayObjectFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public ItemValue As UInteger
-    Public ItemWeight As Single
+Friend Class SCRL_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend PickUpSoundFormID As UInteger
+    Friend PutDownSoundFormID As UInteger
+    Friend EquipTypeFormID As UInteger
+    Friend MenuDisplayObjectFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend ItemValue As UInteger
+    Friend ItemWeight As Single
     ' SPIT data
-    Public BaseCost As UInteger
-    Public SpellFlags As UInteger
-    Public SpellType As UInteger
-    Public ChargeTime As Single
-    Public CastType As UInteger
-    Public DeliveryType As UInteger
-    Public CastDuration As Single
-    Public Range As Single
-    Public HalfCostPerkFormID As UInteger
+    Friend BaseCost As UInteger
+    Friend SpellFlags As UInteger
+    Friend SpellType As UInteger
+    Friend ChargeTime As Single
+    Friend CastType As UInteger
+    Friend DeliveryType As UInteger
+    Friend CastDuration As Single
+    Friend Range As Single
+    Friend HalfCostPerkFormID As UInteger
     ' Effects
-    Public Effects As New List(Of MagicEffect_Entry)
+    Friend Effects As New List(Of MagicEffect_Entry)
 End Class
 
 ''' <summary>SHOU word entry (word + spell + recovery).</summary>
-Public Class SHOU_WordEntry
-    Public WordFormID As UInteger
-    Public SpellFormID As UInteger
-    Public RecoveryTime As Single
+Friend Class SHOU_WordEntry
+    Friend WordFormID As UInteger
+    Friend SpellFormID As UInteger
+    Friend RecoveryTime As Single
 End Class
 
 ''' <summary>SSE SHOU record - Shout.</summary>
-Public Class SHOU_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public MenuDisplayObjectFormID As UInteger
-    Public EquipTypeFormID As UInteger
-    Public Words As New List(Of SHOU_WordEntry)
+Friend Class SHOU_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend MenuDisplayObjectFormID As UInteger
+    Friend EquipTypeFormID As UInteger
+    Friend Words As New List(Of SHOU_WordEntry)
 End Class
 
 ''' <summary>SSE WOOP record - Word of Power.</summary>
-Public Class WOOP_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Translation As String = ""
+Friend Class WOOP_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Translation As String = ""
 End Class
 
 ''' <summary>SSE RGDL record - Ragdoll.</summary>
-Public Class RGDL_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Version As UInteger
+Friend Class RGDL_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Version As UInteger
     ' DATA general
-    Public DynamicBoneCount As UInteger
-    Public FeedbackEnabled As Boolean
-    Public FootIKEnabled As Boolean
-    Public LookIKEnabled As Boolean
-    Public GrabIKEnabled As Boolean
-    Public PoseMatchingEnabled As Boolean
+    Friend DynamicBoneCount As UInteger
+    Friend FeedbackEnabled As Boolean
+    Friend FootIKEnabled As Boolean
+    Friend LookIKEnabled As Boolean
+    Friend GrabIKEnabled As Boolean
+    Friend PoseMatchingEnabled As Boolean
     ' XNAM
-    Public ActorBaseFormID As UInteger
+    Friend ActorBaseFormID As UInteger
     ' TNAM
-    Public BodyPartDataFormID As UInteger
+    Friend BodyPartDataFormID As UInteger
     ' RAFD feedback data
-    Public DynamicKeyframeBlend As Single
-    Public HierarchyGain As Single
-    Public PositionGain As Single
-    Public VelocityGain As Single
-    Public AccelerationGain As Single
-    Public SnapGain As Single
-    Public VelocityDamping As Single
-    Public SnapMaxLinearVelocity As Single
-    Public SnapMaxAngularVelocity As Single
-    Public SnapMaxLinearDistance As Single
-    Public SnapMaxAngularDistance As Single
-    Public PositionMaxLinearVelocity As Single
-    Public PositionMaxAngularVelocity As Single
-    Public ProjectileMaxVelocity As Integer
-    Public MeleeMaxVelocity As Integer
+    Friend DynamicKeyframeBlend As Single
+    Friend HierarchyGain As Single
+    Friend PositionGain As Single
+    Friend VelocityGain As Single
+    Friend AccelerationGain As Single
+    Friend SnapGain As Single
+    Friend VelocityDamping As Single
+    Friend SnapMaxLinearVelocity As Single
+    Friend SnapMaxAngularVelocity As Single
+    Friend SnapMaxLinearDistance As Single
+    Friend SnapMaxAngularDistance As Single
+    Friend PositionMaxLinearVelocity As Single
+    Friend PositionMaxAngularVelocity As Single
+    Friend ProjectileMaxVelocity As Integer
+    Friend MeleeMaxVelocity As Integer
     ' RAFB
-    Public FeedbackDynamicBones As New List(Of UShort)
+    Friend FeedbackDynamicBones As New List(Of UShort)
     ' RAPS
-    Public MatchBone1 As UShort
-    Public MatchBone2 As UShort
-    Public MatchBone3 As UShort
-    Public DisableOnMove As Boolean
-    Public MotorsStrength As Single
-    Public PoseActivationDelayTime As Single
-    Public MatchErrorAllowance As Single
-    Public DisplacementToDisable As Single
+    Friend MatchBone1 As UShort
+    Friend MatchBone2 As UShort
+    Friend MatchBone3 As UShort
+    Friend DisableOnMove As Boolean
+    Friend MotorsStrength As Single
+    Friend PoseActivationDelayTime As Single
+    Friend MatchErrorAllowance As Single
+    Friend DisplacementToDisable As Single
     ' ANAM
-    Public DeathPose As String = ""
+    Friend DeathPose As String = ""
 End Class
 
 ''' <summary>SSE APPA record - Apparatus (Alchemy Station type).</summary>
-Public Class APPA_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public PickUpSoundFormID As UInteger
-    Public PutDownSoundFormID As UInteger
-    Public Quality As UInteger
-    Public ItemValue As UInteger
-    Public ItemWeight As Single
+Friend Class APPA_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend PickUpSoundFormID As UInteger
+    Friend PutDownSoundFormID As UInteger
+    Friend Quality As UInteger
+    Friend ItemValue As UInteger
+    Friend ItemWeight As Single
 End Class
 
 ''' <summary>SSE SLGM record - Soul Gem.</summary>
-Public Class SLGM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public PickUpSoundFormID As UInteger
-    Public PutDownSoundFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public ItemValue As UInteger
-    Public ItemWeight As Single
-    Public ContainedSoul As Byte
-    Public MaximumCapacity As Byte
-    Public LinkedSoulGemFormID As UInteger
+Friend Class SLGM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend PickUpSoundFormID As UInteger
+    Friend PutDownSoundFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend ItemValue As UInteger
+    Friend ItemWeight As Single
+    Friend ContainedSoul As Byte
+    Friend MaximumCapacity As Byte
+    Friend LinkedSoulGemFormID As UInteger
 End Class
 
 ''' <summary>SSE VOLI record - Volumetric Lighting.</summary>
-Public Class VOLI_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Intensity As Single
-    Public CustomColorContribution As Single
-    Public RedR As Single
-    Public RedG As Single
-    Public RedB As Single
-    Public GreenR As Single
-    Public GreenG As Single
-    Public GreenB As Single
-    Public BlueR As Single
-    Public BlueG As Single
-    Public BlueB As Single
-    Public DensityContribution As Single
-    Public DensitySize As Single
-    Public DensityWindSpeed As Single
-    Public DensityFallingSpeed As Single
-    Public PhaseFunctionContribution As Single
-    Public PhaseFunctionScattering As Single
-    Public SamplingRepartitionRangeFactor As Single
+Friend Class VOLI_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Intensity As Single
+    Friend CustomColorContribution As Single
+    Friend RedR As Single
+    Friend RedG As Single
+    Friend RedB As Single
+    Friend GreenR As Single
+    Friend GreenG As Single
+    Friend GreenB As Single
+    Friend BlueR As Single
+    Friend BlueG As Single
+    Friend BlueB As Single
+    Friend DensityContribution As Single
+    Friend DensitySize As Single
+    Friend DensityWindSpeed As Single
+    Friend DensityFallingSpeed As Single
+    Friend PhaseFunctionContribution As Single
+    Friend PhaseFunctionScattering As Single
+    Friend SamplingRepartitionRangeFactor As Single
 End Class
 
 ' -------------------------------------------------------
@@ -259,70 +259,70 @@ End Class
 ' -------------------------------------------------------
 
 ''' <summary>Fallout 4 LSPR record - (stub, unused in practice).</summary>
-Public Class LSPR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class LSPR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>Fallout 4 MICN record - Menu Icon (stub).</summary>
-Public Class MICN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class MICN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>Fallout 4 SCPT record - Script (legacy stub).</summary>
-Public Class SCPT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class SCPT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>Fallout 4 SKIL record - Skill (legacy stub).</summary>
-Public Class SKIL_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class SKIL_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>Fallout 4 TLOD record - (stub).</summary>
-Public Class TLOD_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class TLOD_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>Fallout 4 TOFT record - (stub).</summary>
-Public Class TOFT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class TOFT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>SSE CLDC record - (unused, empty GRUP).</summary>
-Public Class CLDC_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class CLDC_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>SSE HAIR record - Hair (legacy, empty GRUP).</summary>
-Public Class HAIR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class HAIR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 ''' <summary>SSE PWAT record - Placeable Water (unused, empty GRUP).</summary>
-Public Class PWAT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class PWAT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 End Class
 
 #End Region
 
 #Region "Parsers"
 
-Public Module AdditionalRecordParsers
+Friend Module AdditionalRecordParsers
 
     ' ===================================================================
     ' FO4 full parsers
     ' ===================================================================
 
-    Public Function ParseLCRT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LCRT_Data
+    Friend Function ParseLCRT(rec As PluginRecord, pluginManager As PluginManager) As LCRT_Data
         Dim l As New LCRT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -337,7 +337,7 @@ Public Module AdditionalRecordParsers
         Return l
     End Function
 
-    Public Function ParseMATO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MATO_Data
+    Friend Function ParseMATO(rec As PluginRecord, pluginManager As PluginManager) As MATO_Data
         Dim m As New MATO_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -367,7 +367,7 @@ Public Module AdditionalRecordParsers
         Return m
     End Function
 
-    Public Function ParseNOCM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As NOCM_Data
+    Friend Function ParseNOCM(rec As PluginRecord, pluginManager As PluginManager) As NOCM_Data
         Dim n As New NOCM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         Dim currentEntry As NOCM_Entry = Nothing
         For Each sr In rec.Subrecords
@@ -392,7 +392,7 @@ Public Module AdditionalRecordParsers
         Return n
     End Function
 
-    Public Function ParseOVIS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As OVIS_Data
+    Friend Function ParseOVIS(rec As PluginRecord, pluginManager As PluginManager) As OVIS_Data
         Dim o As New OVIS_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         Dim pendingFormID As UInteger = 0
         Dim hasPending As Boolean = False
@@ -419,7 +419,7 @@ Public Module AdditionalRecordParsers
         Return o
     End Function
 
-    Public Function ParsePLYR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As PLYR_Data
+    Friend Function ParsePLYR(rec As PluginRecord, pluginManager As PluginManager) As PLYR_Data
         Return New PLYR_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
@@ -427,7 +427,7 @@ Public Module AdditionalRecordParsers
     ' SSE full parsers
     ' ===================================================================
 
-    Public Function ParseSCRL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SCRL_Data
+    Friend Function ParseSCRL(rec As PluginRecord, pluginManager As PluginManager) As SCRL_Data
         Dim s As New SCRL_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -476,7 +476,7 @@ Public Module AdditionalRecordParsers
         Return s
     End Function
 
-    Public Function ParseSHOU(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SHOU_Data
+    Friend Function ParseSHOU(rec As PluginRecord, pluginManager As PluginManager) As SHOU_Data
         Dim s As New SHOU_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -497,7 +497,7 @@ Public Module AdditionalRecordParsers
         Return s
     End Function
 
-    Public Function ParseWOOP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As WOOP_Data
+    Friend Function ParseWOOP(rec As PluginRecord, pluginManager As PluginManager) As WOOP_Data
         Dim w As New WOOP_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -508,7 +508,7 @@ Public Module AdditionalRecordParsers
         Return w
     End Function
 
-    Public Function ParseRGDL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As RGDL_Data
+    Friend Function ParseRGDL(rec As PluginRecord, pluginManager As PluginManager) As RGDL_Data
         Dim r As New RGDL_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -572,7 +572,7 @@ Public Module AdditionalRecordParsers
         Return r
     End Function
 
-    Public Function ParseAPPA(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As APPA_Data
+    Friend Function ParseAPPA(rec As PluginRecord, pluginManager As PluginManager) As APPA_Data
         Dim a As New APPA_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -594,7 +594,7 @@ Public Module AdditionalRecordParsers
         Return a
     End Function
 
-    Public Function ParseSLGM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SLGM_Data
+    Friend Function ParseSLGM(rec As PluginRecord, pluginManager As PluginManager) As SLGM_Data
         Dim s As New SLGM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -619,7 +619,7 @@ Public Module AdditionalRecordParsers
         Return s
     End Function
 
-    Public Function ParseVOLI(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As VOLI_Data
+    Friend Function ParseVOLI(rec As PluginRecord, pluginManager As PluginManager) As VOLI_Data
         Dim v As New VOLI_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -668,39 +668,39 @@ Public Module AdditionalRecordParsers
     ' Stub parsers (minimal records, just extract EDID)
     ' ===================================================================
 
-    Public Function ParseLSPR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LSPR_Data
+    Friend Function ParseLSPR(rec As PluginRecord, pluginManager As PluginManager) As LSPR_Data
         Return New LSPR_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParseMICN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MICN_Data
+    Friend Function ParseMICN(rec As PluginRecord, pluginManager As PluginManager) As MICN_Data
         Return New MICN_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParseSCPT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SCPT_Data
+    Friend Function ParseSCPT(rec As PluginRecord, pluginManager As PluginManager) As SCPT_Data
         Return New SCPT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParseSKIL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SKIL_Data
+    Friend Function ParseSKIL(rec As PluginRecord, pluginManager As PluginManager) As SKIL_Data
         Return New SKIL_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParseTLOD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TLOD_Data
+    Friend Function ParseTLOD(rec As PluginRecord, pluginManager As PluginManager) As TLOD_Data
         Return New TLOD_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParseTOFT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TOFT_Data
+    Friend Function ParseTOFT(rec As PluginRecord, pluginManager As PluginManager) As TOFT_Data
         Return New TOFT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParseCLDC(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CLDC_Data
+    Friend Function ParseCLDC(rec As PluginRecord, pluginManager As PluginManager) As CLDC_Data
         Return New CLDC_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParseHAIR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As HAIR_Data
+    Friend Function ParseHAIR(rec As PluginRecord, pluginManager As PluginManager) As HAIR_Data
         Return New HAIR_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 
-    Public Function ParsePWAT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As PWAT_Data
+    Friend Function ParsePWAT(rec As PluginRecord, pluginManager As PluginManager) As PWAT_Data
         Return New PWAT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
     End Function
 

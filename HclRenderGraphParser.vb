@@ -26,8 +26,8 @@ Option Explicit On
 Imports System.Collections.Generic
 Imports System.Linq
 
-Public NotInheritable Class HclRenderGraphParser_Class
-    Public Shared Function ParseTransformSetDefinition(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclTransformSetDefinitionGraph_Class
+Friend NotInheritable Class HclRenderGraphParser_Class
+    Friend Shared Function ParseTransformSetDefinition(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclTransformSetDefinitionGraph_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclTransformSetDefinition", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -39,7 +39,7 @@ Public NotInheritable Class HclRenderGraphParser_Class
         }
     End Function
 
-    Public Shared Function ParseObjectSpaceSkinPNOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
+    Friend Shared Function ParseObjectSpaceSkinPNOperator(graph As HkxObjectGraph_Class, source As HkxVirtualObjectGraph_Class) As HclObjectSpaceSkinPNOperatorGraph_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing
         If Not source.ClassName.Equals("hclObjectSpaceSkinPNOperator", StringComparison.OrdinalIgnoreCase) Then Return Nothing
 
@@ -72,7 +72,7 @@ Public NotInheritable Class HclRenderGraphParser_Class
         Return result
     End Function
 
-    Public Shared Function ParseSimpleMeshBoneDeformOperator(graph As HkxObjectGraph_Class,
+    Friend Shared Function ParseSimpleMeshBoneDeformOperator(graph As HkxObjectGraph_Class,
                                                              source As HkxVirtualObjectGraph_Class,
                                                              Optional skeleton As HkaSkeletonGraph_Class = Nothing) As HclSimpleMeshBoneDeformOperatorGraph_Class
         If IsNothing(graph) OrElse IsNothing(source) Then Return Nothing

@@ -1176,7 +1176,7 @@ Public Class RACE_BoneDataGender
     End Function
 End Class
 
-Public Enum RACE_BoneDataSection
+Friend Enum RACE_BoneDataSection
     None = 0
     WeightScale = 1     ' opened by BSMP, BSMS payload is 9 floats (Thin/Muscular/Fat Vec3)
     RangeModifier = 2   ' opened by BMMP, BSMS payload is 4 floats (MinY, MinZ, MaxY, MaxZ)
@@ -2006,11 +2006,11 @@ Public Module RecordParsers
     ''' the value to fit in [-128, 127]. We need bit-pattern reinterpret: 0xFF → -1, 0x80 → -128.
     ''' Used wherever xEdit declares a field as `itS8` (Faction.Rank, REVB filters, PSDT schedule,
     ''' WRLD rank, etc.).</summary>
-    Friend Function ReadInt8(b As Byte) As SByte
+    Public Function ReadInt8(b As Byte) As SByte
         Return If(b < 128, CSByte(b), CSByte(CInt(b) - 256))
     End Function
 
-    Friend Function ReadOptionalFloat(data As Byte(), offset As Integer) As Single?
+    Public Function ReadOptionalFloat(data As Byte(), offset As Integer) As Single?
         If data Is Nothing OrElse data.Length < offset + 4 Then Return Nothing
         Dim raw = BitConverter.ToUInt32(data, offset)
         If raw = &H7F7FFFFFUI OrElse raw = &HFF7FFFFFUI Then Return Nothing
@@ -2025,6 +2025,12 @@ Public Module RecordParsers
     End Function
 
     Private Function ResolveFormIDReference(rec As PluginRecord, rawFormID As UInteger, pluginManager As PluginManager) As UInteger
+        ' ⛔ SIN PluginManager EL FormID VUELVE CRUDO: sin el mapeo de master-index, o sea un número
+        ' PLAUSIBLE Y EQUIVOCADO, sin error. Es el motivo por el que los 154 `Optional pluginManager As
+        ' PluginManager = Nothing` de estos parsers dejaron de ser opcionales: la firma ANUNCIABA como
+        ' soportado un modo que corrompe, mientras los 160 llamadores reales habían concluido por separado
+        ' que no lo era (se sacó el Optional y compiló limpio: nadie lo omitía). Esta guarda queda como red
+        ' para quien pase Nothing a propósito — que ahora es un acto explícito, no un default.
         If pluginManager Is Nothing OrElse rec Is Nothing Then Return rawFormID
         Return pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rawFormID)
     End Function
@@ -2043,7 +2049,7 @@ Public Module RecordParsers
     '''   PropertyCount x 24 bytes, parseadas por CraftingRecordParsers.ParseObjectModProperty para que las
     '''   Properties de OMOD.DATA y las inline del OBTS no puedan divergir.
     ''' Nothing si el payload esta malformado. Lo usan NPC_.OBTS (robots/templates) y ARMO.OBTS (multi-addon).</summary>
-    Friend Function ParseOBTSPayload(d As Byte(), rec As PluginRecord, pluginManager As PluginManager) As ARMO_Combination
+    Public Function ParseOBTSPayload(d As Byte(), rec As PluginRecord, pluginManager As PluginManager) As ARMO_Combination
         If d Is Nothing OrElse d.Length < 17 Then Return Nothing
         Dim combo As New ARMO_Combination()
         Dim includeCount As UInteger = BitConverter.ToUInt32(d, 0)
@@ -2148,7 +2154,7 @@ Public Module RecordParsers
     ''' Use this for bulk operations (loading thousands of NPCs at startup, walking template
     ''' chains). For preview / save / edit, use the full ParseNPC which captures every subrecord
     ''' for byte-equivalent round-trip.</summary>
-    Public Function ParseNPCLight(rec As PluginRecord, pluginName As String, Optional pluginManager As PluginManager = Nothing) As NPC_Data
+    Public Function ParseNPCLight(rec As PluginRecord, pluginName As String, pluginManager As PluginManager) As NPC_Data
         Dim npc As New NPC_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID,
@@ -2214,7 +2220,7 @@ Public Module RecordParsers
     ' xEdit para poder cruzarlo contra el .pas.
     ' Para listados masivos usar ParseNPCLight: es ordenes de magnitud mas rapido porque saltea VMAD, Attacks,
     ' DEST, combinaciones OBTS, Factions/Perks/Properties/Inventory.
-    Public Function ParseNPC(rec As PluginRecord, pluginName As String, Optional pluginManager As PluginManager = Nothing) As NPC_Data
+    Public Function ParseNPC(rec As PluginRecord, pluginName As String, pluginManager As PluginManager) As NPC_Data
         Dim npc As New NPC_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID,
@@ -3125,7 +3131,7 @@ Public Module RecordParsers
         Return If(String.IsNullOrEmpty(eid), own, eid)
     End Function
 
-    Public Function ParseRACE(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As RACE_Data
+    Public Function ParseRACE(rec As PluginRecord, pluginManager As PluginManager) As RACE_Data
         Dim race As New RACE_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -3731,7 +3737,7 @@ Public Module RecordParsers
         Return race
     End Function
 
-    Public Function ParseARMO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ARMO_Data
+    Public Function ParseARMO(rec As PluginRecord, pluginManager As PluginManager) As ARMO_Data
         Dim armo As New ARMO_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -3947,7 +3953,7 @@ Public Module RecordParsers
         Return armo
     End Function
 
-    Public Function ParseARMA(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ARMA_Data
+    Public Function ParseARMA(rec As PluginRecord, pluginManager As PluginManager) As ARMA_Data
         Dim arma As New ARMA_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4081,7 +4087,7 @@ Public Module RecordParsers
         Return arma
     End Function
 
-    Public Function ParseOTFT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As OTFT_Data
+    Public Function ParseOTFT(rec As PluginRecord, pluginManager As PluginManager) As OTFT_Data
         Dim otft As New OTFT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4100,7 +4106,7 @@ Public Module RecordParsers
         Return otft
     End Function
 
-    Public Function ParseHDPT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As HDPT_Data
+    Public Function ParseHDPT(rec As PluginRecord, pluginManager As PluginManager) As HDPT_Data
         Dim hdpt As New HDPT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4166,7 +4172,7 @@ Public Module RecordParsers
         Return hdpt
     End Function
 
-    Public Function ParseCLFM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CLFM_Data
+    Public Function ParseCLFM(rec As PluginRecord, pluginManager As PluginManager) As CLFM_Data
         Dim clfm As New CLFM_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4222,7 +4228,7 @@ Public Module RecordParsers
     ''' los dos juegos esta leyendo, EN SILENCIO, un slot con otra semantica en uno de ellos. Los unicos con la
     ''' misma semantica en ambos son TX00 (diffuse) y TX01 (normal). El rename por juego (o un indexador
     ''' posicional Slot(i)) queda como refactor aparte: TXST_Data lo consumen ~20 sitios.</para></summary>
-    Public Function ParseTXST(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TXST_Data
+    Public Function ParseTXST(rec As PluginRecord, pluginManager As PluginManager) As TXST_Data
         Dim txst As New TXST_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4261,7 +4267,7 @@ Public Module RecordParsers
     ''' (OBND/LVLD/LVLM/LVLF/LVLG/LLCT/N×(LVLO+COED)/LLKC) and captures the LVLN-specific generic
     ''' model. The two records differ ONLY at the tail: LVLN ends with a generic model, LVLI with
     ''' LVSG+ONAM — so this parser does NOT read LVSG/ONAM (they are not part of the LVLN spec).</summary>
-    Public Function ParseLVLN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LVLN_Data
+    Public Function ParseLVLN(rec As PluginRecord, pluginManager As PluginManager) As LVLN_Data
         Dim lvln As New LVLN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4358,7 +4364,7 @@ Public Module RecordParsers
         Return lvln
     End Function
 
-    Public Function ParseLVLI(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LVLI_Data
+    Public Function ParseLVLI(rec As PluginRecord, pluginManager As PluginManager) As LVLI_Data
         Dim lvli As New LVLI_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4461,7 +4467,7 @@ Public Module RecordParsers
         Return lvli
     End Function
 
-    Public Function ParseFLST(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As FLST_Data
+    Public Function ParseFLST(rec As PluginRecord, pluginManager As PluginManager) As FLST_Data
         Dim flst As New FLST_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -4476,7 +4482,7 @@ Public Module RecordParsers
         Return flst
     End Function
 
-    Public Function ParseMSWP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MSWP_Data
+    Public Function ParseMSWP(rec As PluginRecord, pluginManager As PluginManager) As MSWP_Data
         Dim mswp As New MSWP_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

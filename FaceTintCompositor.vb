@@ -38,7 +38,9 @@ End Enum
 ''' magic constants. SrgbOpacity (default) uses the IEC 61966-2-1 transfer; it is the verified
 ''' convention -- the same TTET[0] mask drives diffuse and N/S, and N/S matches CK at slope 1.000
 ''' only under sRGB. Linear is kept for A/B comparison. Applied identically by render and bake.</summary>
-Public Enum FaceTintBlendConvention
+' ⛔ Enum LEGACY: FaceTintConvention lo reemplaza y lo dice por escrito ("el enum legacy ... sólo tenía
+' Linear/SrgbOpacity"). Única referencia en todo el árbol: esta declaración. Friend hasta que se borre.
+Friend Enum FaceTintBlendConvention
     Linear = 0       ' coverage = mask * opacity (blend in stored/gamma space)
     SrgbOpacity = 1  ' coverage = sRGB(mask) * opacity (mask shaped by the sRGB transfer)
 End Enum
@@ -443,37 +445,18 @@ Public Module FaceTintCompositor
             Dim w = lvl.Width, h = lvl.Height
             Dim px = lvl.Data
             Dim fmt = tex.DxgiCodeFinal
-            ' bytes-per-pixel del decode que devuelve el wrapper (ChooseDecompressFormatForSource):
-            '   BC1/BC2/BC3/BC7 -> R8G8B8A8(28/29) ó B8G8R8A8(87/88/91/93) = 4 canales
-            '   BC5 (normal/spec) -> R8G8_UNORM/SNORM(49/50) = 2 canales ; BC4 -> R8(61/62) = 1 canal
-            Dim bpp As Integer = 0
-            Select Case fmt
-                Case 28, 29, 87, 88, 91, 93 : bpp = 4
-                Case 49, 50 : bpp = 2
-                Case 61, 62 : bpp = 1
-            End Select
+            ' ⛔ La tabla de formatos y el desempaquetado viven UNA sola vez, en FaceTintCpuCompositor:
+            ' acá estaban transcriptos, con el mismo `Select Case` por píxel adentro del loop y encima
+            ' SERIAL. Es la misma ley con la salida en BGRA en vez de RGBA.
+            Dim bpp As Integer = FaceTintCpuCompositor.CanalesDelFormatoDecodificado(fmt)
             If w <= 0 OrElse h <= 0 OrElse px Is Nothing OrElse bpp = 0 OrElse px.Length < w * h * bpp Then
                 Dim p = outPath, dx = fmt, nb = If(px Is Nothing, 0, px.Length)
                 Logger.LogLazy(Function() $"[PRISTINE-DUMP] '{System.IO.Path.GetFileName(p)}' formato no soportado (DxgiFinal={dx}, bytes={nb}) -> skip")
                 Return
             End If
-            Dim isBgra8 = (fmt = 87 OrElse fmt = 88 OrElse fmt = 91 OrElse fmt = 93)
             Dim bgra(w * h * 4 - 1) As Byte
-            For i As Integer = 0 To w * h - 1
-                Dim o As Integer = i * 4, s As Integer = i * bpp
-                Select Case bpp
-                    Case 4
-                        If isBgra8 Then
-                            bgra(o) = px(s) : bgra(o + 1) = px(s + 1) : bgra(o + 2) = px(s + 2) : bgra(o + 3) = px(s + 3)
-                        Else
-                            bgra(o) = px(s + 2) : bgra(o + 1) = px(s + 1) : bgra(o + 2) = px(s) : bgra(o + 3) = px(s + 3)   ' RGBA -> BGRA
-                        End If
-                    Case 2   ' R8G8 (BC5, p.ej. normal): R=X, G=Y, B=0, A=255 — igual que el readback GL de un RG texture
-                        bgra(o) = 0 : bgra(o + 1) = px(s + 1) : bgra(o + 2) = px(s) : bgra(o + 3) = 255
-                    Case 1   ' R8 (BC4): grayscale replicado
-                        bgra(o) = px(s) : bgra(o + 1) = px(s) : bgra(o + 2) = px(s) : bgra(o + 3) = 255
-                End Select
-            Next
+            FaceTintCpuCompositor.EmpaquetarPixeles(px, bgra, w * h, bpp,
+                                                    FaceTintCpuCompositor.EsBgra8(fmt), salidaEsBgra:=True)
             WriteBgraToTga(outPath, bgra, w, h)
         Catch ex As Exception
             Dim p = outPath, msg = ex.Message
@@ -2319,25 +2302,25 @@ void main() {
                                         fromSpace As Integer, toSpace As Integer) As Integer
         ArgumentNullException.ThrowIfNull(state)
         If srcTexId = 0 OrElse width <= 0 OrElse height <= 0 Then Return 0
-        EnsureCompositorInitialized(state)
-        If state._program = 0 OrElse state._quadVao = 0 Then Return 0
 
-        Dim prevFbo As Integer = GL.GetInteger(GetPName.DrawFramebufferBinding)
-        Dim prevProg As Integer = GL.GetInteger(GetPName.CurrentProgram)
-        Dim prevVao As Integer = GL.GetInteger(GetPName.VertexArrayBinding)
-        Dim prevActiveTex As Integer = GL.GetInteger(GetPName.ActiveTexture)
-        ' Select unit 0 BEFORE reading its 2D binding: GetInteger(TextureBinding2D) reports the
-        ' binding of the CURRENTLY ACTIVE unit, but the restore below rebinds prevTex0 onto unit 0.
-        ' Without this the binding of prevActiveTex's unit would be (wrongly) restored onto unit 0.
-        ' For callers that enter with unit 0 already active this is a no-op (identical capture).
-        GL.ActiveTexture(TextureUnit.Texture0)
-        Dim prevTex0 As Integer = GL.GetInteger(GetPName.TextureBinding2D)
-        Dim prevViewport(3) As Integer
-        GL.GetInteger(GetPName.Viewport, prevViewport)
-
+        ' ⛔ ESTA FUNCION TENIA LA CAPTURA/RESTAURACION ESCRITA A MANO, campo por campo, duplicando a
+        ' SaveGlState/RestoreGlState (200 lineas mas arriba, EN ESTE MISMO ARCHIVO). Los tres ENABLES
+        ' faltaban en la copia: la funcion los apagaba y el Finally restauraba todo MENOS ellos. Se
+        ' dispara en el camino vivo —ConvertChannelIfNeeded corre en cada composite del editor de cara—
+        ' asi que cada tick de slider dejaba DEPTH_TEST y BLEND apagados; quedaba tapado porque
+        ' ApplyMaterial los re-fija por material en el frame siguiente, pero eso es suerte, no diseño, y a
+        ' SCISSOR_TEST no lo re-fija nadie.
+        ' ⭐ El arreglo NO es completar la copia sino BORRARLA: completarla deja doce campos transcriptos
+        ' que vuelven a divergir en cuanto alguien agregue ColorMask o BlendFunc al snapshot. Una sola ley.
+        ' ⛔ Y se toma ANTES de EnsureCompositorInitialized: esa funcion, en su PRIMERA llamada, bindea y
+        ' desbindea VAO/VBO, asi que capturar despues leia prevVao = 0 y despues "restauraba" ese 0 encima
+        ' del VAO del llamador.
+        Dim snap = SaveGlState()
         Dim outTex As Integer = 0
         Dim outFbo As Integer = 0
         Try
+            EnsureCompositorInitialized(state)
+            If state._program = 0 OrElse state._quadVao = 0 Then Return 0
             If Not AllocateResultTextureAndFbo(state, width, height, outTex, outFbo) Then Return 0
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, outFbo)
             GL.Viewport(0, 0, width, height)
@@ -2373,15 +2356,13 @@ void main() {
         Finally
             ' outFbo is the persistent scratch container (state-owned, reused across calls) — NOT
             ' deleted here. It lives until state.Dispose().
-            GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
-            GL.UseProgram(prevProg)
-            GL.BindVertexArray(prevVao)
-            ' prevTex0 was captured on unit 0 (see capture), so restore it onto unit 0 first,
-            ' then reselect the caller's original active unit. Matches the other compose paths.
-            GL.ActiveTexture(TextureUnit.Texture0)
-            GL.BindTexture(TextureTarget.Texture2D, prevTex0)
-            GL.ActiveTexture(CType(prevActiveTex, TextureUnit))
-            GL.Viewport(prevViewport(0), prevViewport(1), prevViewport(2), prevViewport(3))
+            RestoreGlState(snap)
+            ' [AUDIT-GLSTATE] valida que los tres enables vuelven. Si alguno entra en True, ANTES se
+            ' perdia; que aparezca en el log es la prueba de que el caso se ejercito de verdad.
+            If Logger.Enabled Then
+                Dim d = snap.WasDepth, sc = snap.WasScissor, b = snap.WasBlend
+                Logger.LogLazy(Function() $"[AUDIT-GLSTATE] ConvertTextureSpace restaura depth={d} scissor={sc} blend={b}")
+            End If
         End Try
         Return outTex
     End Function
@@ -2796,5 +2777,22 @@ Public NotInheritable Class FaceTintTextureCache
         Next
         _entries.Clear()
     End Sub
+
+    ''' <summary>Olvida las claves SIN borrar un solo handle de GL.
+    ''' <para>⛔ Es para el único caso en que <see cref="Clear"/> no se puede usar: cuando NO se pudo hacer
+    ''' current el contexto dueño. Ahí borrar es lo peligroso —los nombres de GL son por contexto y el
+    ''' <c>DeleteTexture</c> caería sobre el que esté current, matando texturas vivas de otro preview— pero
+    ''' DEJAR LAS ENTRADAS tampoco sirve: <see cref="GetOrLoadBatch"/> sirve el hit sin revalidar nada, así
+    ''' que el caché seguiría entregando las texturas del NPC anterior para siempre. Olvidar sin borrar deja
+    ''' el caché coherente con su espejo de CPU (que sí se limpia) al precio de no liberar handles.</para>
+    ''' <para>Ese precio es casi siempre cero: <c>EnsureContextCurrent</c> sólo falla si el control está
+    ''' <c>Nothing</c>/<c>IsDisposed</c> —contexto muerto, los handles ya se fueron con él— o si tiró, en
+    ''' cuyo caso el contexto no es usable igual. Devuelve cuántas entradas se olvidaron para que el
+    ''' llamador lo pueda loguear: si eso es distinto de 0 seguido, hay un contexto que nunca vuelve.</para></summary>
+    Public Function OlvidarSinBorrar() As Integer
+        Dim n = _entries.Count
+        _entries.Clear()
+        Return n
+    End Function
 End Class
 

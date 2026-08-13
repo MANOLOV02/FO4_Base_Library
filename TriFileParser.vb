@@ -322,8 +322,34 @@ Public Class TriHeadFile
     Public Property BaseVertices As Vector3()
 
     ''' <summary>Get a morph by name (case-insensitive).</summary>
+    ''' <remarks>⛔ <c>List.Find</c> ENUMERA. Si otro hilo hace <c>Morphs.Add</c> mientras esto corre,
+    ''' tira <c>InvalidOperationException</c> — ver <see cref="ClonarParaMerge"/>.</remarks>
     Public Function GetMorph(name As String) As TriHeadMorph
         Return Morphs.Find(Function(m) m.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+    End Function
+
+    ''' <summary>Copia SUPERFICIAL pensada para mergear morphs encima sin tocar el original.
+    ''' <para>⛔⛔ EXISTE PORQUE LAS INSTANCIAS DE ESTA CLASE SE CACHEAN Y SE COMPARTEN.
+    ''' <c>NpcMorphResolver._triHeadCache</c> es <c>Shared</c> y <c>PathLoadCache.GetOrLoad</c> devuelve
+    ''' SIEMPRE LA MISMA INSTANCIA. Mergear el chargen "in place" sobre lo que devuelve el caché rompía
+    ''' de dos formas:</para>
+    ''' <para>1. CARRERA — <c>ResolveMorphPlan</c> corre bajo <c>Parallel.ForEach</c>: un hilo hacía
+    ''' <c>Morphs.Add</c> mientras otro estaba adentro de <c>GetMorph</c> → <c>Morphs.Find</c>, que enumera
+    ''' ⇒ <c>InvalidOperationException</c> intermitente ("falló una vez y después anduvo").</para>
+    ''' <para>2. CONTAMINACIÓN — y esta es peor porque NO tira: el .tri de raza cacheado se quedaba con los
+    ''' morphs de chargen y con los EXTENDIDOS de RaceMenu del PRIMER NPC que pasó, y todos los NPC
+    ''' siguientes de esa raza los veían. Mueve bytes horneados y no da ningún síntoma.</para>
+    ''' <para>Los <c>TriHeadMorph</c> y <c>BaseVertices</c> se comparten por referencia a propósito: son de
+    ''' sólo lectura después del parseo, y copiarlos costaría megabytes por NPC. Lo único que se duplica es
+    ''' la LISTA, que es lo único que se muta.</para></summary>
+    Public Function ClonarParaMerge() As TriHeadFile
+        Return New TriHeadFile With {
+            .NumVertices = Me.NumVertices,
+            .NumTriangles = Me.NumTriangles,
+            .NumMorphs = Me.NumMorphs,
+            .BaseVertices = Me.BaseVertices,
+            .Morphs = New List(Of TriHeadMorph)(Me.Morphs)
+        }
     End Function
 End Class
 

@@ -9,37 +9,37 @@ Imports System.Text
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 SNDR record - Sound Descriptor.</summary>
-Public Class SNDR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Notes As String = ""
-    Public DescriptorType As UInteger  ' 0=Standard, 1=Compound, 2=AutoWeapon
-    Public CategoryFormID As UInteger
-    Public AlternateSoundFormID As UInteger
-    Public OutputModelFormID As UInteger
+Friend Class SNDR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Notes As String = ""
+    Friend DescriptorType As UInteger  ' 0=Standard, 1=Compound, 2=AutoWeapon
+    Friend CategoryFormID As UInteger
+    Friend AlternateSoundFormID As UInteger
+    Friend OutputModelFormID As UInteger
 
     ' LNAM
-    Public IsLooping As Boolean
-    Public RumbleSend As Byte
+    Friend IsLooping As Boolean
+    Friend RumbleSend As Byte
 
     ' Child descriptors (for Compound type)
-    Public ChildDescriptorFormIDs As New List(Of UInteger)
+    Friend ChildDescriptorFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Fallout 4 SNCT record - Sound Category.</summary>
-Public Class SNCT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public CategoryFlags As UInteger
-    Public ParentCategoryFormID As UInteger
-    Public MenuSliderCategoryFormID As UInteger
-    Public StaticVolumeMult As Single
-    Public DefaultMenuValue As Single
-    Public MinFrequencyMult As Single
-    Public SidechainTargetMult As Single
+Friend Class SNCT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend CategoryFlags As UInteger
+    Friend ParentCategoryFormID As UInteger
+    Friend MenuSliderCategoryFormID As UInteger
+    Friend StaticVolumeMult As Single
+    Friend DefaultMenuValue As Single
+    Friend MinFrequencyMult As Single
+    Friend SidechainTargetMult As Single
 
-    Public ReadOnly Property MuteWhenSubmerged As Boolean
+    Friend ReadOnly Property MuteWhenSubmerged As Boolean
         Get
             Return (CategoryFlags And &H1UI) <> 0
         End Get
@@ -47,33 +47,33 @@ Public Class SNCT_Data
 End Class
 
 ''' <summary>Fallout 4 SOPM record - Sound Output Model.</summary>
-Public Class SOPM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
+Friend Class SOPM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
 
     ' NAM1
-    Public OutputFlags As Byte
-    Public ReverbSendPct As Byte
-    Public OutputType As UInteger  ' 0=UsesHRTF, 1=DefinedSpeakerOutput
-    Public StaticAttenuation As Single ' stored as S16/100
+    Friend OutputFlags As Byte
+    Friend ReverbSendPct As Byte
+    Friend OutputType As UInteger  ' 0=UsesHRTF, 1=DefinedSpeakerOutput
+    Friend StaticAttenuation As Single ' stored as S16/100
 End Class
 
 ''' <summary>MUSC track entry.</summary>
-Public Class MUSC_TrackEntry
-    Public TrackFormID As UInteger
+Friend Class MUSC_TrackEntry
+    Friend TrackFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 MUSC record - Music Type.</summary>
-Public Class MUSC_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public MusicFlags As UInteger
-    Public Priority As UShort = 50
-    Public DuckingDB As Single
-    Public FadeDuration As Single
-    Public TrackFormIDs As New List(Of UInteger)
+Friend Class MUSC_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend MusicFlags As UInteger
+    Friend Priority As UShort = 50
+    Friend DuckingDB As Single
+    Friend FadeDuration As Single
+    Friend TrackFormIDs As New List(Of UInteger)
 
-    Public ReadOnly Property PlaysOneSelection As Boolean
+    Friend ReadOnly Property PlaysOneSelection As Boolean
         Get
             Return (MusicFlags And &H1UI) <> 0
         End Get
@@ -81,104 +81,104 @@ Public Class MUSC_Data
 End Class
 
 ''' <summary>Fallout 4 MUST record - Music Track.</summary>
-Public Class MUST_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public TrackType As UInteger   ' 0x23CB=Palette, 0x6ED7=SingleTrack, 0xA1DC=SilentTrack
-    Public Duration As Single
-    Public FadeOut As Single
-    Public TrackFileName As String = ""
-    Public FinaleFileName As String = ""
-    Public LoopBegins As Single
-    Public LoopEnds As Single
-    Public LoopCount As UInteger
-    Public SubTrackFormIDs As New List(Of UInteger)
+Friend Class MUST_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend TrackType As UInteger   ' 0x23CB=Palette, 0x6ED7=SingleTrack, 0xA1DC=SilentTrack
+    Friend Duration As Single
+    Friend FadeOut As Single
+    Friend TrackFileName As String = ""
+    Friend FinaleFileName As String = ""
+    Friend LoopBegins As Single
+    Friend LoopEnds As Single
+    Friend LoopCount As UInteger
+    Friend SubTrackFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Fallout 4 REVB record - Reverb Parameters.</summary>
-Public Class REVB_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public DecayTimeMs As UShort = 1250
-    Public HFReferenceHz As UShort = 800
-    Public RoomFilter As SByte
-    Public RoomHFFilter As SByte
-    Public Reflections As SByte
-    Public ReverbAmp As SByte
-    Public DecayHFRatio As Single  ' stored as U8/100
-    Public ReflectDelayMs As Byte
-    Public ReverbDelayMs As Byte
-    Public DiffusionPct As Byte = 100
-    Public DensityPct As Byte = 100
-    Public ReverbClass As UInteger
+Friend Class REVB_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend DecayTimeMs As UShort = 1250
+    Friend HFReferenceHz As UShort = 800
+    Friend RoomFilter As SByte
+    Friend RoomHFFilter As SByte
+    Friend Reflections As SByte
+    Friend ReverbAmp As SByte
+    Friend DecayHFRatio As Single  ' stored as U8/100
+    Friend ReflectDelayMs As Byte
+    Friend ReverbDelayMs As Byte
+    Friend DiffusionPct As Byte = 100
+    Friend DensityPct As Byte = 100
+    Friend ReverbClass As UInteger
 End Class
 
 ''' <summary>Fallout 4 KSSM record - Sound Keyword Mapping.</summary>
-Public Class KSSM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public PrimaryDescriptorFormID As UInteger
-    Public ExteriorTailFormID As UInteger
-    Public VATSDescriptorFormID As UInteger
-    Public VATSThreshold As Single
-    Public KeywordFormIDs As New List(Of UInteger)
+Friend Class KSSM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend PrimaryDescriptorFormID As UInteger
+    Friend ExteriorTailFormID As UInteger
+    Friend VATSDescriptorFormID As UInteger
+    Friend VATSThreshold As Single
+    Friend KeywordFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Fallout 4 AECH record - Audio Effect Chain.</summary>
-Public Class AECH_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public EffectType As UInteger  ' 0=BSOverdrive, 1=BSStateVariableFilter, 2=BSDelayEffect
-    Public IsEnabled As Boolean
+Friend Class AECH_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend EffectType As UInteger  ' 0=BSOverdrive, 1=BSStateVariableFilter, 2=BSDelayEffect
+    Friend IsEnabled As Boolean
 End Class
 
 ''' <summary>SCSN category multiplier entry.</summary>
-Public Class SCSN_CategoryMult
-    Public CategoryFormID As UInteger
-    Public Multiplier As Single
+Friend Class SCSN_CategoryMult
+    Friend CategoryFormID As UInteger
+    Friend Multiplier As Single
 End Class
 
 ''' <summary>Fallout 4 SCSN record - Audio Category Snapshot.</summary>
-Public Class SCSN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Priority As UShort
-    Public CategoryMultipliers As New List(Of SCSN_CategoryMult)
+Friend Class SCSN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Priority As UShort
+    Friend CategoryMultipliers As New List(Of SCSN_CategoryMult)
 End Class
 
 ''' <summary>STAG sound entry.</summary>
-Public Class STAG_SoundEntry
-    Public SoundFormID As UInteger
-    Public Action As String = ""
+Friend Class STAG_SoundEntry
+    Friend SoundFormID As UInteger
+    Friend Action As String = ""
 End Class
 
 ''' <summary>Fallout 4 STAG record - Animation Sound Tag Set.</summary>
-Public Class STAG_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Sounds As New List(Of STAG_SoundEntry)
+Friend Class STAG_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Sounds As New List(Of STAG_SoundEntry)
 End Class
 
 ''' <summary>Fallout 4 SOUN record - Sound Marker.</summary>
-Public Class SOUN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public SoundDescriptorFormID As UInteger
+Friend Class SOUN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend SoundDescriptorFormID As UInteger
 
     ' SDSC - Sound Descriptor
     ' REPT - Repeat
-    Public RepeatMinTime As Single
-    Public RepeatMaxTime As Single
-    Public Stackable As Boolean
+    Friend RepeatMinTime As Single
+    Friend RepeatMaxTime As Single
+    Friend Stackable As Boolean
 End Class
 
 #End Region
 
 #Region "Parsers"
 
-Public Module AudioRecordParsers
+Friend Module AudioRecordParsers
 
-    Public Function ParseSNDR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SNDR_Data
+    Friend Function ParseSNDR(rec As PluginRecord, pluginManager As PluginManager) As SNDR_Data
         Dim s As New SNDR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -215,7 +215,7 @@ Public Module AudioRecordParsers
         Return s
     End Function
 
-    Public Function ParseSNCT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SNCT_Data
+    Friend Function ParseSNCT(rec As PluginRecord, pluginManager As PluginManager) As SNCT_Data
         Dim s As New SNCT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -255,7 +255,7 @@ Public Module AudioRecordParsers
         Return s
     End Function
 
-    Public Function ParseSOPM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SOPM_Data
+    Friend Function ParseSOPM(rec As PluginRecord, pluginManager As PluginManager) As SOPM_Data
         Dim s As New SOPM_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -282,7 +282,7 @@ Public Module AudioRecordParsers
         Return s
     End Function
 
-    Public Function ParseMUSC(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MUSC_Data
+    Friend Function ParseMUSC(rec As PluginRecord, pluginManager As PluginManager) As MUSC_Data
         Dim m As New MUSC_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -315,7 +315,7 @@ Public Module AudioRecordParsers
         Return m
     End Function
 
-    Public Function ParseMUST(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MUST_Data
+    Friend Function ParseMUST(rec As PluginRecord, pluginManager As PluginManager) As MUST_Data
         Dim m As New MUST_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -357,7 +357,7 @@ Public Module AudioRecordParsers
         Return m
     End Function
 
-    Public Function ParseREVB(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As REVB_Data
+    Friend Function ParseREVB(rec As PluginRecord, pluginManager As PluginManager) As REVB_Data
         Dim r As New REVB_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -393,7 +393,7 @@ Public Module AudioRecordParsers
         Return r
     End Function
 
-    Public Function ParseKSSM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As KSSM_Data
+    Friend Function ParseKSSM(rec As PluginRecord, pluginManager As PluginManager) As KSSM_Data
         Dim k As New KSSM_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -423,7 +423,7 @@ Public Module AudioRecordParsers
         Return k
     End Function
 
-    Public Function ParseAECH(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As AECH_Data
+    Friend Function ParseAECH(rec As PluginRecord, pluginManager As PluginManager) As AECH_Data
         Dim a As New AECH_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -445,7 +445,7 @@ Public Module AudioRecordParsers
         Return a
     End Function
 
-    Public Function ParseSCSN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SCSN_Data
+    Friend Function ParseSCSN(rec As PluginRecord, pluginManager As PluginManager) As SCSN_Data
         Dim s As New SCSN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -470,7 +470,7 @@ Public Module AudioRecordParsers
         Return s
     End Function
 
-    Public Function ParseSTAG(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As STAG_Data
+    Friend Function ParseSTAG(rec As PluginRecord, pluginManager As PluginManager) As STAG_Data
         Dim s As New STAG_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -499,7 +499,7 @@ Public Module AudioRecordParsers
         Return s
     End Function
 
-    Public Function ParseSOUN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SOUN_Data
+    Friend Function ParseSOUN(rec As PluginRecord, pluginManager As PluginManager) As SOUN_Data
         Dim s As New SOUN_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

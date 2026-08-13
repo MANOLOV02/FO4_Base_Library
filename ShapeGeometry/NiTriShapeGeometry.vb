@@ -676,17 +676,10 @@ Public Class NiTriShapeGeometry
                     If partBones IsNot Nothing AndAlso partBoneIdx < partBones.Count Then
                         shapeBoneIdx = CInt(partBones(partBoneIdx))
                     End If
-                    ' Was Debug.Assert + CByte(... And &HFF): in RELEASE the assert is a no-op and
-                    ' the mask silently truncated the index to a DIFFERENT, wrong bone — data the
-                    ' caller then writes back out.  >255 is simply not representable in the Byte
-                    ' palette, so there is no correct fallback: refuse.
-                    If shapeBoneIdx < 0 OrElse shapeBoneIdx > 255 Then
-                        Throw New InvalidOperationException(
-                            $"Bone palette overflow: NiSkinPartition bone index {shapeBoneIdx} cannot be " &
-                            "encoded as Byte (NiTriShape with >256 bones).  Truncating would silently " &
-                            "bind the vertex to the wrong bone.")
-                    End If
-                    outIdx(outBase + j) = CByte(shapeBoneIdx)
+                    ' La ley del empaquetado vive en BoneInfluencePacker: era la MISMA decisión escrita
+                    ' acá y en Wardrobe_Manager, y allá enmascaraba con &HFF (bindeo silencioso al hueso
+                    ' equivocado) justo lo que este comentario declaraba removido.
+                    outIdx(outBase + j) = BoneInfluencePacker.PackPaletteIndex(shapeBoneIdx, "NiSkinPartition")
                     outWgt(outBase + j) = CType(weight * renorm, SysHalf)
                 Next
             Next
@@ -725,7 +718,11 @@ Public Class NiTriShapeGeometry
         For Each kvp In perVertex
             Dim vIdx = kvp.Key
             Dim list = kvp.Value
-            list.Sort(Function(a, b) b.weight.CompareTo(a.weight))
+            ' ⛔ CON DESEMPATE. `List.Sort` es INESTABLE: con dos influencias del mismo peso —un vértice
+            ' a mitad de camino entre dos huesos sale 0,5/0,5 del pintado, no es raro— el orden de slot
+            ' quedaba sin especificar y la salida dejaba de ser función de la entrada. La copia de
+            ' Wardrobe_Manager sí desempataba; ahora las dos usan la misma ley.
+            list.Sort(Function(a, b) BoneInfluencePacker.CompararInfluencias(a.weight, a.boneIdx, b.weight, b.boneIdx))
             Dim copy = Math.Min(wpv, list.Count)
             Dim outBase = vIdx * wpv
             Dim sumW As Single = 0
@@ -734,15 +731,7 @@ Public Class NiTriShapeGeometry
             ' beyond slot 4 — which is rare).
             Dim renorm As Single = If(sumW > 0.0F AndAlso copy < list.Count, 1.0F / sumW, 1.0F)
             For j = 0 To copy - 1
-                Dim shapeBoneIdx As Integer = list(j).boneIdx
-                ' See FillFromPartition: Debug.Assert is a no-op in Release and the &HFF mask
-                ' silently rebound the vertex to the wrong bone.  Refuse instead.
-                If shapeBoneIdx < 0 OrElse shapeBoneIdx > 255 Then
-                    Throw New InvalidOperationException(
-                        $"Bone palette overflow: NiSkinData bone index {shapeBoneIdx} cannot be encoded " &
-                        "as Byte (>256 bones).  Truncating would silently bind the vertex to the wrong bone.")
-                End If
-                outIdx(outBase + j) = CByte(shapeBoneIdx)
+                outIdx(outBase + j) = BoneInfluencePacker.PackPaletteIndex(list(j).boneIdx, "NiSkinData")
                 outWgt(outBase + j) = CType(list(j).weight * renorm, SysHalf)
             Next
         Next

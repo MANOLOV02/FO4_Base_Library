@@ -499,13 +499,51 @@ Public Module FaceTintCpuCompositor
 
         ''' <summary>Expande el buffer entero a unidad [0,1] sobre <paramref name="dst"/> (mismo largo).
         ''' Reemplaza a los `Array.Copy(t.Rgba8, acc, …)`: Array.Copy con Byte()→Single() haria la conversion
-        ''' WIDENING (255 → 255,0F) en vez de la de ESCALA, o sea el bug exacto que este rename previene.</summary>
+        ''' WIDENING (255 → 255,0F) en vez de la de ESCALA, o sea el bug exacto que este rename previene.
+        ''' <para>⭐ VECTORIZADO por CALCULO, no por lookup: no hay gather en <c>System.Numerics.Vector</c>,
+        ''' asi que la unica forma de usar SIMD es reemplazar <c>ByteToUnit(b)</c> por <c>CSng(b)/255.0F</c>.
+        ''' No es la misma cuenta —la tabla redondea dos veces (Double y despues Single) y esta una sola—
+        ''' pero el dominio tiene 256 valores y <c>TexCodecPerfProbe lut</c> los recorre TODOS comparando
+        ''' por patron de bits: coinciden los 256. Es lossless por AGOTAMIENTO DEL DOMINIO, no por argumento.
+        ''' ⛔ Si alguien cambia la definicion de <see cref="ByteToUnit"/>, ese gate se pone rojo y esta
+        ''' funcion tiene que volver al lookup. No tocar una sin correr el otro.</para>
+        ''' <para>El ancho sale de <c>Vector(Of T).Count</c> ⇒ 64/32/16 bytes segun la maquina, sin
+        ''' hardcodear nada, igual que el resto del SIMD de la app. La cola va por la TABLA a proposito:
+        ''' es la ley de referencia.</para>
+        ''' <para>⛔ Deliberadamente NO lleva <c>Parallel.For</c>: los cuatro llamadores de produccion estan
+        ''' adentro del <c>Parallel.ForEach</c> por NPC del runner, o sea que seria un tercer nivel de
+        ''' anidamiento sobre el mismo scheduler — el mismo motivo medido que esta escrito en
+        ''' <c>CachedUnitDecode</c>.</para></summary>
         Public Sub CopyUnitTo(dst As Single())
             Dim n = Math.Min(If(dst Is Nothing, 0, dst.Length), If(Rgba8 Is Nothing, 0, Rgba8.Length))
             Dim lut = ByteToUnit, src = Rgba8
-            For i As Integer = 0 To n - 1
+            Dim i As Integer = 0
+            If Vector.IsHardwareAccelerated Then
+                Dim anchoB = Vector(Of Byte).Count       ' 64 / 32 / 16 segun AVX-512 / AVX2 / SSE2
+                Dim anchoS = Vector(Of Single).Count     ' SIEMPRE anchoB \ 4: mismo registro, 4 bytes por Single
+                Dim divisor = New Vector(Of Single)(255.0F)
+                While i <= n - anchoB
+                    Dim vb = New Vector(Of Byte)(src, i)
+                    Dim lo16, hi16 As Vector(Of UShort)
+                    Vector.Widen(vb, lo16, hi16)
+                    Dim a32, b32, c32, d32 As Vector(Of UInteger)
+                    Vector.Widen(lo16, a32, b32)
+                    Vector.Widen(hi16, c32, d32)
+                    Dim fa = Vector.ConvertToSingle(a32) / divisor
+                    Dim fb = Vector.ConvertToSingle(b32) / divisor
+                    Dim fc = Vector.ConvertToSingle(c32) / divisor
+                    Dim fd = Vector.ConvertToSingle(d32) / divisor
+                    fa.CopyTo(dst, i)
+                    fb.CopyTo(dst, i + anchoS)
+                    fc.CopyTo(dst, i + anchoS * 2)
+                    fd.CopyTo(dst, i + anchoS * 3)
+                    i += anchoB
+                End While
+            End If
+            While i < n
                 dst(i) = lut(src(i))
-            Next
+                i += 1
+            End While
         End Sub
 
         ''' <summary>El buffer entero como Single() fresco en unidad [0,1]. Para los pocos consumidores que
@@ -597,6 +635,177 @@ Public Module FaceTintCpuCompositor
         Return If(geIdx >= 0, geIdx, 0)
     End Function
 
+    ' =====================================================================================================
+    ' ⭐ LA LEY DEL DESEMPAQUETADO, ESCRITA UNA VEZ.
+    ' =====================================================================================================
+    ' ⛔ Estaba transcripta DOS veces —`DecodeDds` (salida RGBA, paralela) y `FaceTintCompositor.
+    ' WritePristineTga` (salida BGRA, SERIAL)— con la misma tabla de formatos copiada y el mismo
+    ' `Select Case` POR PIXEL adentro del loop. Son la misma ley con la salida en otro orden de canales.
+    '
+    ' Lo que cambia respecto de las dos copias, sin mover un byte:
+    '   1. La rama sale del loop. Antes se evaluaba `Select Case canales` 16,7 millones de veces para una
+    '      cara de 4096²; ahora una sola vez, y cada caso tiene su loop plano.
+    '   2. El caso 4 canales sin swap es una COPIA: `Buffer.BlockCopy` en vez de cuatro asignaciones por
+    '      pixel. Es el caso comun (BC1/BC2/BC3/BC7 descomprimen a R8G8B8A8_UNORM = 28).
+    '   3. El caso 4 canales CON swap se vectoriza con `Vector(Of Byte)` y `Vector.Shuffle`.
+    '
+    ' ⛔ EL ANCHO SIMD SE DERIVA EN RUNTIME, NUNCA SE HARDCODEA: `Vector(Of Byte).Count` da 64 con
+    ' AVX-512, 32 con AVX2 y 16 con SSE2, y `Vector.IsHardwareAccelerated` dice si hay algo de eso. Si no
+    ' lo hay, corre la cola escalar y listo — el mismo patron que `FastPow.LaneCount` y el resto del
+    ' proyecto. La app se distribuye: no puede llevar un ancho calibrado a un equipo.
+    ' Ver 00-reglas-app-distribuida y la trampa 2 de 61-perf-simd-trampas.
+
+    ''' <summary>Máscaras de canal para el intercambio R↔B, construidas UNA vez con el ancho que haya
+    ''' elegido el runtime. <c>Vector.Shuffle</c> no existe en este TFM, así que el intercambio se arma
+    ''' con dos cargas DESPLAZADAS (±2 bytes) y un <c>ConditionalSelect</c> por canal: en el carril del
+    ''' canal 0 se toma el byte que está 2 más adelante (la R), en el del canal 2 el que está 2 más
+    ''' atrás (la B), y los canales 1 y 3 quedan como están.</summary>
+    Private ReadOnly _maskCanal0 As System.Numerics.Vector(Of Byte) = ConstruirMascaraDeCanal(0)
+    Private ReadOnly _maskCanal2 As System.Numerics.Vector(Of Byte) = ConstruirMascaraDeCanal(2)
+
+    Private Function ConstruirMascaraDeCanal(canal As Integer) As System.Numerics.Vector(Of Byte)
+        Dim n = System.Numerics.Vector(Of Byte).Count
+        Dim m(n - 1) As Byte
+        For i As Integer = 0 To n - 1
+            m(i) = If((i And 3) = canal, CByte(255), CByte(0))
+        Next
+        Return New System.Numerics.Vector(Of Byte)(m)
+    End Function
+
+    ''' <summary>Convierte los píxeles crudos que devuelve el wrapper a 4 canales de 8 bits.
+    ''' <para><paramref name="canales"/> es lo que trae la fuente: 4 (RGBA/BGRA8), 2 (R8G8 de un BC5) o
+    ''' 1 (R8 de un BC4). El relleno de los canales que la fuente no tiene es el de siempre: B = 0 y
+    ''' A = 255 para dos canales, gris replicado y A = 255 para uno.</para>
+    ''' <para><paramref name="fuenteEsBgra"/> y <paramref name="salidaEsBgra"/> son órdenes de canal, no
+    ''' dos leyes: lo único que deciden es si hay que intercambiar R y B. Cuando coinciden, el caso de 4
+    ''' canales es una copia y nada más.</para>
+    ''' <para>Escrituras disjuntas por píxel ⇒ el resultado es bit-idéntico al serial, que es lo que
+    ''' permite paralelizar por rangos.</para></summary>
+    Friend Sub EmpaquetarPixeles(src As Byte(), dst As Byte(), npix As Integer,
+                                 canales As Integer, fuenteEsBgra As Boolean, salidaEsBgra As Boolean)
+        If src Is Nothing OrElse dst Is Nothing OrElse npix <= 0 Then Return
+        ' ⛔ Validar ACÁ y no dejar que reviente adentro. Sin esto, un `dst` corto tira
+        ' IndexOutOfRangeException desde dentro de un Parallel.ForEach —envuelta en AggregateException— y
+        ' EN QUÉ ITERACIÓN revienta depende del ancho de Vector(Of Byte) del equipo: el mismo input daría
+        ' distinta excepción en distintas máquinas. En una app que se distribuye eso es indiagnosticable.
+        If src.Length < CLng(npix) * canales Then
+            Throw New ArgumentException($"El buffer de origen necesita {CLng(npix) * canales} bytes y tiene {src.Length}.", NameOf(src))
+        End If
+        If dst.Length < CLng(npix) * 4 Then
+            Throw New ArgumentException($"El buffer de destino necesita {CLng(npix) * 4} bytes y tiene {dst.Length}.", NameOf(dst))
+        End If
+        Dim swap = (fuenteEsBgra <> salidaEsBgra)
+
+        Select Case canales
+            Case 4
+                If Not swap Then
+                    Buffer.BlockCopy(src, 0, dst, 0, npix * 4)
+                Else
+                    SwapRbEnBloque(src, dst, npix)
+                End If
+
+            Case 2
+                System.Threading.Tasks.Parallel.ForEach(
+                    System.Collections.Concurrent.Partitioner.Create(0, npix),
+                    Sub(range)
+                        For i As Integer = range.Item1 To range.Item2 - 1
+                            Dim o = i * 4, s = i * 2
+                            Dim x = src(s), y = src(s + 1)
+                            If salidaEsBgra Then
+                                dst(o) = 0 : dst(o + 1) = y : dst(o + 2) = x : dst(o + 3) = 255
+                            Else
+                                dst(o) = x : dst(o + 1) = y : dst(o + 2) = 0 : dst(o + 3) = 255
+                            End If
+                        Next
+                    End Sub)
+
+            Case 1
+                System.Threading.Tasks.Parallel.ForEach(
+                    System.Collections.Concurrent.Partitioner.Create(0, npix),
+                    Sub(range)
+                        For i As Integer = range.Item1 To range.Item2 - 1
+                            Dim o = i * 4, g = src(i)
+                            dst(o) = g : dst(o + 1) = g : dst(o + 2) = g : dst(o + 3) = 255
+                        Next
+                    End Sub)
+
+            Case Else
+                ' ⛔ Sin este Case el Select no matchea, la Sub vuelve SIN ESCRIBIR y el llamador recibe
+                ' una imagen NEGRA en silencio. La versión vieja tenía el 1 canal como `Case Else`, así
+                ' que cualquier valor raro caía ahí; al enumerar los casos ese paraguas desapareció.
+                Throw New ArgumentOutOfRangeException(NameOf(canales), canales,
+                    "Sólo se sabe desempaquetar 1, 2 o 4 canales.")
+        End Select
+    End Sub
+
+    ''' <summary>Intercambia R y B de cada píxel de 4 bytes. Vectorizado con el ancho que decida el
+    ''' runtime; la cola y el caso sin aceleración van por el camino escalar, que da los MISMOS bytes.</summary>
+    Private Sub SwapRbEnBloque(src As Byte(), dst As Byte(), npix As Integer)
+        Dim ancho = System.Numerics.Vector(Of Byte).Count
+        ' El bloque vectorial lee en [i-2, i+ancho+2): hace falta margen de 2 bytes de cada lado, así que
+        ' el primer píxel y la cola van por el camino escalar. Sin aceleración de hardware, TODO va por el
+        ' escalar — que da exactamente los mismos bytes, por eso no hay dos leyes.
+        Dim usarSimd = System.Numerics.Vector.IsHardwareAccelerated AndAlso ancho >= 8 AndAlso (ancho And 3) = 0
+        Dim topeSimd = src.Length - ancho - 2
+
+        System.Threading.Tasks.Parallel.ForEach(
+            System.Collections.Concurrent.Partitioner.Create(0, npix),
+            Sub(range)
+                Dim desde = range.Item1 * 4
+                Dim hasta = range.Item2 * 4
+                Dim i = desde
+
+                If usarSimd Then
+                    ' Alinear el arranque del bloque vectorial a un píxel con margen izquierdo.
+                    Dim arranque = If(desde < 4, 4, desde)
+                    While i < arranque AndAlso i < hasta
+                        EscalarSwapRb(src, dst, i)
+                        i += 4
+                    End While
+                    Dim m0 = _maskCanal0, m2 = _maskCanal2
+                    While i + ancho <= hasta AndAlso i <= topeSimd
+                        Dim v As New System.Numerics.Vector(Of Byte)(src, i)
+                        Dim adelante As New System.Numerics.Vector(Of Byte)(src, i + 2)
+                        Dim atras As New System.Numerics.Vector(Of Byte)(src, i - 2)
+                        Dim r = System.Numerics.Vector.ConditionalSelect(
+                                    m0, adelante,
+                                    System.Numerics.Vector.ConditionalSelect(m2, atras, v))
+                        r.CopyTo(dst, i)
+                        i += ancho
+                    End While
+                End If
+
+                While i < hasta
+                    EscalarSwapRb(src, dst, i)
+                    i += 4
+                End While
+            End Sub)
+    End Sub
+
+    Private Sub EscalarSwapRb(src As Byte(), dst As Byte(), i As Integer)
+        Dim b = src(i), g = src(i + 1), r = src(i + 2), a = src(i + 3)
+        dst(i) = r : dst(i + 1) = g : dst(i + 2) = b : dst(i + 3) = a
+    End Sub
+
+    ''' <summary>⭐ LA TABLA DE FORMATOS del decode, escrita UNA vez. Devuelve cuántos canales trae el
+    ''' formato que el wrapper dejó en <c>DxgiCodeFinal</c>, o 0 si no es uno que estos caminos sepan
+    ''' desempaquetar (BC6H/16 bits y compañía).
+    ''' <para>Los valores salen de lo que produce el wrapper al descomprimir: BC1/BC2/BC3/BC7 →
+    ''' R8G8B8A8(28/29) o B8G8R8A8(87/88/91/93); BC5 → R8G8(49/50); BC4 → R8(61/62).</para></summary>
+    Friend Function CanalesDelFormatoDecodificado(dxgiFinal As Integer) As Integer
+        Select Case dxgiFinal
+            Case 28, 29, 87, 88, 91, 93 : Return 4
+            Case 49, 50 : Return 2
+            Case 61, 62 : Return 1
+            Case Else : Return 0
+        End Select
+    End Function
+
+    ''' <summary>True si el formato decodificado trae los canales en orden B,G,R,A.</summary>
+    Friend Function EsBgra8(dxgiFinal As Integer) As Boolean
+        Return dxgiFinal = 87 OrElse dxgiFinal = 88 OrElse dxgiFinal = 91 OrElse dxgiFinal = 93
+    End Function
+
     ''' <summary>Decodifica un DDS (BCn -> uncompressed) por CPU/DirectXTex (useCompress:=False) a RGBA
     ''' float [0,1]. 4-canales (BC1/3/7 -> RGBA/BGRA), 2-canales (BC5 -> R8G8, B=0 A=1), 1-canal (BC4 ->
     ''' gray). Nothing si falla o formato no soportado. MISMA tabla de formatos que WritePristineTga.
@@ -606,57 +815,69 @@ Public Module FaceTintCpuCompositor
     Public Function DecodeDds(ddsBytes As Byte(), Optional preferW As Integer = 0, Optional preferH As Integer = 0) As DecodedTex
         If ddsBytes Is Nothing OrElse ddsBytes.Length = 0 Then Return Nothing
         Try
-            Dim loaded = DirectXTexWrapperCLI.Loader.LoadTextures(New Byte()() {ddsBytes}, useCompress:=False, forceOpenGL:=False)
-            If loaded Is Nothing OrElse loaded.Count = 0 OrElse loaded(0) Is Nothing OrElse Not loaded(0).Loaded Then Return Nothing
+            ' ⭐ PEDIR UN SOLO NIVEL. La ley de selección no cambia —sigue siendo SelectLevelForTarget—
+            ' pero se resuelve ANTES de decodificar, con las dimensiones que salen del header (μs), en vez
+            ' de descomprimir la cadena entera y quedarse con uno. Medido: descomprimir los mips que se
+            ' descartan es el 25-29 % del decode (1024² BC1: 15,5 ms → 11,7 ms).
+            ' ⛔ Sólo para el caso simple. Con cubemap/array `Levels` mezcla mips y caras, y el índice que
+            ' devuelve la ley no es un nivel de mip: ahí se conserva el camino de siempre, entero, para no
+            ' cambiar lo que ese caso hace hoy.
+            ' ⛔⛔ LA GUARDA MIRA `ArraySize`, NO `Faces`. `Faces` lo deriva el wrapper como `IsCubemap ? 6 : 1`,
+            ' así que para un Texture2DArray vale 1 y `Not IsCubemap AndAlso Faces <= 1` daba VERDADERO: la
+            ' condición decía "sin cubemap/array" y no excluía un solo array. Ese caso entraba igual al camino
+            ' nuevo, que no es lo que este comentario promete.
+            Dim nivelPedido As Integer = -1
+            Dim md = DirectXTexWrapperCLI.Loader.GetDdsMetadata(ddsBytes)
+            If md IsNot Nothing AndAlso md.Loaded AndAlso Not md.IsCubemap AndAlso md.ArraySize <= 1 AndAlso
+               md.MipCount > 1 AndAlso md.Width > 0 AndAlso md.Height > 0 Then
+                Dim dimsHeader As New List(Of (W As Integer, H As Integer))(md.MipCount)
+                For li As Integer = 0 To md.MipCount - 1
+                    dimsHeader.Add((Math.Max(1, md.Width >> li), Math.Max(1, md.Height >> li)))
+                Next
+                nivelPedido = SelectLevelForTarget(dimsHeader, preferW, preferH)
+            End If
+
+            Dim loaded = DirectXTexWrapperCLI.Loader.LoadTextures(New Byte()() {ddsBytes}, False, False, nivelPedido)
+            If loaded Is Nothing OrElse loaded.Count = 0 OrElse loaded(0) Is Nothing OrElse Not loaded(0).Loaded Then
+                ' ⛔ SE LOGUEA. Cuando el nivel fuera de rango TIRABA, la excepción caía en el Catch de abajo
+                ' y dejaba una línea `[DECODE]`. Al pasar el wrapper a señalar con `Loaded = false` —que es lo
+                ' correcto, porque no mata el lote entero— este `Return Nothing` se volvió MUDO, y se perdió
+                ' el rastro justo del caso que uno querría ver: un DDS cuyo header miente sobre `mipLevels`.
+                Dim np = nivelPedido, nb = ddsBytes.Length
+                Logger.LogLazy(Function() $"[DECODE] el wrapper no cargó el DDS ({nb} B, nivel pedido={np})")
+                Return Nothing
+            End If
             Dim tex = loaded(0)
             If tex.Levels Is Nothing OrElse tex.Levels.Count = 0 OrElse tex.Levels(0) Is Nothing Then Return Nothing
-            Dim dims As New List(Of (W As Integer, H As Integer))(tex.Levels.Count)
-            For li As Integer = 0 To tex.Levels.Count - 1
-                Dim cand = tex.Levels(li)
-                dims.Add(If(cand Is Nothing, (0, 0), (cand.Width, cand.Height)))
-            Next
-            Dim lvlIdx As Integer = SelectLevelForTarget(dims, preferW, preferH)
+            Dim lvlIdx As Integer = 0
+            If nivelPedido < 0 Then
+                Dim dims As New List(Of (W As Integer, H As Integer))(tex.Levels.Count)
+                For li As Integer = 0 To tex.Levels.Count - 1
+                    Dim cand = tex.Levels(li)
+                    dims.Add(If(cand Is Nothing, (0, 0), (cand.Width, cand.Height)))
+                Next
+                lvlIdx = SelectLevelForTarget(dims, preferW, preferH)
+            End If
             Dim lvl = tex.Levels(lvlIdx)
             Dim w = lvl.Width, h = lvl.Height
             Dim px = lvl.Data
             Dim fmt = tex.DxgiCodeFinal
-            Dim bpp As Integer = 0
-            Select Case fmt
-                Case 28, 29, 87, 88, 91, 93 : bpp = 4
-                Case 49, 50 : bpp = 2
-                Case 61, 62 : bpp = 1
-            End Select
-            If w <= 0 OrElse h <= 0 OrElse px Is Nothing OrElse bpp = 0 OrElse px.Length < w * h * bpp Then Return Nothing
-            Dim isBgra8 = (fmt = 87 OrElse fmt = 88 OrElse fmt = 91 OrElse fmt = 93)
+            Dim canales = CanalesDelFormatoDecodificado(fmt)
+            If w <= 0 OrElse h <= 0 OrElse px Is Nothing OrElse canales = 0 OrElse px.Length < w * h * canales Then Return Nothing
             Dim outArr(w * h * 4 - 1) As Byte
-            ' Paralelo por rangos: el pack es puramente por-píxel (escrituras disjuntas ⇒ bit-idéntico al serial).
-            ' El fold SSE decodea el complexion a resolución NATIVA (4096² con COtR = 16,7M px) en cada fold.
-            ' Se guardan los bytes CRUDOS: la división por 255 se hace al LEER, por ByteToUnit (misma cuenta,
-            ' menos memoria). Las constantes de relleno del pack son las mismas de siempre: 2 canales ⇒ B=0 A=255.
-            System.Threading.Tasks.Parallel.ForEach(
-                System.Collections.Concurrent.Partitioner.Create(0, w * h),
-                Sub(range)
-                    For i As Integer = range.Item1 To range.Item2 - 1
-                        Dim o As Integer = i * 4, s As Integer = i * bpp
-                        Select Case bpp
-                            Case 4
-                                If isBgra8 Then
-                                    outArr(o) = px(s + 2) : outArr(o + 1) = px(s + 1) : outArr(o + 2) = px(s) : outArr(o + 3) = px(s + 3)
-                                Else
-                                    outArr(o) = px(s) : outArr(o + 1) = px(s + 1) : outArr(o + 2) = px(s + 2) : outArr(o + 3) = px(s + 3)
-                                End If
-                            Case 2
-                                outArr(o) = px(s) : outArr(o + 1) = px(s + 1) : outArr(o + 2) = 0 : outArr(o + 3) = 255
-                            Case Else ' 1
-                                outArr(o) = px(s) : outArr(o + 1) = px(s) : outArr(o + 2) = px(s) : outArr(o + 3) = 255
-                        End Select
-                    Next
-                End Sub)
+            EmpaquetarPixeles(px, outArr, w * h, canales, EsBgra8(fmt), salidaEsBgra:=False)
+            Dim bpp = canales
             ' `bpp` acá ES el número de canales de la fuente (4 = RGBA/BGRA8, 2 = R8G8 de un BC5, 1 = R8 de un
             ' BC4): la tabla de formatos de arriba lo asigna con ese significado. Se propaga para que un
             ' consumidor VECTORIAL (normal map) sepa que el B/A que ve es relleno del pack. Ver DecodedTex.Channels.
             Return New DecodedTex With {.Width = w, .Height = h, .Rgba8 = outArr, .Channels = bpp}
-        Catch
+        Catch ex As Exception
+            ' ⛔ ERA UN `Catch : Return Nothing` PELADO. Todo lo que reviente acá —OOM al reservar el array
+            ' administrado del wrapper, un DDS corrupto, un formato que la tabla no cubre— salía como
+            ' "textura perdida" sin una sola línea, y río abajo eso se ve como una cara sin tintar. Que el
+            ' llamador reciba Nothing sigue igual: lo que cambia es que ahora queda RASTRO de por qué.
+            Dim m = ex.GetType().Name & ": " & ex.Message
+            Logger.LogLazy(Function() $"[DECODE] DecodeDds falló ({m})")
             Return Nothing
         End Try
     End Function
@@ -1075,8 +1296,27 @@ Public Module FaceTintCpuCompositor
     ' con la MISMA expresión literal), o sea un verde de mentira. Se migró tal cual, anotado, para no
     ' mezclar el traslado con un arreglo de lógica.
 
-    ''' <summary>Arranca el cache de decode batch (llamar ANTES del loop de clones). Arranca los DOS niveles.</summary>
-    Public Sub BeginBatchDecodeCache()
+    ''' <summary>Arranca el cache de decode batch (llamar ANTES del loop de clones). Arranca los DOS niveles.
+    ''' ⛔ EL TECHO SE RESUELVE ACÁ, donde el lote SE ABRE, y no en cada llamador.
+    ''' <para>Estaba sólo en <c>BakeAllRunner</c>, que es UNO de los cuatro sitios que abren el lote: el
+    ''' batch de la GUI (<c>MainForm.BuildCharGen</c>) y los dos del CLI de FaceTint lo abrían sin tocarlo.
+    ''' Como el default es "sin techo", eso no se notaba… salvo para el usuario que exporta
+    ''' <c>FGBAKE_DECODE_CACHE_MB</c> justamente para sobrevivir un barrido con poca RAM: en la GUI —que es
+    ''' por donde pasa casi todo el mundo— su variable no la leía nadie.</para>
+    ''' <para>Resolverlo en el punto de apertura hace imposible que un entry point nuevo se lo olvide.
+    ''' Devuelve el motivo para que el llamador lo pueda loguear.</para></summary>
+    Public Function BeginBatchDecodeCacheConMotivo() As String
+        Dim presupuesto = ResolveDecodeCacheBudgetFromEnvironment()
+        BatchDecodeCacheBudgetBytes = presupuesto.Bytes
+        BeginBatchDecodeCache()
+        Return presupuesto.Reason
+    End Function
+
+    ''' <summary>⛔ PRIVATE A PROPOSITO. Abre el lote SIN resolver el techo: es media operacion, y mientras
+    ''' fue publica la frase "hace imposible que un entry point nuevo se lo olvide" era falsa — la puerta sin
+    ''' techo seguia abierta al lado de la que si lo pone. El unico que puede llamarla es
+    ''' <see cref="BeginBatchDecodeCacheConMotivo"/>, que fija el presupuesto primero.</summary>
+    Private Sub BeginBatchDecodeCache()
         BatchDecodeCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, DecodedTex)(StringComparer.OrdinalIgnoreCase)
         BatchUnitCache = New System.Collections.Concurrent.ConcurrentDictionary(Of String, Single())(StringComparer.OrdinalIgnoreCase)
         ' Solo los BYTES: describen el cache VIVO, que acaba de nacer. Los hits/misses/rechazos son ACUMULADOS

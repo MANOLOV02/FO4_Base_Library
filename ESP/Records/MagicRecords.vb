@@ -10,56 +10,56 @@ Imports System.Text
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 ENCH record - Enchantment (Object Effect).</summary>
-Public Class ENCH_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
+Friend Class ENCH_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
 
     ' ENIT
-    Public EnchantmentCost As Integer
-    Public Flags As UInteger
-    Public CastType As UInteger
-    Public EnchantmentAmount As Integer
-    Public TargetType As UInteger
-    Public EnchantType As UInteger
-    Public ChargeTime As Single
-    Public BaseEnchantmentFormID As UInteger
-    Public WornRestrictionsFormID As UInteger
+    Friend EnchantmentCost As Integer
+    Friend Flags As UInteger
+    Friend CastType As UInteger
+    Friend EnchantmentAmount As Integer
+    Friend TargetType As UInteger
+    Friend EnchantType As UInteger
+    Friend ChargeTime As Single
+    Friend BaseEnchantmentFormID As UInteger
+    Friend WornRestrictionsFormID As UInteger
 
     ' Effects
-    Public Effects As New List(Of MagicEffect_Entry)
+    Friend Effects As New List(Of MagicEffect_Entry)
 End Class
 
 ''' <summary>Fallout 4 SPEL record - Spell.</summary>
-Public Class SPEL_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public EquipTypeFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
+Friend Class SPEL_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend EquipTypeFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
 
     ' SPIT
-    Public BaseCost As UInteger
-    Public SpellFlags As UInteger
-    Public SpellType As UInteger   ' 0=Spell, 1=Disease, 2=Power, 3=LesserPower, 4=Ability, 5=Poison, 10=Addiction, 11=Voice
-    Public ChargeTime As Single
-    Public CastType As UInteger
-    Public DeliveryType As UInteger
-    Public CastDuration As Single
-    Public Range As Single
-    Public CastingPerkFormID As UInteger
+    Friend BaseCost As UInteger
+    Friend SpellFlags As UInteger
+    Friend SpellType As UInteger   ' 0=Spell, 1=Disease, 2=Power, 3=LesserPower, 4=Ability, 5=Poison, 10=Addiction, 11=Voice
+    Friend ChargeTime As Single
+    Friend CastType As UInteger
+    Friend DeliveryType As UInteger
+    Friend CastDuration As Single
+    Friend Range As Single
+    Friend CastingPerkFormID As UInteger
 
     ' Effects
-    Public Effects As New List(Of MagicEffect_Entry)
+    Friend Effects As New List(Of MagicEffect_Entry)
 
-    Public ReadOnly Property IsAbility As Boolean
+    Friend ReadOnly Property IsAbility As Boolean
         Get
             Return SpellType = 4
         End Get
     End Property
 
-    Public ReadOnly Property IsAddiction As Boolean
+    Friend ReadOnly Property IsAddiction As Boolean
         Get
             Return SpellType = 10
         End Get
@@ -67,129 +67,129 @@ Public Class SPEL_Data
 End Class
 
 ''' <summary>Fallout 4 MGEF record - Magic Effect.</summary>
-Public Class MGEF_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public MenuDisplayObjectFormID As UInteger
+Friend Class MGEF_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend MenuDisplayObjectFormID As UInteger
 
     ' DATA struct (massive, ~160 bytes)
-    Public EffectFlags As UInteger
-    Public BaseCost As Single
-    Public AssociatedItemFormID As UInteger
-    Public ResistValueFormID As UInteger
-    Public CounterEffectCount As UShort
-    Public CastingLightFormID As UInteger
-    Public TaperWeight As Single
-    Public HitShaderFormID As UInteger
-    Public EnchantShaderFormID As UInteger
-    Public MinSkillLevel As UInteger
-    Public SpellmakingArea As UInteger
-    Public SpellmakingCastingTime As Single
-    Public TaperCurve As Single
-    Public TaperDuration As Single
-    Public SecondAVWeight As Single
-    Public EffectType As Integer
-    Public PrimaryAV As Integer
-    Public ProjectileFormID As UInteger
-    Public ExplosionFormID As UInteger
-    Public CastingType As UInteger
-    Public DeliveryType As UInteger
-    Public SecondAV As Integer
-    Public CastingArtFormID As UInteger
-    Public HitEffectArtFormID As UInteger
-    Public ImpactDataFormID As UInteger
-    Public SkillUsageMultiplier As Single
-    Public DualCastArtFormID As UInteger
-    Public DualCastScale As Single
-    Public EnchantArtFormID As UInteger
-    Public HitVisualsFormID As UInteger
-    Public EnchantVisualsFormID As UInteger
-    Public EquipAbilityFormID As UInteger
-    Public ImageSpaceModFormID As UInteger
-    Public PerkToApplyFormID As UInteger
-    Public CastingSoundLevel As UInteger
-    Public ScriptEffectAIScore As Single
-    Public ScriptEffectAIDelayTime As Single
+    Friend EffectFlags As UInteger
+    Friend BaseCost As Single
+    Friend AssociatedItemFormID As UInteger
+    Friend ResistValueFormID As UInteger
+    Friend CounterEffectCount As UShort
+    Friend CastingLightFormID As UInteger
+    Friend TaperWeight As Single
+    Friend HitShaderFormID As UInteger
+    Friend EnchantShaderFormID As UInteger
+    Friend MinSkillLevel As UInteger
+    Friend SpellmakingArea As UInteger
+    Friend SpellmakingCastingTime As Single
+    Friend TaperCurve As Single
+    Friend TaperDuration As Single
+    Friend SecondAVWeight As Single
+    Friend EffectType As Integer
+    Friend PrimaryAV As Integer
+    Friend ProjectileFormID As UInteger
+    Friend ExplosionFormID As UInteger
+    Friend CastingType As UInteger
+    Friend DeliveryType As UInteger
+    Friend SecondAV As Integer
+    Friend CastingArtFormID As UInteger
+    Friend HitEffectArtFormID As UInteger
+    Friend ImpactDataFormID As UInteger
+    Friend SkillUsageMultiplier As Single
+    Friend DualCastArtFormID As UInteger
+    Friend DualCastScale As Single
+    Friend EnchantArtFormID As UInteger
+    Friend HitVisualsFormID As UInteger
+    Friend EnchantVisualsFormID As UInteger
+    Friend EquipAbilityFormID As UInteger
+    Friend ImageSpaceModFormID As UInteger
+    Friend PerkToApplyFormID As UInteger
+    Friend CastingSoundLevel As UInteger
+    Friend ScriptEffectAIScore As Single
+    Friend ScriptEffectAIDelayTime As Single
 
     ' Counter effects
-    Public CounterEffectFormIDs As New List(Of UInteger)
+    Friend CounterEffectFormIDs As New List(Of UInteger)
 
     ' Sounds
-    Public Sounds As New List(Of KeyValuePair(Of UInteger, UInteger)) ' Type, SNDR FormID
+    Friend Sounds As New List(Of KeyValuePair(Of UInteger, UInteger)) ' Type, SNDR FormID
 End Class
 
 ''' <summary>Fallout 4 PERK record - Perk.</summary>
-Public Class PERK_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public IconPath As String = ""
-    Public SWFPath As String = ""
-    Public SoundFormID As UInteger
-    Public NextPerkFormID As UInteger
+Friend Class PERK_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend IconPath As String = ""
+    Friend SWFPath As String = ""
+    Friend SoundFormID As UInteger
+    Friend NextPerkFormID As UInteger
 
     ' DATA
-    Public IsTrait As Boolean
-    Public Level As Byte
-    Public NumRanks As Byte
-    Public IsPlayable As Boolean
-    Public IsHidden As Boolean
+    Friend IsTrait As Boolean
+    Friend Level As Byte
+    Friend NumRanks As Byte
+    Friend IsPlayable As Boolean
+    Friend IsHidden As Boolean
 
     ' Effects (simplified)
-    Public EffectCount As Integer
+    Friend EffectCount As Integer
 End Class
 
 ''' <summary>Fallout 4 LVSP record - Leveled Spell.</summary>
-Public Class LVSP_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ChanceNone As Byte
-    Public Flags As Byte
-    Public Entries As New List(Of LVSP_Entry)
+Friend Class LVSP_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ChanceNone As Byte
+    Friend Flags As Byte
+    Friend Entries As New List(Of LVSP_Entry)
 
-    Public ReadOnly Property UseAll As Boolean
+    Friend ReadOnly Property UseAll As Boolean
         Get
             Return (Flags And &H4) <> 0
         End Get
     End Property
 End Class
 
-Public Class LVSP_Entry
-    Public Level As UShort
-    Public FormID As UInteger
-    Public Count As UShort = 1US
+Friend Class LVSP_Entry
+    Friend Level As UShort
+    Friend FormID As UInteger
+    Friend Count As UShort = 1US
 End Class
 
 ''' <summary>Fallout 4 KYWD record - Keyword.</summary>
-Public Class KYWD_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Notes As String = ""
-    Public KeywordColor As Color = Color.Empty
-    Public KeywordType As UInteger
-    Public AttractionRuleFormID As UInteger
+Friend Class KYWD_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Notes As String = ""
+    Friend KeywordColor As Color = Color.Empty
+    Friend KeywordType As UInteger
+    Friend AttractionRuleFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 EQUP record - Equip Type.</summary>
-Public Class EQUP_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public SlotParentFormIDs As New List(Of UInteger)
-    Public Flags As UInteger
-    Public ConditionActorValueFormID As UInteger
+Friend Class EQUP_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend SlotParentFormIDs As New List(Of UInteger)
+    Friend Flags As UInteger
+    Friend ConditionActorValueFormID As UInteger
 
-    Public ReadOnly Property UseAllParents As Boolean
+    Friend ReadOnly Property UseAllParents As Boolean
         Get
             Return (Flags And &H1UI) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsItemSlot As Boolean
+    Friend ReadOnly Property IsItemSlot As Boolean
         Get
             Return (Flags And &H4UI) <> 0
         End Get
@@ -197,51 +197,51 @@ Public Class EQUP_Data
 End Class
 
 ''' <summary>Fallout 4 GLOB record - Global Variable.</summary>
-Public Class GLOB_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ValueType As Byte  ' 's'=Short, 'l'=Long, 'f'=Float, 'b'=Boolean
-    Public Value As Single
+Friend Class GLOB_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ValueType As Byte  ' 's'=Short, 'l'=Long, 'f'=Float, 'b'=Boolean
+    Friend Value As Single
 End Class
 
 ''' <summary>Fallout 4 GMST record - Game Setting.</summary>
-Public Class GMST_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public StringValue As String = ""
-    Public IntValue As Integer
-    Public FloatValue As Single
-    Public BoolValue As Boolean
-    Public DataType As Char  ' 's'=String, 'i'=Int, 'f'=Float, 'b'=Bool (derived from EditorID prefix)
+Friend Class GMST_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend StringValue As String = ""
+    Friend IntValue As Integer
+    Friend FloatValue As Single
+    Friend BoolValue As Boolean
+    Friend DataType As Char  ' 's'=String, 'i'=Int, 'f'=Float, 'b'=Bool (derived from EditorID prefix)
 End Class
 
 ''' <summary>Fallout 4 AVIF record - Actor Value Information.</summary>
-Public Class AVIF_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public Abbreviation As String = ""
-    Public DefaultValue As Single
-    Public AVFlags As UInteger
-    Public AVType As UInteger
+Friend Class AVIF_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend Abbreviation As String = ""
+    Friend DefaultValue As Single
+    Friend AVFlags As UInteger
+    Friend AVType As UInteger
 End Class
 
 ''' <summary>Fallout 4 DMGT record - Damage Type.</summary>
-Public Class DMGT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ActorValueFormIDs As New List(Of UInteger)
-    Public SpellFormIDs As New List(Of UInteger)
+Friend Class DMGT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ActorValueFormIDs As New List(Of UInteger)
+    Friend SpellFormIDs As New List(Of UInteger)
 End Class
 
 #End Region
 
 #Region "Parsers"
 
-Public Module MagicRecordParsers
+Friend Module MagicRecordParsers
 
-    Public Function ParseENCH(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ENCH_Data
+    Friend Function ParseENCH(rec As PluginRecord, pluginManager As PluginManager) As ENCH_Data
         Dim e As New ENCH_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -300,7 +300,7 @@ Public Module MagicRecordParsers
         Return e
     End Function
 
-    Public Function ParseSPEL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SPEL_Data
+    Friend Function ParseSPEL(rec As PluginRecord, pluginManager As PluginManager) As SPEL_Data
         Dim s As New SPEL_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -350,7 +350,7 @@ Public Module MagicRecordParsers
         Return s
     End Function
 
-    Public Function ParseMGEF(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MGEF_Data
+    Friend Function ParseMGEF(rec As PluginRecord, pluginManager As PluginManager) As MGEF_Data
         Dim m As New MGEF_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -440,7 +440,7 @@ Public Module MagicRecordParsers
         End If
     End Sub
 
-    Public Function ParsePERK(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As PERK_Data
+    Friend Function ParsePERK(rec As PluginRecord, pluginManager As PluginManager) As PERK_Data
         Dim p As New PERK_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -483,7 +483,7 @@ Public Module MagicRecordParsers
         Return p
     End Function
 
-    Public Function ParseLVSP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LVSP_Data
+    Friend Function ParseLVSP(rec As PluginRecord, pluginManager As PluginManager) As LVSP_Data
         Dim l As New LVSP_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -510,7 +510,7 @@ Public Module MagicRecordParsers
         Return l
     End Function
 
-    Public Function ParseKYWD(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As KYWD_Data
+    Friend Function ParseKYWD(rec As PluginRecord, pluginManager As PluginManager) As KYWD_Data
         Dim k As New KYWD_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -538,7 +538,7 @@ Public Module MagicRecordParsers
         Return k
     End Function
 
-    Public Function ParseEQUP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As EQUP_Data
+    Friend Function ParseEQUP(rec As PluginRecord, pluginManager As PluginManager) As EQUP_Data
         Dim e As New EQUP_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -564,7 +564,7 @@ Public Module MagicRecordParsers
         Return e
     End Function
 
-    Public Function ParseGLOB(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As GLOB_Data
+    Friend Function ParseGLOB(rec As PluginRecord, pluginManager As PluginManager) As GLOB_Data
         Dim g As New GLOB_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -586,7 +586,7 @@ Public Module MagicRecordParsers
         Return g
     End Function
 
-    Public Function ParseGMST(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As GMST_Data
+    Friend Function ParseGMST(rec As PluginRecord, pluginManager As PluginManager) As GMST_Data
         Dim g As New GMST_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -615,7 +615,7 @@ Public Module MagicRecordParsers
         Return g
     End Function
 
-    Public Function ParseAVIF(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As AVIF_Data
+    Friend Function ParseAVIF(rec As PluginRecord, pluginManager As PluginManager) As AVIF_Data
         Dim a As New AVIF_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -647,7 +647,7 @@ Public Module MagicRecordParsers
         Return a
     End Function
 
-    Public Function ParseDMGT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DMGT_Data
+    Friend Function ParseDMGT(rec As PluginRecord, pluginManager As PluginManager) As DMGT_Data
         Dim d As New DMGT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID

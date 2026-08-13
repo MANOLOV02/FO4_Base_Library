@@ -11,67 +11,67 @@ Imports System.Text
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 ACTI record - Activator.</summary>
-Public Class ACTI_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public ActivateTextOverride As String = ""
-    Public MarkerColor As Color = Color.Empty
-    Public LoopingSoundFormID As UInteger
-    Public ActivationSoundFormID As UInteger
-    Public WaterTypeFormID As UInteger
-    Public InteractionKeywordFormID As UInteger
-    Public NativeTerminalFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public ActivatorFlags As UShort
+Friend Class ACTI_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend ActivateTextOverride As String = ""
+    Friend MarkerColor As Color = Color.Empty
+    Friend LoopingSoundFormID As UInteger
+    Friend ActivationSoundFormID As UInteger
+    Friend WaterTypeFormID As UInteger
+    Friend InteractionKeywordFormID As UInteger
+    Friend NativeTerminalFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend ActivatorFlags As UShort
 
     ' RADR Radio Receiver
-    Public RadioSoundModelFormID As UInteger
-    Public RadioFrequency As Single
-    Public RadioVolume As Single
-    Public RadioStartsActive As Boolean
+    Friend RadioSoundModelFormID As UInteger
+    Friend RadioFrequency As Single
+    Friend RadioVolume As Single
+    Friend RadioStartsActive As Boolean
 End Class
 
 ''' <summary>Fallout 4 STAT record - Static.</summary>
-Public Class STAT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
+Friend Class STAT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
 
     ' DNAM
-    Public MaxAngle As Single = 90.0F
-    Public DirectionMaterialFormID As UInteger
-    Public LeafAmplitude As Single = 1.0F
-    Public LeafFrequency As Single = 1.0F
+    Friend MaxAngle As Single = 90.0F
+    Friend DirectionMaterialFormID As UInteger
+    Friend LeafAmplitude As Single = 1.0F
+    Friend LeafFrequency As Single = 1.0F
 
     ' MNAM LOD meshes
-    Public LODMeshes As String() = {"", "", "", ""}
+    Friend LODMeshes As String() = {"", "", "", ""}
 End Class
 
 ''' <summary>Fallout 4 DOOR record - Door.</summary>
-Public Class DOOR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public OpenSoundFormID As UInteger
-    Public CloseSoundFormID As UInteger
-    Public LoopSoundFormID As UInteger
-    Public DoorFlags As Byte
-    Public OpenText As String = ""
-    Public CloseText As String = ""
-    Public RandomTeleportFormIDs As New List(Of UInteger)
-    Public KeywordFormIDs As New List(Of UInteger)
+Friend Class DOOR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend OpenSoundFormID As UInteger
+    Friend CloseSoundFormID As UInteger
+    Friend LoopSoundFormID As UInteger
+    Friend DoorFlags As Byte
+    Friend OpenText As String = ""
+    Friend CloseText As String = ""
+    Friend RandomTeleportFormIDs As New List(Of UInteger)
+    Friend KeywordFormIDs As New List(Of UInteger)
 
-    Public ReadOnly Property IsAutomatic As Boolean
+    Friend ReadOnly Property IsAutomatic As Boolean
         Get
             Return (DoorFlags And &H2) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsHidden As Boolean
+    Friend ReadOnly Property IsHidden As Boolean
         Get
             Return (DoorFlags And &H4) <> 0
         End Get
@@ -79,108 +79,108 @@ Public Class DOOR_Data
 End Class
 
 ''' <summary>Fallout 4 FURN record - Furniture.</summary>
-Public Class FURN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public NativeTerminalFormID As UInteger
-    Public FurnitureFlags As UShort
+Friend Class FURN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend NativeTerminalFormID As UInteger
+    Friend FurnitureFlags As UShort
 
     ' WBDT Workbench
-    Public WorkbenchType As Byte  ' 0=None, 1=CreateObject, 2=Weapons, 5=Alchemy, 8=Armor, 9=PowerArmor, 10=RobotMod
-    Public AssociatedFormID As UInteger
+    Friend WorkbenchType As Byte  ' 0=None, 1=CreateObject, 2=Weapons, 5=Alchemy, 8=Armor, 9=PowerArmor, 10=RobotMod
+    Friend AssociatedFormID As UInteger
 
     ' Container items
-    Public Items As New List(Of ContainerItem)
+    Friend Items As New List(Of ContainerItem)
 End Class
 
 ''' <summary>Fallout 4 MSTT record - Moveable Static.</summary>
-Public Class MSTT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public LoopingSoundFormID As UInteger
-    Public OnLocalMap As Boolean = True
+Friend Class MSTT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend LoopingSoundFormID As UInteger
+    Friend OnLocalMap As Boolean = True
 End Class
 
 ''' <summary>Fallout 4 TREE record - Tree.</summary>
-Public Class TREE_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public IngredientFormID As UInteger
-    Public HarvestSoundFormID As UInteger
-    Public ProductionSpring As Byte
-    Public ProductionSummer As Byte
-    Public ProductionFall As Byte
-    Public ProductionWinter As Byte
+Friend Class TREE_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend IngredientFormID As UInteger
+    Friend HarvestSoundFormID As UInteger
+    Friend ProductionSpring As Byte
+    Friend ProductionSummer As Byte
+    Friend ProductionFall As Byte
+    Friend ProductionWinter As Byte
 
     ' CNAM tree data
-    Public TrunkFlexibility As Single = 1.0F
-    Public BranchFlexibility As Single = 1.0F
-    Public LeafAmplitude As Single = 1.0F
-    Public LeafFrequency As Single = 1.0F
+    Friend TrunkFlexibility As Single = 1.0F
+    Friend BranchFlexibility As Single = 1.0F
+    Friend LeafAmplitude As Single = 1.0F
+    Friend LeafFrequency As Single = 1.0F
 End Class
 
 ''' <summary>Fallout 4 GRAS record - Grass.</summary>
-Public Class GRAS_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ModelPath As String = ""
-    Public Density As Byte = 30
-    Public MinSlope As Byte
-    Public MaxSlope As Byte = 90
-    Public UnitsFromWater As UShort
+Friend Class GRAS_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ModelPath As String = ""
+    Friend Density As Byte = 30
+    Friend MinSlope As Byte
+    Friend MaxSlope As Byte = 90
+    Friend UnitsFromWater As UShort
 End Class
 
 ''' <summary>Terminal menu item entry.</summary>
-Public Class TERM_MenuItem
-    Public ItemText As String = ""
-    Public ResponseText As String = ""
-    Public ItemType As Byte
-    Public ItemID As UShort
-    Public SubmenuFormID As UInteger
+Friend Class TERM_MenuItem
+    Friend ItemText As String = ""
+    Friend ResponseText As String = ""
+    Friend ItemType As Byte
+    Friend ItemID As UShort
+    Friend SubmenuFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 TERM record - Terminal.</summary>
-Public Class TERM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public HeaderText As String = ""
-    Public WelcomeText As String = ""
-    Public LoopingSoundFormID As UInteger
-    Public TerminalFlags As UShort
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public BodyTexts As New List(Of String)
-    Public MenuItems As New List(Of TERM_MenuItem)
+Friend Class TERM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend HeaderText As String = ""
+    Friend WelcomeText As String = ""
+    Friend LoopingSoundFormID As UInteger
+    Friend TerminalFlags As UShort
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend BodyTexts As New List(Of String)
+    Friend MenuItems As New List(Of TERM_MenuItem)
 End Class
 
 ''' <summary>Message button entry.</summary>
-Public Class MESG_Button
-    Public ButtonText As String = ""
+Friend Class MESG_Button
+    Friend ButtonText As String = ""
 End Class
 
 ''' <summary>Fallout 4 MESG record - Message.</summary>
-Public Class MESG_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public ShortTitle As String = ""
-    Public SWFPath As String = ""
-    Public OwnerQuestFormID As UInteger
-    Public MessageFlags As UInteger
-    Public DisplayTime As UInteger = 2
-    Public Buttons As New List(Of MESG_Button)
+Friend Class MESG_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend ShortTitle As String = ""
+    Friend SWFPath As String = ""
+    Friend OwnerQuestFormID As UInteger
+    Friend MessageFlags As UInteger
+    Friend DisplayTime As UInteger = 2
+    Friend Buttons As New List(Of MESG_Button)
 
-    Public ReadOnly Property IsMessageBox As Boolean
+    Friend ReadOnly Property IsMessageBox As Boolean
         Get
             Return (MessageFlags And &H1UI) <> 0
         End Get
@@ -188,73 +188,73 @@ Public Class MESG_Data
 End Class
 
 ''' <summary>Fallout 4 LSCR record - Load Screen.</summary>
-Public Class LSCR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public Description As String = ""
-    Public LoadingNIFFormID As UInteger
-    Public TransformFormID As UInteger
-    Public CameraPath As String = ""
+Friend Class LSCR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend Description As String = ""
+    Friend LoadingNIFFormID As UInteger
+    Friend TransformFormID As UInteger
+    Friend CameraPath As String = ""
 End Class
 
 ''' <summary>Fallout 4 SCOL record - Static Collection.</summary>
-Public Class SCOL_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
+Friend Class SCOL_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
 End Class
 
 ''' <summary>Fallout 4 PKIN record - Pack-In.</summary>
-Public Class PKIN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public CellFormID As UInteger
-    Public Version As UInteger
+Friend Class PKIN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend CellFormID As UInteger
+    Friend Version As UInteger
 End Class
 
 ''' <summary>Fallout 4 TACT record - Talking Activator.</summary>
-Public Class TACT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public VoiceTypeFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
+Friend Class TACT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend VoiceTypeFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
 End Class
 
 ''' <summary>Fallout 4 ADDN record - Addon Node.</summary>
-Public Class ADDN_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ModelPath As String = ""
-    Public NodeIndex As UInteger = 284
-    Public SoundFormID As UInteger
-    Public LightFormID As UInteger
+Friend Class ADDN_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ModelPath As String = ""
+    Friend NodeIndex As UInteger = 284
+    Friend SoundFormID As UInteger
+    Friend LightFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 ANIO record - Animated Object.</summary>
-Public Class ANIO_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public ModelPath As String = ""
-    Public UnloadEvent As String = ""
+Friend Class ANIO_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend ModelPath As String = ""
+    Friend UnloadEvent As String = ""
 End Class
 
 ''' <summary>Fallout 4 DEBR record - Debris.</summary>
-Public Class DEBR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public HasData As Boolean
+Friend Class DEBR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend HasData As Boolean
 End Class
 
 #End Region
 
 #Region "Parsers"
 
-Public Module MiscRecordParsers
+Friend Module MiscRecordParsers
 
-    Public Function ParseACTI(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ACTI_Data
+    Friend Function ParseACTI(rec As PluginRecord, pluginManager As PluginManager) As ACTI_Data
         Dim a As New ACTI_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -289,7 +289,7 @@ Public Module MiscRecordParsers
         Return a
     End Function
 
-    Public Function ParseSTAT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As STAT_Data
+    Friend Function ParseSTAT(rec As PluginRecord, pluginManager As PluginManager) As STAT_Data
         Dim s As New STAT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -315,7 +315,7 @@ Public Module MiscRecordParsers
         Return s
     End Function
 
-    Public Function ParseDOOR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DOOR_Data
+    Friend Function ParseDOOR(rec As PluginRecord, pluginManager As PluginManager) As DOOR_Data
         Dim d As New DOOR_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -337,7 +337,7 @@ Public Module MiscRecordParsers
         Return d
     End Function
 
-    Public Function ParseFURN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As FURN_Data
+    Friend Function ParseFURN(rec As PluginRecord, pluginManager As PluginManager) As FURN_Data
         Dim f As New FURN_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -367,7 +367,7 @@ Public Module MiscRecordParsers
         Return f
     End Function
 
-    Public Function ParseMSTT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MSTT_Data
+    Friend Function ParseMSTT(rec As PluginRecord, pluginManager As PluginManager) As MSTT_Data
         Dim m As New MSTT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -384,7 +384,7 @@ Public Module MiscRecordParsers
         Return m
     End Function
 
-    Public Function ParseTREE(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TREE_Data
+    Friend Function ParseTREE(rec As PluginRecord, pluginManager As PluginManager) As TREE_Data
         Dim t As New TREE_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -411,7 +411,7 @@ Public Module MiscRecordParsers
         Return t
     End Function
 
-    Public Function ParseGRAS(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As GRAS_Data
+    Friend Function ParseGRAS(rec As PluginRecord, pluginManager As PluginManager) As GRAS_Data
         Dim g As New GRAS_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -428,7 +428,7 @@ Public Module MiscRecordParsers
         Return g
     End Function
 
-    Public Function ParseTERM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TERM_Data
+    Friend Function ParseTERM(rec As PluginRecord, pluginManager As PluginManager) As TERM_Data
         Dim t As New TERM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         Dim currentMenuItem As TERM_MenuItem = Nothing
@@ -475,7 +475,7 @@ Public Module MiscRecordParsers
         Return t
     End Function
 
-    Public Function ParseMESG(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MESG_Data
+    Friend Function ParseMESG(rec As PluginRecord, pluginManager As PluginManager) As MESG_Data
         Dim m As New MESG_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -503,7 +503,7 @@ Public Module MiscRecordParsers
         Return m
     End Function
 
-    Public Function ParseLSCR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LSCR_Data
+    Friend Function ParseLSCR(rec As PluginRecord, pluginManager As PluginManager) As LSCR_Data
         Dim l As New LSCR_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         For Each sr In rec.Subrecords
@@ -518,7 +518,7 @@ Public Module MiscRecordParsers
         Return l
     End Function
 
-    Public Function ParseSCOL(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As SCOL_Data
+    Friend Function ParseSCOL(rec As PluginRecord, pluginManager As PluginManager) As SCOL_Data
         Dim s As New SCOL_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -529,7 +529,7 @@ Public Module MiscRecordParsers
         Return s
     End Function
 
-    Public Function ParsePKIN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As PKIN_Data
+    Friend Function ParsePKIN(rec As PluginRecord, pluginManager As PluginManager) As PKIN_Data
         Dim p As New PKIN_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -541,7 +541,7 @@ Public Module MiscRecordParsers
         Return p
     End Function
 
-    Public Function ParseTACT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As TACT_Data
+    Friend Function ParseTACT(rec As PluginRecord, pluginManager As PluginManager) As TACT_Data
         Dim t As New TACT_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -554,7 +554,7 @@ Public Module MiscRecordParsers
         Return t
     End Function
 
-    Public Function ParseADDN(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ADDN_Data
+    Friend Function ParseADDN(rec As PluginRecord, pluginManager As PluginManager) As ADDN_Data
         Dim a As New ADDN_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -568,7 +568,7 @@ Public Module MiscRecordParsers
         Return a
     End Function
 
-    Public Function ParseANIO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ANIO_Data
+    Friend Function ParseANIO(rec As PluginRecord, pluginManager As PluginManager) As ANIO_Data
         Dim a As New ANIO_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -579,7 +579,7 @@ Public Module MiscRecordParsers
         Return a
     End Function
 
-    Public Function ParseDEBR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As DEBR_Data
+    Friend Function ParseDEBR(rec As PluginRecord, pluginManager As PluginManager) As DEBR_Data
         Return New DEBR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID,

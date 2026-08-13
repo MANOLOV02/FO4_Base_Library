@@ -25,10 +25,10 @@ Imports System.Linq
 Imports NiflySharp.Structs
 Imports OpenTK.Mathematics
 
-Public NotInheritable Class HclCollisionPoseHelper_Class
+Friend NotInheritable Class HclCollisionPoseHelper_Class
     ''' <param name="skeleton">SkeletonInstance to read live bone transforms from. If Nothing,
     ''' falls back to <see cref="SkeletonInstance.Default"/> (transitional back-compat).</param>
-    Public Shared Function BuildCapsulesFromLiveSkeleton(config As HclClothConfigGraph_Class, Optional skeleton As SkeletonInstance = Nothing) As List(Of HclLiveCapsuleCollider_Class)
+    Friend Shared Function BuildCapsulesFromLiveSkeleton(config As HclClothConfigGraph_Class, Optional skeleton As SkeletonInstance = Nothing) As List(Of HclLiveCapsuleCollider_Class)
         Dim effectiveSkel As SkeletonInstance = If(skeleton, SkeletonInstance.Default)
         Dim lookup As New Dictionary(Of String, Transform_Class)(StringComparer.OrdinalIgnoreCase)
         For Each kvp In effectiveSkel.SkeletonDictionary
@@ -38,12 +38,12 @@ Public NotInheritable Class HclCollisionPoseHelper_Class
         Return BuildCapsules(config, lookup)
     End Function
 
-    Public Shared Function BuildCapsulesFromReferenceSkeleton(config As HclClothConfigGraph_Class,
+    Friend Shared Function BuildCapsulesFromReferenceSkeleton(config As HclClothConfigGraph_Class,
                                                               package As HclClothPackageGraph_Class) As List(Of HclLiveCapsuleCollider_Class)
         Return BuildCapsules(config, BuildReferenceSkeletonTransforms(package?.Skeleton))
     End Function
 
-    Public Shared Function BuildCapsules(config As HclClothConfigGraph_Class,
+    Friend Shared Function BuildCapsules(config As HclClothConfigGraph_Class,
                                          boneTransforms As IReadOnlyDictionary(Of String, Transform_Class)) As List(Of HclLiveCapsuleCollider_Class)
         Dim result As New List(Of HclLiveCapsuleCollider_Class)
         If config Is Nothing OrElse boneTransforms Is Nothing Then Return result
@@ -149,11 +149,11 @@ Public NotInheritable Class HclCollisionPoseHelper_Class
     End Function
 End Class
 
-Public Class HclLiveCapsuleCollider_Class
-    Public Property ConfigName As String
-    Public Property BoneName As String
-    Public Property EndpointA As System.Numerics.Vector3
-    Public Property EndpointB As System.Numerics.Vector3
-    Public Property Radius As Single
-    Public Property AuxiliaryRadius As Single
+Friend Class HclLiveCapsuleCollider_Class
+    Friend Property ConfigName As String
+    Friend Property BoneName As String
+    Friend Property EndpointA As System.Numerics.Vector3
+    Friend Property EndpointB As System.Numerics.Vector3
+    Friend Property Radius As Single
+    Friend Property AuxiliaryRadius As Single
 End Class

@@ -93,8 +93,7 @@ Public Module DirectXTextureConversionHelper
             request.Subresources.Add(CreateBitmapSubresource(mipBitmap, mipLevel))
         Next
 
-        Dim conversion = DirectXTextureConversionHelper.ConvertSubresources(request)
-        Return CreateDdsBytesFromConversion(conversion)
+        Return ConvertToDdsBytes(request)
     End Function
 
     ''' <summary>
@@ -123,6 +122,11 @@ Public Module DirectXTextureConversionHelper
         File.WriteAllBytes(outputFilePath, ddsBytes)
     End Sub
 
+    ''' <summary>Encodea un buffer BGRA8 a un DDS completo (header + payload).
+    ''' <para>⛔ CONTRATO: el llamador NO puede mutar <paramref name="bgraPixels"/> mientras esta función
+    ''' no haya vuelto. El buffer no se clona — el wrapper lo fija y lo copia dentro de la misma llamada
+    ''' síncrona— y clonarlo costaba 64 MB por encode de 4096². Pasar un buffer que otro hilo está
+    ''' escribiendo produce una textura con un estado intermedio, sin error.</para></summary>
     Public Function Bgra32BytesToDdsBytes(
         width As Integer,
         height As Integer,
@@ -143,10 +147,9 @@ Public Module DirectXTextureConversionHelper
         If outputDxgiFormat <= 0 Then Throw New ArgumentOutOfRangeException(NameOf(outputDxgiFormat), "The output DXGI format is not valid.")
         If generatedMipLevels < 0 Then Throw New ArgumentOutOfRangeException(NameOf(generatedMipLevels), "generatedMipLevels debe ser >= 0.")
 
-        ' TEX_COMPRESS_PARALLEL (0x10000000) SIEMPRE: multi-thread CPU. MEDIDO byte-IDÉNTICO al serial (probe
-        ' --fmttest: BC3/BC5/Uncompressed idénticos) y más rápido incluso en los baratos (BC3 90ms→4ms). El compress
-        ' BCn es por-bloque independiente ⇒ determinista. Se OR-ea a lo que pida el caller; inerte en Uncompressed.
-        compressFlags = compressFlags Or &H10000000
+        ' Sigue siendo el ÚNICO entry point que fuerza el paralelismo del códec, igual que antes: los
+        ' otros dos respetan lo que pida el caller. Lo que cambió es la justificación, no el alcance.
+        compressFlags = ResolveCompressFlags(compressFlags)
 
         Dim request As New DxTextureConversionRequest With {
             .Width = width,
@@ -162,8 +165,15 @@ Public Module DirectXTextureConversionHelper
             .AlphaThreshold = alphaThreshold
         }
 
+        ' ⛔ SIN Clone. El wrapper sólo LEE este buffer: lo fija con pin_ptr y lo copia al ScratchImage
+        ' dentro de la misma llamada SÍNCRONA, antes de devolver. El clon no protegía de nada — para que
+        ' hiciera falta, otro hilo tendría que estar mutando el mismo array mientras esta llamada corre, y
+        ' en ese escenario el clon tampoco salva (copiaría un estado intermedio). Lo que sí costaba: 64 MB
+        ' por encode de 4096², medidos como 320 MB de asignación administrada por llamada contra 85 MB
+        ' del camino sin clon ni concatenación.
+        ' ⇒ CONTRATO: el llamador no puede mutar `bgraPixels` mientras esta función no haya vuelto.
         request.Subresources.Add(New DxTextureSubresourceBuffer(
-            data:=CType(bgraPixels.Clone(), Byte()),
+            data:=bgraPixels,
             width:=width,
             height:=height,
             rowPitch:=width * 4,
@@ -171,8 +181,7 @@ Public Module DirectXTextureConversionHelper
             mipLevel:=0,
             arrayIndex:=0))
 
-        Dim conversion = DirectXTextureConversionHelper.ConvertSubresources(request)
-        Return CreateDdsBytesFromConversion(conversion)
+        Return ConvertToDdsBytes(request)
     End Function
 
     Public Sub SaveBgra32BytesAsDds(
@@ -342,28 +351,52 @@ Public Module DirectXTextureConversionHelper
                 arrayIndex:=arrayIndex))
         Next
 
-        Dim conversion = DirectXTextureConversionHelper.ConvertSubresources(request)
-        Return CreateDdsBytesFromConversion(conversion)
+        Return ConvertToDdsBytes(request)
     End Function
-    Private Function CreateDdsBytesFromConversion(conversion As DxTextureConversionResult) As Byte()
-        If conversion Is Nothing Then Throw New InvalidOperationException("The DDS conversion returned Nothing.")
+    ''' <summary>TEX_COMPRESS_PARALLEL (0x10000000) va SIEMPRE. Los bytes son idénticos al serial —el
+    ''' compress BCn es por bloque independiente— así que el único eje es el tiempo.
+    ''' <para>⛔ La justificación que estaba escrita acá ("BC3 90 ms→4 ms") era FALSA, y el modo de falla
+    ''' vale más que el número: salía de <c>RunFmtTest</c>, que cronometra el brazo SERIE en la PRIMERA
+    ''' llamada del proceso. Medía el arranque en frío (carga del wrapper C++/CLI, factoría WIC, JIT),
+    ''' no el códec. Con calentamiento no reproduce ni de lejos.</para>
+    ''' <para>Lo que sí mide <c>Tools/TexCodecPerfProbe</c> (12 hilos lógicos, mismo buffer, bytes
+    ''' verificados idénticos en los dos brazos):</para>
+    ''' <list type="table">
+    ''' <item><term>BC1/BC3/BC5 1024²</term><description><b>0,96–1,05×</b> — no gana nada, y el CPU/wall
+    ''' sube de 0,98 a 11,2.</description></item>
+    ''' <item><term>BC1/BC3/BC5 2048²</term><description><b>1,14–1,21×</b> — acá sí gana.</description></item>
+    ''' <item><term>BC7 1024²</term><description>serie <b>220,9 s</b> / paralelo <b>39,0 s</b> ⇒ <b>5,66×</b>.
+    ''' BC7 es el único códec compute-bound; los baratos están limitados por ancho de banda de memoria, y
+    ''' por eso no escalan con los núcleos.</description></item>
+    ''' <item><term>lote de 24×1024² con DOP=12 (la forma del bake)</term><description><b>0,98–1,09×</b> —
+    ''' o sea NINGUNA diferencia. Con el fan-out por NPC la máquina ya está saturada y el paralelismo
+    ''' interno no suma ni resta.</description></item>
+    ''' </list>
+    ''' <para>⇒ Se probó derivarlo por formato (prenderlo sólo en BC7) y la medición lo REFUTÓ: no mejora
+    ''' el lote y hace perder 1,14–1,21× en una textura grande sola, que es el caso interactivo. Queda
+    ''' incondicional, que es lo que la medición sostiene.</para>
+    ''' <para>⛔ NO hay perilla de entorno para apagarlo. La hubo por dos horas y la sacó la revisión de
+    ''' arquitectura, con razón: el valor no se DERIVA de nada, así que una env var no "fija" un valor
+    ''' derivado —que es la única variante que <c>00-reglas-app-distribuida</c> habilita— sino que agrega
+    ''' un SEGUNDO comportamiento, y su único valor útil era exactamente el de antes. Eso es
+    ''' <c>00-reglas-nunca-modo-legacy-para-no-romper</c>. Para medir el eje está
+    ''' <c>Tools/TexCodecPerfProbe</c>, que le pasa los flags exactos al wrapper sin tocar el entorno.</para></summary>
+    Private Function ResolveCompressFlags(compressFlags As Integer) As Integer
+        Const TEX_COMPRESS_PARALLEL As Integer = &H10000000
+        Return compressFlags Or TEX_COMPRESS_PARALLEL
+    End Function
 
-        Dim headerBytes = Loader.EncodeDDSHeader(
-            conversion.DxgiFormat,
-            conversion.Width,
-            conversion.Height,
-            conversion.ArraySize,
-            conversion.MipLevels,
-            conversion.IsCubemap)
-
-        Dim payloadBytes = DirectXTextureConversionHelper.ConcatenateSubresources(conversion.Subresources)
-        Dim ddsBytes(headerBytes.Length + payloadBytes.Length - 1) As Byte
-
-        System.Buffer.BlockCopy(headerBytes, 0, ddsBytes, 0, headerBytes.Length)
-        If payloadBytes.Length > 0 Then
-            System.Buffer.BlockCopy(payloadBytes, 0, ddsBytes, headerBytes.Length, payloadBytes.Length)
-        End If
-
+    ''' <summary>Convierte y devuelve el DDS COMPLETO en UN solo array, por el camino de un solo buffer
+    ''' del wrapper.
+    ''' <para>El camino anterior (convertir a subrecursos → <c>ConcatenateSubresources</c> → copia final)
+    ''' materializaba el payload TRES veces en memoria administrada, todas en LOH para una textura de
+    ''' cara. Medido con 4096² BGRA8: <b>320 MB</b> asignados por encode (con el Clone de la entrada)
+    ''' contra <b>~85 MB</b> por este camino. Los bytes de salida son los mismos para ArraySize = 1, que
+    ''' es todo lo que la app produce; ver la nota de orden del payload en el wrapper.</para></summary>
+    Private Function ConvertToDdsBytes(request As DxTextureConversionRequest) As Byte()
+        ValidateRequest(request)
+        Dim ddsBytes = Loader.ConvertSubresourcesToDds(ToNativeRequest(request))
+        If ddsBytes Is Nothing Then Throw New InvalidOperationException("The DDS conversion returned Nothing.")
         Return ddsBytes
     End Function
 
@@ -577,29 +610,11 @@ Public Module DirectXTextureConversionHelper
         Return arrays
     End Function
 
+    ''' <summary>Conversión por subrecursos. Para el consumidor que quiere el DDS entero está
+    ''' <see cref="ConvertToDdsBytes"/>, que no materializa un array por mip.</summary>
     Public Function ConvertSubresources(request As DxTextureConversionRequest) As DxTextureConversionResult
         ValidateRequest(request)
-
-        Dim nativeRequest = CreateNativeConversionRequest(request)
-        Dim loaderType = GetType(Loader)
-        Dim convertMethod As MethodInfo = Nothing
-
-        For Each candidate In loaderType.GetMethods(BindingFlags.Public Or BindingFlags.Static)
-            If String.Equals(candidate.Name, "ConvertSubresources", StringComparison.Ordinal) Then
-                Dim parameters = candidate.GetParameters()
-                If parameters.Length = 1 Then
-                    convertMethod = candidate
-                    Exit For
-                End If
-            End If
-        Next
-
-        If convertMethod Is Nothing Then
-            Throw New MissingMethodException(loaderType.FullName, "ConvertSubresources")
-        End If
-
-        Dim nativeResult = convertMethod.Invoke(Nothing, {nativeRequest})
-        Return ConvertNativeResult(nativeResult)
+        Return FromNativeResult(Loader.ConvertSubresources(ToNativeRequest(request)))
     End Function
 
     Public Function ConvertToArrays(request As DxTextureConversionRequest) As Byte()()
@@ -613,17 +628,39 @@ Public Module DirectXTextureConversionHelper
         Return arrays
     End Function
 
+    ''' <summary>Concatena los subrecursos en el ORDEN DEL FORMATO DDS: array-major y después mip
+    ''' (para cada cara, toda su cadena de mips; después la cara siguiente).
+    ''' <para>⛔ Antes concatenaba en el orden en que venían, que es el orden en que el wrapper los
+    ''' EMITE — mip-major. Los dos coinciden con <c>ArraySize = 1</c>, que es todo lo que la app produce,
+    ''' y por eso nadie lo vio; con un cubemap el archivo salía con las caras entrelazadas. Medido con la
+    ''' fixture <c>huecos</c> del probe (cubemap 32² × 6 caras × 2 mips, cara i marcada con R = 10 + i·40):
+    ''' el orden viejo devolvía <c>10;50;90;130;210;50</c> en las posiciones de las caras, el correcto
+    ''' devuelve <c>10;50;90;130;170;210</c>.</para>
+    ''' <para>Hace falta ARRAY-major porque es lo que escribe <c>DirectX::SaveToDDSMemory</c>
+    ''' (<c>for item { for level }</c>) y lo que espera cualquier lector de DDS. El reordenamiento usa el
+    ''' <c>MipLevel</c>/<c>ArrayIndex</c> que cada subrecurso ya trae; si vienen sin marcar (índices
+    ''' negativos) se respeta el orden de llegada, que es lo único que se puede hacer sin inventar.</para></summary>
     Public Function ConcatenateSubresources(subresources As IEnumerable(Of DxTextureSubresourceBuffer)) As Byte()
         ArgumentNullException.ThrowIfNull(subresources)
 
-        Dim payloads As New List(Of Byte())()
-        Dim total As Long = 0
-
+        Dim lista As New List(Of DxTextureSubresourceBuffer)()
         For Each subresource In subresources
             If subresource Is Nothing Then
                 Throw New InvalidDataException("There is a Nothing subresource in the collection.")
             End If
+            lista.Add(subresource)
+        Next
 
+        Dim todosMarcados = lista.Count > 0 AndAlso lista.TrueForAll(Function(s) s.MipLevel >= 0 AndAlso s.ArrayIndex >= 0)
+        Dim ordenados As IEnumerable(Of DxTextureSubresourceBuffer) = lista
+        If todosMarcados Then
+            ordenados = lista.OrderBy(Function(s) s.ArrayIndex).ThenBy(Function(s) s.MipLevel)
+        End If
+
+        Dim payloads As New List(Of Byte())()
+        Dim total As Long = 0
+
+        For Each subresource In ordenados
             Dim data = If(subresource.Data, Array.Empty(Of Byte)())
             payloads.Add(data)
             total += data.Length
@@ -657,134 +694,84 @@ Public Module DirectXTextureConversionHelper
         Return CInt(total)
     End Function
 
-    Private Function ConvertNativeResult(nativeResult As Object) As DxTextureConversionResult
+    ''' <summary>Mapea el resultado del wrapper a los tipos de este módulo.
+    ''' <para>⛔ Antes esto se hacía por REFLEXIÓN: se buscaba el tipo por nombre, se creaba con
+    ''' <c>Activator</c>, se seteaba miembro por miembro con <c>SetValue</c> y se invocaba el método con
+    ''' <c>MethodInfo.Invoke</c> — todo en CADA llamada, incluido el barrido de <c>GetMethods</c>. El
+    ''' módulo ya hacía <c>Imports DirectXTexWrapperCLI</c> y usaba <c>Loader</c> tipado dos líneas más
+    ''' arriba, así que la ABI era conocida en compilación. En tiempo no se medía (queda bajo el piso de
+    ''' ruido del A/A hasta 4096²); lo que se saca es el modo de falla: un renombre en el wrapper pasaba
+    ''' el compilador y explotaba en runtime como <c>MissingMemberException</c> en el medio de un bake.</para></summary>
+    Private Function FromNativeResult(nativeResult As TextureConversionResult) As DxTextureConversionResult
         If nativeResult Is Nothing Then
             Throw New InvalidOperationException("The wrapper returned a null result.")
         End If
 
         Dim result As New DxTextureConversionResult With {
-            .Width = GetRequiredIntProperty(nativeResult, "Width"),
-            .Height = GetRequiredIntProperty(nativeResult, "Height"),
-            .DxgiFormat = GetRequiredIntProperty(nativeResult, "DxgiFormat"),
-            .MipLevels = GetRequiredIntProperty(nativeResult, "MipLevels"),
-            .ArraySize = GetRequiredIntProperty(nativeResult, "ArraySize"),
-            .IsCubemap = GetRequiredBooleanProperty(nativeResult, "IsCubemap")
+            .Width = nativeResult.Width,
+            .Height = nativeResult.Height,
+            .DxgiFormat = nativeResult.DxgiFormat,
+            .MipLevels = nativeResult.MipLevels,
+            .ArraySize = nativeResult.ArraySize,
+            .IsCubemap = nativeResult.IsCubemap
         }
 
-        Dim nativeSubresources = TryCast(GetRequiredMemberValue(nativeResult, "Subresources"), System.Collections.IEnumerable)
-        If nativeSubresources Is Nothing Then Return result
+        If nativeResult.Subresources Is Nothing Then Return result
 
-        For Each nativeSubresource In nativeSubresources
+        For Each nativeSubresource In nativeResult.Subresources
             If nativeSubresource Is Nothing Then
                 Throw New InvalidOperationException("The wrapper returned a null subresource.")
             End If
+            If nativeSubresource.Data Is Nothing Then
+                Throw New InvalidOperationException("The wrapper returned a subresource without Data.")
+            End If
 
             result.Subresources.Add(New DxTextureSubresourceBuffer(
-                data:=GetRequiredByteArrayProperty(nativeSubresource, "Data"),
-                width:=GetRequiredIntProperty(nativeSubresource, "Width"),
-                height:=GetRequiredIntProperty(nativeSubresource, "Height"),
-                rowPitch:=GetRequiredIntProperty(nativeSubresource, "RowPitch"),
-                slicePitch:=GetRequiredIntProperty(nativeSubresource, "SlicePitch"),
-                mipLevel:=GetRequiredIntProperty(nativeSubresource, "MipLevel"),
-                arrayIndex:=GetRequiredIntProperty(nativeSubresource, "ArrayIndex")))
+                data:=nativeSubresource.Data,
+                width:=nativeSubresource.Width,
+                height:=nativeSubresource.Height,
+                rowPitch:=nativeSubresource.RowPitch,
+                slicePitch:=nativeSubresource.SlicePitch,
+                mipLevel:=nativeSubresource.MipLevel,
+                arrayIndex:=nativeSubresource.ArrayIndex))
         Next
 
         Return result
     End Function
 
-    Private Function CreateNativeConversionRequest(request As DxTextureConversionRequest) As Object
-        Dim wrapperAssembly = GetType(Loader).Assembly
-        Dim requestType = wrapperAssembly.GetType("DirectXTexWrapperCLI.TextureConversionRequest", throwOnError:=True)
-        Dim subresourceType = wrapperAssembly.GetType("DirectXTexWrapperCLI.TextureSubresource", throwOnError:=True)
-        Dim nativeRequest = Activator.CreateInstance(requestType)
+    Private Function ToNativeRequest(request As DxTextureConversionRequest) As TextureConversionRequest
+        Dim nativeRequest As New TextureConversionRequest()
+        nativeRequest.Width = request.Width
+        nativeRequest.Height = request.Height
+        nativeRequest.InputDxgiFormat = request.InputDxgiFormat
+        nativeRequest.OutputDxgiFormat = request.OutputDxgiFormat
+        nativeRequest.MipLevels = request.MipLevels
+        nativeRequest.ArraySize = request.ArraySize
+        nativeRequest.IsCubemap = request.IsCubemap
+        nativeRequest.AutoGenerateMipMaps = request.AutoGenerateMipMaps
+        nativeRequest.FilterFlags = request.FilterFlags
+        nativeRequest.CompressFlags = request.CompressFlags
+        nativeRequest.AlphaThreshold = request.AlphaThreshold
 
-        SetRequiredMemberValue(nativeRequest, "Width", request.Width)
-        SetRequiredMemberValue(nativeRequest, "Height", request.Height)
-        SetRequiredMemberValue(nativeRequest, "InputDxgiFormat", request.InputDxgiFormat)
-        SetRequiredMemberValue(nativeRequest, "OutputDxgiFormat", request.OutputDxgiFormat)
-        SetRequiredMemberValue(nativeRequest, "MipLevels", request.MipLevels)
-        SetRequiredMemberValue(nativeRequest, "ArraySize", request.ArraySize)
-        SetRequiredMemberValue(nativeRequest, "IsCubemap", request.IsCubemap)
-        SetRequiredMemberValue(nativeRequest, "AutoGenerateMipMaps", request.AutoGenerateMipMaps)
-        SetRequiredMemberValue(nativeRequest, "FilterFlags", request.FilterFlags)
-        SetRequiredMemberValue(nativeRequest, "CompressFlags", request.CompressFlags)
-        SetRequiredMemberValue(nativeRequest, "AlphaThreshold", request.AlphaThreshold)
-
-        Dim nativeSubresources = Array.CreateInstance(subresourceType, request.Subresources.Count)
+        Dim nativeSubresources(request.Subresources.Count - 1) As TextureSubresource
         For i As Integer = 0 To request.Subresources.Count - 1
             Dim subresource = request.Subresources(i)
             If subresource Is Nothing Then
                 Throw New ArgumentException($"Subresources({i}) is Nothing.", NameOf(request))
             End If
 
-            Dim nativeSubresource = Activator.CreateInstance(subresourceType)
-            SetRequiredMemberValue(nativeSubresource, "Data", If(subresource.Data, Array.Empty(Of Byte)()))
-            SetRequiredMemberValue(nativeSubresource, "Width", subresource.Width)
-            SetRequiredMemberValue(nativeSubresource, "Height", subresource.Height)
-            SetRequiredMemberValue(nativeSubresource, "RowPitch", subresource.RowPitch)
-            SetRequiredMemberValue(nativeSubresource, "SlicePitch", subresource.SlicePitch)
-            SetRequiredMemberValue(nativeSubresource, "MipLevel", subresource.MipLevel)
-            SetRequiredMemberValue(nativeSubresource, "ArrayIndex", subresource.ArrayIndex)
-            nativeSubresources.SetValue(nativeSubresource, i)
+            nativeSubresources(i) = New TextureSubresource(
+                If(subresource.Data, Array.Empty(Of Byte)()),
+                subresource.Width,
+                subresource.Height,
+                subresource.RowPitch,
+                subresource.SlicePitch,
+                subresource.MipLevel,
+                subresource.ArrayIndex)
         Next
 
-        SetRequiredMemberValue(nativeRequest, "Subresources", nativeSubresources)
+        nativeRequest.Subresources = nativeSubresources
         Return nativeRequest
-    End Function
-
-    Private Function GetRequiredMemberValue(instance As Object, memberName As String) As Object
-        ArgumentNullException.ThrowIfNull(instance)
-        If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("The member name is required.", NameOf(memberName))
-
-        Dim instanceType = instance.GetType()
-        Dim propertyInfo = instanceType.GetProperty(memberName, BindingFlags.Public Or BindingFlags.Instance Or BindingFlags.Static)
-        If propertyInfo IsNot Nothing Then
-            Return propertyInfo.GetValue(instance)
-        End If
-
-        Dim fieldInfo = instanceType.GetField(memberName, BindingFlags.Public Or BindingFlags.Instance Or BindingFlags.Static)
-        If fieldInfo IsNot Nothing Then
-            Return fieldInfo.GetValue(instance)
-        End If
-
-        Throw New MissingMemberException(instanceType.FullName, memberName)
-    End Function
-
-    Private Sub SetRequiredMemberValue(instance As Object, memberName As String, value As Object)
-        ArgumentNullException.ThrowIfNull(instance)
-        If String.IsNullOrWhiteSpace(memberName) Then Throw New ArgumentException("The member name is required.", NameOf(memberName))
-
-        Dim instanceType = instance.GetType()
-        Dim propertyInfo = instanceType.GetProperty(memberName, BindingFlags.Public Or BindingFlags.Instance Or BindingFlags.Static)
-        If propertyInfo IsNot Nothing AndAlso propertyInfo.CanWrite Then
-            propertyInfo.SetValue(instance, value)
-            Return
-        End If
-
-        Dim fieldInfo = instanceType.GetField(memberName, BindingFlags.Public Or BindingFlags.Instance Or BindingFlags.Static)
-        If fieldInfo IsNot Nothing Then
-            fieldInfo.SetValue(instance, value)
-            Return
-        End If
-
-        Throw New MissingMemberException(instanceType.FullName, memberName)
-    End Sub
-
-    Private Function GetRequiredIntProperty(instance As Object, propertyName As String) As Integer
-        Return CInt(GetRequiredMemberValue(instance, propertyName))
-    End Function
-
-    Private Function GetRequiredBooleanProperty(instance As Object, propertyName As String) As Boolean
-        Return CBool(GetRequiredMemberValue(instance, propertyName))
-    End Function
-
-    Private Function GetRequiredByteArrayProperty(instance As Object, propertyName As String) As Byte()
-        Dim value = TryCast(GetRequiredMemberValue(instance, propertyName), Byte())
-        If value Is Nothing Then
-            Throw New InvalidCastException($"Member {propertyName} did not return a Byte().")
-        End If
-
-        Return value
     End Function
 
     Private Sub ValidateRequest(request As DxTextureConversionRequest)

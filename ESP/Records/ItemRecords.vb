@@ -10,100 +10,100 @@ Imports System.Text
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 WEAP record - Weapon.</summary>
-Public Class WEAP_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public EquipTypeFormID As UInteger
-    Public EnchantmentFormID As UInteger
-    Public InstanceNamingFormID As UInteger
-    Public TemplateFormID As UInteger
-    Public EmbeddedWeaponModFormID As UInteger
-    Public ImpactDataSetFormID As UInteger
-    Public NPCAddAmmoListFormID As UInteger
-    Public AimModelFormID As UInteger
-    Public ZoomFormID As UInteger
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public WorldModelPath As String = ""
-    Public FirstPersonModelPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
+Friend Class WEAP_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend EquipTypeFormID As UInteger
+    Friend EnchantmentFormID As UInteger
+    Friend InstanceNamingFormID As UInteger
+    Friend TemplateFormID As UInteger
+    Friend EmbeddedWeaponModFormID As UInteger
+    Friend ImpactDataSetFormID As UInteger
+    Friend NPCAddAmmoListFormID As UInteger
+    Friend AimModelFormID As UInteger
+    Friend ZoomFormID As UInteger
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend WorldModelPath As String = ""
+    Friend FirstPersonModelPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
 
     ' DNAM struct fields
-    Public AmmoFormID As UInteger
-    Public Speed As Single
-    Public ReloadSpeed As Single
-    Public Reach As Single
-    Public MinRange As Single
-    Public MaxRange As Single
-    Public AttackDelay As Single
-    Public OutOfRangeDamageMult As Single = 0.5F
-    Public OnHit As UInteger
-    Public SkillFormID As UInteger
-    Public ResistFormID As UInteger
-    Public WeaponFlags As UInteger
-    Public Capacity As UShort
-    Public AnimationType As Byte
-    Public SecondaryDamage As Single
-    Public Weight As Single
-    Public Value As UInteger
-    Public BaseDamage As UShort
-    Public SoundLevel As UInteger
-    Public SoundAttackFormID As UInteger
-    Public SoundAttack2DFormID As UInteger
-    Public SoundAttackLoopFormID As UInteger
-    Public SoundAttackFailFormID As UInteger
-    Public SoundIdleFormID As UInteger
-    Public SoundEquipFormID As UInteger
-    Public SoundUnequipFormID As UInteger
-    Public SoundFastEquipFormID As UInteger
-    Public AccuracyBonus As Byte
-    Public AnimAttackSeconds As Single = 0.3F
-    Public ActionPointCost As Single = 20.0F
-    Public FullPowerSeconds As Single
-    Public MinPowerPerShot As Single
-    Public Stagger As UInteger
+    Friend AmmoFormID As UInteger
+    Friend Speed As Single
+    Friend ReloadSpeed As Single
+    Friend Reach As Single
+    Friend MinRange As Single
+    Friend MaxRange As Single
+    Friend AttackDelay As Single
+    Friend OutOfRangeDamageMult As Single = 0.5F
+    Friend OnHit As UInteger
+    Friend SkillFormID As UInteger
+    Friend ResistFormID As UInteger
+    Friend WeaponFlags As UInteger
+    Friend Capacity As UShort
+    Friend AnimationType As Byte
+    Friend SecondaryDamage As Single
+    Friend Weight As Single
+    Friend Value As UInteger
+    Friend BaseDamage As UShort
+    Friend SoundLevel As UInteger
+    Friend SoundAttackFormID As UInteger
+    Friend SoundAttack2DFormID As UInteger
+    Friend SoundAttackLoopFormID As UInteger
+    Friend SoundAttackFailFormID As UInteger
+    Friend SoundIdleFormID As UInteger
+    Friend SoundEquipFormID As UInteger
+    Friend SoundUnequipFormID As UInteger
+    Friend SoundFastEquipFormID As UInteger
+    Friend AccuracyBonus As Byte
+    Friend AnimAttackSeconds As Single = 0.3F
+    Friend ActionPointCost As Single = 20.0F
+    Friend FullPowerSeconds As Single
+    Friend MinPowerPerShot As Single
+    Friend Stagger As UInteger
 
     ' FNAM firing data
-    Public AnimFireSeconds As Single
-    Public RumbleLeftMotor As Single = 0.5F
-    Public RumbleRightMotor As Single = 1.0F
-    Public RumbleDuration As Single = 0.33F
-    Public AnimReloadSeconds As Single
-    Public SightedTransitionSeconds As Single = 0.25F
-    Public NumProjectiles As Byte = 1
-    Public OverrideProjectileFormID As UInteger
-    Public FiringPattern As UInteger
+    Friend AnimFireSeconds As Single
+    Friend RumbleLeftMotor As Single = 0.5F
+    Friend RumbleRightMotor As Single = 1.0F
+    Friend RumbleDuration As Single = 0.33F
+    Friend AnimReloadSeconds As Single
+    Friend SightedTransitionSeconds As Single = 0.25F
+    Friend NumProjectiles As Byte = 1
+    Friend OverrideProjectileFormID As UInteger
+    Friend FiringPattern As UInteger
 
     ' CRDT critical data
-    Public CritDamageMult As Single = 2.0F
-    Public CritChargeBonus As Single
-    Public CritEffectFormID As UInteger
+    Friend CritDamageMult As Single = 2.0F
+    Friend CritChargeBonus As Single
+    Friend CritEffectFormID As UInteger
 
     ' Damage types (DAMA)
-    Public DamageTypes As New List(Of KeyValuePair(Of UInteger, Single))
+    Friend DamageTypes As New List(Of KeyValuePair(Of UInteger, Single))
 
     ' Melee speed
-    Public MeleeSpeed As UInteger
+    Friend MeleeSpeed As UInteger
 
     ' Flags - bits per position en wbDefinitionsFO4.pas:13284-13316 (wbFlags array of strings).
     ' Sin gaps hasta bit 23, después unknowns. Verificación cruzada con xEdit display.
-    Public ReadOnly Property IsAutomatic As Boolean
+    Friend ReadOnly Property IsAutomatic As Boolean
         Get
             ' Spec WEAP.DNAM bit 15 (0x00008000) — antes 0x80 era "Unknown 8".
             Return (WeaponFlags And &H8000UI) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsBoltAction As Boolean
+    Friend ReadOnly Property IsBoltAction As Boolean
         Get
             ' Spec WEAP.DNAM bit 22 (0x00400000) — antes 0x100 era "Crit Effect - on Death".
             Return (WeaponFlags And &H400000UI) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsNPCsUseAmmo As Boolean
+    Friend ReadOnly Property IsNPCsUseAmmo As Boolean
         Get
             ' Spec WEAP.DNAM bit 1 (0x02) — pos coincide con valor, OK.
             Return (WeaponFlags And &H2UI) <> 0
@@ -112,29 +112,29 @@ Public Class WEAP_Data
 End Class
 
 ''' <summary>Fallout 4 AMMO record - Ammunition.</summary>
-Public Class AMMO_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ShortName As String = ""
-    Public Description As String = ""
-    Public ModelPath As String = ""
-    Public CasingModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
+Friend Class AMMO_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ShortName As String = ""
+    Friend Description As String = ""
+    Friend ModelPath As String = ""
+    Friend CasingModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
 
     ' DATA struct
-    Public Value As UInteger
-    Public Weight As Single
+    Friend Value As UInteger
+    Friend Weight As Single
 
     ' DNAM struct
-    Public ProjectileFormID As UInteger
-    Public Flags As Byte
-    Public Damage As Single
-    Public Health As UInteger
+    Friend ProjectileFormID As UInteger
+    Friend Flags As Byte
+    Friend Damage As Single
+    Friend Health As UInteger
 
-    Public ReadOnly Property IsNonPlayable As Boolean
+    Friend ReadOnly Property IsNonPlayable As Boolean
         Get
             Return (Flags And &H2) <> 0
         End Get
@@ -142,46 +142,46 @@ Public Class AMMO_Data
 End Class
 
 ''' <summary>Fallout 4 ALCH record - Ingestible (potion/chem/food).</summary>
-Public Class ALCH_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public EquipTypeFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public Weight As Single
+Friend Class ALCH_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend EquipTypeFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend Weight As Single
 
     ' ENIT struct
-    Public Value As Integer
-    Public ENITFlags As UInteger
-    Public AddictionFormID As UInteger
-    Public AddictionChance As Single
-    Public ConsumeSound As UInteger
-    Public AddictionName As String = ""
+    Friend Value As Integer
+    Friend ENITFlags As UInteger
+    Friend AddictionFormID As UInteger
+    Friend AddictionChance As Single
+    Friend ConsumeSound As UInteger
+    Friend AddictionName As String = ""
 
     ' Effects
-    Public Effects As New List(Of MagicEffect_Entry)
+    Friend Effects As New List(Of MagicEffect_Entry)
 
     ' Flags - bits per position en wbDefinitionsFO4.pas:6080-6098 (wbFlags array of strings).
     ' Hay GAP grande: tras "Food Item" (pos 1) hay 14 "Unknown" hasta "Medicine" (pos 16) y "Poison" (pos 17).
-    Public ReadOnly Property IsFood As Boolean
+    Friend ReadOnly Property IsFood As Boolean
         Get
             ' Spec ALCH.ENIT pos 1 (0x02) — coincide.
             Return (ENITFlags And &H2UI) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsMedicine As Boolean
+    Friend ReadOnly Property IsMedicine As Boolean
         Get
             ' Spec ALCH.ENIT pos 16 (0x00010000) — antes 0x04 era "Unknown 3".
             Return (ENITFlags And &H10000UI) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsPoison As Boolean
+    Friend ReadOnly Property IsPoison As Boolean
         Get
             ' Spec ALCH.ENIT pos 17 (0x00020000) — antes 0x08 era "Unknown 4".
             Return (ENITFlags And &H20000UI) <> 0
@@ -190,68 +190,68 @@ Public Class ALCH_Data
 End Class
 
 ''' <summary>Shared magic effect entry used by ALCH, ENCH, SPEL, INGR.</summary>
-Public Class MagicEffect_Entry
-    Public BaseEffectFormID As UInteger
-    Public Magnitude As Single
-    Public Area As UInteger
-    Public Duration As UInteger
+Friend Class MagicEffect_Entry
+    Friend BaseEffectFormID As UInteger
+    Friend Magnitude As Single
+    Friend Area As UInteger
+    Friend Duration As UInteger
 End Class
 
 ''' <summary>Fallout 4 MISC record - Miscellaneous Item.</summary>
-Public Class MISC_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public Value As Integer
-    Public Weight As Single
+Friend Class MISC_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend Value As Integer
+    Friend Weight As Single
 
     ' Components (CVPA)
-    Public Components As New List(Of KeyValuePair(Of UInteger, UInteger)) ' FormID, Count
+    Friend Components As New List(Of KeyValuePair(Of UInteger, UInteger)) ' FormID, Count
 End Class
 
 ''' <summary>Fallout 4 BOOK record - Book/Holotape.</summary>
-Public Class BOOK_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public Description As String = ""
-    Public BookText As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public InventoryArtFormID As UInteger
-    Public FeaturedItemMessageFormID As UInteger
-    Public Value As UInteger
-    Public Weight As Single
+Friend Class BOOK_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend Description As String = ""
+    Friend BookText As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend InventoryArtFormID As UInteger
+    Friend FeaturedItemMessageFormID As UInteger
+    Friend Value As UInteger
+    Friend Weight As Single
 
     ' DNAM
-    Public BookFlags As Byte
-    Public TeachesFormID As UInteger
-    Public TextOffsetX As UInteger
-    Public TextOffsetY As UInteger
+    Friend BookFlags As Byte
+    Friend TeachesFormID As UInteger
+    Friend TextOffsetX As UInteger
+    Friend TextOffsetY As UInteger
 
     ' Flags - bits per position en wbDefinitionsFO4.pas:6276-6282 (wbFlags array of strings).
     ' GAP en pos 3 (Unknown 3) entre AddSpell (pos 2) y AddPerk (pos 4) — mismo patrón que HDPT.
-    Public ReadOnly Property CanBeTaken As Boolean
+    Friend ReadOnly Property CanBeTaken As Boolean
         Get
             ' Spec BOOK.DNAM pos 1 (0x02 "Can't be Taken") — chequea =0 para "puede tomarse".
             Return (BookFlags And &H2) = 0
         End Get
     End Property
 
-    Public ReadOnly Property IsAddSpell As Boolean
+    Friend ReadOnly Property IsAddSpell As Boolean
         Get
             ' Spec BOOK.DNAM pos 2 (0x04 "Add Spell") — coincide.
             Return (BookFlags And &H4) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsAddPerk As Boolean
+    Friend ReadOnly Property IsAddPerk As Boolean
         Get
             ' Spec BOOK.DNAM pos 4 (0x10 "Add Perk") — antes 0x08 era "Unknown 3".
             Return (BookFlags And &H10) <> 0
@@ -260,59 +260,59 @@ Public Class BOOK_Data
 End Class
 
 ''' <summary>Fallout 4 KEYM record - Key.</summary>
-Public Class KEYM_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public Value As Integer
-    Public Weight As Single
+Friend Class KEYM_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend Value As Integer
+    Friend Weight As Single
 End Class
 
 ''' <summary>Fallout 4 LIGH record - Light.</summary>
-Public Class LIGH_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public GoboTexture As String = ""
-    Public SoundFormID As UInteger
-    Public LensFormID As UInteger
-    Public GodRaysFormID As UInteger
+Friend Class LIGH_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend GoboTexture As String = ""
+    Friend SoundFormID As UInteger
+    Friend LensFormID As UInteger
+    Friend GodRaysFormID As UInteger
 
     ' DATA struct
-    Public Time As Integer
-    Public Radius As UInteger
-    Public LightColor As Color = Color.Empty
-    Public LightFlags As UInteger
-    Public FalloffExponent As Single
-    Public FOV As Single
-    Public NearClip As Single
-    Public FlickerPeriod As Single
-    Public FlickerIntensityAmplitude As Single
-    Public FlickerMovementAmplitude As Single
-    Public ConstantAttenuation As Single
-    Public ScalarAttenuation As Single
-    Public ExponentAttenuation As Single
-    Public GodRaysNearClip As Single
-    Public Value As UInteger
-    Public Weight As Single
+    Friend Time As Integer
+    Friend Radius As UInteger
+    Friend LightColor As Color = Color.Empty
+    Friend LightFlags As UInteger
+    Friend FalloffExponent As Single
+    Friend FOV As Single
+    Friend NearClip As Single
+    Friend FlickerPeriod As Single
+    Friend FlickerIntensityAmplitude As Single
+    Friend FlickerMovementAmplitude As Single
+    Friend ConstantAttenuation As Single
+    Friend ScalarAttenuation As Single
+    Friend ExponentAttenuation As Single
+    Friend GodRaysNearClip As Single
+    Friend Value As UInteger
+    Friend Weight As Single
 
-    Public FadeValue As Single
+    Friend FadeValue As Single
 
-    Public ReadOnly Property CanBeCarried As Boolean
+    Friend ReadOnly Property CanBeCarried As Boolean
         Get
             Return (LightFlags And &H2UI) <> 0
         End Get
     End Property
 
-    Public ReadOnly Property IsFlicker As Boolean
+    Friend ReadOnly Property IsFlicker As Boolean
         Get
             Return (LightFlags And &H8UI) <> 0
         End Get
@@ -320,26 +320,26 @@ Public Class LIGH_Data
 End Class
 
 ''' <summary>Fallout 4 INGR record - Ingredient.</summary>
-Public Class INGR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
-    Public EquipTypeFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public Value As Integer
-    Public Weight As Single
+Friend Class INGR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
+    Friend EquipTypeFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend Value As Integer
+    Friend Weight As Single
 
     ' ENIT
-    Public IngredientValue As Integer
-    Public IngredientFlags As UInteger
+    Friend IngredientValue As Integer
+    Friend IngredientFlags As UInteger
 
     ' Effects
-    Public Effects As New List(Of MagicEffect_Entry)
+    Friend Effects As New List(Of MagicEffect_Entry)
 
-    Public ReadOnly Property IsFood As Boolean
+    Friend ReadOnly Property IsFood As Boolean
         Get
             Return (IngredientFlags And &H2UI) <> 0
         End Get
@@ -347,30 +347,30 @@ Public Class INGR_Data
 End Class
 
 ''' <summary>Container entry for CONT record.</summary>
-Public Class ContainerItem
-    Public ItemFormID As UInteger
-    Public Count As Integer
+Friend Class ContainerItem
+    Friend ItemFormID As UInteger
+    Friend Count As Integer
 End Class
 
 ''' <summary>Fallout 4 CONT record - Container.</summary>
-Public Class CONT_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public Items As New List(Of ContainerItem)
-    Public OpenSoundFormID As UInteger
-    Public CloseSoundFormID As UInteger
-    Public TakeAllSoundFormID As UInteger
-    Public FilterListFormID As UInteger
-    Public NativeTerminalFormID As UInteger
+Friend Class CONT_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend Items As New List(Of ContainerItem)
+    Friend OpenSoundFormID As UInteger
+    Friend CloseSoundFormID As UInteger
+    Friend TakeAllSoundFormID As UInteger
+    Friend FilterListFormID As UInteger
+    Friend NativeTerminalFormID As UInteger
 
     ' DATA
-    Public ContainerFlags As Byte
-    Public Weight As Single
+    Friend ContainerFlags As Byte
+    Friend Weight As Single
 
-    Public ReadOnly Property IsRespawns As Boolean
+    Friend ReadOnly Property IsRespawns As Boolean
         Get
             Return (ContainerFlags And &H2) <> 0
         End Get
@@ -378,54 +378,54 @@ Public Class CONT_Data
 End Class
 
 ''' <summary>Fallout 4 FLOR record - Flora.</summary>
-Public Class FLOR_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public ActivateTextOverride As String = ""
-    Public IngredientFormID As UInteger
-    Public HarvestSoundFormID As UInteger
-    Public KeywordFormIDs As New List(Of UInteger)
-    Public Flags As UShort
+Friend Class FLOR_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend ActivateTextOverride As String = ""
+    Friend IngredientFormID As UInteger
+    Friend HarvestSoundFormID As UInteger
+    Friend KeywordFormIDs As New List(Of UInteger)
+    Friend Flags As UShort
 
     ' PFPC
-    Public ProductionSpring As Byte
-    Public ProductionSummer As Byte
-    Public ProductionFall As Byte
-    Public ProductionWinter As Byte
+    Friend ProductionSpring As Byte
+    Friend ProductionSummer As Byte
+    Friend ProductionFall As Byte
+    Friend ProductionWinter As Byte
 End Class
 
 ''' <summary>Fallout 4 NOTE record - Note/Holotape.</summary>
-Public Class NOTE_Data
-    Public FormID As UInteger
-    Public EditorID As String = ""
-    Public FullName As String = ""
-    Public ModelPath As String = ""
-    Public IconPath As String = ""
-    Public MessageIconPath As String = ""
+Friend Class NOTE_Data
+    Friend FormID As UInteger
+    Friend EditorID As String = ""
+    Friend FullName As String = ""
+    Friend ModelPath As String = ""
+    Friend IconPath As String = ""
+    Friend MessageIconPath As String = ""
 
     ' DNAM type
-    Public NoteType As Byte  ' 0=Sound, 1=Voice, 2=Program, 3=Terminal
+    Friend NoteType As Byte  ' 0=Sound, 1=Voice, 2=Program, 3=Terminal
 
     ' DATA
-    Public Value As UInteger
-    Public Weight As Single
+    Friend Value As UInteger
+    Friend Weight As Single
 
     ' SNAM (union based on type)
-    Public SoundFormID As UInteger    ' When type=Sound
-    Public SceneFormID As UInteger    ' When type=Voice
-    Public TerminalFormID As UInteger ' When type=Terminal
-    Public ProgramFile As String = ""
+    Friend SoundFormID As UInteger    ' When type=Sound
+    Friend SceneFormID As UInteger    ' When type=Voice
+    Friend TerminalFormID As UInteger ' When type=Terminal
+    Friend ProgramFile As String = ""
 End Class
 
 #End Region
 
 #Region "Parsers"
 
-Public Module ItemRecordParsers
+Friend Module ItemRecordParsers
 
-    Public Function ParseWEAP(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As WEAP_Data
+    Friend Function ParseWEAP(rec As PluginRecord, pluginManager As PluginManager) As WEAP_Data
         Dim w As New WEAP_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -599,7 +599,7 @@ Public Module ItemRecordParsers
         Next
     End Sub
 
-    Public Function ParseAMMO(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As AMMO_Data
+    Friend Function ParseAMMO(rec As PluginRecord, pluginManager As PluginManager) As AMMO_Data
         Dim a As New AMMO_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -638,7 +638,7 @@ Public Module ItemRecordParsers
         Return a
     End Function
 
-    Public Function ParseALCH(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As ALCH_Data
+    Friend Function ParseALCH(rec As PluginRecord, pluginManager As PluginManager) As ALCH_Data
         Dim a As New ALCH_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -703,7 +703,7 @@ Public Module ItemRecordParsers
         Return a
     End Function
 
-    Public Function ParseMISC(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As MISC_Data
+    Friend Function ParseMISC(rec As PluginRecord, pluginManager As PluginManager) As MISC_Data
         Dim m As New MISC_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -740,7 +740,7 @@ Public Module ItemRecordParsers
         Return m
     End Function
 
-    Public Function ParseBOOK(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As BOOK_Data
+    Friend Function ParseBOOK(rec As PluginRecord, pluginManager As PluginManager) As BOOK_Data
         Dim b As New BOOK_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -788,7 +788,7 @@ Public Module ItemRecordParsers
         Return b
     End Function
 
-    Public Function ParseKEYM(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As KEYM_Data
+    Friend Function ParseKEYM(rec As PluginRecord, pluginManager As PluginManager) As KEYM_Data
         Dim k As New KEYM_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -817,7 +817,7 @@ Public Module ItemRecordParsers
         Return k
     End Function
 
-    Public Function ParseLIGH(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As LIGH_Data
+    Friend Function ParseLIGH(rec As PluginRecord, pluginManager As PluginManager) As LIGH_Data
         Dim l As New LIGH_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -878,7 +878,7 @@ Public Module ItemRecordParsers
         If d.Length >= 64 Then l.Weight = BitConverter.ToSingle(d, 60)
     End Sub
 
-    Public Function ParseINGR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As INGR_Data
+    Friend Function ParseINGR(rec As PluginRecord, pluginManager As PluginManager) As INGR_Data
         Dim ig As New INGR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -931,7 +931,7 @@ Public Module ItemRecordParsers
         Return ig
     End Function
 
-    Public Function ParseCONT(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As CONT_Data
+    Friend Function ParseCONT(rec As PluginRecord, pluginManager As PluginManager) As CONT_Data
         Dim c As New CONT_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -973,7 +973,7 @@ Public Module ItemRecordParsers
         Return c
     End Function
 
-    Public Function ParseFLOR(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As FLOR_Data
+    Friend Function ParseFLOR(rec As PluginRecord, pluginManager As PluginManager) As FLOR_Data
         Dim f As New FLOR_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
@@ -1010,7 +1010,7 @@ Public Module ItemRecordParsers
         Return f
     End Function
 
-    Public Function ParseNOTE(rec As PluginRecord, Optional pluginManager As PluginManager = Nothing) As NOTE_Data
+    Friend Function ParseNOTE(rec As PluginRecord, pluginManager As PluginManager) As NOTE_Data
         Dim n As New NOTE_Data With {
             .FormID = rec.Header.FormID,
             .EditorID = rec.EditorID
