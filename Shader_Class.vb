@@ -1112,22 +1112,31 @@ void main(void)
 			// horneado por la pasada b12 FaceCustom. Si alguna vez se quiere cerrar si corresponde
 			// re-agregarla, hace falta un A/B in-app contra un render del juego: no se decide leyendo shaders.
 
-			// SHADOW. ONLY THE KEY CASTS, and that is the engine's own arrangement: the forward has
-			// exactly ONE shadowed directional plus an UNSHADOWED point-light loop (rec1498 reuses the
-			// shadow register as the loop counter at L194, so the value is already dead there), and the
-			// SSE mask packs the sun in a single channel. It is also how a real 3-point studio works:
-			// the fills are what keep the shadow side readable, so they must not be occluded too.
-			// Scaling `diffuse` here -- instead of the accumulators -- is what makes every term inside
-			// directionalLight (Oren-Nayar, thin rim, transmission, subsurface) AND the specular carry
-			// the factor, while hemiAmbient() below stays untouched. See the SHADOWS uniform block.
+			// SHADOW. EACH light that has a layer occludes ITS OWN diffuse, before directionalLight().
+			// The branches are UNIFORM per draw, so a light that does not cast costs nothing and there
+			// is no warp divergence. Scaling diffuse here -- instead of the accumulators -- is what
+			// makes every term inside directionalLight (Oren-Nayar, thin rim, transmission, subsurface)
+			// AND the specular carry the factor, while hemiAmbient() below stays untouched.
+			// isKeyLight stays TRUE for the key alone: that flag is about being the engine-s single
+			// directional (transmission, subsurface rolloff), which is NOT the same as casting.
+			// See the SHADOWS uniform block and ShadowMap.vb.
 			DirectionalLight keyLight = frontal;
+			DirectionalLight fillL = directional0;
+			DirectionalLight fillR = directional1;
+			DirectionalLight backL = directional2;
 			if (bShadows)
-				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(geoNormal));
+			{
+				vec3 wn = toWorldDir(geoNormal);
+				if (uShadowSlot[0] >= 0) keyLight.diffuse *= shadowFactorAt(vWorldPos, wn, uShadowSlot[0]);
+				if (uShadowSlot[1] >= 0) fillL.diffuse    *= shadowFactorAt(vWorldPos, wn, uShadowSlot[1]);
+				if (uShadowSlot[2] >= 0) fillR.diffuse    *= shadowFactorAt(vWorldPos, wn, uShadowSlot[2]);
+				if (uShadowSlot[3] >= 0) backL.diffuse    *= shadowFactorAt(vWorldPos, wn, uShadowSlot[3]);
+			}
 
 			directionalLight(keyLight, lightFrontal, true, outDiffuse, outSpecular);   // key = la direccional del motor
-			directionalLight(directional0, lightDirectional0, false, outDiffuse, outSpecular);
-			directionalLight(directional1, lightDirectional1, false, outDiffuse, outSpecular);
-			directionalLight(directional2, lightDirectional2, false, outDiffuse, outSpecular);
+			directionalLight(fillL, lightDirectional0, false, outDiffuse, outSpecular);
+			directionalLight(fillR, lightDirectional1, false, outDiffuse, outSpecular);
+			directionalLight(backL, lightDirectional2, false, outDiffuse, outSpecular);
 
 			// Rim lighting (FO4): disabled for multi-light rig. With the back fill
 			// light dot(-L,V)~1 and low rimPower values (0.1) the smoothstep term
@@ -2517,16 +2526,25 @@ void main(void)
 
 			// SHADOW. Same law and same placement as the FO4 fragment (see the SHADOWS uniform block):
 			// the SSE DEFSHADOW path multiplies the DIRECTIONAL by the mask and adds the ambient after,
-			// so scaling the key's `diffuse` here reproduces it and leaves hemiAmbient() alone.
-			// Only the KEY casts -- the fills keep the shadow side readable.
+			// so scaling each light-s own diffuse here reproduces it and leaves hemiAmbient() alone.
+			// EVERY light with a layer casts; the branches are uniform per draw.
 			DirectionalLight keyLight = frontal;
+			DirectionalLight fillL = directional0;
+			DirectionalLight fillR = directional1;
+			DirectionalLight backL = directional2;
 			if (bShadows)
-				keyLight.diffuse *= shadowFactorAt(vWorldPos, toWorldDir(geoNormal));
+			{
+				vec3 wn = toWorldDir(geoNormal);
+				if (uShadowSlot[0] >= 0) keyLight.diffuse *= shadowFactorAt(vWorldPos, wn, uShadowSlot[0]);
+				if (uShadowSlot[1] >= 0) fillL.diffuse    *= shadowFactorAt(vWorldPos, wn, uShadowSlot[1]);
+				if (uShadowSlot[2] >= 0) fillR.diffuse    *= shadowFactorAt(vWorldPos, wn, uShadowSlot[2]);
+				if (uShadowSlot[3] >= 0) backL.diffuse    *= shadowFactorAt(vWorldPos, wn, uShadowSlot[3]);
+			}
 
 			directionalLight(keyLight, lightFrontal, outDiffuse, outSpecular);
-			directionalLight(directional0, lightDirectional0, outDiffuse, outSpecular);
-			directionalLight(directional1, lightDirectional1, outDiffuse, outSpecular);
-			directionalLight(directional2, lightDirectional2, outDiffuse, outSpecular);
+			directionalLight(fillL, lightDirectional0, outDiffuse, outSpecular);
+			directionalLight(fillR, lightDirectional1, outDiffuse, outSpecular);
+			directionalLight(backL, lightDirectional2, outDiffuse, outSpecular);
 
 			// Rim lighting is now applied per-light inside directionalLight() (engine idx 4042),
 			// gated by saturate(dot(Vn,-L)) so it stays an edge effect across the multi-light rig.
@@ -2951,35 +2969,62 @@ Friend Module ShadowDepthShaderSource
     ''' uniforms tienen que quedar arriba, junto al resto de los varyings, y la funcion abajo, despues de
     ''' <c>matModel</c>/<c>matModelViewInverse</c>.</para></summary>
     Friend Const SharedUniformsGlsl As String = "// =============================== SHADOWS ===============================
-// ONE orthographic shadow map, for the KEY light only. The measurements that put this term exactly
-// where it is (and nowhere else) live in ShadowMap.vb; the short version is that in BOTH engines the
-// shadow multiplies the DIRECTIONAL light's diffuse AND specular and NEVER the ambient:
+// ONE orthographic shadow map PER CASTING LIGHT, packed as layers of a single depth texture array.
+// The measurements that put this term exactly where it is (and nowhere else) live in ShadowMap.vb; the
+// short version is that in BOTH engines the shadow multiplies the DIRECTIONAL light-s diffuse AND
+// specular and NEVER the ambient:
 //   FO4 forward rec1498 -> L142/L154 (whole per-light accumulator), L193 (specular), and L281 adds
-//   the ambient AFTERWARDS.  SSE DEFSHADOW -> `mul r2.yzw, r4.xxxx, cb2[1].xxyz` and the ambient
-//   (`dp4 cb2[11..13].vec4(N,1)`) is likewise added after.
-// That is why the factor is applied by scaling the KEY's `diffuse` before directionalLight() instead
-// of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission, subsurface)
-// plus the specular get it, and hemiAmbient() does not.
-uniform sampler2DShadow texShadowMap;
-uniform mat4 matShadowViewProj;   // world -> light clip space
+//   the ambient AFTERWARDS.  SSE DEFSHADOW -> mul r2.yzw, r4.xxxx, cb2[1].xxyz and the ambient
+//   (dp4 cb2[11..13].vec4(N,1)) is likewise added after.
+// That is why the factor is applied by scaling EACH light-s own diffuse before directionalLight()
+// instead of touching the accumulators: every term inside (Oren-Nayar, thin rim, transmission,
+// subsurface) plus the specular get it, and hemiAmbient() does not.
+//
+// !!!! COMPOSITION HAPPENS IN THE LIGHT ACCUMULATOR, NOT IN A SHADOW BUFFER. Do NOT combine the N
+// occlusions into one scalar and multiply the whole accumulator by it: that darkens light arriving
+// from directions that are NOT blocked, and it throws away the colour. With the per-light law, the
+// shadow of a warm key on ground still lit by a cool fill comes out BLUISH, which is what happens.
+//
+// The engine has ONE directional, so N > 1 is a previewer tool, not a fidelity claim. isKeyLight
+// (transmission + subsurface rolloff) stays the KEY only: casting and being-the-sun are different.
+#define MAX_SHADOW_LIGHTS 4
+uniform sampler2DArrayShadow texShadowMap;
+uniform mat4 matShadowViewProj[MAX_SHADOW_LIGHTS];  // world -> light clip space, PER LAYER
+uniform int  uShadowSlot[MAX_SHADOW_LIGHTS];        // rig light index -> layer, -1 = does not cast
 uniform bool bShadows;            // false = the whole feature is inert (factor is never computed)
-uniform float uShadowIntensity;   // 1 = the key goes fully dark in shadow (what the engine does)
-uniform float uShadowNormalBias;  // WORLD units (already scaled by the map texel size on the CPU)
-uniform float uShadowDepthBias;   // normalized-depth units
-uniform int uShadowPcfRadius;     // kernel is (2r+1)^2 taps; 0 = single tap, like the FO4 forward
-uniform vec2 uShadowTexelUV;      // PCF tap STEP in UV: (softness / radius) / mapSize"
+uniform float uShadowIntensity;   // 1 = the light goes fully dark in shadow (what the engine does)
+uniform float uShadowNormalBias;  // WORLD units, SCALAR: see below
+uniform float uShadowDepthBias[MAX_SHADOW_LIGHTS];  // normalized-depth units, PER LAYER
+uniform int  uShadowPcfRadius;    // kernel is (2r+1)^2 taps; 0 = single tap, like the FO4 forward
+uniform vec2 uShadowTexelUV;      // PCF tap STEP in UV: (softness / radius) / ALLOCATED size, SCALAR
+uniform float uShadowUvScale[MAX_SHADOW_LIGHTS];  // logical / allocated, PER LAYER. 1.0 = full layer.
+// WHY uShadowUvScale EXISTS. The wide GROUND maps size themselves from the projected footprint, which
+// is altitude / tan(elevation) -- and orbiting moves every light-s elevation on every frame of the
+// drag. With an adaptive texture size that meant Release + TexImage3D + CheckFramebufferStatus several
+// times per gesture, i.e. two driver sync points inside the draw path. So the texture is ALLOCATED at
+// a fixed size (a function of the config, never of where the user came from) and each layer is DRAWN
+// into a smaller viewport anchored at the corner; this scales the lookup back. The area outside the
+// viewport is not garbage: the pass clears the whole layer (glClear ignores the viewport) to depth
+// 1.0 = nothing occludes, which is exactly what the white border returns.
+// 1.0 is the character map-s value and multiplying by it is exact, so this is a no-op there.
+// WHY THE BIAS AND THE UV SCALE ARE PER-LAYER BUT THE TEXEL STEP AND THE NORMAL BIAS ARE NOT. ShadowMapMath.Fit takes its extent from the
+// BOUNDING SPHERE, which is rotation invariant, so Radius, TexelWorld and DepthRange come out
+// IDENTICAL for every light over the same AABB -- only the ViewProj differs. That is what lets the
+// layers share resolution, filtering and normal bias. The wide GROUND maps are the exception: their
+// extent is the shadow FOOTPRINT, which depends on each light-s elevation, so their DepthRange (and
+// hence the depth bias) is per layer."
 
     ''' <summary>El lookup. Toma la posicion de mundo EXPLICITA (no un varying) porque los tres
     ''' consumidores la obtienen distinto: los iluminados por <c>vWorldPos</c> del vertex shader, el suelo
     ''' construyendola en el propio VS del quad.</summary>
-    Friend Const SharedLookupGlsl As String = "// 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true.
-float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm)
+    Friend Const SharedLookupGlsl As String = "// 1 = fully lit, 0 = fully shadowed. Only ever called when bShadows is true and the light has a layer.
+float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm, in int layer)
 {
 	// NORMAL OFFSET is the primary anti-acne: displacing the sample point along the surface normal by
 	// about one texel kills the self-shadowing of surfaces at a grazing angle to the light WITHOUT the
 	// peter-panning a large constant depth bias causes. It arrives in world units already multiplied by
 	// the texel's world size, so changing the map resolution does not require re-tuning the knob.
-	vec4 lc = matShadowViewProj * vec4(worldPos + worldNrm * uShadowNormalBias, 1.0);
+	vec4 lc = matShadowViewProj[layer] * vec4(worldPos + worldNrm * uShadowNormalBias, 1.0);
 	vec3 p = lc.xyz / lc.w;
 	p = p * 0.5 + 0.5;   // NDC -> [0,1]
 
@@ -2989,17 +3034,21 @@ float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm)
 	if (p.z > 1.0)
 		return 1.0;
 
-	float refDepth = p.z - uShadowDepthBias;
+	float refDepth = p.z - uShadowDepthBias[layer];
 
 	// Hardware PCF: the sampler is in COMPARE_REF_TO_TEXTURE, so every texture() call already returns
 	// the bilinear average of four depth comparisons. The loop widens that to (2r+1)^2 taps. The tap
 	// count is computed, not accumulated: it is known from the radius.
+	// The layer may have been drawn into a smaller viewport than the texture it lives in: bring the
+	// [0,1] of the logical map into the [0,scale] it actually occupies. See uShadowUvScale.
+	vec2 base = p.xy * uShadowUvScale[layer];
+
 	float sum = 0.0;
 	for (int y = -uShadowPcfRadius; y <= uShadowPcfRadius; ++y)
 	{
 		for (int x = -uShadowPcfRadius; x <= uShadowPcfRadius; ++x)
 		{
-			sum += texture(texShadowMap, vec3(p.xy + vec2(float(x), float(y)) * uShadowTexelUV, refDepth));
+			sum += texture(texShadowMap, vec4(base + vec2(float(x), float(y)) * uShadowTexelUV, float(layer), refDepth));
 		}
 	}
 	float side = float(2 * uShadowPcfRadius + 1);
@@ -3359,11 +3408,14 @@ void main(void)
 in vec3 gWorldPos;
 in vec2 gLocal;
 
-// What the ground keeps when the KEY is occluded, per channel: (everything else) / (everything).
-// Derived from the live rig on the CPU, NOT a hand-picked constant -- see PreviewModel.GroundShadowTint.
-// Without it the catcher came out PURE BLACK (factor 1 -> dst*0), which no real shadow is: the ambient
-// and the unshadowed fills still light the ground.
-uniform vec3 uGroundShadowTint;
+// What actually reaches a +Z plane, per channel, in LINEAR radiance -- derived from the live rig on
+// the CPU, never a hand-picked constant (see PreviewModel.SubirAporteDelSuelo). uGroundTotal is everything
+// (ambient sky + every light), uGroundContrib[i] is what the light on LAYER i puts on that plane.
+// Occluding layer i subtracts its contribution and nothing else. Without this the first version
+// multiplied by 1 - a and came out PURE BLACK at Intensity 1, which no real shadow is.
+uniform vec3 uGroundTotal;
+uniform vec3 uGroundContrib[MAX_SHADOW_LIGHTS];
+uniform int  uGroundCount;   // how many wide layers exist; 0 = nothing to draw
 
 out vec4 fragColor;
 
@@ -3384,15 +3436,50 @@ void main(void)
 	if (edge <= 0.0)
 		discard;
 
-	// The plane's normal is world +Z, so the normal-offset of the lookup pushes the sample straight up.
-	float lit = shadowFactorAt(gWorldPos, vec3(0.0, 0.0, 1.0));
-	float a = (1.0 - lit) * edge;
-	if (a <= 0.002)
+	// The plane-s normal is world +Z, so the normal-offset of the lookup pushes the sample straight up.
+	// EVERY casting light gets its own lookup and subtracts its own contribution: that is the same
+	// per-light composition law the lit passes use, evaluated for one fixed normal.
+	vec3 lost = vec3(0.0);
+	for (int i = 0; i < uGroundCount; ++i)
+	{
+		// A LAYER WITH NO CONTRIBUTION IS SKIPPED, NOT MULTIPLIED BY ZERO -- AND THIS BRANCH IS THE ONLY
+		// GUARD THERE IS. A reserved layer whose light is below the catcher-s minimum elevation this frame
+		// still exists and still gets sampled by this loop; its matShadowViewProj is the zero matrix -- it
+		// comes from the `_groundFits(capa) = Nothing` INSIDE the per-layer draw loop of
+		// PreviewModel.RenderShadowPass, which is the only place that leaves a zeroed layer while
+		// uGroundCount is still > 0. (Not from OlvidarEncuadresDeSuelo: that one always ends with
+		// uGroundCount = 0, so this loop does not even run.) The lookup divides by w = 0 and returns NaN. And
+		// 0.0 * NaN is NaN, not 0: without this continue, ONE such layer turns the whole quad black.
+		// There used to be a CPU-side glClear of those layers as well; it was removed because it guarded
+		// nothing -- the coordinates come out NaN whatever depth the layer holds, and the cleared set was
+		// exactly the skipped set. Do not re-add it: fix the skip instead.
+		// The branch is uniform per draw, so it also saves that layer-s PCF kernel.
+		if (dot(uGroundContrib[i], vec3(1.0)) <= 0.0)
+			continue;
+		lost += uGroundContrib[i] * (1.0 - shadowFactorAt(gWorldPos, vec3(0.0, 0.0, 1.0), i));
+	}
+
+	vec3 lin = clamp((uGroundTotal - lost) / max(uGroundTotal, vec3(1e-4)), 0.0, 1.0);
+	// A CHANNEL WITH NO LIGHT AT ALL CANNOT BE SHADOWED: it stays at 1 = no darkening. Without this the
+	// max() above turns a fully dark rig (total = 0) into (0 - 0) / 1e-4 = 0, i.e. a BLACK ground -- the
+	// exact case the previous SafeRatio() handled by returning 1. step(edge, x) is 1 when x >= edge.
+	lin = mix(vec3(1.0), lin, step(vec3(1e-4), uGroundTotal));
+
+	// ENCODED TO DISPLAY BEFORE LEAVING. The ratio above is RADIANCE, but this quad multiplies against
+	// the framebuffer, which holds values that are already encoded: both lit fragments end in
+	// pow(color, 1/2.2) and nobody turns GL_FRAMEBUFFER_SRGB on. Multiplying a linear ratio into an
+	// encoded destination made the GROUND shadow darker than the BODY shadow in the same frame (Studio:
+	// ratio 0.815, correct on-screen factor 0.911; over a background of 128 it came out 104 instead of
+	// 117). Exact, not approximate, for the case that actually happens: the quad depth-tests, so where
+	// the character is in front it does not draw, and its destination is the clear colour or the floor
+	// grid -- neither went through the tonemap.
+	vec3 fac = pow(lin, vec3(1.0 / 2.2));
+	if (all(greaterThan(fac, vec3(0.998))))
 		discard;
 
 	// Multiplicative blend: the caller sets ZERO / SRC_COLOR, so this value MULTIPLIES the framebuffer.
-	// Fully shadowed (a = 1) leaves exactly the tint; fully lit leaves white = the background untouched.
-	fragColor = vec4(mix(vec3(1.0), uGroundShadowTint, a), 1.0);
+	// edge = 0 leaves white = the background untouched.
+	fragColor = vec4(mix(vec3(1.0), fac, edge), 1.0);
 }
 "
 End Module
@@ -3583,6 +3670,63 @@ Public MustInherit Class Shader_Base_Class
         If loc <> -1 Then
             GL.UniformMatrix4(loc, False, value)
         End If
+    End Sub
+
+    ''' <summary>Sube un array de matrices de una sola llamada.
+    ''' <para>⛔ RESUELVE LA LOCATION DEL ELEMENTO [0] Y SUBE N DE CORRIDO. La alternativa —armar
+    ''' <c>"nombre[" &amp; i &amp; "]"</c> por elemento— aloca strings en el camino de dibujo, que es
+    ''' justo lo que este archivo evita en todos lados. GLSL garantiza locations consecutivas para los
+    ''' elementos de un array de uniforms, asi que una sola llamada con count=N es correcta.</para>
+    ''' <para>⚠️ El caller pasa un array REUTILIZADO de floats; no se aloca nada aca.</para></summary>
+    ''' <summary>⛔ EL NOMBRE LLEGA YA CON EL <c>[0]</c>, y no es un detalle de gusto. La version anterior
+    ''' recibia <c>"matShadowViewProj"</c> y hacia <c>name &amp; "[0]"</c> adentro — o sea alocaba una String
+    ''' POR LLAMADA, en el camino de dibujo, mientras su propio doc decia que existia para NO alocar. Eran 8
+    ''' por frame: poco, pero el comentario afirmaba cero y esa clase de mentira es la que hace que alguien
+    ''' mas adelante confie en algo que no pasa. Pasando el literal completo desde el caller, la String es
+    ''' una constante internada y no se aloca nada.</summary>
+    Public Sub SetMatrix4Array(nombreElemento0 As String, valores As Single(), count As Integer)
+        If count <= 0 Then Exit Sub
+        Dim loc As Integer = GetUniformLocationCached(nombreElemento0)
+        If loc <> -1 Then
+            GL.UniformMatrix4(loc, count, False, valores)
+        End If
+    End Sub
+
+    Public Sub SetFloatArray(nombreElemento0 As String, valores As Single(), count As Integer)
+        If count <= 0 Then Exit Sub
+        Dim loc As Integer = GetUniformLocationCached(nombreElemento0)
+        If loc <> -1 Then
+            GL.Uniform1(loc, count, valores)
+        End If
+    End Sub
+
+    Public Sub SetIntArray(nombreElemento0 As String, valores As Integer(), count As Integer)
+        If count <= 0 Then Exit Sub
+        Dim loc As Integer = GetUniformLocationCached(nombreElemento0)
+        If loc <> -1 Then
+            GL.Uniform1(loc, count, valores)
+        End If
+    End Sub
+
+    ''' <summary>Idem para vec3 (el array viene aplanado, 3 floats por elemento).</summary>
+    Public Sub SetVector3Array(nombreElemento0 As String, valores As Single(), count As Integer)
+        If count <= 0 Then Exit Sub
+        Dim loc As Integer = GetUniformLocationCached(nombreElemento0)
+        If loc <> -1 Then
+            GL.Uniform3(loc, count, valores)
+        End If
+    End Sub
+
+    ''' <summary>Bindea una TEXTURE_2D_ARRAY. Existe aparte de <see cref="BindTexture"/> porque el target
+    ''' es parte del ESTADO de la unidad, no del uniform: bindear un array con el metodo de 2D deja el
+    ''' sampler leyendo un target que no tiene nada, y el sintoma es una sombra que no aparece nunca.
+    ''' <para>⛔ LAS UNIDADES 14 Y 15 SON EXCLUSIVAS DE SOMBRAS. Una unidad puede tener bindeados los dos
+    ''' targets a la vez y el sampler elige por su tipo; mezclar ahi un texture2D de otro pase es como se
+    ''' arma un bug que solo aparece con ciertos materiales.</para></summary>
+    Public Sub BindTextureArray(uniformName As String, textureID As Integer, unit As TextureUnit)
+        GL.ActiveTexture(unit)
+        GL.BindTexture(TextureTarget.Texture2DArray, textureID)
+        SetInt(uniformName, unit - TextureUnit.Texture0)
     End Sub
 
     Public Sub BindTexture(uniformName As String, textureID As Integer, unit As TextureUnit)

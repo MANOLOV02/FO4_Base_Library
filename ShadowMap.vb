@@ -2,7 +2,15 @@ Imports System.Runtime.CompilerServices
 Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
-' Sombras proyectadas del previewer (FO4 + SSE). Un solo shadow map ortografico para la KEY del rig.
+' Sombras proyectadas del previewer (FO4 + SSE). Un shadow map ortografico POR LUZ QUE CASTEE, en un
+' array de texturas. Por default castea solo la key; el usuario puede prender las otras tres.
+'
+' ⭐ LA COMPOSICION OCURRE EN EL ACUMULADOR DE LUZ, NO EN UN BUFFER DE SOMBRA. Cada luz multiplica SU
+' PROPIO `diffuse` por SU PROPIA oclusion antes de entrar a directionalLight(). Combinar las N
+' oclusiones en un escalar y multiplicar todo el acumulador —que es la otra lectura posible de
+' "componer las sombras"— oscurece luz que viene de una direccion NO BLOQUEADA, y ademas pierde el
+' color: con esta ley, la sombra de una key calida sobre un piso al que llega un fill frio queda
+' AZULADA, que es lo que pasa de verdad.
 '
 ' ⛔ LA LEY QUE SE REPLICA, y es la unica. Medida en los dos motores (ver memoria
 ' 21-render-sombras-re-y-corpus):
@@ -17,9 +25,15 @@ Imports OpenTK.Mathematics
 ' subsurface) y el especular, y hemiAmbient() queda intacto. Con sombra binaria es identico al motor;
 ' con PCF es la generalizacion suave (el doble multiply del motor es artefacto de un termino 0/1, no ley).
 '
+' ⚠️ EL MOTOR TIENE UNA SOLA DIRECCIONAL (el sol) y por eso sombrea una sola. Las cuatro del preview no
+' son cuatro soles: son un set de estudio para leer la malla. Que las cuatro PUEDAN castear es una
+' herramienta del previewer, no una afirmacion de fidelidad — la ley fiel es "cada direccional que
+' castea ocluye su propio difuso y especular, y el ambiente jamas", y esa se respeta con N igual que
+' con 1. Y `isKeyLight` (transmision + rolloff de subsurface) sigue siendo SOLO la key: castear y
+' hacer-de-sol son dos cosas distintas.
 ' ⛔ EL MECANISMO NO se replica, a proposito. FO4 usa 4 CASCADAS con un tap duro y SSE una MASCARA
 ' SCREEN-SPACE de 4 canales; las dos existen porque el motor cubre una celda entera con varias luces.
-' Aca hay UN personaje y UNA direccional => un solo mapa ajustado al AABB de la escena da texeles
+' Aca hay UN personaje y a lo sumo cuatro luces => un mapa POR LUZ ajustado al AABB de la escena da texeles
 ' sub-milimetricos. Meter cascadas seria complejidad sin nada que la compre.
 Public Structure PreviewShadowSettings
 
@@ -44,7 +58,8 @@ Public Structure PreviewShadowSettings
     ''' comentario entre los elementos de un inicializador de objeto (BC30201).</para></summary>
     Public Property SoftnessTexels As Single
 
-    ''' <summary>Cuanto oscurece la sombra: `factor = 1 - Intensity*(1-crudo)`. 1 = la key se apaga del
+    ''' <summary>Cuanto oscurece la sombra: `factor = 1 - Intensity*(1-crudo)`. Es GLOBAL a las N luces
+    ''' casteantes, no de una sola. 1 = la luz ocluida se apaga del
     ''' todo en sombra (lo que hace el motor). Menos de 1 NO es fiel; existe porque en un previewer se
     ''' necesita ver la textura del lado oscuro.</summary>
     Public Property Intensity As Single
@@ -59,13 +74,24 @@ Public Structure PreviewShadowSettings
     Public Property DepthBiasTexels As Single
 
     ''' <summary>Dibuja la silueta del personaje sobre el plano del piso (el "shadow catcher"). DEFAULT OFF. Es el
-    ''' indicio mas legible de todos —sin el, el modelo flota—, pero NO es gratis: obliga a agrandar el
-    ''' encuadre del mapa para que la sombra proyectada quepa (ver ShadowMapMath.ExpandForGroundShadow),
-    ''' o sea texeles mas grandes en el personaje. Por eso es una opcion aparte y no parte de Enabled.</summary>
+    ''' indicio mas legible de todos —sin el, el modelo flota—, pero NO es gratis: reserva un SEGUNDO array
+    ''' de shadow maps, del mismo lado y con las mismas capas que el del personaje, o sea que prenderlo
+    ''' DUPLICA la VRAM de la feature (16 -> 32 MB a 2048 con una luz; 64 -> 128 con las cuatro). Por eso es
+    ''' una opcion aparte y no parte de Enabled.
+    ''' <para>⚠️ Este doc decia que el costo era "agrandar el encuadre del mapa, o sea texeles mas grandes en
+    ''' el personaje". Dejo de ser cierto cuando el receptor paso a tener su PROPIO mapa: hay un check del
+    ''' arnes (<c>[suelo]</c>) que falla precisamente si prender el receptor le cambia el texel al personaje.
+    ''' O sea que habia un gate verde probando que este comentario era falso.</para></summary>
     Public Property GroundShadow As Boolean
 
     ''' <summary>Tope del radio de PCF. No es configurable: acota el costo del kernel en el fragment.</summary>
     Public Const MaxPcfRadius As Integer = 4
+
+    ''' <summary>Cuantas luces del rig pueden castear a la vez. Es la cantidad de luces que tiene
+    ''' <see cref="PreviewLightRig"/> (key + 2 fills + back), no un presupuesto: no hay tope, las cuatro
+    ''' pueden. El numero existe para dimensionar los arrays del GLSL y de los uniforms, y tiene que
+    ''' quedar igual al <c>MAX_SHADOW_LIGHTS</c> del shader — el gate `shadow-slots` compara los dos.</summary>
+    Public Const MaxShadowLights As Integer = 4
 
     Public Shared Function Defaults() As PreviewShadowSettings
         Return New PreviewShadowSettings With {
@@ -155,6 +181,48 @@ Friend Module ShadowMapMath
     ''' los dos, porque si se separan el sintoma es una sombra recortada y nadie lo relaciona con esto.
     ''' </para></summary>
     Friend Const GroundFadeStart As Single = 1.0F / GroundQuadMargin
+
+    ''' <summary>Reparte las capas del shadow map entre las luces del rig que castean.
+    '''
+    ''' <para>⛔ EL ORDEN ES FIJO Y ES PARTE DEL CONTRATO: key, fill izquierdo, fill derecho, back. La
+    ''' capa que le toca a cada luz entra en un uniform que el fragment indexa por LUZ, asi que si el
+    ''' orden dependiera de algo (un diccionario, un filtro con Where, el orden de un ConcurrentBag) dos
+    ''' frames identicos podrian repartir distinto y la sombra saltaria de luz sin que nada avise. Este
+    ''' repo ya se comio el gemelo exacto de eso con el orden de dibujo.</para>
+    '''
+    ''' <para>Una luz que no aporta luz NO recibe capa aunque tenga la casilla puesta: ver
+    ''' <see cref="PreviewLight.CasteaDeVerdad"/>, donde esta el argumento de por que eso es una
+    ''' identidad y no una heuristica.</para></summary>
+    ''' <param name="slots">Salida, longitud <c>PreviewShadowSettings.MaxShadowLights</c>: para cada luz,
+    ''' su capa, o -1 si no castea. El caller provee el array (se llama por frame: alocarlo aca seria
+    ''' basura de GC en el camino de dibujo).</param>
+    ''' <returns>Cuantas capas hacen falta. 0 = ninguna luz castea y la feature queda inerte.</returns>
+    Friend Function SlotsDeSombra(rig As PreviewLightRig, slots() As Integer) As Integer
+        If slots Is Nothing OrElse slots.Length < PreviewShadowSettings.MaxShadowLights Then Return 0
+        Dim n As Integer = 0
+        For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
+            slots(i) = -1
+            If LuzDelRig(rig, i).CasteaDeVerdad() Then
+                slots(i) = n
+                n += 1
+            End If
+        Next
+        Return n
+    End Function
+
+    ''' <summary>La luz i del rig, en el ORDEN CANONICO (0 key, 1 fill izq, 2 fill der, 3 back).
+    ''' <para>⛔ Es la UNICA traduccion indice→luz del proyecto y todo lo demas la usa: el reparto de
+    ''' capas, las direcciones que encuadran cada mapa, las contribuciones del receptor de suelo y los
+    ''' uniforms del fragment. Con dos tablas de orden distintas la sombra de una luz se aplicaria a
+    ''' otra, y eso se ve como "la sombra viene de donde no hay luz" — un sintoma que no apunta aca.</para></summary>
+    Friend Function LuzDelRig(rig As PreviewLightRig, i As Integer) As PreviewLight
+        Select Case i
+            Case 0 : Return rig.KeyLight
+            Case 1 : Return rig.FillLeft
+            Case 2 : Return rig.FillRight
+            Case Else : Return rig.BackLight
+        End Select
+    End Function
 
     ''' <summary>El encuadre resuelto: las dos matrices, la combinada que consume el fragment, y el
     ''' tamano de un texel en unidades de mundo (que es lo que escala los dos bias).</summary>
@@ -358,14 +426,17 @@ Friend Module ShadowMapMath
     ''' aparece y desaparece mientras se orbita. La mitigacion que este doc invocaba —"el ratio es mucho
     ''' mas estable que los radios porque salen del mismo AABB"— NO aplica a este caso: aca el numerador
     ''' lo mueve la camara y el denominador no.</para>
-    ''' <para>⚠️ SIGUE SIN HISTERESIS igual, y a proposito: el argumento de arriba (un frame tiene que ser
-    ''' funcion de (escena, config), no de por donde pasaste) no cambia porque haya un gesto mas que lo
-    ''' dispare. La mitigacion que NO costaria determinismo seria reservar siempre la textura del maximo y
-    ''' dibujar adentro con un viewport del tamano logico —misma rasterizacion, misma imagen, sin recrear
-    ''' nada—, al precio de VRAM constante y de escalar las UV en el muestreo. No esta hecho: queda
-    ''' anotado aca para que la proxima vuelta parta de esto y no de "no tiene solucion sin historia".</para>
-    ''' <para>Se elige convivir con eso: la alternativa era la histeresis, y un resultado que depende de por
-    ''' donde pasaste no se ve de ninguna forma, ni en pantalla ni en un gate. Un tiron ocasional si.</para>
+    ''' <para>✅⭐ TODO EL PARRAFO ANTERIOR DESCRIBE UN PROBLEMA QUE YA NO EXISTE, y se conserva porque
+    ''' explica POR QUE la solucion es la que es. La mitigacion que este doc anotaba como pendiente —
+    ''' "reservar siempre la textura del maximo y dibujar adentro con un viewport del tamano logico: misma
+    ''' rasterizacion, misma imagen, sin recrear nada, al precio de VRAM constante y de escalar las UV" —
+    ''' <b>ESTA IMPLEMENTADA</b>. Vive en <see cref="UvScaleDeCapa"/>, doce lineas mas abajo, y en el bloque
+    ''' del mapa ancho de <c>PreviewModel.RenderShadowPass</c>.</para>
+    ''' <para>Esta funcion sigue devolviendo lo mismo que siempre y con la misma firma: lo que cambio es que
+    ''' su resultado ya no dimensiona la TEXTURA sino el VIEWPORT con el que se dibuja adentro de una textura
+    ''' de tamano fijo. O sea que la resolucion —lo unico que este numero decide— es identica a la de antes,
+    ''' y las recreaciones por cruzar una frontera de potencia de dos son cero. Sigue SIN HISTERESIS, que era
+    ''' la unica alternativa considerada y la que costaba determinismo.</para>
     ''' </para></summary>
     Friend Function GroundMapSize(charRadius As Single, groundRadius As Single, mapSize As Integer) As Integer
         If mapSize <= 0 Then Return 0
@@ -376,6 +447,26 @@ Friend Module ShadowMapMath
         If Single.IsNaN(ratio) Then ratio = 1.0F
         Dim pedido As Integer = PreviewShadowSettings.RoundToPowerOfTwo(CInt(mapSize * ratio / GroundTexelRatioTarget))
         Return Math.Clamp(pedido, minimo, mapSize)
+    End Function
+
+    ''' <summary>Escala de UV de una capa que se dibujo en un VIEWPORT mas chico que la textura.
+    '''
+    ''' <para>⭐ ES LA MITAD DE LA SOLUCION AL CHURN DEL MAPA ANCHO. La otra mitad es reservar siempre el
+    ''' tamano maximo. El tamano que pide el encuadre del suelo depende de <c>altura / tan(elevacion)</c>
+    ''' y ORBITAR mueve esa elevacion en cada frame del arrastre: con el tamano adaptativo, el ratio
+    ''' cruzaba las fronteras de potencia de dos varias veces por gesto y cada cruce era Release() +
+    ''' TexImage3D + CheckFramebufferStatus, o sea dos sincronizaciones con el driver en el camino de
+    ''' dibujo. Reservando fijo y dibujando en un viewport chico la imagen es LA MISMA —misma
+    ''' rasterizacion, mismo texel— y no se recrea nada.</para>
+    ''' <para>⛔ Y NO REINTRODUCE HISTORIA: el tamano reservado sale de la config, no de por donde paso el
+    ''' usuario. Esa era la unica objecion contra la histeresis, y esta solucion no la tiene.</para>
+    ''' <para>La region de la textura fuera del viewport NO es basura: el pase la limpia entera (glClear
+    ''' ignora el viewport) a profundidad 1.0 = nada ocluye, que es lo mismo que devuelve el borde
+    ''' blanco. Un kernel de PCF que se pase del borde logico lee iluminado, igual que hoy.</para></summary>
+    Friend Function UvScaleDeCapa(tamanoLogico As Integer, tamanoReservado As Integer) As Single
+        If tamanoReservado <= 0 OrElse tamanoLogico <= 0 Then Return 1.0F
+        If tamanoLogico > tamanoReservado Then Return 1.0F
+        Return CSng(tamanoLogico) / CSng(tamanoReservado)
     End Function
 
     ''' <summary>Relacion de texeles a la que se apunta entre el mapa del suelo y el del personaje.
@@ -420,6 +511,16 @@ Friend Class ShadowMapTarget
     Private _fbo As Integer
     Private _tex As Integer
     Private _size As Integer
+    Private _layers As Integer
+    ''' <summary>Que capa esta attacheada al FBO ahora mismo. -1 = ninguna (recien creado o liberado).
+    ''' ⛔ Tiene que resetearse en <see cref="Release"/> Y quedar en 0 despues del attach de
+    ''' <see cref="Ensure"/>: si mintiera, <see cref="BindForWrite"/> saltearia el attach y el pase
+    ''' escribiria la profundidad de una luz ENCIMA de la capa de otra.</summary>
+    Private _capaAttachada As Integer = -1
+    ''' <summary>La ultima combinacion (lado, capas) con la que <see cref="Ensure"/> fallo, para no
+    ''' reintentarla en cada frame. -1/-1 = no hay ninguna. Ver el comentario de Ensure.</summary>
+    Private _falloSize As Integer = -1
+    Private _falloLayers As Integer = -1
 
     Friend ReadOnly Property Texture As Integer
         Get
@@ -433,62 +534,148 @@ Friend Class ShadowMapTarget
         End Get
     End Property
 
+    Friend ReadOnly Property Layers As Integer
+        Get
+            Return _layers
+        End Get
+    End Property
+
+    ''' <summary>Cuantas veces se creo la textura desde que arranco el proceso. **ES UN INSTRUMENTO**, no
+    ''' un estado del render: nadie lo lee para decidir nada.
+    ''' <para>⭐ EXISTE PORQUE LA AFIRMACION QUE HAY QUE PROBAR ES NEGATIVA: "orbitar no recrea nada". Eso no
+    ''' se puede ver en un pixel ni medir en un A/B de imagen —el frame sale igual se haya recreado o no—,
+    ''' y en ms se pierde adentro del ruido. Lo unico que lo demuestra es CONTAR. El arnes barre la camara
+    ''' por el rango que hacia cruzar las dos fronteras de potencia de dos y exige que este contador no se
+    ''' mueva; sin el, el arreglo del churn seria una afirmacion sin gate, que es como se cuela una
+    ''' regresion que nadie ve hasta que alguien se queja de tirones.</para>
+    ''' <para>Un Integer compartido alcanza: el pase de sombra corre en el hilo de GL y nada mas lo toca.</para>
+    ''' <para>⚠️ ES <c>Shared</c>, asi que SUMA LOS DOS TARGETS (el del personaje y el del receptor de suelo).
+    ''' Un arranque con el suelo prendido cuenta 2, no 1. El check tiene que afirmar que no se MUEVE, no un
+    ''' valor absoluto.</para>
+    ''' <para>⚠️ ESTO VIAJA EN EL BINARIO QUE SE DISTRIBUYE, contra la regla de que los self-tests no viajan
+    ''' — y es a proposito. La regla tiene su excepcion declarada: lo que depende del rig AJENO (driver, GPU)
+    ''' no puede ser un gate de build y necesita medirse en el proceso real. Lo que viaja es UN incremento en
+    ''' el camino de creacion de una textura, que ocurre cero veces por frame en regimen; la LOGICA del check
+    ''' vive en Tools/ShadowGate y no se distribuye.</para></summary>
+    Friend Shared Property VecesRecreada As Integer
+
     Friend ReadOnly Property Ready As Boolean
         Get
             Return _fbo > 0 AndAlso _tex > 0
         End Get
     End Property
 
-    ''' <summary>(Re)crea el target si cambio el tamano. Devuelve False si el FBO no queda completo —
-    ''' el caller tiene que degradar a "sin sombras", NO dibujar igual.</summary>
-    Friend Function Ensure(size As Integer) As Boolean
-        If size <= 0 Then Return False
-        If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size Then Return True
+    ''' <summary>(Re)crea el target si cambio el tamano o la cantidad de capas. Devuelve False si el FBO
+    ''' no queda completo — el caller tiene que degradar a "sin sombras", NO dibujar igual.
+    ''' <para>⭐ ES UN <c>TEXTURE_2D_ARRAY</c> Y NO N TEXTURAS SUELTAS, por tres razones medidas:
+    ''' (1) las unidades de textura son un recurso escaso —el render ya usa 0..8 y 10, y quedan 11-13 y
+    ''' 15— y cuatro luces con receptor de suelo pedirian OCHO; con el array son dos (14 y 15).
+    ''' (2) todas las capas comparten tamano, filtro, bias y borde POR CONSTRUCCION: el extent de
+    ''' <c>ShadowMapMath.Fit</c> sale de la esfera envolvente, que es invariante a la rotacion, asi que
+    ''' <c>TexelWorld</c> y <c>DepthRange</c> son identicos para las cuatro luces y lo unico que cambia
+    ''' es la ViewProj. (3) la capa es una COORDENADA del sampler, no un indice de sampler: no hay
+    ''' indexado dinamico de samplers, que es la trampa que tendria la version con N texturas.
+    ''' ⛔ Un ATLAS 2x2 en una sola textura 2D estaba descartado por correctitud: el kernel de PCF cruza
+    ''' el borde del tile y lee la profundidad del vecino.</para></summary>
+    Friend Function Ensure(size As Integer, layers As Integer) As Boolean
+        If size <= 0 OrElse layers <= 0 Then Return False
+        If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size AndAlso _layers = layers Then Return True
+        ' ⛔⛔ NO SE REINTENTA UNA COMBINACION QUE YA FALLO. Sin esto, una reserva que no entra en la placa
+        ' se reintenta ENTERA EN CADA FRAME: GenTexture + TexImage3D + GenFramebuffer +
+        ' CheckFramebufferStatus + DeleteTexture + una linea de log, decenas de veces por segundo mientras
+        ' el usuario arrastra la camara. Se ve como un cuelgue, y el log dice "FBO incompleto", que no
+        ' apunta a la causa real (no entra en VRAM).
+        ' El camino existia antes y era teorico: una capa a 2048 son 16 MB. Lo abrio ESTE cambio, porque la
+        ' reserva paso a ser lado^2 x 4 x CAPAS x DOS ARRAYS — con MapSize 8192 (que Sanitized permite, y al
+        ' que se llega escribiendo 6000 a mano en el config: RoundToPowerOfTwo(6000) = 8192) y las cuatro
+        ' luces casteando son 2 GB.
+        ' El centinela se limpia solo en cuanto cambia el pedido, asi que bajar la calidad o destildar una
+        ' luz vuelve a intentar en el frame siguiente.
+        ' ⚠️ PERO SOBREVIVE A UN CICLO DE APAGAR/PRENDER con los MISMOS (lado, capas): `Release()` no lo
+        ' toca, y el camino de apagado pasa justo por ahi. O sea que si el usuario libera VRAM y vuelve a
+        ' tildar "Cast shadows" sin cambiar nada mas, sigue sin reintentar. Es deliberado: limpiarlo en
+        ' `Release()` seria el arreglo obvio y el equivocado, porque el propio camino de FALLO llama a
+        ' SoltarMapasDeSombra() -> Release() en cada frame, y con eso vuelve exactamente la tormenta de
+        ' reintentos que este centinela existe para cortar. La salida es cambiar la calidad o una casilla de
+        ' luz, que es justo lo que dice el log.
+        If size = _falloSize AndAlso layers = _falloLayers Then Return False
         Release()
 
+        ' Instrumento del arnes, no logica: ver VecesRecreada. Se incrementa donde REALMENTE se paga el
+        ' costo (crear la textura + el FBO), no en la entrada del metodo, que sale antes por el fast-path.
+        VecesRecreada += 1
         _tex = GL.GenTexture()
-        GL.BindTexture(TextureTarget.Texture2D, _tex)
-        GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.DepthComponent24, size, size, 0,
-                      PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero)
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
+        GL.BindTexture(TextureTarget.Texture2DArray, _tex)
+        GL.TexImage3D(TextureTarget.Texture2DArray, 0, PixelInternalFormat.DepthComponent24,
+                      size, size, layers, 0, PixelFormat.DepthComponent, PixelType.Float, IntPtr.Zero)
+        GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureMinFilter, CInt(TextureMinFilter.Linear))
+        GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureMagFilter, CInt(TextureMagFilter.Linear))
         ' CLAMP_TO_BORDER + borde 1.0 => todo lo que cae FUERA del mapa lee "sin ocluir". Con CLAMP_TO_EDGE
-        ' el borde del mapa se estira y proyecta una sombra falsa por toda la escena.
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToBorder))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToBorder))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureBorderColor, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
-        ' Modo comparacion: el sampler2DShadow del fragment devuelve el PCF por hardware.
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareMode, CInt(TextureCompareMode.CompareRefToTexture))
-        GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareFunc, CInt(All.Lequal))
-        GL.BindTexture(TextureTarget.Texture2D, 0)
+        ' el borde del mapa se estira y proyecta una sombra falsa por toda la escena. En un array el wrap
+        ' aplica a S y T; la tercera coordenada es la capa y no se filtra.
+        GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureWrapS, CInt(TextureWrapMode.ClampToBorder))
+        GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureWrapT, CInt(TextureWrapMode.ClampToBorder))
+        GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureBorderColor, New Single() {1.0F, 1.0F, 1.0F, 1.0F})
+        ' Modo comparacion: el sampler2DArrayShadow del fragment devuelve el PCF por hardware.
+        GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureCompareMode, CInt(TextureCompareMode.CompareRefToTexture))
+        GL.TexParameter(TextureTarget.Texture2DArray, TextureParameterName.TextureCompareFunc, CInt(All.Lequal))
+        GL.BindTexture(TextureTarget.Texture2DArray, 0)
 
         Dim prevFbo As Integer = GL.GetInteger(GetPName.FramebufferBinding)
         _fbo = GL.GenFramebuffer()
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
-        GL.FramebufferTexture2D(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment,
-                                TextureTarget.Texture2D, _tex, 0)
+        ' Se attachea la capa 0 solo para poder verificar completeness aca: el pase re-attachea la capa
+        ' que va a escribir antes de cada dibujo (BindForWrite). El completeness no depende de la capa.
+        GL.FramebufferTextureLayer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, _tex, 0, 0)
+        _capaAttachada = 0
         GL.DrawBuffer(DrawBufferMode.None)
         GL.ReadBuffer(ReadBufferMode.None)
         Dim status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, prevFbo)
 
         If status <> FramebufferErrorCode.FramebufferComplete Then
-            Logger.Log($"[SHADOW] FBO incompleto ({status}) con size={size}: sombras desactivadas este frame.")
+            Logger.Log($"[SHADOW] FBO incompleto ({status}) con size={size} layers={layers} " &
+                       $"({CLng(size) * size * 4L * layers \ (1024L * 1024L)} MB): sombras desactivadas. " &
+                       "No se reintenta con estos valores hasta que cambien (calidad o cantidad de luces).")
             Release()
+            _falloSize = size
+            _falloLayers = layers
             Return False
         End If
 
         _size = size
+        _layers = layers
+        _falloSize = -1
+        _falloLayers = -1
         Return True
     End Function
 
-    ''' <summary>Bindea el FBO y deja el viewport en el tamano del mapa. NO consulta el estado previo:
-    ''' el caller lo captura UNA vez antes del primer mapa y lo restaura despues del ultimo, asi que un
-    ''' glGet por pase seria un resultado que se descarta. Y los glGet de framebuffer son justo los que
-    ''' fuerzan a varios drivers a vaciar la lista de comandos diferida.</summary>
-    Friend Sub BindForWrite()
+    ''' <summary>Bindea el FBO apuntando a UNA capa y deja el viewport en el tamano del mapa. NO consulta
+    ''' el estado previo: el caller lo captura UNA vez antes del primer mapa y lo restaura despues del
+    ''' ultimo, asi que un glGet por pase seria un resultado que se descarta. Y los glGet de framebuffer
+    ''' son justo los que fuerzan a varios drivers a vaciar la lista de comandos diferida.
+    ''' <para>⛔ NO se re-verifica completeness por capa: cambiar de capa dentro del mismo array no puede
+    ''' volver incompleto un FBO que ya lo estaba, y ese <c>CheckFramebufferStatus</c> por capa seria un
+    ''' punto de sincronizacion con el driver por luz y por frame.</para></summary>
+    ''' <param name="viewport">Lado del area que se dibuja, en texeles. Menor que <see cref="Size"/> cuando
+    ''' la capa se reservo mas grande de lo que necesita — ver ShadowMapMath.UvScaleDeCapa. El resto de la
+    ''' capa lo deja el Clear del pase en profundidad 1.0 = nada ocluye.</param>
+    Friend Sub BindForWrite(layer As Integer, viewport As Integer)
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, _fbo)
-        GL.Viewport(0, 0, _size, _size)
+        ' ⛔ EL ATTACH SOLO SI LA CAPA CAMBIO. Cambiar un attachment es de las llamadas que fuerzan
+        ' revalidacion del FBO en varios drivers — la misma clase de costo que este mismo metodo se toma el
+        ' trabajo de evitar mas abajo rechazando un glGet y un CheckFramebufferStatus por capa. Re-attachear
+        ' incondicionalmente costaba una revalidacion por capa y por frame, y en el caso POR DEFAULT (una
+        ' sola luz, siempre la capa 0) las 60 del segundo eran todas redundantes.
+        If layer <> _capaAttachada Then
+            GL.FramebufferTextureLayer(FramebufferTarget.Framebuffer, FramebufferAttachment.DepthAttachment, _tex, 0, layer)
+            _capaAttachada = layer
+        End If
+        ' ⛔ EL VIEWPORT VA DESDE (0,0) Y ES CUADRADO. El encuadre de la luz mapea su NDC a [0,1] de la
+        ' region logica, y la escala de UV del fragment asume justo eso: origen en la esquina y lado
+        ' igual en los dos ejes. Centrar la region, o usar lados distintos, obliga a subir un offset
+        ' ademas de la escala y el sintoma seria una sombra corrida media pantalla.
+        GL.Viewport(0, 0, viewport, viewport)
     End Sub
 
     Friend Sub Release()
@@ -501,6 +688,8 @@ Friend Class ShadowMapTarget
             _tex = 0
         End If
         _size = 0
+        _layers = 0
+        _capaAttachada = -1
     End Sub
 
     Public Sub Dispose() Implements IDisposable.Dispose

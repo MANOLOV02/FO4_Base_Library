@@ -189,8 +189,12 @@ Partial Public Class LightRigForm
         ' sola ya mandaba el combo a "Custom"— y encima tapaba el problema real, que era que el modelo se
         ' cuantizaba. Eso lo arregla AnguloDesdeNud; acá alcanza con el epsilon de siempre.
         Dim dAz As Single = Math.Abs(((a.AzimuthDeg - b.AzimuthDeg) Mod 360.0F + 540.0F) Mod 360.0F - 180.0F)
+        ' ⛔ EL FLAG DE CASTEO ENTRA EN LA COMPARACION. Sin esto, prender la sombra de un fill dejaba el
+        ' combo diciendo "Studio" cuando el rig ya NO es Studio — y Apply habilitado, o sea un click de
+        ' distancia de perder el cambio sin aviso.
         Return CasiIgual(a.Strength, b.Strength) AndAlso ColorCoincide(a.Color, b.Color) AndAlso
-               dAz <= RigMatchEpsilon AndAlso CasiIgual(a.ElevationDeg, b.ElevationDeg)
+               dAz <= RigMatchEpsilon AndAlso CasiIgual(a.ElevationDeg, b.ElevationDeg) AndAlso
+               a.CastsShadow = b.CastsShadow
     End Function
 
     Private Shared Function RigCoincide(a As PreviewLightRig, b As PreviewLightRig) As Boolean
@@ -231,6 +235,14 @@ Partial Public Class LightRigForm
         CargarAngulo(tL_Az, rig.FillLeft.AzimuthDeg) : CargarAngulo(tL_El, rig.FillLeft.ElevationDeg)
         CargarAngulo(tR_Az, rig.FillRight.AzimuthDeg) : CargarAngulo(tR_El, rig.FillRight.ElevationDeg)
         CargarAngulo(tB_Az, rig.BackLight.AzimuthDeg) : CargarAngulo(tB_El, rig.BackLight.ElevationDeg)
+
+        ' Quien castea es parte del RIG (viaja con el preset), no de Setting_PreviewShadows_*: por eso se
+        ' carga acá con las otras propiedades de luz y se vuelca por VolcarUIenModelo, que es lo que hace
+        ' que tocarlo marque el combo de presets como "Custom" — que en este caso SI es lo que significa.
+        chkCastKey.Checked = rig.KeyLight.CastsShadow
+        chkCastFillL.Checked = rig.FillLeft.CastsShadow
+        chkCastFillR.Checked = rig.FillRight.CastsShadow
+        chkCastBack.Checked = rig.BackLight.CastsShadow
 
         ' Ambient = 3 perillas independientes: intensidad, hemisferio (ground level) y tintes.
         tambient.Value = rig.AmbientIntensity
@@ -383,8 +395,20 @@ Partial Public Class LightRigForm
         ' Este dialogo no conoce la camara y no tiene por que conocerla: lo honesto es NO decidir por el
         ' usuario cuando el resultado depende de algo que va a cambiar en cuanto mueva la vista.
         Dim sigueALaCamara = Config_App.Current.Setting_LightsFollowCamera
-        Dim elev = Config_App.Current.ActiveLights().KeyLight.ElevationDeg
-        Dim puede = sigueALaCamara OrElse elev >= ElevacionMinima
+        ' ⛔ LA CONDICION ES SOBRE EL CONJUNTO DE CASTERS, no sobre la key. Desde que cualquier luz puede
+        ' castear, el receptor se dibuja si AL MENOS UNA de las que castean esta por encima del corte: con
+        ' la key rasante y un fill alto hay sombra de piso perfectamente valida, y el cartel decia que no.
+        Dim rigActual = Config_App.Current.ActiveLights()
+        Dim puede As Boolean = sigueALaCamara
+        If Not puede Then
+            For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
+                Dim l = ShadowMapMath.LuzDelRig(rigActual, i)
+                If l.CasteaDeVerdad() AndAlso l.ElevationDeg >= ElevacionMinima Then
+                    puede = True
+                    Exit For
+                End If
+            Next
+        End If
         If sigueALaCamara Then
             ' ⛔ CORTO: el gate `ui-layout` del ShadowGate mide el ancho real del control contra el interior
             ' del grupo, y un texto de una linea mas largo que el original lo saca del recuadro. Ya me paso
@@ -392,9 +416,13 @@ Partial Public Class LightRigForm
             chkGroundShadow.Text = "Shadow on the ground (follows the camera)"
         Else
             chkGroundShadow.Text = If(puede, "Shadow on the ground",
-                                      $"Shadow on the ground (needs the key above {ElevacionMinima:0.00} deg)")
+                                      $"Shadow on the ground (needs a casting light above {ElevacionMinima:0.00} deg)")
         End If
         chkGroundShadow.Enabled = puede AndAlso chkShadows.Checked
+        ' ⛔ Y EL CARTEL DE VRAM SE REFRESCA ACA, que es el unico lugar donde se decide `chkGroundShadow.Enabled`
+        ' — el factor que DUPLICA la cuenta. Sin esto, mover el slider de elevacion de la ultima luz que
+        ' calificaba dejaba el cartel mostrando el doble, sin que nada lo volviera a llamar.
+        ActualizarCartelDeVram()
     End Sub
 
     Private Sub ActualizarHabilitadoWelding()
@@ -427,7 +455,24 @@ Partial Public Class LightRigForm
                                                   ActualizarHabilitadoSombras()
                                                   VolcarSombrasEnModelo()
                                               End Sub
-        AddHandler chkGroundShadow.CheckedChanged, Sub(sender, e) VolcarSombrasEnModelo()
+        ' ⛔ VAN A VolcarUIenModelo (el rig) Y NO A VolcarSombrasEnModelo: el flag vive en el rig. Cruzarlos
+        ' escribiria el rig en Setting_PreviewShadows_* y viceversa, y el sintoma seria que la casilla se
+        ' olvida al cerrar el dialogo.
+        ' ⛔ EL ORDEN IMPORTA Y ESTABA AL REVES. El cartel de VRAM lee el RIG (con el mismo predicado que el
+        ' render) y el habilitado del receptor de suelo, y las dos cosas las actualiza VolcarUIenModelo: si
+        ' el cartel corre ANTES, muestra el estado anterior al click. Se veia al apagar la ultima luz que
+        ' calificaba para el receptor: el cartel seguia contando dos juegos de mapas y nada lo volvia a
+        ' llamar. VolcarUIenModelo primero, cartel despues.
+        For Each c In New CheckBox() {chkCastKey, chkCastFillL, chkCastFillR, chkCastBack}
+            AddHandler c.CheckedChanged, Sub(sender, e)
+                                             VolcarUIenModelo()
+                                             ActualizarCartelDeVram()
+                                         End Sub
+        Next
+        AddHandler chkGroundShadow.CheckedChanged, Sub(sender, e)
+                                                       VolcarSombrasEnModelo()
+                                                       ActualizarCartelDeVram()
+                                                   End Sub
         AddHandler chkLightsFollowCamera.CheckedChanged, Sub(sender, e)
                                                              If _preventchanges Then Return
                                                              Config_App.Current.Setting_LightsFollowCamera = chkLightsFollowCamera.Checked
@@ -449,6 +494,7 @@ Partial Public Class LightRigForm
                                                               ' que no es una eleccion del usuario.
                                                               If Not _preventchanges Then _mapSizeFueraDeLista = 0
                                                               VolcarSombrasEnModelo()
+                                                              ActualizarCartelDeVram()
                                                           End Sub
         AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
         AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
@@ -541,10 +587,10 @@ Partial Public Class LightRigForm
         ' El rig vivo entra como referencia para que los angulos sobrevivan al redondeo del NUD.
         Dim ant = Config_App.Current.ActiveLights()
         Dim rig As New PreviewLightRig With {
-            .KeyLight = LeerLuz(tbKey, btnKeyColor, tK_Az, tK_El, ant.KeyLight),
-            .FillLeft = LeerLuz(tbFillL, btnFillLColor, tL_Az, tL_El, ant.FillLeft),
-            .FillRight = LeerLuz(tbFillR, btnFillRColor, tR_Az, tR_El, ant.FillRight),
-            .BackLight = LeerLuz(tbBack, btnBackColor, tB_Az, tB_El, ant.BackLight),
+            .KeyLight = LeerLuz(tbKey, btnKeyColor, tK_Az, tK_El, chkCastKey, ant.KeyLight),
+            .FillLeft = LeerLuz(tbFillL, btnFillLColor, tL_Az, tL_El, chkCastFillL, ant.FillLeft),
+            .FillRight = LeerLuz(tbFillR, btnFillRColor, tR_Az, tR_El, chkCastFillR, ant.FillRight),
+            .BackLight = LeerLuz(tbBack, btnBackColor, tB_Az, tB_El, chkCastBack, ant.BackLight),
             .AmbientIntensity = CSng(tambient.Value),
             .AmbientGroundLevel = CSng(tGroundLevel.Value),
             .AmbientSkyColor = RigColor.FromColor(btnAmbSky.BackColor),
@@ -596,6 +642,11 @@ Partial Public Class LightRigForm
     ''' mueva Softness diez minutos preguntandose por que no pasa nada.</summary>
     Private Sub ActualizarHabilitadoSombras()
         Dim on_ = chkShadows.Checked
+        chkCastKey.Enabled = on_
+        chkCastFillL.Enabled = on_
+        chkCastFillR.Enabled = on_
+        chkCastBack.Enabled = on_
+        ActualizarCartelDeVram()
         lblShadowQuality.Enabled = on_
         cmbShadowQuality.Enabled = on_
         lblShadowSoft.Enabled = on_
@@ -604,6 +655,45 @@ Partial Public Class LightRigForm
         tShadowStrength.Enabled = on_
         ' El receptor de suelo tiene ADEMAS su propia condicion (elevacion de la key). Una sola fuente.
         ActualizarAvisoDeSuelo()
+    End Sub
+
+    ''' <summary>Dice cuantos mapas y cuanta VRAM cuesta la configuracion actual. NO es un tope: no hay
+    ''' tope, las cuatro luces pueden castear. Es la alternativa honesta a un cap mudo — quien decide los
+    ''' bytes es el usuario, y para decidir necesita el numero.
+    ''' <para>La cuenta es lado^2 x 4 bytes (DepthComponent24 se almacena en 32 bits en todo driver de
+    ''' escritorio) x capas, y por DOS si el receptor de suelo esta activo: desde que su array se reserva
+    ''' fijo —del mismo lado y con las mismas capas que el del personaje, que es lo que evita recrearlo al
+    ''' orbitar— prenderlo DUPLICA exactamente la reserva. Este doc decia "se menciona sin numero en vez de
+    ''' inventarlo", que era cierto cuando el mapa ancho se dimensionaba solo y ya no lo es: ahora el numero
+    ''' se conoce y decir la mitad de un costo es peor que no decirlo.</para></summary>
+    Private Sub ActualizarCartelDeVram()
+        ' ⛔ CUENTA CON EL MISMO PREDICADO QUE EL RENDER, no las casillas tildadas. `SlotsDeSombra` reparte
+        ' capas con `CasteaDeVerdad()`, que descarta la luz que no APORTA luz (Strength 0 o color negro):
+        ' una luz tildada y apagada no reserva un byte. Contando `Checked` el cartel cobraba VRAM que la GPU
+        ' no reserva — un error "del lado seguro", pero el doc de aca abajo afirma ser LA cuenta, y una
+        ' cuenta que sobra no es la cuenta.
+        Dim rigActual = Config_App.Current.ActiveLights()
+        Dim n As Integer = 0
+        For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
+            If ShadowMapMath.LuzDelRig(rigActual, i).CasteaDeVerdad() Then n += 1
+        Next
+        lblShadowVram.Enabled = chkShadows.Checked
+        If Not chkShadows.Checked OrElse n = 0 Then
+            lblShadowVram.Text = ""
+            ToolTip1.SetToolTip(lblShadowVram, "")
+            Exit Sub
+        End If
+        Dim sh = Config_App.Current.ActiveShadows().Sanitized()
+        Dim lado As Integer = sh.MapSize
+        ' El receptor de suelo reserva su propio array, del MISMO lado y con las MISMAS capas (reserva
+        ' fija: es lo que evita recrearlo al orbitar). O sea que prenderlo DUPLICA la cuenta, y decir la
+        ' mitad de un costo es peor que no decirlo.
+        Dim juegos As Integer = If(chkGroundShadow.Checked AndAlso chkGroundShadow.Enabled, 2, 1)
+        Dim mb As Double = CDbl(lado) * lado * 4.0 * n * juegos / (1024.0 * 1024.0)
+        lblShadowVram.Text = $"{mb:0} MB"
+        ToolTip1.SetToolTip(lblShadowVram,
+            $"{n * juegos} shadow map(s) of {lado}x{lado}" &
+            If(juegos = 2, " (the ground catcher allocates its own set).", "."))
     End Sub
 
     ''' <summary>MapSize del config cuando NO esta entre las opciones del combo (0 = esta en la lista).
@@ -713,11 +803,12 @@ Partial Public Class LightRigForm
 
     Private Shared Function LeerLuz(strength As TinySliderTextBox, swatch As Button,
                                     azimuth As TinySliderTextBox, elevation As TinySliderTextBox,
-                                    actual As PreviewLight) As PreviewLight
+                                    castea As CheckBox, actual As PreviewLight) As PreviewLight
         Return New PreviewLight(CSng(strength.Value),
                                 azimuthDeg:=AnguloDesdeNud(azimuth, actual.AzimuthDeg),
                                 elevationDeg:=AnguloDesdeNud(elevation, actual.ElevationDeg)) With {
-            .Color = RigColor.FromColor(swatch.BackColor)}
+            .Color = RigColor.FromColor(swatch.BackColor),
+            .CastsShadow = castea.Checked}
     End Function
 
     ''' <summary>Carga un rig completo en la UI sin disparar un evento por control (un solo

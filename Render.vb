@@ -5129,7 +5129,9 @@ Public Class PreviewModel
         ' esta lista es lo unico que quedaria referenciando las mallas del NPC anterior.
         _shadowCasters.Clear()
         _shadowActive = False
+        _shadowCount = 0
         _groundActive = False
+        _groundCount = 0
         meshes.Clear()
         OpaqueMeshes.Clear()
         CutoutMeshes.Clear()
@@ -5164,6 +5166,31 @@ Public Class PreviewModel
         Public Fill0Diffuse As Vector3, Fill0Dir As Vector3
         Public Fill1Diffuse As Vector3, Fill1Dir As Vector3
         Public BackDiffuse As Vector3, BackDir As Vector3
+
+        ''' <summary>La direccion de la luz i en el ORDEN CANONICO de ShadowMapMath.LuzDelRig
+        ''' (0 key, 1 fill izq, 2 fill der, 3 back). ⛔ Devuelve la direccion YA RESUELTA de este frame
+        ''' —o sea con follow-camera aplicado si esta prendido—, que es la MISMA que va a los uniforms
+        ''' del fragment. Tomarla del rig crudo permitiria que la sombra se proyecte desde una direccion
+        ''' y la luz venga de otra, y con `Setting_LightsFollowCamera` en True (el default) eso pasaria
+        ''' en cuanto el usuario orbite.</summary>
+        Friend Function DirDeLuz(i As Integer) As Vector3
+            Select Case i
+                Case 0 : Return KeyDir
+                Case 1 : Return Fill0Dir
+                Case 2 : Return Fill1Dir
+                Case Else : Return BackDir
+            End Select
+        End Function
+
+        ''' <summary>El difuso LINEAL de la luz i, mismo orden.</summary>
+        Friend Function DifusoDeLuz(i As Integer) As Vector3
+            Select Case i
+                Case 0 : Return KeyDiffuse
+                Case 1 : Return Fill0Diffuse
+                Case 2 : Return Fill1Diffuse
+                Case Else : Return BackDiffuse
+            End Select
+        End Function
     End Structure
 
     ''' <summary>Rig resuelto para el frame en curso. Lo llena <see cref="RenderAll"/> antes de dibujar y lo
@@ -5238,9 +5265,25 @@ Public Class PreviewModel
     ' Estado del shadow map de ESTE frame. Lo llena RenderShadowPass antes de cualquier draw iluminado y
     ' lo consume ApplyMaterial, que es quien sube los uniforms. Igual que _frameLights: se resuelve una
     ' vez por frame y depende solo de (rig activo, camara, geometria).
-    Private _shadowFit As ShadowMapMath.LightFit
+    ''' <summary>Encuadre de CADA capa del mapa del personaje, indexado por CAPA (no por luz).</summary>
+    Private ReadOnly _shadowFits(PreviewShadowSettings.MaxShadowLights - 1) As ShadowMapMath.LightFit
+    ''' <summary>Luz del rig -> capa, o -1. El fragment lo indexa por LUZ. Orden canonico:
+    ''' ShadowMapMath.LuzDelRig.</summary>
+    Private ReadOnly _shadowSlots(PreviewShadowSettings.MaxShadowLights - 1) As Integer
+    ''' <summary>Cuantas capas tiene el mapa del personaje este frame. 0 = ninguna luz castea.</summary>
+    Private _shadowCount As Integer
     Private _shadowSettings As PreviewShadowSettings
     Private _shadowActive As Boolean
+    ' Buffers REUTILIZADOS para subir los uniforms de array. Campos y no locales por la misma razon que
+    ' _shadowCasters y _shadowPlanes: esto corre en cada frame que se repinta.
+    Private ReadOnly _bufViewProj(PreviewShadowSettings.MaxShadowLights * 16 - 1) As Single
+    Private ReadOnly _bufDepthBias(PreviewShadowSettings.MaxShadowLights - 1) As Single
+    Private ReadOnly _bufContrib(PreviewShadowSettings.MaxShadowLights * 3 - 1) As Single
+    ''' <summary>Escala de UV por capa del mapa del PERSONAJE. Es 1.0 siempre —ese mapa ocupa la capa
+    ''' entera—; existe para que el uniform se suba con la misma ruta que el del suelo y no haya dos
+    ''' caminos, uno de los cuales se olvidaria de actualizar el dia que el personaje tambien reserve
+    ''' de mas.</summary>
+    Private ReadOnly _shadowUvScale(PreviewShadowSettings.MaxShadowLights - 1) As Single
     ''' <summary>Buffer REUTILIZADO de casters: el pase corre en cada frame que se repinta, asi que una
     ''' List nueva por frame es basura de GC en el camino de dibujo — el mismo motivo por el que
     ''' BlendedDepthBuffer es un campo y no un local.
@@ -5257,50 +5300,44 @@ Public Class PreviewModel
     ''' motivo que <see cref="_shadowPlanes"/>: la sobrecarga que toma una Matrix4 aloca un Vector4(5) por
     ''' llamada, o sea por malla y por bucket.</summary>
     Private ReadOnly _framePlanes(5) As Vector4
-    ''' <summary>Lo que le QUEDA al suelo cuando la key esta ocluida, por canal: (todo lo demas) / (todo).
+    ''' <summary>Sube lo que recibe un plano de normal +Z: el TOTAL y el aporte de cada capa casteante.
     '''
-    ''' <para>⛔ NO ES UNA CONSTANTE ELEGIDA A OJO, y esa es la diferencia entre una sombra y una calcomania.
-    ''' La primera version multiplicaba por <c>1 - a</c>, o sea que con Intensity = 1 el suelo quedaba en
-    ''' NEGRO PURO — y ningun suelo en sombra es negro: le siguen llegando el ambiente y los tres fills,
-    ''' que no castean. Aca se evalua exactamente eso para un plano con normal +Z, con el MISMO rig que
-    ''' esta iluminando al personaje: <c>total = ambienteCielo + SUM(luz_i * max(dir_i.Z, 0))</c> y el
-    ''' resultado es <c>(total - aporte de la key) / total</c>. Consecuencia util: la sombra del suelo se
-    ''' aclara y se oscurece sola al mover el rig, sin ninguna perilla que mantener en sincronia.</para>
+    ''' <para>⛔ NO ES UNA CONSTANTE ELEGIDA A OJO, y esa es la diferencia entre una sombra y una
+    ''' calcomania. La primera version multiplicaba por <c>1 - a</c>, o sea que con Intensity = 1 el suelo
+    ''' quedaba en NEGRO PURO — y ningun suelo en sombra es negro: le siguen llegando el ambiente y las
+    ''' luces que no estan bloqueadas EN ESE PIXEL. Aca se evalua exactamente eso, con el MISMO rig que
+    ''' esta iluminando al personaje.</para>
     '''
-    ''' <para>El ambiente que se usa es el del hemisferio de ARRIBA porque la normal del plano es +Z, que
-    ''' es justo donde <c>hemiAmbient</c> devuelve <c>ambientSky</c> puro.</para></summary>
-    Private Function GroundShadowTint() As Vector3
+    ''' <para>⭐ Y AHORA ES POR LUZ, que es lo que lo vuelve correcto con N: el fragment resta el aporte
+    ''' de cada capa ocluida y nada mas, asi que la sombra del suelo se COMPONE igual que la del cuerpo y
+    ''' ademas se TINE — ocluir una key calida donde llega un fill frio deja el piso azulado. La version
+    ''' de un solo tinte no podia expresar eso ni con N mapas.</para>
+    '''
+    ''' <para>El ambiente que entra es el del hemisferio de ARRIBA porque la normal del plano es +Z, que
+    ''' es justo donde <c>hemiAmbient</c> devuelve <c>ambientSky</c> puro. El pow 1/2.2 lo hace el
+    ''' fragment, no esta funcion: ver el comentario del GLSL.</para></summary>
+    Private Sub SubirAporteDelSuelo(shader As Shader_Base_Class)
+        If shader Is Nothing Then Exit Sub
         Dim total As Vector3 = _frameLights.AmbientSky
-        Dim keyContrib As Vector3 = _frameLights.KeyDiffuse * Math.Max(_frameLights.KeyDir.Z, 0.0F)
-        total += keyContrib
-        total += _frameLights.Fill0Diffuse * Math.Max(_frameLights.Fill0Dir.Z, 0.0F)
-        total += _frameLights.Fill1Diffuse * Math.Max(_frameLights.Fill1Dir.Z, 0.0F)
-        total += _frameLights.BackDiffuse * Math.Max(_frameLights.BackDir.Z, 0.0F)
-
-        Dim rest As Vector3 = total - keyContrib
-        ' Un rig completamente apagado (total = 0) no puede producir sombra: devolver blanco = no oscurece,
-        ' que es lo correcto y ademas evita el 0/0.
-        ' ⛔⭐ Y SE CODIFICA A DISPLAY ANTES DE SALIR. La razon de arriba es de RADIANCIA (lineal), pero el
-        ' quad multiplica contra el framebuffer, que guarda valores YA codificados: los dos fragments
-        ' iluminados terminan en `pow(color, 1/2.2)` y nadie prende GL_FRAMEBUFFER_SRGB. Multiplicar un
-        ' cociente lineal contra un destino codificado deja la sombra del SUELO mas oscura que la del
-        ' CUERPO —que si se aplica en lineal, antes del encode— en el mismo frame. Con Studio el cociente
-        ' es 0,815 y el factor correcto en pantalla es 0,911: sobre un fondo de 128 la sombra salia 104 en
-        ' vez de 117.
-        ' ⭐ Y ES EXACTO, no aproximado, en el caso que realmente ocurre: el quad tiene DepthTest, asi que
-        ' donde el personaje esta delante no dibuja, y su destino es el ClearColor o la grilla del piso —
-        ' ninguno de los dos paso por el tonemap. Para un destino con gamma pura, el multiplicador en
-        ' espacio de display de un cociente lineal k es exactamente pow(k, 1/2.2), sin depender de la
-        ' luminancia.
-        Dim lin As New Vector3(SafeRatio(rest.X, total.X), SafeRatio(rest.Y, total.Y), SafeRatio(rest.Z, total.Z))
-        Const Inv As Single = 1.0F / 2.2F
-        Return New Vector3(MathF.Pow(lin.X, Inv), MathF.Pow(lin.Y, Inv), MathF.Pow(lin.Z, Inv))
-    End Function
-
-    Private Shared Function SafeRatio(rest As Single, total As Single) As Single
-        If total <= 0.0001F Then Return 1.0F
-        Return Math.Clamp(rest / total, 0.0F, 1.0F)
-    End Function
+        For luz = 0 To PreviewShadowSettings.MaxShadowLights - 1
+            total += _frameLights.DifusoDeLuz(luz) * Math.Max(_frameLights.DirDeLuz(luz).Z, 0.0F)
+        Next
+        For capa = 0 To _groundCount - 1
+            Dim luz = _groundLuzDeCapa(capa)
+            ' Una capa que este frame no califica (su luz esta por debajo de la elevacion minima) existe,
+            ' esta limpia y se samplea igual — pero no aporta: su contribucion va en CERO. Asi el termino
+            ' que le resta el fragment es nulo pase lo que pase con el lookup.
+            Dim c As Vector3 = If(_groundValida(capa),
+                                  _frameLights.DifusoDeLuz(luz) * Math.Max(_frameLights.DirDeLuz(luz).Z, 0.0F),
+                                  Vector3.Zero)
+            _bufContrib(capa * 3 + 0) = c.X
+            _bufContrib(capa * 3 + 1) = c.Y
+            _bufContrib(capa * 3 + 2) = c.Z
+        Next
+        shader.SetVector3("uGroundTotal", total)
+        shader.SetVector3Array("uGroundContrib[0]", _bufContrib, _groundCount)
+        shader.SetInt("uGroundCount", _groundCount)
+    End Sub
 
     ''' <summary>Libera el VAO/VBO del receptor de suelo. Lo llama PreviewControl.Clean junto con el
     ''' Floor, que es donde ya se libera la geometria propia del modelo.</summary>
@@ -5314,8 +5351,13 @@ Public Class PreviewModel
     ''' <summary>Plano del receptor de suelo (Z de mundo) y si este frame lo dibuja.</summary>
     Private _groundZ As Single
     Private _groundActive As Boolean
-    ''' <summary>Encuadre del mapa ANCHO, el que sólo usa el receptor de suelo. Ver RenderShadowPass.</summary>
-    Private _groundFit As ShadowMapMath.LightFit
+    ''' <summary>Encuadre del mapa ANCHO por CAPA, a que luz corresponde cada capa, su escala de UV
+    ''' (region logica / textura reservada) y si este frame se dibujo de verdad.</summary>
+    Private ReadOnly _groundFits(PreviewShadowSettings.MaxShadowLights - 1) As ShadowMapMath.LightFit
+    Private ReadOnly _groundLuzDeCapa(PreviewShadowSettings.MaxShadowLights - 1) As Integer
+    Private ReadOnly _groundUvScale(PreviewShadowSettings.MaxShadowLights - 1) As Single
+    Private ReadOnly _groundValida(PreviewShadowSettings.MaxShadowLights - 1) As Boolean
+    Private _groundCount As Integer
     Private _groundQuadCenter As Vector3
     Private _groundQuadHalf As Vector2
     Private _groundQuad As GroundShadowQuad
@@ -5377,9 +5419,35 @@ Public Class PreviewModel
         _queryEnVuelo = True
     End Sub
 
+    ''' <summary>Encuadre de la capa 0 (la primera luz que castea). Lo consume el arnes.
+    ''' <para>Sirve como representante para TexelWorld y DepthRange porque los dos son iguales en todas
+    ''' las capas: el extent sale de la esfera envolvente, que no depende de la direccion de la luz.</para></summary>
     Friend ReadOnly Property ShadowFit As ShadowMapMath.LightFit
         Get
-            Return _shadowFit
+            Return _shadowFits(0)
+        End Get
+    End Property
+
+    ''' <summary>Encuadre de una capa concreta. Para el arnes: verificar que cada luz encuadra desde SU
+    ''' direccion y no desde la de la key.</summary>
+    Friend ReadOnly Property ShadowFitDeCapa(capa As Integer) As ShadowMapMath.LightFit
+        Get
+            If capa < 0 OrElse capa >= PreviewShadowSettings.MaxShadowLights Then Return Nothing
+            Return _shadowFits(capa)
+        End Get
+    End Property
+
+    ''' <summary>Cuantas luces castean este frame, y a que capa fue cada una.</summary>
+    Friend ReadOnly Property ShadowCount As Integer
+        Get
+            Return _shadowCount
+        End Get
+    End Property
+
+    Friend ReadOnly Property ShadowSlotDeLuz(luz As Integer) As Integer
+        Get
+            If luz < 0 OrElse luz >= PreviewShadowSettings.MaxShadowLights Then Return -1
+            Return _shadowSlots(luz)
         End Get
     End Property
 
@@ -5387,7 +5455,7 @@ Public Class PreviewModel
     ''' Tools/ShadowGate para verificar que prender el suelo NO le cambia el encuadre al personaje.</summary>
     Friend ReadOnly Property GroundFit As ShadowMapMath.LightFit
         Get
-            Return _groundFit
+            Return _groundFits(0)
         End Get
     End Property
 
@@ -5412,7 +5480,7 @@ Public Class PreviewModel
         ParentControl.GroundShadowTarget?.Release()
     End Sub
 
-    ''' <summary>Dibuja el shadow map de la KEY. Cualquier salida temprana deja <c>_shadowActive</c> en
+    ''' <summary>Dibuja una capa de shadow map POR CADA LUZ QUE CASTEE. Cualquier salida temprana deja <c>_shadowActive</c> en
     ''' False, o sea el frame se dibuja exactamente como antes de que existiera esta feature — nunca a
     ''' medias contra un mapa viejo.
     '''
@@ -5423,7 +5491,9 @@ Public Class PreviewModel
     ''' depth y el sintoma no apunta para aca.</para></summary>
     Private Sub RenderShadowPass()
         _shadowActive = False
+        _shadowCount = 0
         _groundActive = False
+        _groundCount = 0
         If ParentControl Is Nothing Then Exit Sub
 
         Dim cfg = Config_App.Current.ActiveShadows().Sanitized()
@@ -5432,7 +5502,10 @@ Public Class PreviewModel
         ' sin shader, sin casters, encuadre invalido y fallo de Ensure— y liberar en una sola es no
         ' cumplirlo:
         ' prender sombras + suelo y despues DESTILDAR sombras dejaba los dos mapas colgados hasta el Clean
-        ' (a 2048 + 1024 son ~16 MB; con MapSize 4096 y el suelo saturado, bastante mas).
+        ' ⚠️ Y LA CUENTA CRECIO: los dos arrays se reservan al MISMO lado y con las MISMAS capas, asi que a
+        ' 2048 con una sola luz son 16 + 16 = 32 MB, con las cuatro 128 MB, y a 4096 con las cuatro 512 MB.
+        ' (Este comentario decia "a 2048 + 1024 son ~16 MB", que era la aritmetica de cuando el mapa ancho se
+        ' dimensionaba solo. Ver el cartel de VRAM del dialogo, que hace exactamente esta cuenta.)
         If Not cfg.Enabled Then SoltarMapasDeSombra() : Exit Sub
 
         Dim depthShader = ParentControl.CurrentShadowShader
@@ -5493,14 +5566,38 @@ Public Class PreviewModel
         ' texel pasaba a cubrir 2,4 veces mas mundo: la sombra sobre el PERSONAJE se volvia 2,4 veces mas
         ' gruesa (medido: texel 0,077 -> 0,181 u). Con un mapa propio para el suelo, el del personaje
         ' vuelve al encuadre ajustado y no se pierde nada de nitidez.
-        ' El del suelo va a MENOS resolucion a proposito: es una mancha grande y difusa, no necesita
-        ' filo. Cuanto menos lo decide GroundMapSize a partir de los dos radios, asi que el extra de VRAM
-        ' depende de la elevacion de la key: va de 1/16 del mapa del personaje a igualarlo.
-        Dim fit = ShadowMapMath.Fit(_frameLights.KeyDir, bmin, bmax, cfg.MapSize)
-        If Not fit.Valid Then SoltarMapasDeSombra() : Exit Sub
+        ' El del suelo se DIBUJA a menos resolucion a proposito: es una mancha grande y difusa, no
+        ' necesita filo, y cuanto menos lo decide GroundMapSize a partir de los dos radios.
+        ' ⛔ PERO SE RESERVA AL MISMO TAMANO QUE EL DEL PERSONAJE, y este comentario decia lo contrario
+        ' ("el extra de VRAM va de 1/16 del mapa del personaje a igualarlo"). Dejo de ser cierto al
+        ' arreglar el churn: el tamano LOGICO sigue saliendo de GroundMapSize —y es el viewport con el que
+        ' se dibuja— pero la TEXTURA se reserva fija, porque un tamano de textura que depende de la
+        ' elevacion de la luz se recrea varias veces por arrastre de camara. O sea: la resolucion es la de
+        ' antes, la VRAM no. Ver ShadowMapMath.UvScaleDeCapa.
+        ' ===================== REPARTO DE CAPAS =====================
+        ' Que luces castean lo decide el RIG (PreviewLight.CastsShadow) y lo resuelve una funcion PURA,
+        ' con orden fijo y sin alocar: ver ShadowMapMath.SlotsDeSombra y su gate `shadow-slots`.
+        Dim rigVivo = Config_App.Current.ActiveLights()
+        _shadowCount = ShadowMapMath.SlotsDeSombra(rigVivo, _shadowSlots)
+        If _shadowCount <= 0 Then SoltarMapasDeSombra() : Exit Sub
+
+        ' ⭐ EL ENCUADRE ES POR LUZ PERO EL TAMANO DE TEXEL ES COMUN: Fit toma el extent de la esfera
+        ' envolvente, invariante a la rotacion, asi que Radius/TexelWorld/DepthRange salen iguales para
+        ' las cuatro y lo unico que cambia es la ViewProj. Por eso las capas de un array alcanzan.
+        For luz = 0 To PreviewShadowSettings.MaxShadowLights - 1
+            Dim capa = _shadowSlots(luz)
+            If capa < 0 Then Continue For
+            _shadowFits(capa) = ShadowMapMath.Fit(_frameLights.DirDeLuz(luz), bmin, bmax, cfg.MapSize)
+            If Not _shadowFits(capa).Valid Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
+        Next
 
         If ParentControl.ShadowTarget Is Nothing Then ParentControl.ShadowTarget = New ShadowMapTarget()
-        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize) Then SoltarMapasDeSombra() : Exit Sub
+        ' ⛔ `_shadowCount = 0` EN LAS SALIDAS TEMPRANAS, no solo en la cabecera del metodo. El render no se
+        ' rompia —UploadShadowUniforms sube bShadows=False por `active`— pero `ShadowCount` es una propiedad
+        ' que el ARNES lee, y en un frame que no dibujo ni un mapa reportaba "2 casters". Dos checks
+        ' (`strength-cero` y `sin-casters`) se apoyan justo en ese numero: quedaban midiendo contra un valor
+        ' que describe una intencion, no lo que se dibujo.
+        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize, _shadowCount) Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
 
         ' ⛔ NI UN glGet NI UN ARRAY POR FRAME ACA. El doc de ShadowMapTarget.BindForWrite dice que los
         ' glGet de framebuffer son los que fuerzan a varios drivers a vaciar la lista de comandos diferida
@@ -5510,44 +5607,126 @@ Public Class PreviewModel
         ' ResizeViewport y son los mismos con los que se armo la proyeccion de este frame).
         Const prevFbo As Integer = 0
 
-        RenderDepthInto(ParentControl.ShadowTarget, fit, depthShader, casters)
-        _shadowFit = fit
+        For capa = 0 To _shadowCount - 1
+            ' El mapa del PERSONAJE usa la capa entera: viewport = lado reservado, escala de UV 1.0. La
+            ' reserva-mas-grande-que-el-viewport es cosa del mapa ANCHO, cuyo tamano depende de la camara.
+            _shadowUvScale(capa) = 1.0F
+            RenderDepthInto(ParentControl.ShadowTarget, capa, cfg.MapSize, _shadowFits(capa), depthShader, casters)
+        Next
         _shadowSettings = cfg
         _shadowActive = True
 
         ' ===================== MAPA 2: ANCHO, SOLO PARA EL SUELO =====================
         If Not cfg.GroundShadow Then
-            ' Apagada la opcion, el mapa ancho se SUELTA. Sin esto quedaban ~3 MB de VRAM colgados hasta
-            ' el Clean, contradiciendo el criterio del otro target ("con la opcion apagada nunca se asigna
-            ' un byte de GPU").
+            ' Apagada la opcion, el mapa ancho se SUELTA. Sin esto quedaban colgados hasta el Clean 16 MB
+            ' (2048, una luz casteante) o 64 MB (2048, las cuatro), contradiciendo el criterio del otro
+            ' target ("con la opcion apagada nunca se asigna un byte de GPU").
+            ' ⚠️ Este comentario decia "~3 MB": era la cuenta de cuando el mapa ancho se dimensionaba solo y
+            ' salia tipicamente 512. Con la reserva fija mide lo mismo que el del personaje.
             ParentControl.GroundShadowTarget?.Release()
+            OlvidarEncuadresDeSuelo()
         Else
-            Dim gmin = bmin, gmax = bmax
-            Dim expanded As Boolean
-            ' Si la luz esta demasiado baja la sombra se va al infinito: el receptor se apaga solo.
-            ShadowMapMath.ExpandForGroundShadow(gmin, gmax, _frameLights.KeyDir, _groundZ, expanded)
-            ' Si la luz quedo demasiado baja el receptor se apaga SOLO, y entonces su mapa tambien sobra.
-            If Not expanded Then ParentControl.GroundShadowTarget?.Release()
-            If expanded Then
-                ' ⛔ EL TAMANO DEL MAPA ANCHO SALE DE SU RADIO, no de una fraccion fija del otro. El radio
-                ' del encuadre del suelo depende de la ELEVACION de la key —la sombra mide altura/tan(elev)—
-                ' asi que con `MapSize \ 2` fijo el texel del suelo variaba ~2x entre presets sin que nada
-                ' lo dijera: Studio (key a 25,9 grados) daba 0,36 u por texel y Portrait (15,4 grados) ~0,73,
-                ' o sea que el preset que MAS muestra la sombra en el piso era el que peor la dibujaba.
-                ' El TAMANO del mapa ancho es matematica pura y vive en ShadowMapMath: tiene dos trampas
-                ' (clamp invertido con MapSize 256, desborde del CInt con una escena degenerada) que un gate
-                ' de leyes cubre y un A/B de pixeles no. Ver GroundMapSize.
-                Dim gRadioTent = ShadowMapMath.Fit(_frameLights.KeyDir, gmin, gmax, cfg.MapSize).Radius
-                Dim gSize As Integer = ShadowMapMath.GroundMapSize(fit.Radius, gRadioTent, cfg.MapSize)
-                Dim gfit = ShadowMapMath.Fit(_frameLights.KeyDir, gmin, gmax, gSize)
-                If gfit.Valid Then
-                    If ParentControl.GroundShadowTarget Is Nothing Then ParentControl.GroundShadowTarget = New ShadowMapTarget()
-                    If ParentControl.GroundShadowTarget.Ensure(gSize) Then
-                        RenderDepthInto(ParentControl.GroundShadowTarget, gfit, depthShader, casters)
-                        _groundFit = gfit
-                        ' El quad NO se dimensiona con gfit.Radius: ese radio es la media diagonal de la
-                        ' esfera 3D e incluye la ALTURA. La huella real es gmin/gmax en XY. Ver
-                        ' GroundShadowQuad.Render.
+            ' ⛔ EL RECEPTOR ES POR LUZ Y LA HUELLA ES LA UNION. Cada luz proyecta su propia sombra sobre
+            ' el plano y necesita SU capa. Si se recortara a la huella de una sola, la sombra de las
+            ' otras saldria cortada en seco — que es exactamente el sintoma que ExpandForGroundShadow
+            ' existe para evitar.
+            ' ⭐⛔ LA FORMA DEL ARRAY ES FUNCION DE LA CONFIG, NO DE LA CAMARA, Y ESO ES EL ARREGLO DEL
+            ' CHURN. Se reservan SIEMPRE `_shadowCount` capas de `cfg.MapSize`, aunque una luz no
+            ' califique este frame: la cantidad de luces que superan la elevacion minima CAMBIA al
+            ' orbitar (la direccion la rota la camara con el default de luces-siguen-camara), y si eso
+            ' decidiera la forma del array, cada cruce del umbral seria un Release + TexImage3D en el
+            ' camino de dibujo. Una capa que no califica no se dibuja: queda en 1.0 = iluminada, y su
+            ' aporte entra en cero. Cuesta VRAM y no cuesta ni un frame que dependa de la historia.
+            Dim gmin = bmin, gmax = bmax          ' union de huellas
+            Dim hayAlguna As Boolean = False
+            Dim minPorCapa(PreviewShadowSettings.MaxShadowLights - 1) As Vector3
+            Dim maxPorCapa(PreviewShadowSettings.MaxShadowLights - 1) As Vector3
+            Dim califica(PreviewShadowSettings.MaxShadowLights - 1) As Boolean
+            For luz = 0 To PreviewShadowSettings.MaxShadowLights - 1
+                Dim capa = _shadowSlots(luz)
+                If capa < 0 Then Continue For
+                _groundLuzDeCapa(capa) = luz
+                Dim lmin = bmin, lmax = bmax
+                Dim expandida As Boolean
+                ShadowMapMath.ExpandForGroundShadow(lmin, lmax, _frameLights.DirDeLuz(luz), _groundZ, expandida)
+                califica(capa) = expandida
+                If Not expandida Then Continue For
+                minPorCapa(capa) = lmin
+                maxPorCapa(capa) = lmax
+                gmin = Vector3.ComponentMin(gmin, lmin)
+                gmax = Vector3.ComponentMax(gmax, lmax)
+                hayAlguna = True
+            Next
+
+            If Not hayAlguna Then
+                ' ⛔⛔ NINGUNA LUZ CALIFICA ESTE FRAME => NO SE DIBUJA, PERO **NO SE SUELTA EL TARGET**.
+                ' Soltarlo era el ultimo agujero del arreglo del churn, y contradecia el principio que este
+                ' mismo bloque enuncia doce lineas mas arriba: la forma del array es funcion de la CONFIG,
+                ' no de la camara. `hayAlguna` SI depende de la camara —es "alguna luz casteante supera
+                ' L.Z >= 0,2" y con luces-siguen-camara (el default) orbitar rota esas direcciones en cada
+                ' frame del arrastre—, asi que un Release aca es un TexImage3D de 2048x2048 en el camino de
+                ' dibujo cada vez que el usuario cruza esa elevacion, ida y vuelta, con la sombra de piso
+                ' apareciendo y desapareciendo.
+                ' La VRAM queda reservada mientras la OPCION siga prendida, que es exactamente el criterio:
+                ' apagar "Shadow on the ground" (config) si suelta, y eso lo hace la rama de arriba.
+                OlvidarEncuadresDeSuelo()
+            Else
+                If ParentControl.GroundShadowTarget Is Nothing Then ParentControl.GroundShadowTarget = New ShadowMapTarget()
+                ' RESERVA FIJA: mismo lado que el mapa del personaje, mismas capas. Los dos numeros salen
+                ' de la config, asi que Ensure devuelve True sin recrear nada mientras el usuario no toque
+                ' la calidad ni las casillas.
+                If Not ParentControl.GroundShadowTarget.Ensure(cfg.MapSize, _shadowCount) Then
+                    ' El target no se pudo reservar: este frame no hay receptor, y los encuadres del frame
+                    ' anterior no valen. Misma razon que la rama de arriba.
+                    OlvidarEncuadresDeSuelo()
+                Else
+                    Dim algunaDibujada As Boolean = False
+                    For capa = 0 To _shadowCount - 1
+                        _groundUvScale(capa) = 1.0F
+                        _groundValida(capa) = False
+                        ' ⛔ Y EL ENCUADRE SE BORRA, no se deja el del frame pasado. `_groundFits(capa)` solo
+                        ' se asigna si la capa califica, asi que sin esto una luz que ESTE frame quedo bajo la
+                        ' elevacion minima seguia publicando por `GroundFit` el encuadre de cuando si
+                        ' calificaba — un dato rancio que el arnes leeria como si fuera de este frame. Un
+                        ' LightFit en cero se nota (Valid = False, Radius = 0); uno viejo se cree.
+                        _groundFits(capa) = Nothing
+                        If Not califica(capa) Then Continue For
+                        ' El tamano LOGICO de esta capa sale de su propio radio: una key alta y un fill
+                        ' rasante conservan cada uno su resolucion optima, que es lo que se perdia al
+                        ' compartir un unico tamano de textura. Sigue siendo la misma funcion pura de
+                        ' siempre, con sus dos trampas cubiertas por `ground-mapsize`.
+                        Dim dirLuz = _frameLights.DirDeLuz(_groundLuzDeCapa(capa))
+                        Dim radioTent = ShadowMapMath.Fit(dirLuz, minPorCapa(capa), maxPorCapa(capa), cfg.MapSize).Radius
+                        Dim gLog As Integer = ShadowMapMath.GroundMapSize(_shadowFits(0).Radius, radioTent, cfg.MapSize)
+                        If gLog <= 0 Then Continue For
+                        Dim gfit = ShadowMapMath.Fit(dirLuz, minPorCapa(capa), maxPorCapa(capa), gLog)
+                        If Not gfit.Valid Then Continue For
+                        _groundFits(capa) = gfit
+                        _groundUvScale(capa) = ShadowMapMath.UvScaleDeCapa(gLog, cfg.MapSize)
+                        _groundValida(capa) = True
+                        RenderDepthInto(ParentControl.GroundShadowTarget, capa, gLog, gfit, depthShader, casters)
+                        algunaDibujada = True
+                    Next
+                    ' ⛔⭐ ACA HABIA UN "LIMPIAR LAS CAPAS QUE NO CALIFICAN", Y SE SACO PORQUE NO PROTEGIA DE
+                    ' NADA. El argumento era: TexImage3D con IntPtr.Zero deja el contenido indefinido, asi
+                    ' que una capa nunca dibujada se samplearia como profundidad basura. Las dos mitades son
+                    ' falsas hoy:
+                    '  1. La poblacion que se limpiaba y la que el fragment SALTEA son la MISMA por
+                    '     construccion: se limpiaba `Not _groundValida(capa)`, y SubirAporteDelSuelo le pone
+                    '     contribucion CERO a esas mismas capas, y el fragment hace `continue` sobre
+                    '     contribucion cero. Se limpiaba algo que no se lee nunca.
+                    '  2. Y si alguien sacara ese `continue`, limpiar TAMPOCO salvaria: la capa que no
+                    '     califica tiene la ViewProj en cero —se la deja asi el `_groundFits(capa) = Nothing`
+                    '     del bucle de arriba, que es el UNICO punto que deja una capa en cero con
+                    '     `_groundCount` todavia mayor que cero— asi que el lookup divide por w = 0 y las
+                    '     coordenadas salen NaN, sin importar que profundidad haya guardada adentro.
+                    ' Costaba un glFramebufferTextureLayer + un glClear por capa y por frame, o sea la misma
+                    ' revalidacion de FBO que `_capaAttachada` se agrego a evitar. El unico guardian real es
+                    ' el `continue` del fragment, y ahi esta dicho.
+                    If algunaDibujada Then
+                        _groundCount = _shadowCount
+                        ' El quad NO se dimensiona con un radio: ese radio es la media diagonal de la
+                        ' esfera 3D e incluye la ALTURA. La huella real es la union gmin/gmax en XY.
                         ShadowMapMath.GroundQuadFromFootprint(gmin, gmax, _groundZ, _groundQuadCenter, _groundQuadHalf)
                         _groundActive = True
                     End If
@@ -5565,9 +5744,14 @@ Public Class PreviewModel
     ''' por los dos mapas (el ajustado al personaje y el ancho del suelo): el estado GL y el orden de los
     ''' draws tienen que ser IDENTICOS en los dos o la sombra del piso no coincidiria con la del cuerpo.
     ''' <para>NO restaura framebuffer ni viewport: lo hace el caller una sola vez despues del ultimo mapa.</para></summary>
-    Private Sub RenderDepthInto(target As ShadowMapTarget, fit As ShadowMapMath.LightFit,
+    ''' <param name="viewport">Lado LOGICO que ocupa esta capa dentro de la textura. El
+    ''' <c>GL.Clear</c> de abajo limpia la capa ENTERA (glClear no mira el viewport, lo acota el scissor
+    ''' y esta apagado), asi que lo que quede fuera de la region logica queda en 1.0 = nada ocluye — que
+    ''' es exactamente lo que devuelve el borde blanco. De eso depende que la reserva fija sea correcta.</param>
+    Private Sub RenderDepthInto(target As ShadowMapTarget, capa As Integer, viewport As Integer,
+                                fit As ShadowMapMath.LightFit,
                                 depthShader As Shader_Base_Class, casters As List(Of RenderableMesh))
-        target.BindForWrite()
+        target.BindForWrite(capa, viewport)
 
         GL.Clear(ClearBufferMask.DepthBufferBit)
         GL.Enable(EnableCap.DepthTest)
@@ -5597,50 +5781,80 @@ Public Class PreviewModel
         GL.BindVertexArray(0)
     End Sub
 
-    ''' <summary>Sube al shader ILUMINADO todo lo que necesita <c>shadowFactor()</c>. Se llama UNA vez por
-    ''' frame, no por malla: son constantes del frame y el programa es el mismo para todos los draws (y
-    ''' para el pase de overlays, que reusa CurrentShader).
-    ''' <para>Con <c>ShadowActive = False</c> sube <c>bShadows = false</c> y nada mas: el fragment ni
-    ''' calcula el factor, y el frame sale bit a bit igual al de antes de que existiera la feature — que es
-    ''' lo que verifica el A/B contra HEAD de Tools/ShadowGate.</para></summary>
-    Private Sub UploadShadowUniforms(shader As Shader_Base_Class, fit As ShadowMapMath.LightFit,
+    ''' <summary>Borra los encuadres del mapa ANCHO y apaga su cuenta. Se llama desde TODA salida en la que
+    ''' el receptor de suelo no se dibuja pero el target NO se suelta.
+    ''' <para>⛔ NO ES HIGIENE: <c>_groundFits</c> sobrevive entre frames, y sin esto una capa que este frame
+    ''' no califica sigue publicando por <c>GroundFit</c> el encuadre de cuando SI calificaba — con
+    ''' <c>Valid = True</c>, o sea indistinguible de uno fresco para quien lo lee. Un <c>LightFit</c> en cero
+    ''' se nota; uno viejo se cree.</para>
+    ''' <para>⚠️ NO es esta funcion la que alimenta el <c>continue</c> del fragment del suelo, aunque lo
+    ''' parezca: aca siempre se sale con <c>_groundCount = 0</c>, o sea que el bucle de ese fragment ni
+    ''' itera. La capa en cero que ESE guardian ataja la deja el <c>_groundFits(capa) = Nothing</c> del bucle
+    ''' de dibujo de <see cref="RenderShadowPass"/>, que es el unico punto donde una capa queda en cero con
+    ''' <c>_groundCount</c> todavia mayor que cero.</para></summary>
+    Private Sub OlvidarEncuadresDeSuelo()
+        For capa = 0 To PreviewShadowSettings.MaxShadowLights - 1
+            _groundFits(capa) = Nothing
+            _groundValida(capa) = False
+            _groundUvScale(capa) = 1.0F
+        Next
+        _groundCount = 0
+    End Sub
+
+    ''' <summary>Sube al shader ILUMINADO (o al del suelo) todo lo que necesita <c>shadowFactorAt()</c>.
+    ''' Se llama UNA vez por frame y por programa, no por malla: son constantes del frame.
+    ''' <para>Con <c>active = False</c> sube <c>bShadows = false</c> y nada mas: el fragment ni calcula el
+    ''' factor, y el frame sale igual al de antes de que existiera la feature.</para>
+    ''' <para>⛔ EL MAPEO LUZ→CAPA VIAJA EN <c>uShadowSlot</c> Y NO SE RECALCULA EN EL SHADER. Es la misma
+    ''' tabla que uso el pase de profundidad; derivarla dos veces es como se termina proyectando la
+    ''' sombra de una luz sobre el difuso de otra.</para></summary>
+    ''' <param name="fits">Encuadres POR CAPA.</param>
+    ''' <param name="count">Cuantas capas tiene el target.</param>
+    ''' <param name="slots">Luz→capa, o Nothing para el programa del suelo (que indexa por capa directo).</param>
+    ''' <param name="uvScale">Region logica / textura reservada, POR CAPA. 1.0 en el mapa del personaje.</param>
+    Private Sub UploadShadowUniforms(shader As Shader_Base_Class, fits() As ShadowMapMath.LightFit,
+                                     count As Integer, slots() As Integer, uvScale() As Single,
                                      target As ShadowMapTarget, active As Boolean,
                                      unit As TextureUnit, normalBiasTexels As Single,
                                      depthBiasWorld As Single)
         If shader Is Nothing Then Exit Sub
         shader.Use()
-        If Not active OrElse target Is Nothing Then
+        If Not active OrElse target Is Nothing OrElse count <= 0 Then
             shader.SetBool("bShadows", False)
             Exit Sub
         End If
 
         shader.SetBool("bShadows", True)
-        shader.SetMatrix4("matShadowViewProj", fit.ViewProj)
+
+        ' Las matrices van aplanadas a un buffer REUTILIZADO: una llamada de GL para las N.
+        For capa = 0 To count - 1
+            CopiarMatriz(fits(capa).ViewProj, _bufViewProj, capa * 16)
+            ' EL BIAS DE PROFUNDIDAD ENTRA EN UNIDADES DE MUNDO Y SE NORMALIZA CON EL DepthRange DE SU
+            ' PROPIA CAPA. En el mapa del personaje las N capas tienen el mismo rango (esfera envolvente);
+            ' en el ANCHO no, porque su extent es la huella proyectada y depende de la elevacion de cada
+            ' luz. Un solo valor para todas dejaba la sombra de la luz mas rasante despegada del pie.
+            _bufDepthBias(capa) = If(fits(capa).DepthRange > 0.0F, depthBiasWorld / fits(capa).DepthRange, 0.0F)
+        Next
+        ' El nombre va con el `[0]` puesto: es un literal internado y asi el setter no aloca una String por
+        ' llamada en el camino de dibujo. Ver el doc de SetMatrix4Array.
+        shader.SetMatrix4Array("matShadowViewProj[0]", _bufViewProj, count)
+        shader.SetFloatArray("uShadowDepthBias[0]", _bufDepthBias, count)
+        shader.SetFloatArray("uShadowUvScale[0]", uvScale, count)
+
+        ' El programa del suelo indexa por CAPA (su bucle va de 0 a uGroundCount): no usa uShadowSlot.
+        If slots IsNot Nothing Then shader.SetIntArray("uShadowSlot[0]", slots, PreviewShadowSettings.MaxShadowLights)
+
         shader.SetFloat("uShadowIntensity", _shadowSettings.Intensity)
-        ' Los dos bias se autoran en TEXELES y se convierten aca, que es donde se conoce el tamano real
-        ' del texel: asi cambiar MapSize no obliga a re-tunearlos, y los DOS mapas (que tienen texeles de
-        ' distinto tamano) quedan cada uno con el suyo.
         ' | EL NORMAL-OFFSET ES CERO PARA EL RECEPTOR DE SUELO, y no es una omision. Su unica funcion es
-        ' matar el auto-sombreado de superficies rasantes, y el quad del piso NO ES CASTER (no entra en
-        ' _shadowCasters): no puede auto-sombrearse. En cambio SI paga el desvio: el mapa del suelo tiene
-        ' texeles ~5x mas grandes, asi que los 2 texeles del default son ~0,7 u de corrimiento a lo largo
-        ' de +Z, que con la key a 26 grados se traducen en ~1,5 u de sombra DESPEGADA del pie
-        ' (peter-panning). El uShadowDepthBias si se conserva: tapa la cuantizacion de 24 bits del caster
-        ' y actua a lo largo del rayo, no de costado.
-        shader.SetFloat("uShadowNormalBias", normalBiasTexels * fit.TexelWorld)
-        ' | EL BIAS DE PROFUNDIDAD ENTRA EN UNIDADES DE MUNDO. Estaba en texeles DEL MAPA, y el mapa del
-        ' suelo tiene texeles ~4,7x mas grandes: los 1,5 texeles del default eran 0,54 u de corrimiento a
-        ' lo largo del rayo, que con la key a 26 grados dan 1,11 u de sombra despegada del pie sobre un
-        ' pie de ~25 u. El bias tapa la cuantizacion de 24 bits del CASTER, que escala con el DepthRange y
-        ' no con el texel, asi que usar el texel del mapa ANGOSTO en los dos es lo correcto y ademas mas
-        ' chico. Ver el uShadowNormalBias de abajo, que es cero para el suelo por otro motivo.
-        shader.SetFloat("uShadowDepthBias",
-                        If(fit.DepthRange > 0.0F, depthBiasWorld / fit.DepthRange, 0.0F))
-        ' | LA SUAVIDAD ES CONTINUA. Estaba `CInt(Math.Round(SoftnessTexels))`, o sea que la perilla
-        ' colapsaba a 5 valores enteros Y, por el redondeo bancario de .NET, 1,5 y 2,5 daban los DOS 2:
-        ' mover el slider del default 1,5 a 2,0 no cambiaba un pixel y la perilla parecia rota. Ahora el
-        ' radio entero es el techo y el SOBRANTE viaja en el espaciado de los taps, que es lo que hace
-        ' continuo el desenfoque sin cambiar la cantidad de muestras.
+        ' matar el auto-sombreado de superficies rasantes, y el quad del piso NO ES CASTER: no puede
+        ' auto-sombrearse. En cambio SI paga el desvio: el mapa del suelo tiene texeles mucho mas grandes
+        ' y eso se traduce en sombra DESPEGADA del pie (peter-panning).
+        ' | ES UN ESCALAR PARA TODAS LAS CAPAS porque el texel del mapa del personaje es el mismo en
+        ' todas (esfera envolvente). Ver el comentario del bloque de uniforms en el GLSL.
+        shader.SetFloat("uShadowNormalBias", normalBiasTexels * fits(0).TexelWorld)
+
+        ' | LA SUAVIDAD ES CONTINUA: el radio entero es el techo y el SOBRANTE viaja en el espaciado de
+        ' los taps, que es lo que hace continuo el desenfoque sin cambiar la cantidad de muestras.
         Dim soft As Single = Math.Clamp(_shadowSettings.SoftnessTexels, 0.0F, PreviewShadowSettings.MaxPcfRadius)
         Dim radio As Integer = CInt(Math.Ceiling(soft))
         shader.SetInt("uShadowPcfRadius", radio)
@@ -5648,14 +5862,22 @@ Public Class PreviewModel
         Dim invSize As Single = If(target.Size > 0, paso / target.Size, 0.0F)
         shader.SetVector2("uShadowTexelUV", New Vector2(invSize, invSize))
         ' | LA UNIDAD ES UN PARAMETRO, y tiene que serlo. El sampler uniform es POR PROGRAMA, pero el
-        ' binding de la unidad de textura es ESTADO GLOBAL del contexto. El pase del suelo corre entre
-        ' DECAL y BLENDED; si usara la misma unidad que el pase iluminado, dejaria ahi el mapa ANCHO y las
-        ' mallas BLENDED (pelo alpha-blend, ojos) y el pase de OVERLAYS que vienen despues samplearian esa
-        ' textura con la matriz del encuadre AJUSTADO: coordenadas de un encuadre contra la textura de
-        ' otro. Se veria como que el cuerpo recibe sombra y el pelo no.
-        ' 14 espeja el t14 del motor para el pase iluminado; 15 queda para el suelo (el render usa 0..8 y
-        ' 10, asi que 11-13 y 15 estan libres). GL 4.3 garantiza 16 unidades en el fragment.
-        shader.BindTexture("texShadowMap", target.Texture, unit)
+        ' binding de la unidad es ESTADO GLOBAL del contexto. El pase del suelo corre entre DECAL y
+        ' BLENDED; si usara la misma unidad que el pase iluminado, dejaria ahi el array ANCHO y las
+        ' mallas BLENDED y el pase de OVERLAYS samplearian esa textura con las matrices del encuadre
+        ' AJUSTADO: coordenadas de un encuadre contra la textura de otro.
+        ' 14 espeja el t14 del motor para el pase iluminado; 15 queda para el suelo. ⛔ Las dos son
+        ' EXCLUSIVAS de sombras y ahora ademas de target TEXTURE_2D_ARRAY: ver BindTextureArray.
+        shader.BindTextureArray("texShadowMap", target.Texture, unit)
+    End Sub
+
+    ''' <summary>Aplana una Matrix4 de OpenTK a un buffer de floats en el orden que espera glUniform
+    ''' (column-major, que es como OpenTK guarda sus filas y como ya se sube con SetMatrix4).</summary>
+    Friend Shared Sub CopiarMatriz(m As Matrix4, destino As Single(), offset As Integer)
+        destino(offset + 0) = m.M11 : destino(offset + 1) = m.M12 : destino(offset + 2) = m.M13 : destino(offset + 3) = m.M14
+        destino(offset + 4) = m.M21 : destino(offset + 5) = m.M22 : destino(offset + 6) = m.M23 : destino(offset + 7) = m.M24
+        destino(offset + 8) = m.M31 : destino(offset + 9) = m.M32 : destino(offset + 10) = m.M33 : destino(offset + 11) = m.M34
+        destino(offset + 12) = m.M41 : destino(offset + 13) = m.M42 : destino(offset + 14) = m.M43 : destino(offset + 15) = m.M44
     End Sub
 
     Public Property FloorOffset As Double = -0.00F
@@ -5686,9 +5908,10 @@ Public Class PreviewModel
         RenderShadowPass()
         CerrarCronometroDeProfundidad()
         ' Y los uniforms que el fragment iluminado necesita, una sola vez para todos los draws del frame.
-        UploadShadowUniforms(ParentControl.CurrentShader, _shadowFit, ParentControl.ShadowTarget, _shadowActive,
+        UploadShadowUniforms(ParentControl.CurrentShader, _shadowFits, _shadowCount, _shadowSlots, _shadowUvScale,
+                             ParentControl.ShadowTarget, _shadowActive,
                              TextureUnit.Texture14, _shadowSettings.NormalBiasTexels,
-                             _shadowSettings.DepthBiasTexels * _shadowFit.TexelWorld)
+                             _shadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
 
         ' Note: ShapeDataLoaded is intentionally NOT checked here. Each mesh.Render() guards
         ' against null RelatedNifShape internally. Checking ShapeDataLoaded at this level would
@@ -5778,10 +6001,11 @@ Public Class PreviewModel
             ' El quad usa OTRO programa, asi que recibe su propia copia de los uniforms — y ahi esta el
             ' truco de los dos mapas: MISMOS nombres de uniform, valores DISTINTOS (el encuadre ancho y su
             ' textura). Por eso no hubo que tocar una linea de GLSL.
-            UploadShadowUniforms(ParentControl.SharedGroundShadowShader, _groundFit, ParentControl.GroundShadowTarget,
-                                 _groundActive, TextureUnit.Texture15, 0.0F,
-                                 _shadowSettings.DepthBiasTexels * _shadowFit.TexelWorld)
-            ParentControl.SharedGroundShadowShader?.SetVector3("uGroundShadowTint", GroundShadowTint())
+            UploadShadowUniforms(ParentControl.SharedGroundShadowShader, _groundFits, _groundCount, Nothing, _groundUvScale,
+                                 ParentControl.GroundShadowTarget, _groundActive,
+                                 TextureUnit.Texture15, 0.0F,
+                                 _shadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
+            SubirAporteDelSuelo(ParentControl.SharedGroundShadowShader)
             _groundQuad.Render(ParentControl.SharedGroundShadowShader, vp, _groundQuadCenter, _groundQuadHalf)
         End If
 

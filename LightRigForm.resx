@@ -120,4 +120,15 @@
   <metadata name="ToolTip1.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
     <value>17, 17</value>
   </metadata>
+  <data name="chkLightsFollowCamera.ToolTip" xml:space="preserve">
+    <value>Off: the lights sit in the WORLD. Orbiting turns the character inside the light, so you see the back lit from behind -- this is what the game does, and it is what you want when judging how a piece will look in-game.
+On (default): the rig turns WITH the camera, like a mesh viewer. The model stays evenly lit from every angle, which is what you want when inspecting geometry.
+Shadows follow either way: every casting light projects from the very same direction the shader lights it with.</value>
+  </data>
+  <data name="chkRecalcNormals.ToolTip" xml:space="preserve">
+    <value>Recalculate normals and the tangent basis when geometry is loaded, after morphs deform it, and when building a NIF. Without it a morphed mesh keeps the tangent basis of its un-morphed shape, which is the frame the shader reads the normal map in — and the built NIF is written that way too.</value>
+  </data>
+  <data name="chkDeterministic.ToolTip" xml:space="preserve">
+    <value>When the bitangent's Gram-Schmidt residual falls below single-precision noise, complete the basis from the normal and tangent instead of normalizing rounding noise. Turn off to reproduce BodySlide byte for byte.</value>
+  </data>
 </root>

@@ -53,11 +53,12 @@ End Structure
 ''' cara mientras el usuario gira, y nadie lo lee como "iluminación consistente". Un estudio real —y el
 ''' motor— tienen las luces quietas y es el modelo el que se gira.</para>
 '''
-''' <para>⭐ LA MIGRACIÓN ES EXACTA EN LA VISTA POR DEFECTO. Con la cámara en (angleX=0, angleY=0),
-''' <c>OrbitCamera.UpdateDirectionFromAngles</c> da <c>Forward=(0,1,0)</c> y
-''' <c>right=cross(Forward,UnitZ)=(1,0,0)</c>: la base de cámara ES la del mundo. Por eso el esquema viejo
-''' se convierte sin pérdida con <see cref="FromCameraRelative"/> y los presets conservan su aspecto en
-''' esa vista — sólo dejan de seguir al usuario.</para>
+''' <para>⛔ NO HAY CONVERSIÓN DESDE EL ESQUEMA VIEJO, y este párrafo la describía. Existió una
+''' <c>FromCameraRelative</c> que convertía los 6 multiplicadores evaluándolos en la vista por defecto
+''' —donde la base de cámara ES la del mundo (<c>Forward=(0,1,0)</c>, <c>right=(1,0,0)</c>), así que la
+''' conversión no perdía nada—, y se borró entera con el bump a esquema 2: los presets se re-autoraron,
+''' con lo cual convertir un rig viejo lo dejaría fuera del set nuevo igual. Hoy un rig de esquema menor
+''' se PISA con <c>Defaults()</c>; ver <c>Config_App.RepararRigDeEsquemaViejo</c>.</para>
 '''
 ''' <para>Convención: azimut 0 = +Y del mundo (de donde mira la cámara por defecto), creciendo hacia +X;
 ''' elevación 0 = horizonte, +90 = cenital. Es la misma fórmula que ya usa la cámara orbital, así que los
@@ -70,6 +71,29 @@ Public Structure PreviewLight
     Public Property AzimuthDeg As Single
     ''' <summary>Grados, 0 = horizonte, +90 = arriba. Se acota a [−90,90] al leer.</summary>
     Public Property ElevationDeg As Single
+
+    ''' <summary>Esta luz escribe su propio shadow map y ocluye su propia contribucion.
+    ''' <para>⛔ ES PARTE DEL RIG, no de <c>PreviewShadowSettings</c>, y esa division es la que hace que
+    ''' la cosa cierre: "que luces castean" es una propiedad de la LUZ y viaja con el preset; "como se
+    ''' dibujan las sombras" (calidad, suavidad, oscuridad, bias, receptor de suelo) es global a todas y
+    ''' vive del otro lado. Mezclarlas obligaria a versionar dos esquemas por el mismo cambio.</para>
+    ''' <para>Default por preset: SOLO la key. Cada luz casteante extra cuesta un mapa de profundidad
+    ''' completo —+16 MB a 2048, y +32 si ademas esta el receptor de suelo, que reserva su propio array del
+    ''' mismo tamano— mas un lookup de PCF por fragmento; que las cuatro PUEDAN no significa que ninguna
+    ''' arranque prendida.</para></summary>
+    Public Property CastsShadow As Boolean
+
+    ''' <summary>True si esta luz puede oscurecer algo: castea Y aporta luz.
+    ''' <para>⭐ EL SEGUNDO TERMINO NO ES UNA OPTIMIZACION OPORTUNISTA, ES UNA IDENTIDAD: el shader
+    ''' multiplica <c>diffuse * factor</c>, y con <c>diffuse = 0</c> el producto es 0 con cualquier factor.
+    ''' O sea que una luz apagada con la casilla puesta produce EXACTAMENTE el mismo frame casteando que
+    ''' no casteando, y castear le costaria un mapa entero. El epsilon esta en espacio perceptual (que es
+    ''' donde vive <c>Diffuse()</c>); en lineal equivale a ~1e-7.</para></summary>
+    Public Function CasteaDeVerdad() As Boolean
+        If Not CastsShadow Then Return False
+        Dim d = Diffuse()
+        Return Math.Max(d.X, Math.Max(d.Y, d.Z)) > 0.0005F
+    End Function
 
     Public Sub New(strength As Single, azimuthDeg As Single, elevationDeg As Single)
         Me.Strength = strength
@@ -93,30 +117,6 @@ Public Structure PreviewLight
                                               CSng(Math.Sin(el)))
     End Function
 
-    ''' <summary>Convierte los 6 multiplicadores del esquema VIEJO (relativos a la cámara) al par
-    ''' azimut/elevación de mundo, evaluándolos en la VISTA POR DEFECTO — donde la base de cámara es la
-    ''' del mundo, así que la conversión no pierde nada.
-    ''' <para>Vive acá y no en el cargador del config porque además es lo que usa el gate
-    ''' <c>rig-migration</c> de Tools/ParityGate para verificar que los presets nuevos son exactamente la
-    ''' conversión de los viejos.</para></summary>
-    Public Shared Function FromCameraRelative(strength As Single, up As Single, down As Single,
-                                              left As Single, right As Single,
-                                              forward As Single, back As Single) As PreviewLight
-        ' Base de la cámara por defecto: right=(1,0,0), forward=(0,1,0), up=(0,0,1).
-        Dim x As Double = right - left
-        Dim y As Double = forward - back
-        Dim z As Double = up - down
-        Dim n As Double = Math.Sqrt(x * x + y * y + z * z)
-        If n < 0.0001 Then
-            ' Mismo fallback que tenía el código viejo ante un vector degenerado: el forward de la cámara.
-            x = 0.0 : y = 1.0 : z = 0.0 : n = 1.0
-        End If
-        x /= n : y /= n : z /= n
-        Dim az As Double = Math.Atan2(x, y) * 180.0 / Math.PI
-        If az < 0.0 Then az += 360.0
-        Dim el As Double = Math.Asin(Math.Clamp(z, -1.0, 1.0)) * 180.0 / Math.PI
-        Return New PreviewLight(strength, CSng(az), CSng(el))
-    End Function
 End Structure
 
 ''' <summary>El rig completo: 4 direccionales + ambient hemisférico de 3 perillas independientes
@@ -158,8 +158,15 @@ Public Structure PreviewLightRig
     ''' la rama de migración, nunca reinterpretar los valores en silencio.</para></summary>
     Public Property SchemaVersion As Integer
 
-    ''' <summary>El esquema que escribe esta versión del código.</summary>
-    Public Const CurrentSchemaVersion As Integer = 1
+    ''' <summary>El esquema que escribe esta versión del código.
+    ''' <para>2 = presets re-autorados (ángulos múltiplos de 15, fuerzas múltiplos de 0,05) + el flag
+    ''' <see cref="PreviewLight.CastsShadow"/> por luz. ⛔ Un rig de esquema menor NO se convierte: se
+    ''' pisa con <see cref="Defaults"/>, incluido un rig personalizado. Es decisión del usuario
+    ''' (2026-08-12) y está argumentada en <c>Config_App.RepararRigDeEsquemaViejo</c>. Sin el bump, un
+    ''' config del esquema 1 se deserializa con <c>CastsShadow = False</c> en las cuatro luces —Structure,
+    ''' el default del tipo, no el del inicializador— y el usuario estrena la feature APAGADA sin haberlo
+    ''' pedido. Ver memoria 10-stack-json-structure-defaults.</para></summary>
+    Public Const CurrentSchemaVersion As Integer = 2
 
     ''' <summary>El rig por default = preset "Studio" (el primero de <see cref="Presets"/>), que es
     ''' también al que vuelve el botón Reset. Una sola fuente de verdad.</summary>
@@ -192,31 +199,30 @@ Public Structure PreviewLightRig
     Public Shared Function Presets() As LightRigPreset()
     ' ⛔ LA KEY DE STUDIO ESTABA A 0 GRADOS DE LA CAMARA (forward:=1 y nada mas), y una luz frontal
     ' pura NO PROYECTA SOMBRA VISIBLE por construccion: lo que ocluye tapa exactamente su propia
-    ' sombra. MEDIDO con Tools/ShadowGate sobre cabeza+pelo+cuerpo vanilla: con el Studio viejo,
-    ' prender las sombras movia 6797 px (1,05 % de la pantalla) con un delta maximo de canal de 23
-    ' sobre 255 — o sea la feature estaba practicamente invisible en el preset por default.
-    ' ⛔ LOS ANGULOS VAN CON 5 DECIMALES, no con 2. Con 2 el error de direccion es 8,4e-5 rad — mil veces
-    ' el ruido del float— y eso alcanza para VOLTEAR pixeles sueltos en un borde con alpha-test (medido:
-    ' 340 px de 648.000 contra el rig viejo, 11 de ellos con delta alto en la silueta del pelo). Con 5
-    ' decimales el error baja a 7,5e-8 = el piso del Single. Al retocar un preset a mano, conservar la
-    ' precision o el A/B contra el commit anterior deja de dar cero.
-    ' El nuevo Studio pone la key a 3/4 (arriba y a un lado), que es donde la pone un estudio real,
-    ' y mantiene el PRESUPUESTO DE LUZ del set calibrado: la suma de las cuatro directas en
-    ' LINEAL sigue en ~0,63 (el viejo daba 0,62). El gate `studio-rig` de Tools/ParityGate verifica
-    ' las dos cosas —presupuesto y angulo— para que nadie devuelva la key al frente sin darse cuenta.
-    ' El ambiente baja de 1,00/0,50 a 0,92/0,45: apenas lo justo para que la sombra se lea sin
-    ' perder la lectura de textura, que es el proposito declarado de este preset.
-    ' ⚠️ Un usuario EXISTENTE no ve ningun cambio: su rig esta persistido en config.json y esto solo
-    ' cambia el preset (o sea lo que aplica Reset / lo que estrena un config nuevo). Efecto lateral
-    ' conocido: si su rig coincidia con el Studio viejo, el combo del dialogo ahora dice "Custom".
+    ' sombra. MEDIDO con Tools/ShadowGate sobre cabeza+pelo+cuerpo vanilla: con aquel Studio, prender
+    ' las sombras movia 6797 px (1,05 % de la pantalla) con un delta maximo de canal de 23 sobre 255.
+    ' El gate `studio-rig` de Tools/ParityGate lo impide desde entonces.
+    ' ⭐ LOS ANGULOS SON REDONDOS Y ESO ES DELIBERADO. Estuvieron con 5 decimales porque eran DERIVADOS
+    ' de una conversion del esquema viejo y 2 decimales volteaban pixeles sueltos en bordes con
+    ' alpha-test (340 px de 648.000 medidos). Esa conversion ya no existe: los sets se autoran a mano,
+    ' en multiplos de 15 grados y 0,05 de fuerza, y el golden `rig-presets` los congela con tolerancia
+    ' 0,00005 grados — no por precision, sino porque un golden flojo no congela nada.
+    ' ⛔ TODA KEY POR ENCIMA DE ShadowMapMath.ElevacionMinimaGrados (11,54). La key de Dungeon estuvo en
+    ' -22,29 grados, o sea bajo el horizonte, y con eso ExpandForGroundShadow rechaza el encuadre: el
+    ' receptor de suelo quedaba PERMANENTEMENTE deshabilitado en ese preset y la UI se lo decia al
+    ' usuario en un cartel. Un preset que apaga una feature no es una eleccion de escenario. Ley 5 de
+    ' `studio-rig`.
+    ' ⛔ SOLO LA KEY CASTEA EN LOS CINCO SETS. Cada luz casteante extra es un shadow map completo
+    ' (+16 MB a 2048) y un lookup de PCF por fragmento; el usuario puede prender las otras tres desde el
+    ' dialogo, pero ningun preset se las estrena por el.
         Return New LightRigPreset() {
             New LightRigPreset("Studio",
                 "Neutral 3-point + rim. Colourless light for judging textures and materials, with the key off-axis so shaped shadows read.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.7F, azimuthDeg:=41.42367F, elevationDeg:=25.88216F),
-                    .FillLeft = New PreviewLight(0.34F, azimuthDeg:=305.21759F, elevationDeg:=8.20385F),
-                    .FillRight = New PreviewLight(0.18F, azimuthDeg:=38.65981F, elevationDeg:=0.00000F),
-                    .BackLight = New PreviewLight(0.28F, azimuthDeg:=199.29005F, elevationDeg:=25.26399F),
+                    .KeyLight = New PreviewLight(0.7F, azimuthDeg:=45.0F, elevationDeg:=30.0F) With {.CastsShadow = True},
+                    .FillLeft = New PreviewLight(0.35F, azimuthDeg:=300.0F, elevationDeg:=15.0F),
+                    .FillRight = New PreviewLight(0.2F, azimuthDeg:=30.0F, elevationDeg:=0.0F),
+                    .BackLight = New PreviewLight(0.3F, azimuthDeg:=225.0F, elevationDeg:=30.0F),
                     .AmbientIntensity = 0.92F,
                     .AmbientGroundLevel = 0.45F,
                     .AmbientSkyColor = RigColor.White,
@@ -225,34 +231,34 @@ Public Structure PreviewLightRig
             New LightRigPreset("Sunny day",
                 "Hard high sun from the upper left, blue sky as fill and a warm bounce off the ground. The most directional set: sunlit side vs shaded side is a wide ratio.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(1F, azimuthDeg:=47.72631F, elevationDeg:=53.37645F) With {.Color = New RigColor(1.0F, 0.96F, 0.9F)},
-                    .FillLeft = New PreviewLight(0.35F, azimuthDeg:=60.94540F, elevationDeg:=23.60911F) With {.Color = New RigColor(0.82F, 0.88F, 1.0F)},
-                    .FillRight = New PreviewLight(0.48F, azimuthDeg:=296.56505F, elevationDeg:=19.17935F) With {.Color = New RigColor(0.82F, 0.88F, 1.0F)},
-                    .BackLight = New PreviewLight(0.35F, azimuthDeg:=180.00000F, elevationDeg:=30.96376F) With {.Color = New RigColor(1.0F, 0.97F, 0.92F)},
+                    .KeyLight = New PreviewLight(0.9F, azimuthDeg:=45.0F, elevationDeg:=60.0F) With {.Color = New RigColor(1.0F, 0.96F, 0.9F), .CastsShadow = True},
+                    .FillLeft = New PreviewLight(0.4F, azimuthDeg:=300.0F, elevationDeg:=30.0F) With {.Color = New RigColor(0.82F, 0.88F, 1.0F)},
+                    .FillRight = New PreviewLight(0.3F, azimuthDeg:=30.0F, elevationDeg:=-15.0F) With {.Color = New RigColor(0.82F, 0.88F, 1.0F)},
+                    .BackLight = New PreviewLight(0.35F, azimuthDeg:=225.0F, elevationDeg:=45.0F) With {.Color = New RigColor(1.0F, 0.97F, 0.92F)},
                     .AmbientIntensity = 0.62F,
                     .AmbientGroundLevel = 0.6F,
                     .AmbientSkyColor = New RigColor(0.78F, 0.86F, 1.0F),
                     .AmbientGroundColor = New RigColor(1.0F, 0.9F, 0.76F),
                     .SchemaVersion = CurrentSchemaVersion}),
             New LightRigPreset("Overcast",
-                "Cloudy dome: the key carries only a quarter of the light and the ambient does the rest, so shadows stay faint. Volume comes from the sky-to-ground gradient, not from shape.",
+                "Cloudy dome: a high, weak key with the ambient doing most of the work, so shadows stay faint. Volume comes from the sky-to-ground gradient, not from shape.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.34F, azimuthDeg:=0.00000F, elevationDeg:=65.77225F) With {.Color = New RigColor(0.97F, 0.98F, 1.0F)},
-                    .FillLeft = New PreviewLight(0.4F, azimuthDeg:=59.53446F, elevationDeg:=19.54049F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
-                    .FillRight = New PreviewLight(0.4F, azimuthDeg:=300.46554F, elevationDeg:=19.54049F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
-                    .BackLight = New PreviewLight(0.22F, azimuthDeg:=180.00000F, elevationDeg:=16.69924F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
+                    .KeyLight = New PreviewLight(0.45F, azimuthDeg:=45.0F, elevationDeg:=75.0F) With {.Color = New RigColor(0.97F, 0.98F, 1.0F), .CastsShadow = True},
+                    .FillLeft = New PreviewLight(0.35F, azimuthDeg:=315.0F, elevationDeg:=15.0F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
+                    .FillRight = New PreviewLight(0.35F, azimuthDeg:=45.0F, elevationDeg:=15.0F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
+                    .BackLight = New PreviewLight(0.2F, azimuthDeg:=180.0F, elevationDeg:=30.0F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
                     .AmbientIntensity = 1.05F,
                     .AmbientGroundLevel = 0.55F,
                     .AmbientSkyColor = New RigColor(0.9F, 0.94F, 1.0F),
                     .AmbientGroundColor = New RigColor(0.72F, 0.71F, 0.68F),
                     .SchemaVersion = CurrentSchemaVersion}),
             New LightRigPreset("Portrait",
-                "Studio portrait: 3/4 key from the RIGHT (opposite side to Sunny day) with almost no overhead component, 4:1 fill, off-axis hair kicker and a dark ground so the body falls into shadow.",
+                "Studio portrait: 3/4 key from the RIGHT (opposite side to Sunny day), high enough to shape the cheekbone, 2:1 fill, off-axis hair kicker and a dark ground so the body falls into shadow.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(1F, azimuthDeg:=318.17983F, elevationDeg:=15.35295F) With {.Color = New RigColor(1.0F, 0.97F, 0.93F)},
-                    .FillLeft = New PreviewLight(0.36F, azimuthDeg:=56.30993F, elevationDeg:=-7.89514F) With {.Color = New RigColor(0.94F, 0.96F, 1.0F)},
-                    .FillRight = New PreviewLight(0.17F, azimuthDeg:=308.65981F, elevationDeg:=0.00000F) With {.Color = New RigColor(1.0F, 0.98F, 0.95F)},
-                    .BackLight = New PreviewLight(0.39F, azimuthDeg:=153.43495F, elevationDeg:=28.22051F) With {.Color = New RigColor(1.0F, 0.95F, 0.88F)},
+                    .KeyLight = New PreviewLight(0.9F, azimuthDeg:=315.0F, elevationDeg:=45.0F) With {.Color = New RigColor(1.0F, 0.97F, 0.93F), .CastsShadow = True},
+                    .FillLeft = New PreviewLight(0.5F, azimuthDeg:=45.0F, elevationDeg:=15.0F) With {.Color = New RigColor(0.94F, 0.96F, 1.0F)},
+                    .FillRight = New PreviewLight(0.25F, azimuthDeg:=285.0F, elevationDeg:=0.0F) With {.Color = New RigColor(1.0F, 0.98F, 0.95F)},
+                    .BackLight = New PreviewLight(0.45F, azimuthDeg:=135.0F, elevationDeg:=45.0F) With {.Color = New RigColor(1.0F, 0.95F, 0.88F)},
                     .AmbientIntensity = 0.58F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.96F, 0.97F, 1.0F),
@@ -261,10 +267,10 @@ Public Structure PreviewLightRig
             New LightRigPreset("Dungeon",
                 "A NEAR wall torch low on the left plus a far weaker one behind on the right (the asymmetric distance), with cold moonlight through a grate. Only the near torch is strongly warm; everything else is cool, so the contrast is one of TEMPERATURE instead of dyeing the whole model orange.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.74F, azimuthDeg:=59.93142F, elevationDeg:=-22.29063F) With {.Color = New RigColor(1.0F, 0.84F, 0.66F)},
-                    .FillLeft = New PreviewLight(0.3F, azimuthDeg:=50.19443F, elevationDeg:=-21.01231F) With {.Color = New RigColor(1.0F, 0.9F, 0.8F)},
-                    .FillRight = New PreviewLight(0.28F, azimuthDeg:=232.12502F, elevationDeg:=7.49472F) With {.Color = New RigColor(1.0F, 0.88F, 0.74F)},
-                    .BackLight = New PreviewLight(0.38F, azimuthDeg:=180.00000F, elevationDeg:=24.22775F) With {.Color = New RigColor(0.72F, 0.8F, 1.0F)},
+                    .KeyLight = New PreviewLight(1.0F, azimuthDeg:=60.0F, elevationDeg:=15.0F) With {.Color = New RigColor(1.0F, 0.84F, 0.66F), .CastsShadow = True},
+                    .FillLeft = New PreviewLight(0.45F, azimuthDeg:=240.0F, elevationDeg:=30.0F) With {.Color = New RigColor(1.0F, 0.9F, 0.8F)},
+                    .FillRight = New PreviewLight(0.3F, azimuthDeg:=30.0F, elevationDeg:=-30.0F) With {.Color = New RigColor(1.0F, 0.88F, 0.74F)},
+                    .BackLight = New PreviewLight(0.4F, azimuthDeg:=210.0F, elevationDeg:=45.0F) With {.Color = New RigColor(0.72F, 0.8F, 1.0F)},
                     .AmbientIntensity = 0.56F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.68F, 0.76F, 0.95F),
