@@ -594,8 +594,7 @@ Partial Public Class LightRigForm
             .AmbientIntensity = CSng(tambient.Value),
             .AmbientGroundLevel = CSng(tGroundLevel.Value),
             .AmbientSkyColor = RigColor.FromColor(btnAmbSky.BackColor),
-            .AmbientGroundColor = RigColor.FromColor(btnAmbGround.BackColor),
-            .SchemaVersion = PreviewLightRig.CurrentSchemaVersion}
+            .AmbientGroundColor = RigColor.FromColor(btnAmbGround.BackColor)}
 
         Config_App.Current.SetActiveLights(rig)
         ' Mover la elevacion de la key puede habilitar o deshabilitar el receptor de suelo.

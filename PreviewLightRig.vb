@@ -1,4 +1,4 @@
-' Rig de luces del previewer GL (4 direccionales + ambient hemisférico), compartido FO4/SSE.
+﻿' Rig de luces del previewer GL (4 direccionales + ambient hemisférico), compartido FO4/SSE.
 '
 ' ⛔ SIN COMPATIBILIDAD con el `Setting_Lightrig` / `LightsRig_struct` anterior: aquel guardaba los
 ' colores como `System.Numerics.Vector3`, cuyos X/Y/Z son CAMPOS, y System.Text.Json (IncludeFields =
@@ -7,7 +7,7 @@
 ' De ahí el síntoma: preview oscuro que cambiaba solo con abrir el rig. Acá TODO son PROPIEDADES de
 ' tipos primitivos => round-trip exacto por JSON, sin converters ni fallbacks "(0,0,0) = blanco".
 '
-' El rig es POR JUEGO (Config_App.Setting_PreviewLights_FO4 / _SSE, igual que las opciones de CharGen).
+' El rig es POR JUEGO (Config_App.Setting_LightRig_FO4 / _SSE, igual que las opciones de CharGen).
 ' Nadie toca los campos por juego directamente: Render y LightRigForm van SIEMPRE por
 ' Config_App.Current.ActiveLights() / SetActiveLights(), así cambiar de juego cambia el rig solo.
 
@@ -56,9 +56,10 @@ End Structure
 ''' <para>⛔ NO HAY CONVERSIÓN DESDE EL ESQUEMA VIEJO, y este párrafo la describía. Existió una
 ''' <c>FromCameraRelative</c> que convertía los 6 multiplicadores evaluándolos en la vista por defecto
 ''' —donde la base de cámara ES la del mundo (<c>Forward=(0,1,0)</c>, <c>right=(1,0,0)</c>), así que la
-''' conversión no perdía nada—, y se borró entera con el bump a esquema 2: los presets se re-autoraron,
-''' con lo cual convertir un rig viejo lo dejaría fuera del set nuevo igual. Hoy un rig de esquema menor
-''' se PISA con <c>Defaults()</c>; ver <c>Config_App.RepararRigDeEsquemaViejo</c>.</para>
+''' conversión no perdía nada—, y se borró entera cuando se re-autoraron los presets: convertir un rig
+''' viejo lo dejaría fuera del set nuevo igual. Hoy tampoco hay VERSIÓN ni reparación: la propiedad que
+''' persiste el rig se renombró, así que un rig viejo no se convierte ni se pisa — no se lee. Ver el
+''' bloque de <c>Setting_LightRig_*</c> en <c>Config_Class.vb</c>.</para>
 '''
 ''' <para>Convención: azimut 0 = +Y del mundo (de donde mira la cámara por defecto), creciendo hacia +X;
 ''' elevación 0 = horizonte, +90 = cenital. Es la misma fórmula que ya usa la cámara orbital, así que los
@@ -150,23 +151,14 @@ Public Structure PreviewLightRig
     ''' <summary>TINTE del hemisferio de abajo. El BRILLO lo da <see cref="AmbientGroundLevel"/>.</summary>
     Public Property AmbientGroundColor As RigColor
 
-    ''' <summary>Versión del ESQUEMA de este rig. **CENTINELA de migración**: un config.json escrito antes
-    ''' de las luces fijas al mundo no trae la clave, el deserializador la deja en 0, y ahí
-    ''' <c>Config_App.LoadConfig</c> sabe que tiene que convertir los 6 multiplicadores viejos leyéndolos
-    ''' del JSON crudo. Un Boolean no serviría de centinela: ausente y False son indistinguibles.
-    ''' <para>1 = azimut/elevación de mundo. Al cambiar el esquema otra vez: subir la constante y agregar
-    ''' la rama de migración, nunca reinterpretar los valores en silencio.</para></summary>
-    Public Property SchemaVersion As Integer
-
-    ''' <summary>El esquema que escribe esta versión del código.
-    ''' <para>2 = presets re-autorados (ángulos múltiplos de 15, fuerzas múltiplos de 0,05) + el flag
-    ''' <see cref="PreviewLight.CastsShadow"/> por luz. ⛔ Un rig de esquema menor NO se convierte: se
-    ''' pisa con <see cref="Defaults"/>, incluido un rig personalizado. Es decisión del usuario
-    ''' (2026-08-12) y está argumentada en <c>Config_App.RepararRigDeEsquemaViejo</c>. Sin el bump, un
-    ''' config del esquema 1 se deserializa con <c>CastsShadow = False</c> en las cuatro luces —Structure,
-    ''' el default del tipo, no el del inicializador— y el usuario estrena la feature APAGADA sin haberlo
-    ''' pedido. Ver memoria 10-stack-json-structure-defaults.</para></summary>
-    Public Const CurrentSchemaVersion As Integer = 2
+    ' ⛔⭐ ESTE RIG NO TIENE VERSION DE ESQUEMA, Y ES A PROPOSITO. Tenia una (`SchemaVersion` +
+    ' `CurrentSchemaVersion`) que `Config_App.LoadConfig` comparaba para reponer los defaults; se borraron
+    ' las tres cosas. La invalidacion pasó a hacerse RENOMBRANDO la propiedad que persiste el rig
+    ' (`Setting_PreviewLights_*` -> `Setting_LightRig_*`), con lo cual el dato viejo no se detecta: no se
+    ' lee. Ver el bloque de `Setting_LightRig_*` en Config_Class.vb, que tiene el mecanismo y su precio.
+    ' El motivo: una version obliga a mantener una rama que PUEDE no dispararse —y este proyecto ya tuvo
+    ' tres mecanismos distintos de invalidacion conviviendo, uno de ellos ciego a "la clave existia y
+    ' significaba otra cosa"—. Una clave que no existe no se puede leer mal.
 
     ''' <summary>El rig por default = preset "Studio" (el primero de <see cref="Presets"/>), que es
     ''' también al que vuelve el botón Reset. Una sola fuente de verdad.</summary>
@@ -226,8 +218,7 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.92F,
                     .AmbientGroundLevel = 0.45F,
                     .AmbientSkyColor = RigColor.White,
-                    .AmbientGroundColor = RigColor.White,
-                    .SchemaVersion = CurrentSchemaVersion}),
+                    .AmbientGroundColor = RigColor.White}),
             New LightRigPreset("Sunny day",
                 "Hard high sun from the upper left, blue sky as fill and a warm bounce off the ground. The most directional set: sunlit side vs shaded side is a wide ratio.",
                 New PreviewLightRig With {
@@ -238,8 +229,7 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.62F,
                     .AmbientGroundLevel = 0.6F,
                     .AmbientSkyColor = New RigColor(0.78F, 0.86F, 1.0F),
-                    .AmbientGroundColor = New RigColor(1.0F, 0.9F, 0.76F),
-                    .SchemaVersion = CurrentSchemaVersion}),
+                    .AmbientGroundColor = New RigColor(1.0F, 0.9F, 0.76F)}),
             New LightRigPreset("Overcast",
                 "Cloudy dome: a high, weak key with the ambient doing most of the work, so shadows stay faint. Volume comes from the sky-to-ground gradient, not from shape.",
                 New PreviewLightRig With {
@@ -250,8 +240,7 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 1.05F,
                     .AmbientGroundLevel = 0.55F,
                     .AmbientSkyColor = New RigColor(0.9F, 0.94F, 1.0F),
-                    .AmbientGroundColor = New RigColor(0.72F, 0.71F, 0.68F),
-                    .SchemaVersion = CurrentSchemaVersion}),
+                    .AmbientGroundColor = New RigColor(0.72F, 0.71F, 0.68F)}),
             New LightRigPreset("Portrait",
                 "Studio portrait: 3/4 key from the RIGHT (opposite side to Sunny day), high enough to shape the cheekbone, 2:1 fill, off-axis hair kicker and a dark ground so the body falls into shadow.",
                 New PreviewLightRig With {
@@ -262,8 +251,7 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.58F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.96F, 0.97F, 1.0F),
-                    .AmbientGroundColor = New RigColor(0.7F, 0.66F, 0.62F),
-                    .SchemaVersion = CurrentSchemaVersion}),
+                    .AmbientGroundColor = New RigColor(0.7F, 0.66F, 0.62F)}),
             New LightRigPreset("Dungeon",
                 "A NEAR wall torch low on the left plus a far weaker one behind on the right (the asymmetric distance), with cold moonlight through a grate. Only the near torch is strongly warm; everything else is cool, so the contrast is one of TEMPERATURE instead of dyeing the whole model orange.",
                 New PreviewLightRig With {
@@ -274,8 +262,7 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.56F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.68F, 0.76F, 0.95F),
-                    .AmbientGroundColor = New RigColor(0.8F, 0.7F, 0.6F),
-                    .SchemaVersion = CurrentSchemaVersion})}
+                    .AmbientGroundColor = New RigColor(0.8F, 0.7F, 0.6F)})}
     End Function
 
     ''' <summary>Color del hemisferio de arriba ya escalado por la intensidad (sin linearizar).</summary>

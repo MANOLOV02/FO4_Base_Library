@@ -216,43 +216,72 @@ Public Class Config_App
     ' colores como System.Numerics.Vector3 (X/Y/Z son CAMPOS) y System.Text.Json los escribía como `{}`,
     ' así que al releer volvían (0,0,0) = ambient negro. La key vieja del config.json se ignora al cargar
     ' (STJ saltea las desconocidas) y desaparece en el próximo guardado.
-    Public Property Setting_PreviewLights_FO4 As PreviewLightRig = PreviewLightRig.Defaults()
-    Public Property Setting_PreviewLights_SSE As PreviewLightRig = PreviewLightRig.Defaults()
+    ''' <summary>⛔⭐ EL NOMBRE DE LA PROPIEDAD **ES** LA VERSION DEL ESQUEMA, y por eso no hay ninguna.
+    '''
+    ''' <para>Estas claves se llamaban <c>Setting_PreviewLights_FO4/_SSE</c>. Al re-autorarse los presets y
+    ''' agregarse el casteo por luz, el rig guardado de cualquier usuario dejo de tener sentido —no hay
+    ''' recomposicion posible: cambia el set entero— asi que en vez de versionar y reparar, se RENOMBRO.
+    ''' El mecanismo es el que ya uso este proyecto cuando <c>Setting_Lightrig</c> paso a
+    ''' <c>Setting_PreviewLights_*</c>, y esta MEDIDO sobre el config.json real: System.Text.Json ignora la
+    ''' clave que no conoce al cargar, la propiedad nueva se queda con el inicializador (o sea
+    ''' <c>Defaults()</c>, porque Config_App es una CLASS y sus inicializadores SI corren), y al re-guardar
+    ''' se escribe sólo lo que existe hoy ⇒ <b>la clave vieja desaparece sola del archivo</b>.</para>
+    '''
+    ''' <para>⭐ Lo que esto compra: CERO guards. No hay <c>SchemaVersion</c>, ni funcion de reparacion, ni
+    ''' centinela, ni rama que pueda no dispararse. Un config viejo no se "detecta y repara": directamente
+    ''' no se lee. Es la unica forma de invalidacion que no puede fallar en silencio, y este archivo tenia
+    ''' TRES mecanismos distintos para el mismo problema (version en el rig, centinela <c>MapSize &lt;= 0</c>
+    ''' en las sombras, version en TBN), uno de ellos —el centinela— incapaz de distinguir "nunca existio"
+    ''' de "existio con otro significado".</para>
+    '''
+    ''' <para>⛔ EL PRECIO, y hay que saberlo: esto sirve UNA VEZ POR NOMBRE. Si mañana cambia otra vez el
+    ''' significado del rig hay que RENOMBRAR DE NUEVO; si alguien edita la semantica y se olvida, el dato
+    ''' viejo se reinterpreta en silencio y no hay version que lo delate. A cambio, mientras se respete, no
+    ''' existe el modo de falla contrario (un guard que se creia que corria y no corria). El gate
+    ''' <c>config-esquema-borrado</c> verifica las dos mitades: que la clave vieja se ignore y que no
+    ''' sobreviva al guardado.</para></summary>
+    Public Property Setting_LightRig_FO4 As PreviewLightRig = PreviewLightRig.Defaults()
+    Public Property Setting_LightRig_SSE As PreviewLightRig = PreviewLightRig.Defaults()
 
     ''' <summary>El rig del juego activo. Value-type: devuelve una COPIA (editarla no persiste nada;
     ''' para escribir usar <see cref="SetActiveLights"/>).</summary>
     Public Function ActiveLights() As PreviewLightRig
-        Return If(Game = Game_Enum.Skyrim, Setting_PreviewLights_SSE, Setting_PreviewLights_FO4)
+        Return If(Game = Game_Enum.Skyrim, Setting_LightRig_SSE, Setting_LightRig_FO4)
     End Function
 
     ''' <summary>Escribe el rig en el slot del juego activo.</summary>
     Public Sub SetActiveLights(rig As PreviewLightRig)
         If Game = Game_Enum.Skyrim Then
-            Setting_PreviewLights_SSE = rig
+            Setting_LightRig_SSE = rig
         Else
-            Setting_PreviewLights_FO4 = rig
+            Setting_LightRig_FO4 = rig
         End If
     End Sub
 
     ' === Sombras proyectadas del previewer, POR JUEGO (misma convención que el rig de luces) ===
     ' Nadie las lee directo: Render y LightRigForm van por ActiveShadows()/SetActiveShadows().
-    ' ⛔ Un config.json anterior a esta opción no trae la clave y PreviewShadowSettings es una Structure:
-    ' el deserializador la deja en cero. El repuesto está en LoadConfig con MapSize=0 de centinela.
-    Public Property Setting_PreviewShadows_FO4 As PreviewShadowSettings = PreviewShadowSettings.Defaults()
-    Public Property Setting_PreviewShadows_SSE As PreviewShadowSettings = PreviewShadowSettings.Defaults()
+    ' ⛔ RENOMBRADAS junto con el rig (eran `Setting_PreviewShadows_FO4/_SSE`) y por el mismo motivo: ver el
+    ' bloque de Setting_LightRig_*. Renombrarlas ADEMAS elimina el centinela `MapSize <= 0` que tenían en
+    ' LoadConfig: con la clave nueva ausente, la propiedad se queda con el `Defaults()` completo y no hay
+    ' nada que detectar ni reparar. Ese centinela era el más débil de los tres mecanismos que convivían acá,
+    ' porque sólo distinguía "la clave no estaba" y no "la clave estaba y significaba otra cosa".
+    ' ⚠️ El clamp de PreviewShadowSettings.Sanitized() NO se va: eso defiende el camino de dibujo de un
+    ' config editado a mano, que es otro problema.
+    Public Property Setting_ShadowMaps_FO4 As PreviewShadowSettings = PreviewShadowSettings.Defaults()
+    Public Property Setting_ShadowMaps_SSE As PreviewShadowSettings = PreviewShadowSettings.Defaults()
 
     ''' <summary>Los ajustes de sombra del juego activo. Value-type: devuelve una COPIA (para escribir,
     ''' <see cref="SetActiveShadows"/>).</summary>
     Public Function ActiveShadows() As PreviewShadowSettings
-        Return If(Game = Game_Enum.Skyrim, Setting_PreviewShadows_SSE, Setting_PreviewShadows_FO4)
+        Return If(Game = Game_Enum.Skyrim, Setting_ShadowMaps_SSE, Setting_ShadowMaps_FO4)
     End Function
 
     ''' <summary>Escribe los ajustes de sombra en el slot del juego activo.</summary>
     Public Sub SetActiveShadows(s As PreviewShadowSettings)
         If Game = Game_Enum.Skyrim Then
-            Setting_PreviewShadows_SSE = s
+            Setting_ShadowMaps_SSE = s
         Else
-            Setting_PreviewShadows_FO4 = s
+            Setting_ShadowMaps_FO4 = s
         End If
     End Sub
 
@@ -318,81 +347,34 @@ Public Class Config_App
         JsonConfigIO.Save(Current, ConfigFilePath, "configuration")
     End Sub
 
-    ''' <summary>⭐ RIG DE ESQUEMA VIEJO ⇒ PRESET POR DEFAULT. Sin conversion, sin lectura del JSON crudo,
-    ''' sin ramas por campo. Devuelve el rig que hay que usar y, por <paramref name="pisado"/>, si lo cambio.
-    '''
-    ''' <para>⛔⛔ ESTO PISA LO QUE EL USUARIO HAYA ELEGIDO, incluido un rig personalizado, y es una
-    ''' DECISION SUYA (2026-08-12: <i>"se pisan directo y el custom si lo tiene se olvida"</i>). La
-    ''' alternativa —arrastrar un lector del formato anterior por cada bump de esquema— es exactamente el
-    ''' modo legacy que este proyecto no tiene. Reemplaza a la conversion de los 6 multiplicadores
-    ''' relativos a la camara (esquema 0 → 1), que se borro entera junto con
-    ''' <c>PreviewLight.FromCameraRelative</c>.</para>
-    '''
-    ''' <para>El centinela es <see cref="PreviewLightRig.SchemaVersion"/>: un config.json anterior no trae
-    ''' la clave y el deserializador la deja en 0, y uno del esquema 1 trae un 1. Los dos son &lt; 2 ⇒ los
-    ''' dos se reponen. Es PURA a proposito —no toca <c>Current</c> ni el disco— para que el gate
-    ''' <c>rig-esquema-viejo</c> la pueda probar sin config de por medio.</para></summary>
-    Friend Shared Function RepararRigDeEsquemaViejo(rig As PreviewLightRig, ByRef pisado As Boolean) As PreviewLightRig
-        If rig.SchemaVersion >= PreviewLightRig.CurrentSchemaVersion Then
-            pisado = False
-            Return rig
-        End If
-        pisado = True
-        Return PreviewLightRig.Defaults()
-    End Function
+    ' ⛔⭐ ACA VIVIA `RepararRigDeEsquemaViejo`, Y SE BORRO ENTERA. El rig y las sombras del preview ya no se
+    ' versionan ni se reparan: sus propiedades se RENOMBRARON, con lo cual el dato viejo no se detecta —
+    ' simplemente no se lee, y desaparece del archivo en el proximo guardado. Ver el bloque de
+    ' `Setting_LightRig_*`, donde esta el mecanismo y su precio.
+    ' El motivo de fondo: un guard puede no dispararse (y este archivo llego a tener TRES mecanismos
+    ' distintos, uno de ellos incapaz de distinguir "la clave no estaba" de "estaba y significaba otra
+    ' cosa"). Una clave que no existe no puede leerse mal.
 
     Public Shared Sub LoadConfig()
         Dim cfg = JsonConfigIO.Load(Of Config_App)(ConfigFilePath, "configuration")
         If cfg IsNot Nothing Then
             Current = cfg
-            ' - LOS CINCO REPAROS DE ESTE METODO SE PERSISTEN, no dos. `hayQueGrabar` se declara aca arriba
-            ' porque los tres centinelas de abajo (grilla y los dos de sombras) tambien MUTAN `Current` y
-            ' antes no tocaban el grabado: se salvaban de casualidad, por el mismo "grabado gratis" de la
-            ' rama de TBN que corria en cada arranque. Desde que esa rama es de UNA VEZ por version, un
-            ' usuario que ya migro las opciones se queda con la grilla y las sombras reparadas SOLO EN
-            ' MEMORIA, rehaciendo el mismo trabajo en cada arranque. Es el argumento que ya esta escrito
-            ' abajo para el rig, palabra por palabra.
+            ' `hayQueGrabar` se declara aca arriba porque el centinela de la grilla tambien MUTA `Current` y
+            ' antes no tocaba el grabado: se salvaba de casualidad, por el "grabado gratis" de la rama de
+            ' TBN que corria en cada arranque. Desde que esa rama es de UNA VEZ por version, sin esto la
+            ' grilla se repara SOLO EN MEMORIA y se rehace el mismo trabajo en cada arranque.
             Dim hayQueGrabar As Boolean = False
             If Current.Settings_RenderGrid.Size = 0 Then
                 Current.Settings_RenderGrid = Default_RenderGrid_Settings()
                 hayQueGrabar = True
             End If
-            ' ⛔ CENTINELA de las sombras. PreviewShadowSettings es una Structure y el config.json de todo
-            ' usuario existente NO trae la clave, así que el deserializador la deja entera en cero: las
-            ' sombras arrancarían apagadas Y con MapSize=0, o sea rotas si alguien las prendiera. Un mapa
-            ' de 0 texeles no es un valor legítimo, que es justo lo que se le pide a un centinela (un
-            ' Boolean no serviría: False-por-ausencia y False-por-decisión son indistinguibles).
-            ' Ver memoria 10-stack-json-structure-defaults.
-            If Current.Setting_PreviewShadows_FO4.MapSize <= 0 Then
-                Current.Setting_PreviewShadows_FO4 = PreviewShadowSettings.Defaults()
-                hayQueGrabar = True
-            End If
-            If Current.Setting_PreviewShadows_SSE.MapSize <= 0 Then
-                Current.Setting_PreviewShadows_SSE = PreviewShadowSettings.Defaults()
-                hayQueGrabar = True
-            End If
-
-            ' ⛔ RIG DE ESQUEMA VIEJO: SE PISA CON EL PRESET POR DEFAULT, no se convierte. Un config.json
-            ' anterior a las luces fijas al mundo no trae SchemaVersion (queda en 0) y uno del esquema 1
-            ' trae un 1; los dos son menores que el actual y los dos se reponen. Sin esto, el
-            ' deserializador dejaria las direcciones en CERO —las cuatro luces apuntando horizontal desde
-            ' +Y— y el preview cambiaria en silencio.
-            ' La decision de PISAR (y de perder un rig personalizado) es del usuario y esta argumentada en
-            ' RepararRigDeEsquemaViejo. Antes habia una conversion que leia los 6 multiplicadores del JSON
-            ' crudo; se borro entera con el bump a esquema 2, porque los presets se re-autoraron y
-            ' convertir un rig viejo lo dejaria fuera del set nuevo igual.
-            ' ⛔ SE GRABA ACA. La reparacion no persiste por si sola, y hasta ahora le servia de grabado
-            ' gratis la rama de TBN de abajo — que corre UNA SOLA VEZ por version. Sin marcar `hayQueGrabar`
-            ' un usuario que ya migro las opciones se queda con el rig repuesto SOLO EN MEMORIA, repitiendo
-            ' el mismo trabajo en cada arranque y con el config a medio terminar en disco.
-            ' ⛔ UN SOLO GRABADO AL FINAL, no un SaveConfig() aca: con dos escrituras, la primera persiste
-            ' las opciones de TBN TODAVIA sin reparar y se duplica la exposicion a la falla de escritura
-            ' (instalacion en Program Files, archivo de solo lectura).
-            Dim rigPisado As Boolean
-            Current.Setting_PreviewLights_FO4 = RepararRigDeEsquemaViejo(Current.Setting_PreviewLights_FO4, rigPisado)
-            If rigPisado Then hayQueGrabar = True
-            Current.Setting_PreviewLights_SSE = RepararRigDeEsquemaViejo(Current.Setting_PreviewLights_SSE, rigPisado)
-            If rigPisado Then hayQueGrabar = True
+            ' ⛔⭐ ACA HABIA CUATRO RAMAS MAS —el centinela `MapSize <= 0` de las dos configs de sombra y la
+            ' reparacion por version de los dos rigs— y NO SE REEMPLAZARON POR NADA: las cuatro propiedades
+            ' se RENOMBRARON, asi que el dato viejo ya no se lee y no hay nada que detectar. Ver el bloque de
+            ' `Setting_LightRig_*`.
+            ' ⭐ Y no hace falta grabar por eso: un config viejo se carga con los defaults en memoria, y la
+            ' clave vieja desaparece del archivo en el primer guardado que ocurra por cualquier motivo. Si
+            ' nunca ocurre, tampoco importa — lo que hay en disco no se vuelve a leer.
             ' ⛔ MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
             ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0, o sea
             ' que la estrenaria APAGADA sin haberlo pedido. Si el archivo declara una version anterior,
