@@ -577,22 +577,25 @@ Friend Class ShadowMapTarget
     ''' indexado dinamico de samplers, que es la trampa que tendria la version con N texturas.
     ''' ⛔ Un ATLAS 2x2 en una sola textura 2D estaba descartado por correctitud: el kernel de PCF cruza
     ''' el borde del tile y lee la profundidad del vecino.</para></summary>
-    ''' <param name="media">16 bits de profundidad en vez de 24 (que el driver guarda en 32) ⇒ **la MITAD
-    ''' de VRAM**. Se usa en el array ANCHO del receptor de suelo y NO en el del personaje, y la asimetria
-    ''' esta medida, no elegida:
-    ''' <list type="bullet">
-    ''' <item>La cuantizacion no viene de la precision del formato sino del RANGO: este ortho abarca ~161 u,
-    ''' asi que 16 bits dan 161/65536 = 0,0025 u de escalon, contra un TEXEL de 0,0748 u a 2048 — 30 veces
-    ''' mas fino que la huella del texel. (Lo que arruina un mapa de 16 bits en un juego es la no
-    ''' linealidad del depth en PERSPECTIVA; un ortho no la tiene.)</item>
-    ''' <item>⛔ Y aun asi NO es gratis en el personaje: medido con `ab-default`, pasar el mapa del
-    ''' personaje a 16 bits mueve <b>244 px de 648.000 (0,038 %) con delta 1</b> contra el render anterior.
-    ''' Invisible, pero distinto de cero — y ese check es el mas fuerte del paquete justamente porque exige
-    ''' CERO. Aflojarlo a una tolerancia para ahorrar VRAM seria cambiar el instrumento por el resultado.</item>
-    ''' <item>El del suelo no participa de ese A/B (el receptor viene apagado por default), es una mancha
-    ''' difusa con texeles ~5x mas grandes, y su penumbra ya tiene una divergencia deliberada declarada.
-    ''' Ahi los 16 bits no compran ruido que se note y ahorran la mitad de la mitad del total.</item>
-    ''' </list></param>
+    ''' <param name="media">16 bits de profundidad en vez de 24 (que el driver guarda en 32) ⇒ **la MITAD de
+    ''' VRAM**. Hoy lo usan LOS DOS arrays; el parametro existe para poder volver atras uno solo.
+    '''
+    ''' <para>⭐ POR QUE ALCANZAN 16 BITS, medido y no supuesto: la cuantizacion no la fija la precision del
+    ''' formato sino el RANGO. Este ortho abarca ~161 u, asi que 16 bits dan 161/65536 = <b>0,0025 u</b> de
+    ''' escalon contra un TEXEL de <b>0,0748 u</b> a 2048 — 30 veces mas fino que la huella del texel, y
+    ''' todavia 15 veces mas fino a 4096. Lo que arruina un mapa de 16 bits en un juego es la NO LINEALIDAD
+    ''' del depth en proyeccion PERSPECTIVA; un ortho no la tiene.</para>
+    '''
+    ''' <para>⭐⭐ Y LO QUE COMPRA NO ES "MENOS MEMORIA": ES PODER GASTARLA EN RESOLUCION. Lo que se ve en el
+    ''' borde de la sombra es el TEXEL, no los bits de profundidad — asi que a igual presupuesto conviene
+    ''' 16 bits a 4096 (texel 0,0374 u, 32 MB por luz) antes que 24 bits a 2048 (texel 0,0748 u, 16 MB), y
+    ''' 16 a 4096 se ve igual que 24 a 4096 por la MITAD.</para>
+    '''
+    ''' <para>Medido: en el mapa del SUELO no movio un solo pixel (`ground-penumbra` da el mismo numero con
+    ''' 24 y con 16). En el del PERSONAJE mueve <b>244 px de 648.000 (0,038 %) con delta exactamente 1</b>
+    ''' — el bit menos significativo del encode, en la banda de PCF. `ab-default` lo acepta como divergencia
+    ''' DECLARADA y a cambio afirma algo mas fuerte que "0 px": que el delta maximo sea &lt;= 1 y el conteo
+    ''' quede acotado. Un umbral que solo mirara el conteo dejaria pasar 244 px con delta 200.</para></param>
     Friend Function Ensure(size As Integer, layers As Integer, Optional media As Boolean = False) As Boolean
         If size <= 0 OrElse layers <= 0 Then Return False
         If _fbo > 0 AndAlso _tex > 0 AndAlso _size = size AndAlso _layers = layers Then Return True

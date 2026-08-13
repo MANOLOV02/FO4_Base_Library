@@ -5597,7 +5597,7 @@ Public Class PreviewModel
         ' que el ARNES lee, y en un frame que no dibujo ni un mapa reportaba "2 casters". Dos checks
         ' (`strength-cero` y `sin-casters`) se apoyan justo en ese numero: quedaban midiendo contra un valor
         ' que describe una intencion, no lo que se dibujo.
-        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize, _shadowCount) Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
+        If Not ParentControl.ShadowTarget.Ensure(cfg.MapSize, _shadowCount, media:=True) Then _shadowCount = 0 : SoltarMapasDeSombra() : Exit Sub
 
         ' ⛔ NI UN glGet NI UN ARRAY POR FRAME ACA. El doc de ShadowMapTarget.BindForWrite dice que los
         ' glGet de framebuffer son los que fuerzan a varios drivers a vaciar la lista de comandos diferida

@@ -684,19 +684,20 @@ Partial Public Class LightRigForm
         End If
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         Dim lado As Integer = sh.MapSize
-        ' El receptor de suelo reserva su propio array, del MISMO lado y con las MISMAS capas (reserva fija:
-        ' es lo que evita recrearlo al orbitar), pero a 16 BITS en vez de 24 ⇒ suma la MITAD, no el doble.
-        ' ⛔ La cuenta tiene que seguir a la del render: mientras el personaje vaya a DepthComponent24 (4 B
-        ' por texel en todo driver de escritorio) y el suelo a DepthComponent16 (2 B), son 4n + 2n. Si algun
-        ' dia se igualan los formatos y esto no se actualiza, el cartel miente — y un cartel que miente sobre
-        ' bytes es peor que no tenerlo.
+        ' Los DOS arrays van a DepthComponent16 = 2 B por texel (el receptor de suelo reserva el suyo del
+        ' mismo lado y con las mismas capas: reserva fija, es lo que evita recrearlo al orbitar).
+        ' ⛔ La cuenta tiene que seguir a la del render. Fueron 4 B (DepthComponent24, que el driver guarda
+        ' en 32) hasta que se midio que en un ortho de rango corto los 16 bits no mueven un pixel: el escalon
+        ' de profundidad queda 30x mas fino que el TEXEL, que es lo unico que se ve en el borde. Si algun dia
+        ' alguno vuelve a 24 y esto no se actualiza, el cartel miente — y un cartel que miente sobre bytes es
+        ' peor que no tenerlo.
         Dim conSuelo As Boolean = chkGroundShadow.Checked AndAlso chkGroundShadow.Enabled
-        Dim bytesPorTexel As Double = 4.0 + If(conSuelo, 2.0, 0.0)
+        Dim bytesPorTexel As Double = 2.0 + If(conSuelo, 2.0, 0.0)
         Dim mb As Double = CDbl(lado) * lado * bytesPorTexel * n / (1024.0 * 1024.0)
         lblShadowVram.Text = $"{mb:0} MB"
         ToolTip1.SetToolTip(lblShadowVram,
-            $"{n} shadow map(s) of {lado}x{lado} at 24-bit depth" &
-            If(conSuelo, $", plus {n} more at 16-bit for the ground catcher.", "."))
+            $"{n} shadow map(s) of {lado}x{lado} at 16-bit depth" &
+            If(conSuelo, $", plus {n} more for the ground catcher.", "."))
     End Sub
 
     ''' <summary>MapSize del config cuando NO esta entre las opciones del combo (0 = esta en la lista).
