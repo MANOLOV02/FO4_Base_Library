@@ -202,6 +202,9 @@ Public Module DirectXDDSLoader
         ' PBO que hubiera bindeado al entrar. Se LEE adentro del Try (ver la nota del bindeo, más abajo), no
         ' acá: sólo lo consume el Finally, y el Finally sólo corre si se entró al Try.
         Dim prevPixelUnpackBuffer As Integer = 0
+        ' Binding de textura que hubiera al entrar. Mismo criterio que el PBO: se lee adentro del Try, que es
+        ' donde vive el unico consumidor (el Finally).
+        Dim prevTextureBinding As Integer = 0
         ' ⛔ El alineamiento previo se lee ACÁ, ANTES del Try. Estaba leído adentro, así que cualquier
         ' excepción anterior a esa línea hacía que el Finally "restaurara" el literal 4 de la
         ' inicialización — y 4 NO es lo que hay: `CreateColorTexture` deja el UNPACK_ALIGNMENT global en 1
@@ -471,6 +474,23 @@ Public Module DirectXDDSLoader
             ' errors caused by THIS upload, not leftovers from another caller.
             DrainGlErrors()
 
+            ' ⛔ El binding previo se lee ACA, antes de generar y bindear el nuestro, y con el pname TIPADO.
+            ' MEDIDO por reflexion sobre OpenTK.Graphics 4.9.3 (el ensamblado que resuelve este proyecto):
+            ' GetPName.TextureBinding2D = 0x8069, GetPName.TextureBindingCubeMap = 0x8514. Un
+            ' `CType(numero, GetPName)` con el valor equivocado COMPILA —los enums del CLR no validan rango— y
+            ' `glGetIntegerv` con pname invalido NO escribe el destino: es exactamente como se colo antes un
+            ' `&H8CA8` que en realidad era GL_READ_FRAMEBUFFER. Mismo patron tipado que usa
+            ' FaceTintCompositor.SaveGlState.
+            ' ⛔⛔ ESTA FUNCION NO TOCA `ActiveTexture` EN NINGUN LADO, Y DE AHI SALE LA CORRECCION:
+            ' glGetIntegerv(TEXTURE_BINDING_*) reporta el binding de la unidad ACTIVA, asi que la lectura y la
+            ' restauracion caen sobre la MISMA unidad por construccion. Si alguien agrega un ActiveTexture aca
+            ' adentro, este par se desaparea en silencio (lee en la unidad N, restaura en la 0).
+            Try
+                GL.GetInteger(If(tex.IsCubemap, GetPName.TextureBindingCubeMap, GetPName.TextureBinding2D), prevTextureBinding)
+            Catch
+                prevTextureBinding = 0
+            End Try
+
             texID = GL.GenTexture()
             GL.BindTexture(target, texID)
 
@@ -621,7 +641,10 @@ Public Module DirectXDDSLoader
             ' completa en el sitio del bindeo.
             GL.BindBuffer(BufferTarget.PixelUnpackBuffer, prevPixelUnpackBuffer)
             GL.PixelStore(PixelStoreParameter.UnpackAlignment, prevUnpackAlignment)
-            GL.BindTexture(target, 0)
+            ' Se DEVUELVE el binding que hubiera al entrar, por el mismo argumento que el PBO: desbindear es
+            ' precondicion de la subida, no un estado que esta funcion deba dejar fijado. Dejarlo en 0 pisaba
+            ' el binding de la unidad activa de cualquier llamador.
+            GL.BindTexture(target, prevTextureBinding)
         End Try
 
         Return 0

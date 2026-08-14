@@ -106,14 +106,40 @@ Public Class FilesDictionary_class
         ''' sueltos (`BA2File = ""`) no lo usan.</para></summary>
         Public Property ArchiveGen As Integer = 0
 
-        Public Function GetBytesFromOpenArchive(pack As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader) As Byte()
+        ''' <summary>Referencia al contador VIVO de generacion del archive del que salio este `Index`. Es lo
+        ''' que permite que el acierto de cache compruebe la generacion VIGENTE sin un `Path.Combine` ni un
+        ''' lookup: comparar `ArchiveGen` contra el cache solo prueba que los dos son de la MISMA generacion,
+        ''' no que esa generacion siga activa. `Nothing` en entradas armadas a mano (no vienen del scan): ahi
+        ''' el acierto de cache se rechaza por conservador y se cae al camino normal, que sella con
+        ''' <see cref="FilesDictionary_class.ContentGenOf"/>.</summary>
+        Friend GenToken As FilesDictionary_class.ArchiveGenToken
+
+        ''' <summary>Extrae esta entrada de un archive YA ABIERTO, bajo el sello de generación.
+        ''' <para>⛔ <paramref name="gen0"/> lo trae el LLAMADOR: es la generación que leyó ANTES de abrir o
+        ''' alquilar el archive. No se calcula acá a propósito — un <c>File_Location</c> guarda el NOMBRE de
+        ''' su .ba2, no de qué ARCHIVO salió el <paramref name="pack"/>, así que recomponer la ruta acá
+        ''' inventaría un invariante que el tipo no puede sostener.</para>
+        ''' <para>El chequeo va POR ENTRADA aunque el bracket lo cierre el llamador por GRUPO: cuesta una
+        ''' comparación de Integer y cubre el caso de entradas con generaciones distintas en el mismo grupo.
+        ''' </para></summary>
+        Friend Function ExtractUnderSeal(pack As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader,
+                                         gen0 As Integer) As Byte()
             If IsNothing(pack) OrElse IsLosseFile Then Return Array.Empty(Of Byte)
+            If Me.ArchiveGen <> gen0 Then Return Array.Empty(Of Byte)
             Try
                 Return pack.ExtractToMemory(Index)
             Catch
                 Return Array.Empty(Of Byte)
             End Try
         End Function
+
+        ' ⛔ ACA VIVIA `GetBytesFromOpenArchive`, `Public`, y se BORRO. Recibia un `BethesdaReader` ya abierto
+        ' y no podia demostrar nada de lo que hacia falta: ni que ese reader correspondiera al `BA2File` de
+        ' esta entrada, ni que se hubiera abierto en la generacion que despues comprobaba, ni que el `Index`
+        ' fuera de ese mismo archive. Su sello era DEBIL por construccion y no se podia reforzar desde
+        ' adentro. Los dos caminos internos que la usaban pasaron a `ExtractUnderSeal`, que recibe la
+        ' generacion leida ANTES de abrir, y quedo sin un solo llamador — verificado en todo el arbol y en
+        ' los arboles hermanos. Superficie publica peligrosa sin nadie que la aproveche: se va.
 
         Public ReadOnly Property IsLosseFile As Boolean
             Get
@@ -123,9 +149,31 @@ Public Class FilesDictionary_class
         Public Function GetBytes() As Byte()
             ' O1.1: Check WeakReference byte cache first
             Dim cached As Byte() = Nothing
-            Dim weakRef As WeakReference(Of Byte()) = Nothing
-            If FilesDictionary_class._bytesCache.TryGetValue(FullPath, weakRef) Then
-                If weakRef.TryGetTarget(cached) Then Return cached
+            Dim weakRef As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+            If FilesDictionary_class._bytesCache.TryGetValue(FullPath, weakRef) AndAlso
+               weakRef.Datos IsNot Nothing AndAlso weakRef.Datos.TryGetTarget(cached) Then
+                If IsLosseFile Then
+                    ' ⛔ EL CENTINELA SE VERIFICA. Aceptar cualquier valor cacheado bajo este `FullPath` deja
+                    ' que un suelto consuma bytes publicados por un ARCHIVE: hay una ventana en la que el
+                    ' caché tiene los bytes del BA2 y el diccionario ya pasó a un ganador suelto.
+                    If weakRef.Token Is Nothing AndAlso weakRef.Gen = FilesDictionary_class.GenSuelto Then Return cached
+                Else
+                    ' ⛔⛔ LA CONDICION ES TRIPLE: cache.Gen == ArchiveGen == GENERACION VIGENTE. Las dos
+                    ' primeras solas NO alcanzan — son dos copias VIEJAS que siguen coincidiendo entre sí
+                    ' después del bump (entrada vieja 4, caché viejo 4, vigente 5) y el acierto pasaba
+                    ' devolviendo bytes de la generación anterior. La tercera sale de `GenToken`, que es una
+                    ' REFERENCIA al contador vivo: un deref y dos comparaciones de Integer, sin
+                    ' `Path.Combine` ni lookup, o sea el acierto de caché sigue sin pagar nada.
+                    ' ⛔⛔ LA IDENTIDAD DEL ARCHIVE VA PRIMERO. Sin ella, dos archives que traen el MISMO
+                    ' path y están en la MISMA generación (lo normal en un load order modeado: A publica,
+                    ' AddEntryResolvingConflict pasa el ganador a B, y la purga del caché ocurre DESPUÉS del
+                    ' TryUpdate) pasan las tres comparaciones numéricas y B devuelve los bytes de A.
+                    ' `ReferenceEquals` contra el token: una comparación de referencias, sin lookup.
+                    If ReferenceEquals(weakRef.Token, Me.GenToken) AndAlso
+                       GenToken IsNot Nothing AndAlso
+                       weakRef.Gen = Me.ArchiveGen AndAlso
+                       Threading.Volatile.Read(GenToken.Gen) = Me.ArchiveGen Then Return cached
+                End If
             End If
 
             Dim result As Byte()
@@ -137,17 +185,23 @@ Public Class FilesDictionary_class
                 ' O1.2: Use archive reader pool instead of opening/closing each time
                 Dim archivePath = IO.Path.Combine(FO4Path, Me.BA2File)
 
-                ' ⛔ EL SELLO SE MIRA ANTES DE ABRIR NADA. Si el archive se invalido (pack, unpack, re-scan)
-                ' despues de que este File_Location se creo, su `Index` apunta a otra entrada del archive
-                ' NUEVO: extraer devolveria bytes de un archivo distinto, sin error. Vacio es la respuesta
-                ' correcta — el llamador ya sabe tratarlo, y el diccionario ya tiene la entrada re-estampada
-                ' para quien la busque de nuevo. Ver File_Location.ArchiveGen.
-                If FilesDictionary_class.ContentGenOf(archivePath) <> Me.ArchiveGen Then Return Array.Empty(Of Byte)
+                ' ⛔⛔ EL SELLO ES UN BRACKET, NO UN CHEQUEO. Mirarlo sólo ANTES deja la ventana entre el
+                ' chequeo y el extract: otro hilo puede desmontar y reescribir el .ba2 en el medio, y el
+                ' `Index` viejo sobre el archive nuevo devuelve LOS BYTES DE OTRA ENTRADA — y encima se
+                ' cachean. Se lee antes y se RE-LEE después: el contador es MONOTÓNICO (`AddOrUpdate` con
+                ' v+1, ninguna clave se borra nunca), así que dos lecturas iguales PRUEBAN que nadie
+                ' invalidó en el medio.
+                Dim gen0 = FilesDictionary_class.ContentGenOf(archivePath)
+                If gen0 <> Me.ArchiveGen Then Return FilesDictionary_class.ReintentarTrasInvalidacion(Me)
                 Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
                 Dim returned As Boolean = False
                 Try
                     leased = FilesDictionary_class.LeaseReader(archivePath)
                     result = leased.Reader.ExtractToMemory(Index)
+                    ' ⛔ NADA PUEDE RETORNAR ENTRE EL EXTRACT Y ESTE ReturnReader. Un `Return` temprano acá
+                    ' —que es como salió escrito el post-chequeo en la primera versión— no poolea NI dispone:
+                    ' el FileStream queda inalcanzable (ni `ArchivePoolReaderCount` lo ve) reteniendo el .ba2
+                    ' hasta el finalizer. El cierre del bracket va DESPUÉS del Try.
                     FilesDictionary_class.ReturnReader(archivePath, leased)
                     returned = True
                 Catch ex As Exception
@@ -162,11 +216,21 @@ Public Class FilesDictionary_class
                     End If
                     Return Array.Empty(Of Byte)
                 End Try
+
+                ' CIERRE DEL BRACKET, con el reader ya devuelto. Si el archive se invalidó mientras
+                ' extraíamos, estos bytes NO se pueden atribuir a ninguna generación: no se devuelven y —
+                ' sobre todo— no se publican en el caché por path, que es donde el daño se vuelve permanente.
+                If FilesDictionary_class.ContentGenOf(archivePath) <> gen0 Then
+                    Return FilesDictionary_class.ReintentarTrasInvalidacion(Me)
+                End If
             End If
 
             ' O1.1: Store result in WeakReference cache
             If result IsNot Nothing AndAlso result.Length > 0 Then
-                FilesDictionary_class._bytesCache(FullPath) = New WeakReference(Of Byte())(result)
+                FilesDictionary_class._bytesCache(FullPath) =
+                    If(IsLosseFile,
+                       (New WeakReference(Of Byte())(result), FilesDictionary_class.GenSuelto, Nothing),
+                       (New WeakReference(Of Byte())(result), Me.ArchiveGen, Me.GenToken))
             End If
 
             Return result
@@ -189,7 +253,22 @@ Public Class FilesDictionary_class
     Private Shared ReadOnly _appData As New ConcurrentDictionary(Of Type, Object)
 
     ' O1.1: Lazy byte cache with WeakReference — allows GC to reclaim when memory is needed
-    Private Shared ReadOnly _bytesCache As New ConcurrentDictionary(Of String, WeakReference(Of Byte()))(StringComparer.OrdinalIgnoreCase)
+    ''' <summary>⛔⛔ CADA VALOR LLEVA LA GENERACION CON LA QUE SE PUBLICO. Sin eso, el acierto de caché
+    ''' esquivaba el sello ENTERO: `GetBytes` devolvía el valor cacheado en su primera línea, antes de mirar
+    ''' `ArchiveGen`, así que entre el bump de `UnregisterArchive` y la purga por clave de
+    ''' `RemoveDictionaryEntry` —un barrido O(diccionario), cientos de miles de entradas— una lectura seguía
+    ''' devolviendo bytes de la generación anterior sin comprobar nada.
+    ''' <para>⛔ ETIQUETAR EL VALOR NO ALCANZA POR SI SOLO. `cache.Gen = File_Location.ArchiveGen` son dos
+    ''' copias que siguen coincidiendo despues de un bump, asi que prueban que son de la MISMA generacion, no
+    ''' que esa generacion siga VIGENTE. La comparacion es triple y la tercera pata sale de
+    ''' <see cref="File_Location.GenToken"/> —una referencia al contador vivo—, no de `ContentGenOf`: asi el
+    ''' acierto de cache no paga el `Path.Combine` que aloca ni los dos lookups en la ruta mas caliente.</para>
+    ''' <para>Los SUELTOS no participan: no tienen archive del cual derivar generación. Se publican con
+    ''' <see cref="GenSuelto"/> y el lector los acepta sin comparar.</para></summary>
+    Private Shared ReadOnly _bytesCache As New ConcurrentDictionary(Of String, (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Generación con la que se publican los bytes de un archivo SUELTO. No se compara nunca.</summary>
+    Private Const GenSuelto As Integer = Integer.MinValue
 
     ' O1.2: Archive reader pool — reuses BethesdaReader instances to avoid repeated open/close
     ' ⛔ El pool guarda ADEMAS el instante en que cada reader volvio. Sin eso `DisposeIdleReaders` no
@@ -285,18 +364,55 @@ Public Class FilesDictionary_class
     ''' </para>
     ''' <para>Por eso este SOLO se bumpea donde el contenido deja de valer y las entradas se van a rehacer:
     ''' <see cref="UnregisterArchive"/> y el re-scan de <see cref="Fill_DictionaryAsync"/>.</para></summary>
-    Private Shared ReadOnly _archiveContentGen As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+    ''' <summary>Contador de generacion de contenido, COMPARTIDO Y MUTABLE. Es un objeto y no un Integer a
+    ''' proposito: <see cref="File_Location"/> y el cache guardan una REFERENCIA a el, asi que pueden leer la
+    ''' generacion VIGENTE sin consultar ningun diccionario. Con un Integer copiado en cada lado, dos copias
+    ''' viejas coinciden entre si despues de un bump y el chequeo pasa igual — que es exactamente como se
+    ''' colo el acierto de cache rancio.
+    ''' <para>⛔ LA REFERENCIA AL TOKEN VIAJA TAMBIEN DENTRO DEL VALOR CACHEADO, no solo en el
+    ''' `File_Location`: es lo unico que identifica DE QUE ARCHIVE salieron esos bytes. Dos archives con el
+    ''' mismo path y la misma generacion —lo normal en un load order modeado— pasan cualquier comparacion
+    ''' numerica.</para></summary>
+    Friend NotInheritable Class ArchiveGenToken
+        Public Gen As Integer
+    End Class
+
+    Private Shared ReadOnly _archiveContentGen As New ConcurrentDictionary(Of String, ArchiveGenToken)(StringComparer.OrdinalIgnoreCase)
 
     ''' <summary>Generacion de contenido vigente para esa ruta de archive (0 si nunca se invalido).</summary>
     Friend Shared Function ContentGenOf(archivePath As String) As Integer
-        Dim g As Integer = 0
-        _archiveContentGen.TryGetValue(ArchiveKey(archivePath), g)
-        Return g
+        Dim tok As ArchiveGenToken = Nothing
+        If Not _archiveContentGen.TryGetValue(ArchiveKey(archivePath), tok) OrElse tok Is Nothing Then Return 0
+        Return Threading.Volatile.Read(tok.Gen)
+    End Function
+
+    ''' <summary>Token de generacion de ese archive, creandolo si hace falta. Lo usa el estampado.</summary>
+    Friend Shared Function ContentGenTokenOf(archivePath As String) As ArchiveGenToken
+        Return _archiveContentGen.GetOrAdd(ArchiveKey(archivePath), Function(k) New ArchiveGenToken())
+    End Function
+
+    ''' <summary>Qué hacer cuando el sello rechaza una lectura: buscar en el diccionario la entrada VIGENTE
+    ''' de ese mismo path y delegarle. Si el archive se re-montó, esa entrada ya está re-estampada y la
+    ''' lectura sale bien; si no cambió nada, se devuelve vacío como antes.
+    ''' <para>⛔ NO ES UN LUJO. Devolver vacío a secas se convertía en un fallo PERMANENTE río abajo:
+    ''' <c>FaceTintCpuCompositor</c> cachea un "unit negativo" para esa textura y no vuelve a pedírsela al
+    ''' diccionario en toda la corrida, así que un pack que caiga entre dos lecturas dejaba texturas sin
+    ''' hornear en silencio. El comentario del sello afirmaba que "el diccionario ya tiene la entrada
+    ''' re-estampada para quien la busque de nuevo" — nadie la buscaba de nuevo. Ahora sí.</para>
+    ''' <para>No recursa sin fin: si la entrada vigente es LA MISMA instancia que acaba de fallar, no hay a
+    ''' quién delegar y se corta. Un segundo nivel encontraría ya esa misma instancia.</para></summary>
+    Friend Shared Function ReintentarTrasInvalidacion(rechazada As File_Location) As Byte()
+        If rechazada Is Nothing OrElse String.IsNullOrEmpty(rechazada.FullPath) Then Return Array.Empty(Of Byte)
+        Dim vigente As File_Location = Nothing
+        If Not _dictionary.TryGetValue(NormalizeDictionaryKey(rechazada.FullPath), vigente) Then Return Array.Empty(Of Byte)
+        If vigente Is Nothing OrElse ReferenceEquals(vigente, rechazada) Then Return Array.Empty(Of Byte)
+        Return vigente.GetBytes()
     End Function
 
     Private Shared Sub BumpArchiveContentGen(key As String)
         If String.IsNullOrEmpty(key) Then Return
-        _archiveContentGen.AddOrUpdate(key, 1, Function(k, v) v + 1)
+        Dim tok = _archiveContentGen.GetOrAdd(key, Function(k) New ArchiveGenToken())
+        Threading.Interlocked.Increment(tok.Gen)
     End Sub
 
     Private Shared Sub DisposePooled(entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer))
@@ -392,9 +508,41 @@ Public Class FilesDictionary_class
         End If
 
         ' Create new reader
-        Dim fs As FileStream = AbrirArchiveParaLectura(archivePath)
-        Dim reader As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
-        Return (reader, fs, Stopwatch.GetTimestamp(), _archiveEpoch.GetOrAdd(key, 0))
+        ' ⛔⛔ EL EPOCH SE CAPTURA ANTES DE ABRIR Y SE RE-VERIFICA DESPUÉS DE PARSEAR. Leerlo recién en el
+        ' `Return` —como estaba— estampa el epoch FINAL sobre un reader que abrió el archivo VIEJO: si un
+        ' packager desmonta, reescribe y re-monta mientras este hilo está adentro del constructor (que parsea
+        ' ~100k nombres), el reader vuelve con la tabla vieja y el epoch nuevo, entra al pool como vigente, y
+        ' después sirve `Index` del archive nuevo contra la tabla vieja ⇒ bytes de otra entrada, cacheados.
+        ' Dos lecturas iguales alrededor del open prueban que no hubo invalidación en el medio.
+        For intento As Integer = 1 To 3
+            Dim genAntes = _archiveEpoch.GetOrAdd(key, 0)
+            Dim fs As FileStream = AbrirArchiveParaLectura(archivePath)
+            Dim reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader
+            Try
+                reader = New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
+            Catch
+                ' ⛔ El constructor parsea la tabla entera y TIRA con un .ba2 truncado o a medio escribir —
+                ' o sea, justo durante un pack. Sin esto el FileStream quedaba inalcanzable (el Catch del
+                ' llamador no lo ve: la excepción sale de acá adentro y su `leased` sigue en default),
+                ' reteniendo el archive hasta el finalizer.
+                Try : fs.Dispose() : Catch : End Try
+                Throw
+            End Try
+            If _archiveEpoch.GetOrAdd(key, 0) = genAntes Then Return (reader, fs, Stopwatch.GetTimestamp(), genAntes)
+            Try : reader.Dispose() : Catch : End Try
+            Try : fs.Dispose() : Catch : End Try
+        Next
+        ' Tres invalidaciones seguidas mientras abríamos. Se devuelve con un epoch imposible para que nadie
+        ' lo poolee ni lo sirva: el llamador ya trata el vacío.
+        Dim fsUlt As FileStream = AbrirArchiveParaLectura(archivePath)
+        Dim readerUlt As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader
+        Try
+            readerUlt = New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fsUlt)
+        Catch
+            Try : fsUlt.Dispose() : Catch : End Try
+            Throw
+        End Try
+        Return (readerUlt, fsUlt, Stopwatch.GetTimestamp(), Integer.MinValue)
     End Function
 
     ''' <summary>Return a reader to the pool if below cap, otherwise dispose it.
@@ -486,13 +634,11 @@ Public Class FilesDictionary_class
         Next
 
         ' Purge dead WeakReference entries from _bytesCache
-        For Each key In _bytesCache.Keys
-            Dim weakRef As WeakReference(Of Byte()) = Nothing
-            If _bytesCache.TryGetValue(key, weakRef) Then
-                Dim dummy As Byte() = Nothing
-                If Not weakRef.TryGetTarget(dummy) Then
-                    _bytesCache.TryRemove(key, weakRef)
-                End If
+        For Each kvpCache In _bytesCache
+            Dim dummy As Byte() = Nothing
+            If kvpCache.Value.Datos Is Nothing OrElse Not kvpCache.Value.Datos.TryGetTarget(dummy) Then
+                Dim fuera As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+                _bytesCache.TryRemove(kvpCache.Key, fuera)
             End If
         Next
     End Sub
@@ -583,6 +729,14 @@ Public Class FilesDictionary_class
     Public Shared Function GetArchiveOriginalBytes(path As String) As Byte()
         Dim key = NormalizeDictionaryKey(path)
         If String.IsNullOrEmpty(key) Then Return Nothing
+        Return GetArchiveOriginalBytesReintento(key, 0)
+    End Function
+
+    ''' <summary>Cuerpo de <see cref="GetArchiveOriginalBytes"/>, con reintento acotado ante una invalidación.
+    ''' Se RE-RESUELVE la entrada en cada vuelta porque los `Index` del archive nuevo son otros. Tres vueltas
+    ''' alcanzan: cada una sólo puede repetirse si hubo otro bump en el medio.</summary>
+    Private Shared Function GetArchiveOriginalBytesReintento(key As String, intento As Integer) As Byte()
+        If intento >= 3 Then Return Nothing
 
         ' Pick the vanilla archived entry = the archived candidate with the minimum SourceOrder.
         ' Candidates: the dictionary winner (only if it's archived) plus every archived loser shadowed
@@ -606,11 +760,19 @@ Public Class FilesDictionary_class
         Dim archivePath = IO.Path.Combine(FO4Path, entry.BA2File)
         Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
         Dim returned As Boolean = False
+        ' ⛔ EL SELLO ACÁ NO PUEDE DEVOLVER VACÍO Y LISTO. Los dos llamadores de producción
+        ' (NpcMaterialResolver) tratan Nothing y Length=0 IGUAL: caen al resolver VIVO, o sea toman al
+        ' ganador SUELTO como si fuera vanilla — y uno de los dos ESCRIBE una textura clonada a disco con
+        ' esos bytes. Un vacío por invalidación acá es un "modded-como-vanilla" persistido, no una respuesta
+        ' honesta. Por eso se REINTENTA re-resolviendo la entrada: los `Index` del archive nuevo son otros.
+        Dim gen0 = ContentGenOf(archivePath)
+        If gen0 <> entry.ArchiveGen Then Return GetArchiveOriginalBytesReintento(key, intento + 1)
         Try
             leased = LeaseReader(archivePath)
-            Dim result = entry.GetBytesFromOpenArchive(leased.Reader)
+            Dim result = entry.ExtractUnderSeal(leased.Reader, gen0)
             ReturnReader(archivePath, leased)
             returned = True
+            If ContentGenOf(archivePath) <> gen0 Then Return GetArchiveOriginalBytesReintento(key, intento + 1)
             Return result
         Catch
             If Not returned Then
@@ -772,6 +934,13 @@ Public Class FilesDictionary_class
         Parallel.ForEach(packedGroups, Sub(group)
                                            Dim archivePath = IO.Path.Combine(FO4Path, group.Key)
 
+                                           ' ⛔ EL SELLO SE IZA POR GRUPO. El `pack` es UNO para todas las entradas del
+                                           ' grupo, así que la unidad de invalidación también es el grupo: si el
+                                           ' archive se reemplazó en el medio, TODO lo que salió de ese reader es de
+                                           ' la generación vieja, no sólo lo posterior al bump. Un `Path.Combine` y
+                                           ' dos lookups por .ba2 en vez de por entrada.
+                                           Dim gen0 = ContentGenOf(archivePath)
+                                           Dim staged As New List(Of (Path As String, Bytes As Byte(), Gen As Integer, Token As ArchiveGenToken))(group.Value.Count)
                                            Try
                                                ' Este camino NO usa el pool (abre su propio stream), pero necesita el
                                                ' MISMO share mode: un prefetch en vuelo bloqueaba el File.Move del
@@ -779,16 +948,30 @@ Public Class FilesDictionary_class
                                                Using fs As FileStream = AbrirArchiveParaLectura(archivePath)
                                                    Using pack As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
                                                        For Each item In group.Value
-                                                           Dim bytes = item.Location.GetBytesFromOpenArchive(pack)
+                                                           Dim bytes = item.Location.ExtractUnderSeal(pack, gen0)
                                                            output(item.OutputIndex) = bytes
-                                                           ' Populate _bytesCache so subsequent GetBytes() calls hit the cache
-                                                           ' instead of re-opening the archive (prefetch only warms OS cache otherwise)
+                                                           ' ⛔ EL CACHÉ SE PUBLICA AL FINAL, NO SOBRE LA MARCHA. Publicar por
+                                                           ' entrada tenía además un defecto independiente del sello: una
+                                                           ' excepción a mitad del grupo cero-ea `output` pero DEJA en
+                                                           ' `_bytesCache` lo ya publicado, con lo cual `GetBytes` devuelve
+                                                           ' bytes de una clave que esta misma función acaba de reportar vacía.
                                                            If bytes IsNot Nothing AndAlso bytes.Length > 0 Then
-                                                               _bytesCache(item.Location.FullPath) = New WeakReference(Of Byte())(bytes)
+                                                               staged.Add((item.Location.FullPath, bytes, item.Location.ArchiveGen, item.Location.GenToken))
                                                            End If
                                                        Next
                                                    End Using
                                                End Using
+
+                                               ' Cierre del bracket: sólo ahora se publica, y sólo si nadie invalidó.
+                                               If ContentGenOf(archivePath) = gen0 Then
+                                                   For Each s In staged
+                                                       _bytesCache(s.Path) = (New WeakReference(Of Byte())(s.Bytes), s.Gen, s.Token)
+                                                   Next
+                                               Else
+                                                   For Each item In group.Value
+                                                       output(item.OutputIndex) = Array.Empty(Of Byte)
+                                                   Next
+                                               End If
                                            Catch
                                                For Each item In group.Value
                                                    output(item.OutputIndex) = Array.Empty(Of Byte)
@@ -1425,7 +1608,7 @@ Public Class FilesDictionary_class
         If _dictionary.TryAdd(normalized, location) Then
             IndexDictionaryKey(normalized)
             ' Clear stale byte cache for this entry
-            Dim dummy As WeakReference(Of Byte()) = Nothing
+            Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
             _bytesCache.TryRemove(normalized, dummy)
             Return True
         End If
@@ -1460,14 +1643,14 @@ Public Class FilesDictionary_class
         Loop
 
         IndexDictionaryKey(normalized)
-        Dim dummy As WeakReference(Of Byte()) = Nothing
+        Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
         _bytesCache.TryRemove(normalized, dummy)
     End Sub
 
     ''' <summary>Removes the current entry. If an overridden entry exists (e.g. BA2 behind a loose), restores it.</summary>
     Public Shared Sub RemoveDictionaryEntry(fullPath As String)
         Dim normalized = NormalizeDictionaryKey(fullPath)
-        Dim dummy As WeakReference(Of Byte()) = Nothing
+        Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
         _bytesCache.TryRemove(normalized, dummy)
 
         ' Try to restore a previously overridden entry
@@ -1521,15 +1704,17 @@ Public Class FilesDictionary_class
 
         Dim archiveFileName = Path.GetFileName(absolutePath)
 
-        ' Montar es CAMBIAR lo que hay en esa ruta (WM Pack y el packer de FaceGen escriben un .ba2 nuevo
-        ' ahi, y el CLI monta SIN desmontar antes): los readers pooleados de la generacion anterior tienen la
-        ' tabla de entradas VIEJA. Va ANTES del guard de idempotencia porque `_registeredArchives` esta
-        ' indexado por NOMBRE DE ARCHIVO: con dos archives homonimos en carpetas distintas el segundo sale
-        ' temprano y nunca bumpearia. Bumpear de mas sale un re-parseo; no bumpear un archive que cambio sale
-        ' bytes equivocados.
-        BumpArchiveEpoch(ArchiveKey(absolutePath))
-
+        ' ⛔ EL BUMP VA DESPUES DEL GUARD. Antes iba antes, "por los homonimos", y para eso era un NO-OP: el
+        ' guard es por NOMBRE y el bump por RUTA, asi que en el caso homonimo bumpeaba una clave que no tiene
+        ' ni readers ni entradas y salia igual por Exit Sub. Y el epoch no puede evitar bytes equivocados en
+        ' ningun caso: quien invalida los `Index` ya repartidos es `_archiveContentGen`, y eso solo lo mueve
+        ' `UnregisterArchive`. Re-registrar contenido CAMBIADO sin desmontar antes esta roto con bump y sin
+        ' bump — el contrato (Unregister primero) no es opcional. Asi, una llamada duplicada legitima deja de
+        ' costar un re-parseo completo de la tabla por cada reader vivo.
         If Not _registeredArchives.TryAdd(archiveFileName, 0) Then Exit Sub
+
+        ' Montar es CAMBIAR lo que hay en esa ruta: los readers pooleados tienen la tabla de entradas VIEJA.
+        BumpArchiveEpoch(ArchiveKey(absolutePath))
 
         Dim added As New ConcurrentBag(Of String)()
         Dim noopProgress As IProgress(Of (String, Integer, Integer)) =
@@ -1560,6 +1745,53 @@ Public Class FilesDictionary_class
                                         Path.Combine(FO4Path, archivePath))
         Dim archiveFileName = Path.GetFileName(absolutePath)
 
+        ' ⛔⛔ LOS DOS BUMPS VAN PRIMERO, ANTES DE TOCAR EL DICCIONARIO. `RemoveDictionaryEntry` purga
+        ' `_bytesCache` clave por clave y el barrido es O(diccionario) —cientos de miles de entradas—, así
+        ' que con el bump al final quedaba una ventana larga en la que un lector todavía pasaba el sello y
+        ' publicaba bytes rancios en un caché que la purga ya había recorrido: se quedaban pegados TODA la
+        ' sesión, y `RegisterArchive` re-estampa el diccionario pero no limpia ese caché.
+        ' El bump de epoch, además, va antes de vaciar el bag: al revés, un reader devuelto entre el vaciado
+        ' y el bump entra al pool con el epoch viejo todavía vigente y sobrevive a la invalidación.
+        Dim poolKey = ArchiveKey(absolutePath)
+        BumpArchiveEpoch(poolKey)
+        ' Y el sello de CONTENIDO: los `Index` que este archive repartio dejan de valer acá. Es lo que
+        ' invalida los File_Location que otros hilos ya tengan en la mano. Ver File_Location.ArchiveGen.
+        BumpArchiveContentGen(poolKey)
+        DrainAndDisposeBag(poolKey)
+
+        ' ⛔⛔ LA PILA DE OVERRIDES SE PURGA ANTES QUE EL DICCIONARIO, Y ESTO NO ES OPCIONAL.
+        ' `RemoveDictionaryEntry` no borra la clave a secas: hace `TryPop` de la pila y RESTAURA al perdedor
+        ' como GANADOR del diccionario. Si ese perdedor pertenece a un archive que este mismo barrido ya
+        ' desmontó —que es exactamente lo que hace WM Pack, que desregistra el SET COMPLETO y en un orden
+        ' que no controla— vuelve al diccionario con su `ArchiveGen` viejo. Con el sello, esa clave devuelve
+        ' vacío PARA SIEMPRE (el reintento vuelve a encontrar esa misma instancia); sin el sello devolvía
+        ' bytes de otra entrada. Las dos son malas y ninguna se ve hasta que falta un asset.
+        Dim entradasPurgadas As Integer = 0
+        For Each kvpOvr In _overriddenEntries
+            Dim pila = kvpOvr.Value
+            If pila Is Nothing Then Continue For
+            Dim actuales = pila.ToArray()          ' tope primero
+            Dim sobreviven = actuales.Where(Function(e) e Is Nothing OrElse e.IsLosseFile OrElse
+                                                Not e.BA2File.Equals(archiveFileName, StringComparison.OrdinalIgnoreCase)).ToArray()
+            If sobreviven.Length = actuales.Length Then Continue For
+            entradasPurgadas += actuales.Length - sobreviven.Length
+            Dim nueva As New ConcurrentStack(Of File_Location)()
+            ' Se re-apila de la base al tope para conservar el orden: `ToArray` devuelve tope primero.
+            For i = sobreviven.Length - 1 To 0 Step -1
+                nueva.Push(sobreviven(i))
+            Next
+            If nueva.IsEmpty Then
+                Dim fuera As ConcurrentStack(Of File_Location) = Nothing
+                _overriddenEntries.TryRemove(kvpOvr.Key, fuera)
+            Else
+                _overriddenEntries(kvpOvr.Key) = nueva
+            End If
+        Next
+        If entradasPurgadas > 0 Then
+            Dim n = entradasPurgadas, a = archiveFileName
+            Logger.LogLazy(Function() $"[DICT] UnregisterArchive('{a}'): {n} entrada(s) sombreada(s) purgada(s) de la pila de overrides.")
+        End If
+
         ' Snapshot keys to remove before mutating the dictionary.
         Dim toRemove As New List(Of String)
         For Each kvp In _dictionary
@@ -1572,17 +1804,6 @@ Public Class FilesDictionary_class
         For Each key In toRemove
             RemoveDictionaryEntry(key)
         Next
-
-        ' Drop pooled readers for this archive (their backing FileStream may be invalid after rewrite).
-        ' ⛔ EL BUMP DE GENERACION VA ANTES DE VACIAR. Al reves queda una ventana en la que un reader devuelto
-        ' entre el vaciado y el bump entra al pool con el epoch viejo TODAVIA vigente y sobrevive a la
-        ' invalidacion. Ver `_archiveEpoch` — incluido lo que esto NO cierra.
-        Dim poolKey = ArchiveKey(absolutePath)
-        BumpArchiveEpoch(poolKey)
-        ' Y el sello de CONTENIDO: los `Index` que este archive repartio dejan de valer acá. Es lo que
-        ' invalida los File_Location que otros hilos ya tengan en la mano. Ver File_Location.ArchiveGen.
-        BumpArchiveContentGen(poolKey)
-        DrainAndDisposeBag(poolKey)
 
         Dim removedFlag As Byte = 0
         _registeredArchives.TryRemove(archiveFileName, removedFlag)
@@ -1719,6 +1940,18 @@ Public Class FilesDictionary_class
             _archivesFromCache = 0
             _archivesReindexed = 0
 
+            ' ⛔⛔ LOS BUMPS VAN ANTES DE `Dictionary.Clear()` Y DE `ClearBytesCache()`. Estaban ~25 lineas
+            ' mas abajo, con lo cual entre la limpieza del cache y el bump quedaba una ventana en la que un
+            ' lector concurrente todavia pasaba el sello y volvia a publicar bytes del load order ANTERIOR en
+            ' un cache recien vaciado. Se recorren las claves del sello ademas de las del pool: un archive
+            ' puede haber repartido indices sin que nadie le haya alquilado un reader todavia.
+            For Each poolKey In _archivePool.Keys
+                BumpArchiveEpoch(poolKey)
+            Next
+            For Each genKey In _archiveContentGen.Keys
+                BumpArchiveContentGen(genKey)
+            Next
+
             FO4Path = Fo4DataPath
             Dictionary.Clear()
             _overriddenEntries.Clear()
@@ -1738,15 +1971,6 @@ Public Class FilesDictionary_class
             ' Pack y el packer de FaceGen— un reader conservado extraeria en el indice equivocado y esos bytes
             ' quedan ademas pegados en `_bytesCache`. Bumpear primero hace que ese mismo `DisposeIdleReaders`
             ' los coseche en vez de conservarlos.
-            For Each poolKey In _archivePool.Keys
-                BumpArchiveEpoch(poolKey)
-            Next
-            ' Y el sello de CONTENIDO de todo archive que haya repartido indices: el re-scan los va a
-            ' re-derivar de los archivos como estan AHORA. Se recorren las claves del sello, no las del pool:
-            ' un archive puede haber repartido entradas sin que nadie le haya alquilado un reader todavia.
-            For Each genKey In _archiveContentGen.Keys
-                BumpArchiveContentGen(genKey)
-            Next
             DisposeIdleReaders()
             InitPoolCleanupTimer()
 
@@ -2176,7 +2400,8 @@ Public Class FilesDictionary_class
             ' que nunca se desmonto no tendria clave, el re-scan no lo bumpearia, y un `File_Location` viejo
             ' seguiria matcheando en 0 contra entradas re-derivadas — que es justo el caso "el .ba2 cambio
             ' entre dos scans" (o sea, lo que hacen WM Pack y el packer de FaceGen).
-            Dim genArchive = _archiveContentGen.GetOrAdd(ArchiveKey(ba2), 0)
+            Dim genToken = ContentGenTokenOf(ba2)
+            Dim genArchive = Threading.Volatile.Read(genToken.Gen)
 
             ' Cache hit: populate dict from index without opening the archive.
             Dim cachedEntries As List(Of CachedEntry) = Nothing
@@ -2190,7 +2415,8 @@ Public Class FilesDictionary_class
                         .FullPath = standardized,
                         .SourceOrder = sourceOrder,
                         .FileDate = ba2DateLocal,
-                        .ArchiveGen = genArchive
+                        .ArchiveGen = genArchive,
+                        .GenToken = genToken
                     }
                     AddEntryResolvingConflict(standardized, entry)
                     addedKeys?.Add(standardized)
@@ -2224,7 +2450,8 @@ Public Class FilesDictionary_class
                             .FullPath = standardized,
                             .SourceOrder = sourceOrder,
                             .FileDate = ba2DateLocal,
-                            .ArchiveGen = genArchive
+                            .ArchiveGen = genArchive,
+                            .GenToken = genToken
                         }
 
                         ' O1.3: During scan, only populate _dictionary; indexes are built in batch after scan

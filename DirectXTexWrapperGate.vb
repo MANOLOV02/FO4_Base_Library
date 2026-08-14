@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Runtime.CompilerServices
 Imports System.Text
 
@@ -17,30 +17,35 @@ Imports System.Text
 ''' sirviendo para navegar el arbol y editar ESP, y el preview muestra el problema a la vista; abortar ahi
 ''' convierte una instalacion DEGRADADA en una app muerta. Los que abortan son los modos que ESCRIBEN
 ''' ARCHIVOS sin nadie mirando —los bakes headless y el CLI—, donde seguir significa dejar en disco DDS
-''' equivocados, que es peor que fallar. Tampoco lo llama Wardrobe_Manager: su <c>--build</c> escribe NIF y
-''' no decodifica una sola textura.</para>
+''' equivocados, que es peor que fallar. En Wardrobe_Manager lo llaman el PACK y el UNPACK, que parsean cada
+''' .dds con el wrapper via <c>Dx10Importer</c> / <c>EncodeDDSHeader</c> — el unpack es el caso mas grave de
+''' todos: escribe un .dds vacio por textura y despues BORRA el .ba2, que era la unica copia. Su
+''' <c>--build</c> escribe NIF y no decodifica una sola textura, y por eso no lo llama.</para>
 '''
 ''' <para>⛔ NO PASA POR <c>CrashReport</c>. Ese modulo tiene un guard <c>_reported</c> de por vida: gastarlo
 ''' acá dejaria MUDA cualquier caida posterior de la sesion, que es justo el diagnostico para el que
 ''' existe.</para></summary>
 Public Module DirectXTexWrapperGate
 
-    Private _ok As Boolean = False
+    Private _veredicto As String = Nothing
     Private ReadOnly _candado As New Object()
 
     ''' <summary>Cadena vacia si el wrapper es el esperado; si no, el diagnostico para el usuario.
-    ''' <para>Se memoiza SOLO el exito: un fallo transitorio (OOM en el encode de 1x1) no tiene por que
-    ''' quedar clavado como veredicto para toda la sesion.</para></summary>
+    ''' <para>⛔ SE MEMOIZA TAMBIEN EL FALLO. Antes solo el exito, "por si el fallo era transitorio" — y eso
+    ''' era tolerable con el gate en tres entry points, pero ahora vive en el chokepoint del bake: un barrido
+    ''' de miles de NPC con el wrapper roto correria la sonda entera (4 llamadas nativas) una vez POR NPC y
+    ''' serializada bajo este mismo SyncLock. Y los modos de falla reales —bitness equivocado, metodo que no
+    ''' existe, DLL en cuarentena— no son transitorios.</para></summary>
     Public Function Verificar() As String
         SyncLock _candado
-            If _ok Then Return ""
+            If _veredicto IsNot Nothing Then Return _veredicto
             Try
                 Sonda()
-                _ok = True
-                Return ""
+                _veredicto = ""
             Catch ex As Exception
-                Return Diagnostico(ex)
+                _veredicto = Diagnostico(ex)
             End Try
+            Return _veredicto
         End SyncLock
     End Function
 
