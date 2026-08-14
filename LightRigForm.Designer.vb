@@ -71,9 +71,7 @@ Partial Class LightRigForm
         tambient = New TinySliderTextBox()
         lblGroundLvl = New Label()
         tGroundLevel = New TinySliderTextBox()
-        lblAmbSky = New Label()
         btnAmbSky = New Button()
-        lblAmbGround = New Label()
         btnAmbGround = New Button()
         grpBackground = New GroupBox()
         lblBackground = New Label()
@@ -666,10 +664,9 @@ Partial Class LightRigForm
         grpPresets.Controls.Add(cmbPreset)
         grpPresets.Controls.Add(btnApplyPreset)
         grpPresets.Controls.Add(btnReset)
-        grpPresets.Controls.Add(chkLightsFollowCamera)
-        grpPresets.Location = New Point(444, 224)
+        grpPresets.Location = New Point(444, 364)
         grpPresets.Name = "grpPresets"
-        grpPresets.Size = New Size(418, 110)
+        grpPresets.Size = New Size(418, 59)
         grpPresets.TabIndex = 6
         grpPresets.TabStop = False
         grpPresets.Text = "Rig"
@@ -715,7 +712,7 @@ Partial Class LightRigForm
         ' chkLightsFollowCamera
         ' 
         chkLightsFollowCamera.AutoSize = True
-        chkLightsFollowCamera.Location = New Point(11, 68)
+        chkLightsFollowCamera.Location = New Point(121, 26)
         chkLightsFollowCamera.Name = "chkLightsFollowCamera"
         chkLightsFollowCamera.Size = New Size(156, 19)
         chkLightsFollowCamera.TabIndex = 3
@@ -728,13 +725,11 @@ Partial Class LightRigForm
         grpAmbient.Controls.Add(tambient)
         grpAmbient.Controls.Add(lblGroundLvl)
         grpAmbient.Controls.Add(tGroundLevel)
-        grpAmbient.Controls.Add(lblAmbSky)
         grpAmbient.Controls.Add(btnAmbSky)
-        grpAmbient.Controls.Add(lblAmbGround)
         grpAmbient.Controls.Add(btnAmbGround)
         grpAmbient.Location = New Point(444, 12)
         grpAmbient.Name = "grpAmbient"
-        grpAmbient.Size = New Size(418, 118)
+        grpAmbient.Size = New Size(418, 92)
         grpAmbient.TabIndex = 4
         grpAmbient.TabStop = False
         grpAmbient.Text = "Ambient"
@@ -801,38 +796,20 @@ Partial Class LightRigForm
         ToolTip1.SetToolTip(tGroundLevel, "Brightness of the lower hemisphere as a fraction of the sky, in RADIANCE: 100% is a flat ambient, 0% a black ground. The tint beside it only colours that light, it does not brighten it.")
         tGroundLevel.TrackColor = SystemColors.ControlDark
         ' 
-        ' lblAmbSky
-        ' 
-        lblAmbSky.AutoSize = True
-        lblAmbSky.Location = New Point(11, 90)
-        lblAmbSky.Name = "lblAmbSky"
-        lblAmbSky.Size = New Size(46, 15)
-        lblAmbSky.TabIndex = 2
-        lblAmbSky.Text = "Sky tint"
-        ' 
         ' btnAmbSky
         ' 
-        btnAmbSky.Location = New Point(87, 86)
+        btnAmbSky.Location = New Point(317, 23)
         btnAmbSky.Name = "btnAmbSky"
-        btnAmbSky.Size = New Size(50, 23)
+        btnAmbSky.Size = New Size(90, 28)
         btnAmbSky.TabIndex = 2
         ToolTip1.SetToolTip(btnAmbSky, "Ambient color when a surface faces UP (world +Z). Engine ambient is normal-dependent.")
         btnAmbSky.UseVisualStyleBackColor = False
         ' 
-        ' lblAmbGround
-        ' 
-        lblAmbGround.AutoSize = True
-        lblAmbGround.Location = New Point(287, 90)
-        lblAmbGround.Name = "lblAmbGround"
-        lblAmbGround.Size = New Size(68, 15)
-        lblAmbGround.TabIndex = 3
-        lblAmbGround.Text = "Ground tint"
-        ' 
         ' btnAmbGround
         ' 
-        btnAmbGround.Location = New Point(357, 86)
+        btnAmbGround.Location = New Point(317, 53)
         btnAmbGround.Name = "btnAmbGround"
-        btnAmbGround.Size = New Size(50, 23)
+        btnAmbGround.Size = New Size(90, 28)
         btnAmbGround.TabIndex = 3
         ToolTip1.SetToolTip(btnAmbGround, "Ambient color when a surface faces DOWN (world -Z) -- ground bounce.")
         btnAmbGround.UseVisualStyleBackColor = False
@@ -841,7 +818,7 @@ Partial Class LightRigForm
         ' 
         grpBackground.Controls.Add(lblBackground)
         grpBackground.Controls.Add(cmbBackground)
-        grpBackground.Location = New Point(444, 142)
+        grpBackground.Location = New Point(444, 110)
         grpBackground.Name = "grpBackground"
         grpBackground.Size = New Size(418, 68)
         grpBackground.TabIndex = 6
@@ -875,13 +852,14 @@ Partial Class LightRigForm
         grpShadows.Controls.Add(lblShadowVram)
         grpShadows.Controls.Add(chkDepth16)
         grpShadows.Controls.Add(chkGroundShadow)
+        grpShadows.Controls.Add(chkLightsFollowCamera)
         grpShadows.Controls.Add(lblShadowQuality)
         grpShadows.Controls.Add(cmbShadowQuality)
         grpShadows.Controls.Add(lblShadowSoft)
         grpShadows.Controls.Add(tShadowSoft)
         grpShadows.Controls.Add(lblShadowStrength)
         grpShadows.Controls.Add(tShadowStrength)
-        grpShadows.Location = New Point(444, 346)
+        grpShadows.Location = New Point(444, 184)
         grpShadows.Name = "grpShadows"
         grpShadows.Size = New Size(418, 174)
         grpShadows.TabIndex = 7
@@ -1058,7 +1036,7 @@ Partial Class LightRigForm
         grpNormals.Controls.Add(nudSeamAngle)
         grpNormals.Controls.Add(lblEpsPos)
         grpNormals.Controls.Add(nudEpsPos)
-        grpNormals.Location = New Point(12, 12)
+        grpNormals.Location = New Point(8, 132)
         grpNormals.Name = "grpNormals"
         grpNormals.Size = New Size(418, 144)
         grpNormals.TabIndex = 0
@@ -1163,7 +1141,7 @@ Partial Class LightRigForm
         grpWeld.Controls.Add(nudWeldPos)
         grpWeld.Controls.Add(lblWeldUv)
         grpWeld.Controls.Add(nudWeldUv)
-        grpWeld.Location = New Point(12, 168)
+        grpWeld.Location = New Point(8, 282)
         grpWeld.Name = "grpWeld"
         grpWeld.Size = New Size(418, 148)
         grpWeld.TabIndex = 1
@@ -1251,7 +1229,7 @@ Partial Class LightRigForm
         grpSkin.Controls.Add(chkGpuSkinning)
         grpSkin.Controls.Add(chkSingleBone)
         grpSkin.Controls.Add(chkHiddenSegments)
-        grpSkin.Location = New Point(444, 12)
+        grpSkin.Location = New Point(8, 6)
         grpSkin.Name = "grpSkin"
         grpSkin.Size = New Size(418, 120)
         grpSkin.TabIndex = 2
@@ -1293,7 +1271,7 @@ Partial Class LightRigForm
         grpCamera.Controls.Add(chkResetAngles)
         grpCamera.Controls.Add(chkResetZoom)
         grpCamera.Controls.Add(chkFreezeCamera)
-        grpCamera.Location = New Point(444, 144)
+        grpCamera.Location = New Point(440, 6)
         grpCamera.Name = "grpCamera"
         grpCamera.Size = New Size(418, 120)
         grpCamera.TabIndex = 3
@@ -1339,9 +1317,9 @@ Partial Class LightRigForm
         grpFloor.Controls.Add(nudFloorStep)
         grpFloor.Controls.Add(lblFloorColor)
         grpFloor.Controls.Add(cmbFloorColor)
-        grpFloor.Location = New Point(444, 276)
+        grpFloor.Location = New Point(440, 132)
         grpFloor.Name = "grpFloor"
-        grpFloor.Size = New Size(418, 148)
+        grpFloor.Size = New Size(418, 144)
         grpFloor.TabIndex = 4
         grpFloor.TabStop = False
         grpFloor.Text = "Floor grid"
@@ -1423,9 +1401,9 @@ Partial Class LightRigForm
         ' 
         ' btnResetRender
         ' 
-        btnResetRender.Location = New Point(12, 330)
+        btnResetRender.Location = New Point(440, 282)
         btnResetRender.Name = "btnResetRender"
-        btnResetRender.Size = New Size(200, 27)
+        btnResetRender.Size = New Size(418, 27)
         btnResetRender.TabIndex = 5
         btnResetRender.Text = "Reset rendering to defaults"
         ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera and floor grid -- to its default. Lights and shadows are on the other tab and are not touched.")
@@ -1576,9 +1554,7 @@ Partial Class LightRigForm
     Friend WithEvents tShadowSoft As FO4_Base_Library.TinySliderTextBox
     Friend WithEvents lblShadowStrength As Label
     Friend WithEvents tShadowStrength As FO4_Base_Library.TinySliderTextBox
-    Friend WithEvents lblAmbSky As Label
     Friend WithEvents btnAmbSky As Button
-    Friend WithEvents lblAmbGround As Label
     Friend WithEvents btnAmbGround As Button
     Friend WithEvents btnKeyColor As Button
     Friend WithEvents btnFillLColor As Button

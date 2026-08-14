@@ -171,6 +171,40 @@ Public Structure PreviewLightRig
     ''' <summary>TINTE del hemisferio de abajo. El BRILLO lo da <see cref="AmbientGroundLevel"/>.</summary>
     Public Property AmbientGroundColor As RigColor
 
+    ' ==========================================================================================
+    ' COMO SE VEN LAS SOMBRAS — parte del RIG, no de PreviewShadowSettings
+    ' ==========================================================================================
+    ' ⭐ EL CRITERIO ES LA NATURALEZA DE LA PERILLA, no dónde era cómodo ponerla. El rig ya decide QUE
+    ' LUCES CASTEAN (PreviewLight.CastsShadow), asi que es incoherente que no pueda decidir COMO SE VEN
+    ' esas sombras: la blandura, la oscuridad y si el modelo apoya en el piso son parte del LOOK de un set
+    ' de luces, igual que la temperatura o el balance key/fill. Un "Dungeon" con sombra dura y negra y un
+    ' "Overcast" con sombra apenas insinuada son dos escenarios distintos, y hasta ahora los cinco presets
+    ' compartian una unica configuracion global.
+    '
+    ' ⛔ Y POR ESO MISMO **NO** SE MUDARON LAS OTRAS CINCO. `MapSize`, `Depth16`, los dos bias y `Enabled`
+    ' se quedan en PreviewShadowSettings porque son presupuesto de MAQUINA, no estetica. Si viajaran en el
+    ' preset, aplicar "Portrait" le reescribiria la calidad y la VRAM a alguien que puso 1024 porque su
+    ' placa no da — un preset de ILUMINACION no tiene por que tocar el presupuesto de video, y el sintoma
+    ' (se traba el preview despues de aplicar un preset) no apunta al preset.
+    '
+    ' ⚠️ Consecuencia deliberada: tocar estas tres AHORA marca el combo de presets como "Custom", cosa que
+    ' antes no pasaba. Es correcto — el rig efectivamente dejo de coincidir con el preset. Ver RigCoincide.
+
+    ''' <summary>Radio del kernel de PCF en TEXELES del mapa. Fraccionario: la parte entera son los taps y
+    ''' el sobrante viaja en el ESPACIADO, asi que el desenfoque es continuo. Acotado a
+    ''' <c>PreviewShadowSettings.MaxPcfRadius</c> al subirlo.</summary>
+    Public Property ShadowSoftnessTexels As Single
+
+    ''' <summary>Cuanto oscurece la sombra: <c>factor = 1 - Darkness*(1-crudo)</c>, acotado a [0,1] al
+    ''' subirlo. 1 = la luz ocluida se apaga del todo, que es lo que hace el motor. Menos de 1 NO es fiel;
+    ''' existe porque en un previewer hace falta leer la textura del lado oscuro.</summary>
+    Public Property ShadowDarkness As Single
+
+    ''' <summary>Dibuja la silueta sobre el plano del piso (el "shadow catcher").
+    ''' <para>⚠️ NO es gratis: reserva un SEGUNDO array de shadow maps del mismo lado y con las mismas
+    ''' capas que el del personaje, o sea que prenderlo DUPLICA la VRAM de la feature.</para></summary>
+    Public Property ShadowOnGround As Boolean
+
     ' ⛔⭐ ESTE RIG NO TIENE VERSION DE ESQUEMA, Y ES A PROPOSITO. Tenia una (`SchemaVersion` +
     ' `CurrentSchemaVersion`) que `Config_App.LoadConfig` comparaba para reponer los defaults; se borraron
     ' las tres cosas. La invalidacion pasó a hacerse RENOMBRANDO la propiedad que persiste el rig
@@ -209,24 +243,24 @@ Public Structure PreviewLightRig
     '''      queda cerca de ese total y gasta
     '''      la diferencia en CONTRASTE (dónde está la luz y cuánto baja el ambiente), no en potencia.</summary>
     Public Shared Function Presets() As LightRigPreset()
-    ' ⛔ LA KEY DE STUDIO ESTABA A 0 GRADOS DE LA CAMARA (forward:=1 y nada mas), y una luz frontal
-    ' pura NO PROYECTA SOMBRA VISIBLE por construccion: lo que ocluye tapa exactamente su propia
-    ' sombra. MEDIDO con Tools/ShadowGate sobre cabeza+pelo+cuerpo vanilla: con aquel Studio, prender
-    ' las sombras movia 6797 px (1,05 % de la pantalla) con un delta maximo de canal de 23 sobre 255.
-    ' El gate `studio-rig` de Tools/ParityGate lo impide desde entonces.
-    ' ⭐ LOS ANGULOS SON REDONDOS Y ESO ES DELIBERADO. Estuvieron con 5 decimales porque eran DERIVADOS
-    ' de una conversion del esquema viejo y 2 decimales volteaban pixeles sueltos en bordes con
-    ' alpha-test (340 px de 648.000 medidos). Esa conversion ya no existe: los sets se autoran a mano,
-    ' en multiplos de 15 grados y 0,05 de fuerza, y el golden `rig-presets` los congela con tolerancia
-    ' 0,00005 grados — no por precision, sino porque un golden flojo no congela nada.
-    ' ⛔ TODA KEY POR ENCIMA DE ShadowMapMath.ElevacionMinimaGrados (11,54). La key de Dungeon estuvo en
-    ' -22,29 grados, o sea bajo el horizonte, y con eso ExpandForGroundShadow rechaza el encuadre: el
-    ' receptor de suelo quedaba PERMANENTEMENTE deshabilitado en ese preset y la UI se lo decia al
-    ' usuario en un cartel. Un preset que apaga una feature no es una eleccion de escenario. Ley 5 de
-    ' `studio-rig`.
-    ' ⛔ SOLO LA KEY CASTEA EN LOS CINCO SETS. Cada luz casteante extra es un shadow map completo
-    ' (+16 MB a 2048) y un lookup de PCF por fragmento; el usuario puede prender las otras tres desde el
-    ' dialogo, pero ningun preset se las estrena por el.
+        ' ⛔ LA KEY DE STUDIO ESTABA A 0 GRADOS DE LA CAMARA (forward:=1 y nada mas), y una luz frontal
+        ' pura NO PROYECTA SOMBRA VISIBLE por construccion: lo que ocluye tapa exactamente su propia
+        ' sombra. MEDIDO con Tools/ShadowGate sobre cabeza+pelo+cuerpo vanilla: con aquel Studio, prender
+        ' las sombras movia 6797 px (1,05 % de la pantalla) con un delta maximo de canal de 23 sobre 255.
+        ' El gate `studio-rig` de Tools/ParityGate lo impide desde entonces.
+        ' ⭐ LOS ANGULOS SON REDONDOS Y ESO ES DELIBERADO. Estuvieron con 5 decimales porque eran DERIVADOS
+        ' de una conversion del esquema viejo y 2 decimales volteaban pixeles sueltos en bordes con
+        ' alpha-test (340 px de 648.000 medidos). Esa conversion ya no existe: los sets se autoran a mano,
+        ' en multiplos de 15 grados y 0,05 de fuerza, y el golden `rig-presets` los congela con tolerancia
+        ' 0,00005 grados — no por precision, sino porque un golden flojo no congela nada.
+        ' ⛔ TODA KEY POR ENCIMA DE ShadowMapMath.ElevacionMinimaGrados (11,54). La key de Dungeon estuvo en
+        ' -22,29 grados, o sea bajo el horizonte, y con eso ExpandForGroundShadow rechaza el encuadre: el
+        ' receptor de suelo quedaba PERMANENTEMENTE deshabilitado en ese preset y la UI se lo decia al
+        ' usuario en un cartel. Un preset que apaga una feature no es una eleccion de escenario. Ley 5 de
+        ' `studio-rig`.
+        ' ⛔ SOLO LA KEY CASTEA EN LOS CINCO SETS. Cada luz casteante extra es un shadow map completo
+        ' (+16 MB a 2048) y un lookup de PCF por fragmento; el usuario puede prender las otras tres desde el
+        ' dialogo, pero ningun preset se las estrena por el.
         Return New LightRigPreset() {
             New LightRigPreset("Studio",
                 "Neutral 3-point + rim. Colourless light for judging textures and materials, with the key off-axis so shaped shadows read.",
@@ -238,7 +272,10 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.92F,
                     .AmbientGroundLevel = 0.45F,
                     .AmbientSkyColor = RigColor.White,
-                    .AmbientGroundColor = RigColor.White}),
+                    .AmbientGroundColor = RigColor.White,
+                    .ShadowSoftnessTexels = 2.0F,
+                    .ShadowDarkness = 1.0F,
+                    .ShadowOnGround = False}),
             New LightRigPreset("Sunny day",
                 "Hard high sun from the upper left, blue sky as fill and a warm bounce off the ground. The most directional set: sunlit side vs shaded side is a wide ratio.",
                 New PreviewLightRig With {
@@ -249,7 +286,10 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.62F,
                     .AmbientGroundLevel = 0.6F,
                     .AmbientSkyColor = New RigColor(0.78F, 0.86F, 1.0F),
-                    .AmbientGroundColor = New RigColor(1.0F, 0.9F, 0.76F)}),
+                    .AmbientGroundColor = New RigColor(1.0F, 0.9F, 0.76F),
+                    .ShadowSoftnessTexels = 2.0F,
+                    .ShadowDarkness = 1.0F,
+                    .ShadowOnGround = False}),
             New LightRigPreset("Overcast",
                 "Cloudy dome: a high, weak key with the ambient doing most of the work, so shadows stay faint. Volume comes from the sky-to-ground gradient, not from shape.",
                 New PreviewLightRig With {
@@ -260,7 +300,10 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 1.05F,
                     .AmbientGroundLevel = 0.55F,
                     .AmbientSkyColor = New RigColor(0.9F, 0.94F, 1.0F),
-                    .AmbientGroundColor = New RigColor(0.72F, 0.71F, 0.68F)}),
+                    .AmbientGroundColor = New RigColor(0.72F, 0.71F, 0.68F),
+                    .ShadowSoftnessTexels = 2.0F,
+                    .ShadowDarkness = 1.0F,
+                    .ShadowOnGround = False}),
             New LightRigPreset("Portrait",
                 "Studio portrait: 3/4 key from the RIGHT (opposite side to Sunny day), high enough to shape the cheekbone, 2:1 fill, off-axis hair kicker and a dark ground so the body falls into shadow.",
                 New PreviewLightRig With {
@@ -271,7 +314,10 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.58F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.96F, 0.97F, 1.0F),
-                    .AmbientGroundColor = New RigColor(0.7F, 0.66F, 0.62F)}),
+                    .AmbientGroundColor = New RigColor(0.7F, 0.66F, 0.62F),
+                    .ShadowSoftnessTexels = 2.0F,
+                    .ShadowDarkness = 1.0F,
+                    .ShadowOnGround = False}),
             New LightRigPreset("Dungeon",
                 "A NEAR wall torch low on the left plus a far weaker one behind on the right (the asymmetric distance), with cold moonlight through a grate. Only the near torch is strongly warm; everything else is cool, so the contrast is one of TEMPERATURE instead of dyeing the whole model orange.",
                 New PreviewLightRig With {
@@ -282,7 +328,10 @@ Public Structure PreviewLightRig
                     .AmbientIntensity = 0.56F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.68F, 0.76F, 0.95F),
-                    .AmbientGroundColor = New RigColor(0.8F, 0.7F, 0.6F)})}
+                    .AmbientGroundColor = New RigColor(0.8F, 0.7F, 0.6F),
+                    .ShadowSoftnessTexels = 2.0F,
+                    .ShadowDarkness = 1.0F,
+                    .ShadowOnGround = False})}
     End Function
 
     ''' <summary>Color del hemisferio de arriba ya escalado por la intensidad (sin linearizar).</summary>

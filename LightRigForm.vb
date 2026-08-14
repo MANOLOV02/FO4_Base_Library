@@ -203,7 +203,10 @@ Partial Public Class LightRigForm
                CasiIgual(a.AmbientIntensity, b.AmbientIntensity) AndAlso
                CasiIgual(a.AmbientGroundLevel, b.AmbientGroundLevel) AndAlso
                ColorCoincide(a.AmbientSkyColor, b.AmbientSkyColor) AndAlso
-               ColorCoincide(a.AmbientGroundColor, b.AmbientGroundColor)
+               ColorCoincide(a.AmbientGroundColor, b.AmbientGroundColor) AndAlso
+               CasiIgual(a.ShadowSoftnessTexels, b.ShadowSoftnessTexels) AndAlso
+               CasiIgual(a.ShadowDarkness, b.ShadowDarkness) AndAlso
+               a.ShadowOnGround = b.ShadowOnGround
     End Function
 
     Private Sub ActualizarTooltipPreset()
@@ -255,16 +258,18 @@ Partial Public Class LightRigForm
         ' de presets como "Custom", que es exactamente lo que no significa.
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         chkShadows.Checked = sh.Enabled
-        chkGroundShadow.Checked = sh.GroundShadow
         chkDepth16.Checked = sh.Depth16
+        ' ⭐ ESTOS TRES SALEN DEL RIG, no de ActiveShadows(): blandura, oscuridad y receptor de suelo son
+        ' parte del LOOK del set de luces y viajan con el preset. Ver el bloque de PreviewLightRig.
+        chkGroundShadow.Checked = rig.ShadowOnGround
         ' Anclaje del rig. Vive en Config_App como el resto de las preferencias del visor y NO en
         ' PreviewLightRig: no es parte del set calibrado —no cambia una sola intensidad ni un angulo— sino
         ' de COMO se interpreta. Metiendolo en el rig habria que versionar el schema y ademas tocarlo
         ' marcaria el combo de presets como "Custom", que no es lo que significa.
         chkLightsFollowCamera.Checked = Config_App.Current.Setting_LightsFollowCamera
         CargarCalidadSombra(sh.MapSize)
-        tShadowSoft.Value = sh.SoftnessTexels
-        tShadowStrength.Value = sh.Intensity
+        tShadowSoft.Value = rig.ShadowSoftnessTexels
+        tShadowStrength.Value = rig.ShadowDarkness
         ActualizarHabilitadoSombras()
         ActualizarAvisoDeSuelo()
 
@@ -484,8 +489,13 @@ Partial Public Class LightRigForm
                                              ActualizarCartelDeVram()
                                          End Sub
         Next
+        ' ⛔ VAN A VolcarUIenModelo (el RIG), no a VolcarSombrasEnModelo: blandura, oscuridad y receptor de
+        ' suelo se mudaron al rig. Cruzarlos escribiria en la estructura equivocada y el sintoma seria que
+        ' la perilla se olvida al cerrar el dialogo.
+        ' ⭐ Y por eso mismo tocarlas AHORA marca el combo como "Custom" y Apply/Reset las restauran: son
+        ' parte del preset. Antes Reset te devolvia las luces y te dejaba la sombra como estaba.
         AddHandler chkGroundShadow.CheckedChanged, Sub(sender, e)
-                                                       VolcarSombrasEnModelo()
+                                                       VolcarUIenModelo()
                                                        ActualizarCartelDeVram()
                                                    End Sub
         ' La precision parte la cuenta de VRAM al medio, asi que el cartel se refresca con ella.
@@ -516,8 +526,8 @@ Partial Public Class LightRigForm
                                                               VolcarSombrasEnModelo()
                                                               ActualizarCartelDeVram()
                                                           End Sub
-        AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
-        AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarSombrasEnModelo()
+        AddHandler tShadowSoft.ValueChanged, Sub(sender, e) VolcarUIenModelo()
+        AddHandler tShadowStrength.ValueChanged, Sub(sender, e) VolcarUIenModelo()
 
         ' Pestana Rendering: todo escribe en Config_App al vuelo, igual que las luces.
         For Each c In New CheckBox() {chkRecalcNormals, chkRepairNaN, chkNormalize, chkDeterministic,
@@ -614,7 +624,10 @@ Partial Public Class LightRigForm
             .AmbientIntensity = CSng(tambient.Value),
             .AmbientGroundLevel = CSng(tGroundLevel.Value),
             .AmbientSkyColor = RigColor.FromColor(btnAmbSky.BackColor),
-            .AmbientGroundColor = RigColor.FromColor(btnAmbGround.BackColor)}
+            .AmbientGroundColor = RigColor.FromColor(btnAmbGround.BackColor),
+            .ShadowSoftnessTexels = CSng(tShadowSoft.Value),
+            .ShadowDarkness = CSng(tShadowStrength.Value),
+            .ShadowOnGround = chkGroundShadow.Checked}
 
         Config_App.Current.SetActiveLights(rig)
         ' Mover la elevacion de la key puede habilitar o deshabilitar el receptor de suelo.
@@ -731,7 +744,6 @@ Partial Public Class LightRigForm
         If _preventchanges Then Return
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         sh.Enabled = chkShadows.Checked
-        sh.GroundShadow = chkGroundShadow.Checked
         sh.Depth16 = chkDepth16.Checked
         If _mapSizeFueraDeLista > 0 Then
             ' El usuario tiene un tamano propio y todavia no eligio uno de la lista: se conserva.
@@ -739,8 +751,6 @@ Partial Public Class LightRigForm
         ElseIf cmbShadowQuality.SelectedIndex >= 0 Then
             sh.MapSize = ShadowQualities(cmbShadowQuality.SelectedIndex).Size
         End If
-        sh.SoftnessTexels = CSng(tShadowSoft.Value)
-        sh.Intensity = CSng(tShadowStrength.Value)
         Config_App.Current.SetActiveShadows(sh)
         RaiseEvent LightsChanged()
     End Sub

@@ -1,4 +1,4 @@
-Imports System.Runtime.CompilerServices
+﻿Imports System.Runtime.CompilerServices
 Imports OpenTK.Graphics.OpenGL4
 Imports OpenTK.Mathematics
 
@@ -45,45 +45,6 @@ Public Structure PreviewShadowSettings
     ''' Config_App.LoadConfig lo repara con Defaults(). Un mapa de 0 texeles no es un valor legitimo,
     ''' que es justo lo que se le pide a un centinela (ver memoria 10-stack-json-structure-defaults).</summary>
     Public Property MapSize As Integer
-
-    ''' <summary>Radio del kernel de PCF, en texeles del mapa. Fraccionario: la parte entera es la
-    ''' cantidad de taps y el sobrante viaja en el ESPACIADO, asi que el desenfoque es continuo.
-    ''' <para>⛔ El default es 2,0 y no 1,5, y el cambio no es de gusto. Decia 1,5 pero CORRIA como 2,0: el
-    ''' radio salia de <c>CInt(Math.Round(SoftnessTexels))</c> y el redondeo BANCARIO de .NET manda 1,5 al
-    ''' 2 (par) — que ademas hacia que 1,5 y 2,5 fueran el mismo valor y la perilla tuviera un tramo
-    ''' muerto. Toda la feature, incluido el A/B que se aprobo mirando, se vio siempre con 2,0. Ahora que
-    ''' 1,5 significa 1,5 de verdad, dejarlo daria una sombra mas dura que la aprobada: medido, 10.974 px
-    ''' contra 21.615 en la escena del arnes. Se deja el numero que describe lo que se vio.</para>
-    ''' <para>⛔ El comentario vive ACA y no adentro del <c>{ }</c> de Defaults(): VB no acepta una linea de
-    ''' comentario entre los elementos de un inicializador de objeto (BC30201).</para></summary>
-    Public Property SoftnessTexels As Single
-
-    ''' <summary>Cuanto oscurece la sombra: `factor = 1 - Intensity*(1-crudo)`. Es GLOBAL a las N luces
-    ''' casteantes, no de una sola. 1 = la luz ocluida se apaga del
-    ''' todo en sombra (lo que hace el motor). Menos de 1 NO es fiel; existe porque en un previewer se
-    ''' necesita ver la textura del lado oscuro.</summary>
-    Public Property Intensity As Single
-
-    ''' <summary>Desplazamiento del punto de muestreo a lo largo de la normal, en TEXELES del mapa.
-    ''' Es el anti-acne principal: escala con el tamano real del texel, asi que no hay que re-tunearlo
-    ''' al cambiar MapSize.</summary>
-    Public Property NormalBiasTexels As Single
-
-    ''' <summary>Bias constante restado a la profundidad de referencia, en TEXELES (se convierte a
-    ''' unidades de profundidad con el rango del mapa). Tapa el residuo de cuantizacion del depth.</summary>
-    Public Property DepthBiasTexels As Single
-
-    ''' <summary>Dibuja la silueta del personaje sobre el plano del piso (el "shadow catcher"). DEFAULT OFF. Es el
-    ''' indicio mas legible de todos —sin el, el modelo flota—, pero NO es gratis: reserva un SEGUNDO array
-    ''' de shadow maps, del mismo lado y con las mismas capas que el del personaje, o sea que prenderlo
-    ''' DUPLICA la VRAM de la feature (16 -> 32 MB a 2048 con una luz; 64 -> 128 con las cuatro). Por eso es
-    ''' una opcion aparte y no parte de Enabled.
-    ''' <para>⚠️ Este doc decia que el costo era "agrandar el encuadre del mapa, o sea texeles mas grandes en
-    ''' el personaje". Dejo de ser cierto cuando el receptor paso a tener su PROPIO mapa: hay un check del
-    ''' arnes (<c>[suelo]</c>) que falla precisamente si prender el receptor le cambia el texel al personaje.
-    ''' O sea que habia un gate verde probando que este comentario era falso.</para></summary>
-    Public Property GroundShadow As Boolean
-
     ''' <summary>16 bits de profundidad en vez de 24 ⇒ **la MITAD de VRAM** en los dos arrays. Default
     ''' **False** (24 bits).
     '''
@@ -110,6 +71,21 @@ Public Structure PreviewShadowSettings
     ''' <summary>Tope del radio de PCF. No es configurable: acota el costo del kernel en el fragment.</summary>
     Public Const MaxPcfRadius As Integer = 4
 
+    ''' <summary>Desplazamiento del punto de muestreo a lo largo de la normal, en TEXELES del mapa. Es el
+    ''' anti-acne principal: escala con el tamano real del texel, asi que no hay que re-tunearlo al cambiar
+    ''' MapSize.
+    ''' <para>⛔ ES UNA <c>Const</c> Y NO SE PERSISTE, y eso es un cambio deliberado: era una propiedad que
+    ''' viajaba al config.json y **no tenia ningun control en el dialogo**. O sea una clave que sólo se
+    ''' podia tocar editando el JSON a mano, ocupando lugar en el archivo de todos los usuarios. Un bias mal
+    ''' puesto no es una preferencia estetica: da acne o peter-panning. Si algun dia hace falta tunearlo,
+    ''' que sea con una perilla de verdad y una medicion, no con una clave fantasma.</para></summary>
+    Public Const NormalBiasTexels As Single = 2.0F
+
+    ''' <summary>Bias constante restado a la profundidad de referencia, en TEXELES (se convierte a unidades
+    ''' de profundidad con el rango del mapa). Tapa el residuo de cuantizacion del depth del caster.
+    ''' Misma razon que <see cref="NormalBiasTexels"/> para ser <c>Const</c>.</summary>
+    Public Const DepthBiasTexels As Single = 1.5F
+
     ''' <summary>Cuantas luces del rig pueden castear a la vez. Es la cantidad de luces que tiene
     ''' <see cref="PreviewLightRig"/> (key + 2 fills + back), no un presupuesto: no hay tope, las cuatro
     ''' pueden. El numero existe para dimensionar los arrays del GLSL y de los uniforms, y tiene que
@@ -119,12 +95,7 @@ Public Structure PreviewShadowSettings
     Public Shared Function Defaults() As PreviewShadowSettings
         Return New PreviewShadowSettings With {
             .Enabled = True,
-            .MapSize = 2048,
-            .SoftnessTexels = 2.0F,
-            .Intensity = 1.0F,
-            .NormalBiasTexels = 2.0F,
-            .DepthBiasTexels = 1.5F,
-            .GroundShadow = False}
+            .MapSize = 2048}
     End Function
 
     ''' <summary>Copia con los valores acotados al rango que el render sabe ejecutar. Lo llama el render
@@ -153,10 +124,6 @@ Public Structure PreviewShadowSettings
         ' se lo lleva al default de la feature. `Enabled` y el resto se respetan tal como vinieron.
         If s.MapSize <= 0 Then s.MapSize = Defaults().MapSize
         s.MapSize = Math.Clamp(RoundToPowerOfTwo(s.MapSize), 256, 8192)
-        s.SoftnessTexels = Math.Clamp(s.SoftnessTexels, 0.0F, CSng(MaxPcfRadius))
-        s.Intensity = Math.Clamp(s.Intensity, 0.0F, 1.0F)
-        s.NormalBiasTexels = Math.Clamp(s.NormalBiasTexels, 0.0F, 16.0F)
-        s.DepthBiasTexels = Math.Clamp(s.DepthBiasTexels, 0.0F, 16.0F)
         Return s
     End Function
 

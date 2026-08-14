@@ -5273,6 +5273,11 @@ Public Class PreviewModel
     ''' <summary>Cuantas capas tiene el mapa del personaje este frame. 0 = ninguna luz castea.</summary>
     Private _shadowCount As Integer
     Private _shadowSettings As PreviewShadowSettings
+    ''' <summary>El LOOK de la sombra, copiado del RIG al frame (ver RenderShadowPass). Vive alla y no en
+    ''' PreviewShadowSettings porque blandura y oscuridad son parte del set de luces, no del presupuesto
+    ''' de maquina.</summary>
+    Private _shadowSoftness As Single
+    Private _shadowDarkness As Single
     Private _shadowActive As Boolean
     ' Buffers REUTILIZADOS para subir los uniforms de array. Campos y no locales por la misma razon que
     ' _shadowCasters y _shadowPlanes: esto corre en cada frame que se repinta.
@@ -5578,6 +5583,12 @@ Public Class PreviewModel
         ' Que luces castean lo decide el RIG (PreviewLight.CastsShadow) y lo resuelve una funcion PURA,
         ' con orden fijo y sin alocar: ver ShadowMapMath.SlotsDeSombra y su gate `shadow-slots`.
         Dim rigVivo = Config_App.Current.ActiveLights()
+        ' El LOOK de la sombra (blandura, oscuridad, receptor de suelo) vive en el RIG, no en
+        ' PreviewShadowSettings: es parte del set de luces igual que la temperatura o el balance key/fill.
+        ' Se copia al frame aca, junto al reparto de capas, porque UploadShadowUniforms corre despues y no
+        ' tiene el rig a mano.
+        _shadowSoftness = rigVivo.ShadowSoftnessTexels
+        _shadowDarkness = rigVivo.ShadowDarkness
         _shadowCount = ShadowMapMath.SlotsDeSombra(rigVivo, _shadowSlots)
         If _shadowCount <= 0 Then SoltarMapasDeSombra() : Exit Sub
 
@@ -5617,7 +5628,7 @@ Public Class PreviewModel
         _shadowActive = True
 
         ' ===================== MAPA 2: ANCHO, SOLO PARA EL SUELO =====================
-        If Not cfg.GroundShadow Then
+        If Not rigVivo.ShadowOnGround Then
             ' Apagada la opcion, el mapa ancho se SUELTA. Sin esto quedaban colgados hasta el Clean 16 MB
             ' (2048, una luz casteante) o 64 MB (2048, las cuatro), contradiciendo el criterio del otro
             ' target ("con la opcion apagada nunca se asigna un byte de GPU").
@@ -5845,7 +5856,8 @@ Public Class PreviewModel
         ' El programa del suelo indexa por CAPA (su bucle va de 0 a uGroundCount): no usa uShadowSlot.
         If slots IsNot Nothing Then shader.SetIntArray("uShadowSlot[0]", slots, PreviewShadowSettings.MaxShadowLights)
 
-        shader.SetFloat("uShadowIntensity", _shadowSettings.Intensity)
+        ' Acotado ACA: el rig no tiene un Sanitized() y estos dos ya no pasan por el de PreviewShadowSettings.
+        shader.SetFloat("uShadowIntensity", Math.Clamp(_shadowDarkness, 0.0F, 1.0F))
         ' | EL NORMAL-OFFSET ES CERO PARA EL RECEPTOR DE SUELO, y no es una omision. Su unica funcion es
         ' matar el auto-sombreado de superficies rasantes, y el quad del piso NO ES CASTER: no puede
         ' auto-sombrearse. En cambio SI paga el desvio: el mapa del suelo tiene texeles mucho mas grandes
@@ -5856,7 +5868,7 @@ Public Class PreviewModel
 
         ' | LA SUAVIDAD ES CONTINUA: el radio entero es el techo y el SOBRANTE viaja en el espaciado de
         ' los taps, que es lo que hace continuo el desenfoque sin cambiar la cantidad de muestras.
-        Dim soft As Single = Math.Clamp(_shadowSettings.SoftnessTexels, 0.0F, PreviewShadowSettings.MaxPcfRadius)
+        Dim soft As Single = Math.Clamp(_shadowSoftness, 0.0F, PreviewShadowSettings.MaxPcfRadius)
         Dim radio As Integer = CInt(Math.Ceiling(soft))
         shader.SetInt("uShadowPcfRadius", radio)
         Dim paso As Single = If(radio > 0, soft / radio, 1.0F)
@@ -5911,8 +5923,8 @@ Public Class PreviewModel
         ' Y los uniforms que el fragment iluminado necesita, una sola vez para todos los draws del frame.
         UploadShadowUniforms(ParentControl.CurrentShader, _shadowFits, _shadowCount, _shadowSlots, _shadowUvScale,
                              ParentControl.ShadowTarget, _shadowActive,
-                             TextureUnit.Texture14, _shadowSettings.NormalBiasTexels,
-                             _shadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
+                             TextureUnit.Texture14, PreviewShadowSettings.NormalBiasTexels,
+                             PreviewShadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
 
         ' Note: ShapeDataLoaded is intentionally NOT checked here. Each mesh.Render() guards
         ' against null RelatedNifShape internally. Checking ShapeDataLoaded at this level would
@@ -6005,7 +6017,7 @@ Public Class PreviewModel
             UploadShadowUniforms(ParentControl.SharedGroundShadowShader, _groundFits, _groundCount, Nothing, _groundUvScale,
                                  ParentControl.GroundShadowTarget, _groundActive,
                                  TextureUnit.Texture15, 0.0F,
-                                 _shadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
+                                 PreviewShadowSettings.DepthBiasTexels * _shadowFits(0).TexelWorld)
             SubirAporteDelSuelo(ParentControl.SharedGroundShadowShader)
             _groundQuad.Render(ParentControl.SharedGroundShadowShader, vp, _groundQuadCenter, _groundQuadHalf)
         End If
