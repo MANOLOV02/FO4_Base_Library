@@ -1686,40 +1686,40 @@ Public Class FilesDictionary_class
         ' de las demas mutaciones estructurales: con el TryPop adentro y la publicacion en _dictionary afuera,
         ' dos removedores popean entradas distintas y se pisan al publicar.
         SyncLock _overriddenEntriesLock
-        Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
-        _bytesCache.TryRemove(normalized, dummy)
+            Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+            _bytesCache.TryRemove(normalized, dummy)
 
-        ' Try to restore a previously overridden entry
-        Dim stack As ConcurrentStack(Of File_Location) = Nothing
-        Dim restored As File_Location = Nothing
-        If _overriddenEntries.TryGetValue(normalized, stack) AndAlso stack.TryPop(restored) Then
-            _dictionary(normalized) = restored
-            If stack.IsEmpty Then
-                Dim vacia As ConcurrentStack(Of File_Location) = Nothing
-                _overriddenEntries.TryRemove(normalized, vacia)
+            ' Try to restore a previously overridden entry
+            Dim stack As ConcurrentStack(Of File_Location) = Nothing
+            Dim restored As File_Location = Nothing
+            If _overriddenEntries.TryGetValue(normalized, stack) AndAlso stack.TryPop(restored) Then
+                _dictionary(normalized) = restored
+                If stack.IsEmpty Then
+                    Dim vacia As ConcurrentStack(Of File_Location) = Nothing
+                    _overriddenEntries.TryRemove(normalized, vacia)
+                End If
+            Else
+                Dim removed As File_Location = Nothing
+                If _dictionary.TryRemove(normalized, removed) Then
+                    ' Remove from search indexes only if truly gone.
+                    ' ⛔ BAJO EL CANDADO, por la ventana SIMÉTRICA a la de IndexNormalizedKey: si un build está
+                    ' enumerando el diccionario y alcanzó a ver esta clave ANTES del TryRemove de arriba, la va a
+                    ' insertar en el índice; si la poda corriera sin candado podría ejecutarse ANTES de esa
+                    ' inserción y no borrar nada, dejando en el índice una clave que ya no está en el diccionario
+                    ' (un picker ofreciendo un archivo inexistente). Con el candado la poda espera a que el build
+                    ' publique y borra después. Si el índice no está construido, los TryGetValue no encuentran
+                    ' bucket y esto es un no-op correcto: el build posterior lee el diccionario YA sin la clave.
+                    Dim directoryKey = NormalizeDirectoryKey(IO.Path.GetDirectoryName(normalized))
+                    Dim extensionKey = NormalizeExtensionKey(IO.Path.GetExtension(normalized))
+                    SyncLock _keysByDirectoryLock
+                        Dim bucket As ConcurrentDictionary(Of String, Byte) = Nothing
+                        If _KeysByDirectory.TryGetValue(directoryKey, bucket) Then bucket.TryRemove(normalized, 0)
+                        If extensionKey <> "" Then
+                            If _KeysByDirectoryExtension.TryGetValue(BuildDirectoryExtensionBucketKey(directoryKey, extensionKey), bucket) Then bucket.TryRemove(normalized, 0)
+                        End If
+                    End SyncLock
+                End If
             End If
-        Else
-            Dim removed As File_Location = Nothing
-            If _dictionary.TryRemove(normalized, removed) Then
-                ' Remove from search indexes only if truly gone.
-                ' ⛔ BAJO EL CANDADO, por la ventana SIMÉTRICA a la de IndexNormalizedKey: si un build está
-                ' enumerando el diccionario y alcanzó a ver esta clave ANTES del TryRemove de arriba, la va a
-                ' insertar en el índice; si la poda corriera sin candado podría ejecutarse ANTES de esa
-                ' inserción y no borrar nada, dejando en el índice una clave que ya no está en el diccionario
-                ' (un picker ofreciendo un archivo inexistente). Con el candado la poda espera a que el build
-                ' publique y borra después. Si el índice no está construido, los TryGetValue no encuentran
-                ' bucket y esto es un no-op correcto: el build posterior lee el diccionario YA sin la clave.
-                Dim directoryKey = NormalizeDirectoryKey(IO.Path.GetDirectoryName(normalized))
-                Dim extensionKey = NormalizeExtensionKey(IO.Path.GetExtension(normalized))
-                SyncLock _keysByDirectoryLock
-                    Dim bucket As ConcurrentDictionary(Of String, Byte) = Nothing
-                    If _KeysByDirectory.TryGetValue(directoryKey, bucket) Then bucket.TryRemove(normalized, 0)
-                    If extensionKey <> "" Then
-                        If _KeysByDirectoryExtension.TryGetValue(BuildDirectoryExtensionBucketKey(directoryKey, extensionKey), bucket) Then bucket.TryRemove(normalized, 0)
-                    End If
-                End SyncLock
-            End If
-        End If
         End SyncLock
     End Sub
 

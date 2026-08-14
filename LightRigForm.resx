@@ -120,9 +120,6 @@
   <metadata name="ToolTip1.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
     <value>17, 17</value>
   </metadata>
-  <metadata name="ToolTip1.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
-    <value>17, 17</value>
-  </metadata>
   <data name="chkLightsFollowCamera.ToolTip" xml:space="preserve">
     <value>Off: the lights sit in the WORLD. Orbiting turns the character inside the light, so you see the back lit from behind -- this is what the game does, and it is what you want when judging how a piece will look in-game.
 On (default): the rig turns WITH the camera, like a mesh viewer. The model stays evenly lit from every angle, which is what you want when inspecting geometry.

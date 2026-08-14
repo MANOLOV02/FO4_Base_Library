@@ -885,4 +885,6 @@ Partial Public Class LightRigForm
         chkLightsFollowCamera.Checked = anclajeDefault
         AplicarRig(PreviewLightRig.Defaults())
     End Sub
+
+
 End Class

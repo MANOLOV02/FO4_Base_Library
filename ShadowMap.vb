@@ -95,7 +95,8 @@ Public Structure PreviewShadowSettings
     Public Shared Function Defaults() As PreviewShadowSettings
         Return New PreviewShadowSettings With {
             .Enabled = True,
-            .MapSize = 2048}
+            .MapSize = 2048,
+            .Depth16 = True}
     End Function
 
     ''' <summary>Copia con los valores acotados al rango que el render sabe ejecutar. Lo llama el render
