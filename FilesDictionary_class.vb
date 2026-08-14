@@ -242,6 +242,27 @@ Public Class FilesDictionary_class
     Private Shared _dictionary As New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
     ''' <summary>Stack of overridden entries per key. When a loose overrides a BA2 (or a BA2 overrides another), the loser is pushed here.</summary>
     Private Shared ReadOnly _overriddenEntries As New ConcurrentDictionary(Of String, ConcurrentStack(Of File_Location))(StringComparer.OrdinalIgnoreCase)
+
+    ''' SERIALIZA LA TRANSICION GANADOR-PERDEDOR, no solo la pila. Que el diccionario y la pila sean
+    ''' concurrentes por separado no alcanza: "leer, resolver el conflicto, publicar el ganador y bajar el
+    ''' perdedor" es UNA operacion, y partida en dos primitivas atomicas se puede intercalar con una purga o
+    ''' con un RemoveDictionaryEntry de otro hilo. El resultado es un Push perdido, una pila reemplazada bajo
+    ''' los pies de un TryPop, o un ganador publicado sin su perdedor.
+    ''' <para>ORDEN DE CANDADOS OBLIGATORIO: _overriddenEntriesLock -> _keysByDirectoryLock. NUNCA al reves.
+    ''' Verificado: los cinco bloques que toman _keysByDirectoryLock no llaman -ni directa ni indirectamente-
+    ''' a nada que tome este, y no corren callbacks, logging diferido ni codigo ajeno.</para>
+    ''' <para>GLOBAL Y NO POR STRIPES, y eso esta MEDIDO: el corpus da 39.584 claves con override sobre
+    ''' 374.395 (10,57 %; profundidad 1 en 39.361). Son ~39,5 k Push en un scan de 3.296 ms, del orden del
+    ''' 0,1 %. 256 stripes agregarian una matriz de orden de candados y dejarian sin resolver los dos Clear()
+    ''' globales, a cambio de nada que la medicion muestre. Si una regresion MEDIDA lo justifica, ahi si.</para>
+    Private Shared ReadOnly _overriddenEntriesLock As New Object()
+
+    ''' Cuantos Push de override lleva la sesion. Existe para que el costo del candado se discuta con un
+    ''' numero del corpus del usuario y no con una estimacion.
+    Private Shared _overridePushCount As Integer
+    Public Shared Function OverridePushCount() As Integer
+        Return Threading.Volatile.Read(_overridePushCount)
+    End Function
     ''' <summary>Extensiones que el diccionario indexa de sueltos y archives. Las ultimas cubren archivos de
     ''' configuracion de RaceMenu (skee64) y LooksMenu (f4ee): los dos los abren por la capa de archives del
     ''' juego, asi que pueden vivir DENTRO de un BSA/BA2 y a menudo lo hacen - .ini (morphs extendidos, BodyGen),
@@ -1404,17 +1425,25 @@ Public Class FilesDictionary_class
             Return _dictionary
         End Get
         Set(value As ConcurrentDictionary(Of String, File_Location))
-            If IsNothing(value) Then
-                _dictionary = New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
-            Else
-                _dictionary = value
-            End If
-
-            _overriddenEntries.Clear()
-            RebuildSearchIndexesFromDictionary()
+            ' ⛔ LA SUSTITUCION ENTRA AL CANDADO. Reemplazar `_dictionary` y DESPUES vaciar las pilas deja el
+            ' problema simetrico al del re-scan: entre las dos, una insercion crea su par ganador/perdedor
+            ' contra el diccionario NUEVO y despues pierde su pila. Es una sola transicion.
+            ' Orden mantenido: _overriddenEntriesLock -> _keysByDirectoryLock (lo toma el rebuild).
+            SyncLock _overriddenEntriesLock
+                If IsNothing(value) Then
+                    _dictionary = New ConcurrentDictionary(Of String, File_Location)(StringComparer.OrdinalIgnoreCase)
+                Else
+                    _dictionary = value
+                End If
+                _overriddenEntries.Clear()
+                RebuildSearchIndexesFromDictionary()
+            End SyncLock
         End Set
     End Property
-    Private Shared Sub PushOverriddenEntry(normalized As String, loser As File_Location)
+    ''' PRECONDICION: el llamador YA tiene _overriddenEntriesLock. El sufijo esta en el nombre a proposito,
+    ''' para que un SyncLock anidado por accidente se vea al leer la llamada.
+    Private Shared Sub PushOverriddenEntryUnlocked(normalized As String, loser As File_Location)
+        Threading.Interlocked.Increment(_overridePushCount)
         Dim stack = _overriddenEntries.GetOrAdd(normalized, Function(key) New ConcurrentStack(Of File_Location)())
         stack.Push(loser)
     End Sub
@@ -1434,32 +1463,32 @@ Public Class FilesDictionary_class
     ''' onto the override stack.
     '''
     ''' <para>⛔ Why this exists instead of ConcurrentDictionary.AddOrUpdate: AddOrUpdate's
-    ''' updateValueFactory is documented to run MORE THAN ONCE when its CAS loses a race, and the previous
-    ''' code called PushOverriddenEntry from INSIDE that factory — so a losing attempt pushed a loser onto
-    ''' the override stack and then pushed it again on the retry, leaving duplicate/phantom entries. That
-    ''' was rare with 4 workers and becomes routine as the worker count goes up. Here the push happens only
-    ''' after the compare-and-swap that actually won.</para></summary>
+    ''' updateValueFactory is documented to run MORE THAN ONCE when its CAS loses a race, and an even older
+    ''' version called the push from INSIDE that factory — so a losing attempt pushed a loser onto the
+    ''' override stack and then pushed it again on the retry, leaving duplicate/phantom entries. Eso se
+    ''' arreglo primero con un bucle de CAS explicito; hoy lo cierra el candado, que serializa la transicion
+    ''' entera y hace que no haya carrera que perder. Ver <see cref="_overriddenEntriesLock"/>.</para></summary>
     Private Shared Sub AddEntryResolvingConflict(key As String, entry As File_Location)
-        Do
+        ' EL CUERPO ENTERO VA BAJO EL CANDADO, no solo el Push. Con el CAS afuera, entre el TryUpdate que
+        ' publica al ganador y el Push que baja al perdedor se puede colar un RemoveDictionaryEntry que popea
+        ' y publica OTRO ganador: quedaba atomico un solo lado del par.
+        ' Y POR ESO DESAPARECIO EL BUCLE DE CAS. Existia porque AddOrUpdate puede correr su factory mas de una
+        ' vez y la factory tenia efecto colateral (apilaba el loser dos veces). Serializado por este candado,
+        ' TryUpdate no puede perder la carrera y el reintento no tiene contra que re-resolver.
+        ' NO se indexa aca. Durante el scan solo se puebla _dictionary; los indices se construyen en lote al
+        ' final. Indexar aca lo pagaria por entrada -374.395 veces- en la fase paralela, que es justo lo que
+        ' ese diseño evita.
+        SyncLock _overriddenEntriesLock
             Dim existing As File_Location = Nothing
             If Not _dictionary.TryGetValue(key, existing) Then
-                If _dictionary.TryAdd(key, entry) Then Return
-                Continue Do   ' another worker inserted between the read and the add — re-resolve against it
-            End If
-
-            If Resolve_Conflict(existing, entry) Then
-                ' New entry wins. Swap it in, then retire the loser. TryUpdate fails only if someone
-                ' changed the slot meanwhile, in which case we re-resolve against the new occupant.
-                If _dictionary.TryUpdate(key, entry, existing) Then
-                    PushOverriddenEntry(key, existing)
-                    Return
-                End If
+                _dictionary(key) = entry
+            ElseIf Resolve_Conflict(existing, entry) Then
+                _dictionary(key) = entry
+                PushOverriddenEntryUnlocked(key, existing)
             Else
-                ' Existing wins: OUR entry is the loser. The slot is untouched, so there is nothing to CAS.
-                PushOverriddenEntry(key, entry)
-                Return
+                PushOverriddenEntryUnlocked(key, entry)
             End If
-        Loop
+        End SyncLock
     End Sub
 
     Private Shared Function NormalizeDirectoryKey(directoryPath As String) As String
@@ -1605,51 +1634,58 @@ Public Class FilesDictionary_class
 
     Public Shared Function TryAddDictionaryEntry(fullPath As String, location As File_Location) As Boolean
         Dim normalized = NormalizeDictionaryKey(fullPath)
-        If _dictionary.TryAdd(normalized, location) Then
-            IndexDictionaryKey(normalized)
-            ' Clear stale byte cache for this entry
-            Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
-            _bytesCache.TryRemove(normalized, dummy)
-            Return True
-        End If
+        ' TOMA EL CANDADO AUNQUE NO APILE NADA. No hace Push, pero MUTA `_dictionary`, y si el objetivo del
+        ' candado es serializar las mutaciones ESTRUCTURALES entonces esto tambien entra: sin el, se intercala
+        ' en el medio de una transicion pila-a-ganador de `RemoveDictionaryEntry` y publica una entrada que esa
+        ' transicion no vio.
+        SyncLock _overriddenEntriesLock
+            If _dictionary.TryAdd(normalized, location) Then
+                IndexDictionaryKey(normalized)
+                ' Clear stale byte cache for this entry
+                Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+                _bytesCache.TryRemove(normalized, dummy)
+                Return True
+            End If
+        End SyncLock
         Return False
     End Function
 
     ''' <summary>Alta o actualizacion de una entrada (p.ej. una del BA2 reemplazada por un suelto que acaba de
     ''' escribir WM o el cloner de materiales). Solo las entradas de BA2 van al stack de overrides: loose sobre
     ''' loose es el mismo archivo sobreescrito y no hay nada que restaurar.
-    ''' <para>CAS explicito y no AddOrUpdate, misma razon que <see cref="AddEntryResolvingConflict"/>: el
-    ''' updateValueFactory puede correr MAS DE UNA VEZ si pierde la carrera, y esta factory tiene efecto
-    ''' colateral (PushOverriddenEntry), asi que un intento perdedor apilaria el mismo loser dos veces.</para>
+    ''' <para>No usa AddOrUpdate, misma razon que <see cref="AddEntryResolvingConflict"/>: el
+    ''' updateValueFactory puede correr MAS DE UNA VEZ si pierde la carrera, y tiene efecto colateral (apilar
+    ''' al perdedor), asi que un intento perdedor apilaria el mismo loser dos veces. Hoy lo cierra el candado
+    ''' de <see cref="_overriddenEntriesLock"/>, que ademas hace atomica la transicion ganador-perdedor.</para>
     ''' <para>Semantica distinta a la del scan: NO consulta Resolve_Conflict. La entrada del caller siempre
     ''' gana porque acaba de escribir el archivo.</para></summary>
     Public Shared Sub AddOrUpdateDictionaryEntry(fullPath As String, location As File_Location)
         Dim normalized = NormalizeDictionaryKey(fullPath)
 
-        Do
+        ' MISMO CANDADO Y MISMO MOTIVO que AddEntryResolvingConflict: aca tambien se publica un ganador y se
+        ' baja un perdedor, y es el camino que usa WM al empaquetar (los sueltos que acaba de escribir), o sea
+        ' CONCURRENTE con el desmontaje y la purga de archives del mismo pack. El bucle de CAS se va por la
+        ' misma razon. La indexacion y la purga del cache quedan DENTRO: la transicion de esa clave es una
+        ' sola unidad, igual que en RemoveDictionaryEntry.
+        SyncLock _overriddenEntriesLock
             Dim existing As File_Location = Nothing
-            If Not _dictionary.TryGetValue(normalized, existing) Then
-                If _dictionary.TryAdd(normalized, location) Then Exit Do
-                Continue Do   ' someone inserted between the read and the add — re-read and replace it
-            End If
+            Dim habia = _dictionary.TryGetValue(normalized, existing) AndAlso existing IsNot Nothing
+            _dictionary(normalized) = location
+            If habia AndAlso Not existing.IsLosseFile Then PushOverriddenEntryUnlocked(normalized, existing)
 
-            ' Replace, then retire the loser — but only once the swap actually landed. TryUpdate fails
-            ' only if another thread changed the slot meanwhile, in which case we retry against the new
-            ' occupant (and push THAT one, not the stale one we had read).
-            If _dictionary.TryUpdate(normalized, location, existing) Then
-                If Not existing.IsLosseFile Then PushOverriddenEntry(normalized, existing)
-                Exit Do
-            End If
-        Loop
-
-        IndexDictionaryKey(normalized)
-        Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
-        _bytesCache.TryRemove(normalized, dummy)
+            IndexDictionaryKey(normalized)
+            Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
+            _bytesCache.TryRemove(normalized, dummy)
+        End SyncLock
     End Sub
 
     ''' <summary>Removes the current entry. If an overridden entry exists (e.g. BA2 behind a loose), restores it.</summary>
     Public Shared Sub RemoveDictionaryEntry(fullPath As String)
         Dim normalized = NormalizeDictionaryKey(fullPath)
+        ' EL CUERPO ENTERO VA BAJO EL CANDADO. La transicion "pila -> ganador" tiene que ser atomica respecto
+        ' de las demas mutaciones estructurales: con el TryPop adentro y la publicacion en _dictionary afuera,
+        ' dos removedores popean entradas distintas y se pisan al publicar.
+        SyncLock _overriddenEntriesLock
         Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
         _bytesCache.TryRemove(normalized, dummy)
 
@@ -1658,6 +1694,10 @@ Public Class FilesDictionary_class
         Dim restored As File_Location = Nothing
         If _overriddenEntries.TryGetValue(normalized, stack) AndAlso stack.TryPop(restored) Then
             _dictionary(normalized) = restored
+            If stack.IsEmpty Then
+                Dim vacia As ConcurrentStack(Of File_Location) = Nothing
+                _overriddenEntries.TryRemove(normalized, vacia)
+            End If
         Else
             Dim removed As File_Location = Nothing
             If _dictionary.TryRemove(normalized, removed) Then
@@ -1680,6 +1720,7 @@ Public Class FilesDictionary_class
                 End SyncLock
             End If
         End If
+        End SyncLock
     End Sub
 
     ''' <summary>
@@ -1711,23 +1752,44 @@ Public Class FilesDictionary_class
         ' `UnregisterArchive`. Re-registrar contenido CAMBIADO sin desmontar antes esta roto con bump y sin
         ' bump — el contrato (Unregister primero) no es opcional. Asi, una llamada duplicada legitima deja de
         ' costar un re-parseo completo de la tabla por cada reader vivo.
-        If Not _registeredArchives.TryAdd(archiveFileName, 0) Then Exit Sub
+        ' ⛔⛔ EL MONTAJE ENTERO VA BAJO EL CANDADO, no solo el guard. Con el candado tomado unicamente para
+        ' el `TryAdd`, quedaba esta ventana: alta del flag -> se suelta -> `UnregisterArchive` entra, no
+        ' encuentra entradas todavia, borra el flag y termina -> `ProcessBa2File` publica TODAS las entradas.
+        ' Resultado: el archive montado en `_dictionary` y AUSENTE de `_registeredArchives`, y un
+        ' `RegisterArchive` posterior lo monta de nuevo generando overrides contra sus PROPIAS entradas.
+        ' El orden "si gana el alta, el desmontaje espera" solo era cierto para el guard, no para el montaje.
+        ' ⛔ SI, ESTO DEJA I/O BAJO EL CANDADO (abrir el archive y parsear su tabla). Se acepta acotado: es la
+        ' ruta de montaje en runtime, no el scan — `Fill_DictionaryAsync` llama a `ProcessBa2File` desde sus
+        ' workers SIN pasar por aca, asi que el scan paralelo no se serializa. `Monitor` es reentrante, de modo
+        ' que los `AddEntryResolvingConflict` de adentro re-adquieren sin problema.
+        SyncLock _overriddenEntriesLock
+            If Not _registeredArchives.TryAdd(archiveFileName, 0) Then Exit Sub
 
-        ' Montar es CAMBIAR lo que hay en esa ruta: los readers pooleados tienen la tabla de entradas VIEJA.
-        BumpArchiveEpoch(ArchiveKey(absolutePath))
+            ' Montar es CAMBIAR lo que hay en esa ruta: los readers pooleados tienen la tabla de entradas VIEJA.
+            BumpArchiveEpoch(ArchiveKey(absolutePath))
 
-        Dim added As New ConcurrentBag(Of String)()
-        Dim noopProgress As IProgress(Of (String, Integer, Integer)) =
-            New Progress(Of (String, Integer, Integer))(Sub(_x)
-                                                            ' no-op: runtime register doesn't surface progress
-                                                        End Sub)
+            Dim added As New ConcurrentBag(Of String)()
+            Dim noopProgress As IProgress(Of (String, Integer, Integer)) =
+                New Progress(Of (String, Integer, Integer))(Sub(_x)
+                                                                ' no-op: runtime register doesn't surface progress
+                                                            End Sub)
 
-        ProcessBa2File(absolutePath, sourceOrder, noopProgress, added)
+            Try
+                ProcessBa2File(absolutePath, sourceOrder, noopProgress, added)
 
-        ' Index only the keys touched by this archive instead of rebuilding the entire search index.
-        For Each key In added
-            IndexDictionaryKey(key)
-        Next
+                ' Index only the keys touched by this archive instead of rebuilding the entire search index.
+                For Each key In added
+                    IndexDictionaryKey(key)
+                Next
+            Catch
+                ' ⛔ ROLLBACK COMPLETO, NO SOLO EL FLAG. `ProcessBa2File` publica INCREMENTALMENTE: si revienta
+                ' en la entrada 40.000 deja un montaje a medias, y quitar unicamente el flag lo dejaria vivo e
+                ' invisible para el proximo desmontaje. Se reusa el mismo camino de `UnregisterArchive`, que
+                ' ademas restaura desde la pila lo que este montaje habia sombreado.
+                DesmontarBajoCandado(absolutePath, archiveFileName)
+                Throw
+            End Try
+        End SyncLock
     End Sub
 
     ''' <summary>
@@ -1745,6 +1807,30 @@ Public Class FilesDictionary_class
                                         Path.Combine(FO4Path, archivePath))
         Dim archiveFileName = Path.GetFileName(absolutePath)
 
+        DesmontarBajoCandadoConLog(absolutePath, archiveFileName)
+    End Sub
+
+    ''' <summary>Cuerpo de <see cref="UnregisterArchive"/> con su logging. Toma el candado.</summary>
+    Private Shared Sub DesmontarBajoCandadoConLog(absolutePath As String, archiveFileName As String)
+        Dim entradasPurgadas As Integer
+        SyncLock _overriddenEntriesLock
+            entradasPurgadas = DesmontarBajoCandado(absolutePath, archiveFileName)
+        End SyncLock
+        If entradasPurgadas > 0 Then
+            Dim n = entradasPurgadas, a = archiveFileName
+            Logger.LogLazy(Function() $"[DICT] UnregisterArchive('{a}'): {n} entrada(s) sombreada(s) purgada(s) de la pila de overrides.")
+        End If
+    End Sub
+
+    ''' <summary>Desmonta un archive: bumps, purga de las pilas, retiro de sus ganadores y baja del flag.
+    ''' Devuelve cuantas entradas sombreadas se purgaron.
+    ''' <para>⛔ PRECONDICION: el llamador YA tiene <see cref="_overriddenEntriesLock"/>, y la operacion
+    ''' ENTERA tiene que correr bajo UNA sola adquisicion. Soltarlo entre la purga y el retiro reabre el
+    ''' agujero por otra puerta: un `AddEntryResolvingConflict` o un `AddOrUpdateDictionaryEntry` concurrente
+    ''' puede BAJAR a la pila una entrada de este archive DESPUES de que la purga paso, y despues
+    ''' `RemoveDictionaryEntry` la restaura como GANADOR — vuelve el asset permanentemente vacio.</para>
+    ''' <para>Lo llaman <see cref="UnregisterArchive"/> y el rollback de <see cref="RegisterArchive"/>.</para></summary>
+    Private Shared Function DesmontarBajoCandado(absolutePath As String, archiveFileName As String) As Integer
         ' ⛔⛔ LOS DOS BUMPS VAN PRIMERO, ANTES DE TOCAR EL DICCIONARIO. `RemoveDictionaryEntry` purga
         ' `_bytesCache` clave por clave y el barrido es O(diccionario) —cientos de miles de entradas—, así
         ' que con el bump al final quedaba una ventana larga en la que un lector todavía pasaba el sello y
@@ -1787,10 +1873,6 @@ Public Class FilesDictionary_class
                 _overriddenEntries(kvpOvr.Key) = nueva
             End If
         Next
-        If entradasPurgadas > 0 Then
-            Dim n = entradasPurgadas, a = archiveFileName
-            Logger.LogLazy(Function() $"[DICT] UnregisterArchive('{a}'): {n} entrada(s) sombreada(s) purgada(s) de la pila de overrides.")
-        End If
 
         ' Snapshot keys to remove before mutating the dictionary.
         Dim toRemove As New List(Of String)
@@ -1801,21 +1883,30 @@ Public Class FilesDictionary_class
             End If
         Next
 
+        ' `RemoveDictionaryEntry` vuelve a tomar este mismo candado: `Monitor` es REENTRANTE por hilo, asi
+        ' que la re-adquisicion es correcta y barata.
         For Each key In toRemove
             RemoveDictionaryEntry(key)
         Next
 
+        ' ⛔ LA BAJA DEL FLAG VA ADENTRO, AL FINAL. Afuera queda una carrera de ciclo de vida: entre el ultimo
+        ' RemoveDictionaryEntry y este TryRemove, un `RegisterArchive` del mismo archive encuentra el nombre
+        ' todavia presente, sale por su guard de idempotencia, y despues nosotros borramos el flag ⇒ el archive
+        ' queda DESMONTADO y marcado como no registrado, con el intento de montaje perdido en silencio.
         Dim removedFlag As Byte = 0
         _registeredArchives.TryRemove(archiveFileName, removedFlag)
-    End Sub
+        Return entradasPurgadas
+    End Function
 
     ''' <summary>Returns the overridden entries for a key (from most recent to oldest), or empty if none.</summary>
     Public Shared Function GetOverriddenEntries(fullPath As String) As File_Location()
         Dim normalized = NormalizeDictionaryKey(fullPath)
         Dim stack As ConcurrentStack(Of File_Location) = Nothing
-        If _overriddenEntries.TryGetValue(normalized, stack) Then
-            Return stack.ToArray()
-        End If
+        SyncLock _overriddenEntriesLock
+            If _overriddenEntries.TryGetValue(normalized, stack) Then
+                Return stack.ToArray()
+            End If
+        End SyncLock
         Return Array.Empty(Of File_Location)()
     End Function
 
@@ -1953,9 +2044,15 @@ Public Class FilesDictionary_class
             Next
 
             FO4Path = Fo4DataPath
-            Dictionary.Clear()
-            _overriddenEntries.Clear()
-            ClearSearchIndexes()
+            ' LOS TRES JUNTOS, BAJO UNA SOLA ADQUISICION. Con el `Dictionary.Clear()` afuera queda una ventana
+            ' entre el vaciado del diccionario y el de las pilas: una insercion en el medio crea su par
+            ' ganador/perdedor y despues pierde su pila en el Clear, o al reves. Se mantiene el orden
+            ' _overriddenEntriesLock -> _keysByDirectoryLock (`ClearSearchIndexes` toma el segundo).
+            SyncLock _overriddenEntriesLock
+                Dictionary.Clear()
+                _overriddenEntries.Clear()
+                ClearSearchIndexes()
+            End SyncLock
 
             ' Drop the previous scan's pooled paths — they're only referenced by the dictionary we
             ' just cleared. (String.Intern, which this replaced, could never release them.)
