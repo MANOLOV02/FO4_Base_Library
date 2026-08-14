@@ -41,6 +41,58 @@ Public Class Config_App
     End Enum
     Public Property Game As Game_Enum = Game_Enum.Skyrim
     Public Property SkeletonPath As String = ""
+
+    ' ==========================================================================================
+    ' Rutas del juego fijadas A MANO — dos slots por juego, uno por juego
+    ' ==========================================================================================
+    ' El nombre de la carpeta que el motor usa para Plugins.txt y para los .ini es una constante compilada
+    ' dentro del exe, y cada tienda la cambia (la edición de GOG de Skyrim SE usa "Skyrim Special Edition
+    ' GOG"). GamePathsResolver la deriva sola para las variantes que están VERIFICADAS; para todo lo demás
+    ' —Epic, Microsoft Store, un juego bajo un mod manager— la única respuesta correcta es que la elija el
+    ' usuario. Estas cuatro claves son esa elección.
+    '
+    ' ⭐ "" = AUTOMÁTICO, y es el default. Un config.json existente no trae las claves ⇒ deserializan a ""
+    '    ⇒ resolución automática. Cero migración y cero cambio de comportamiento para quien ya funciona.
+    ' ⭐ ≠ "" = pisado por el usuario: GANA SIEMPRE y ni siquiera se toca el disco para comprobarlo.
+    ' ⭐ POR JUEGO, como el rig de luces y las sombras (ver Setting_LightRig_* y ActiveLights()). Alguien que
+    '    alterna FO4 y Skyrim tiene DOS load orders reales y distintos; un slot único haría que configurar
+    '    uno destruyera el otro en silencio.
+    ' ⛔ NO se persiste el valor AUTOMÁTICO, sólo el pisado. Guardar el derivado lo dejaría podrido en cuanto
+    '    el usuario mueva el juego, y volveríamos a tener una ruta que miente sin que nadie la haya elegido.
+
+    ''' <summary>Ruta COMPLETA del Plugins.txt de Fallout 4 fijada por el usuario. "" = automático.</summary>
+    Public Property Setting_PluginsTxtPath_FO4 As String = ""
+    ''' <summary>Ruta COMPLETA del Plugins.txt de Skyrim fijada por el usuario. "" = automático.</summary>
+    Public Property Setting_PluginsTxtPath_SSE As String = ""
+    ''' <summary>CARPETA de los .ini de Fallout 4 fijada por el usuario. "" = automático. Es la carpeta y no
+    ''' un archivo porque son tres (Fallout4.ini, Fallout4Custom.ini, Fallout4Prefs.ini).</summary>
+    Public Property Setting_GameIniDir_FO4 As String = ""
+    ''' <summary>CARPETA de los .ini de Skyrim fijada por el usuario. "" = automático.</summary>
+    Public Property Setting_GameIniDir_SSE As String = ""
+
+    ''' <summary>El Plugins.txt fijado a mano para el juego ACTIVO, o "" si va por automático.</summary>
+    Public Function ActivePluginsTxtOverride() As String
+        Return If(Game = Game_Enum.Skyrim, Setting_PluginsTxtPath_SSE, Setting_PluginsTxtPath_FO4)
+    End Function
+
+    ''' <summary>Escribe el slot del juego ACTIVO. "" lo devuelve a automático.</summary>
+    Public Sub SetActivePluginsTxtOverride(value As String)
+        Dim v = If(value, "").Trim()
+        If Game = Game_Enum.Skyrim Then Setting_PluginsTxtPath_SSE = v Else Setting_PluginsTxtPath_FO4 = v
+        GamePathsResolver.Invalidate()
+    End Sub
+
+    ''' <summary>La carpeta de .ini fijada a mano para el juego ACTIVO, o "" si va por automático.</summary>
+    Public Function ActiveGameIniDirOverride() As String
+        Return If(Game = Game_Enum.Skyrim, Setting_GameIniDir_SSE, Setting_GameIniDir_FO4)
+    End Function
+
+    ''' <summary>Escribe el slot del juego ACTIVO. "" lo devuelve a automático.</summary>
+    Public Sub SetActiveGameIniDirOverride(value As String)
+        Dim v = If(value, "").Trim()
+        If Game = Game_Enum.Skyrim Then Setting_GameIniDir_SSE = v Else Setting_GameIniDir_FO4 = v
+        GamePathsResolver.Invalidate()
+    End Sub
     ' BSAFiles, BSAFiles_Clonables, Allowed_To_Clone, and all WM-only settings moved to WM_Config
     Public Property Setting_SingleBoneSkinning As Boolean = False
     Public Property Setting_GPUSkinning As Boolean = True

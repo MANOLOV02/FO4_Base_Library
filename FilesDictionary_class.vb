@@ -96,6 +96,16 @@ Public Class FilesDictionary_class
         Public Property SourceOrder As Integer = Integer.MinValue
         Public Property FileDate As Date = Date.MinValue
 
+        ''' <summary>SELLO de la generacion de CONTENIDO del archive del que salio este `Index`.
+        ''' <para>⛔ El `Index` es un numero de entrada dentro de UN archive concreto. Cuando el packager
+        ''' reescribe ese .ba2, los indices cambian — pero un `File_Location` que otro hilo capturo ANTES
+        ''' sigue vivo con el indice viejo, y `ExtractToMemory(IndexViejo)` sobre el archive NUEVO devuelve
+        ''' LOS BYTES DE OTRO ARCHIVO. Sin excepcion, sin log, y encima se quedan pegados en el cache por
+        ''' path. Vaciar el pool de readers no toca esto: el problema no es el reader, es el indice.</para>
+        ''' <para>Se compara contra <see cref="FilesDictionary_class.ContentGenOf"/> antes de extraer. Los
+        ''' sueltos (`BA2File = ""`) no lo usan.</para></summary>
+        Public Property ArchiveGen As Integer = 0
+
         Public Function GetBytesFromOpenArchive(pack As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader) As Byte()
             If IsNothing(pack) OrElse IsLosseFile Then Return Array.Empty(Of Byte)
             Try
@@ -126,7 +136,14 @@ Public Class FilesDictionary_class
             Else
                 ' O1.2: Use archive reader pool instead of opening/closing each time
                 Dim archivePath = IO.Path.Combine(FO4Path, Me.BA2File)
-                Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
+
+                ' ⛔ EL SELLO SE MIRA ANTES DE ABRIR NADA. Si el archive se invalido (pack, unpack, re-scan)
+                ' despues de que este File_Location se creo, su `Index` apunta a otra entrada del archive
+                ' NUEVO: extraer devolveria bytes de un archivo distinto, sin error. Vacio es la respuesta
+                ' correcta — el llamador ya sabe tratarlo, y el diccionario ya tiene la entrada re-estampada
+                ' para quien la busque de nuevo. Ver File_Location.ArchiveGen.
+                If FilesDictionary_class.ContentGenOf(archivePath) <> Me.ArchiveGen Then Return Array.Empty(Of Byte)
+                Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
                 Dim returned As Boolean = False
                 Try
                     leased = FilesDictionary_class.LeaseReader(archivePath)
@@ -180,7 +197,127 @@ Public Class FilesDictionary_class
     ' Reconstruir un `BethesdaReader` no es gratis: su constructor hace `ListEntries()`, o sea PARSEA LA
     ' TABLA DE ARCHIVOS COMPLETA del BA2 (un BSA de Skyrim son ~100k nombres leidos byte a byte). En un
     ' bake de una hora eso son >=120 re-parseos forzados de cada archivo tocado, en el medio del trabajo.
-    Private Shared ReadOnly _archivePool As New ConcurrentDictionary(Of String, ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)))(StringComparer.OrdinalIgnoreCase)
+    Private Shared ReadOnly _archivePool As New ConcurrentDictionary(Of String, ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer)))(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>GENERACION por archive. Un reader ALQUILADO ya salio del bag, asi que
+    ''' <see cref="UnregisterArchive"/> —que solo vacia el bag— no lo alcanza: cuando ese reader vuelve,
+    ''' <see cref="ReturnReader"/> re-crea el bag con `GetOrAdd` y el pool INVALIDADO resucita, sirviendo
+    ''' entradas del archive VIEJO por el resto de la sesion. Y como <see cref="File_Location.GetBytes"/>
+    ''' cachea lo que extrae en <see cref="_bytesCache"/>, esos bytes equivocados se quedan pegados.
+    ''' <para>El epoch se captura EN EL LEASE y se compara al devolver, al re-alquilar y en la limpieza: un
+    ''' reader de otra generacion se DESTRUYE, nunca se poolea ni se sirve.</para>
+    ''' <para>⛔⛔ LO QUE ESTO **NO** ARREGLA, y el comentario de los dos packagers afirma que si: que la
+    ''' reescritura del .ba2 quede libre de carreras. Un reader ALQUILADO tiene su `FileStream` abierto
+    ''' (`File.OpenRead` ⇒ FileShare.Read) mientras dura el `ExtractToMemory`, y `UnregisterArchive` vuelve
+    ''' con ese handle vivo ⇒ el `File.Move`/`Delete` del packager puede seguir fallando. Y un lector que
+    ''' entro a `LeaseReader` justo antes del bump abre el archivo que el packager esta por reescribir.
+    ''' Cerrar ESO pide exclusion lease↔unregister (un lock por archive), no una generacion. Queda ABIERTO
+    ''' y a proposito: es un lock en el camino mas caliente de la app y no se mete sin medirlo.</para>
+    ''' <para>⛔ NUNCA se borra una entrada de acá, tampoco en Unregister. Si se borrara, un reader viejo que
+    ''' vuelve despues compararia contra un contador RECIEN CREADO en 0 y volveria a parecer valido — que es
+    ''' exactamente el agujero que esto cierra. Es un Integer por archive.</para></summary>
+    Private Shared ReadOnly _archiveEpoch As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Memo de <see cref="ArchiveKey"/>. Acotado por la cantidad de deletreos distintos de ruta de
+    ''' archive (decenas), y saca un P/Invoke a GetFullPathName de CADA lectura de BA2.</summary>
+    Private Shared ReadOnly _archiveKeyCache As New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+
+    ''' <summary>Clave canonica del pool y del epoch. Cada entrada arma la ruta por su cuenta
+    ''' (`Path.Combine(FO4Path, BA2File)` en el lease; el path que le pasen a Unregister/Register), asi que
+    ''' sin normalizar, dos deletreos de la MISMA ruta (`Data\x.ba2` vs `Data\.\x.ba2`) son dos claves y la
+    ''' invalidacion no alcanza a los readers que hay que matar.
+    ''' <para>⛔ SOLO se normaliza lo que ya esta COMPLETAMENTE CALIFICADO. `Path.GetFullPath` de una ruta
+    ''' relativa la resuelve contra `Environment.CurrentDirectory`, que es GLOBAL y lo cambia cualquier
+    ''' OpenFileDialog de WinForms (RestoreDirectory viene en False): la clave del lease y la del return
+    ''' saldrian distintas si el usuario abre un dialogo en el medio de un bake, y el reader rancio se
+    ''' pool-earia bajo una clave que ningun Unregister va a drenar nunca. `FO4Path` ademas vale "" hasta que
+    ''' corre el scan, con lo cual el Combine da genuinamente relativo. Sin calificar ⇒ se usa verbatim, que
+    ''' es lo que hacia antes.</para></summary>
+    Private Shared Function ArchiveKey(archivePath As String) As String
+        If String.IsNullOrEmpty(archivePath) Then Return ""
+        Dim cached As String = Nothing
+        If _archiveKeyCache.TryGetValue(archivePath, cached) Then Return cached
+        Dim key As String = archivePath
+        Try
+            If Path.IsPathFullyQualified(archivePath) Then key = Path.GetFullPath(archivePath)
+        Catch
+            key = archivePath
+        End Try
+        _archiveKeyCache(archivePath) = key
+        Return key
+    End Function
+
+    ''' <summary>⛔⛔ ABRE CON `FileShare.Delete`, NO CON `File.OpenRead`. Es LA razon por la que
+    ''' <see cref="UnregisterArchive"/> no entregaba lo que sus dos llamadores afirman por escrito
+    ''' ("makes the rewrite path race-free"): `File.OpenRead` mapea a `CreateFile` con
+    ''' `dwShareMode = FILE_SHARE_READ`, y `File.Move` abre el origen pidiendo acceso DELETE. El kernel
+    ''' compara ese acceso contra el share mode de CADA handle abierto ⇒ falta `FILE_SHARE_DELETE` ⇒
+    ''' `STATUS_SHARING_VIOLATION`. Un solo reader alquilado en otro hilo —su `FileStream` vive todo el
+    ''' `ExtractToMemory`— hacia fallar el `File.Move` del packager. No es una carrera de tiempos: es un
+    ''' invariante del kernel.
+    ''' <para>⛔ EL ARBITRO LECTOR/ESCRITOR DE UN ARCHIVO ES EL SO, NO UN LOCK NUESTRO. Se evaluo un
+    ''' `ReaderWriterLockSlim` por archive y es la capa equivocada: no cubre al OTRO proceso (MO2/USVFS,
+    ''' xEdit, el antivirus), no cubre ningun `FileStream` futuro que alguien se olvide de envolver, y para
+    ''' servir de algo el write lock tendria que abarcar el `Pack` ENTERO — con lo cual RWLS bloquea a los
+    ''' lectores nuevos (para no matar de hambre al writer) y el hilo de UI queda clavado los minutos que
+    ''' dura el pack.</para>
+    ''' <para>`Read Or Delete`, NO `ReadWrite`: `File.Move` necesita DELETE, no WRITE. Agregar
+    ''' `FILE_SHARE_WRITE` solo abriria la puerta a que un escritor externo nos rompa una lectura a mitad,
+    ''' sin comprar nada.</para></summary>
+    Private Shared Function AbrirArchiveParaLectura(archivePath As String) As FileStream
+        Return New FileStream(archivePath, FileMode.Open, FileAccess.Read,
+                              FileShare.Read Or FileShare.Delete, 4096, FileOptions.None)
+    End Function
+
+    Private Shared Sub BumpArchiveEpoch(key As String)
+        If String.IsNullOrEmpty(key) Then Return
+        _archiveEpoch.AddOrUpdate(key, 1, Function(k, v) v + 1)
+    End Sub
+
+    ''' <summary>GENERACION DE CONTENIDO del archive, que es OTRA COSA que <see cref="_archiveEpoch"/> y por
+    ''' eso es un contador aparte. El epoch gobierna los READERS pooleados y por eso lo bumpea tambien
+    ''' `RegisterArchive` (montar puede cambiar lo que hay en esa ruta). Este gobierna la validez de los
+    ''' INDICES ya repartidos en `File_Location`, y `RegisterArchive` es justamente quien los RE-ESTAMPA.
+    ''' <para>⛔⛔ SI FUERAN EL MISMO CONTADOR, ESTO SE ROMPE EN SILENCIO: `RegisterArchive` bumpea ANTES de
+    ''' su guard de idempotencia (a proposito, porque `_registeredArchives` va por NOMBRE de archivo), asi
+    ''' que un segundo `RegisterArchive` del mismo archive bumpearia y saldria por `Exit Sub` SIN volver a
+    ''' estampar — y a partir de ahi TODA lectura de ese archive devolveria vacio por el resto de la sesion.
+    ''' </para>
+    ''' <para>Por eso este SOLO se bumpea donde el contenido deja de valer y las entradas se van a rehacer:
+    ''' <see cref="UnregisterArchive"/> y el re-scan de <see cref="Fill_DictionaryAsync"/>.</para></summary>
+    Private Shared ReadOnly _archiveContentGen As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Generacion de contenido vigente para esa ruta de archive (0 si nunca se invalido).</summary>
+    Friend Shared Function ContentGenOf(archivePath As String) As Integer
+        Dim g As Integer = 0
+        _archiveContentGen.TryGetValue(ArchiveKey(archivePath), g)
+        Return g
+    End Function
+
+    Private Shared Sub BumpArchiveContentGen(key As String)
+        If String.IsNullOrEmpty(key) Then Return
+        _archiveContentGen.AddOrUpdate(key, 1, Function(k, v) v + 1)
+    End Sub
+
+    Private Shared Sub DisposePooled(entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer))
+        If entry.Reader IsNot Nothing Then
+            Try : entry.Reader.Dispose() : Catch : End Try
+        End If
+        If entry.Stream IsNot Nothing Then
+            Try : entry.Stream.Dispose() : Catch : End Try
+        End If
+    End Sub
+
+    ''' <summary>Saca el bag del pool y destruye todo lo que tenga. Cuerpo compartido por la invalidacion y
+    ''' por <see cref="UnregisterArchive"/>.</summary>
+    Private Shared Sub DrainAndDisposeBag(key As String)
+        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer)) = Nothing
+        If Not _archivePool.TryRemove(key, bag) OrElse bag Is Nothing Then Return
+        Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
+        While bag.TryTake(entry)
+            DisposePooled(entry)
+        End While
+    End Sub
 
     ''' <summary>Periodo del timer de limpieza, en ms. Es TAMBIEN el umbral de ocio: un reader devuelto
     ''' hace menos que esto se considera en uso y no se toca. No es una constante elegida a ojo — es el
@@ -201,51 +338,95 @@ Public Class FilesDictionary_class
     ''' </summary>
     Public Const ArchiveSourceOrder_RuntimeRegistered As Integer = Integer.MaxValue - 1
 
+    ''' <summary>⛔ EL CHEQUEO SOLO NO ALCANZA: dos primeros lectores concurrentes lo pasaban los DOS y
+    ''' creaban dos timers, uno de los cuales quedaba corriendo sin referencia (limpiezas dobles + un timer
+    ''' que nadie puede parar). El CAS publica uno solo y el perdedor se destruye SIN haber arrancado — por
+    ''' eso el `Start` va despues de ganar y no en la construccion.
+    ''' <para>⛔ La sobrecarga generica va EXPLICITA. Con `Option Strict Off` (que es como compila esto),
+    ''' `Interlocked.CompareExchange` tambien ofrece la version de `Object`, y esa toma el destino `ByRef
+    ''' Object`: VB tendria que materializar un temporal y copiar de vuelta, o sea que el "CAS" correria
+    ''' sobre el temporal y volveria a ser una asignacion con carrera.</para>
+    ''' <para>⛔ El handler va envuelto en Try. En .NET moderno una excepcion no atrapada en `Elapsed` puede
+    ''' matar el proceso, y esto vive en un binario que se distribuye: una limpieza de cache no puede ser un
+    ''' modo de caida. Ver 00-reglas-app-distribuida.</para></summary>
     Private Shared Sub InitPoolCleanupTimer()
         If _poolCleanupTimer IsNot Nothing Then Return
-        _poolCleanupTimer = New System.Timers.Timer(PoolCleanupPeriodMs)
-        AddHandler _poolCleanupTimer.Elapsed, Sub(sender, e) DisposeIdleReaders()
-        _poolCleanupTimer.AutoReset = True
-        _poolCleanupTimer.Start()
+        Dim nuevo As New System.Timers.Timer(PoolCleanupPeriodMs)
+        AddHandler nuevo.Elapsed, Sub(sender, e)
+                                      Try
+                                          DisposeIdleReaders()
+                                      Catch
+                                      End Try
+                                  End Sub
+        nuevo.AutoReset = True
+        If Threading.Interlocked.CompareExchange(Of System.Timers.Timer)(_poolCleanupTimer, nuevo, Nothing) IsNot Nothing Then
+            Try : nuevo.Dispose() : Catch : End Try
+            Return
+        End If
+        nuevo.Start()
     End Sub
 
-    ''' <summary>Lease a BethesdaReader from the pool, or create a new one if pool is empty.</summary>
-    Private Shared Function LeaseReader(archivePath As String) As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)
+    ''' <summary>Lease a BethesdaReader from the pool, or create a new one if pool is empty.
+    ''' <para>⛔ El epoch de una entrada del bag se compara contra el ACTUAL leido en ese instante, no contra
+    ''' uno capturado al entrar: capturarlo antes del `TryTake` hace que un lease preemptado tire entradas de
+    ''' una generacion MAS NUEVA que la suya (cada una cuesta un `ListEntries()` completo).</para>
+    ''' <para>⛔ `Friend`, no `Private`: es la costura que necesita el gate de `Tools/PreflightScanProbe` para
+    ''' poner un lease en vuelo de forma DETERMINISTA (lease → Unregister → Return en un solo hilo) en vez de
+    ''' correr una carrera con sleeps que pasa en verde por casualidad. No cambia la superficie distribuida.
+    ''' Ver 00-reglas-self-tests-no-van-en-el-binario.</para></summary>
+    Friend Shared Function LeaseReader(archivePath As String) As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer)
         ' Lazy-init the pool cleanup timer on first use
         InitPoolCleanupTimer()
 
-        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)) = Nothing
-        Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
+        Dim key = ArchiveKey(archivePath)
+        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer)) = Nothing
+        Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
 
-        If _archivePool.TryGetValue(archivePath, bag) Then
-            If bag.TryTake(entry) Then
-                Return entry
-            End If
+        If _archivePool.TryGetValue(key, bag) Then
+            While bag.TryTake(entry)
+                ' Una entrada del bag puede ser de otra generacion: la devolvio un hilo que tenia el lease
+                ' tomado cuando se invalido el archive. No se sirve — se destruye y se sigue drenando.
+                If entry.Epoch = _archiveEpoch.GetOrAdd(key, 0) Then Return entry
+                DisposePooled(entry)
+            End While
         End If
 
         ' Create new reader
-        Dim fs As FileStream = File.OpenRead(archivePath)
+        Dim fs As FileStream = AbrirArchiveParaLectura(archivePath)
         Dim reader As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
-        Return (reader, fs, Stopwatch.GetTimestamp())
+        Return (reader, fs, Stopwatch.GetTimestamp(), _archiveEpoch.GetOrAdd(key, 0))
     End Function
 
-    ''' <summary>Return a reader to the pool if below cap, otherwise dispose it.</summary>
-    Private Shared Sub ReturnReader(archivePath As String, entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long))
-        Dim bag = _archivePool.GetOrAdd(archivePath, Function(key) New ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long))())
+    ''' <summary>Return a reader to the pool if below cap, otherwise dispose it.
+    ''' <para>⛔ EL CHEQUEO DE EPOCH VA ANTES DEL `GetOrAdd`. Al reves, el propio `GetOrAdd` re-crea el bag que
+    ''' la invalidacion acababa de sacar del pool: el pool muerto resucita aunque despues tiremos el reader.
+    ''' Un epoch AUSENTE cuenta como distinto (se destruye): que falte solo puede significar que la clave se
+    ''' desalineo, y ahi tratar el hueco como "0" seria pool-ear a ciegas.</para>
+    ''' <para>Se probó ademas RE-CHEQUEAR despues del `Add` y purgar el bag si el epoch cambio en el medio, y
+    ''' esta MAL: el purgado se lleva puestos readers VIGENTES que otro hilo acababa de devolver, y cada uno
+    ''' cuesta re-parsear la tabla de entradas entera. No hace falta: una entrada rancia que se cuele nunca se
+    ''' SIRVE —la filtran `LeaseReader` y `DisposeIdleReaders`— y se cosecha en el proximo lease o tick.</para>
+    ''' <para><see cref="LeaseReader"/> explica por que es `Friend`.</para></summary>
+    Friend Shared Sub ReturnReader(archivePath As String, entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer))
+        Dim key = ArchiveKey(archivePath)
 
+        Dim epochActual As Integer = 0
+        If Not _archiveEpoch.TryGetValue(key, epochActual) OrElse entry.Epoch <> epochActual Then
+            DisposePooled(entry)
+            Return
+        End If
+
+        Dim bag = _archivePool.GetOrAdd(key, Function(k) New ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer))())
+
+        ' El cap es BEST-EFFORT a proposito: `Count` y `Add` no son atomicos, asi que dos devoluciones
+        ' simultaneas pueden dejar 3. Hacerlo estricto pide un lock en el camino caliente de CADA lectura
+        ' para ahorrar un FileStream que `DisposeIdleReaders` cosecha igual.
         If bag.Count < MaxPooledReadersPerArchive Then
             entry.DevueltoEn = Stopwatch.GetTimestamp()
             bag.Add(entry)
         Else
             ' Over capacity — dispose
-            Try
-                entry.Reader.Dispose()
-            Catch
-            End Try
-            Try
-                entry.Stream.Dispose()
-            Catch
-            End Try
+            DisposePooled(entry)
         End If
     End Sub
 
@@ -259,7 +440,9 @@ Public Class FilesDictionary_class
         Dim ahora As Long = Stopwatch.GetTimestamp()
         For Each kvp In _archivePool
             Dim bag = kvp.Value
-            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
+            Dim epochActual As Integer = 0
+            Dim hayEpoch = _archiveEpoch.TryGetValue(kvp.Key, epochActual)
+            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
             ' ⛔⛔ SE DRENA LA BAG ENTERA Y RECIEN DESPUES SE DEVUELVEN LOS VIVOS.
             ' Probe a devolverlos EN EL ACTO para achicar la ventana en que la bag queda vacia, y esta MAL:
             ' `ConcurrentBag` mantiene una lista POR HILO y `TryTake` saca de la del hilo actual antes de
@@ -270,23 +453,34 @@ Public Class FilesDictionary_class
             ' entradas (~100k nombres en un BSA) por archive, para siempre.
             ' La ventana con la bag vacia es el precio y es corto; que un LeaseReader concurrente construya
             ' un reader de mas es barato al lado de no liberar nunca.
-            Dim aConservar As New List(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long))()
+            Dim aConservar As New List(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer))()
             While bag.TryTake(entry)
-                If (ahora - entry.DevueltoEn) < umbral Then
+                If Not hayEpoch OrElse entry.Epoch <> epochActual Then
+                    ' De una generacion anterior (el archive se desmonto o se reemplazo mientras este reader
+                    ' estaba alquilado). Tiene la tabla de entradas VIEJA: no vuelve al pool ni por ocioso.
+                    DisposePooled(entry)
+                ElseIf (ahora - entry.DevueltoEn) < umbral Then
                     aConservar.Add(entry)
                 Else
-                    Try : entry.Reader.Dispose() : Catch : End Try
-                    Try : entry.Stream.Dispose() : Catch : End Try
+                    DisposePooled(entry)
                 End If
             End While
             ' El cap se respeta tambien acá: `ReturnReader` lo chequea antes de agregar, asi que sin esto
             ' los dos juntos podian dejar el pool POR ENCIMA del maximo.
+            ' ⛔⛔ SE RE-OBTIENE EL BAG DEL POOL, NO SE USA `kvp.Value`. Entre el drenaje de arriba y este
+            ' re-agregado, otro hilo puede haber hecho `TryRemove` de esta clave (`UnregisterArchive`): se
+            ' llevaba un bag YA VACIO —no disponia nada, "quedo limpio"— y despues nosotros re-agregabamos los
+            ' vivos a un bag DESACOPLADO del pool. Esos FileStream quedaban inalcanzables: nadie los alquila,
+            ' el proximo tick no los ve (enumera `_archivePool`), `ArchivePoolReaderCount` no los cuenta, y
+            ' siguen bloqueando el .ba2 hasta que corra el finalizer del handle. Con `GetOrAdd` se re-publica.
             For Each vivo In aConservar
-                If bag.Count < MaxPooledReadersPerArchive Then
-                    bag.Add(vivo)
+                Dim bagVivo = _archivePool.GetOrAdd(kvp.Key, Function(k) New ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer))())
+                Dim epochPost As Integer = 0
+                If bagVivo.Count < MaxPooledReadersPerArchive AndAlso
+                   _archiveEpoch.TryGetValue(kvp.Key, epochPost) AndAlso epochPost = vivo.Epoch Then
+                    bagVivo.Add(vivo)
                 Else
-                    Try : vivo.Reader.Dispose() : Catch : End Try
-                    Try : vivo.Stream.Dispose() : Catch : End Try
+                    DisposePooled(vivo)
                 End If
         Next
         Next
@@ -410,7 +604,7 @@ Public Class FilesDictionary_class
 
         ' Read directly from the archive, bypassing _bytesCache. Reuse the reader pool.
         Dim archivePath = IO.Path.Combine(FO4Path, entry.BA2File)
-        Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
+        Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
         Dim returned As Boolean = False
         Try
             leased = LeaseReader(archivePath)
@@ -579,7 +773,10 @@ Public Class FilesDictionary_class
                                            Dim archivePath = IO.Path.Combine(FO4Path, group.Key)
 
                                            Try
-                                               Using fs As FileStream = File.OpenRead(archivePath)
+                                               ' Este camino NO usa el pool (abre su propio stream), pero necesita el
+                                               ' MISMO share mode: un prefetch en vuelo bloqueaba el File.Move del
+                                               ' packager igual que un reader pooleado. Ver AbrirArchiveParaLectura.
+                                               Using fs As FileStream = AbrirArchiveParaLectura(archivePath)
                                                    Using pack As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
                                                        For Each item In group.Value
                                                            Dim bytes = item.Location.GetBytesFromOpenArchive(pack)
@@ -1323,6 +1520,15 @@ Public Class FilesDictionary_class
         End If
 
         Dim archiveFileName = Path.GetFileName(absolutePath)
+
+        ' Montar es CAMBIAR lo que hay en esa ruta (WM Pack y el packer de FaceGen escriben un .ba2 nuevo
+        ' ahi, y el CLI monta SIN desmontar antes): los readers pooleados de la generacion anterior tienen la
+        ' tabla de entradas VIEJA. Va ANTES del guard de idempotencia porque `_registeredArchives` esta
+        ' indexado por NOMBRE DE ARCHIVO: con dos archives homonimos en carpetas distintas el segundo sale
+        ' temprano y nunca bumpearia. Bumpear de mas sale un re-parseo; no bumpear un archive que cambio sale
+        ' bytes equivocados.
+        BumpArchiveEpoch(ArchiveKey(absolutePath))
+
         If Not _registeredArchives.TryAdd(archiveFileName, 0) Then Exit Sub
 
         Dim added As New ConcurrentBag(Of String)()
@@ -1368,14 +1574,15 @@ Public Class FilesDictionary_class
         Next
 
         ' Drop pooled readers for this archive (their backing FileStream may be invalid after rewrite).
-        Dim bag As ConcurrentBag(Of (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long)) = Nothing
-        If _archivePool.TryRemove(absolutePath, bag) Then
-            Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long) = Nothing
-            While bag.TryTake(entry)
-                Try : entry.Reader.Dispose() : Catch : End Try
-                Try : entry.Stream.Dispose() : Catch : End Try
-            End While
-        End If
+        ' ⛔ EL BUMP DE GENERACION VA ANTES DE VACIAR. Al reves queda una ventana en la que un reader devuelto
+        ' entre el vaciado y el bump entra al pool con el epoch viejo TODAVIA vigente y sobrevive a la
+        ' invalidacion. Ver `_archiveEpoch` — incluido lo que esto NO cierra.
+        Dim poolKey = ArchiveKey(absolutePath)
+        BumpArchiveEpoch(poolKey)
+        ' Y el sello de CONTENIDO: los `Index` que este archive repartio dejan de valer acá. Es lo que
+        ' invalida los File_Location que otros hilos ya tengan en la mano. Ver File_Location.ArchiveGen.
+        BumpArchiveContentGen(poolKey)
+        DrainAndDisposeBag(poolKey)
 
         Dim removedFlag As Byte = 0
         _registeredArchives.TryRemove(archiveFileName, removedFlag)
@@ -1525,6 +1732,21 @@ Public Class FilesDictionary_class
             ClearBytesCache()
 
             ' O1.2: Dispose idle readers and initialize pool cleanup timer
+            ' ⛔ EL RE-SCAN INVALIDA TODA GENERACION. `DisposeIdleReaders` CONSERVA a proposito lo devuelto en
+            ' los ultimos 30 s, y despues de esto `_dictionary` va a tener `Index` NUEVOS, derivados de los
+            ' archivos como estan AHORA. Si algun .ba2 cambio entre scans —que es exactamente lo que hacen WM
+            ' Pack y el packer de FaceGen— un reader conservado extraeria en el indice equivocado y esos bytes
+            ' quedan ademas pegados en `_bytesCache`. Bumpear primero hace que ese mismo `DisposeIdleReaders`
+            ' los coseche en vez de conservarlos.
+            For Each poolKey In _archivePool.Keys
+                BumpArchiveEpoch(poolKey)
+            Next
+            ' Y el sello de CONTENIDO de todo archive que haya repartido indices: el re-scan los va a
+            ' re-derivar de los archivos como estan AHORA. Se recorren las claves del sello, no las del pool:
+            ' un archive puede haber repartido entradas sin que nadie le haya alquilado un reader todavia.
+            For Each genKey In _archiveContentGen.Keys
+                BumpArchiveContentGen(genKey)
+            Next
             DisposeIdleReaders()
             InitPoolCleanupTimer()
 
@@ -1900,12 +2122,16 @@ Public Class FilesDictionary_class
         Next
         Dim diskSet = New HashSet(Of String)(diskPlugins, StringComparer.OrdinalIgnoreCase)
 
-        ' VR builds (Fallout4VR / Skyrim VR) keep loadorder.txt in their own LocalAppData subdir; the
-        ' shared resolver falls back to the VR folder when the base game folder is absent.
-        Dim loadorderTxt = Path.Combine(PluginManager.ResolveGameAppDataDir(), "loadorder.txt")
+        ' loadorder.txt vive al lado del Plugins.txt vigente, que lo decide GamePathsResolver (variante del
+        ' exe + tabla de nombres verificados, o la ruta que fijó el usuario). Devuelve "" cuando no se pudo
+        ' resolver: ahí no se arma ninguna ruta — Path.Combine("", "loadorder.txt") daría una ruta RELATIVA
+        ' contra el directorio de trabajo. Sin este archivo los plugins inactivos se ordenan alfabéticamente,
+        ' que es el fallback de abajo.
+        Dim loadorderDir = PluginManager.ResolveGameAppDataDir()
+        Dim loadorderTxt = If(loadorderDir = "", "", Path.Combine(loadorderDir, "loadorder.txt"))
 
         Dim emitted As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
-        If File.Exists(loadorderTxt) Then
+        If loadorderTxt <> "" AndAlso File.Exists(loadorderTxt) Then
             For Each line In File.ReadAllLines(loadorderTxt, Encoding.UTF8)
                 Dim trimmed = line.Trim()
                 If trimmed.Length = 0 Then Continue For
@@ -1943,6 +2169,14 @@ Public Class FilesDictionary_class
             Dim ba2DateUtc As Date = fi.LastWriteTimeUtc  ' cache signature component
             Dim extsCanonical = _canonicalExtensionsSnapshot
             Dim cachePath = GetCacheFilePath(ba2FileName)
+            ' Sello de generacion para TODAS las entradas que este archive produzca en esta pasada. Se lee
+            ' UNA vez, izado fuera de los dos loops. Ver File_Location.ArchiveGen.
+            ' ⛔ `GetOrAdd`, no `ContentGenOf`: hace falta que la CLAVE exista aunque el valor sea 0, porque
+            ' el bump masivo del re-scan recorre las claves de este diccionario. Con `TryGetValue` un archive
+            ' que nunca se desmonto no tendria clave, el re-scan no lo bumpearia, y un `File_Location` viejo
+            ' seguiria matcheando en 0 contra entradas re-derivadas — que es justo el caso "el .ba2 cambio
+            ' entre dos scans" (o sea, lo que hacen WM Pack y el packer de FaceGen).
+            Dim genArchive = _archiveContentGen.GetOrAdd(ArchiveKey(ba2), 0)
 
             ' Cache hit: populate dict from index without opening the archive.
             Dim cachedEntries As List(Of CachedEntry) = Nothing
@@ -1955,7 +2189,8 @@ Public Class FilesDictionary_class
                         .Index = ce.Index,
                         .FullPath = standardized,
                         .SourceOrder = sourceOrder,
-                        .FileDate = ba2DateLocal
+                        .FileDate = ba2DateLocal,
+                        .ArchiveGen = genArchive
                     }
                     AddEntryResolvingConflict(standardized, entry)
                     addedKeys?.Add(standardized)
@@ -1972,7 +2207,9 @@ Public Class FilesDictionary_class
                 collected = New List(Of CachedEntry)
             End If
 
-            Using fs As FileStream = File.OpenRead(ba2)
+            ' Mismo share mode que el resto de las lecturas de archive: el scan puede correr mientras un
+            ' packager reescribe otro .ba2 del set. Ver AbrirArchiveParaLectura.
+            Using fs As FileStream = AbrirArchiveParaLectura(ba2)
                 Using arc As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
                     For Each fil In arc.EntriesFiles
                         Dim rawPath = fil.FullPath.Correct_Path_Separator
@@ -1986,7 +2223,8 @@ Public Class FilesDictionary_class
                             .Index = fil.Index,
                             .FullPath = standardized,
                             .SourceOrder = sourceOrder,
-                            .FileDate = ba2DateLocal
+                            .FileDate = ba2DateLocal,
+                            .ArchiveGen = genArchive
                         }
 
                         ' O1.3: During scan, only populate _dictionary; indexes are built in batch after scan

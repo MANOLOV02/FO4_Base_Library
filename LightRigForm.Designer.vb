@@ -663,7 +663,6 @@ Partial Class LightRigForm
         grpPresets.Controls.Add(lblPreset)
         grpPresets.Controls.Add(cmbPreset)
         grpPresets.Controls.Add(btnApplyPreset)
-        grpPresets.Controls.Add(btnReset)
         grpPresets.Location = New Point(444, 364)
         grpPresets.Name = "grpPresets"
         grpPresets.Size = New Size(418, 59)
@@ -686,12 +685,12 @@ Partial Class LightRigForm
         cmbPreset.FormattingEnabled = True
         cmbPreset.Location = New Point(87, 28)
         cmbPreset.Name = "cmbPreset"
-        cmbPreset.Size = New Size(190, 23)
+        cmbPreset.Size = New Size(254, 23)
         cmbPreset.TabIndex = 0
         ' 
         ' btnApplyPreset
         ' 
-        btnApplyPreset.Location = New Point(283, 27)
+        btnApplyPreset.Location = New Point(349, 26)
         btnApplyPreset.Name = "btnApplyPreset"
         btnApplyPreset.Size = New Size(58, 25)
         btnApplyPreset.TabIndex = 1
@@ -701,11 +700,11 @@ Partial Class LightRigForm
         ' 
         ' btnReset
         ' 
-        btnReset.Location = New Point(349, 27)
+        btnReset.Location = New Point(444, 432)
         btnReset.Name = "btnReset"
-        btnReset.Size = New Size(58, 25)
+        btnReset.Size = New Size(414, 25)
         btnReset.TabIndex = 2
-        btnReset.Text = "Reset"
+        btnReset.Text = "Reset Lighting to default"
         ToolTip1.SetToolTip(btnReset, "Reset the whole lighting tab: Studio preset, default background color, shadow settings back to their defaults (which turns shadows ON), and the light anchoring back to its default.")
         btnReset.UseVisualStyleBackColor = True
         ' 
@@ -842,7 +841,7 @@ Partial Class LightRigForm
         cmbBackground.Location = New Point(87, 28)
         cmbBackground.Name = "cmbBackground"
         cmbBackground.SelectedColor = Color.Black
-        cmbBackground.Size = New Size(264, 24)
+        cmbBackground.Size = New Size(320, 24)
         cmbBackground.TabIndex = 0
         ToolTip1.SetToolTip(cmbBackground, "Select the preview background color.")
         ' 
@@ -886,7 +885,7 @@ Partial Class LightRigForm
         ' chkDepth16
         ' 
         chkDepth16.AutoSize = True
-        chkDepth16.Location = New Point(251, 60)
+        chkDepth16.Location = New Point(350, 60)
         chkDepth16.Name = "chkDepth16"
         chkDepth16.Size = New Size(57, 19)
         chkDepth16.TabIndex = 9
@@ -916,7 +915,7 @@ Partial Class LightRigForm
         cmbShadowQuality.DropDownStyle = ComboBoxStyle.DropDownList
         cmbShadowQuality.Location = New Point(87, 56)
         cmbShadowQuality.Name = "cmbShadowQuality"
-        cmbShadowQuality.Size = New Size(158, 23)
+        cmbShadowQuality.Size = New Size(254, 23)
         cmbShadowQuality.TabIndex = 1
         ' 
         ' lblShadowSoft
@@ -939,7 +938,7 @@ Partial Class LightRigForm
         tShadowSoft.MinimumSize = New Size(100, 24)
         tShadowSoft.Name = "tShadowSoft"
         tShadowSoft.ShowTicks = True
-        tShadowSoft.Size = New Size(224, 28)
+        tShadowSoft.Size = New Size(320, 28)
         tShadowSoft.SmallChange = 0.5R
         tShadowSoft.TabIndex = 2
         tShadowSoft.TextBoxTextAlign = HorizontalAlignment.Right
@@ -969,7 +968,7 @@ Partial Class LightRigForm
         tShadowStrength.MinimumSize = New Size(100, 24)
         tShadowStrength.Name = "tShadowStrength"
         tShadowStrength.ShowTicks = True
-        tShadowStrength.Size = New Size(224, 28)
+        tShadowStrength.Size = New Size(320, 28)
         tShadowStrength.SmallChange = 0.05R
         tShadowStrength.TabIndex = 3
         tShadowStrength.TextBoxTextAlign = HorizontalAlignment.Right
@@ -996,6 +995,7 @@ Partial Class LightRigForm
         TabLights.Controls.Add(grpBackground)
         TabLights.Controls.Add(grpAmbient)
         TabLights.Controls.Add(grpShadows)
+        TabLights.Controls.Add(btnReset)
         TabLights.Controls.Add(grpPresets)
         TabLights.Controls.Add(grpBack)
         TabLights.Controls.Add(grpFillR)

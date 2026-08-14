@@ -51,6 +51,14 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>TexCodecPerfProbe</_Parameter1>
     </AssemblyAttribute>
+    <!-- Tools/PreflightScanProbe: gate del POOL DE READERS de archives. Necesita LeaseReader / ReturnReader
+         (`Friend`) para poner un lease EN VUELO de forma determinista —lease → UnregisterArchive → Return en
+         un solo hilo— y observar que el reader de la generacion vieja no vuelve al pool. Sin esa costura el
+         unico test posible es una carrera con sleeps, o sea un gate que pasa en verde por casualidad; ver
+         81-gates-que-pasaban-en-vacio. NADA se vuelve Public por esto. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>PreflightScanProbe</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <!-- Shared\ NO se compila dentro de esta lib: son fuentes que cada APP linkea a su propio ensamblado.
@@ -80,4 +88,7 @@
     <ProjectReference Include="..\NiflySharp\NiflySharp\NiflySharp.csproj" />
   </ItemGroup>
 
+  <!-- Fija la plataforma del wrapper NATIVO. Va en LOS SEIS proyectos, no solo en los dos que lo
+       referencian de verdad: el SDK inyecta el ProjectReference transitivo sin la metadata. Ver el .targets. -->
+  <Import Project="..\..\DirectXTextWrapper\DirectXTexWrapper.targets" />
 </Project>

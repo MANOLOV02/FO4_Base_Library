@@ -828,6 +828,19 @@ Public Module FaceTintCpuCompositor
             ' nuevo, que no es lo que este comentario promete.
             Dim nivelPedido As Integer = -1
             Dim md = DirectXTexWrapperCLI.Loader.GetDdsMetadata(ddsBytes)
+            ' ⛔⛔ UN Texture2DArray DEVOLVIA UNA SLICE CREYENDO QUE ERA UN MIP. La guarda de abajo es la del
+            ' ATAJO de un-solo-nivel, no un rechazo: con `ArraySize > 1` da False, `nivelPedido` queda en -1 y
+            ' se cae al camino completo, donde `SelectLevelForTarget` indexa `tex.Levels` — que para un array
+            ' MEZCLA mips y slices. Con `DownsizeFromMip0 = False` (el default) y un `preferW` dado, devuelve
+            ' el ULTIMO indice con W >= target, o sea una SLICE. Y este es el camino que escribe el DDS del
+            ' bake en Release: el de GL solo corre en DebugMode.
+            ' No se adivina cual de las N slices queria el llamador. `Nothing` sube por el camino que el
+            ' llamador ya chequea y termina en RecordTextureFailure, que SI se ve en el reporte del bake.
+            If md IsNot Nothing AndAlso md.Loaded AndAlso Not md.IsCubemap AndAlso md.ArraySize > 1 Then
+                Dim nSlices = md.ArraySize, nb2 = ddsBytes.Length
+                Logger.LogLazy(Function() $"[DECODE] Texture2DArray no soportado: ArraySize={nSlices} sin cubemap ({nb2} B). No se decodifica.")
+                Return Nothing
+            End If
             If md IsNot Nothing AndAlso md.Loaded AndAlso Not md.IsCubemap AndAlso md.ArraySize <= 1 AndAlso
                md.MipCount > 1 AndAlso md.Width > 0 AndAlso md.Height > 0 Then
                 Dim dimsHeader As New List(Of (W As Integer, H As Integer))(md.MipCount)

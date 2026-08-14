@@ -41,9 +41,28 @@ Public NotInheritable Class LoadOrderActivator
     ''' in one user's file, and writing to it to create them is exactly what must never happen by accident.</summary>
     Private Shared _testGameDirOverride As String = Nothing
 
-    Private Shared Function ResolveGameDir() As String
-        If Not String.IsNullOrEmpty(_testGameDirOverride) Then Return _testGameDirOverride
-        Return PluginManager.ResolveGameAppDataDir()
+    ''' <summary>El Plugins.txt sobre el que se va a escribir, o "" + motivo si no hay uno confiable.
+    '''
+    ''' <para>⛔ ESTE ES EL PUNTO MÁS PELIGROSO DE TODA LA RESOLUCIÓN DE RUTAS, y hasta ahora fallaba para el
+    ''' lado malo. La versión vieja componía la ruta contra la carpeta "preferida" aunque no existiera, y
+    ''' <see cref="WriteEntries"/> la CREA: un usuario de la edición de GOG terminaba con un
+    ''' <c>%LOCALAPPDATA%\Skyrim Special Edition\Plugins.txt</c> recién nacido, con un solo plugin adentro,
+    ''' y un mensaje diciéndole que se había activado. El juego no lo leía nunca. Un archivo equivocado
+    ''' escrito con cara de éxito es peor que un error.</para>
+    '''
+    ''' <para>Ahora: si el resolver no llegó a una ubicación, no se escribe nada. Sí se permite CREAR el
+    ''' archivo cuando la carpeta salió de evidencia real (el .ini del juego está ahí, pero el usuario
+    ''' todavía no corrió el juego) o cuando la ruta la fijó el usuario a mano — en los dos casos el destino
+    ''' está confirmado por algo que no es una suposición nuestra.</para></summary>
+    Private Shared Function ResolvePluginsTarget() As (Path As String, Problem As String)
+        If Not String.IsNullOrEmpty(_testGameDirOverride) Then
+            Return (IO.Path.Combine(_testGameDirOverride, "Plugins.txt"), "")
+        End If
+        Dim r = GamePathsResolver.Resolve()
+        If Not r.HasPluginsTxt Then
+            Return ("", If(r.Problem, "The game's load order file could not be located."))
+        End If
+        Return (r.PluginsTxtPath, "")
     End Function
 
     Public Enum OutcomeKind
@@ -142,14 +161,16 @@ Public NotInheritable Class LoadOrderActivator
                 Return res
             End Try
 
-            Dim gameDir = ResolveGameDir()
-            If String.IsNullOrEmpty(gameDir) OrElse Not Directory.Exists(gameDir) Then
+            Dim target = ResolvePluginsTarget()
+            If target.Path = "" Then
                 res.Kind = OutcomeKind.Skipped
-                res.Summary = "The game's AppData folder was not found, so Plugins.txt could not be updated."
+                res.Summary = target.Problem &
+                              " Nothing was written — set the Plugins.txt location in Setup and try again."
                 Return res
             End If
 
-            Dim pluginsTxt = ResolveExistingOrDefault(gameDir, "Plugins.txt", "plugins.txt")
+            Dim pluginsTxt = target.Path
+            Dim gameDir = If(Path.GetDirectoryName(pluginsTxt), "")
             res.PluginsTxtPath = pluginsTxt
 
             ' The engine rewrites its own copy of the load order on exit, so writing underneath a running
@@ -535,6 +556,8 @@ Public NotInheritable Class LoadOrderActivator
                                                  ourIsEsmGroup As Boolean, dataPath As String,
                                                  cache As Dictionary(Of String, Boolean?)) As String
         Try
+            ' gameDir sale del Plugins.txt vigente; si ese no tenía carpeta no hay dónde espejar.
+            If gameDir = "" Then Return ""
             Dim loPath = ResolveExistingOrDefault(gameDir, "loadorder.txt", "LoadOrder.txt")
             If Not File.Exists(loPath) Then Return ""
             If (File.GetAttributes(loPath) And FileAttributes.ReadOnly) <> 0 Then

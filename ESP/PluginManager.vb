@@ -696,11 +696,12 @@ Public Class PluginManager
     ''' ini folder) follows from the mode — NOT from which folder happens to exist on disk. So the exe the
     ''' user pointed at decides which game's files we read; folder existence is only a last-resort fallback.
     ''' SSE's exe is SkyrimSE.exe and FO4's is Fallout4.exe, so neither matches the VR suffix.</summary>
+    ''' <para>⭐ El discriminador se mudó a <see cref="GamePathsResolver.IdentifyExe"/>, que compara contra los
+    ''' cuatro nombres canónicos en vez de mirar si la ruta TERMINA en "VR". El criterio viejo daba False
+    ''' para un usuario que apuntaba a <c>skse64_loader.exe</c> al lado de <c>SkyrimVR.exe</c> — y de esa
+    ''' respuesta cuelga el master implícito de VR del load order.</para>
     Public Shared Function IsVrBuild() As Boolean
-        Dim exePath = If(Config_App.Current?.FO4ExePath, "")
-        If exePath = "" Then Return False
-        Dim exeName = Path.GetFileNameWithoutExtension(exePath)
-        Return exeName.EndsWith("VR", StringComparison.OrdinalIgnoreCase)
+        Return GamePathsResolver.IsVrBuild()
     End Function
 
     ''' <summary>Resolves the LocalAppData game directory that holds Plugins.txt / loadorder.txt.
@@ -712,15 +713,28 @@ Public Class PluginManager
     ''' load order. Always returns the preferred path when neither exists, so callers can still build a
     ''' (non-existent) file path without crashing.</summary>
     Public Shared Function ResolveGameAppDataDir() As String
-        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
-        Dim appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
-        Dim flatPath = Path.Combine(appData, If(isFO4, "Fallout4", "Skyrim Special Edition"))
-        Dim vrPath = Path.Combine(appData, If(isFO4, "Fallout4VR", "Skyrim VR"))
+        Return GamePathsResolver.Resolve().PluginsDir
+    End Function
 
-        Dim preferred = If(IsVrBuild(), vrPath, flatPath)
-        Dim fallback = If(IsVrBuild(), flatPath, vrPath)
-        If Not Directory.Exists(preferred) AndAlso Directory.Exists(fallback) Then Return fallback
-        Return preferred
+    ''' <summary>Ruta completa del <c>Plugins.txt</c> vigente, o "" si no se resolvió. Preferir ESTA sobre
+    ''' <c>ResolveGameAppDataDir</c> + "Plugins.txt": cuando el usuario fija la ruta a mano puede apuntar al
+    ''' archivo de un perfil de mod manager, que no tiene por qué llamarse igual ni vivir en una carpeta con
+    ''' nombre de juego.</summary>
+    Public Shared Function ResolvePluginsTxtPath() As String
+        Return GamePathsResolver.Resolve().PluginsTxtPath
+    End Function
+
+    ''' <summary>"" cuando la ubicación del load order está resuelta; si no, la explicación en inglés para
+    ''' mostrarle al usuario.
+    '''
+    ''' <para>⛔ Existe porque el modo de falla de todo esto es MUDO: sin Plugins.txt,
+    ''' <see cref="ReadActiveLoadOrder"/> devuelve los masters implícitos y nada más, o sea una lista
+    ''' perfectamente válida que representa un juego sin un solo mod. Ningún caller podía distinguir eso de
+    ''' "el usuario efectivamente no tiene mods". Ahora sí.</para></summary>
+    Public Shared Function LoadOrderSourceProblem() As String
+        Dim r = GamePathsResolver.Resolve()
+        If r.HasPluginsTxt Then Return ""
+        Return r.Problem
     End Function
 
     ''' <summary>Resolves the Documents\My Games directory that holds the game .ini files
@@ -729,16 +743,7 @@ Public Class PluginManager
     ''' names come from wbGameName (xeInit.pas:513,526), i.e. FO4VR still reads Fallout4[Custom].ini and
     ''' SkyrimVR still reads Skyrim[Custom].ini. Use <see cref="ResolveGameIniPath"/> to build a full path.</summary>
     Public Shared Function ResolveGameIniDir() As String
-        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
-        Dim documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
-        Dim myGames = Path.Combine(documents, "My Games")
-        Dim flatPath = Path.Combine(myGames, If(isFO4, "Fallout4", "Skyrim Special Edition"))
-        Dim vrPath = Path.Combine(myGames, If(isFO4, "Fallout4VR", "Skyrim VR"))
-
-        Dim preferred = If(IsVrBuild(), vrPath, flatPath)
-        Dim fallback = If(IsVrBuild(), flatPath, vrPath)
-        If Not Directory.Exists(preferred) AndAlso Directory.Exists(fallback) Then Return fallback
-        Return preferred
+        Return GamePathsResolver.Resolve().IniDir
     End Function
 
     ''' <summary>Full path of an ini file (<paramref name="iniFileName"/> = "Fallout4.ini",
@@ -746,24 +751,22 @@ Public Class PluginManager
     ''' (xeInit.pas:515-517, comment "VR games don't create ini file in My Games by default, use the one in
     ''' the game folder"): for a VR build, if the ini is NOT in My Games, fall back to the game root — the
     ''' folder that contains Data, i.e. the exe's own folder. Returns the My Games path when nothing exists.</summary>
+    ''' <para>⚠️ Ahora puede devolver "" (carpeta de inis sin resolver). Los dos consumidores
+    ''' (<c>PluginEncodingSettings.ReadSLanguageFrom</c> y <c>LocalizedStrings</c>) ya arrancan con un
+    ''' <c>File.Exists</c> que trata "" como ausente, que es la semántica correcta: sin ini no hay
+    ''' <c>sLanguage</c> y se cae al default del juego, igual que antes cuando el archivo no existía.</para>
     Public Shared Function ResolveGameIniPath(iniFileName As String) As String
-        Dim myGamesPath = Path.Combine(ResolveGameIniDir(), iniFileName)
-        If File.Exists(myGamesPath) OrElse Not IsVrBuild() Then Return myGamesPath
-
-        Dim exePath = If(Config_App.Current?.FO4ExePath, "")
-        If exePath = "" Then Return myGamesPath
-        Dim gameRoot = Path.GetDirectoryName(exePath)
-        If String.IsNullOrEmpty(gameRoot) Then Return myGamesPath
-        Dim gameRootPath = Path.Combine(gameRoot, iniFileName)
-        If File.Exists(gameRootPath) Then Return gameRootPath
-        Return myGamesPath
+        Return GamePathsResolver.ResolveIniPath(iniFileName)
     End Function
 
     Public Shared Function ReadActiveLoadOrder() As List(Of String)
         Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
         Dim gameDir = ResolveGameAppDataDir()
-        Dim pluginsTxt = Path.Combine(gameDir, "Plugins.txt")
-        If Not File.Exists(pluginsTxt) Then pluginsTxt = Path.Combine(gameDir, "plugins.txt")
+        ' ⛔ "" cuando no se resolvió, y Path.Combine("", "x") devuelve "x" — o sea una ruta RELATIVA que se
+        ' resolvería contra el directorio de trabajo y podría llegar a encontrar un archivo que no es. Con
+        ' rutas vacías no se arma nada: el load order queda en los implícitos y LoadOrderSourceProblem() lo
+        ' explica.
+        Dim pluginsTxt = ResolvePluginsTxtPath()
 
         ' Implicit masters: el engine carga estos siempre primero, no aparecen en Plugins.txt.
         ' Spec verificada contra ejecución vanilla y herramientas LOOT/xEdit.
@@ -847,9 +850,9 @@ Public Class PluginManager
         ' bytes aligned with the runtime engine; otherwise a `loadorder.txt` that places any plugin
         ' before Fallout4.esm would shove the game master to slot 1+, desyncing every FormID
         ' diagnostic / clipboard helper / FaceGen path lookup that depends on the high byte.
-        Dim loadorderTxt = Path.Combine(gameDir, "loadorder.txt")
+        Dim loadorderTxt = If(gameDir = "", "", Path.Combine(gameDir, "loadorder.txt"))
         Dim ordered As New List(Of String)
-        If File.Exists(loadorderTxt) Then
+        If loadorderTxt <> "" AndAlso File.Exists(loadorderTxt) Then
             Dim implicitsSet As New HashSet(Of String)(implicits, StringComparer.OrdinalIgnoreCase)
             Dim ccSet As New HashSet(Of String)(ccEntries, StringComparer.OrdinalIgnoreCase)
 

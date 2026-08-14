@@ -199,6 +199,9 @@ Public Module DirectXDDSLoader
 
         Dim target = If(tex.IsCubemap, TextureTarget.TextureCubeMap, TextureTarget.Texture2D)
         Dim texID As Integer = 0
+        ' PBO que hubiera bindeado al entrar. Se LEE adentro del Try (ver la nota del bindeo, más abajo), no
+        ' acá: sólo lo consume el Finally, y el Finally sólo corre si se entró al Try.
+        Dim prevPixelUnpackBuffer As Integer = 0
         ' ⛔ El alineamiento previo se lee ACÁ, ANTES del Try. Estaba leído adentro, así que cualquier
         ' excepción anterior a esa línea hacía que el Finally "restaurara" el literal 4 de la
         ' inicialización — y 4 NO es lo que hay: `CreateColorTexture` deja el UNPACK_ALIGNMENT global en 1
@@ -225,6 +228,24 @@ Public Module DirectXDDSLoader
         Dim faces As Integer = Math.Max(1, tex.Faces)
 
         If tex.IsCubemap AndAlso faces <> 6 Then
+            Return 0
+        End If
+
+        ' ⛔⛔ UN Texture2DArray SUBIA LA SLICE EQUIVOCADA, EN SILENCIO. `Faces` lo llena el wrapper con el
+        ' `arraySize` CRUDO, no con "6 si es cubemap si no 1": para un DDS 2D-array vale N. Sin cubemap, el
+        ' doble loop de abajo usa `TextureTarget.Texture2D` para las N slices del MISMO mip, asi que cada
+        ' `TexSubImage2D` pisa a la anterior — sin error de GL, sin log — y la textura terminaba con la
+        ' ULTIMA slice y `Loaded = True`. Bytes equivocados en silencio, que es el peor resultado posible.
+        ' Subirlo bien pide GL_TEXTURE_2D_ARRAY (TexStorage3D/TexSubImage3D) y un sampler distinto en los
+        ' shaders; ningun material de FO4/SSE trae uno, asi que la respuesta correcta es NO CARGARLO y
+        ' dejar rastro, no adivinar cual de las N slices queria el llamador.
+        ' ⚠️ ESTE LOG NO SE VE EN RELEASE: `Logger.Enabled` esta forzado a False y su setter descarta
+        ' cualquier True (ver Logger.vb). O sea que este guard es una RED MUDA. El canal visible para el
+        ' mismo defecto esta del lado CPU, que es ademas el que ESCRIBE los bytes en disco: ver el guard
+        ' gemelo en FaceTintCpuCompositor.DecodeDds, que devuelve Nothing y sube como fallo de textura.
+        If Not tex.IsCubemap AndAlso faces <> 1 Then
+            Dim nSlices = faces
+            Logger.LogLazy(Function() $"[DDS] Texture2DArray no soportado: arraySize={nSlices} sin cubemap. No se carga (antes se subia la ultima slice como si fuera la textura).")
             Return 0
         End If
 
@@ -499,6 +520,22 @@ Public Module DirectXDDSLoader
             ' verdad, eso es un PBO PERSISTENTE por contexto con fence, no uno por textura.
             ' ⛔ Desbindear explicitamente: con un PBO bindeado, el argumento de datos de TexSubImage2D se
             ' interpreta como un OFFSET dentro del buffer y no como un puntero al array.
+            ' ⛔⛔ PERO ESO ES PRECONDICION DE ESTA FUNCION, NO ESTADO GLOBAL QUE LE TOQUE FIJAR. Antes el
+            ' Finally lo dejaba en 0, o sea que convertia "sin PBO durante la subida" en "sin PBO para
+            ' siempre" y se llevaba puesto el binding de cualquier uploader ajeno. Se guarda el previo acá y
+            ' el Finally lo devuelve. Hoy no hay ningun otro bindeo de PIXEL_UNPACK_BUFFER en la solucion ⇒
+            ' esto lee 0 y el comportamiento no cambia en un solo byte; existe para el dia que aparezca un
+            ' PBO PERSISTENTE con fence, que es la unica forma en que un PBO compra algo (ver arriba).
+            ' ⛔ El pname va TIPADO (`GetPName.PixelUnpackBufferBinding` = 0x88EF). Un `CType(&H..., GetPName)`
+            ' con el numero equivocado COMPILA igual —los enums del CLR no validan el rango— y `glGetIntegerv`
+            ' con un pname invalido NO escribe el destino y encola GL_INVALID_ENUM: quedaria siempre 0 (o sea,
+            ' el bug de antes, pero documentado como arreglado) y el error contaminaria al proximo GetError.
+            ' Va DESPUES del DrainGlErrors de arriba a proposito.
+            Try
+                GL.GetInteger(GetPName.PixelUnpackBufferBinding, prevPixelUnpackBuffer)
+            Catch
+                prevPixelUnpackBuffer = 0
+            End Try
             GL.BindBuffer(BufferTarget.PixelUnpackBuffer, 0)
 
             Dim faceTargets() As TextureTarget = {
@@ -579,9 +616,10 @@ Public Module DirectXDDSLoader
             End If
 
         Finally
-            ' Se deja el PIXEL_UNPACK_BUFFER desbindeado: es la precondicion de la subida directa, y
-            ' dejarlo asi evita que un PBO ajeno convierta el puntero de datos en un offset.
-            GL.BindBuffer(BufferTarget.PixelUnpackBuffer, 0)
+            ' Se DEVUELVE el PIXEL_UNPACK_BUFFER que hubiera al entrar (hoy siempre 0). El desbindeo es
+            ' precondicion de la subida, no un estado que esta funcion deba dejar fijado — ver la nota
+            ' completa en el sitio del bindeo.
+            GL.BindBuffer(BufferTarget.PixelUnpackBuffer, prevPixelUnpackBuffer)
             GL.PixelStore(PixelStoreParameter.UnpackAlignment, prevUnpackAlignment)
             GL.BindTexture(target, 0)
         End Try
