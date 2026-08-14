@@ -766,8 +766,14 @@ Friend Class GroundShadowQuad
         shader.SetVector2("uGroundHalf", half)
 
         GL.Enable(EnableCap.DepthTest)
+        GL.DepthFunc(DepthFunction.Lequal)
         GL.DepthMask(False)
-        GL.Disable(EnableCap.CullFace)      ' visible desde arriba y desde abajo
+        ' El receptor comparte el plano exacto del piso. Se rasteriza como decal y se acerca
+        ' apenas en depth, sin mover su posicion fisica ni separarlo del contacto de los pies.
+        GL.Enable(EnableCap.PolygonOffsetFill)
+        GL.PolygonOffset(-0.4F, -3.0F)
+        GL.Enable(EnableCap.CullFace)
+        GL.CullFace(TriangleFace.Back)
         GL.Enable(EnableCap.Blend)
         ' MULTIPLICATIVO: resultado = destino x fuente. Ver el doc del fragment.
         GL.BlendFunc(BlendingFactor.Zero, BlendingFactor.SrcColor)
@@ -778,8 +784,8 @@ Friend Class GroundShadowQuad
 
         GL.Disable(EnableCap.Blend)
         GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha)
+        GL.Disable(EnableCap.PolygonOffsetFill)
         GL.DepthMask(True)
-        GL.Enable(EnableCap.CullFace)
         GL.CullFace(TriangleFace.Back)
     End Sub
 

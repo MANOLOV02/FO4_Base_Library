@@ -1312,7 +1312,7 @@ Partial Class LightRigForm
         grpFloor.Size = New Size(418, 144)
         grpFloor.TabIndex = 4
         grpFloor.TabStop = False
-        grpFloor.Text = "Floor grid"
+        grpFloor.Text = "Floor"
         ' 
         ' chkFloorEnabled
         ' 
@@ -1321,8 +1321,8 @@ Partial Class LightRigForm
         chkFloorEnabled.Name = "chkFloorEnabled"
         chkFloorEnabled.Size = New Size(107, 19)
         chkFloorEnabled.TabIndex = 0
-        chkFloorEnabled.Text = "Show floor grid"
-        ToolTip1.SetToolTip(chkFloorEnabled, "Show the render grid in preview.")
+        chkFloorEnabled.Text = "Render floor"
+        ToolTip1.SetToolTip(chkFloorEnabled, "Render the lit tiled floor in the preview.")
         ' 
         ' lblFloorSize
         ' 
@@ -1343,7 +1343,7 @@ Partial Class LightRigForm
         nudFloorSize.Size = New Size(100, 23)
         nudFloorSize.TabIndex = 1
         nudFloorSize.TextAlign = HorizontalAlignment.Right
-        ToolTip1.SetToolTip(nudFloorSize, "Total grid size.")
+        ToolTip1.SetToolTip(nudFloorSize, "Total floor size.")
         nudFloorSize.Value = New Decimal(New Integer() {1, 0, 0, 0})
         ' 
         ' lblFloorStep
@@ -1353,7 +1353,7 @@ Partial Class LightRigForm
         lblFloorStep.Name = "lblFloorStep"
         lblFloorStep.Size = New Size(30, 15)
         lblFloorStep.TabIndex = 2
-        lblFloorStep.Text = "Step"
+        lblFloorStep.Text = "Tile size"
         ' 
         ' nudFloorStep
         ' 
@@ -1365,7 +1365,7 @@ Partial Class LightRigForm
         nudFloorStep.Size = New Size(100, 23)
         nudFloorStep.TabIndex = 2
         nudFloorStep.TextAlign = HorizontalAlignment.Right
-        ToolTip1.SetToolTip(nudFloorStep, "Distance between grid lines.")
+        ToolTip1.SetToolTip(nudFloorStep, "Width and length of each square tile.")
         nudFloorStep.Value = New Decimal(New Integer() {1, 0, 0, 0})
         ' 
         ' lblFloorColor
@@ -1375,7 +1375,7 @@ Partial Class LightRigForm
         lblFloorColor.Name = "lblFloorColor"
         lblFloorColor.Size = New Size(59, 15)
         lblFloorColor.TabIndex = 3
-        lblFloorColor.Text = "Grid color"
+        lblFloorColor.Text = "Grout color"
         ' 
         ' cmbFloorColor
         ' 
@@ -1387,7 +1387,7 @@ Partial Class LightRigForm
         cmbFloorColor.SelectedColor = Color.Black
         cmbFloorColor.Size = New Size(290, 24)
         cmbFloorColor.TabIndex = 3
-        ToolTip1.SetToolTip(cmbFloorColor, "Color of the grid lines.")
+        ToolTip1.SetToolTip(cmbFloorColor, "Tint of the recessed grout between tiles.")
         ' 
         ' btnResetRender
         ' 
@@ -1396,7 +1396,7 @@ Partial Class LightRigForm
         btnResetRender.Size = New Size(418, 27)
         btnResetRender.TabIndex = 5
         btnResetRender.Text = "Reset rendering to defaults"
-        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera and floor grid -- to its default. Lights and shadows are on the other tab and are not touched.")
+        ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera and floor -- to its default. Lights and shadows are on the other tab and are not touched.")
         btnResetRender.UseVisualStyleBackColor = True
         ' 
         ' LightRigForm

@@ -22,19 +22,110 @@ uniform mat4 matProjection;
 uniform mat4 matView;
 uniform mat4 matModel;
 
+out vec3 worldPos;
+
 void main()
 {
-    gl_Position = matProjection * matView * matModel * vec4(vertexPosition, 1.0);
+    vec4 wp = matModel * vec4(vertexPosition, 1.0);
+    worldPos = wp.xyz;
+    gl_Position = matProjection * matView * wp;
 }"
 
     Friend Const Fragment_Floor As String =
 "#version 430
-uniform vec3 gridColor;
+
+in vec3 worldPos;
+
+uniform float tileStep;
+uniform float floorHalfSize;
+uniform vec3 backgroundColor;
+uniform vec3 backgroundLinear;
+uniform vec3 groutColorLinear;
+uniform vec3 cameraPosition;
+uniform float floorExposure;
+uniform vec3 ambientSky;
+uniform vec3 ambientGround;
+uniform vec3 lightDiffuse[4];
+uniform vec3 lightDirection[4];
+
 out vec4 FragColor;
+
+vec3 tonemap(in vec3 x)
+{
+    const float A = 0.15;
+    const float B = 0.50;
+    const float C = 0.10;
+    const float D = 0.20;
+    const float E = 0.02;
+    const float F = 0.30;
+    return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
+}
+
+vec3 lightAt(in vec3 nrm, in vec3 viewDir, in float detail)
+{
+    vec3 diffuse = mix(ambientGround, ambientSky, clamp(nrm.z * 0.5 + 0.5, 0.0, 1.0));
+    for (int i = 0; i < 4; ++i)
+        diffuse += lightDiffuse[i] * max(dot(nrm, lightDirection[i]), 0.0);
+
+    // One restrained key-light highlight is enough to read as tile without four pow calls per pixel.
+    float keyNdl = max(dot(nrm, lightDirection[0]), 0.0);
+    vec3 keyHalf = normalize(lightDirection[0] + viewDir);
+    float highlight = pow(max(dot(nrm, keyHalf), 0.0), 36.0) * keyNdl;
+    return diffuse + lightDiffuse[0] * highlight * (0.075 * detail);
+}
 
 void main()
 {
-    FragColor = vec4(gridColor, 1.0);
+    float safeStep = max(tileStep, 0.001);
+    vec2 tile = worldPos.xy / safeStep;
+    vec2 cell = fract(tile);
+    vec2 cellId = floor(tile);
+    vec2 edgeDistance = min(cell, 1.0 - cell);
+    vec2 footprint = max(fwidth(tile), vec2(0.00001));
+    float pixelSpan = max(footprint.x, footprint.y);
+
+    // Three-stage LOD: relief and tile variation go first, then grout, then the whole floor merges
+    // into the background. This avoids leaving a smooth lit plate after the tile pattern is gone.
+    float detail = 1.0 - smoothstep(0.16, 0.62, pixelSpan);
+    float pattern = 1.0 - smoothstep(0.38, 0.95, pixelSpan);
+    float surfaceLod = 1.0 - smoothstep(0.70, 1.65, pixelSpan);
+    float jointHalfWidth = 0.045;
+    float nearestEdge = min(edgeDistance.x, edgeDistance.y);
+    float aa = max(fwidth(nearestEdge), 0.0005);
+    float joint = (1.0 - smoothstep(jointHalfWidth - aa, jointHalfWidth + aa, nearestEdge)) * pattern;
+
+    // Signed bevel walls: opposite sides of a groove tilt in opposite directions.
+    float wallT = clamp(nearestEdge / jointHalfWidth, 0.0, 1.0);
+    float bevelBand = (1.0 - abs(wallT * 2.0 - 1.0)) * detail;
+    vec2 bevel = vec2(0.0);
+    if (edgeDistance.x < edgeDistance.y)
+        bevel.x = sign(cell.x - 0.5) * bevelBand;
+    else
+        bevel.y = sign(cell.y - 0.5) * bevelBand;
+    vec3 nrm = normalize(vec3(bevel * 0.68, 1.0));
+
+    vec3 viewDir = normalize(cameraPosition - worldPos);
+    vec3 lighting = lightAt(nrm, viewDir, detail);
+
+    // Cheap stable seven-state variation. No texture, trigonometry or high-frequency random noise.
+    float tileState = mod(cellId.x * 3.0 + cellId.y * 5.0, 7.0) / 6.0;
+    float tileVariation = 1.0 + (tileState - 0.5) * (0.04 * pattern);
+    vec3 tileLinear = backgroundLinear * lighting * floorExposure * tileVariation;
+    vec3 groutLinear = groutColorLinear * lighting * floorExposure * 0.72;
+    vec3 linearColor = mix(tileLinear, groutLinear, joint);
+    // The narrow center is below both bevel walls. This contact occlusion makes the groove read as
+    // recessed even under a nearly vertical rig, where the two wall normals alone are subtle.
+    float grooveCore = (1.0 - smoothstep(0.0, jointHalfWidth * 0.30 + aa, nearestEdge)) * detail;
+    linearColor *= mix(1.0, 0.48, grooveCore);
+    vec3 displayColor = pow(max(tonemap(linearColor) / tonemap(vec3(1.0)), vec3(0.0)), vec3(1.0 / 2.2));
+
+    // Grazing fade hides the projected horizon before the finite quad can read as a flat plate.
+    // The floor stays opaque: it is mixed to the known clear color instead of using alpha blending.
+    float grazingFade = smoothstep(0.012, 0.28, abs(viewDir.z));
+    float edgeCoord = max(abs(worldPos.x), abs(worldPos.y)) / max(floorHalfSize, 0.001);
+    float edgeFade = 1.0 - smoothstep(0.58, 0.98, edgeCoord);
+    float floorFade = surfaceLod * grazingFade * edgeFade;
+    FragColor = vec4(mix(backgroundColor, displayColor, floorFade), 1.0);
 }"
     Sub New()
         MyBase.New(Vertex_Floor, Fragment_Floor)

@@ -300,8 +300,6 @@ Partial Public Class LightRigForm
         nudWeldUv.Value = ClampDec(nudWeldUv, CDec(tbn.WeldUVEpsilon))
         nudEpsPos.Value = ClampDec(nudEpsPos, CDec(tbn.EpsilonPos))
         ActualizarHabilitadoWelding()
-        ActualizarHabilitadoPiso()
-        ActualizarHabilitadoCamara()
 
         chkGpuSkinning.Checked = Config_App.Current.Setting_GPUSkinning
         chkSingleBone.Checked = Config_App.Current.Setting_SingleBoneSkinning
@@ -312,12 +310,14 @@ Partial Public Class LightRigForm
         chkResetAngles.Checked = Config_App.Current.Settings_Camara.ResetAngles
         chkResetZoom.Checked = Config_App.Current.Settings_Camara.ResetZoom
         chkFreezeCamera.Checked = Config_App.Current.Settings_Camara.FreezeCamera
+        ActualizarHabilitadoCamara()
 
         chkFloorEnabled.Checked = Config_App.Current.Settings_RenderGrid.Enabled
         nudFloorSize.Value = ClampDec(nudFloorSize, CDec(Config_App.Current.Settings_RenderGrid.Size))
         nudFloorStep.Value = ClampDec(nudFloorStep, CDec(Config_App.Current.Settings_RenderGrid.StepSize))
         cmbFloorColor.Rellena()
         cmbFloorColor.SelectedColor = Config_App.Current.RenderGridColor()
+        ActualizarHabilitadoPiso()
     End Sub
 
     ''' <summary>Un valor fuera del rango del control tira ArgumentOutOfRangeException y DEJA A MEDIAS

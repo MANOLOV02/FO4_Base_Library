@@ -751,14 +751,10 @@ Public Class PreviewControl
         If m.Floor IsNot Nothing Then
             Dim g = Config_App.Current.Settings_RenderGrid
             Dim col = Config_App.Current.RenderGridColor()
-            ' Solo el tamano y el paso son GEOMETRIA de la grilla. Enabled y Color no: el primero es un
-            ' `If` en el draw y el segundo es un uniform por draw. Rebuild borra y recrea VAO/VBO.
-            Dim reconstruir As Boolean = m.Floor.Size <> CSng(g.Size) OrElse m.Floor.StepSize <> CSng(g.StepSize)
             m.Floor.Enabled = g.Enabled
             m.Floor.Size = CSng(g.Size)
             m.Floor.StepSize = CSng(g.StepSize)
             m.Floor.Color = col
-            If reconstruir Then m.Floor.Rebuild()
         End If
 
         If geomCambio Then
@@ -5546,23 +5542,16 @@ Public Class PreviewModel
         ' adentro del mapa. Lo que quede afuera lee el borde blanco de la textura = "iluminado".
         Dim bmin As Vector3, bmax As Vector3
         ParentControl.GetSceneBounds(bmin, bmax)
-        ' ⛔⭐ EL PLANO DEL RECEPTOR ES EL PISO DECLARADO POR LA APP, no el punto mas bajo del AABB. Antes
-        ' era `bmin.Z` y eso fallaba de tres formas distintas:
-        '  1. La grilla se dibuja en `FloorOffset + 0.01` con DepthMask activo y DepthFunc Lequal. Con el
-        '     receptor en z = 0 y la grilla en z = 0,01, la grilla GANA el test de profundidad en cada
-        '     linea: ~43 rayas brillantes sin sombrear atravesando la sombra, a Size=400/Step=10.
-        '  2. Wardrobe Manager pone `FloorOffset = -HighHeelHeight`: con un outfit de tacos el piso real y
+        ' EL PLANO DEL RECEPTOR ES EL PISO DECLARADO POR LA APP, no el punto mas bajo del AABB. Antes
+        ' era `bmin.Z` y eso fallaba de dos formas distintas:
+        '  1. Wardrobe Manager pone `FloorOffset = -HighHeelHeight`: con un outfit de tacos el piso real y
         '     el receptor quedaban separados por la altura del taco y la sombra flotaba.
-        '  3. GetSceneBounds saltea las shapes con RenderHide, asi que en un preview de UNA pieza (un
+        '  2. GetSceneBounds saltea las shapes con RenderHide, asi que en un preview de UNA pieza (un
         '     guante a z = 100) `bmin.Z` era 100 y la sombra salia como una losa colgada en el aire.
-        ' El +0,02 lo pone por ENCIMA del +0,01 de la grilla: el receptor gana el test contra la grilla, y
-        ' el personaje lo sigue tapando porque esta mas arriba todavia.
-        ' ⚠️ El desempate es de UN SOLO LADO: mirando desde ABAJO del plano (la camara llega casi a -90) la
-        ' grilla queda mas cerca y le vuelve a ganar al receptor, con las mismas rayas brillantes al reves.
-        ' Se deja asi a proposito: la alternativa —invertir el signo segun donde este la camara— mueve el
-        ' plano de la sombra mientras se orbita, que es peor que un artefacto en una vista donde el receptor
-        ' de suelo no significa nada.
-        _groundZ = CSng(FloorOffset) + 0.02F
+        ' El piso procedural es una superficie opaca completa. Separar el receptor +0,02 en Z produce
+        ' z-fighting a distancia y en vistas cenitales. Ambos comparten ahora el plano fisico exacto; el
+        ' pase del receptor resuelve el empate con PolygonOffset, como un decal, sin mover la sombra.
+        _groundZ = CSng(FloorOffset)
 
         ' ===================== MAPA 1: AJUSTADO AL PERSONAJE =====================
         ' ⭐ DOS MAPAS, NO UNO. Con un solo mapa compartido, meter el receptor de suelo obligaba a agrandar
@@ -5898,6 +5887,10 @@ Public Class PreviewModel
         ' O4.1: Process pending background texture uploads (Phase 2) each frame
         ProcessPendingTextureUploads()
 
+        ' El piso procedural usa el mismo rig resuelto que las mallas y debe seguir siendo valido en las
+        ' salidas tempranas de carga de texturas y modelo vacio. Resolverlo no depende de ninguna textura.
+        ResolveFrameLights(camera)
+
         ' Hide meshes while textures are still loading — show status overlay instead
         If Not TexturesReady Then
             If Floor IsNot Nothing AndAlso Floor.Enabled = True Then Floor.Render(projection, camera, FloorOffset)
@@ -5908,10 +5901,6 @@ Public Class PreviewModel
 
         If Floor IsNot Nothing AndAlso Floor.Enabled = True Then Floor.Render(projection, camera, FloorOffset)
         If meshes.Count = 0 Then Exit Sub
-
-        ' Resolver el rig UNA vez por frame, antes de cualquier draw. Los dos consumidores de ApplyMaterial
-        ' (Render y RenderOverlayLayer) sólo se alcanzan desde los loops de abajo, así que nunca lo leen stale.
-        ResolveFrameLights(camera)
 
         ' SOMBRAS: el shadow map se dibuja ANTES de cualquier pase iluminado y DESPUES de resolver el rig,
         ' porque la direccion de la key sale de _frameLights.KeyDir — la MISMA que va a los uniforms del
@@ -6060,13 +6049,35 @@ End Class
 Public Class FloorRenderer
     Implements IDisposable
 
+    Friend Shared Property MedirCostoGpu As Boolean
+    Friend Shared ReadOnly Property NsCostoGpu As Long
+        Get
+            Return _nsCostoGpu
+        End Get
+    End Property
+    Private Shared _nsCostoGpu As Long
+    Private queryTiempo As Integer
+    Private queryEnVuelo As Boolean
+
     Private ReadOnly ParentControl As PreviewControl
     Private vao As Integer
     Private vbo As Integer
     Private vertexCount As Integer
 
     Public Initialized As Boolean = False
-    Public Property Enabled As Boolean = False
+    ''' <summary>Fachada sobre la unica fuente de verdad: Config_App.Settings_RenderGrid.Enabled.
+    ''' Todos los previews y todas las puertas de UI leen y escriben el mismo valor.</summary>
+    Public Property Enabled As Boolean
+        Get
+            Return Config_App.Current IsNot Nothing AndAlso Config_App.Current.Settings_RenderGrid.Enabled
+        End Get
+        Set(value As Boolean)
+            If Config_App.Current Is Nothing Then Return
+            Dim floor = Config_App.Current.Settings_RenderGrid
+            floor.Enabled = value
+            Config_App.Current.Settings_RenderGrid = floor
+        End Set
+    End Property
     Public Property Size As Single = 400.0F
     Public Property StepSize As Single = 10.0F
     Public Property Color As Color = Color.FromKnownColor(KnownColor.ControlLight)
@@ -6079,43 +6090,12 @@ Public Class FloorRenderer
         If vao > 0 Then GL.DeleteVertexArray(vao) : vao = 0
         If vbo > 0 Then GL.DeleteBuffer(vbo) : vbo = 0
 
-        If StepSize <= 0 Then StepSize = 10.0F
-        If Size <= 0 Then Size = 100.0F
-
-        Dim halfSize As Single = Size * 0.5F
-        Dim lineCountPerAxis As Integer = CInt(Math.Floor(Size / StepSize)) + 1
-
-        Dim verts As New List(Of Single)
-
-        Dim startPos As Single = -halfSize
-        Dim endPos As Single = halfSize
-
-        For i As Integer = 0 To lineCountPerAxis - 1
-            Dim p As Single = startPos + (i * StepSize)
-
-            If p > endPos Then Exit For
-
-            ' línea paralela al eje Y, en X = p
-            verts.Add(p) : verts.Add(startPos) : verts.Add(0.0F)
-            verts.Add(p) : verts.Add(endPos) : verts.Add(0.0F)
-
-            ' línea paralela al eje X, en Y = p
-            verts.Add(startPos) : verts.Add(p) : verts.Add(0.0F)
-            verts.Add(endPos) : verts.Add(p) : verts.Add(0.0F)
-        Next
-
-        ' asegurar borde final si no cayó exacto
-        If Math.Abs(endPos - (startPos + ((lineCountPerAxis - 1) * StepSize))) > 0.0001F Then
-            Dim p As Single = endPos
-
-            verts.Add(p) : verts.Add(startPos) : verts.Add(0.0F)
-            verts.Add(p) : verts.Add(endPos) : verts.Add(0.0F)
-
-            verts.Add(startPos) : verts.Add(p) : verts.Add(0.0F)
-            verts.Add(endPos) : verts.Add(p) : verts.Add(0.0F)
-        End If
-
-        Dim vertices As Single() = verts.ToArray()
+        ' Unit quad, counter-clockwise from above. Size and tile spacing are uniforms/model state, so
+        ' changing render-grid settings no longer reallocates GPU geometry.
+        Dim vertices As Single() = {
+            -0.5F, -0.5F, 0.0F, 0.5F, -0.5F, 0.0F, 0.5F, 0.5F, 0.0F,
+            -0.5F, -0.5F, 0.0F, 0.5F, 0.5F, 0.0F, -0.5F, 0.5F, 0.0F
+        }
         vertexCount = vertices.Length \ 3
 
         vao = GL.GenVertexArray()
@@ -6140,6 +6120,25 @@ Public Class FloorRenderer
         If vao = 0 OrElse vertexCount <= 0 Then Exit Sub
         If IsNothing(ParentControl) OrElse IsNothing(ParentControl.SharedFloorShader) Then Exit Sub
 
+        Dim cronometrando As Boolean = False
+        If MedirCostoGpu Then
+            If queryTiempo = 0 Then queryTiempo = GL.GenQuery()
+            If queryEnVuelo Then
+                Dim listo As Integer
+                GL.GetQueryObject(queryTiempo, GetQueryObjectParam.QueryResultAvailable, listo)
+                If listo <> 0 Then
+                    Dim ns As Long
+                    GL.GetQueryObject(queryTiempo, GetQueryObjectParam.QueryResult, ns)
+                    _nsCostoGpu = ns
+                    queryEnVuelo = False
+                End If
+            End If
+            If Not queryEnVuelo Then
+                GL.BeginQuery(QueryTarget.TimeElapsed, queryTiempo)
+                cronometrando = True
+            End If
+        End If
+
         Dim shader = ParentControl.SharedFloorShader
 
         shader.Use()
@@ -6147,22 +6146,49 @@ Public Class FloorRenderer
         GL.Disable(EnableCap.Blend)
         GL.Enable(EnableCap.DepthTest)
         GL.DepthMask(True)
-        GL.Disable(EnableCap.CullFace)
+        GL.Enable(EnableCap.CullFace)
+        GL.CullFace(TriangleFace.Back)
 
         Dim view As Matrix4 = camera.GetViewMatrix()
-        Dim model As Matrix4 = Matrix4.CreateTranslation(0.0F, 0.0F, CSng(offsetZ) + 0.01F)
+        Dim safeSize = Math.Max(Size, 1.0F)
+        Dim safeStep = Math.Max(StepSize, 0.001F)
+        Dim model As Matrix4 = Matrix4.CreateTranslation(0.0F, 0.0F, CSng(offsetZ)) *
+                               Matrix4.CreateScale(safeSize, safeSize, 1.0F)
+        Dim background = Config_App.Current.Setting_BackColor()
+        Dim lights = ParentControl.Model.FrameLights
 
         shader.SetMatrix4("matProjection", projection)
         shader.SetMatrix4("matView", view)
         shader.SetMatrix4("matModel", model)
-        shader.SetVector3("gridColor", New Vector3(Color.R / 255.0F, Color.G / 255.0F, Color.B / 255.0F))
+        shader.SetFloat("tileStep", safeStep)
+        shader.SetFloat("floorHalfSize", safeSize * 0.5F)
+        shader.SetVector3("backgroundColor", Shader_Base_Class.Color_to_Vector(background))
+        shader.SetVector3("backgroundLinear", Shader_Base_Class.Color_to_Vector_Linear(background))
+        shader.SetVector3("groutColorLinear", Shader_Base_Class.Color_to_Vector_Linear(Color))
+        shader.SetVector3("cameraPosition", camera.GetEyePosition())
+        shader.SetVector3("ambientSky", lights.AmbientSky)
+        shader.SetVector3("ambientGround", lights.AmbientGround)
+        Dim upLighting = lights.AmbientSky
+        For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
+            upLighting += lights.DifusoDeLuz(i) * Math.Max(lights.DirDeLuz(i).Z, 0.0F)
+        Next
+        Dim upLuma = upLighting.X * 0.2126F + upLighting.Y * 0.7152F + upLighting.Z * 0.0722F
+        shader.SetFloat("floorExposure", Math.Clamp(0.72F / Math.Max(upLuma, 0.001F), 0.55F, 1.8F))
+        For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
+            shader.SetVector3($"lightDiffuse[{i}]", lights.DifusoDeLuz(i))
+            shader.SetVector3($"lightDirection[{i}]", lights.DirDeLuz(i))
+        Next
 
         GL.BindVertexArray(vao)
-        GL.DrawArrays(PrimitiveType.Lines, 0, vertexCount)
+        GL.DrawArrays(PrimitiveType.Triangles, 0, vertexCount)
         GL.BindVertexArray(0)
 
         GL.UseProgram(0)
         GL.Enable(EnableCap.CullFace)
+        If cronometrando Then
+            GL.EndQuery(QueryTarget.TimeElapsed)
+            queryEnVuelo = True
+        End If
     End Sub
 
     Public Sub Rebuild()
@@ -6173,6 +6199,8 @@ Public Class FloorRenderer
     Public Sub Dispose() Implements IDisposable.Dispose
         If vao > 0 Then GL.DeleteVertexArray(vao) : vao = 0
         If vbo > 0 Then GL.DeleteBuffer(vbo) : vbo = 0
+        If queryTiempo > 0 Then GL.DeleteQuery(queryTiempo) : queryTiempo = 0
+        queryEnVuelo = False
         Initialized = False
         GC.SuppressFinalize(Me)
     End Sub
@@ -6241,8 +6269,3 @@ Public Class OrbitCamera
         Return FocusPosition + Forward * distance
     End Function
 End Class
-
-
-
-
-

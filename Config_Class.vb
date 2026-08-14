@@ -338,7 +338,7 @@ Public Class Config_App
     End Sub
 
     Private _color As Color = Color.DarkGray
-    Private _colorGrod As Color = Color.LightGray
+    Private _colorGrod As Color = Color.White
 
     Public Function Setting_BackColor() As Color
         If _color = Color.Empty Then _color = Color.FromName(Setting_BackColorName)
@@ -369,7 +369,7 @@ Public Class Config_App
     ' Settings_Build moved to WM_Config
     Public Property Settings_RenderGrid As RenderGridSettings = Default_RenderGrid_Settings()
     Public Shared Function Default_RenderGrid_Settings() As RenderGridSettings
-        Return New RenderGridSettings With {.Enabled = False, .Size = 400, .StepSize = 10}
+        Return New RenderGridSettings With {.Enabled = False, .Size = 400, .StepSize = 20}
     End Function
     ' Default_Build_Settings moved to WM_Config
     Public Shared Function Default_CameraSettings() As CameraSettings
