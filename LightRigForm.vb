@@ -710,10 +710,13 @@ Partial Public Class LightRigForm
         For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
             If ShadowMapMath.LuzDelRig(rigActual, i).CasteaDeVerdad() Then n += 1
         Next
-        lblShadowVram.Enabled = chkShadows.Checked
+        ' ⛔ EL NUMERO VA EN EL TITULO DEL GROUPBOX, no en una etiqueta adentro. Estuvo como `lblShadowVram`
+        ' a la derecha de la fila de calidad y se PISABA con la casilla de 16 bits: la etiqueta es AutoSize
+        ' y crece hacia la derecha ("128 MB" son ~50 px desde x=317) justo encima del control que arranca en
+        ' x=350. El titulo no compite con nada, se lee sin buscarlo, y de paso el costo queda al lado del
+        ' nombre de la feature que lo causa.
         If Not chkShadows.Checked OrElse n = 0 Then
-            lblShadowVram.Text = ""
-            ToolTip1.SetToolTip(lblShadowVram, "")
+            grpShadows.Text = "Shadows"
             Exit Sub
         End If
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
@@ -730,8 +733,8 @@ Partial Public Class LightRigForm
         Dim bytesPorArray As Double = If(chkDepth16.Checked, 2.0, 4.0)
         Dim bytesPorTexel As Double = bytesPorArray * If(conSuelo, 2.0, 1.0)
         Dim mb As Double = CDbl(lado) * lado * bytesPorTexel * n / (1024.0 * 1024.0)
-        lblShadowVram.Text = $"{mb:0} MB"
-        ToolTip1.SetToolTip(lblShadowVram,
+        grpShadows.Text = $"Shadows ({mb:0} MB)"
+        ToolTip1.SetToolTip(grpShadows,
             $"{n} shadow map(s) of {lado}x{lado} at {If(chkDepth16.Checked, 16, 24)}-bit depth" &
             If(conSuelo, $", plus {n} more for the ground catcher.", "."))
     End Sub

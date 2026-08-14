@@ -78,7 +78,6 @@ Partial Class LightRigForm
         cmbBackground = New ColorComboBox()
         grpShadows = New GroupBox()
         chkShadows = New CheckBox()
-        lblShadowVram = New Label()
         chkDepth16 = New CheckBox()
         chkGroundShadow = New CheckBox()
         lblShadowQuality = New Label()
@@ -848,7 +847,6 @@ Partial Class LightRigForm
         ' grpShadows
         ' 
         grpShadows.Controls.Add(chkShadows)
-        grpShadows.Controls.Add(lblShadowVram)
         grpShadows.Controls.Add(chkDepth16)
         grpShadows.Controls.Add(chkGroundShadow)
         grpShadows.Controls.Add(chkLightsFollowCamera)
@@ -873,14 +871,6 @@ Partial Class LightRigForm
         chkShadows.Size = New Size(98, 19)
         chkShadows.TabIndex = 0
         chkShadows.Text = "Cast shadows"
-        ' 
-        ' lblShadowVram
-        ' 
-        lblShadowVram.AutoSize = True
-        lblShadowVram.Location = New Point(317, 60)
-        lblShadowVram.Name = "lblShadowVram"
-        lblShadowVram.Size = New Size(0, 15)
-        lblShadowVram.TabIndex = 5
         ' 
         ' chkDepth16
         ' 
@@ -1544,7 +1534,6 @@ Partial Class LightRigForm
     Friend WithEvents chkCastFillL As CheckBox
     Friend WithEvents chkCastFillR As CheckBox
     Friend WithEvents chkCastBack As CheckBox
-    Friend WithEvents lblShadowVram As Label
     Friend WithEvents chkDepth16 As CheckBox
     Friend WithEvents chkGroundShadow As CheckBox
     Friend WithEvents chkLightsFollowCamera As CheckBox
