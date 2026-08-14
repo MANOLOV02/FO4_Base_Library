@@ -96,11 +96,31 @@ Public Structure PreviewLight
         Return Math.Max(d.X, Math.Max(d.Y, d.Z)) > 0.0005F
     End Function
 
-    Public Sub New(strength As Single, azimuthDeg As Single, elevationDeg As Single)
+    ''' <summary>⛔⛔ TODOS LOS CAMPOS, TODOS OBLIGATORIOS, EN UN SOLO PASO. Ninguno es opcional y ninguno
+    ''' se completa despues con un <c>With { }</c>.
+    '''
+    ''' <para>⭐ ESTO NO ES ESTILO: LA CONSTRUCCION EN DOS FASES YA COSTO EL PEOR DEFECTO DE ESTA FEATURE.
+    ''' El ctor tomaba (strength, azimut, elevacion), ponia el color en blanco por su cuenta, y el caller
+    ''' completaba <c>Color</c> y <c>CastsShadow</c> con un inicializador de objeto. El rig que pinea
+    ''' <c>Tools/ShadowGate</c> se escribio asi y se OLVIDO el <c>CastsShadow</c>: como
+    ''' <c>PreviewLight</c> es una Structure, el campo quedo en False —el default del TIPO— ninguna luz
+    ''' casteo, el arnes entero paso a medir CERO en todos sus A/B de sombra, y encima reventaba con
+    ''' NullReferenceException porque el target ni se instanciaba. Un arnes verde que no medi­a nada.
+    ''' Con el ctor completo, olvidarse un campo es un ERROR DE COMPILACION.</para>
+    '''
+    ''' <para>⚠️ Lo que NO se puede evitar en VB: <c>New PreviewLight()</c> sin argumentos existe siempre en
+    ''' una Structure y da todos los campos en cero. Por eso el ctor completo es una guia fuerte, no una
+    ''' garantia — pero elimina el caso real, que es el de alguien escribiendo una luz a proposito.</para>
+    ''' <para>El color va explicito hasta cuando es blanco: que un preset diga <c>RigColor.White</c> es
+    ''' informacion (esa luz es neutra a proposito), y que lo pusiera el ctor por su cuenta era una decision
+    ''' invisible desde el call site.</para></summary>
+    Public Sub New(strength As Single, azimuthDeg As Single, elevationDeg As Single,
+                   color As RigColor, castsShadow As Boolean)
         Me.Strength = strength
-        Me.Color = RigColor.White
+        Me.Color = color
         Me.AzimuthDeg = azimuthDeg
         Me.ElevationDeg = elevationDeg
+        Me.CastsShadow = castsShadow
     End Sub
 
     ''' <summary>Color × fuerza, en espacio perceptual (el render lineariza).</summary>
@@ -211,10 +231,10 @@ Public Structure PreviewLightRig
             New LightRigPreset("Studio",
                 "Neutral 3-point + rim. Colourless light for judging textures and materials, with the key off-axis so shaped shadows read.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.7F, azimuthDeg:=45.0F, elevationDeg:=30.0F) With {.CastsShadow = True},
-                    .FillLeft = New PreviewLight(0.35F, azimuthDeg:=300.0F, elevationDeg:=15.0F),
-                    .FillRight = New PreviewLight(0.2F, azimuthDeg:=30.0F, elevationDeg:=0.0F),
-                    .BackLight = New PreviewLight(0.3F, azimuthDeg:=225.0F, elevationDeg:=30.0F),
+                    .KeyLight = New PreviewLight(0.7F, azimuthDeg:=45.0F, elevationDeg:=30.0F, color:=RigColor.White, castsShadow:=True),
+                    .FillLeft = New PreviewLight(0.35F, azimuthDeg:=300.0F, elevationDeg:=15.0F, color:=RigColor.White, castsShadow:=False),
+                    .FillRight = New PreviewLight(0.2F, azimuthDeg:=30.0F, elevationDeg:=0.0F, color:=RigColor.White, castsShadow:=False),
+                    .BackLight = New PreviewLight(0.3F, azimuthDeg:=225.0F, elevationDeg:=30.0F, color:=RigColor.White, castsShadow:=False),
                     .AmbientIntensity = 0.92F,
                     .AmbientGroundLevel = 0.45F,
                     .AmbientSkyColor = RigColor.White,
@@ -222,10 +242,10 @@ Public Structure PreviewLightRig
             New LightRigPreset("Sunny day",
                 "Hard high sun from the upper left, blue sky as fill and a warm bounce off the ground. The most directional set: sunlit side vs shaded side is a wide ratio.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.9F, azimuthDeg:=45.0F, elevationDeg:=60.0F) With {.Color = New RigColor(1.0F, 0.96F, 0.9F), .CastsShadow = True},
-                    .FillLeft = New PreviewLight(0.4F, azimuthDeg:=300.0F, elevationDeg:=30.0F) With {.Color = New RigColor(0.82F, 0.88F, 1.0F)},
-                    .FillRight = New PreviewLight(0.3F, azimuthDeg:=30.0F, elevationDeg:=-15.0F) With {.Color = New RigColor(0.82F, 0.88F, 1.0F)},
-                    .BackLight = New PreviewLight(0.35F, azimuthDeg:=225.0F, elevationDeg:=45.0F) With {.Color = New RigColor(1.0F, 0.97F, 0.92F)},
+                    .KeyLight = New PreviewLight(0.9F, azimuthDeg:=45.0F, elevationDeg:=60.0F, color:=New RigColor(1.0F, 0.96F, 0.9F), castsShadow:=True),
+                    .FillLeft = New PreviewLight(0.4F, azimuthDeg:=300.0F, elevationDeg:=30.0F, color:=New RigColor(0.82F, 0.88F, 1.0F), castsShadow:=False),
+                    .FillRight = New PreviewLight(0.3F, azimuthDeg:=30.0F, elevationDeg:=-15.0F, color:=New RigColor(0.82F, 0.88F, 1.0F), castsShadow:=False),
+                    .BackLight = New PreviewLight(0.35F, azimuthDeg:=225.0F, elevationDeg:=45.0F, color:=New RigColor(1.0F, 0.97F, 0.92F), castsShadow:=False),
                     .AmbientIntensity = 0.62F,
                     .AmbientGroundLevel = 0.6F,
                     .AmbientSkyColor = New RigColor(0.78F, 0.86F, 1.0F),
@@ -233,10 +253,10 @@ Public Structure PreviewLightRig
             New LightRigPreset("Overcast",
                 "Cloudy dome: a high, weak key with the ambient doing most of the work, so shadows stay faint. Volume comes from the sky-to-ground gradient, not from shape.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.45F, azimuthDeg:=45.0F, elevationDeg:=75.0F) With {.Color = New RigColor(0.97F, 0.98F, 1.0F), .CastsShadow = True},
-                    .FillLeft = New PreviewLight(0.35F, azimuthDeg:=315.0F, elevationDeg:=15.0F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
-                    .FillRight = New PreviewLight(0.35F, azimuthDeg:=45.0F, elevationDeg:=15.0F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
-                    .BackLight = New PreviewLight(0.2F, azimuthDeg:=180.0F, elevationDeg:=30.0F) With {.Color = New RigColor(0.95F, 0.97F, 1.0F)},
+                    .KeyLight = New PreviewLight(0.45F, azimuthDeg:=45.0F, elevationDeg:=75.0F, color:=New RigColor(0.97F, 0.98F, 1.0F), castsShadow:=True),
+                    .FillLeft = New PreviewLight(0.35F, azimuthDeg:=315.0F, elevationDeg:=15.0F, color:=New RigColor(0.95F, 0.97F, 1.0F), castsShadow:=False),
+                    .FillRight = New PreviewLight(0.35F, azimuthDeg:=45.0F, elevationDeg:=15.0F, color:=New RigColor(0.95F, 0.97F, 1.0F), castsShadow:=False),
+                    .BackLight = New PreviewLight(0.2F, azimuthDeg:=180.0F, elevationDeg:=30.0F, color:=New RigColor(0.95F, 0.97F, 1.0F), castsShadow:=False),
                     .AmbientIntensity = 1.05F,
                     .AmbientGroundLevel = 0.55F,
                     .AmbientSkyColor = New RigColor(0.9F, 0.94F, 1.0F),
@@ -244,10 +264,10 @@ Public Structure PreviewLightRig
             New LightRigPreset("Portrait",
                 "Studio portrait: 3/4 key from the RIGHT (opposite side to Sunny day), high enough to shape the cheekbone, 2:1 fill, off-axis hair kicker and a dark ground so the body falls into shadow.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(0.9F, azimuthDeg:=315.0F, elevationDeg:=45.0F) With {.Color = New RigColor(1.0F, 0.97F, 0.93F), .CastsShadow = True},
-                    .FillLeft = New PreviewLight(0.5F, azimuthDeg:=45.0F, elevationDeg:=15.0F) With {.Color = New RigColor(0.94F, 0.96F, 1.0F)},
-                    .FillRight = New PreviewLight(0.25F, azimuthDeg:=285.0F, elevationDeg:=0.0F) With {.Color = New RigColor(1.0F, 0.98F, 0.95F)},
-                    .BackLight = New PreviewLight(0.45F, azimuthDeg:=135.0F, elevationDeg:=45.0F) With {.Color = New RigColor(1.0F, 0.95F, 0.88F)},
+                    .KeyLight = New PreviewLight(0.9F, azimuthDeg:=315.0F, elevationDeg:=45.0F, color:=New RigColor(1.0F, 0.97F, 0.93F), castsShadow:=True),
+                    .FillLeft = New PreviewLight(0.5F, azimuthDeg:=45.0F, elevationDeg:=15.0F, color:=New RigColor(0.94F, 0.96F, 1.0F), castsShadow:=False),
+                    .FillRight = New PreviewLight(0.25F, azimuthDeg:=285.0F, elevationDeg:=0.0F, color:=New RigColor(1.0F, 0.98F, 0.95F), castsShadow:=False),
+                    .BackLight = New PreviewLight(0.45F, azimuthDeg:=135.0F, elevationDeg:=45.0F, color:=New RigColor(1.0F, 0.95F, 0.88F), castsShadow:=False),
                     .AmbientIntensity = 0.58F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.96F, 0.97F, 1.0F),
@@ -255,10 +275,10 @@ Public Structure PreviewLightRig
             New LightRigPreset("Dungeon",
                 "A NEAR wall torch low on the left plus a far weaker one behind on the right (the asymmetric distance), with cold moonlight through a grate. Only the near torch is strongly warm; everything else is cool, so the contrast is one of TEMPERATURE instead of dyeing the whole model orange.",
                 New PreviewLightRig With {
-                    .KeyLight = New PreviewLight(1.0F, azimuthDeg:=60.0F, elevationDeg:=15.0F) With {.Color = New RigColor(1.0F, 0.84F, 0.66F), .CastsShadow = True},
-                    .FillLeft = New PreviewLight(0.45F, azimuthDeg:=240.0F, elevationDeg:=30.0F) With {.Color = New RigColor(1.0F, 0.9F, 0.8F)},
-                    .FillRight = New PreviewLight(0.3F, azimuthDeg:=30.0F, elevationDeg:=-30.0F) With {.Color = New RigColor(1.0F, 0.88F, 0.74F)},
-                    .BackLight = New PreviewLight(0.4F, azimuthDeg:=210.0F, elevationDeg:=45.0F) With {.Color = New RigColor(0.72F, 0.8F, 1.0F)},
+                    .KeyLight = New PreviewLight(1.0F, azimuthDeg:=60.0F, elevationDeg:=15.0F, color:=New RigColor(1.0F, 0.84F, 0.66F), castsShadow:=True),
+                    .FillLeft = New PreviewLight(0.45F, azimuthDeg:=240.0F, elevationDeg:=30.0F, color:=New RigColor(1.0F, 0.9F, 0.8F), castsShadow:=False),
+                    .FillRight = New PreviewLight(0.3F, azimuthDeg:=30.0F, elevationDeg:=-30.0F, color:=New RigColor(1.0F, 0.88F, 0.74F), castsShadow:=False),
+                    .BackLight = New PreviewLight(0.4F, azimuthDeg:=210.0F, elevationDeg:=45.0F, color:=New RigColor(0.72F, 0.8F, 1.0F), castsShadow:=False),
                     .AmbientIntensity = 0.56F,
                     .AmbientGroundLevel = 0.35F,
                     .AmbientSkyColor = New RigColor(0.68F, 0.76F, 0.95F),

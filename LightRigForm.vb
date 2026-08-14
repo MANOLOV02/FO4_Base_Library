@@ -832,11 +832,13 @@ Partial Public Class LightRigForm
     Private Shared Function LeerLuz(strength As TinySliderTextBox, swatch As Button,
                                     azimuth As TinySliderTextBox, elevation As TinySliderTextBox,
                                     castea As CheckBox, actual As PreviewLight) As PreviewLight
+        ' Todos los campos por el ctor: sin `With { }` que complete a medias. Ver su doc — asi se olvido
+        ' un CastsShadow en el arnes y todos sus A/B de sombra pasaron a medir cero.
         Return New PreviewLight(CSng(strength.Value),
                                 azimuthDeg:=AnguloDesdeNud(azimuth, actual.AzimuthDeg),
-                                elevationDeg:=AnguloDesdeNud(elevation, actual.ElevationDeg)) With {
-            .Color = RigColor.FromColor(swatch.BackColor),
-            .CastsShadow = castea.Checked}
+                                elevationDeg:=AnguloDesdeNud(elevation, actual.ElevationDeg),
+                                color:=RigColor.FromColor(swatch.BackColor),
+                                castsShadow:=castea.Checked)
     End Function
 
     ''' <summary>Carga un rig completo en la UI sin disparar un evento por control (un solo
