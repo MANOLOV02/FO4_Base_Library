@@ -1640,6 +1640,60 @@ Public Class PreviewControl
                                       End Sub
 
         menu.Items.Add(toggleFloor)
+
+        Dim floorShadowRig = Config_App.Current.ActiveLights()
+        Dim toggleFloorShadows As New ToolStripMenuItem("Cast Floor Shadows") With {
+            .Checked = floorShadowRig.ShadowOnGround,
+            .CheckOnClick = True
+        }
+        AddHandler toggleFloorShadows.Click, Sub()
+                                                 Dim currentRig = Config_App.Current.ActiveLights()
+                                                 currentRig.ShadowOnGround = toggleFloorShadows.Checked
+                                                 Config_App.Current.SetActiveLights(currentRig)
+                                                 UpdateRequired = True
+                                             End Sub
+        menu.Items.Add(toggleFloorShadows)
+        menu.Items.Add(New ToolStripSeparator())
+
+        Dim shadowSettings = Config_App.Current.ActiveShadows().Sanitized()
+        Dim toggleShadows As New ToolStripMenuItem("Cast Shadows") With {
+            .Checked = shadowSettings.Enabled,
+            .CheckOnClick = True
+        }
+        AddHandler toggleShadows.Click, Sub()
+                                            Dim current = Config_App.Current.ActiveShadows().Sanitized()
+                                            current.Enabled = toggleShadows.Checked
+                                            Config_App.Current.SetActiveShadows(current)
+                                            UpdateRequired = True
+                                        End Sub
+        menu.Items.Add(toggleShadows)
+
+        Dim lightsFollowCamera As New ToolStripMenuItem("Lights Follow Camera") With {
+            .Checked = Config_App.Current.Setting_LightsFollowCamera,
+            .CheckOnClick = True
+        }
+        AddHandler lightsFollowCamera.Click, Sub()
+                                                 Config_App.Current.Setting_LightsFollowCamera = lightsFollowCamera.Checked
+                                                 UpdateRequired = True
+                                             End Sub
+        menu.Items.Add(lightsFollowCamera)
+
+        Dim presetsMenu As New ToolStripMenuItem("Light Preset")
+        Dim activeRig = Config_App.Current.ActiveLights()
+        For Each preset In PreviewLightRig.Presets()
+            ' Copia local deliberada: el handler sobrevive a esta iteracion del For Each.
+            Dim selectedPreset = preset
+            Dim presetItem As New ToolStripMenuItem(selectedPreset.Name) With {
+                .Checked = LightRigForm.RigCoincide(selectedPreset.Rig, activeRig),
+                .ToolTipText = selectedPreset.Description
+            }
+            AddHandler presetItem.Click, Sub()
+                                             Config_App.Current.SetActiveLights(selectedPreset.Rig)
+                                             UpdateRequired = True
+                                         End Sub
+            presetsMenu.DropDownItems.Add(presetItem)
+        Next
+        menu.Items.Add(presetsMenu)
         menu.Items.Add(New ToolStripSeparator())
         Dim toggleSkinning As New ToolStripMenuItem("GPU Skinning") With {
             .Checked = Config_App.Current.Setting_GPUSkinning,

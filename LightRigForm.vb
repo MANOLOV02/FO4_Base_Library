@@ -197,7 +197,9 @@ Partial Public Class LightRigForm
                a.CastsShadow = b.CastsShadow
     End Function
 
-    Private Shared Function RigCoincide(a As PreviewLightRig, b As PreviewLightRig) As Boolean
+    ' Compartida con el menu contextual del preview: los dos lugares deben decidir "preset activo"
+    ' con exactamente la misma tolerancia (incluida la cuantizacion de colores de la UI).
+    Friend Shared Function RigCoincide(a As PreviewLightRig, b As PreviewLightRig) As Boolean
         Return LuzCoincide(a.KeyLight, b.KeyLight) AndAlso LuzCoincide(a.FillLeft, b.FillLeft) AndAlso
                LuzCoincide(a.FillRight, b.FillRight) AndAlso LuzCoincide(a.BackLight, b.BackLight) AndAlso
                CasiIgual(a.AmbientIntensity, b.AmbientIntensity) AndAlso
