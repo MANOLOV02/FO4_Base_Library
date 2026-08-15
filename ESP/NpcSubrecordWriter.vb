@@ -116,7 +116,7 @@ Public Module NpcSubrecordWriter
                 If npc.HasCrimeFaction Then EmitFormId(bw, "CRIF", npc.CrimeFactionFormID, remap)
                 ' ⚠️ CHECK AUTOMÁTICO — invariante del par (HasHeadTexture, HeadTextureFormID).
                 ' Este gate emite FTST mirando SÓLO la bandera (a diferencia del sink de FormIDs en
-                ' SaveNpcEspWriter.vb:951, que además exige <> 0), así que un par incoherente
+                ' SaveNpcEspWriter.vb:975, que además exige <> 0), así que un par incoherente
                 ' Has=True + valor=0 escribe literalmente FTST=0 en el plugin y encima no registra el
                 ' FormID en el sink. Ese par sólo puede nacer de que alguien resuelva la bandera por
                 ' un lado y el valor por otro — el bug que teníamos en NpcRecordOverlay, donde el TXST
@@ -125,6 +125,11 @@ Public Module NpcSubrecordWriter
                 ' MISMO valor, así que esto no debería dispararse nunca; si se dispara, volvió a haber
                 ' dos escrituras al mismo campo. NO se cambia el byte emitido: un FTST=0 heredado de un
                 ' record de origen (referencia sin resolver) debe seguir haciendo round-trip verbatim.
+                '
+                ' ⛔ El CLEAR EXPLÍCITO del editor (SseHeadTextureFormIDOverride = 0, "Clear (no FTST)") NO
+                ' dispara esto y NO debe: el overlay lo resuelve como (Has=False, valor=0) y este gate exige
+                ' Has=True. El probe sigue siendo útil justamente por el clear — vigila la implementación
+                ' ingenua ("emitir FTST=0" en vez de omitir el subrecord), que es el error natural al agregarlo.
                 If npc.HasHeadTexture AndAlso npc.HeadTextureFormID = 0UI Then
                     Dim edidLog = npc.EditorID
                     Dim fidLog = npc.FormID
