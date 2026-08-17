@@ -162,6 +162,79 @@ Public Class Nifcontent_Class_Manolo
     ''' <para>⛔ <c>And Not</c>, NUNCA asignar un literal: el valor normal lleva otros bits REALES —
     ''' <c>0x8000E</c> (NoAnimSyncS), <c>SaveExtGeom</c>, <c>MeshLOD_FO4</c>, <c>NoDecals</c>…
     ''' Pisar el campo entero borraría flags que nadie pidió tocar.</para></summary>
+    ''' <summary>Quita el shader de la shape y borra su CLAUSURA huérfana. Es la operación "Make helper"
+    ''' del editor de WM, pero vive ACÁ porque es cirugía sobre el grafo de bloques del NIF, no UI —
+    ''' y porque así un probe puede ejercitar el CÓDIGO REAL en vez de una copia.
+    ''' <para>⛔ NO se usa <c>RemoveUnreferencedBlocks</c>: es un barrido de ARCHIVO ENTERO que se lleva
+    ''' puestos los huérfanos PREEXISTENTES del NIF del usuario (un <c>NiStringExtraData</c> suelto, un
+    ''' alpha property desenganchado, controladores muertos — habituales en meshes editadas a mano).
+    ''' Esto es el mismo barrido, acotado al subárbol del shader.</para>
+    ''' <para>⛔ TODO POR OBJETO, nunca por índice: <c>RemoveBlock</c> hace <c>Blocks.RemoveAt</c> ANTES
+    ''' del fixup y ahí decrementa todo <c>Index &gt; index</c>, así que un índice capturado a través de
+    ''' un RemoveBlock apunta a OTRO bloque.</para>
+    ''' <para>⛔ Se usa <c>shader.References</c> como fuente en vez de enumerar campos a mano: ya trae
+    ''' texture set + controller + extraData + extraDataList, y el controlador además ENCADENA
+    ''' (NextController → interpolador → NiFloatData). Una lista escrita a mano envejece mal.</para>
+    ''' <para>⚠️ Un CICLO no se borra (cada miembro se ve referenciado). Mismo comportamiento que
+    ''' <c>RemoveUnreferencedBlocks</c>, o sea sin regresión.</para>
+    ''' <para>Devuelve la cantidad de bloques borrados (shader incluido). 0 = no había shader.</para></summary>
+    Public Function RemoveShaderAndOrphanClosure(shape As INiShape) As Integer
+        Dim bs = TryCast(shape, NiflySharp.Blocks.BSTriShape)
+        If bs Is Nothing Then Throw New NotSupportedException("RemoveShaderAndOrphanClosure requires a BSTriShape family shape.")
+        Dim shader = TryCast(GetShader(shape), NiObject)
+
+        ' 1) resolver a OBJETOS todo lo que el shader referencia, ANTES de borrar nada: después no hay
+        '    cómo navegar del shape al shader ni del shader a su clausura.
+        Dim pendientes As New List(Of NiObject)
+        If shader IsNot Nothing Then
+            For Each r In shader.References
+                If r Is Nothing OrElse r.IsEmpty() Then Continue For
+                Dim b = GetBlock(Of NiObject)(r)
+                If b IsNot Nothing Then pendientes.Add(b)
+            Next
+        End If
+
+        ' 2) soltar el ref del shape. .Clear() deja Index = -1, que es EXACTAMENTE el estado que produce
+        '    leer del disco un NIF con -1; con Nothing el ref sale de References y el Clone de la shape
+        '    copia null, un estado que ningún NIF leído produce.
+        bs.ShaderPropertyRef.Clear()
+
+        ' 3) el shader, y después su clausura
+        Dim borrados As Integer = 0
+        If shader IsNot Nothing AndAlso Not IsBlockReferenced(shader) Then
+            If RemoveBlock(shader) Then borrados += 1
+        End If
+        borrados += BorrarClausuraHuerfana(pendientes)
+        Return borrados
+    End Function
+
+    ''' <summary>Worklist del borrado de clausura. ⛔ DEDUPE POR REFERENCIA: un bloque puede estar
+    ''' encolado dos veces (un <c>ExtraDataList</c> que liste el mismo <c>NiExtraData</c> dos veces es
+    ''' legal). En la segunda visita ya no está en el archivo, <c>IsBlockReferenced</c> devuelve False, y
+    ''' leer sus <c>References</c> resolvería ÍNDICES PODRIDOS al bloque que hoy ocupa esa ranura — la
+    ''' misma corrupción que evita el "todo por objeto". Termina siempre: sólo se encola tras un
+    ''' <c>RemoveBlock</c> exitoso, y los borrados están acotados por el <c>Blocks.Count</c> inicial.</summary>
+    Private Function BorrarClausuraHuerfana(pendientes As List(Of NiObject)) As Integer
+        Dim vistos As New HashSet(Of NiObject)(System.Collections.Generic.ReferenceEqualityComparer.Instance)
+        Dim borrados As Integer = 0
+        Dim i As Integer = 0
+        While i < pendientes.Count
+            Dim b = pendientes(i)
+            i += 1
+            If b Is Nothing OrElse Not vistos.Add(b) Then Continue While
+            Dim idx As Integer
+            If Not GetBlockIndex(b, idx) Then Continue While      ' ya no está en el archivo
+            If IsBlockReferenced(b) Then Continue While
+            For Each r In b.References                             ' capturar ANTES de borrar
+                If r Is Nothing OrElse r.IsEmpty() Then Continue For
+                Dim hijo = GetBlock(Of NiObject)(r)
+                If hijo IsNot Nothing Then pendientes.Add(hijo)
+            Next
+            If RemoveBlock(b) Then borrados += 1
+        End While
+        Return borrados
+    End Function
+
     Public Sub ClearShapeHidden(shape As INiShape)
         Dim avo = TryCast(shape, NiAVObject)
         If avo Is Nothing Then Exit Sub
