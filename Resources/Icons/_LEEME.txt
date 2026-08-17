@@ -1,0 +1,63 @@
+ICONOS DE LA UI — EL LUGAR ÚNICO
+================================
+Acá viven los iconos de Wardrobe_Manager, FO4_NPC_Manager y Ba2_Bsa_Manager. Una carpeta por medida
+en píxeles: 16\ (45 iconos) y 24\ (12 iconos).
+
+⛔ Estos PNG NO se compilan ni se incrustan en el DLL. Son la FUENTE desde la cual el diseñador de
+cada formulario importa al ImageList. El que los lleva al binario es el .resx de cada formulario.
+
+
+PARA USARLOS EN UN FORMULARIO
+-----------------------------
+1. Arrastrá un ImageList del cuadro de herramientas al formulario.
+2. Poné ImageSize en 16x16 (o 24x24) ANTES de agregar imágenes: cambiarlo después VACÍA la colección.
+   ColorDepth en Depth32Bit, si no se pierde el alfa parcial de los bordes.
+3. En la propiedad Images, botón "...", Agregar, y elegí los PNG de la carpeta de esa medida.
+4. En cada Button / Label / TabPage: ImageList = ImageList1, y elegí el ImageKey del desplegable
+   (que muestra las miniaturas).
+
+Se ve en el lienzo y el selector muestra los dibujos, que es el camino nativo del diseñador.
+
+
+PARA AGREGAR UN ICONO NUEVO
+---------------------------
+Copiá el PNG en la carpeta de su medida y listo: ya está disponible para importar desde las tres
+apps. Convención de nombre: PascalCase sin guiones ni espacios (FileSaveAs.png, LayerVisibleOn.png).
+
+
+DE DÓNDE SALIERON
+-----------------
+Los 45 de 16\ son los que tenían los tres ImageList de Wardrobe_Manager; los 12 de 24\ son los del
+ImageList de Ba2_Bsa_Manager. Cuatro existían dos veces con el mismo nombre y bytes distintos
+(agt_action_fail, agt_action_success, attach, agt_update_drivers): venían de ImageListStreamer
+distintos y diferían hasta en 96 de 256 píxeles, con delta RGB máximo 33 y el alfa idéntico. Quedó
+una sola copia de cada uno.
+
+
+⚠️ SOBRE EL WARNING MSB3825
+---------------------------
+Al meter imágenes en un .resx el build avisa que el recurso "se deserializará a través de
+BinaryFormatter, que se quitó de .NET 9". ES FALSO, y ya lo mandó a nadie por el camino equivocado
+una vez. Bitmap e ImageListStreamer están en la lista blanca explícita de tipos que WinForms lee sin
+BinaryFormatter. Medido 2026-08-17 con el blob real del diseñador: carga idéntico en .NET 8.0.30,
+9.0.19 y 10.0.9. Microsoft ya está sacando el warning para .NET 9+.
+Se apaga con <GenerateResourceWarnOnBinaryFormatterUse>false</GenerateResourceWarnOnBinaryFormatterUse>.
+https://learn.microsoft.com/dotnet/standard/serialization/binaryformatter-migration-guide/winforms-applications
+
+Lo que SÍ sigue abierto (dotnet/winforms#12310) es que las imágenes agregadas POR CÓDIGO a un
+ImageList no se ven en el diseñador. En runtime sí. Por eso conviene agregarlas desde el diseñador.
+
+
+⚠️ SI ALGÚN DÍA VUELVE EL ERROR MSB3821
+---------------------------------------
+"...o bien tiene la marca de la Web", en los .resx. No hay marca de la Web y Desbloquear no sirve.
+El gate de GenerateResource es un AND: zona de seguridad del archivo >= Internet Y el resx tiene un
+nodo mimetype. En agosto de 2026 todo lo que colgaba de C:\Users\jvare\OneDrive mapeaba a zona 4 por
+el sync root, y cuatro días después ya no. La zona es del ENTORNO y cambia sola.
+
+MEDIRLA antes de rediseñar nada, en Windows PowerShell 5.1:
+    [System.Security.Policy.Zone]::CreateFromUrl("file:///C:/ruta/al/Form.resx").SecurityZone
+
+Si volviera a dar Restricted, la tarea GenerateResource NO tiene compuerta (revisadas sus 40
+propiedades públicas): las salidas son sacar los nodos mimetype de los resx o sacar el árbol de
+OneDrive. Una junction desde D:\ no alcanza, urlmon resuelve el reparse point.

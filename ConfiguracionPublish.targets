@@ -1,0 +1,72 @@
+<Project>
+
+  <!-- ============================================================================================
+       CONFIGURACIÓN "Publish": es Release, con su propia carpeta de salida.
+
+       PARA QUÉ. Separar lo que se distribuye de lo que se compila para probar. Los CopyPublish.bat de
+       F:\Fallout 4 Mods (Manolo)\ copian de bin\<plataforma>\Publish\, así que un Release cualquiera ya
+       no puede colarse en el paquete que sube a Nexus. Y el chequeo de iconos duplicados corta el build
+       en Publish, mientras que en Release sólo avisa (ver IconosCompartidos.targets).
+
+       ⛔ POR QUÉ ESTE ARCHIVO EXISTE, Y NO ALCANZA CON AGREGAR "Publish" A <Configurations>.
+       Una configuración nueva NO HEREDA NADA de Release. El SDK condiciona sus defaults al nombre
+       literal "Release". MEDIDO 2026-08-17 con -getProperty, sobre FO4_Base_Library:
+
+         propiedad              Debug     Release   Publish (sin este archivo)
+         Optimize               false     true      <VACIO>   <- binario SIN OPTIMIZAR
+         DefineTrace            true      true      <VACIO>
+         FinalDefineConstants   DEBUG,    TRACE,    (solo PUBLISH=-1: sin TRACE)
+                                TRACE     RELEASE
+         OutputPath             bin\..\Debug  bin\..\Release  bin\..\Publish   <- esto SI sale solo
+
+       O sea que sin esto se distribuiría un binario sin optimizar, y en verde. Es exactamente el modo
+       de falla que documenta 00-reglas-epistemica: nada falla, sólo sale peor.
+
+       Lo que NO se replica de Release a propósito: la constante RELEASE=-1 (VB define el nombre de la
+       config, así que en Publish queda PUBLISH=-1). Verificado que ningún `#If` del árbol la usa. Los
+       47 bloques `#If DEBUG` quedan apagados igual que en Release, que es lo que importa.
+
+       ⛔ LOS PROYECTOS QUE NO SON NUESTROS SE MAPEAN A Release.
+       DirectXTexWrapper.vcxproj sólo declara Debug|Win32, Debug|x64, Release|Win32 y Release|x64:
+       pedirle "Publish" falla. Y MaterialLib / NiflySharp son forks de terceros que no queremos tocar
+       (ver 00-reglas-arbol-compartido-no-pisar). A los cuatro se les fija la configuración por
+       SetConfiguration, igual que DirectXTexWrapper.targets hace con SetPlatform.
+       ============================================================================================ -->
+
+  <PropertyGroup Condition="'$(Configuration)'=='Publish'">
+    <Optimize>true</Optimize>
+    <DefineTrace>true</DefineTrace>
+    <DefineDebug>false</DefineDebug>
+    <DebugSymbols>false</DebugSymbols>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <!-- Guardia. Copiar propiedades a mano se desincroniza en silencio: si alguien saca el PropertyGroup
+       de arriba, o un SDK futuro cambia un default, esto CORTA en vez de distribuir un binario sin
+       optimizar. Control negativo comprobado: sacando <Optimize> del PropertyGroup, este Error salta. -->
+  <Target Name="VerificarQuePublishEsRelease" Condition="'$(Configuration)'=='Publish'" BeforeTargets="CoreCompile">
+    <Error Condition="'$(Optimize)' != 'true'"
+           Text="La configuracion Publish quedo con Optimize='$(Optimize)' en $(MSBuildProjectFile). Publish es lo que se distribuye y tiene que compilar optimizado como Release. Ver FO4_Base_Library\ConfiguracionPublish.targets." />
+    <Error Condition="'$(DefineDebug)' == 'true'"
+           Text="La configuracion Publish quedo con DefineDebug=true en $(MSBuildProjectFile): se distribuiria con los bloques #If DEBUG ACTIVOS. Ver FO4_Base_Library\ConfiguracionPublish.targets." />
+  </Target>
+
+  <!-- ⛔ El DependsOnTargets NO es decorativo, por el mismo motivo que en DirectXTexWrapper.targets: el
+       SDK inyecta los ProjectReference transitivos en IncludeTransitiveProjectReferences, que corre
+       DESPUES de AssignProjectConfiguration. Sin el, a las referencias transitivas no les llega el
+       mapeo y se les pide Publish igual. -->
+  <Target Name="MapearConfiguracionEnPublish"
+          Condition="'$(Configuration)'=='Publish'"
+          BeforeTargets="AssignProjectConfiguration"
+          DependsOnTargets="IncludeTransitiveProjectReferences">
+    <ItemGroup>
+      <ProjectReference Condition="'%(Filename)%(Extension)'=='DirectXTexWrapper.vcxproj' Or
+                                   '%(Filename)%(Extension)'=='MaterialLib.csproj' Or
+                                   '%(Filename)%(Extension)'=='NiflySharp.csproj' Or
+                                   '%(Filename)%(Extension)'=='NiflySharp.Generator.csproj'">
+        <SetConfiguration>Configuration=Release</SetConfiguration>
+      </ProjectReference>
+    </ItemGroup>
+  </Target>
+
+</Project>

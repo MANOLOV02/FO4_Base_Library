@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Library</OutputType>
+    <Configurations>Debug;Release;Publish</Configurations>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Platforms>x86;x64</Platforms>
     <RootNamespace>FO4_Base_Library</RootNamespace>
@@ -75,6 +76,27 @@
     <Import Include="System.Windows.Forms" />
   </ItemGroup>
 
+  <!-- El MSB3825 de IconFormBase.resx se apaga a proposito. Dice que el recurso "se deserializara a
+       traves de BinaryFormatter, que se quito de .NET 9", y es FALSO: Bitmap e ImageListStreamer
+       estan en la lista blanca de tipos que WinForms lee sin BinaryFormatter. Medido 2026-08-17 con
+       el blob real del disenador: carga identico en .NET 8.0.30, 9.0.19 y 10.0.9. Microsoft ya esta
+       sacando el warning para .NET 9+. Ver Resources\Icons\_LEEME.txt. -->
+  <PropertyGroup>
+    <GenerateResourceWarnOnBinaryFormatterUse>false</GenerateResourceWarnOnBinaryFormatterUse>
+  </PropertyGroup>
+
+  <!-- ============================ ICONOS COMPARTIDOS ============================
+       Resources\Icons\<medida>\<Nombre>.png es EL LUGAR UNICO donde viven los iconos de la UI de
+       las tres apps. NO se compilan ni se incrustan: son la fuente desde la cual el disenador de
+       cada formulario importa al ImageList (boton "..." de la propiedad Images). Por eso van como
+       None y no como EmbeddedResource — el que los lleva al binario es el .resx de cada form.
+
+       Para agregar un icono: se copia el PNG en la carpeta de su medida y ya esta disponible para
+       importar desde cualquiera de las tres apps. Ver Resources\Icons\_LEEME.txt. -->
+  <ItemGroup>
+    <None Include="Resources\Icons\**\*.png" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="ICSharpCode.SharpZipLib.dll" Version="0.85.4.369" />
     <PackageReference Include="K4os.Compression.LZ4.Streams" Version="1.3.8" />
@@ -91,4 +113,10 @@
   <!-- Fija la plataforma del wrapper NATIVO. Va en LOS SEIS proyectos, no solo en los dos que lo
        referencian de verdad: el SDK inyecta el ProjectReference transitivo sin la metadata. Ver el .targets. -->
   <Import Project="..\..\DirectXTextWrapper\DirectXTexWrapper.targets" />
+  <!-- Avisa si un formulario quedo con COPIA PROPIA de los iconos compartidos. Solo lee; no
+       modifica nada. Warning en Debug, error en Release. Ver el comentario del .targets. -->
+  <Import Project="IconosCompartidos.targets" />
+  <!-- La configuracion Publish: es Release con carpeta propia. Sin esto compilaria SIN
+       OPTIMIZAR, en verde. Ver el comentario del .targets. -->
+  <Import Project="ConfiguracionPublish.targets" />
 </Project>

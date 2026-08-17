@@ -1,0 +1,72 @@
+﻿<Project>
+
+  <!-- ============================================================================================
+       CHEQUEO DE ICONOS DUPLICADOS.  Sólo LEE: no modifica ningún archivo, nunca.
+
+       QUÉ DETECTA
+       Los iconos de la UI viven una sola vez, en el .resx de FO4_Base_Library\IconFormBase, y los
+       formularios los reciben por herencia (ver el remarks de IconFormBase.vb). Pero cada vez que se
+       abre y se GUARDA un formulario derivado en el diseñador de Visual Studio, VS le re-serializa
+       los ImageList heredados adentro: le copia los 57 iconos a su propio .resx (~75 KB) y le agrega
+       las 57 líneas SetKeyName al .Designer.vb.
+
+       POR QUÉ IMPORTA, Y NO ES POR EL TAMAÑO
+       Los 75 KB son ruido en un DLL de 3 MB. El problema es que esa copia QUEDA CONGELADA: el día
+       que se cambie un PNG de Resources\Icons y se reimporte en IconFormBase, los formularios que
+       tienen copia propia siguen mostrando el dibujo viejo. Sin error, sin warning, sin nada. Este
+       target existe para que eso deje de ser invisible.
+
+       POR QUÉ ESTO AVISA Y NO CORRIGE
+       Corregir implica editar el .Designer.vb y el .resx, o sea tocar fuentes durante el build: pisa
+       archivos que VS tiene abiertos (justo se compila después de diseñar), rompe la compilación
+       incremental porque el build modificaría sus propias entradas, y deja el árbol sucio con
+       cambios que nadie hizo. Se corrige a mano, con el formulario cerrado.
+
+       ⛔ Y NO SE PUEDE ARREGLAR SÓLO SACANDO EL .resx. Medido 2026-08-17: `ImageList.ImageStream =
+       Nothing` VACÍA la colección (45 imágenes -> 0) y el SetKeyName siguiente tira
+       IndexOutOfRangeException. Un limpiador que tocara sólo el resx dejaría la app crasheando.
+
+       CÓMO SE CORRIGE cuando esto avisa
+       1. Cerrar el formulario en Visual Studio.
+       2. En su .Designer.vb, borrar los bloques  ' IconsSmall  y  ' IconsLarge  enteros (la línea
+          ImageStream = CType(...) y las 57 SetKeyName). ⛔ NO tocar las líneas
+          `<control>.ImageList = IconsSmall` ni `<control>.ImageKey = "..."`: ese es el cableado real.
+       3. En su .resx, borrar los dos nodos <data name="IconsSmall.ImageStream"> e "IconsLarge".
+       Los <metadata ... TrayLocation> se pueden dejar: son System.Drawing.Point, inofensivos.
+       ============================================================================================ -->
+
+  <PropertyGroup>
+    <!-- Corta SOLO en Publish, que es lo que se distribuye (ver ConfiguracionPublish.targets). En
+         Debug y en Release avisa nomás, para no estorbar mientras se diseña ni al probar.
+         Se puede forzar con -p:IconosDuplicadosEsError=true|false -->
+    <IconosDuplicadosEsError Condition="'$(IconosDuplicadosEsError)' == '' And '$(Configuration)' == 'Publish'">true</IconosDuplicadosEsError>
+    <IconosDuplicadosEsError Condition="'$(IconosDuplicadosEsError)' == ''">false</IconosDuplicadosEsError>
+  </PropertyGroup>
+
+  <Target Name="ChequearIconosDuplicados" AfterTargets="Build" Condition="'$(IconosDuplicadosChequeo)' != 'false'">
+
+    <ItemGroup>
+      <!-- Los .resx del proyecto. Quedan afuera bin\ y obj\ (ahí hay copias generadas) y el propio
+           IconFormBase.resx: ESE es la fuente, sus dos blobs son los buenos y los únicos que deben
+           existir en todo el árbol. -->
+      <_IconResx Include="$(MSBuildProjectDirectory)\**\*.resx"
+                 Exclude="$(MSBuildProjectDirectory)\bin\**;$(MSBuildProjectDirectory)\obj\**;$(MSBuildProjectDirectory)\**\IconFormBase.resx" />
+
+      <!-- Se busca el NODO, no el nombre suelto: <metadata ... IconsSmall.TrayLocation> no cuenta. -->
+      <_IconResxConCopia Include="@(_IconResx)"
+        Condition="$([System.Text.RegularExpressions.Regex]::IsMatch($([System.IO.File]::ReadAllText('%(FullPath)')), '&lt;data name=&quot;Icons(Small|Large)\.ImageStream&quot;'))" />
+    </ItemGroup>
+
+    <!-- ⛔ La Condition sobre @(...) NO sobra, aunque el %(...) del File ya deberia armar el lote:
+         sacandola, MSBuild deja de emitir el aviso (medido 2026-08-17, con el item POBLADO). -->
+    <Warning Condition="'@(_IconResxConCopia)' != '' And '$(IconosDuplicadosEsError)' != 'true'"
+             File="%(_IconResxConCopia.FullPath)"
+             Text="Este formulario tiene su PROPIA COPIA de los iconos compartidos (~75 KB). Va a seguir mostrando los dibujos viejos cuando se cambie un PNG de FO4_Base_Library\Resources\Icons. Lo dejó el diseñador de VS al guardar. Cómo sacarlo: ver FO4_Base_Library\IconosCompartidos.targets." />
+
+    <Error Condition="'@(_IconResxConCopia)' != '' And '$(IconosDuplicadosEsError)' == 'true'"
+           File="%(_IconResxConCopia.FullPath)"
+           Text="Este formulario tiene su PROPIA COPIA de los iconos compartidos (~75 KB) y quedaría congelada en la versión que se distribuye. Lo dejó el diseñador de VS al guardar. Cómo sacarlo: ver FO4_Base_Library\IconosCompartidos.targets. Para compilar igual: -p:IconosDuplicadosEsError=false" />
+
+  </Target>
+
+</Project>

@@ -6,7 +6,9 @@
 ''' tienen sets separados, igual que las opciones de CharGen. Ver PreviewLightRig.vb.
 ''' </summary>
 Partial Public Class LightRigForm
-    Inherits Form
+    ' ⛔ Tiene que decir lo MISMO que el .Designer.vb: VB exige que todas las partes de una clase
+    ' parcial declaren la misma clase base (BC30928). Ver el remarks de IconFormBase.vb.
+    Inherits IconFormBase
 
     ''' <summary>
     ''' Raised whenever the user edits any control (slider / NUD / preset / Reset). The new values have

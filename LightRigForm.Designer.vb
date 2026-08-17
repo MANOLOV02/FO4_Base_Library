@@ -1,6 +1,12 @@
 ﻿<Global.Microsoft.VisualBasic.CompilerServices.DesignerGenerated()>
 Partial Class LightRigForm
-    Inherits System.Windows.Forms.Form
+    ' Hereda de IconFormBase, que aporta los ImageList compartidos IconsSmall (16x16)
+    ' e IconsLarge (24x24): los iconos viven UNA sola vez, en el resx de ese formulario base.
+    ' El formulario base NO tiene controles y no fija Size/Text/Icon/AutoScale, asi que heredar de
+    ' el no cambia el aspecto de nada. Ver el remarks de IconFormBase.vb.
+    ' ⛔ Los iconos se eligen SIEMPRE por ImageKey, nunca por ImageIndex: el orden del ImageList
+    ' compartido se corre solo con agregar un PNG a Resources\Icons.
+    Inherits IconFormBase
 
     'Form reemplaza a Dispose para limpiar la lista de componentes.
     <System.Diagnostics.DebuggerNonUserCode()>
@@ -700,11 +706,15 @@ Partial Class LightRigForm
         ' 
         ' btnReset
         ' 
+        btnReset.ImageAlign = ContentAlignment.MiddleRight
+        btnReset.ImageKey = "AgtReload"
+        btnReset.ImageList = IconsSmall
         btnReset.Location = New Point(444, 432)
         btnReset.Name = "btnReset"
         btnReset.Size = New Size(414, 25)
         btnReset.TabIndex = 2
         btnReset.Text = "Reset Lighting to default"
+        btnReset.TextImageRelation = TextImageRelation.ImageBeforeText
         ToolTip1.SetToolTip(btnReset, "Reset the whole lighting tab: Studio preset, default background color, shadow settings back to their defaults (which turns shadows ON), and the light anchoring back to its default.")
         btnReset.UseVisualStyleBackColor = True
         ' 
@@ -973,6 +983,7 @@ Partial Class LightRigForm
         TabsMain.Controls.Add(TabLights)
         TabsMain.Controls.Add(TabRender)
         TabsMain.Dock = DockStyle.Fill
+        TabsMain.ImageList = IconsSmall
         TabsMain.Location = New Point(0, 0)
         TabsMain.Name = "TabsMain"
         TabsMain.SelectedIndex = 0
@@ -992,6 +1003,7 @@ Partial Class LightRigForm
         TabLights.Controls.Add(grpFillR)
         TabLights.Controls.Add(grpFillL)
         TabLights.Controls.Add(grpKey)
+        TabLights.ImageKey = "HelpHint"
         TabLights.Location = New Point(4, 24)
         TabLights.Name = "TabLights"
         TabLights.Padding = New Padding(3)
@@ -1009,6 +1021,7 @@ Partial Class LightRigForm
         TabRender.Controls.Add(grpCamera)
         TabRender.Controls.Add(grpFloor)
         TabRender.Controls.Add(btnResetRender)
+        TabRender.ImageKey = "Thumbnail"
         TabRender.Location = New Point(4, 24)
         TabRender.Name = "TabRender"
         TabRender.Padding = New Padding(3)
@@ -1253,7 +1266,7 @@ Partial Class LightRigForm
         chkHiddenSegments.AutoSize = True
         chkHiddenSegments.Location = New Point(11, 72)
         chkHiddenSegments.Name = "chkHiddenSegments"
-        chkHiddenSegments.Size = New Size(147, 19)
+        chkHiddenSegments.Size = New Size(157, 19)
         chkHiddenSegments.TabIndex = 2
         chkHiddenSegments.Text = "Render hidden segments"
         ToolTip1.SetToolTip(chkHiddenSegments, "Render mesh segments the NIF marks as not drawn: the with-item variant (e.g. the Pip-Boy forearm) and, with an actor, the segments covered by worn items. Per-triangle; does not affect exports.")
@@ -1263,7 +1276,7 @@ Partial Class LightRigForm
         chkShowHelperShapes.AutoSize = True
         chkShowHelperShapes.Location = New Point(11, 96)
         chkShowHelperShapes.Name = "chkShowHelperShapes"
-        chkShowHelperShapes.Size = New Size(160, 19)
+        chkShowHelperShapes.Size = New Size(142, 19)
         chkShowHelperShapes.TabIndex = 3
         chkShowHelperShapes.Text = "Render hidden shapes"
         ToolTip1.SetToolTip(chkShowHelperShapes, "Render whole shapes the NIF marks as not drawn: no shader property (collisions, markers, emitter volumes) or the NiAVObject hidden flag (weapon blood, screen glows, baked headwear occlusion).")
@@ -1331,7 +1344,7 @@ Partial Class LightRigForm
         chkFloorEnabled.AutoSize = True
         chkFloorEnabled.Location = New Point(11, 24)
         chkFloorEnabled.Name = "chkFloorEnabled"
-        chkFloorEnabled.Size = New Size(107, 19)
+        chkFloorEnabled.Size = New Size(91, 19)
         chkFloorEnabled.TabIndex = 0
         chkFloorEnabled.Text = "Render floor"
         ToolTip1.SetToolTip(chkFloorEnabled, "Render the lit tiled floor in the preview.")
@@ -1363,7 +1376,7 @@ Partial Class LightRigForm
         lblFloorStep.AutoSize = True
         lblFloorStep.Location = New Point(210, 54)
         lblFloorStep.Name = "lblFloorStep"
-        lblFloorStep.Size = New Size(30, 15)
+        lblFloorStep.Size = New Size(48, 15)
         lblFloorStep.TabIndex = 2
         lblFloorStep.Text = "Tile size"
         ' 
@@ -1385,7 +1398,7 @@ Partial Class LightRigForm
         lblFloorColor.AutoSize = True
         lblFloorColor.Location = New Point(11, 88)
         lblFloorColor.Name = "lblFloorColor"
-        lblFloorColor.Size = New Size(59, 15)
+        lblFloorColor.Size = New Size(67, 15)
         lblFloorColor.TabIndex = 3
         lblFloorColor.Text = "Grout color"
         ' 
@@ -1403,11 +1416,15 @@ Partial Class LightRigForm
         ' 
         ' btnResetRender
         ' 
+        btnResetRender.ImageAlign = ContentAlignment.MiddleRight
+        btnResetRender.ImageKey = "AgtReload"
+        btnResetRender.ImageList = IconsSmall
         btnResetRender.Location = New Point(440, 282)
         btnResetRender.Name = "btnResetRender"
         btnResetRender.Size = New Size(418, 27)
         btnResetRender.TabIndex = 5
         btnResetRender.Text = "Reset rendering to defaults"
+        btnResetRender.TextImageRelation = TextImageRelation.ImageBeforeText
         ToolTip1.SetToolTip(btnResetRender, "Reset every setting on this tab -- normals, welding, skinning, camera and floor -- to its default. Lights and shadows are on the other tab and are not touched.")
         btnResetRender.UseVisualStyleBackColor = True
         ' 
