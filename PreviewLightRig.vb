@@ -214,10 +214,20 @@ Public Structure PreviewLightRig
     ' tres mecanismos distintos de invalidacion conviviendo, uno de ellos ciego a "la clave existia y
     ' significaba otra cosa"—. Una clave que no existe no se puede leer mal.
 
-    ''' <summary>El rig por default = preset "Studio" (el primero de <see cref="Presets"/>), que es
-    ''' también al que vuelve el botón Reset. Una sola fuente de verdad.</summary>
+    ''' <summary>El rig por default = preset <b>"Portrait"</b>, que es también al que vuelve el botón
+    ''' Reset. Una sola fuente de verdad.
+    ''' <para>⚠ ALCANCE: lo comparten las TRES apps. Cambiarlo mueve el aspecto por default de Wardrobe
+    ''' Manager y NPC Manager para quien todavía no tenga un rig guardado en su <c>config.json</c>, y
+    ''' para todo el que apriete "Reset Lighting to default". No toca a quien ya haya guardado el suyo:
+    ''' la config persistida gana. Decisión del usuario, 2026-08-17.</para>
+    ''' <para>Se busca POR NOMBRE y no por índice: reordenar <see cref="Presets"/> —cosa que pasa cada vez
+    ''' que se agrega uno— cambiaría el default en silencio. Si el nombre no estuviera, cae al primero.</para></summary>
     Public Shared Function Defaults() As PreviewLightRig
-        Return Presets()(0).Rig
+        Dim ps = Presets()
+        For Each p In ps
+            If String.Equals(p.Name, "Portrait", StringComparison.OrdinalIgnoreCase) Then Return p.Rig
+        Next
+        Return ps(0).Rig
     End Function
 
     ''' <summary>Sets de luces predefinidos. Cada uno es un ESCENARIO coherente (dirección + temperatura
