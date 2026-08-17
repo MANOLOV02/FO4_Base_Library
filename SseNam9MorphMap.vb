@@ -87,4 +87,107 @@ Public NotInheritable Class SseNam9MorphMap
         If value = 0UI Then Return "Default"
         Return Families(familyIndex).Prefix & value.ToString()
     End Function
+
+    ''' <summary>INVERSA de <see cref="MorphForType"/>: ¿este nombre de morph es el miembro N de esta familia?
+    ''' <para>⭐ La validación es un ROUND-TRIP contra el propio constructor, no un parseo de la cola. El motor
+    ''' arma el nombre con <c>sprintf("%s%d", family, N)</c>, así que un nombre sólo es miembro si el
+    ''' constructor lo reproduce EXACTAMENTE. Eso descarta gratis y sin reglas extra:</para>
+    ''' <list type="bullet">
+    ''' <item>ceros a la izquierda — <c>NoseType03</c> parsea a 3, pero el motor pide <c>NoseType3</c>, que es
+    ''' OTRO morph (o ninguno) ⇒ ofrecerlo sería una entrada que no mueve un vértice;</item>
+    ''' <item>signos y separadores — <c>NoseType+1</c>, <c>NoseType 1</c> (por eso <c>NumberStyles.None</c> e
+    ''' <c>InvariantCulture</c>: el overload corto de <c>TryParse</c> acepta signo y depende del locale);</item>
+    ''' <item><c>N = 0</c> — el valor 0 selecciona el morph "Default", NO <c>&lt;Prefix&gt;0</c>. Contarlo como
+    ''' miembro duplicaría la fila "Default" del combo con el mismo valor.</item>
+    ''' </list>
+    ''' <para>Case-insensitive porque <see cref="TriHeadFile.GetMorph"/> lo es: si el motor aplica
+    ''' <c>nosetype3</c>, el catálogo tiene que verlo.</para></summary>
+    Public Shared Function TryParseFamilyMember(familyIndex As Integer, morphName As String, ByRef value As UInteger) As Boolean
+        value = 0UI
+        If familyIndex < 0 OrElse familyIndex >= Families.Length Then Return False
+        If String.IsNullOrEmpty(morphName) Then Return False
+        Dim prefix = Families(familyIndex).Prefix
+        If morphName.Length <= prefix.Length Then Return False
+        If Not morphName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) Then Return False
+        Dim n As UInteger
+        If Not UInteger.TryParse(morphName.Substring(prefix.Length), Globalization.NumberStyles.None,
+                                 Globalization.CultureInfo.InvariantCulture, n) Then Return False
+        If n = 0UI Then Return False
+        If Not String.Equals(MorphForType(familyIndex, n), morphName, StringComparison.OrdinalIgnoreCase) Then Return False
+        value = n
+        Return True
+    End Function
+
+    ''' <summary>Los tipos NAMA que un conjunto de nombres de morph pone al alcance, por familia.
+    ''' <para><see cref="IsKnown"/> distingue "leí los .tri y esta familia no tiene tipos" (caso REAL: vanilla
+    ''' no trae ningún <c>BrowType</c>) de "todavía no pude leer ningún .tri". Colapsar los dos en una lista
+    ''' vacía es lo que obligaría a la UI a elegir entre mentir y bloquear.</para></summary>
+    Public NotInheritable Class NamaTypeCatalog
+        ''' <summary>Por familia, los N disponibles ORDENADOS y SIN REPETIR. El dedup no es cosmético:
+        ''' <c>femaleheadchargen.tri</c> trae <c>NoseType9</c> DUPLICADO (índices 44 y 45) y
+        ''' <c>mouthhumanfchargen.tri</c> repite <c>LipType18</c> — medido 2026-08-17 con
+        ''' <c>NpcSseRoundtripProbe --tricollide</c>. Sin dedup el combo mostraría dos filas idénticas.</summary>
+        Public ReadOnly Available As List(Of UInteger)()
+        ''' <summary>Por familia: ¿existe el morph "Default" (el que selecciona el valor 0)?</summary>
+        Public ReadOnly HasDefault As Boolean()
+        ''' <summary>False = no se leyó ningún .tri todavía. Las listas vacías NO significan "sin tipos".</summary>
+        Public ReadOnly IsKnown As Boolean
+
+        Friend Sub New(available As List(Of UInteger)(), hasDefault As Boolean(), isKnown As Boolean)
+            Me.Available = available : Me.HasDefault = hasDefault : Me.IsKnown = isKnown
+        End Sub
+
+        Public Shared Function Unknown() As NamaTypeCatalog
+            Return New NamaTypeCatalog(EmptyFamilies(), New Boolean(NamaFamilyCount - 1) {}, False)
+        End Function
+
+        ''' <summary>Catálogo CONOCIDO y sin tipos — se leyó y no hay ninguno. Distinto de
+        ''' <see cref="Unknown"/>, que es "no se pudo leer".</summary>
+        Public Shared Function KnownEmpty() As NamaTypeCatalog
+            Return New NamaTypeCatalog(EmptyFamilies(), New Boolean(NamaFamilyCount - 1) {}, True)
+        End Function
+
+        Private Shared Function EmptyFamilies() As List(Of UInteger)()
+            Dim av(NamaFamilyCount - 1) As List(Of UInteger)
+            For f = 0 To NamaFamilyCount - 1 : av(f) = New List(Of UInteger)() : Next
+            Return av
+        End Function
+    End Class
+
+    ''' <summary>Atajo de <see cref="NamaTypeCatalog.KnownEmpty"/> para los llamadores que ya saben que no
+    ''' hay nada que leer (p.ej. ninguna head part declara chargen .tri).</summary>
+    Public Shared Function KnownEmptyTypeCatalog() As NamaTypeCatalog
+        Return NamaTypeCatalog.KnownEmpty()
+    End Function
+
+    ''' <summary>Arma el catálogo desde los nombres de morph de los chargen .tri en juego. PURO: sin I/O y sin
+    ''' UI, así que lo consumen por igual el editor y el reverse-engineer de morphs (una sola ley, un solo lugar).
+    ''' <paramref name="morphNames"/> vacío ⇒ catálogo <c>IsKnown=False</c>.</summary>
+    Public Shared Function BuildTypeCatalog(morphNames As IEnumerable(Of String)) As NamaTypeCatalog
+        If morphNames Is Nothing Then Return NamaTypeCatalog.Unknown()
+        Dim seen(NamaFamilyCount - 1) As HashSet(Of UInteger)
+        Dim available(NamaFamilyCount - 1) As List(Of UInteger)
+        Dim hasDefault(NamaFamilyCount - 1) As Boolean
+        For f = 0 To NamaFamilyCount - 1
+            seen(f) = New HashSet(Of UInteger)()
+            available(f) = New List(Of UInteger)()
+        Next
+        For Each nm In morphNames
+            If String.IsNullOrEmpty(nm) Then Continue For
+            If String.Equals(nm, "Default", StringComparison.OrdinalIgnoreCase) Then
+                For f = 0 To NamaFamilyCount - 1 : hasDefault(f) = True : Next
+                Continue For
+            End If
+            For f = 0 To NamaFamilyCount - 1
+                Dim n As UInteger
+                If TryParseFamilyMember(f, nm, n) AndAlso seen(f).Add(n) Then available(f).Add(n)
+            Next
+        Next
+        ' ⛔ Esta función NO opina sobre known-ness: siempre devuelve un catálogo CONOCIDO (aunque quede
+        ' vacío). Quién sabe si los datos se pudieron leer es el LLAMADOR — antes acá había un segundo
+        ' "si no vi ningún nombre ⇒ Unknown" que PISABA esa decisión, y un .tri que parsea con 0 morphs
+        ' terminaba deshabilitando el combo por el motivo equivocado. Una sola ley, en un solo lugar.
+        For f = 0 To NamaFamilyCount - 1 : available(f).Sort() : Next
+        Return New NamaTypeCatalog(available, hasDefault, True)
+    End Function
 End Class

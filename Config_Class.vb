@@ -102,6 +102,47 @@ Public Class Config_App
     ' FO4_NPC_Manager FORCES this False at startup (Program/MainForm) because its render RELIES on the
     ' per-segment occlusion (Pip-Boy 60/160 swap, head-part hiding) — see the "= False" there.
     Public Property Setting_DrawHiddenSegments As Boolean = True
+
+    ''' <summary>Default POR APP de <see cref="Setting_ShowHelperShapes"/>. Lo declara el HOST antes de
+    ''' <see cref="LoadConfig"/>: Wardrobe Manager = True (es un editor, muestra todo, como OutfitStudio);
+    ''' NPC Manager y ShadowGate = False (son visores).
+    ''' <para>⛔ Nullable a propósito: si un host se olvida de declararlo, <c>LoadConfig</c> lo registra
+    ''' RUIDOSAMENTE en vez de asumir en silencio. Un default que se puede olvidar sin ruido es peor que
+    ''' no tenerlo.</para>
+    ''' <para>⛔ NO es un ajuste del usuario: es el valor que se usa cuando la clave no está, y el que
+    ''' repone el botón Reset del diálogo compartido (que es de la LIBRERÍA y no sabe en qué app corre).</para></summary>
+    Public Shared Property DefaultShowHelperShapes As Boolean? = Nothing
+
+    ''' <summary>¿Esta app puede EDITAR <see cref="Setting_DrawHiddenSegments"/>? Lo declara el HOST.
+    ''' False en NPC Manager: su render DEPENDE de la oclusion por segmento (swap de Pip-Boy 60/160,
+    ''' ocultado de head parts) y la fuerza a False al arrancar.
+    ''' <para>Lo leen el menu contextual de la camara y —como DEFAULT— <c>LightRigForm.AllowHiddenSegments</c>,
+    ''' para que la politica se declare UNA vez por app en vez de repetirse en cada consumidor. El
+    ''' inicializador explicito del dialogo sigue mandando si alguien lo pone a mano.</para>
+    ''' <para>⭐ La casilla NO se oculta: se muestra DESHABILITADA, para que el usuario sepa que el ajuste
+    ''' existe y por que esta forzado.</para></summary>
+    Public Shared Property AllowDrawHiddenSegments As Boolean = True
+
+    ''' <summary>Casilla "Show helper shapes" (ver <see cref="HelperShapeGate"/>).
+    ''' <para><c>Nothing</c> = el usuario NUNCA tocó la casilla. ⛔ NO se resuelve al cargar: se resuelve
+    ''' en LECTURA (<see cref="ShowHelperShapesEfectivo"/>) y sólo se escribe cuando el usuario la toca.
+    ''' Así cambiar el default por app es cambiar UNA CONSTANTE — sin llave de versión, sin pisar lo que
+    ''' el usuario eligió, y sin un segundo write-on-load (ver el aviso de JsonConfigIO sobre por qué
+    ''' escribir al cargar es peligroso: si el Save falla, la migración re-dispara en cada arranque).</para>
+    ''' <para>⚠️ Funciona porque es una propiedad de la CLASE, no de una Structure: System.Text.Json
+    ''' serializa el Nothing como <c>null</c> y lo devuelve como Nothing, o sea que "no eligió" es un
+    ''' estado persistente y round-trippeable.</para></summary>
+    Public Property Setting_ShowHelperShapes As Boolean? = Nothing
+
+    ''' <summary>ÚNICA resolución del fallback, leída por el gate Y por la casilla del diálogo. Si cada
+    ''' uno resolviera por su lado, el viewport podría mostrar helpers mientras la casilla se pinta
+    ''' destildada — un control mudo y mentiroso.
+    ''' <para>⛔ NO usar el ternario <c>If(...)</c> con un Nullable: devuelve HasValue=True.</para></summary>
+    Public Shared Function ShowHelperShapesEfectivo() As Boolean
+        If Current Is Nothing Then Return True
+        Return Current.Setting_ShowHelperShapes.GetValueOrDefault(DefaultShowHelperShapes.GetValueOrDefault(True))
+    End Function
+
     Public Property Setting_RecalculateNormals As Boolean = True
 
     ''' <summary>El rig de luces gira CON la cámara en vez de quedar fijo al mundo.
@@ -416,6 +457,13 @@ Public Class Config_App
             ' TBN que corria en cada arranque. Desde que esa rama es de UNA VEZ por version, sin esto la
             ' grilla se repara SOLO EN MEMORIA y se rehace el mismo trabajo en cada arranque.
             Dim hayQueGrabar As Boolean = False
+            ' ⛔ NO se resuelve ni se graba Setting_ShowHelperShapes acá: `Nothing` es un estado
+            ' persistente y round-trippeable, y resolverlo en lectura evita la llave de versión y el
+            ' write-on-load. Ver el doc de esa propiedad. Lo único que se hace es DELATAR al host que no
+            ' declaró su default, porque el fallback silencioso sería "mostrar" en un visor.
+            If Not DefaultShowHelperShapes.HasValue Then
+                Logger.LogLazy(Function() "[CFG] DefaultShowHelperShapes no declarado por el host; se asume True (mostrar helper shapes).")
+            End If
             If Current.Settings_RenderGrid.Size = 0 Then
                 Current.Settings_RenderGrid = Default_RenderGrid_Settings()
                 hayQueGrabar = True

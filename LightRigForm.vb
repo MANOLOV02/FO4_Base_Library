@@ -26,8 +26,13 @@ Partial Public Class LightRigForm
     ''' esconde). FO4_NPC_Manager NO puede exponerla: su render DEPENDE de esa oclusion (el swap de
     ''' Pip-Boy 60/160 y el ocultado de head parts salen de ahi) y por eso la fuerza a False en el
     ''' arranque, en Program.vb. Si el dialogo compartido la dejara editar, el usuario podria romper el
-    ''' render de NPC desde una casilla. Con False la casilla no se muestra y el setting no se toca.</summary>
-    Private _allowHiddenSegments As Boolean = True
+    ''' render de NPC desde una casilla. Con False la casilla se VE pero queda DESHABILITADA (con tooltip
+    ''' que explica por que) y el setting no se toca — decision del usuario: ocultarla hacia que el ajuste
+    ''' desapareciera sin explicacion.</summary>
+    ' Hereda la politica declarada por el host (Config_App.AllowDrawHiddenSegments) en vez de hardcodear
+    ' True. El inicializador explicito `New LightRigForm With {.AllowHiddenSegments = False}` sigue
+    ' mandando: el setter corre despues del constructor.
+    Private _allowHiddenSegments As Boolean = Config_App.AllowDrawHiddenSegments
 
     Public Property AllowHiddenSegments As Boolean
         Get
@@ -42,7 +47,9 @@ Partial Public Class LightRigForm
             ' hacia nada (el guard de escritura si miraba el valor ya asignado) y recien desaparecia a
             ' mitad de sesion, si el usuario tocaba Apply preset o Reset. Un control mudo y mentiroso
             ' justo en el unico ajuste app-aware del dialogo.
-            If chkHiddenSegments IsNot Nothing Then chkHiddenSegments.Visible = value
+            ' ⭐ DESHABILITADA, NO OCULTA (decision del usuario): en NPC Manager el usuario VE que la
+            ' opcion existe y que esta forzada, en vez de que el ajuste desaparezca sin explicacion.
+            If chkHiddenSegments IsNot Nothing Then chkHiddenSegments.Enabled = value
         End Set
     End Property
 
@@ -305,9 +312,19 @@ Partial Public Class LightRigForm
 
         chkGpuSkinning.Checked = Config_App.Current.Setting_GPUSkinning
         chkSingleBone.Checked = Config_App.Current.Setting_SingleBoneSkinning
-        ' Ver AllowHiddenSegments: en NPC Manager la casilla NO se muestra y el valor no se toca.
-        chkHiddenSegments.Visible = AllowHiddenSegments
+        ' Ver AllowHiddenSegments: en NPC Manager la casilla se VE pero esta DESHABILITADA, y el valor
+        ' no se toca. Mostrar-y-deshabilitar en vez de ocultar es decision del usuario: que se sepa que
+        ' el ajuste existe y por que no se puede tocar.
+        chkHiddenSegments.Enabled = AllowHiddenSegments
+        If Not AllowHiddenSegments Then
+            ToolTip1.SetToolTip(chkHiddenSegments,
+                "Forced OFF in NPC Manager: the NPC render relies on per-segment occlusion (Pip-Boy 60/160 swap, head-part hiding).")
+        End If
         chkHiddenSegments.Checked = Config_App.Current.Setting_DrawHiddenSegments
+        ' La casilla de HELPER SHAPES si va en las DOS apps (decision del usuario): es un toggle de
+        ' inspeccion util en las dos, y NO comparte semantica con la oclusion por segmento.
+        ' ⛔ GetValueOrDefault, NUNCA el ternario If(): con un Nullable devuelve HasValue=True.
+        chkShowHelperShapes.Checked = Config_App.ShowHelperShapesEfectivo()
 
         chkResetAngles.Checked = Config_App.Current.Settings_Camara.ResetAngles
         chkResetZoom.Checked = Config_App.Current.Settings_Camara.ResetZoom
@@ -351,6 +368,9 @@ Partial Public Class LightRigForm
         Config_App.Current.Setting_GPUSkinning = True
         Config_App.Current.Setting_SingleBoneSkinning = False
         If AllowHiddenSegments Then Config_App.Current.Setting_DrawHiddenSegments = True
+        ' Vuelve a "el usuario no eligio" ⇒ manda el default de la app. Reponer un literal le
+        ' prenderia los helpers a NPC Manager, que es un visor.
+        Config_App.Current.Setting_ShowHelperShapes = Nothing
         Config_App.Current.Settings_Camara = Config_App.Default_CameraSettings
         Config_App.Current.Settings_RenderGrid = Config_App.Default_RenderGrid_Settings
         Config_App.Current.Setting_RenderGridColor = Color.FromKnownColor(KnownColor.LightGray).Name
@@ -533,7 +553,7 @@ Partial Public Class LightRigForm
 
         ' Pestana Rendering: todo escribe en Config_App al vuelo, igual que las luces.
         For Each c In New CheckBox() {chkRecalcNormals, chkRepairNaN, chkNormalize, chkDeterministic,
-                                      chkSmoothSeams, chkGpuSkinning, chkSingleBone, chkHiddenSegments,
+                                      chkSmoothSeams, chkGpuSkinning, chkSingleBone, chkHiddenSegments, chkShowHelperShapes,
                                       chkResetAngles, chkResetZoom}
             AddHandler c.CheckedChanged, Sub(sender, e) VolcarRenderEnModelo()
         Next
@@ -786,6 +806,12 @@ Partial Public Class LightRigForm
         ' SOLO si la app lo permite. En NPC Manager la casilla ni se muestra, y no tocar el valor es lo
         ' que evita que el dialogo compartido le rompa la oclusion por segmento.
         If AllowHiddenSegments Then Config_App.Current.Setting_DrawHiddenSegments = chkHiddenSegments.Checked
+        ' ⛔ Solo si CAMBIO: escribirla incondicionalmente convertiria "no eligio" en "eligio" con
+        ' solo abrir el dialogo por otra opcion y dar OK, y a partir de ahi un cambio del default por
+        ' app ya no le llegaria nunca.
+        If chkShowHelperShapes.Checked <> Config_App.ShowHelperShapesEfectivo() Then
+            Config_App.Current.Setting_ShowHelperShapes = chkShowHelperShapes.Checked
+        End If
 
         Config_App.Current.Settings_Camara = New Config_App.CameraSettings With {
             .ResetAngles = chkResetAngles.Checked,

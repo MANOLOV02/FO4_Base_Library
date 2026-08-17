@@ -27,6 +27,29 @@ Public Interface IRenderableShape
     ReadOnly Property Geometry As IShapeGeometry
     ReadOnly Property NifSkin As INiSkin
     ReadOnly Property NifShader As INiShader
+    ''' <summary>Geometría auxiliar que el MOTOR no dibuja nunca. Predicado del canónico
+    ''' (BodySlide/OutfitStudio <c>GLSurface.cpp:1298</c>): <c>!shader || (shape-&gt;flags &amp; 1) != 0</c>,
+    ''' con el comentario de <c>Mesh.h:169</c>: "true for shapes with no shader or with the hidden flag
+    ''' set (e.g. collisions)". Ellos lo exponen con la casilla "Show Helper Shapes".
+    ''' <para>Las dos señales: <b>(a)</b> sin <c>BSShaderProperty</c> — así marca HDT-SMP sus proxies de
+    ''' colisión (<c>VirtualHairCollision_*</c>), vanilla la colisión Havok (<c>SKY_HAV_MAT_*</c> en los
+    ''' <c>*_col.nif</c>), los <c>EditorMarker</c> y los volúmenes de emisor; <b>(b)</b> bit 0 de
+    ''' <c>NiAVObject.Flags</c> = Hidden (NifSkope <c>spells/flags.cpp:539</c>; BodySlide
+    ''' <c>BodySlideApp.cpp:3864</c> <c>shape-&gt;flags |= 1</c>) — la sangre de las armas, el
+    ''' <c>PageText</c> de los libros, el glow del Pip-Boy.</para>
+    ''' <para>⛔ <b>NO ES UN GUARD DE NULO.</b> Quien pregunta "¿puedo LEER el shader?" usa
+    ''' <c>NifShader Is Nothing</c> — ver <c>OSP_Clases</c> (plan de clonado) y los gates del editor de
+    ''' materiales de WM. Una shape con bit0 <b>y material válido</b> es editable y clonable, y WM mismo
+    ''' las fabrica (<c>BuildingForm.SetShapeHidden</c> sobre las 100 % zapeadas). Confundirlos deja el
+    ''' mod construido apuntando al material de la BA2 vanilla.</para>
+    ''' <para>⛔ <b>NO CACHEAR</b>: los botones "Convert to renderable" / "Make helper" del editor de WM
+    ''' cambian el valor en runtime.</para>
+    ''' <para>⚠️ El bit 0 tiene OTRO significado en un FaceGeom de FO4: ahí el CK (y nuestro bake, ver
+    ''' <c>FaceGenBuilder</c>) lo usa como marca de oclusión de headwear horneada. No colisiona porque
+    ''' NPC Manager nunca LEE un FaceGeom — sólo los escribe.</para>
+    ''' <para>⭐ MEDIDO sobre los BSA/BA2 de los dos juegos (<c>Tools/HelperShapeScan</c>, 253.770 NIF /
+    ''' 1.308.751 shapes): 5.197 = 0,40 %, sin un solo caso de geometría visible legítima.</para></summary>
+    ReadOnly Property IsHelperShape As Boolean
     ReadOnly Property ShapeBones As IReadOnlyList(Of NiNode)
     ReadOnly Property ShapeBoneTransforms As IReadOnlyList(Of Transform_Class)
     ReadOnly Property ShapeMaterial As Nifcontent_Class_Manolo.RelatedMaterial_Class

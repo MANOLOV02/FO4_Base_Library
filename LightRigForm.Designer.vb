@@ -111,6 +111,7 @@ Partial Class LightRigForm
         chkGpuSkinning = New CheckBox()
         chkSingleBone = New CheckBox()
         chkHiddenSegments = New CheckBox()
+        chkShowHelperShapes = New CheckBox()
         grpCamera = New GroupBox()
         chkResetAngles = New CheckBox()
         chkResetZoom = New CheckBox()
@@ -1219,6 +1220,7 @@ Partial Class LightRigForm
         grpSkin.Controls.Add(chkGpuSkinning)
         grpSkin.Controls.Add(chkSingleBone)
         grpSkin.Controls.Add(chkHiddenSegments)
+        grpSkin.Controls.Add(chkShowHelperShapes)
         grpSkin.Location = New Point(8, 6)
         grpSkin.Name = "grpSkin"
         grpSkin.Size = New Size(418, 120)
@@ -1255,6 +1257,16 @@ Partial Class LightRigForm
         chkHiddenSegments.TabIndex = 2
         chkHiddenSegments.Text = "Draw hidden segments"
         ToolTip1.SetToolTip(chkHiddenSegments, "Draw normally-hidden geometry segments (e.g. Pip-Boy forearm variant, occluded segments) in the viewport. WM inspection aid; does not affect exports.")
+        ' 
+        ' chkShowHelperShapes
+        ' 
+        chkShowHelperShapes.AutoSize = True
+        chkShowHelperShapes.Location = New Point(11, 96)
+        chkShowHelperShapes.Name = "chkShowHelperShapes"
+        chkShowHelperShapes.Size = New Size(160, 19)
+        chkShowHelperShapes.TabIndex = 3
+        chkShowHelperShapes.Text = "Show helper shapes"
+        ToolTip1.SetToolTip(chkShowHelperShapes, "Show helper shapes (e.g. collisions) - shapes with no shader or with the hidden flag set.")
         ' 
         ' grpCamera
         ' 
@@ -1515,6 +1527,7 @@ Partial Class LightRigForm
     Friend WithEvents chkGpuSkinning As CheckBox
     Friend WithEvents chkSingleBone As CheckBox
     Friend WithEvents chkHiddenSegments As CheckBox
+    Friend WithEvents chkShowHelperShapes As CheckBox
     Friend WithEvents grpCamera As GroupBox
     Friend WithEvents chkResetAngles As CheckBox
     Friend WithEvents chkResetZoom As CheckBox

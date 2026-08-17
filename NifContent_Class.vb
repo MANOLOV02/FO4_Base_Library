@@ -157,6 +157,18 @@ Public Class Nifcontent_Class_Manolo
         avo.Flags_us = CUShort(avo.Flags_us Or 1US)
     End Sub
 
+    ''' <summary>Hermano simétrico de <see cref="SetShapeHidden"/>: APAGA el bit 0 (hidden).
+    ''' Único par escritor del bit, para que no haya un <c>Or 1</c> suelto en ningún lado.
+    ''' <para>⛔ <c>And Not</c>, NUNCA asignar un literal: el valor normal lleva otros bits REALES —
+    ''' <c>0x8000E</c> (NoAnimSyncS), <c>SaveExtGeom</c>, <c>MeshLOD_FO4</c>, <c>NoDecals</c>…
+    ''' Pisar el campo entero borraría flags que nadie pidió tocar.</para></summary>
+    Public Sub ClearShapeHidden(shape As INiShape)
+        Dim avo = TryCast(shape, NiAVObject)
+        If avo Is Nothing Then Exit Sub
+        avo.Flags_ui = avo.Flags_ui And Not 1UI
+        avo.Flags_us = CUShort(avo.Flags_us And Not 1US)
+    End Sub
+
     Public Sub RemoveTriData(shapeName As String, toRoot As Boolean)
         Dim target As NiAVObject
         If toRoot Then
@@ -266,6 +278,18 @@ Public Class Nifcontent_Class_Manolo
 
 
         Dim shad = GetShader(shap)
+
+        ' ⛔ CONTRATO, y TIRA — no `Exit Sub`. GetRelatedMaterial (el LECTOR, arriba) sí tolera el shader
+        ' nulo y sintetiza un material vacío; este es el ESCRITOR y su único caller es el camino de
+        ' GUARDAR de WM (Editor_Form.Revisa_Material), que devuelve Boolean. Tragarlo en silencio haría
+        ' que el usuario apriete Save, la UI cierre como si hubiera guardado, y el material no se escriba
+        ' en ninguna parte. Lector con guard + escritor que traga = 00-reglas-paridad-canonica.
+        ' El caller filtra las helper shapes ANTES y con aviso; esto es la red, no la política.
+        If shad Is Nothing Then
+            Throw New InvalidOperationException(
+                $"SetRelatedMaterial on a shape with no BSShaderProperty ('{shap?.Name?.String}'). " &
+                "It is a helper shape (collision/marker): the caller must filter it out first.")
+        End If
 
         Select Case Config_App.Current.Game
             Case Config_App.Game_Enum.Fallout4

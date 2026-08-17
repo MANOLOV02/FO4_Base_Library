@@ -167,6 +167,18 @@ Public Class NifRenderableShape
         End Get
     End Property
 
+    ''' <summary>Ver <see cref="IRenderableShape.IsHelperShape"/> para la ley y las fuentes.
+    ''' Sólo <c>Flags_ui</c>: <c>_flags_us</c> únicamente se serializa con <c>StreamVersion &lt;= 26</c>
+    ''' (Morrowind) — FO4 (130), SSE (100) y Oldrim (83) van todos por el uint32.</summary>
+    Public ReadOnly Property IsHelperShape As Boolean Implements IRenderableShape.IsHelperShape
+        Get
+            If _shape Is Nothing Then Return False
+            If NifShader Is Nothing Then Return True
+            Dim avo = TryCast(_shape, NiAVObject)
+            Return avo IsNot Nothing AndAlso (avo.Flags_ui And 1UI) <> 0UI
+        End Get
+    End Property
+
     Public ReadOnly Property ShapeBones As IReadOnlyList(Of NiNode) Implements IRenderableShape.ShapeBones
         Get
             ' Synthetic override: return injected anchor bone instead of NIF-resolved palette.

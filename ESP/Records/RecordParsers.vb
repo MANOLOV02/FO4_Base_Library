@@ -1268,6 +1268,46 @@ Public Class RACE_SubgraphData
     Public AnimationPaths As New List(Of String)
 End Class
 
+''' <summary>RACE <c>MPAI</c>/<c>MPAV</c> "Available Morphs" — <b>SKYRIM-only</b>, por GÉNERO: el bitmask de
+''' tipos NAMA (Nose/Brow/Eyes/Lip) que el <b>CREATION KIT ofrece en su desplegable</b> para esa raza.
+''' xEdit: <c>wbDefinitionsTES5.pas:9587</c> (struct) y <c>:9313</c> (nombres de bit).
+''' <para>⛔⛔ <b>NO es lo que el motor ACEPTA, y por lo tanto NUNCA se usa como FILTRO.</b> El aplicador de
+''' NAMA resuelve por NOMBRE contra el chargen <c>.tri</c> y es CIEGO a este bitmask
+''' (<c>ApplyChargenMorph_Hooked</c>, skee64 <c>SKEEHooks.cpp:730-749</c>; y ver el comentario de
+''' <c>NpcMorphResolver.AddNamaTypePreset</c>). MEDIDO sobre el corpus SSE: de 90 valores NAMA que su raza
+''' NO declara, <b>75 EXISTEN igual en las head parts de ese NPC</b> y el juego se los aplica — entre ellos
+''' NPC vanilla como <c>HighElfFemalePreset01</c> (NoseType7, que HighElfRace no declara). Filtrar por esto
+''' rompería la edición de esos NPC. Sirve SÓLO para ANOTAR ("el CK no ofrece este tipo para esta raza").</para>
+''' <para>El índice de familia NO es posicional: cada <c>MPAV</c> viene precedido por un <c>MPAI</c> de 4 bytes
+''' con el índice explícito (0=Nose 1=Brow 2=Eyes 3=Lip) — medido, aunque xEdit lo etiquete "Unknown". Por eso
+''' un bloque ausente sólo se pierde a sí mismo: los demás siguen siendo correctos.</para></summary>
+Public Class RACE_AvailableMorphs
+    Public Const FamilyCount As Integer = 4
+    ''' <summary>¿Vino el bloque de esta familia? Sin esto, "no declara ninguno" y "no vino el dato" serían
+    ''' el mismo cero, y la anotación afirmaría sobre el CK algo que no se leyó.</summary>
+    Public ReadOnly Present As Boolean() = New Boolean(FamilyCount - 1) {}
+    ''' <summary>Tipos 0..31.</summary>
+    Public ReadOnly BitsLo As UInteger() = New UInteger(FamilyCount - 1) {}
+    ''' <summary>Tipos 32..38. SÓLO Eyes los tiene: su MPAV es u32 + <b>u8</b> (<c>wbEyesMorphFlags02</c>,
+    ''' :9407), mientras Nose/Brow/Lip son u32 + relleno. Leer "el primer u32" en las cuatro perdería
+    ''' EyesType32-38 en silencio.</summary>
+    Public ReadOnly BitsHi As UInteger() = New UInteger(FamilyCount - 1) {}
+
+    ''' <summary>¿El CK ofrece este tipo para esta raza+género? <c>False</c> también cuando el bloque no vino
+    ''' (consultar <see cref="Present"/> para distinguir).
+    ''' <para>El valor 0 ("Default") se reporta SIEMPRE como ofrecido: no está mapeado por bit. MEDIDO: 40
+    ''' valores NAMA=0 del corpus caen en razas cuyo bit 0 está APAGADO, así que el bit 0 no representa al
+    ''' valor 0.</para></summary>
+    Public Function Offers(familyIndex As Integer, value As UInteger) As Boolean
+        If familyIndex < 0 OrElse familyIndex >= FamilyCount Then Return False
+        If Not Present(familyIndex) Then Return False
+        If value = 0UI Then Return True
+        If value < 32UI Then Return (BitsLo(familyIndex) And (1UI << CInt(value))) <> 0UI
+        If value > 38UI Then Return False
+        Return (BitsHi(familyIndex) And (1UI << CInt(value - 32UI))) <> 0UI
+    End Function
+End Class
+
 Public Class RACE_Data
     Public FormID As UInteger
     Public EditorID As String = ""
@@ -1315,6 +1355,11 @@ Public Class RACE_Data
     Public Keywords As New List(Of UInteger)
     Public MaleHeadPartFormIDs As New List(Of UInteger)
     Public FemaleHeadPartFormIDs As New List(Of UInteger)
+    ''' <summary>MPAI/MPAV "Available Morphs" del bloque Male Head Data (SKYRIM-only). Nothing en FO4 y en
+    ''' un RACE que no los declare. Ver <see cref="RACE_AvailableMorphs"/>.</summary>
+    Public MaleAvailableMorphs As RACE_AvailableMorphs = Nothing
+    ''' <summary>MPAI/MPAV "Available Morphs" del bloque Female Head Data (SKYRIM-only).</summary>
+    Public FemaleAvailableMorphs As RACE_AvailableMorphs = Nothing
     Public MaleFaceDetailTextureFormIDs As New List(Of UInteger)
     Public FemaleFaceDetailTextureFormIDs As New List(Of UInteger)
     Public MaleDefaultFaceTextureFormID As UInteger
@@ -1519,7 +1564,7 @@ Public Class RaceUtil
     Public Shared Function RaceHairMask(race As RACE_Data) As UInteger
         If race Is Nothing Then Return 0UI
         Dim b = race.OcclusionHairBiped
-        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then Return BipedValueToBit(b)
+        If IsSkyrim() Then Return BipedValueToBit(b)
         Return BipedValueToBit(b) Or BipedValueToBit(b + 1)
     End Function
 
@@ -1546,7 +1591,7 @@ Public Class RaceUtil
     ''' mask (see NpcRenderHost.ApplyRenderToggleVisibility).</summary>
     Public Shared Function RacePipboyMask(race As RACE_Data) As UInteger
         If race Is Nothing Then Return 0UI
-        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then Return 0UI
+        If IsSkyrim() Then Return 0UI
         Return BipedValueToBit(race.PipboyBiped)
     End Function
 End Class
@@ -2022,6 +2067,31 @@ Public Module RecordParsers
     Private Function ResolveDisplayString(rec As PluginRecord, sr As SubrecordData, pluginManager As PluginManager, Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
         If pluginManager Is Nothing Then Return sr.AsString
         Return pluginManager.ResolveFieldString(rec, sr, kind)
+    End Function
+
+    ''' <summary>Gate de juego GLOBAL de estos parsers (el juego de la sesión, <c>Config_App.Current.Game</c>).
+    ''' Unifica los 11 chequeos que estaban inline con tres redacciones distintas.
+    ''' <para>El <c>IsNot Nothing</c> es CINTURÓN, no el arreglo de un crash: <c>Config_App.Current</c> se
+    ''' inicializa en su propia declaración (<c>Config_Class.vb:422</c>) y su único otro asignador escribe
+    ''' dentro de un <c>If cfg IsNot Nothing</c>, así que hoy no puede ser Nothing — 2 de los 11 sitios lo
+    ''' chequeaban y los otros 9 no, sin que ninguno pudiera fallar. Unificar es quitar repetición, no
+    ''' tapar un NullReferenceException.</para>
+    ''' <para>⛔ Justamente porque el caso nulo NO ocurre, no se lo usa para elegir rama: los gates de
+    ''' <c>MO2S/MO3S/MO4S/MO5S</c> preguntan <see cref="IsFallout4"/> (positivo) y no <c>Not IsSkyrim()</c>.
+    ''' Con la forma negativa, un hipotético <c>Current</c> nulo caería en la rama FO4 y ahí esos
+    ''' subrecords —que en Skyrim son un ARRAY de Alternate Textures— se leerían como FormID, ensuciando
+    ''' la master list (ver el comentario de cada Case). Preguntar en positivo hace que el caso imposible
+    ''' sea INERTE en vez de destructivo. Y el default de <c>Config_App.Game</c> es Skyrim, no FO4.</para>
+    ''' <para>⛔ NO unificar acá los gates que miran el juego del PROPIO record (<c>npc.Game</c>, o un
+    ''' parámetro <c>game As Config_App.Game_Enum</c>): ésos describen el record que se está parseando, que
+    ''' puede no ser el juego de la sesión. Son otra pregunta, no una copia de ésta.</para></summary>
+    Friend Function IsSkyrim() As Boolean
+        Return Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim
+    End Function
+
+    ''' <summary>Gemelo de <see cref="IsSkyrim"/> para la rama FO4. Ver ahí la nota sobre qué NO unificar.</summary>
+    Friend Function IsFallout4() As Boolean
+        Return Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Fallout4
     End Function
 
     Private Function ResolveFormIDReference(rec As PluginRecord, rawFormID As UInteger, pluginManager As PluginManager) As UInteger
@@ -3142,6 +3212,8 @@ Public Module RecordParsers
         Dim expectingHeadGender As Boolean = False
         Dim inMaleHead As Boolean = False
         Dim inFemaleHead As Boolean = False
+        ' Familia (0=Nose 1=Brow 2=Eyes 3=Lip) que anunció el último MPAI para el MPAV que le sigue. -1 = ninguna.
+        Dim pendingAvailableMorphFamily As Integer = -1
         Dim pendingFaceMorphDef As RACE_FaceMorphDef = Nothing
         Dim pendingMorphValueDef As RACE_MorphValueDef = Nothing
         Dim pendingMorphPresetDef As RACE_MorphPresetDef = Nothing
@@ -3197,6 +3269,9 @@ Public Module RecordParsers
                     inMaleBody = False
                     inFemaleBody = False
                 Case "MNAM"
+                    ' Un MPAI colgado al final del bloque anterior no debe darle familia al primer MPAV
+                    ' de ESTE bloque: el índice sólo vale para el MPAV que le sigue inmediatamente.
+                    pendingAvailableMorphFamily = -1
                     If expectingHeadGender Then
                         inMaleHead = True
                         inFemaleHead = False
@@ -3208,6 +3283,7 @@ Public Module RecordParsers
                         inFemaleBody = False
                     End If
                 Case "FNAM"
+                    pendingAvailableMorphFamily = -1
                     If expectingHeadGender Then
                         inFemaleHead = True
                         inMaleHead = False
@@ -3293,6 +3369,39 @@ Public Module RecordParsers
                     ElseIf inMaleHead Then
                         race.MaleHeadPartFormIDs.Add(headPartFormID)
                     End If
+                Case "MPAI"
+                    ' Índice de familia del MPAV que sigue (0=Nose 1=Brow 2=Eyes 3=Lip). xEdit lo declara
+                    ' "Unknown" y no lo decodifica, pero son 4 bytes con el índice — verificado sobre
+                    ' Skyrim.esm/Update.esm. Gracias a esto la familia NO se infiere del ORDEN: un RACE al
+                    ' que le falte un bloque sólo pierde ESE, y no corre los otros a la familia equivocada.
+                    pendingAvailableMorphFamily = -1
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        Dim fam = BitConverter.ToInt32(sr.Data, 0)
+                        If fam >= 0 AndAlso fam < RACE_AvailableMorphs.FamilyCount Then pendingAvailableMorphFamily = fam
+                    End If
+                Case "MPAV"
+                    ' SKYRIM-only: el subrecord no existe en las definiciones de FO4 (verificado), y la rama
+                    ' FO4 tiene su propio pipeline de morphs (MSDK/MSDV + MPGS). Gate explícito igual, para
+                    ' que un plugin de FO4 que reusara la firma no pueda inyectar datos acá. Mismo predicado
+                    ' inline que el resto de los gates de este archivo (p.ej. :3645, :3691, :4118).
+                    If Not IsSkyrim() Then Continue For
+                    Dim famIdx = pendingAvailableMorphFamily
+                    pendingAvailableMorphFamily = -1
+                    If famIdx < 0 Then Continue For                       ' MPAV sin su MPAI ⇒ familia desconocida
+                    If sr.Data Is Nothing OrElse sr.Data.Length < 4 Then Continue For
+                    Dim target As RACE_AvailableMorphs = Nothing
+                    If inFemaleHead Then
+                        If race.FemaleAvailableMorphs Is Nothing Then race.FemaleAvailableMorphs = New RACE_AvailableMorphs()
+                        target = race.FemaleAvailableMorphs
+                    ElseIf inMaleHead Then
+                        If race.MaleAvailableMorphs Is Nothing Then race.MaleAvailableMorphs = New RACE_AvailableMorphs()
+                        target = race.MaleAvailableMorphs
+                    End If
+                    If target Is Nothing Then Continue For                ' fuera de un bloque de cabeza
+                    target.Present(famIdx) = True
+                    target.BitsLo(famIdx) = BitConverter.ToUInt32(sr.Data, 0)
+                    ' Sólo Eyes (2) trae la segunda palabra (u8) con los tipos 32..38 — wbEyesMorphFlags02.
+                    If famIdx = 2 AndAlso sr.Data.Length >= 5 Then target.BitsHi(famIdx) = CUInt(sr.Data(4))
                 Case "FTSM"
                     Dim textureSetId = ResolveFormIDReference(rec, sr, pluginManager)
                     If textureSetId <> 0UI Then race.MaleFaceDetailTextureFormIDs.Add(textureSetId)
@@ -3557,7 +3666,7 @@ Public Module RecordParsers
                     ' Only read at RACE top level (not inside head sections).
                     If Not inMaleHead AndAlso Not inFemaleHead AndAlso Not inMaleBody AndAlso Not inFemaleBody _
                        AndAlso sr.Data IsNot Nothing Then
-                        If Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then
+                        If IsSkyrim() Then
                             ' SSE RACE.DATA layout (wbDefinitionsTES5.pas:9665): Skill Boosts[7]=14B + Unknown[2],
                             ' then Male Height @16, Female Height @20, Male/Female Weight @24/28, Flags u32 @32
                             ' (bit 0x2 = "FaceGen Head"). The FO4 version-gated flags offset (8/32) misreads SSE
@@ -3603,7 +3712,7 @@ Public Module RecordParsers
                         '   • SSE (wbDefinitionsTES5.pas:9693-9694 + byte-level engine RE 0x1403BB880 reading
                         '     [race+0x12C]/[race+0x130]): 'Head Biped Object' @DATA+0x44 (A, whole-cull),
                         '     'Hair Biped Object' @DATA+0x48 (B). No dedicated facial-hair occlusion object.
-                        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then
+                        If IsSkyrim() Then
                             If sr.Data.Length >= &H4C Then
                                 race.OcclusionFaceCullBiped = BitConverter.ToInt32(sr.Data, &H44)
                                 race.OcclusionHairBiped = BitConverter.ToInt32(sr.Data, &H48)
@@ -3911,12 +4020,12 @@ Public Module RecordParsers
                     ' ({u32 count, entries…}, wbDefinitionsTES5.pas:3325), so ResolveFormIDReference would read
                     ' the count as a bogus FormID and pollute the master list. Skip under Skyrim — the SSE write
                     ' path preserves the array verbatim (RemapAlternateTextures) and collects its TXST masters.
-                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                    If IsFallout4() Then _
                         armo.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO4S"
                     ' Female World Model material swap (wbMO4S = [MSWP], wbDefinitionsFO4.pas:6172). FO4-only as a
                     ' single FormID; Skyrim MO4S is an Alternate-Textures array (see MO2S note).
-                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                    If IsFallout4() Then _
                         armo.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "OBTS"
                     Dim combo = ParseOBTSPayload(sr.Data, rec, pluginManager)
@@ -4030,18 +4139,18 @@ Public Module RecordParsers
                 ' The SSE write path preserves the arrays verbatim (RemapAlternateTextures) and collects their
                 ' embedded TXST masters via CollectPreservedSourceFormIDs.
                 Case "MO2S"
-                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                    If IsFallout4() Then _
                         arma.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO3S"
-                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                    If IsFallout4() Then _
                         arma.FemaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO4S"
                     ' 1st-person Male material swap (wbDefinitionsFO4.pas:6242 → [MSWP]).
-                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                    If IsFallout4() Then _
                         arma.MaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "MO5S"
                     ' 1st-person Female material swap (wbDefinitionsFO4.pas:6243 → [MSWP]).
-                    If Config_App.Current.Game <> Config_App.Game_Enum.Skyrim Then _
+                    If IsFallout4() Then _
                         arma.FemaleFPMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
                 Case "ONAM"
                     ' Art Object (wbDefinitionsFO4.pas:6252 → [ARTO]).
@@ -4204,8 +4313,7 @@ Public Module RecordParsers
             ' el color de pelo se resolvía mal y, peor, el camino de preservación de Save ESP lo habría re-escrito
             ' como negro. MEDIDO sobre Skyrim.esm: 178 CLFM, FNAM ∈ {1 (×174), 0 (×4)} — nunca 2, así que en la
             ' práctica el bug no se disparaba con datos vanilla; el gate lo cierra igual para records de mods.
-            Dim isFo4Union As Boolean = Config_App.Current IsNot Nothing AndAlso
-                                        Config_App.Current.Game = Config_App.Game_Enum.Fallout4
+            Dim isFo4Union As Boolean = IsFallout4()
             If Not isFo4Union OrElse (clfm.Flags And 2UI) = 0UI Then
                 clfm.Color = ParseClfmColor(rawColor)
                 clfm.HasColor = True

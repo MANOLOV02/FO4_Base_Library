@@ -370,6 +370,14 @@ Public Class PreviewControl
     ''' Es la PRIMERA rama del default-fill 0x1414B7B00 y por eso gana sobre la negra. Antes este caso caia en
     ''' blanco (1,1,1) y sumaba translucidez blanca a full por luz. FO4 no lo usa.</summary>
     Public defaultSseEngineGenericTex As Integer
+    ''' <summary>NEGRO 4x4 para el diffuse de las HELPER SHAPES sin textura (ver
+    ''' <see cref="IRenderableShape.IsHelperShape"/>). Sin esto caian en <c>defaultWhiteTex</c> y una malla
+    ''' de colision se veia como una mancha BLANCA que tapaba el modelo. Negro las deja como silueta.
+    ''' <para>⛔ Textura PROPIA y no <c>defaultSseMsnSpecTex</c> (que tambien es negra): esa tiene una ley
+    ''' del motor detras y repurposarla ata dos cosas que no tienen nada que ver.</para>
+    ''' <para>⚠️ Es una decision NUESTRA, no del canonico: BodySlide deja el sin-shader "untextured"
+    ''' (ResourceLoader.h:30-31, no le da ni el placeholder NoImg.png).</para></summary>
+    Public defaultHelperTex As Integer
     ''' <summary>Default del SUBSURFACE (_sk, texture-set slot 2) de una cabeza FaceGen cuando falta: NEGRO.
     ''' RE byte-level: BSLightingShaderMaterialFacegen slot#10 (0x1414BA8B0) rellena subsurface(+0xB0) con
     ''' DefHeightMap (fill 0xFF000000 = negro); mapeo miembro↔slot verificado en slot#8 (0x1414BA6E0):
@@ -471,6 +479,9 @@ Public Class PreviewControl
 
         ' SSE: default GENERICO del slot 7 (rama backlight) = BSShader_DefNormalMap del motor, ver campo.
         defaultSseEngineGenericTex = CreateColorTexture(64, 64, 128, 128, 255, 255, mipped:=True)
+
+        ' Diffuse de las HELPER SHAPES sin textura = NEGRO (ver el campo). Sin mips: son 4x4 planos.
+        defaultHelperTex = CreateColorTexture(4, 4, 0, 0, 0, 255, mipped:=False)
 
         ' 64×64 default FaceGen SUBSURFACE (_sk faltante) = NEGRO (engine: DefHeightMap → SSS=0; ver campo).
         defaultFacegenSubsurfaceTex = CreateColorTexture(64, 64, 0, 0, 0, 255, mipped:=True)
@@ -1720,6 +1731,44 @@ Public Class PreviewControl
                                              End If
                                          End Sub
         menu.Items.Add(toggleSkinning)
+
+        ' ===== Geometria oculta =====
+        ' Los DOS ajustes de "mostrar lo que normalmente no se ve", juntos y en el mismo lugar donde el
+        ' usuario ya cambia el resto del render. APP-AWARE igual que en el dialogo del rig:
+        '  · Draw hidden segments -> se MUESTRA siempre, DESHABILITADO donde la app no lo permite (NPC
+        '    Manager: su render depende de la oclusion por segmento). Ver Config_App.AllowDrawHiddenSegments.
+        '  · Show helper shapes   -> editable en las DOS apps; lo que cambia por app es el DEFAULT.
+        ' ⛔ Los dos RE-DISPARAN el render en el mismo gesto: son decisiones por-frame, asi que alcanza con
+        ' UpdateRequired (mismo idiom que Render Floor y el resto del menu). Sin esto no se veia nada hasta
+        ' el latido del timer.
+        menu.Items.Add(New ToolStripSeparator())
+
+        Dim hiddenSegs As New ToolStripMenuItem("Draw hidden segments") With {
+            .Checked = Config_App.Current.Setting_DrawHiddenSegments,
+            .CheckOnClick = True,
+            .Enabled = Config_App.AllowDrawHiddenSegments,
+            .ToolTipText = If(Config_App.AllowDrawHiddenSegments,
+                              "Draw normally-hidden geometry segments (e.g. Pip-Boy forearm variant, occluded segments).",
+                              "Forced OFF in NPC Manager: the NPC render relies on per-segment occlusion.")
+        }
+        AddHandler hiddenSegs.Click, Sub()
+                                         If Not Config_App.AllowDrawHiddenSegments Then Exit Sub
+                                         Config_App.Current.Setting_DrawHiddenSegments = hiddenSegs.Checked
+                                         UpdateRequired = True
+                                     End Sub
+        menu.Items.Add(hiddenSegs)
+
+        Dim helperShapes As New ToolStripMenuItem("Show helper shapes") With {
+            .Checked = Config_App.ShowHelperShapesEfectivo(),
+            .CheckOnClick = True,
+            .ToolTipText = "Show helper shapes (e.g. collisions) - shapes with no shader or with the hidden flag set."
+        }
+        AddHandler helperShapes.Click, Sub()
+                                           Config_App.Current.Setting_ShowHelperShapes = helperShapes.Checked
+                                           UpdateRequired = True
+                                       End Sub
+        menu.Items.Add(helperShapes)
+
         menu.Items.Add(New ToolStripSeparator())
         Dim timeLabel As New ToolStripMenuItem($"Last update: {LastUpdateMs:F1} ms") With {.Enabled = False}
         menu.Items.Add(timeLabel)
@@ -1790,7 +1839,10 @@ Public Class PreviewControl
             ' skip (Render: MeshData.Shape Is Nothing OrElse RenderHide). Without this, hiding the body
             ' (e.g. the Edit Outfit "piece only" preview, or "Render body" off) still framed the invisible
             ' body AABB, so a small visible piece ended up zoomed as if the whole body were present.
-            If mesh.MeshData.Shape Is Nothing OrElse mesh.MeshData.Shape.RenderHide Then Continue For
+            ' HelperShapeGate cubre RenderHide + las helper shapes. Encuadrar sobre una helper deforma la
+            ' camara: el VirtualGround de KS Hairdos SMP es un quad de radio 113 centrado en el origen,
+            ' o sea que la escena entera se aleja por una malla que ni siquiera se dibuja.
+            If Not HelperShapeGate.IsShapeDrawable(mesh.MeshData.Shape) Then Continue For
             min = Vector3.ComponentMin(min, mesh.MeshData.Meshgeometry.Minv)
             max = Vector3.ComponentMax(max, mesh.MeshData.Meshgeometry.Maxv)
             anyVisible = True
@@ -2008,6 +2060,7 @@ Public Class PreviewControl
         If defaultFacegenTintTex <> 0 Then GL.DeleteTexture(defaultFacegenTintTex) : defaultFacegenTintTex = 0
         If defaultSseMsnSpecTex <> 0 Then GL.DeleteTexture(defaultSseMsnSpecTex) : defaultSseMsnSpecTex = 0
         If defaultSseEngineGenericTex <> 0 Then GL.DeleteTexture(defaultSseEngineGenericTex) : defaultSseEngineGenericTex = 0
+        If defaultHelperTex <> 0 Then GL.DeleteTexture(defaultHelperTex) : defaultHelperTex = 0
         If defaultFacegenSubsurfaceTex <> 0 Then GL.DeleteTexture(defaultFacegenSubsurfaceTex) : defaultFacegenSubsurfaceTex = 0
         If defaultCubeMap <> 0 Then GL.DeleteTexture(defaultCubeMap) : defaultCubeMap = 0
 #If DEBUG Then
@@ -3411,7 +3464,7 @@ Public Class PreviewModel
         End Function
         Public Sub Render(projection As Matrix4, ByRef camera As OrbitCamera)
 
-            If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide = True Then Exit Sub
+            If Not HelperShapeGate.IsShapeDrawable(MeshData.Shape) Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
             '=============================== MATRICES ===============================
             Dim model As Matrix4 = MeshData.Transform
@@ -3503,7 +3556,8 @@ Public Class PreviewModel
         ''' hace falta subirlos. Lo demas que se sube es lo que decide la POSICION (matrices + skinning) y
         ''' el recorte (zap + alpha-test).</para></summary>
         Friend Sub RenderDepthOnly(shadowShader As Shader_Base_Class, lightView As Matrix4)
-            If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide Then Exit Sub
+            ' Sin esto la helper deja de VERSE pero sigue proyectando sombra.
+            If Not HelperShapeGate.IsShapeDrawable(MeshData.Shape) Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
 
             Dim model As Matrix4 = MeshData.Transform
@@ -3745,7 +3799,7 @@ Public Class PreviewModel
         ''' final igual que en <see cref="Render"/>.</para></summary>
         Public Sub RenderOverlayLayer(projection As Matrix4, ByRef camera As OrbitCamera, layer As OverlayMaterialLayer)
             If layer Is Nothing OrElse layer.Material Is Nothing Then Exit Sub
-            If IsNothing(MeshData.Shape) OrElse MeshData.Shape.RenderHide = True Then Exit Sub
+            If Not HelperShapeGate.IsShapeDrawable(MeshData.Shape) Then Exit Sub
             If IsNothing(Me.MeshData.Shape.NifShape) Then Exit Sub
 
             '=============================== MATRICES (identical to Render) ===============================
@@ -4117,6 +4171,10 @@ Public Class PreviewModel
             '===============================
             If diffuseTextureId <> 0 Then
                 shader.BindTexture("texDiffuse", diffuseTextureId, TextureUnit.Texture0)
+            ElseIf MeshData.Shape IsNot Nothing AndAlso MeshData.Shape.IsHelperShape Then
+                ' Una helper que el usuario decidio VER (casilla "Show helper shapes") no tiene material ni
+                ' texturas: en blanco tapaba el modelo como una mancha. Negro la deja como silueta.
+                shader.BindTexture("texDiffuse", Me.ParentModel.ParentControl.defaultHelperTex, TextureUnit.Texture0)
             Else
                 shader.BindTexture("texDiffuse", Me.ParentModel.ParentControl.defaultWhiteTex, TextureUnit.Texture0)
             End If
@@ -5582,7 +5640,7 @@ Public Class PreviewModel
         casters.Clear()
         For Each mesh In meshes
             If mesh Is Nothing OrElse mesh.MeshData Is Nothing OrElse mesh.MeshData.Shape Is Nothing Then Continue For
-            If mesh.MeshData.Shape.RenderHide OrElse mesh.MeshData.Shape.Wireframe Then Continue For
+            If Not HelperShapeGate.IsShapeDrawable(mesh.MeshData.Shape) OrElse mesh.MeshData.Shape.Wireframe Then Continue For
             Dim mb = mesh.MeshData.Material?.MaterialBase
             If mb Is Nothing OrElse Not mb.CastShadows Then Continue For
             ' Los DECAL son overlays coplanares sobre otra superficie: en un mapa de profundidad no
