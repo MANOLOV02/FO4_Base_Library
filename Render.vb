@@ -1743,12 +1743,12 @@ Public Class PreviewControl
         ' el latido del timer.
         menu.Items.Add(New ToolStripSeparator())
 
-        Dim hiddenSegs As New ToolStripMenuItem("Draw hidden segments") With {
+        Dim hiddenSegs As New ToolStripMenuItem("Render hidden segments") With {
             .Checked = Config_App.Current.Setting_DrawHiddenSegments,
             .CheckOnClick = True,
             .Enabled = Config_App.AllowDrawHiddenSegments,
             .ToolTipText = If(Config_App.AllowDrawHiddenSegments,
-                              "Draw normally-hidden geometry segments (e.g. Pip-Boy forearm variant, occluded segments).",
+                              "Render mesh segments the NIF marks as not drawn (e.g. the with-item Pip-Boy forearm variant).",
                               "Forced OFF in NPC Manager: the NPC render relies on per-segment occlusion.")
         }
         AddHandler hiddenSegs.Click, Sub()
@@ -1758,10 +1758,10 @@ Public Class PreviewControl
                                      End Sub
         menu.Items.Add(hiddenSegs)
 
-        Dim helperShapes As New ToolStripMenuItem("Show helper shapes") With {
+        Dim helperShapes As New ToolStripMenuItem("Render hidden shapes") With {
             .Checked = Config_App.ShowHelperShapesEfectivo(),
             .CheckOnClick = True,
-            .ToolTipText = "Show helper shapes (e.g. collisions) - shapes with no shader or with the hidden flag set."
+            .ToolTipText = "Render whole shapes the NIF marks as not drawn: no shader property, or the NiAVObject hidden flag."
         }
         AddHandler helperShapes.Click, Sub()
                                            Config_App.Current.Setting_ShowHelperShapes = helperShapes.Checked

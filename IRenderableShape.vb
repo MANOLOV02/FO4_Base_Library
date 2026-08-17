@@ -48,7 +48,19 @@ Public Interface IRenderableShape
     ''' <c>FaceGenBuilder</c>) lo usa como marca de oclusión de headwear horneada. No colisiona porque
     ''' NPC Manager nunca LEE un FaceGeom — sólo los escribe.</para>
     ''' <para>⭐ MEDIDO sobre los BSA/BA2 de los dos juegos (<c>Tools/HelperShapeScan</c>, 253.770 NIF /
-    ''' 1.308.751 shapes): 5.197 = 0,40 %, sin un solo caso de geometría visible legítima.</para></summary>
+    ''' 1.308.751 shapes): 5.197 = 0,40 %, sin un solo caso de geometría visible legítima. Y sobre el
+    ''' ShapeData de Wardrobe Manager: 246 de 4.821 shapes (5,1 %), TODAS proxies de colisión
+    ''' (Virtual*, BCA_*, *collision).</para>
+    ''' <para>⛔ EL CÓDIGO DICE "helper", LA UI DICE "hidden". No es un descuido: <c>helper shape</c> es
+    ''' el término del CANÓNICO (<c>bHelperShape</c> en OutfitStudio), y conservarlo deja el código
+    ''' trazable contra la fuente. Pero la etiqueta era imprecisa para el usuario — el bit0 no marca sólo
+    ''' mallas auxiliares: también marca sangre de armas, el <c>PageText</c> de los libros, los glows de
+    ''' pantalla, las etapas de destrucción y la oclusión de headwear que el bake de FO4 hornea. Lo único
+    ''' que TODAS comparten es que el motor no las dibuja, así que la UI las llama
+    ''' <b>"Render hidden shapes"</b> / <b>"Make shape hidden"</b>.</para>
+    ''' <para>⚠️ Y por eso NO se puede partir este predicado por intención: el bit no guarda POR QUÉ está
+    ''' oculta. Distinguir "pelo bajo casco" de "sangre de arma" exigiría contexto que el archivo no
+    ''' tiene (y que Wardrobe Manager, abriendo un NIF suelto, nunca va a tener).</para></summary>
     ReadOnly Property IsHelperShape As Boolean
     ReadOnly Property ShapeBones As IReadOnlyList(Of NiNode)
     ReadOnly Property ShapeBoneTransforms As IReadOnlyList(Of Transform_Class)

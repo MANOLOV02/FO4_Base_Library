@@ -1255,8 +1255,8 @@ Partial Class LightRigForm
         chkHiddenSegments.Name = "chkHiddenSegments"
         chkHiddenSegments.Size = New Size(147, 19)
         chkHiddenSegments.TabIndex = 2
-        chkHiddenSegments.Text = "Draw hidden segments"
-        ToolTip1.SetToolTip(chkHiddenSegments, "Draw normally-hidden geometry segments (e.g. Pip-Boy forearm variant, occluded segments) in the viewport. WM inspection aid; does not affect exports.")
+        chkHiddenSegments.Text = "Render hidden segments"
+        ToolTip1.SetToolTip(chkHiddenSegments, "Render mesh segments the NIF marks as not drawn: the with-item variant (e.g. the Pip-Boy forearm) and, with an actor, the segments covered by worn items. Per-triangle; does not affect exports.")
         ' 
         ' chkShowHelperShapes
         ' 
@@ -1265,8 +1265,8 @@ Partial Class LightRigForm
         chkShowHelperShapes.Name = "chkShowHelperShapes"
         chkShowHelperShapes.Size = New Size(160, 19)
         chkShowHelperShapes.TabIndex = 3
-        chkShowHelperShapes.Text = "Show helper shapes"
-        ToolTip1.SetToolTip(chkShowHelperShapes, "Show helper shapes (e.g. collisions) - shapes with no shader or with the hidden flag set.")
+        chkShowHelperShapes.Text = "Render hidden shapes"
+        ToolTip1.SetToolTip(chkShowHelperShapes, "Render whole shapes the NIF marks as not drawn: no shader property (collisions, markers, emitter volumes) or the NiAVObject hidden flag (weapon blood, screen glows, baked headwear occlusion).")
         ' 
         ' grpCamera
         ' 
