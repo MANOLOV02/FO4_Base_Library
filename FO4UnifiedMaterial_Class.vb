@@ -4474,6 +4474,7 @@ Public Class FO4UnifiedMaterial_Class
         Return New Color4(r / 255, g / 255, b / 255, Math.Min(1.0F, Math.Max(0.0F, alpha)))
     End Function
     Private Shared Function ClampByte(value As Single) As Integer
+        If value > Integer.MaxValue Then Return 255
         Return Math.Min(255, Math.Max(0, CInt(value)))
     End Function
     Private Shared Function NifColor3ToMaterialRgb(color As NiflySharp.Structs.Color3) As UInteger
