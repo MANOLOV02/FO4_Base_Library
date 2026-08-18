@@ -52,6 +52,12 @@ Public Class PluginManager
     ''' <summary>Records grouped by signature type.</summary>
     Public Property RecordsByType As New Dictionary(Of String, List(Of PluginRecord))
 
+    ''' <summary>Los plugins que el último <see cref="LoadAllPlugins"/> dejó FUERA porque les falta un
+    ''' master (o porque se lo dejó fuera a un master suyo, transitivamente). Vacía cuando cargó todo.
+    ''' <para>Existe para que la UI pueda decirlo: excluir en silencio es el modo de falla mudo que este
+    ''' camino viene a eliminar, y el log solo no lo ve el usuario final (Release no escribe log).</para></summary>
+    Public Property LastExcludedForMissingMasters As New List(Of String)
+
     ''' <summary>Load only ACTIVATED plugins from the Fallout 4 Data path. Order source priority:
     ''' 1) loadorder.txt (LOOT/Vortex managed; full ordered list with implicits + actives).
     ''' 2) Plugins.txt with `*activated` markers + hardcoded implicits prepended.
@@ -155,8 +161,20 @@ Public Class PluginManager
                 End Try
             End Sub)
 
-        ' ---- Dependency ordering, BEFORE taking the write lock so a bad set throws without mutating ----
-        Dim mergeOrder = OrderByMasters(readers)
+        ' ---- Dependency ordering, BEFORE taking the write lock so a bad set is resolved without mutating ----
+        ' Los plugins con masters faltantes (y sus dependientes, transitivamente) quedan FUERA en vez de
+        ' tumbar la carga entera — ver OrderByMasters. Se nombran en el log: excluir en silencio sería el
+        ' mismo modo de falla mudo que esto viene a sacar.
+        Dim excludedForMissingMasters As List(Of String) = Nothing
+        Dim mergeOrder = OrderByMasters(readers, excludedForMissingMasters)
+        If excludedForMissingMasters IsNot Nothing AndAlso excludedForMissingMasters.Count > 0 Then
+            Dim names = String.Join(", ", excludedForMissingMasters)
+            Dim n2 = excludedForMissingMasters.Count
+            Logger.LogLazy(Function() $"[ESP] {n2} plugin(s) NOT loaded: a master they require is missing, " &
+                                      $"so their FormIDs could not be resolved — {names}. " &
+                                      "The rest of the load order was loaded normally.")
+        End If
+        LastExcludedForMissingMasters = If(excludedForMissingMasters, New List(Of String))
 
         ' ---- Fan-in merge (sequential, load order 0..N-1, under the write lock) ----
         ' Replaying IndexAndMergePlugin in order preserves: FileID slot assignment order, last-override-wins,
@@ -197,12 +215,63 @@ Public Class PluginManager
     ''' <para>STABLE by construction: visiting in the caller's order and appending post-order yields the
     ''' IDENTITY permutation whenever the input is already correctly ordered, so a valid load order is
     ''' never reshuffled and cannot change which override wins.</para></summary>
-    Private Shared Function OrderByMasters(readers As PluginReader()) As List(Of PluginReader)
+    Private Shared Function OrderByMasters(readers As PluginReader(),
+                                           ByRef excludedForMissingMasters As List(Of String)) As List(Of PluginReader)
         Dim byName As New Dictionary(Of String, PluginReader)(StringComparer.OrdinalIgnoreCase)
         For Each r In readers
             ' readers(i) = Nothing is a plugin whose parse failed; it was already logged and dropped.
             If r IsNot Nothing AndAlso Not byName.ContainsKey(r.FileName) Then byName(r.FileName) = r
         Next
+
+        ' ---- Fase 1: marcar los módulos con masters faltantes y PROPAGAR a sus dependientes ----
+        ' La MECÁNICA es la de xEdit: marcar (wbLoadOrder.pas:400-405), propagar con un punto fijo
+        ' (:414-425) y excluir los marcados (:462-465), de modo que sólo se recorre lo que quedó
+        ' (:1012-1014). El throw queda SÓLO para el ciclo, como :958-959.
+        '
+        ' ⚠️ EL PREDICADO NO ES EL MISMO, y hay que decirlo: en xEdit "falta el master" significa NO EXISTE
+        ' EN Data\ — `_ModulesByName` se arma sobre `TDirectory.GetFiles(wbDataPath)` (:290), la carpeta
+        ' entera. Acá significa "no está entre los plugins que se están cargando". La diferencia aparece con
+        ' un master INSTALADO pero DESTILDADO: xEdit no lo marca y encima lo CARGA, porque `SimulateLoad.Load`
+        ' recursa `Load(miMasters[i])` sin mirar mfActive (:962-964) — el filtro por mfActive existe sólo en
+        ' el bucle raíz.
+        ' ⛔ Ese comportamiento NO se replica, y no por preferencia: xEdit ahí es una herramienta de
+        ' MODELADO y el MOTOR hace lo contrario — un plugin cuyo master no está activo no se carga in-game.
+        ' Nuestro espacio de slots tiene que espejar el del juego (es lo que hace que cada FormID que
+        ' resolvemos signifique lo mismo que en runtime), así que arrastrar un plugin no seleccionado
+        ' correría el FileID de todo lo que viene después y desalinearía la sesión entera respecto de la
+        ' selección del Preflight y del load order real. Manda el motor, no la herramienta.
+        ' ⛔ El `raise` de SimulateLoad (:966) es una ASERCIÓN sobre ese conjunto ya filtrado, no la política
+        ' ante un master colgado. Abortar la carga entera por un plugin roto se apartaba del canónico Y del
+        ' MOTOR —que tampoco carga el dependiente, pero sí todo lo demás— y encima contradecía lo que esta
+        ' misma función ya hace con los otros dos modos de falla: un archivo ausente se saltea mudo
+        ' (LoadAllPlugins, el File.Exists del fan-out) y un parseo fallido también (readers(i) = Nothing).
+        ' Un patch activo cuyo master quedó desinstalado es un estado corriente de modding; convertirlo en
+        ' "no carga NADA" rompía el bake-all y el CLI, que no pasan por el gate del Preflight.
+        Dim broken As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        For Each r In readers
+            If r Is Nothing Then Continue For
+            For Each m In r.Masters
+                If Not byName.ContainsKey(m) Then
+                    broken.Add(r.FileName)
+                    Exit For
+                End If
+            Next
+        Next
+        Dim changed As Boolean = True
+        While changed
+            changed = False
+            For Each r In readers
+                If r Is Nothing OrElse broken.Contains(r.FileName) Then Continue For
+                For Each m In r.Masters
+                    If broken.Contains(m) Then
+                        broken.Add(r.FileName)
+                        changed = True
+                        Exit For
+                    End If
+                Next
+            Next
+        End While
+        excludedForMissingMasters = broken.OrderBy(Function(x) x, StringComparer.OrdinalIgnoreCase).ToList()
 
         Dim ordered As New List(Of PluginReader)
         Const VISITING As Integer = 1, DONE As Integer = 2
@@ -222,13 +291,9 @@ Public Class PluginManager
                     state(r.FileName) = VISITING
                     path.Add(r.FileName)
                     For Each m In r.Masters
+                        ' Fase 1 garantiza que todo master de un plugin NO roto está en byName.
                         Dim master As PluginReader = Nothing
-                        If Not byName.TryGetValue(m, master) Then
-                            Throw New InvalidDataException(
-                                $"Plugin '{r.FileName}' requires master '{m}', which is not among the plugins " &
-                                "being loaded (it was not selected, or it failed to parse). Its FormIDs cannot " &
-                                "be resolved without it, so loading is refused rather than resolved incorrectly.")
-                        End If
+                        If Not byName.TryGetValue(m, master) Then Continue For
                         visit(master)
                     Next
                     path.RemoveAt(path.Count - 1)
@@ -237,7 +302,9 @@ Public Class PluginManager
                 End Sub
 
         For Each r In readers
-            If r IsNot Nothing Then visit(r)
+            ' Los marcados en fase 1 no entran: es el `Exclude(miFlags, mfActive)` de wbLoadOrder.pas:462-465,
+            ' que es lo que hace que SimulateLoad no los recorra.
+            If r IsNot Nothing AndAlso Not broken.Contains(r.FileName) Then visit(r)
         Next
         Return ordered
     End Function
@@ -568,6 +635,105 @@ Public Class PluginManager
             _rwLock.ExitReadLock()
         End Try
     End Function
+    ''' <summary>Outcome of <see cref="TryMapGlobalToFileLocal"/>. Son TRES, no dos, porque los dos
+    ''' llamadores necesitan comportamiento OPUESTO para <see cref="OwnerNotInMasterList"/>: el writer
+    ''' lanza (su pasada de descubrimiento garantiza que todo dueño ya está en la MAST, así que es una
+    ''' aserción) y el saver simplemente no anota nada (el master del NPC recién se suma en ESE guardado,
+    ''' o sea que es un caso legítimo y frecuente).
+    ''' <para>⛔ Por eso el resultado NO es un <c>UInteger?</c>: en VB el ternario <c>If(x, 0UI)</c> sobre
+    ''' un Nullable colapsa Nothing con 0 y devuelve HasValue=True, y 0 es un FormID local VÁLIDO (slot 0
+    ''' = game master, object 0). Un enum + ByRef no tiene esa trampa. Ver 00-reglas-vb-trampas-que-me-comi.</para></summary>
+    Public Enum FileLocalMapResult
+        ''' <summary>Se resolvió: <c>localFormID</c> es válido.</summary>
+        Ok = 0
+        ''' <summary>El FormID global no pertenece a ningún plugin cargado; no hay a qué mapearlo.</summary>
+        NoOwner = 1
+        ''' <summary>El dueño se resolvió pero no está en la MAST del archivo destino ni es el destino.</summary>
+        OwnerNotInMasterList = 2
+    End Enum
+
+    ''' <summary>Índice nombre→POSICIÓN de una lista de masters, para <see cref="TryMapGlobalToFileLocal"/>.
+    ''' <para>La posición sale del recorrido, no del <c>Count</c> del diccionario: un MAST con una entrada
+    ''' repetida (no lo producen ni el CK ni xEdit, pero un archivo editado a mano sí) haría que el
+    ''' diccionario se quedara corto y corriera el índice de todos los masters siguientes. Por la misma
+    ''' razón el "self index" que espera <see cref="TryMapGlobalToFileLocal"/> es el <c>Count</c> de la
+    ''' LISTA, que se pasa aparte.</para>
+    ''' <para>⛔ Ante un nombre REPETIDO gana la ÚLTIMA posición, porque es lo que hace el canónico:
+    ''' <c>LoadOrderFileIDtoFileFileID</c> recorre <c>for var i := Pred(GetMasterCount) <b>downto 0</b> …
+    ''' Exit(CreateFull(i))</c> (wbImplementation.pas:4982-4984), o sea de atrás para adelante, y el
+    ''' primero que corta es el de índice más alto.</para></summary>
+    Public Shared Function BuildMasterIndex(masters As IEnumerable(Of String)) As Dictionary(Of String, Integer)
+        Dim idx As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+        If masters Is Nothing Then Return idx
+        Dim i As Integer = 0
+        For Each m In masters
+            ' Asignación incondicional = "gana la última", el `downto 0` del canónico.
+            If Not String.IsNullOrEmpty(m) Then idx(m) = i
+            i += 1
+        Next
+        Return idx
+    End Function
+
+    ''' <summary>Traducir un FormID GLOBAL (numeración de la sesión: slot de lo cargado) al espacio LOCAL
+    ''' de un archivo cuya MAST es <paramref name="masterIndex"/> y que se llama <paramref name="outName"/>
+    ''' (numeración local: el byte alto es un índice en ESA MAST). Es LA conversión entre las dos
+    ''' numeraciones, y vive acá una sola vez.
+    '''
+    ''' <para>⛔ Existía DOS veces, con la misma aritmética y distinta lista de masters: el remapper de
+    ''' <c>SaveNpcEspWriter</c> (contra la MAST NUEVA que se está escribiendo) y
+    ''' <c>NpcOverrideSaver.MapGlobalToLocalInPlugin</c> (contra la MAST VIEJA del disco). La copia del
+    ''' saver además resolvía mal el caso "el dueño no está en la MAST": lo trataba como SELF, que es la
+    ''' respuesta correcta sólo cuando el dueño ES el archivo destino. Con un master todavía ausente daba
+    ''' un FormID local que colisiona con los records propios del archivo (los drafts arrancan en 0x800 y
+    ''' los records nuevos de cualquier mod también, por la convención del CK — xEdit
+    ''' <c>TwbFile.NewFormID</c>, wbImplementation.pas:5092), y ese FormID se usaba para DESCARTAR
+    ''' records al preservar.</para>
+    '''
+    ''' <para>El ancho del object id lo decide el ENCODING DE ORIGEN, no el destino: un global light es
+    ''' <c>0xFE | lightSlot&lt;&lt;12 | object12</c>, así que enmascarar con 0xFFFFFF conservaría los bits del
+    ''' slot. La salida es siempre full-form (<c>idx &lt;&lt; 24 | object</c>), igual que xEdit, que referencia
+    ''' masters ESL con <c>CreateFull(i)</c>.</para></summary>
+    ''' <param name="masterCount">Cantidad de entradas de la MAST — el "self index", o sea el byte alto de
+    ''' los records propios del archivo. Va aparte del diccionario a propósito: con un MAST que repita un
+    ''' nombre, <c>masterIndex.Count</c> sería menor que la cantidad real de entradas.</param>
+    Public Function TryMapGlobalToFileLocal(globalFormID As UInteger,
+                                            masterIndex As IDictionary(Of String, Integer),
+                                            masterCount As Integer,
+                                            outName As String,
+                                            ByRef localFormID As UInteger) As FileLocalMapResult
+        localFormID = 0UI
+
+        ' Un FormID HARDCODED (object id < 0x800) pasa SIN TOCAR: no pertenece a ningún archivo, lo define
+        ' el motor. Es la primera línea del canónico — `TwbFile.LoadOrderFormIDtoFileFormID`
+        ' (wbImplementation.pas:4990-4995) hace `if aFormID.IsHardcoded then Exit`, con
+        ' `IsHardcoded = _FormID < $800` (wbInterface.pas:22718-22721).
+        If globalFormID < &H800UI Then
+            localFormID = globalFormID
+            Return FileLocalMapResult.Ok
+        End If
+
+        Dim ownerName = GetOriginatingPluginName(globalFormID)
+        If String.IsNullOrEmpty(ownerName) Then Return FileLocalMapResult.NoOwner
+
+        Dim isLightSource As Boolean = ((globalFormID >> 24) And &HFFUI) = &HFEUI
+        Dim objectID As UInteger = If(isLightSource, globalFormID And &HFFFUI, globalFormID And &HFFFFFFUI)
+
+        ' El destino se chequea ANTES que la MAST: un archivo nunca se lista a sí mismo como master, así
+        ' que "no está en la lista" es la respuesta esperada para él y el self index es masterCount.
+        If String.Equals(ownerName, outName, StringComparison.OrdinalIgnoreCase) Then
+            localFormID = (CUInt(Math.Max(0, masterCount)) << 24) Or objectID
+            Return FileLocalMapResult.Ok
+        End If
+
+        Dim idx As Integer
+        If masterIndex IsNot Nothing AndAlso masterIndex.TryGetValue(ownerName, idx) Then
+            localFormID = (CUInt(idx) << 24) Or objectID
+            Return FileLocalMapResult.Ok
+        End If
+
+        Return FileLocalMapResult.OwnerNotInMasterList
+    End Function
+
     Public Function ResolveFieldString(rec As PluginRecord, sr As SubrecordData, Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
         If sr.Data Is Nothing OrElse sr.Data.Length = 0 Then Return ""
 
@@ -883,12 +1049,30 @@ Public Class PluginManager
         Return n.StartsWith("cc")   ' Creation Club (FO4 + SSE)
     End Function
 
+    ''' <summary>La "partial index" de Bethesda para un FormID: el <c>modIndex</c> de un plugin completo, o
+    ''' <c>0xFE000 | lightIndex</c> para uno light. Es exactamente <c>ModInfo::GetPartialIndex</c>
+    ''' (f4se GameData.h:87-90) y es la CLAVE con la que un <c>.jslot</c> de RaceMenu indexa su tabla
+    ''' <c>mods</c> (<c>[{index,name}]</c>, escrita por skee con esa misma función,
+    ''' PresetInterface.cpp:361,396-401).
+    ''' <para>skee la reconstruye al leer como <c>modIndex &lt;&gt; 0xFE ? modIndex : (formId &gt;&gt; 12)</c>
+    ''' (PresetInterface.cpp:993), que es la misma expresión: para un light,
+    ''' <c>0xFE000000 | lightIndex&lt;&lt;12 | obj12</c> desplazado 12 da <c>0xFE000 | lightIndex</c>.</para>
+    ''' <para>⛔ Sirve para leer una tabla de OTRO load order. NO es un slot de esta sesión: el número que
+    ''' devuelve sólo tiene sentido contra la tabla del archivo del que salió el FormID.</para></summary>
+    Public Shared Function PartialIndexOfFormID(formID As UInteger) As UInteger
+        If (formID >> 24) <> &HFEUI Then Return formID >> 24
+        Return formID >> 12
+    End Function
+
     ''' <summary>Local FormID used in the FaceGen file name, per CK convention. Full plugins: strip the
     ''' high (load-order) byte (&amp; 0xFFFFFF). ESL/light plugins (high byte 0xFE): ALSO strip the 12-bit
     ''' light slot, leaving only the 12-bit record (&amp; 0xFFF). Matches the engine/xEdit ESL FileID scheme
     ''' used by ResolveFormID / ToLocalFormID above (0xFE | lightSlot&lt;&lt;12 | object12). Verified: ESL runtime
     ''' 0xFE032800 → CK writes "00000800" (record 0x800), NOT "00032800"; without the ESL mask the light
-    ''' slot leaks into the FaceGen mesh/texture name and the game can't find it. Stateless.</summary>
+    ''' slot leaks into the FaceGen mesh/texture name and the game can't find it. Stateless.
+    ''' <para>⛔ NO confundir con <see cref="PartialIndexOfFormID"/>, justo arriba: aquélla devuelve el
+    ''' ÍNDICE del plugin y ésta el OBJECT ID del record — las dos mitades complementarias del mismo
+    ''' FormID (<c>ModInfo::GetPartialIndex</c> y el inverso de <c>ModInfo::GetFormID</c>).</para></summary>
     Public Shared Function ToFaceGenLocalFormID(globalFormID As UInteger) As UInteger
         If (globalFormID >> 24) = &HFEUI Then Return globalFormID And &HFFFUI
         Return globalFormID And &HFFFFFFUI

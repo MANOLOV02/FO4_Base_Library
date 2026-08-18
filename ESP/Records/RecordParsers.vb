@@ -2094,20 +2094,21 @@ Public Module RecordParsers
         Return Config_App.Current IsNot Nothing AndAlso Config_App.Current.Game = Config_App.Game_Enum.Fallout4
     End Function
 
+    ''' <summary>Nombre local, histórico, de <see cref="ParserHelpers.ResolveFIDRaw"/>. Es un REENVÍO, no
+    ''' una segunda implementación: la política de "sin PluginManager el FormID vuelve crudo" vive en UN
+    ''' solo lugar (ParserHelpers), igual que la LEY de conversión vive en un solo lugar
+    ''' (PluginManager.ResolveReferencedFormID → ResolveFormID → MakeGlobalFormID).
+    ''' <para>⛔ Antes esto era una COPIA con el cuerpo repetido. Los otros 14 archivos de Records\ no ven
+    ''' la versión Private de este Module, así que la copia había nacido por accesibilidad; el costo era
+    ''' que la política de nulos quedaba escrita dos veces y sólo divergía el día que alguien tocara una.
+    ''' Se conserva el NOMBRE para no mover 127 call sites (churn sin beneficio), pero ya no hay dos leyes.</para></summary>
     Private Function ResolveFormIDReference(rec As PluginRecord, rawFormID As UInteger, pluginManager As PluginManager) As UInteger
-        ' ⛔ SIN PluginManager EL FormID VUELVE CRUDO: sin el mapeo de master-index, o sea un número
-        ' PLAUSIBLE Y EQUIVOCADO, sin error. Es el motivo por el que los 154 `Optional pluginManager As
-        ' PluginManager = Nothing` de estos parsers dejaron de ser opcionales: la firma ANUNCIABA como
-        ' soportado un modo que corrompe, mientras los 160 llamadores reales habían concluido por separado
-        ' que no lo era (se sacó el Optional y compiló limpio: nadie lo omitía). Esta guarda queda como red
-        ' para quien pase Nothing a propósito — que ahora es un acto explícito, no un default.
-        If pluginManager Is Nothing OrElse rec Is Nothing Then Return rawFormID
-        Return pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rawFormID)
+        Return ParserHelpers.ResolveFIDRaw(rec, rawFormID, pluginManager)
     End Function
 
+    ''' <summary>Reenvío a <see cref="ParserHelpers.ResolveFID"/>. Ver la nota del overload de arriba.</summary>
     Private Function ResolveFormIDReference(rec As PluginRecord, sr As SubrecordData, pluginManager As PluginManager) As UInteger
-        If sr.Data Is Nothing OrElse sr.Data.Length < 4 Then Return 0UI
-        Return ResolveFormIDReference(rec, sr.AsUInt32, pluginManager)
+        Return ParserHelpers.ResolveFID(rec, sr, pluginManager)
     End Function
 
     ''' <summary>Parsea el payload OBTS (Object Mod Template Item). Layout, con los prefijos de array segun las

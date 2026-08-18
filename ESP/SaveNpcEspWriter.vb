@@ -614,11 +614,148 @@ Public Module SaveNpcEspWriter
         ' update-existing, a prior save consumed object IDs 0x800..existingNextObjectId-1 (those
         ' records are in existingRecords/Entries with self-index FormIDs). Starting at 0x800 again
         ' would re-hand the same IDs and collide with already-preserved overrides.
-        Dim nextSelfObjIndex As UInteger = If(existingNextObjectId > NEXT_OBJECT_ID_DEFAULT, existingNextObjectId, NEXT_OBJECT_ID_DEFAULT)
+        ' Ancho del object id del ARCHIVO QUE SE ESCRIBE: 12 bits si sale con FLAG_ESL, 24 si es completo.
+        ' ⛔ Va ACÁ, antes de repartir, no sólo al escribir el HEDR. xEdit enmascara al REPARTIR
+        ' (TwbFile.NewFormID, wbImplementation.pas:5076-5083 `NextObjectID := GetNextObjectID and Mask`);
+        ' clampear sólo el header dejaba salir object ids > 0xFFF en un ESL, que el motor enmascara a 12
+        ' bits (ModInfo::GetFormID) y hace colisionar con otro record — y ademas congelaba el contador en
+        ' 0xFFF, con lo que CADA guardado siguiente volvia a repartir 0xFFF a un record distinto.
+        Dim objectIdMask As UInteger = If(lightMaster, &HFFFUI, &HFFFFFFUI)
+
+        ' PISO del espacio de object ids. ⛔ NO es la constante 0x800: el canónico lo decide POR ARCHIVO
+        ' (juego + versión del HEDR + tener masters) y para un plugin SSE nuestro da 1, no 0x800 — ver
+        ' PluginWriter.AllowsHardcodedRange. Usarlo cableado hacía que el agotamiento rehusara el guardado
+        ' a los 2048 records cuando en SSE el canónico todavía tiene 2047 libres: un límite propio MÁS
+        ' ESTRICTO que la referencia. Sólo afecta wrap / recuperación / agotamiento; el arranque de un
+        ' guardado normal sale del HEDR (0x800), así que no mueve un byte del caso corriente.
+        Dim objectIdFloor As UInteger = If(PluginWriter.AllowsHardcodedRange(game, sortedMasters.Count), 1UI, NEXT_OBJECT_ID_DEFAULT)
+
+        ' Object ids YA OCUPADOS en este archivo: los de los records PROPIOS que se preservan o se
+        ' re-emiten con su FormID real. xEdit consulta lo mismo antes de entregar uno nuevo
+        ' (`while GetRecordByFormID(Result) <> nil do Inc`, :5100-5109).
+        Dim usedObjectIds As New HashSet(Of UInteger)
+        ' ⛔ Toma un FormID GLOBAL. El object id NO se saca enmascarando con el ancho de SALIDA: lo decide
+        ' el encoding de ORIGEN, y esa ley ya está unificada en TryMapGlobalToFileLocal. Con el ancho de
+        ' salida, un destino ESL que el usuario destilda a full registraba (lightSlot<<12)|obj en vez de
+        ' obj — o sea no anotaba la ocupación real y encima bloqueaba un id espurio.
+        Dim noteUsedObjectId As Action(Of UInteger) =
+            Sub(g As UInteger)
+                If g = 0UI OrElse IsProvisionalDraftFormID(g) Then Return
+                Dim lf As UInteger = 0UI
+                If pluginManager.TryMapGlobalToFileLocal(g, masterIndexLookup, selfMasterIdx, outName, lf) <> PluginManager.FileLocalMapResult.Ok Then Return
+                ' Sólo los records PROPIOS ocupan object ids de este archivo; los overrides van bajo el
+                ' índice de su master. El test por el alto == selfMasterIdx ES el test por "el dueño es
+                ' outName": masterIndexLookup se llena con 0..sortedMasters.Count-1 (más arriba), o sea que
+                ' todo índice de master es ESTRICTAMENTE MENOR que selfMasterIdx = sortedMasters.Count.
+                If (lf >> 24) <> CUInt(selfMasterIdx) Then Return
+                usedObjectIds.Add(lf And &HFFFFFFUI)
+            End Sub
+        For Each r In existingRecords
+            ' ⛔ `r.Header.FormID` es LOCAL: existingRecords viene de un PluginReader FRESCO del archivo de
+            ' destino, que nunca pasa por MergeRecords (el único lugar que reescribe el header a global).
+            ' Pasarlo tal cual a una función que lee el byte alto como SLOT DE SESIÓN es exactamente el
+            ' defecto de este dominio. SerializeExistingRecord hace esta misma conversión, y por lo mismo.
+            noteUsedObjectId(pluginManager.ResolveReferencedFormID(r.SourcePluginName, r.Header.FormID))
+        Next
+        ' Un override de un record de otro plugin queda filtrado por el chequeo de outName; el que cuenta es
+        ' el NPC que ESTE plugin creó en un guardado anterior y ahora se vuelve a editar.
+        For Each e In entries
+            If e.Npc IsNot Nothing Then noteUsedObjectId(e.Npc.FormID)
+        Next
+        For Each oe In outfitEntries : If oe.IsOverride Then noteUsedObjectId(oe.FormID)
+        Next
+        For Each le In leveledEntries : If le.IsOverride Then noteUsedObjectId(le.FormID)
+        Next
+        For Each mw In mswpEntries : If mw.IsOverride Then noteUsedObjectId(mw.FormID)
+        Next
+        For Each ae In armaEntries : If ae.IsOverride Then noteUsedObjectId(ae.FormID)
+        Next
+        For Each ao In armoEntries : If ao.IsOverride Then noteUsedObjectId(ao.FormID)
+        Next
+        For Each ce In clfmEntries : If ce.IsOverride Then noteUsedObjectId(ce.FormID)
+        Next
+
+        ' ⛔ Los records PROPIOS que se preservan también tienen que caber en el ancho de SALIDA.
+        ' CANÓNICO, el PREDICADO verbatim — wbImplementation.pas:10891, las mismas TRES condiciones:
+        '     if _File.IsLight and (FormID.ObjectID > $FFF) and (FixedFormID.FileID = _File.FileFileID[True])
+        ' (la tercera es nuestro filtro `(lf >> 24) = selfMasterIdx`: sólo los records PROPIOS del archivo).
+        ' CANÓNICO, la ACCIÓN — TwbFormID.SetObjectID (wbInterface.pas:22796-22798) hace
+        '     if Value <> (Value and Mask) then raise ERangeError.Create('ObjectID out of bounds')
+        ' con Mask = $FFF para un FileID light. El overload público (:22778-22781) llama con aSilent=False,
+        ' o sea que LEVANTA; el único camino silencioso es el re-empaque interno de SetFileID (:22763-22775).
+        ' ⚠️ DIFERENCIA DECLARADA: en :10891 xEdit REPORTA (es su "Check for Errors") en vez de rehusar.
+        ' Esta app no tiene ese canal, así que el único punto de aplicación disponible es rehusar el
+        ' guardado — que es además lo que hace el canónico al REPARTIR (xeMainForm.pas:12667
+        ' `not TargetIsLight or (ObjectID <= $FFF)`).
+        ' Sin esto, el remapper lo emite con el ancho de ORIGEN (que para el remapper es lo correcto) y en
+        ' un archivo con FLAG_ESL el motor lo pliega a 12 bits (ModInfo::GetFormID) ⇒ colisiona con otro
+        ' record IN-GAME, donde ningún assert lo ve. Se alcanza al TILDAR "Light" sobre un plugin full que
+        ' ya tiene records por encima de 0xFFF, y al reabrir un ESL que el código viejo ya corrompió.
+        Dim overWide = usedObjectIds.Where(Function(o) o > objectIdMask).OrderBy(Function(o) o).ToList()
+        If overWide.Count > 0 Then
+            Throw New InvalidOperationException(
+                $"'{outName}' already contains {overWide.Count} record(s) whose object id does not fit this " &
+                $"file's FormID width (first: 0x{overWide(0):X}, maximum 0x{objectIdMask:X})." &
+                If(lightMaster, $" A light (ESL) plugin only addresses 0x{objectIdFloor:X}..0x{objectIdMask:X}, so the game would fold " &
+                                "those records onto other FormIDs. Save it without the Light flag, or split " &
+                                "the records across two plugins.", " Split the records across two plugins."))
+        End If
+
+        ' Semilla = el contador del HEDR ENMASCARADO, y nada más: es `NextObjectID := GetNextObjectID and
+        ' Mask` (wbImplementation.pas:5083), que NO lleva piso. El único piso lo pone la recuperación de
+        ' abajo. ⛔ Acá había un SEGUNDO piso cableado en 0x800 que el canónico no tiene: en SSE (donde el
+        ' piso real es 1) un HEDR en 0x300 —alcanzable sólo si un guardado previo ya envolvió al rango
+        ' hardcoded— saltaba a 0x800 y tiraba ~1280 ids todavía vigentes.
+        ' El caso "plugin NUEVO" (sin HEDR en disco, existingNextObjectId = 0) sí arranca en 0x800: es la
+        ' convención del CK y lo que PluginWriter escribe en el header, y mantenerla deja los FormID de un
+        ' guardado corriente donde estaban.
+        Dim nextSelfObjIndex As UInteger = If(existingNextObjectId > 0UI, existingNextObjectId And objectIdMask, NEXT_OBJECT_ID_DEFAULT)
+
+        ' Recuperación de una semilla no confiable: arrancar en el object id MÁS ALTO en uso en vez de
+        ' barrer desde el piso. Barrer desde abajo también sería seguro —el salteo de ocupados impide la
+        ' colisión— pero reciclaría el id de un record borrado, y el canónico deliberadamente no lo hace.
+        ' El canónico tiene DOS ramas con la MISMA forma, y `objectIdFloor` es justamente lo que las unifica:
+        '     :5085-5090  con rango hardcoded → `if (NextObjectID < 1)     or (NextObjectID = Mask)` … piso 1
+        '     :5091-5097  sin rango hardcoded → `if (NextObjectID < $800)  or (NextObjectID = Mask)` … piso $800
+        ' ⚠️ Para SSE corre la PRIMERA (ver PluginWriter.AllowsHardcodedRange); citar sólo la segunda
+        ' mandaría al próximo lector a "corregir" el código hacia la rama que no se ejecuta.
+        ' El término `= Mask` NO es decorativo: es EXACTAMENTE el valor que escribía el código pre-fix
+        ' cuando CLAMPEABA el HEDR, así que cualquier ESL que la app haya guardado tocando el tope lo tiene
+        ' en disco. El canónico lo lee como "contador ya rodó, no confiable" y re-siembra; tomarlo como
+        ' bueno sería confiar en el número que dejó el bug.
+        If nextSelfObjIndex < objectIdFloor OrElse nextSelfObjIndex = objectIdMask Then
+            Dim highest As UInteger = objectIdFloor
+            For Each u In usedObjectIds
+                If u >= highest Then highest = u + 1UI
+            Next
+            nextSelfObjIndex = If(highest > objectIdMask, objectIdFloor, highest)
+        End If
+
+        ' Entrega el próximo object id LIBRE, envolviendo AL PISO (objectIdFloor — 1 o 0x800 según el
+        ' archivo, ver arriba) al pasarse del ancho y saltando los que ya están tomados.
+        ' Réplica de TwbFile.NewFormID (:5083-5120), incluido el error duro al agotarse:
+        ' sin él, el desborde es SILENCIOSO y produce dos records con el mismo FormID.
+        Dim dispenseObjectId As Func(Of UInteger) =
+            Function() As UInteger
+                Dim span As Long = CLng(objectIdMask) - CLng(objectIdFloor) + 1L
+                For attempt As Long = 0 To span - 1
+                    If nextSelfObjIndex > objectIdMask OrElse nextSelfObjIndex < objectIdFloor Then
+                        nextSelfObjIndex = objectIdFloor
+                    End If
+                    Dim candidate = nextSelfObjIndex
+                    nextSelfObjIndex += 1UI
+                    If usedObjectIds.Add(candidate) Then Return candidate
+                Next
+                Throw New InvalidOperationException(
+                    $"'{outName}' has no free FormID left: every object id from 0x{objectIdFloor:X} to " &
+                    $"0x{objectIdMask:X} is already used by a record in the file. " &
+                    If(lightMaster, $"A light (ESL) plugin only addresses {span} of them — save without the " &
+                                    "Light flag, or split the records across two plugins.",
+                                    "Split the records across two plugins."))
+            End Function
         For Each oe In outfitEntries
             If oe.IsOverride Then Continue For
-            draftRemap(oe.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
-            nextSelfObjIndex += 1UI
+            draftRemap(oe.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
         ' NPC_ creates ANTES que leveled: los NPC_ son los records primarios y sus FormIDs deben ser
         ' estables (los bakes en disco se nombran por FormID). Una LVLN/LVLI que los referencia toma su
@@ -627,16 +764,14 @@ Public Module SaveNpcEspWriter
         ' asignacion no afecta la correctitud — solo que numero recibe cada record.
         For Each ce In npcCreateEntries
             If draftRemap.ContainsKey(ce.ProvisionalFormID) Then Continue For
-            draftRemap(ce.ProvisionalFormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
-            nextSelfObjIndex += 1UI
+            draftRemap(ce.ProvisionalFormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
         For Each le In leveledEntries
             ' OVERRIDE LVLIs keep their real FormID (master-remapped on emit) — no self-index. Only NEW
             ' (draft) lists get a self-index. Guard against a duplicate provisional listed twice.
             If le.IsOverride Then Continue For
             If draftRemap.ContainsKey(le.FormID) Then Continue For
-            draftRemap(le.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
-            nextSelfObjIndex += 1UI
+            draftRemap(le.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
         ' NEW MSWP / ARMA / ARMO drafts: pre-assign each a real self-index FormID so cross-draft refs
         ' resolve through the single remapper irrespective of emit order (ARMA.MO2S → draft MSWP,
@@ -646,20 +781,17 @@ Public Module SaveNpcEspWriter
         For Each mw In mswpEntries
             If mw.IsOverride Then Continue For
             If draftRemap.ContainsKey(mw.FormID) Then Continue For
-            draftRemap(mw.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
-            nextSelfObjIndex += 1UI
+            draftRemap(mw.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
         For Each ae In armaEntries
             If ae.IsOverride Then Continue For
             If draftRemap.ContainsKey(ae.FormID) Then Continue For
-            draftRemap(ae.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
-            nextSelfObjIndex += 1UI
+            draftRemap(ae.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
         For Each ao In armoEntries
             If ao.IsOverride Then Continue For
             If draftRemap.ContainsKey(ao.FormID) Then Continue For
-            draftRemap(ao.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
-            nextSelfObjIndex += 1UI
+            draftRemap(ao.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
         ' NEW CLFM drafts (SSE hair colour materialized from a RaceMenu preset). Same pre-assignment as every
         ' other draft kind, so the NPC_.HCLF that points at the provisional sentinel rewrites to the real
@@ -667,8 +799,7 @@ Public Module SaveNpcEspWriter
         For Each ce In clfmEntries
             If ce.IsOverride Then Continue For
             If draftRemap.ContainsKey(ce.FormID) Then Continue For
-            draftRemap(ce.FormID) = (CUInt(selfMasterIdx) << 24) Or nextSelfObjIndex
-            nextSelfObjIndex += 1UI
+            draftRemap(ce.FormID) = (CUInt(selfMasterIdx) << 24) Or dispenseObjectId()
         Next
 
         Dim remapper As NpcSubrecordWriter.FormIdRemapper =
@@ -692,8 +823,16 @@ Public Module SaveNpcEspWriter
                         "record claims it, so it cannot be given a real FormID. A referenced draft was most " &
                         "likely cancelled or deleted while something still pointed at it.")
                 End If
+                ' La conversión global → local (byte alto = índice en la MAST de ESTE archivo, self =
+                ' masters.Count, ancho del object id según el encoding de ORIGEN) vive UNA sola vez, en
+                ' PluginManager.TryMapGlobalToFileLocal. Acá sólo se decide QUÉ HACER con cada resultado:
+                ' los dos casos de fallo son aserciones para el writer (ver los comentarios de abajo).
+                Dim mappedLocal As UInteger = 0UI
+                Dim mapRes = pluginManager.TryMapGlobalToFileLocal(globalFormID, masterIndexLookup, selfMasterIdx, outName, mappedLocal)
+                If mapRes = PluginManager.FileLocalMapResult.Ok Then Return mappedLocal
+
                 Dim pname = pluginManager.GetOriginatingPluginName(globalFormID)
-                If String.IsNullOrEmpty(pname) Then
+                If mapRes = PluginManager.FileLocalMapResult.NoOwner Then
                     ' ⛔ Was "best effort: keep raw", which wrote the GLOBAL FormID into a file where the
                     ' high byte means an index into THIS file's MAST — two different numbering spaces. The
                     ' reference silently ended up pointing at whatever plugin sat at that index.
@@ -709,40 +848,31 @@ Public Module SaveNpcEspWriter
                         "re-mastered into the output. Writing it unchanged would silently repoint it at " &
                         "whichever plugin occupies that index in the new master list.")
                 End If
-                ' Object ID width depends on the SOURCE encoding: an ESL/light global is
-                ' 0xFE | (lightSlot << 12) | object12 — masking 0xFFFFFF would keep the light-slot bits
-                ' and corrupt the reference, so take only the low 12 bits. Full sources use the low 24.
-                ' The OUTPUT is always full-form (newIdx << 24 | object) — xEdit references ESL masters
-                ' the same way (LoadOrderFileIDtoFileFileID emits CreateFull(i) on FO4).
-                Dim isLightSource As Boolean = ((globalFormID >> 24) And &HFFUI) = &HFEUI
-                Dim localObjectID = If(isLightSource, globalFormID And &HFFFUI, globalFormID And &HFFFFFFUI)
-                Dim newIdx As Integer
-                If masterIndexLookup.TryGetValue(pname, newIdx) Then
-                    Return (CUInt(newIdx) << 24) Or localObjectID
-                ElseIf String.Equals(pname, outName, StringComparison.OrdinalIgnoreCase) Then
-                    Return (CUInt(selfMasterIdx) << 24) Or localObjectID
-                Else
-                    ' Unknown plugin: el owner resolvio pero no quedo en la MAST. Esta rama nacio como
-                    ' detector de drift entre los COLECTORES (que armaban la MAST caminando el modelo) y los
-                    ' EMISORES (que producian los bytes) — dos leyes paralelas mantenidas a mano, que ya
-                    ' habian divergido dos veces. Los colectores ya no existen: la MAST se DERIVA del walk de
-                    ' emision (Paso 1), la misma pasada que produce estos bytes, asi que todo FormID que llega
-                    ' hasta aca ya paso por discoveryRemapper y su plugin ya esta en la lista. Por
-                    ' construccion, inalcanzable.
-                    '
-                    ' Se deja igual, y sigue tirando en vez de devolver el FormID crudo: el crudo esta indexado
-                    ' por load order, mientras que el byte alto de un FormID en el archivo de salida es un
-                    ' indice en la MAST de ESTE archivo, asi que escribirlo repuntaria la referencia en
-                    ' silencio al plugin que ocupe ese indice. Si algun dia se dispara, lo que se rompio es la
-                    ' premisa de que las dos pasadas recorren lo mismo — y mejor mil veces que el guardado
-                    ' falle fuerte antes que shipear un plugin apuntando al mod equivocado.
-                    Throw New InvalidOperationException(
-                        $"FormID {globalFormID:X8} is owned by '{pname}', which is not in the master list " &
-                        "being written. The master list is built from the discovery pass over this very " &
-                        "emission walk, so every plugin reached here should already be in it — this means " &
-                        "the two passes disagreed. Writing it unchanged would silently repoint the " &
-                        "reference at whichever plugin occupies that index.")
-                End If
+                ' OwnerNotInMasterList: el owner resolvio pero no quedo en la MAST. Esta rama nacio como
+                ' detector de drift entre los COLECTORES (que armaban la MAST caminando el modelo) y los
+                ' EMISORES (que producian los bytes) — dos leyes paralelas mantenidas a mano, que ya
+                ' habian divergido dos veces. Los colectores ya no existen: la MAST se DERIVA del walk de
+                ' emision (Paso 1), la misma pasada que produce estos bytes, asi que todo FormID que llega
+                ' hasta aca ya paso por discoveryRemapper y su plugin ya esta en la lista. Por
+                ' construccion, inalcanzable.
+                '
+                ' ⚠️ Para el WRITER es una asercion y por eso lanza; el otro llamador de
+                ' TryMapGlobalToFileLocal (NpcOverrideSaver, que mapea contra la MAST VIEJA del disco)
+                ' necesita lo OPUESTO — ahi este caso es legitimo y frecuente. Por eso la funcion
+                ' compartida devuelve un enum en vez de decidir por los dos.
+                '
+                ' Sigue tirando en vez de devolver el FormID crudo: el crudo esta indexado
+                ' por load order, mientras que el byte alto de un FormID en el archivo de salida es un
+                ' indice en la MAST de ESTE archivo, asi que escribirlo repuntaria la referencia en
+                ' silencio al plugin que ocupe ese indice. Si algun dia se dispara, lo que se rompio es la
+                ' premisa de que las dos pasadas recorren lo mismo — y mejor mil veces que el guardado
+                ' falle fuerte antes que shipear un plugin apuntando al mod equivocado.
+                Throw New InvalidOperationException(
+                    $"FormID {globalFormID:X8} is owned by '{pname}', which is not in the master list " &
+                    "being written. The master list is built from the discovery pass over this very " &
+                    "emission walk, so every plugin reached here should already be in it — this means " &
+                    "the two passes disagreed. Writing it unchanged would silently repoint the " &
+                    "reference at whichever plugin occupies that index.")
             End Function
 
         ' Diff against existing masters for the SaveResult report.
@@ -817,11 +947,15 @@ Public Module SaveNpcEspWriter
         ' libre despues de este guardado, que es exactamente lo que debe llevar HEDR.nextObjectId. Un plugin
         ' fresco sin drafts se queda en 0x800, y actualizar uno existente sin drafts nuevos preserva el contador
         ' por la semilla.
-        ' La mascara clampea el contador al ancho del object-ID: ESL/light 12 bits, plugin completo 24 bits.
+        ' El ancho (objectIdMask) ya se aplico AL REPARTIR, arriba, que es donde xEdit lo aplica. Aca solo
+        ' queda ENVOLVER a 0x800 si el contador quedo justo pasado del tope, igual que
+        ' TwbFile.NewFormID (wbImplementation.pas:5116-5120: `if NextObjectID > Mask then $800`).
+        ' ⛔ Antes esto CLAMPEABA a objectIdMask, y ese clamp era el motor del defecto: dejaba el contador
+        ' congelado en 0xFFF, asi que el guardado siguiente se sembraba ahi y volvia a repartir 0xFFF a un
+        ' record distinto. Con el reparto ya acotado y el skip de ocupados, el clamp no protegia nada.
         ' ====================================================================
-        Dim objectIdMask As UInteger = If(lightMaster, &HFFFUI, &HFFFFFFUI)
         Dim nextObjectId As UInteger = nextSelfObjIndex
-        If nextObjectId > objectIdMask Then nextObjectId = objectIdMask
+        If nextObjectId > objectIdMask Then nextObjectId = objectIdFloor
         ' HEDR.numRecords = Pred(file.GetCountedRecordCount) (wbImplementation.pas:5215-5219). The file's
         ' counted count walks EVERY element: TES4 itself (TwbMainRecord → 1), plus each top-level GRUP,
         ' which returns Succ(sum of its children) (TwbGroupRecord.GetCountedRecordCount, :17762-17765) —

@@ -27,6 +27,18 @@ Public NotInheritable Class RaceMenuJslot
         Public Property FormIdentifier As String
         Public Property Type As Integer
     End Class
+
+    ''' <summary>La tabla <c>mods</c> del archivo decodificada: <b>partial index del load order del AUTOR</b>
+    ''' → nombre de plugin. Es la ÚNICA forma de interpretar un <c>headParts[].formId</c>, cuyo byte alto es
+    ''' un slot de la sesión que escribió el preset y no significa nada en la nuestra.
+    ''' <para>skee la escribe con <c>ModInfo::GetPartialIndex</c> (PresetInterface.cpp:361,396-401) y la usa
+    ''' para exactamente esto al leer (:992-997): <c>modList.find(...)</c> → <c>LookupModByName</c> →
+    ''' <c>modInfo-&gt;GetFormID(formId)</c>, o sea re-encodear con el índice ACTUAL del mod.</para>
+    ''' <para>⚠️ Es de SÓLO LECTURA: el nodo <c>mods</c> se sigue round-trippeando verbatim desde
+    ''' <see cref="_raw"/>, así que decodificarlo no cambia un byte del archivo re-guardado.
+    ''' ⛔ <c>modNames</c> NO sirve para esto: es una lista de nombres sin índice (skee sólo la usa para
+    ''' <c>presetData-&gt;modList</c>, :970-974), así que no puede traducir un slot.</para></summary>
+    Public Property ModIndexToName As New Dictionary(Of UInteger, String)
     Public Class JslotCustomMorph
         Public Property Name As String
         Public Property Value As Double
@@ -876,6 +888,15 @@ Public NotInheritable Class RaceMenuJslot
             j.Weight = GetDbl(actor("weight"))
             j.HadWeight = actor("weight") IsNot Nothing   ' presencia, igual que hairColor (0 es un peso legítimo)
         End If
+        ' Tabla `mods` (partial index del AUTOR → nombre). Se decodifica para poder traducir los
+        ' headParts[].formId de un .jslot viejo sin identifier; el nodo sigue emitiéndose verbatim.
+        For Each md In AsArray(root("mods"))
+            Dim o = TryCast(md, JsonObject) : If o Is Nothing Then Continue For
+            Dim mname = GetStr(o("name"))
+            If String.IsNullOrEmpty(mname) Then Continue For
+            Dim mkey = CUInt(GetLong(o("index")) And &HFFFFFFFFL)
+            If Not j.ModIndexToName.ContainsKey(mkey) Then j.ModIndexToName(mkey) = mname
+        Next
         For Each hp In AsArray(root("headParts"))
             Dim o = TryCast(hp, JsonObject) : If o Is Nothing Then Continue For
             ' formId is an unsigned 32-bit FormID; GetInt overflows (→ 0) on anything ≥ 0x80000000, which is
@@ -1287,7 +1308,27 @@ Public NotInheritable Class RaceMenuJslot
         If HadWeight Then actor("weight") = Weight
         root("actor") = actor
         Dim hpArr As New JsonArray()
-        For Each hp In HeadParts : hpArr.Add(New JsonObject From {{"formId", hp.FormId}, {"formIdentifier", hp.FormIdentifier}, {"type", hp.Type}}) : Next
+        ' ⛔ La key `formIdentifier` se emite SÓLO si tiene contenido, y no es una preferencia: es la única
+        ' forma que el LECTOR canónico sabe leer.
+        '   · skee ramifica por PRESENCIA, no por valor: `if (part.isMember("formIdentifier"))`
+        '     (PresetInterface.cpp:979). Con la key presente pero vacía cae en `GetFormFromIdentifier("")`,
+        '     que falla, y el head part se DESCARTA — dejando además INALCANZABLE su propio fallback por
+        '     `formId` (:988-1002).
+        '   · skee tampoco produce nunca una key vacía: su exportador sólo mete en la lista los head parts
+        '     cuyo mod resolvió (`GetModInfoByFormID`, :357-364) antes de escribir el par formId/
+        '     formIdentifier (:415-416). O sea que "entrada sin identifier" existe en el formato SÓLO como
+        '     la forma legacy `{formId, type}` — que es justamente la que :988 sabe resolver por tabla.
+        ' ⇒ Omitir la key hace que una entrada que no pudimos resolver round-trippee EXACTAMENTE como la
+        ' forma que el motor sabe leer, en vez de una que le hace descartar el head part.
+        ' ⚠️ El ORDEN de las keys se conserva (formId, formIdentifier, type) para que un preset con
+        ' identifier salga byte-idéntico a como salía antes: reordenar movería bytes en TODOS los archivos
+        ' del usuario sin ganar nada.
+        For Each hp In HeadParts
+            Dim hpObj As New JsonObject From {{"formId", hp.FormId}}
+            If Not String.IsNullOrEmpty(hp.FormIdentifier) Then hpObj("formIdentifier") = hp.FormIdentifier
+            hpObj("type") = hp.Type
+            hpArr.Add(hpObj)
+        Next
         root("headParts") = hpArr
         Dim ftArr As New JsonArray()
         For Each ft In FaceTextures : ftArr.Add(New JsonObject From {{"index", ft.Index}, {"texture", ft.Texture}}) : Next

@@ -27,6 +27,24 @@ Public Module PluginWriter
     ' Convention: object IDs below 0x800 are reserved for the engine's own use.
     Friend Const NEXT_OBJECT_ID_DEFAULT As UInteger = &H800UI
 
+    ''' <summary>¿El archivo que estamos escribiendo puede usar el rango HARDCODED, o sea object ids por
+    ''' DEBAJO de 0x800? Réplica de <c>TwbFile.GetAllowHardcodedRangeUse</c>
+    ''' (wbImplementation.pas:3946-3957): depende del JUEGO y de la VERSIÓN DEL HEDR que emitimos, y exige
+    ''' al menos un master.
+    ''' <para>SSE pide <c>HEDR &gt;= 1.709</c> y nosotros escribimos <see cref="HEDR_VERSION_SSE"/> = 1.71
+    ''' ⇒ True en cuanto el archivo tiene un master. FO4 pide <c>&gt;= 1.0</c> y escribimos
+    ''' <see cref="HEDR_VERSION_FO4"/> = 0.95 ⇒ siempre False. O sea que es GAME-AWARE de verdad, no una
+    ''' constante: el espacio direccionable de un ESL nuestro es 0x001..0xFFF en SSE y 0x800..0xFFF en FO4.</para>
+    ''' <para>⛔ Decide el PISO del espacio (1 vs 0x800), que es lo que el canónico usa para el wrap, la
+    ''' recuperación y el agotamiento (<c>NewFormID</c> :5085-5097, <c>GetHighObjectID</c> :4216-4219).
+    ''' NO cambia de dónde arranca un guardado normal: eso sale del contador del HEDR, que esta app siembra
+    ''' en 0x800 igual que el CK, así que los FormID de un guardado corriente no se mueven.</para></summary>
+    Friend Function AllowsHardcodedRange(game As Config_App.Game_Enum, masterCount As Integer) As Boolean
+        If masterCount <= 0 Then Return False
+        If game = Config_App.Game_Enum.Skyrim Then Return HEDR_VERSION_SSE >= 1.709F
+        Return HEDR_VERSION_FO4 >= 1.0F
+    End Function
+
     ' ========================================================================
     ' NPC_Manager Save ESP — author CNAM canonical string.
     ' Used to (a) tag plugins emitted by NPC_Manager and (b) detect existing

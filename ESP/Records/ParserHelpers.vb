@@ -31,7 +31,14 @@ Friend Module ParserHelpers
         Return ResolveFIDRaw(rec, sr.AsUInt32, pluginManager)
     End Function
 
-    ''' <summary>Resolve a raw FormID value using the plugin's master list.</summary>
+    ''' <summary>Resolve a raw FormID value using the plugin's master list. ÚNICO lugar donde vive la
+    ''' política de nulos de los parsers — <c>RecordParsers.ResolveFormIDReference</c> reenvía acá.
+    ''' <para>⛔ SIN PluginManager EL FormID VUELVE CRUDO: sin el mapeo de master-index queda un número
+    ''' PLAUSIBLE Y EQUIVOCADO, sin error. Es el motivo por el que los <c>Optional pluginManager As
+    ''' PluginManager = Nothing</c> de estos parsers dejaron de ser opcionales: la firma ANUNCIABA como
+    ''' soportado un modo que corrompe, mientras los llamadores reales habían concluido por separado que
+    ''' no lo era (se sacó el Optional y compiló limpio: nadie lo omitía). Esta guarda queda como red para
+    ''' quien pase Nothing a propósito — que ahora es un acto explícito, no un default.</para></summary>
     Friend Function ResolveFIDRaw(rec As PluginRecord, rawFormID As UInteger, pluginManager As PluginManager) As UInteger
         If pluginManager Is Nothing OrElse rec Is Nothing Then Return rawFormID
         Return pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rawFormID)
