@@ -243,6 +243,47 @@ Public Class PreviewControl
     Friend GroundShadowTarget As ShadowMapTarget
     ''' <summary>Raised when user toggles GPU/CPU skinning mode. Consumers handle this to rerender with their pipeline.</summary>
     Public Event SkinningModeToggled(sender As PreviewControl)
+
+    ' ===== Modo "elegir color" (OPT-IN, apagado por default) =====
+    ' [!] Este control es COMPARTIDO (NPC Manager / Wardrobe Manager / Nif Explorer). Con el modo apagado
+    ' -el default y el estado en el que arranca siempre- NO hay un solo cambio de comportamiento: el
+    ' boton izquierdo sigue orbitando. Prenderlo es una decision explicita de UN formulario, y apagarlo
+    ' es responsabilidad suya (el propio setter restaura el cursor, asi que no queda un cursor de cruz
+    ' sin modo).
+    Private _colorPickMode As Boolean = False
+
+    ''' <summary>Cuando esta en True el boton IZQUIERDO deja de orbitar y pasa a MUESTREAR el pixel
+    ''' clickeado: se levanta <see cref="ColorPicked"/> con la posicion y el color TAL COMO SE VE (el
+    ''' framebuffer ya trae luz, sombra, tonemap y el encode a display - no es el albedo ni el tono
+    ''' crudo). El resto de los gestos (rueda, boton del medio, menu contextual) no cambia, asi que el
+    ''' usuario puede seguir encuadrando. Setearlo en False restaura el cursor.</summary>
+    Public Property ColorPickMode As Boolean
+        Get
+            Return _colorPickMode
+        End Get
+        Set(value As Boolean)
+            If _colorPickMode = value Then Return
+            _colorPickMode = value
+            Try
+                Me.Cursor = If(value, Cursors.Cross, Cursors.Default)
+            Catch
+            End Try
+        End Set
+    End Property
+
+    ''' <summary>Pixel muestreado en modo <see cref="ColorPickMode"/>. X/Y en coordenadas del CONTROL
+    ''' (origen arriba-izquierda), Color = el pixel tal como se ve.</summary>
+    Public Class ColorPickedEventArgs
+        Inherits EventArgs
+        Public ReadOnly Property X As Integer
+        Public ReadOnly Property Y As Integer
+        Public ReadOnly Property Color As Color
+        Public Sub New(px As Integer, py As Integer, c As Color)
+            _X = px : _Y = py : _Color = c
+        End Sub
+    End Class
+
+    Public Event ColorPicked As EventHandler(Of ColorPickedEventArgs)
     Public ReadOnly Property CurrentShader As Shader_Base_Class
         Get
             If Config_App.Current.Game = Config_App.Game_Enum.Skyrim AndAlso SharedSSEShader IsNot Nothing Then Return SharedSSEShader
@@ -1396,6 +1437,81 @@ Public Class PreviewControl
         GL.Disable(EnableCap.Blend)
     End Sub
 
+    ''' <summary>Lee el color de UN punto del framebuffer, promediando una ventana de
+    ''' <paramref name="box"/>x<paramref name="box"/> pixeles centrada en (<paramref name="x"/>,
+    ''' <paramref name="y"/>) - coordenadas del CONTROL, origen arriba-izquierda. Devuelve
+    ''' <c>Color.Empty</c> si el punto cae fuera o si no hay contexto.
+    '''
+    ''' <para>[!] Lo que devuelve es el pixel TAL COMO SE VE: el fragment ya le aplico iluminacion,
+    ''' tonemap y el encode a display (Shader_Class: <c>tonemap(...)</c> + <c>pow(1/2.2)</c>). NO es
+    ''' albedo, NO es lineal y NO es el tono del material. Cualquier consumidor que compare dos
+    ''' muestras esta comparando resultados finales, que es exactamente para lo que existe.</para>
+    '''
+    ''' <para>Misma disciplina de estado que <see cref="CaptureBitmap"/>: se CAPTURA y se DEVUELVE el
+    ''' ReadBuffer y el PackAlignment que habia - dejarlos pisados es el bug que "solo se ve a veces".</para></summary>
+    Public Function ReadPixelDisplay(x As Integer, y As Integer, Optional box As Integer = 3) As Color
+        If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Color.Empty
+        If x < 0 OrElse y < 0 OrElse x >= Me.Width OrElse y >= Me.Height Then Return Color.Empty
+        If box < 1 Then box = 1
+
+        Me.EnsureContextCurrent()
+        ApplyResize(True)
+        If UpdateRequired Then
+            ' Mismo consumo up-front que CaptureBitmap: cualquier pedido nuevo que levante RenderScene
+            ' sobrevive a este frame y agenda el siguiente.
+            UpdateRequired = False
+            RenderScene()
+            SwapBuffers()
+            FinishRenderFrame()
+        End If
+
+        ' Recorte de la ventana contra los bordes del control (en coordenadas GL, origen abajo).
+        Dim half As Integer = box \ 2
+        Dim x0 As Integer = Math.Max(0, x - half)
+        Dim x1 As Integer = Math.Min(Me.Width - 1, x + half)
+        Dim glY As Integer = Me.Height - 1 - y
+        Dim y0 As Integer = Math.Max(0, glY - half)
+        Dim y1 As Integer = Math.Min(Me.Height - 1, glY + half)
+        Dim w As Integer = x1 - x0 + 1
+        Dim h As Integer = y1 - y0 + 1
+        If w <= 0 OrElse h <= 0 Then Return Color.Empty
+
+        Dim buf(w * h * 4 - 1) As Byte
+        Dim prevReadBuffer As Integer = CInt(ReadBufferMode.Back)
+        Dim prevPackAlignment As Integer = 4
+        Try
+            GL.GetInteger(GetPName.ReadBuffer, prevReadBuffer)
+            GL.GetInteger(GetPName.PackAlignment, prevPackAlignment)
+        Catch
+        End Try
+        Dim handle As GCHandle = Nothing
+        Try
+            handle = GCHandle.Alloc(buf, GCHandleType.Pinned)
+            GL.ReadBuffer(ReadBufferMode.Front)
+            GL.PixelStore(PixelStoreParameter.PackAlignment, 1)
+            GL.ReadPixels(x0, y0, w, h, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, handle.AddrOfPinnedObject())
+        Catch ex As Exception
+            Return Color.Empty
+        Finally
+            Try
+                GL.ReadBuffer(CType(prevReadBuffer, ReadBufferMode))
+                GL.PixelStore(PixelStoreParameter.PackAlignment, prevPackAlignment)
+            Catch
+            End Try
+            If handle.IsAllocated Then handle.Free()
+        End Try
+
+        Dim sumB As Long = 0, sumG As Long = 0, sumR As Long = 0, sumA As Long = 0
+        Dim n As Integer = w * h
+        For i As Integer = 0 To n - 1
+            sumB += buf(i * 4)
+            sumG += buf(i * 4 + 1)
+            sumR += buf(i * 4 + 2)
+            sumA += buf(i * 4 + 3)
+        Next
+        Return Color.FromArgb(CInt(sumA \ n), CInt(sumR \ n), CInt(sumG \ n), CInt(sumB \ n))
+    End Function
+
     Public Function CaptureBitmap() As Bitmap
         If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Nothing
 
@@ -1472,6 +1588,13 @@ Public Class PreviewControl
     End Sub
     Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
         MyBase.OnMouseDown(e)
+        ' Modo picker: el click izquierdo MUESTREA y no orbita. No se tocan lastX/lastY a proposito -
+        ' OnMouseMove tambien sale temprano con el izquierdo, asi que no hay arrastre que continuar.
+        If _colorPickMode AndAlso e.Button = MouseButtons.Left Then
+            Dim c = ReadPixelDisplay(e.X, e.Y)
+            RaiseEvent ColorPicked(Me, New ColorPickedEventArgs(e.X, e.Y, c))
+            Return
+        End If
         If e.Button = MouseButtons.Left OrElse e.Button = MouseButtons.Middle Then
             lastX = e.X
             lastY = e.Y
@@ -1484,6 +1607,9 @@ Public Class PreviewControl
     Protected Overrides Sub OnMouseMove(e As MouseEventArgs)
         If Me.IsInDesignMode Then Return
         MyBase.OnMouseMove(e)
+        ' En modo picker el izquierdo esta reservado al muestreo: sin esto, mover el mouse con el boton
+        ' apretado orbitaba la camara y el punto recien elegido dejaba de estar donde el usuario lo eligio.
+        If _colorPickMode AndAlso e.Button = MouseButtons.Left Then Return
         ' Left drag sin Ctrl ni Alt: salir de FreeMode (si aplica) y luego ROTATE orbit manteniendo el mismo radio
         ' Left drag sin Ctrl ni Alt: salimos de free-cam (si era el caso) y rotamos en orbit
         If e.Button = MouseButtons.Left AndAlso (Control.ModifierKeys And Keys.Control) = 0 AndAlso (Control.ModifierKeys And Keys.Alt) = 0 Then

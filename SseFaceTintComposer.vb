@@ -325,9 +325,16 @@ Public Module SseFaceTintComposer
     ''' <para>The (TINC, TINV) resolution MIRRORS <see cref="ComposeLinearRgba"/> EXACTLY so the body QNAM and the
     ''' baked/rendered face use the identical skin-tone input: authored NPC tint for that layer INDEX if present
     ''' (TINC bytes /255, TINV u32 /100), else the RACE default (TIND→CLFM colour, DefaultValue). Measured
-    ''' byte-exact (Afflicted TINC=(0.263,0.016,0.004)@0.52 → QNAM (96,63,61)). SSE-only; FO4 never calls this.</summary>
+    ''' byte-exact (Afflicted TINC=(0.263,0.016,0.004)@0.52 → QNAM (96,63,61)). SSE-only; FO4 never calls this.
+    ''' <para><paramref name="offset"/> = ajuste manual del tono del CUERPO (editor de cuerpo). Se suma a
+    ''' (TINC, TINV) ANTES del pliegue, que es el ÚNICO punto donde la intensidad tiene su significado SSE: acá
+    ''' la lleva el interp de la capa (el QNAM de SSE no tiene alpha donde guardarla), y el pliegue corre con el
+    ''' seed y la convención que resuelve la config — no con literales. Nothing (el default) ⇒ byte-idéntico al
+    ''' comportamiento previo. ⛔ SÓLO lo pasan los call sites del CUERPO/save; los de la CARA (compositor,
+    ''' sentinels skee, preset −2 del bake) NO, o el origen del match se movería junto con el destino.</para></summary>
     Public Function ResolveSkinToneQnam(pm As PluginManager, npc As NPC_Data, race As RACE_Data,
-                                        raceFid As UInteger, isFemale As Boolean) As Nullable(Of System.Drawing.Color)
+                                        raceFid As UInteger, isFemale As Boolean,
+                                        Optional offset As SkinToneQnamOffset = Nothing) As Nullable(Of System.Drawing.Color)
         If pm Is Nothing OrElse npc Is Nothing Then Return Nothing
 
         ' Find the RACE skin-tone layer (TINP mask type == 6 = SkinTone). No slot-12 in SSE.
@@ -362,6 +369,15 @@ Public Module SseFaceTintComposer
         Else
             Dim dc = ResolveClfmColor(pm, skin.Value.DefaultClfm)
             cr = dc(0) : cg = dc(1) : cbb = dc(2) : iv = skin.Value.DefaultValue
+        End If
+
+        ' Ajuste manual del tono del CUERPO: se suma ACÁ, sobre (TINC, TINV) ya normalizados a [0..1] y ANTES
+        ' del pliegue, para que la intensidad la aplique el MISMO lerp(seed, color, cobertura) del engine con el
+        ' seed y la convención de la config. Post-procesar el color plegado obligaría a re-derivar el seed y el
+        ' espacio afuera, duplicando la ley. Offset Nothing/cero ⇒ no toca nada.
+        If offset IsNot Nothing AndAlso Not offset.IsZero Then
+            offset.ApplyToRgb01(cr, cg, cbb)
+            iv = offset.ApplyToIntensity01(iv)
         End If
 
         ' Fold intensity into the colour: q = lerp(0.5, TINC, TINV) per channel. QNAM.A = 255 (no SSE alpha).
