@@ -97,7 +97,16 @@ Public Class PluginReader
         If header.Signature <> "TES4" Then Throw New InvalidDataException("Not a valid plugin file: missing TES4 header")
 
         IsESM = (header.Flags And FLAG_ESM) <> 0
-        IsESL = (header.Flags And FLAG_ESL) <> 0
+        ' xEdit forces the light flag from the EXTENSION, not just from the header bit
+        ' (wbLoadOrder.pas:362-363 `if miExtension in [meESL] then Include(miFlags, mfHasLightFlag)`,
+        ' whose own comment reads "if the extension is .esl then force 0x100 flag"). A .esl WITHOUT
+        ' the bit would otherwise be handed a FULL slot here while the engine and xEdit hand it a
+        ' LIGHT one — shifting the high byte of that plugin AND of every full plugin after it, so
+        ' every FormID they own resolves to the wrong file. One law, one place: LoadOrderActivator
+        ' used to OR the extension in on its own copy of this rule and now just reads IsESL.
+        IsESL = (header.Flags And FLAG_ESL) <> 0 OrElse
+                (FileName IsNot Nothing AndAlso
+                 FileName.EndsWith(".esl", StringComparison.OrdinalIgnoreCase))
         IsLocalized = (header.Flags And FLAG_LOCALIZED) <> 0
 
         Dim endPos = br.BaseStream.Position + header.DataSize

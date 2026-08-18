@@ -154,7 +154,8 @@ Public NotInheritable Class LoadOrderActivator
                 rdr.LoadHeaderOnly(pluginFullPath)
                 ourMasters.AddRange(rdr.Masters)
                 ourIsEsmGroup = rdr.IsESM OrElse HasEsmExtension(pluginName)
-                ourIsLight = rdr.IsESL OrElse pluginName.EndsWith(".esl", StringComparison.OrdinalIgnoreCase)
+                ' IsESL already folds in the .esl extension (PluginReader.ReadTES4, per wbLoadOrder.pas:362-363).
+                ourIsLight = rdr.IsESL
             Catch ex As Exception
                 res.Kind = OutcomeKind.Skipped
                 res.Summary = "The plugin header could not be read, so the load order was left untouched: " & ex.Message

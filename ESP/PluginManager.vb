@@ -155,14 +155,16 @@ Public Class PluginManager
                 End Try
             End Sub)
 
+        ' ---- Dependency ordering, BEFORE taking the write lock so a bad set throws without mutating ----
+        Dim mergeOrder = OrderByMasters(readers)
+
         ' ---- Fan-in merge (sequential, load order 0..N-1, under the write lock) ----
         ' Replaying IndexAndMergePlugin in order preserves: FileID slot assignment order, last-override-wins,
         ' and the order AllRecords / RecordsByType are populated — byte-identical to the old sequential loop.
-        ' readers(i) = Nothing (a failed parse) is skipped, exactly as the old per-plugin catch dropped it.
         _rwLock.EnterWriteLock()
         Try
-            For i = 0 To n - 1
-                If readers(i) IsNot Nothing Then IndexAndMergePlugin(readers(i))
+            For Each r In mergeOrder
+                IndexAndMergePlugin(r)
             Next
 
             BuildTypeIndex()
@@ -177,6 +179,69 @@ Public Class PluginManager
     ''' at the end) and <see cref="MergeOverridePlugin"/> (which rebuilds the type index itself).
     ''' Slot assignment is done BEFORE MergeRecords so this plugin's own records (self-refs)
     ''' resolve via its just-assigned slot, and master-refs resolve via earlier plugins' slots.</summary>
+    ''' <summary>Order the parsed plugins so every master precedes the file that declares it.
+    ''' <para>This is what makes resolution correct at all: <see cref="MergeRecords"/> resolves each
+    ''' record AS IT MERGES, against the index built so far. A plugin merged before one of its masters
+    ''' therefore resolves every reference it owns against a master list that is not in the index yet,
+    ''' gets the file-local FormID back unchanged, and files its records under the key of whatever
+    ''' plugin happens to own that slot — silently overwriting a third party's record and hiding its
+    ''' own. The load set alone does not prevent this: the Preflight validates MEMBERSHIP (all masters
+    ''' ticked) but not ORDER, and it lists inactive plugins alphabetically after the active ones, so
+    ''' its own "Check Masters" button can tick a master into a position AFTER its dependent.</para>
+    ''' <para>Canonical: xEdit's <c>TwbModuleInfosHelper.SimulateLoad</c> (wbLoadOrder.pas:946-1000)
+    ''' recurses into <c>Load(miMasters[i])</c> BEFORE assigning the module's own load order and FileID,
+    ''' and raises on a master it cannot find (:965) or a circular reference (:958-959). We do the same,
+    ''' including the raising: a set we cannot order is a set we cannot resolve, and continuing on a
+    ''' guess is the failure mode being removed. Callers that deliberately load a partial set (probes,
+    ''' CLI) must list the masters they depend on.</para>
+    ''' <para>STABLE by construction: visiting in the caller's order and appending post-order yields the
+    ''' IDENTITY permutation whenever the input is already correctly ordered, so a valid load order is
+    ''' never reshuffled and cannot change which override wins.</para></summary>
+    Private Shared Function OrderByMasters(readers As PluginReader()) As List(Of PluginReader)
+        Dim byName As New Dictionary(Of String, PluginReader)(StringComparer.OrdinalIgnoreCase)
+        For Each r In readers
+            ' readers(i) = Nothing is a plugin whose parse failed; it was already logged and dropped.
+            If r IsNot Nothing AndAlso Not byName.ContainsKey(r.FileName) Then byName(r.FileName) = r
+        Next
+
+        Dim ordered As New List(Of PluginReader)
+        Const VISITING As Integer = 1, DONE As Integer = 2
+        Dim state As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+        Dim path As New List(Of String)
+
+        Dim visit As Action(Of PluginReader) = Nothing
+        visit = Sub(r)
+                    Dim st As Integer
+                    If state.TryGetValue(r.FileName, st) Then
+                        If st = DONE Then Return
+                        Throw New InvalidDataException(
+                            "Circular master reference between plugins: " &
+                            String.Join(" -> ", path) & " -> " & r.FileName &
+                            ". No load order can satisfy this, so none is guessed at.")
+                    End If
+                    state(r.FileName) = VISITING
+                    path.Add(r.FileName)
+                    For Each m In r.Masters
+                        Dim master As PluginReader = Nothing
+                        If Not byName.TryGetValue(m, master) Then
+                            Throw New InvalidDataException(
+                                $"Plugin '{r.FileName}' requires master '{m}', which is not among the plugins " &
+                                "being loaded (it was not selected, or it failed to parse). Its FormIDs cannot " &
+                                "be resolved without it, so loading is refused rather than resolved incorrectly.")
+                        End If
+                        visit(master)
+                    Next
+                    path.RemoveAt(path.Count - 1)
+                    state(r.FileName) = DONE
+                    ordered.Add(r)
+                End Sub
+
+        For Each r In readers
+            If r IsNot Nothing Then visit(r)
+        Next
+        Return ordered
+    End Function
+
     Private Sub IndexAndMergePlugin(reader As PluginReader)
         _pluginIndex(reader.FileName) = Plugins.Count
         Plugins.Add(reader)
@@ -191,14 +256,38 @@ Public Class PluginManager
     Private Sub AssignFileIdSlot(reader As PluginReader)
         If reader.IsESL Then
             Dim ls = NextSlotIndex(_nameByLightSlot)
+            If ls > MAX_LIGHT_SLOT Then Throw SlotSpaceExhausted(reader, ls, isLight:=True)
             _lightSlotByName(reader.FileName) = ls
             _nameByLightSlot(ls) = reader.FileName
         Else
             Dim fsx = NextSlotIndex(_nameByFullSlot)
+            If fsx > MAX_FULL_SLOT Then Throw SlotSpaceExhausted(reader, fsx, isLight:=False)
             _fullSlotByName(reader.FileName) = fsx
             _nameByFullSlot(fsx) = reader.FileName
         End If
     End Sub
+
+    ''' <summary>Highest usable FULL slot. 0xFE is the LIGHT marker and 0xFF is reserved, so the full
+    ''' space stops at 0xFD on both games — exactly xEdit's <c>TwbFileID.MaxFullSlot</c>, which starts at
+    ''' 0xFE and decrements once because light modules are supported (wbInterface.pas:22930-22938).</summary>
+    Private Const MAX_FULL_SLOT As Integer = &HFD
+
+    ''' <summary>Highest usable LIGHT slot: the light index is the 12 bits at 12..23 of a 0xFE FormID,
+    ''' so 0xFFF. Matches xEdit's <c>TwbFileID.MaxLightSlot</c> (wbInterface.pas:22948-22954).</summary>
+    Private Const MAX_LIGHT_SLOT As Integer = &HFFF
+
+    ''' <summary>The exception for running out of FileID slots. Without this check the overflow is SILENT
+    ''' and total: a full slot of 0xFE would make every FormID of that plugin read back as a LIGHT FormID
+    ''' (0xFE is the light marker), and a light slot above 0xFFF would shift straight through the 12-bit
+    ''' field into the high byte and destroy the marker itself. xEdit raises here too — 'Too many light
+    ''' modules' / 'Too many full modules', wbLoadOrder.pas:975-986.</summary>
+    Private Shared Function SlotSpaceExhausted(reader As PluginReader, slot As Integer, isLight As Boolean) As InvalidOperationException
+        Return New InvalidOperationException(
+            $"Too many {If(isLight, "light", "full")} plugins: '{reader.FileName}' would need " &
+            $"{If(isLight, "light", "full")} slot {slot}, past the maximum of " &
+            $"{If(isLight, MAX_LIGHT_SLOT, MAX_FULL_SLOT)}. Load fewer plugins — going past this point " &
+            "silently corrupts every FormID the plugin owns.")
+    End Function
 
     ''' <summary>Next free slot index for a name-by-slot dict: max occupied index + 1 (0 when empty).
     ''' Gap-safe so re-slotting (DropSlotAssignment) never reuses a vacated index.</summary>
@@ -209,6 +298,26 @@ Public Class PluginManager
         Next
         Return maxIdx + 1
     End Function
+
+    ''' <summary>Drop every record OWNED by the given FileID slot from <see cref="AllRecords"/>, i.e.
+    ''' the self records of whichever plugin holds that slot. Overrides that plugin carries of another
+    ''' file's records are keyed by the MASTER's global FormID, not by this slot, so they are untouched.
+    ''' Caller must already hold the write lock.</summary>
+    Private Sub PurgeRecordsOwnedBySlot(isLight As Boolean, slot As Integer)
+        Dim stale As New List(Of UInteger)
+        For Each k In AllRecords.Keys
+            ' 0xFE is the light-space marker, never a full slot — test it explicitly in BOTH branches
+            ' so a full slot that happened to equal 254 could not sweep the whole light space.
+            If isLight Then
+                If (k >> 24) = &HFEUI AndAlso CInt((k >> 12) And &HFFFUI) = slot Then stale.Add(k)
+            ElseIf (k >> 24) <> &HFEUI AndAlso CInt(k >> 24) = slot Then
+                stale.Add(k)
+            End If
+        Next
+        For Each k In stale
+            AllRecords.Remove(k)
+        Next
+    End Sub
 
     ''' <summary>Remove a plugin's slot assignment from BOTH the full and light dicts (by name). Used
     ''' before re-assigning a slot when a plugin is re-mounted with a flipped ESM/ESL flag.</summary>
@@ -250,12 +359,37 @@ Public Class PluginManager
         Try
             Dim existingIdx As Integer = -1
             If _pluginIndex.TryGetValue(reader.FileName, existingIdx) Then
-                ' Re-save to a plugin already loaded this session: swap the reader, re-derive the FileID
-                ' slot (handles a flipped ESM/ESL flag — the slot dicts are name-keyed, so a stale
-                ' full-slot entry for a now-ESL plugin would mis-encode its FormIDs), then re-merge.
+                ' Re-save to a plugin already loaded this session. ⛔ Do NOT unconditionally re-slot.
+                ' DropSlotAssignment + AssignFileIdSlot hands out NextSlotIndex = max+1, so a plugin
+                ' that was not the LAST of its slot space gets a brand new slot and every one of its
+                ' self records changes global FormID. Measured consequences: the post-save readback
+                ' looks up the pre-save record under the old key; AllRecords keeps a stale duplicate;
+                ' GetOriginatingPluginName("old") returns "" so the sidecar row is written under
+                ' "Unknown.esp"; and a SECOND save in the same session writes its rows under yet
+                ' another key, so on reopen the second save's morphs are silently lost.
+                ' A slot is a property of load order, not of when the file happens to be re-mounted.
+                Dim nm = reader.FileName
+                Dim oldLightSlot As Integer, oldFullSlot As Integer
+                Dim hadLight = _lightSlotByName.TryGetValue(nm, oldLightSlot)
+                Dim hadFull = _fullSlotByName.TryGetValue(nm, oldFullSlot)
+
+                ' Drop the previous mount's OWN records first. Self records are filed under THIS
+                ' plugin's slot (an override of a master's record is filed under the MASTER's key and
+                ' must survive), so this removes exactly what the re-merge is about to restate — and
+                ' with it any record the user DELETED from the plugin between saves, which would
+                ' otherwise linger in AllRecords forever.
+                If hadLight OrElse hadFull Then
+                    PurgeRecordsOwnedBySlot(hadLight, If(hadLight, oldLightSlot, oldFullSlot))
+                End If
+
                 Plugins(existingIdx) = reader
-                DropSlotAssignment(reader.FileName)
-                AssignFileIdSlot(reader)
+                ' Re-slot ONLY when the slot SPACE changed (ESP<->ESL flip). The ESM flag does not
+                ' select a space — AssignFileIdSlot branches on IsESL alone — so an ESM-only flip
+                ' must NOT re-slot, or it re-introduces exactly the bug above.
+                If reader.IsESL <> hadLight Then
+                    DropSlotAssignment(nm)
+                    AssignFileIdSlot(reader)
+                End If
                 MergeRecords(reader)
             Else
                 IndexAndMergePlugin(reader)
@@ -297,15 +431,34 @@ Public Class PluginManager
 
     ''' <summary>Build the global FormID for a record owned by <paramref name="owner"/>: full plugins →
     ''' (fullSlot &lt;&lt; 24) | object24; ESL plugins → 0xFE | (lightSlot &lt;&lt; 12) | object12.</summary>
+    ''' <para>⛔ A plugin with NO slot assigned is a broken invariant, not a value to guess at. The
+    ''' old code used <c>TryGetValue</c> and ignored the result, so a missing slot silently became
+    ''' slot <b>0</b> — i.e. the GAME MASTER — and every record of that plugin was handed out as a
+    ''' Fallout4.esm/Skyrim.esm FormID. That is the worst possible default for a failure. xEdit
+    ''' raises instead: <c>EFileNoSlotExecption.Create('File has no slot assigned')</c>
+    ''' (wbImplementation.pas:3457-3459). Both call sites reach here with an owner taken from
+    ''' <c>_pluginIndex</c>, and <see cref="IndexAndMergePlugin"/>/<see cref="MergeOverridePlugin"/>
+    ''' assign the slot BEFORE <see cref="MergeRecords"/> runs, so this throw is an assertion on an
+    ''' invariant that holds today — if it ever fires, the bug is ours and upstream.</para>
     Private Function MakeGlobalFormID(owner As PluginReader, objectID As UInteger) As UInteger
         If owner.IsESL Then
-            Dim L As Integer = 0
-            _lightSlotByName.TryGetValue(owner.FileName, L)
+            Dim L As Integer
+            If Not _lightSlotByName.TryGetValue(owner.FileName, L) Then Throw NoSlotAssigned(owner)
             Return &HFE000000UI Or (CUInt(L) << 12) Or (objectID And &HFFFUI)
         End If
-        Dim F As Integer = 0
-        _fullSlotByName.TryGetValue(owner.FileName, F)
+        Dim F As Integer
+        If Not _fullSlotByName.TryGetValue(owner.FileName, F) Then Throw NoSlotAssigned(owner)
         Return (CUInt(F) << 24) Or (objectID And &HFFFFFFUI)
+    End Function
+
+    ''' <summary>The exception for "this plugin is indexed but has no FileID slot". Names the plugin
+    ''' and which slot space was expected, because the caller (a FormID resolution) has no context
+    ''' of its own to report.</summary>
+    Private Function NoSlotAssigned(owner As PluginReader) As InvalidOperationException
+        Return New InvalidOperationException(
+            $"Plugin '{owner.FileName}' has no {If(owner.IsESL, "light", "full")} FileID slot assigned, " &
+            "so its FormIDs cannot be resolved. This is an internal invariant failure: a plugin is " &
+            "indexed only via IndexAndMergePlugin/MergeOverridePlugin, both of which assign the slot first.")
     End Function
 
     ''' <summary>FormID global a partir del nombre del plugin y el <b>object ID CRUDO</b>: 12 bits útiles en
@@ -353,11 +506,18 @@ Public Class PluginManager
         Try
             Dim idx As Integer
             If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, idx) Then Return 0UI
-            Dim p = Plugins(idx)
-            If p.IsESL Then Return &HFE000000UI Or (identifierLocal And &HFFFFFFUI)
-            Dim f As Integer = 0
-            _fullSlotByName.TryGetValue(p.FileName, f)
-            Return (CUInt(f) << 24) Or (identifierLocal And &HFFFFFFUI)
+            ' ⛔ Rebuild from the plugin's CURRENT slot; never trust a slot embedded in the stored
+            ' identifier. The old ESL branch was `0xFE000000 Or (local And 0xFFFFFF)`, which keeps
+            ' bits 12..23 — i.e. whatever light slot happened to be in effect when the row was
+            ' written. Our slot space is COMPACTED (the Preflight loads a subset), so it is not the
+            ' game's, and it shifts between sessions the moment a light plugin is added, removed or
+            ' unticked — one Creation Club item is enough. The row then resolved to a different
+            ' record, or to none, silently.
+            ' Masking to the owner's own width also makes this backward compatible: an OLD identifier
+            ' carrying a light slot masks down to the same object id as a new bare one, so existing
+            ' .bssliders and presets keep resolving and need no migration.
+            ' MakeGlobalFormID is that law, already written once (12 bits for light, 24 for full).
+            Return MakeGlobalFormID(Plugins(idx), identifierLocal)
         Finally
             _rwLock.ExitReadLock()
         End Try
@@ -537,6 +697,55 @@ Public Class PluginManager
         Finally
             _rwLock.ExitReadLock()
         End Try
+    End Function
+
+    ''' <summary>Whether <paramref name="pluginName"/> is loaded in this session, i.e. it has an entry in
+    ''' the plugin index and therefore a FileID slot and a usable master list. Anything NOT loaded cannot
+    ''' have its FormIDs resolved: the resolver would read the file-local master index as a load-order
+    ''' slot and silently name a different plugin.</summary>
+    Public Function IsLoaded(pluginName As String) As Boolean
+        If String.IsNullOrEmpty(pluginName) Then Return False
+        _rwLock.EnterReadLock()
+        Try
+            Return _pluginIndex.ContainsKey(pluginName)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+    End Function
+
+    ''' <summary>The masters <paramref name="pluginName"/> transitively depends on that are NOT loaded,
+    ''' in discovery order and without duplicates. Empty when the closure is satisfied.
+    ''' <para>Transitive on purpose: xEdit propagates <c>mfMastersMissing</c> up the dependency graph
+    ''' (wbLoadOrder.pas:418-421), so a master whose own master is absent poisons its dependents too.
+    ''' Returns empty for a plugin that is not loaded at all — that is a different, blunter problem and
+    ''' <see cref="IsLoaded"/> is the question to ask first.</para></summary>
+    Public Function MissingMastersOf(pluginName As String) As List(Of String)
+        Dim missing As New List(Of String)
+        Dim seen As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        _rwLock.EnterReadLock()
+        Try
+            Dim rootIdx As Integer
+            If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, rootIdx) Then Return missing
+            Dim queue As New Queue(Of Integer)
+            queue.Enqueue(rootIdx)
+            seen.Add(pluginName)
+            While queue.Count > 0
+                Dim p = Plugins(queue.Dequeue())
+                If p Is Nothing Then Continue While
+                For Each m In p.Masters
+                    If Not seen.Add(m) Then Continue For
+                    Dim mi As Integer
+                    If _pluginIndex.TryGetValue(m, mi) Then
+                        queue.Enqueue(mi)
+                    Else
+                        missing.Add(m)
+                    End If
+                Next
+            End While
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+        Return missing
     End Function
 
     ''' <summary>Get all NPC_ records.</summary>

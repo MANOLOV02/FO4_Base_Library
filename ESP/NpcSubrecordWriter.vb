@@ -632,25 +632,31 @@ Public Module NpcSubrecordWriter
         Dim offset As Integer = 15
         Dim kwCount As Integer = CInt(payload(offset))
         offset += 1
-        ' Re-map each keyword. We resolve its global FormID by re-reading the raw u32 + the
-        ' source plugin's MAST list, NOT by indexing combo.Combination.Keywords (which can have
-        ' a different count from the raw if the parser dropped 0-FormIDs). This guarantees we
-        ' patch the actual FormID stored at each offset, regardless of parser-side filtering.
+        ' Re-map each keyword from the parser's RESOLVED-GLOBAL view (combo.Combination.Keywords).
+        ' ⛔ The raw u32 in the payload is a SOURCE-PLUGIN LOCAL FormID and ApplyObtsRemap has no
+        ' PluginManager to resolve it, so it must never be handed to the remapper: the remapper reads the
+        ' high byte as a load-order slot, which would either name the WRONG plugin (and drag it into the
+        ' master list) or resolve to nothing and abort the save.
+        ' The counts do NOT line up 1:1 — ParseOBTSPayload DROPS zero keywords (RecordParsers.vb:2141) —
+        ' so the correspondence is by index among the NON-ZERO slots, which is exact rather than a guess.
+        ' The old code compared the two counts and, whenever an OBTS had a single NULL keyword slot, fell
+        ' through to remapping the local value.
+        Dim kwIdx As Integer = 0
         For i = 0 To kwCount - 1
             If offset + 4 > payload.Length Then Exit For
             Dim rawKw = BitConverter.ToUInt32(payload, offset)
             Dim newRaw As UInteger = 0UI
             If rawKw <> 0UI Then
-                ' raw is the "source-plugin local" FormID; we need to resolve to global before
-                ' the remapper, but ApplyObtsRemap doesn't have a PluginManager. The combo's
-                ' Keywords list is the resolved-global view captured at parse time. We match by
-                ' position when counts agree, fall back to remap(rawKw) treating it as already
-                ' global when counts disagree (defensive for malformed inputs).
-                If kwCount = combo.Combination.Keywords.Count AndAlso i < combo.Combination.Keywords.Count Then
-                    newRaw = remap(combo.Combination.Keywords(i))
+                If kwIdx < combo.Combination.Keywords.Count Then
+                    newRaw = remap(combo.Combination.Keywords(kwIdx))
                 Else
-                    newRaw = remap(rawKw)
+                    ' More non-zero slots in the bytes than the parser recorded: the payload and the model
+                    ' genuinely disagree and there is no honest mapping. Leave these 4 bytes as they are
+                    ' rather than invent one — writing the local unchanged is what the old code effectively
+                    ' did, and it is still better than poisoning the master list or failing the save.
+                    newRaw = rawKw
                 End If
+                kwIdx += 1
             End If
             payload(offset + 0) = CByte(newRaw And &HFFUI)
             payload(offset + 1) = CByte((newRaw >> 8) And &HFFUI)
@@ -664,10 +670,14 @@ Public Module NpcSubrecordWriter
             Dim rawModFID = BitConverter.ToUInt32(payload, offset)
             Dim newRaw As UInteger = 0UI
             If rawModFID <> 0UI Then
-                If CInt(includeCount) = combo.Combination.IncludeOMODFormIDs.Count AndAlso i < combo.Combination.IncludeOMODFormIDs.Count Then
+                ' ParseOBTSPayload adds EVERY include entry (RecordParsers.vb:2152-2162), so the indices
+                ' line up unless the payload was truncated mid-array. In that case leave the bytes alone:
+                ' the raw value is source-plugin LOCAL and feeding it to the remapper would name the wrong
+                ' plugin or abort the save.
+                If i < combo.Combination.IncludeOMODFormIDs.Count Then
                     newRaw = remap(combo.Combination.IncludeOMODFormIDs(i))
                 Else
-                    newRaw = remap(rawModFID)
+                    newRaw = rawModFID
                 End If
             End If
             payload(offset + 0) = CByte(newRaw And &HFFUI)
@@ -693,10 +703,13 @@ Public Module NpcSubrecordWriter
                 Dim rawValue1 = BitConverter.ToUInt32(payload, formIdOffset)
                 Dim newRaw As UInteger = 0UI
                 If rawValue1 <> 0UI Then
-                    If CInt(propertyCount) = combo.Combination.Properties.Count AndAlso i < combo.Combination.Properties.Count Then
+                    ' Same as the includes: the parser adds every property (RecordParsers.vb:2165-2169),
+                    ' so a mismatch only means a truncated payload. Never remap the raw value — it is
+                    ' source-plugin local.
+                    If i < combo.Combination.Properties.Count Then
                         newRaw = remap(combo.Combination.Properties(i).Value1FormID)
                     Else
-                        newRaw = remap(rawValue1)
+                        newRaw = rawValue1
                     End If
                 End If
                 payload(formIdOffset + 0) = CByte(newRaw And &HFFUI)

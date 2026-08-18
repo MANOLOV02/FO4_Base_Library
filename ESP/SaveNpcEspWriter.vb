@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Linq
 Imports System.Text
 
@@ -379,6 +379,20 @@ Public Module SaveNpcEspWriter
         Public DraftFormIdMap As New Dictionary(Of UInteger, UInteger)
     End Class
 
+    ''' <summary>Los buffers que produce UN recorrido completo del walk de emision, agrupados por GRUP.
+    ''' Existe porque ese walk se corre DOS veces: una para DESCUBRIR que masters hacen falta y otra para
+    ''' escribir los bytes definitivos. Ver el Paso 1 de <see cref="SaveOverridePlugin"/>.</summary>
+    Private NotInheritable Class EmittedBuffers
+        Public ReadOnly Records As New List(Of Byte())
+        Public ReadOnly Otft As New List(Of Byte())
+        Public ReadOnly Lvli As New List(Of Byte())
+        Public ReadOnly Lvln As New List(Of Byte())
+        Public ReadOnly Mswp As New List(Of Byte())
+        Public ReadOnly Arma As New List(Of Byte())
+        Public ReadOnly Armo As New List(Of Byte())
+        Public ReadOnly Clfm As New List(Of Byte())
+    End Class
+
     ''' <summary>Save (or update) a plugin file containing the given NPC overrides.
     ''' Performs full xEdit-style MAST cleanup: any masters not referenced by the final
     ''' record set are dropped (except the game master, which is always preserved).</summary>
@@ -429,95 +443,65 @@ Public Module SaveNpcEspWriter
         Dim gameMaster = MasterFileNamePublic(game)
 
         ' ====================================================================
-        ' Step 1: Collect every FormID that will end up in the final plugin.
+        ' Paso 1: el walk de EMISION, parametrizado por el remapper.
+        ' Es la UNICA ley sobre que FormID terminan en el archivo. Antes la MAST se armaba con un juego de
+        ' COLECTORES que caminaban el modelo en paralelo a los emisores: dos leyes mantenidas a mano que ya
+        ' divergieron dos veces (OBTS y CSDI), y cada divergencia es una referencia apuntando al mod
+        ' equivocado. Ahora la MAST se DERIVA de lo que estos bucles realmente escriben, asi que no puede
+        ' quedar corta por construccion.
+        ' Se corre DOS veces porque el indice de master va horneado en cada FormID emitido y
+        ' selfMasterIdx = sortedMasters.Count: el valor a escribir depende del conjunto COMPLETO de masters,
+        ' que recien se conoce cuando el recorrido termino. La primera pasada solo DESCUBRE (remapper
+        ' identidad, buffers descartados); la segunda, con el remapper real, es la que produce los bytes.
         ' ====================================================================
-        Dim allFormIDs As New HashSet(Of UInteger)
-        For Each entry In entries
-            CollectFormIDs(entry.Npc, allFormIDs)
-            ' Also include the record's own FormID (for the master ownership reference).
-            allFormIDs.Add(entry.Npc.FormID)
-        Next
-        ' NEW NPC_ create entries: walk the cloned NpcData for FormID references (RNAM/HEAD/etc).
-        ' Their own FormID is the provisional sentinel (0xFF high byte) — DO NOT add it: it's not
-        ' resolvable to a master, draftRemap handles it. Skip provisional FormIDs in references too
-        ' (cross-draft refs go through draftRemap, same pattern as OTFT/LVLI).
-        For Each ce In npcCreateEntries
-            If ce.NpcData Is Nothing Then Continue For
-            CollectFormIDs(ce.NpcData, allFormIDs)
-        Next
-        For Each rec In existingRecords
-            ' rec.Header.FormID es LOCAL cuando rec viene de un PluginReader fresco (el camino de "actualizar
-            ' existente" carga con un reader nuevo, que nunca pasa por MergeRecords, que es lo que muta el
-            ' header a GLOBAL). El audit de aguas abajo interpreta el byte alto como slot de LOAD ORDER, asi que
-            ' pasarle el LOCAL arrastraria como master espurio al plugin que ocupe ese slot (tipicamente un DLC).
-            ' Se resuelve a GLOBAL por la MAST del plugin de origen: la misma operacion que hace MergeRecords al
-            ' cargar y la misma convencion de xEdit, cuyos records llevan FixedFormID y cuyo CleanMasters opera
-            ' sobre FormID globales.
-            Dim globalRecFid = pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rec.Header.FormID)
-            allFormIDs.Add(globalRecFid)
-            CollectFormIDsFromSubrecords(rec, existingMasters, pluginManager, allFormIDs)
-        Next
-        ' OTFT outfits: the INAM items (ARMO/LVLI) bring in masters; an OVERRIDE entry also brings in
-        ' its own record's master. NEW entries are owned by this plugin (no external master).
-        For Each oe In outfitEntries
-            For Each armoFid In oe.ItemArmoFormIDs
-                ' Skip provisional draft FormIDs (0xFF high byte): they resolve through draftRemap, not a
-                ' master. Adding them would have GetOriginatingPluginName fail (no master at index 0xFF)
-                ' anyway, but skipping keeps the audit clean and the intent explicit.
-                If armoFid <> 0UI AndAlso Not IsProvisionalDraftFormID(armoFid) Then allFormIDs.Add(armoFid)
-            Next
-            If oe.IsOverride AndAlso oe.FormID <> 0UI Then allFormIDs.Add(oe.FormID)
-        Next
-        ' LVLI leveled lists: each LVLO reference (ARMO or a real/nested LVLI) brings in its master.
-        ' Provisional refs to other DRAFT leveled lists resolve via draftRemap (skipped here). An OVERRIDE
-        ' entry (existing LVLI being preserved) also brings in its own record's master.
-        ' Additional FormID-bearing fields (preserve-existing only; NEW drafts leave them empty):
-        '   LVLG (Use Global GLOB), LVSG (Epic Loot Chance GLOB), LLKC (Filter Keyword KYWD),
-        '   per-entry COED (Owner NPC_/FACT + extra GLOB if Owner=NPC_).
-        ' Each FormID that ends up in the file MUST appear here so the master discovery walks include it
-        ' (mirror of xEdit ReportRequiredMasters, wbImplementation.pas:13572).
-        For Each le In leveledEntries
-            For Each ent In le.Entries
-                If ent.RefFormID <> 0UI AndAlso Not IsProvisionalDraftFormID(ent.RefFormID) Then allFormIDs.Add(ent.RefFormID)
-                If ent.HasCoed Then
-                    If ent.CoedOwnerFormID <> 0UI Then allFormIDs.Add(ent.CoedOwnerFormID)
-                    If ent.CoedExtraIsFormID AndAlso ent.CoedOwnerExtra <> 0UI Then allFormIDs.Add(ent.CoedOwnerExtra)
-                End If
-            Next
-            If le.HasUseGlobal AndAlso le.UseGlobalFormID <> 0UI Then allFormIDs.Add(le.UseGlobalFormID)
-            If le.HasEpicLootChance AndAlso le.EpicLootChanceFormID <> 0UI Then allFormIDs.Add(le.EpicLootChanceFormID)
-            For Each fk In le.FilterKeywords
-                If fk.KeywordFormID <> 0UI Then allFormIDs.Add(fk.KeywordFormID)
-            Next
-            ' LVLN generic model: MODS = Material Swap FormID [MSWP]. The bytes hold the GLOBAL FormID
-            ' (resolved at parse), so add it verbatim to the master walk. Other model subrecords are FormID-free.
-            For Each m In le.ModelSubrecords
-                If m.Signature = "MODS" AndAlso m.Data IsNot Nothing AndAlso m.Data.Length = 4 Then
-                    Dim mswp = BitConverter.ToUInt32(m.Data, 0)
-                    If mswp <> 0UI AndAlso Not IsProvisionalDraftFormID(mswp) Then allFormIDs.Add(mswp)
-                End If
-            Next
-            If le.IsOverride AndAlso le.FormID <> 0UI Then allFormIDs.Add(le.FormID)
-        Next
-        ' ARMA / ARMO / MSWP records (NEW-only in this task). Each FormID they reference must enter the
-        ' master walk so the defining plugin lands in the MAST list (mirror of LVLI/OTFT above). Provisional
-        ' draft FormIDs (0xFF high byte, cross-record refs to sibling drafts) resolve via draftRemap, not a
-        ' master, so they are skipped — same convention as the OTFT/LVLI collectors. MSWP has no body FormIDs.
-        For Each ae In armaEntries
-            CollectFormIDsFromArma(ae, allFormIDs, pluginManager)
-        Next
-        For Each ao In armoEntries
-            CollectFormIDsFromArmo(ao, allFormIDs, pluginManager)
-        Next
-        For Each mw In mswpEntries
-            CollectFormIDsFromMswp(mw, allFormIDs)
-        Next
-        ' CLFM: the body carries NO FormID (EDID/CNAM/FNAM only). An OVERRIDE entry still brings in its own
-        ' record's master so the MAST list keeps the plugin that defines it; NEW entries are owned by this
-        ' plugin and resolve through draftRemap. Same shape as the OTFT collector above.
-        For Each ce In clfmEntries
-            If ce.IsOverride AndAlso ce.FormID <> 0UI Then allFormIDs.Add(ce.FormID)
-        Next
+        Dim emitAll As Func(Of NpcSubrecordWriter.FormIdRemapper, EmittedBuffers) =
+            Function(rm As NpcSubrecordWriter.FormIdRemapper) As EmittedBuffers
+                Dim b As New EmittedBuffers
+                For Each entry In entries
+                    b.Records.Add(SerializeNpcRecord(entry, rm))
+                Next
+                For Each existing In existingRecords
+                    b.Records.Add(SerializeExistingRecord(existing, existingMasters, pluginManager, rm))
+                Next
+                ' NEW NPC_ records (clones with self-index FormIDs). Emitted into the same NPC_ GRUP as the
+                ' overrides — CK / xEdit / engine all consume NPC_ records uniformly regardless of override-vs-new.
+                For Each ce In npcCreateEntries
+                    b.Records.Add(SerializeNpcCreateRecord(ce, rm, game))
+                Next
+
+                ' OTFT outfit records (Edit Outfit "Create" tab). Each emits as a top-level record: NEW ones
+                ' carry a self-index FormID (via draftRemap inside the remapper); OVERRIDE ones keep their real
+                ' FormID. INAM items are remapped against the new MAST list.
+                For Each oe In outfitEntries
+                    b.Otft.Add(SerializeOtftRecord(oe, rm, game))
+                Next
+
+                ' LVLI leveled lists (Edit Outfit "New LVL…"). Each emits as a self-index top-level record; LVLO
+                ' references are remapped (draft → self via draftRemap; real ARMO/LVLI → master remap).
+                For Each le In leveledEntries
+                    Dim buf = SerializeLvliRecord(le, rm, game)
+                    If le.IsNpcList Then b.Lvln.Add(buf) Else b.Lvli.Add(buf)
+                Next
+
+                ' MSWP / ARMA / ARMO records (NEW-only). Each emits a self-index top-level record; every FormID it
+                ' references is remapped (draft → self via draftRemap; real → master remap).
+                For Each mw In mswpEntries
+                    b.Mswp.Add(SerializeMswpRecord(mw, rm, game))
+                Next
+                For Each ae In armaEntries
+                    b.Arma.Add(SerializeArmaRecord(ae, rm, game, pluginManager))
+                Next
+                For Each ao In armoEntries
+                    b.Armo.Add(SerializeArmoRecord(ao, rm, game, pluginManager))
+                Next
+
+                ' CLFM colour records (SSE hair tint materialized from a RaceMenu preset). NEW ones take a self-index
+                ' FormID via draftRemap; OVERRIDE ones (authored by a prior save of this plugin) keep their real FormID.
+                For Each ce In clfmEntries
+                    b.Clfm.Add(SerializeClfmRecord(ce, rm, game))
+                Next
+                Return b
+            End Function
 
         ' ====================================================================
         ' Paso 2: armar la MAST list nueva. Espeja ReportRequiredMasters + GetReferenceFile de xEdit: por cada
@@ -528,20 +512,43 @@ Public Module SaveNpcEspWriter
         ' ====================================================================
         Dim referencedPluginNames As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         ' Audit table: which FormID is bringing in which master plugin? Logged so the user can
-        ' identify "extra" masters as either legitimate references or as bugs in CollectFormIDs.
-        Dim auditPerPlugin As New Dictionary(Of String, List(Of UInteger))(StringComparer.OrdinalIgnoreCase)
-        For Each fid In allFormIDs
-            Dim pname = pluginManager.GetOriginatingPluginName(fid)
-            If String.IsNullOrEmpty(pname) Then Continue For
-            If String.Equals(pname, Path.GetFileName(outputPath), StringComparison.OrdinalIgnoreCase) Then Continue For
-            referencedPluginNames.Add(pname)
-            Dim list As List(Of UInteger) = Nothing
-            If Not auditPerPlugin.TryGetValue(pname, list) Then
-                list = New List(Of UInteger)
-                auditPerPlugin(pname) = list
-            End If
-            list.Add(fid)
-        Next
+        ' identify "extra" masters as either legitimate references or as bugs upstream.
+        ' HashSet, no List: el remapper se invoca UNA VEZ POR REFERENCIA EMITIDA, asi que una lista
+        ' acumularia el mismo FormID decenas de veces por master. El audit contesta "que FormID trae
+        ' a este master", que es una pregunta de CONJUNTO.
+        Dim auditPerPlugin As New Dictionary(Of String, HashSet(Of UInteger))(StringComparer.OrdinalIgnoreCase)
+        ' Pasada de DESCUBRIMIENTO: se corre el MISMO walk de emision del Paso 1 con un remapper que, de paso,
+        ' anota cada FormID que le pasan. Por eso la MAST no puede quedar corta: lo que se anota es exactamente
+        ' lo que despues se escribe. Los buffers que devuelve se tiran — todavia no existe el remapper real.
+        ' Un solo nombre de salida para las DOS lambdas: es el predicado de "este FormID es mio, no de un
+        ' master", y escribirlo dos veces es justo la clase de duplicacion que este refactor vino a sacar.
+        Dim outName = Path.GetFileName(outputPath)
+        Dim discoveryRemapper As NpcSubrecordWriter.FormIdRemapper =
+            Function(g As UInteger) As UInteger
+                If g = 0UI Then Return 0UI
+                ' Los drafts provisionales (byte alto 0xFF) no son resolvibles a un master: los maneja
+                ' draftRemap, que todavia no existe en esta pasada. Devolverlos tal cual.
+                If IsProvisionalDraftFormID(g) Then Return g
+                Dim pn = pluginManager.GetOriginatingPluginName(g)
+                If String.IsNullOrEmpty(pn) Then
+                    Throw New InvalidOperationException(
+                        $"FormID {g:X8} does not belong to any loaded plugin, so it cannot be re-mastered into the output.")
+                End If
+                If Not String.Equals(pn, outName, StringComparison.OrdinalIgnoreCase) Then
+                    referencedPluginNames.Add(pn)
+                    Dim lst As HashSet(Of UInteger) = Nothing
+                    If Not auditPerPlugin.TryGetValue(pn, lst) Then
+                        lst = New HashSet(Of UInteger)
+                        auditPerPlugin(pn) = lst
+                    End If
+                    lst.Add(g)
+                End If
+                ' IDENTIDAD deliberada (la misma convencion que usan los probes de round-trip): devolver el
+                ' FormID sin tocar garantiza que ninguna rama del emisor que dependa de cero/no-cero tome un
+                ' camino distinto al de la pasada real, o sea que las dos pasadas recorren lo mismo.
+                Return g
+            End Function
+        Call emitAll(discoveryRemapper)
 
         ' We do NOT force-add the game master here. xEdit's ReportRequiredMasters only auto-adds
         ' files with fsIsGameMaster when the source record itself is hardcoded/game-master
@@ -588,7 +595,6 @@ Public Module SaveNpcEspWriter
         ' Casos especiales: FormID 0 se emite como 0 (ref nula); si el plugin de origen es el propio archivo de
         ' salida, el indice es el "self FileID", que xEdit codifica como len(masters).
         ' ====================================================================
-        Dim outputName = Path.GetFileName(outputPath)
         Dim masterIndexLookup As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
         For i = 0 To sortedMasters.Count - 1
             masterIndexLookup(sortedMasters(i)) = i
@@ -668,14 +674,40 @@ Public Module SaveNpcEspWriter
         Dim remapper As NpcSubrecordWriter.FormIdRemapper =
             Function(globalFormID As UInteger) As UInteger
                 If globalFormID = 0UI Then Return 0UI
-                ' NEW OTFT provisional → real self FormID. Checked FIRST: the 0xFF high byte is not a
-                ' resolvable master, so GetOriginatingPluginName would fail to map it otherwise.
-                Dim mappedDraft As UInteger
-                If draftRemap.TryGetValue(globalFormID, mappedDraft) Then Return mappedDraft
+                ' NEW draft (OTFT/LVLI/ARMA/ARMO/MSWP/CLFM) → real self FormID. Branch on the SAME predicate
+                ' the discovery pass uses — IsProvisionalDraftFormID — and only then consult draftRemap.
+                ' ⛔ Using `draftRemap.TryGetValue` as the branch instead would be the law written twice with
+                ' two different tests: discovery would classify a FormID as a draft while this pass did not,
+                ' or the reverse, and the two walks would stop agreeing. They must partition FormIDs
+                ' identically; what differs between them is only what they DO with each part.
+                If IsProvisionalDraftFormID(globalFormID) Then
+                    Dim mappedDraft As UInteger
+                    If draftRemap.TryGetValue(globalFormID, mappedDraft) Then Return mappedDraft
+                    ' A provisional FormID that no draft claims: something references a draft record that is
+                    ' not being emitted (e.g. a draft cancelled while another still points at it). Falling
+                    ' through would ask GetOriginatingPluginName about a 0xFF high byte — never a valid slot,
+                    ' MAX_FULL_SLOT is 0xFD — and throw the misleading "not in any loaded plugin".
+                    Throw New InvalidOperationException(
+                        $"Draft FormID {globalFormID:X8} is referenced by a record being written but no draft " &
+                        "record claims it, so it cannot be given a real FormID. A referenced draft was most " &
+                        "likely cancelled or deleted while something still pointed at it.")
+                End If
                 Dim pname = pluginManager.GetOriginatingPluginName(globalFormID)
                 If String.IsNullOrEmpty(pname) Then
-                    ' FormID master byte not resolvable to a loaded plugin. Best effort: keep raw.
-                    Return globalFormID
+                    ' ⛔ Was "best effort: keep raw", which wrote the GLOBAL FormID into a file where the
+                    ' high byte means an index into THIS file's MAST — two different numbering spaces. The
+                    ' reference silently ended up pointing at whatever plugin sat at that index.
+                    ' Every way a FormID could reach here without a resolvable owner is now closed
+                    ' upstream: the .esl extension gets a light slot (PluginReader.ReadTES4), a re-mount
+                    ' keeps its slot instead of vacating one (MergeOverridePlugin), a persisted identifier
+                    ' no longer carries a stale slot (GlobalFormIDFromIdentifierLocal), masters are merged
+                    ' before their dependents (OrderByMasters), an unloaded save target is refused by the
+                    ' Save dialog, and MakeGlobalFormID no longer invents slot 0. So this is an assertion
+                    ' on an invariant, not a user-facing failure mode: if it fires, the bug is ours.
+                    Throw New InvalidOperationException(
+                        $"FormID {globalFormID:X8} does not belong to any loaded plugin, so it cannot be " &
+                        "re-mastered into the output. Writing it unchanged would silently repoint it at " &
+                        "whichever plugin occupies that index in the new master list.")
                 End If
                 ' Object ID width depends on the SOURCE encoding: an ESL/light global is
                 ' 0xFE | (lightSlot << 12) | object12 — masking 0xFFFFFF would keep the light-slot bits
@@ -687,12 +719,29 @@ Public Module SaveNpcEspWriter
                 Dim newIdx As Integer
                 If masterIndexLookup.TryGetValue(pname, newIdx) Then
                     Return (CUInt(newIdx) << 24) Or localObjectID
-                ElseIf String.Equals(pname, outputName, StringComparison.OrdinalIgnoreCase) Then
+                ElseIf String.Equals(pname, outName, StringComparison.OrdinalIgnoreCase) Then
                     Return (CUInt(selfMasterIdx) << 24) Or localObjectID
                 Else
-                    ' Unknown plugin (referenced but not in MAST list). Should not happen since
-                    ' Step 2 added all referenced names. Defensive fallback: keep raw FormID.
-                    Return globalFormID
+                    ' Unknown plugin: el owner resolvio pero no quedo en la MAST. Esta rama nacio como
+                    ' detector de drift entre los COLECTORES (que armaban la MAST caminando el modelo) y los
+                    ' EMISORES (que producian los bytes) — dos leyes paralelas mantenidas a mano, que ya
+                    ' habian divergido dos veces. Los colectores ya no existen: la MAST se DERIVA del walk de
+                    ' emision (Paso 1), la misma pasada que produce estos bytes, asi que todo FormID que llega
+                    ' hasta aca ya paso por discoveryRemapper y su plugin ya esta en la lista. Por
+                    ' construccion, inalcanzable.
+                    '
+                    ' Se deja igual, y sigue tirando en vez de devolver el FormID crudo: el crudo esta indexado
+                    ' por load order, mientras que el byte alto de un FormID en el archivo de salida es un
+                    ' indice en la MAST de ESTE archivo, asi que escribirlo repuntaria la referencia en
+                    ' silencio al plugin que ocupe ese indice. Si algun dia se dispara, lo que se rompio es la
+                    ' premisa de que las dos pasadas recorren lo mismo — y mejor mil veces que el guardado
+                    ' falle fuerte antes que shipear un plugin apuntando al mod equivocado.
+                    Throw New InvalidOperationException(
+                        $"FormID {globalFormID:X8} is owned by '{pname}', which is not in the master list " &
+                        "being written. The master list is built from the discovery pass over this very " &
+                        "emission walk, so every plugin reached here should already be in it — this means " &
+                        "the two passes disagreed. Writing it unchanged would silently repoint the " &
+                        "reference at whichever plugin occupies that index.")
                 End If
             End Function
 
@@ -707,9 +756,9 @@ Public Module SaveNpcEspWriter
         ' (drop entries for plugins that referencedPluginNames had but Step 2 filtered out
         ' because they're not in the load order).
         For Each m In sortedMasters
-            Dim list As List(Of UInteger) = Nothing
+            Dim list As HashSet(Of UInteger) = Nothing
             If auditPerPlugin.TryGetValue(m, list) Then
-                result.MasterAudit(m) = list
+                result.MasterAudit(m) = list.ToList()
             Else
                 result.MasterAudit(m) = New List(Of UInteger)
             End If
@@ -726,59 +775,19 @@ Public Module SaveNpcEspWriter
         Next
 
         ' ====================================================================
-        ' Step 4: Serialize each NPC_ record (overrides + preserved existing).
+        ' Paso 4: la emision de verdad. Mismo walk que la pasada de descubrimiento, ahora con el remapper
+        ' real (indices de la MAST ya cerrada + draftRemap). Se conservan los nombres locales de siempre
+        ' para que el Paso 5 y todo lo de aguas abajo no se entere de que la emision se movio.
         ' ====================================================================
-        Dim recordBuffers As New List(Of Byte())
-        For Each entry In entries
-            recordBuffers.Add(SerializeNpcRecord(entry, remapper))
-        Next
-        For Each existing In existingRecords
-            recordBuffers.Add(SerializeExistingRecord(existing, existingMasters, pluginManager, remapper))
-        Next
-        ' NEW NPC_ records (clones with self-index FormIDs). Emitted into the same NPC_ GRUP as the
-        ' overrides — CK / xEdit / engine all consume NPC_ records uniformly regardless of override-vs-new.
-        For Each ce In npcCreateEntries
-            recordBuffers.Add(SerializeNpcCreateRecord(ce, remapper, game))
-        Next
-
-        ' OTFT outfit records (Edit Outfit "Create" tab). Each emits as a top-level record: NEW ones
-        ' carry a self-index FormID (via draftRemap inside the remapper); OVERRIDE ones keep their real
-        ' FormID. INAM items are remapped against the new MAST list.
-        Dim otftBuffers As New List(Of Byte())
-        For Each oe In outfitEntries
-            otftBuffers.Add(SerializeOtftRecord(oe, remapper, game))
-        Next
-
-        ' LVLI leveled lists (Edit Outfit "New LVL…"). Each emits as a self-index top-level record; LVLO
-        ' references are remapped (draft → self via draftRemap; real ARMO/LVLI → master remap).
-        Dim lvliBuffers As New List(Of Byte())
-        Dim lvlnBuffers As New List(Of Byte())
-        For Each le In leveledEntries
-            Dim buf = SerializeLvliRecord(le, remapper, game)
-            If le.IsNpcList Then lvlnBuffers.Add(buf) Else lvliBuffers.Add(buf)
-        Next
-
-        ' MSWP / ARMA / ARMO records (NEW-only). Each emits a self-index top-level record; every FormID it
-        ' references is remapped (draft → self via draftRemap; real → master remap).
-        Dim mswpBuffers As New List(Of Byte())
-        For Each mw In mswpEntries
-            mswpBuffers.Add(SerializeMswpRecord(mw, remapper, game))
-        Next
-        Dim armaBuffers As New List(Of Byte())
-        For Each ae In armaEntries
-            armaBuffers.Add(SerializeArmaRecord(ae, remapper, game, pluginManager))
-        Next
-        Dim armoBuffers As New List(Of Byte())
-        For Each ao In armoEntries
-            armoBuffers.Add(SerializeArmoRecord(ao, remapper, game, pluginManager))
-        Next
-
-        ' CLFM colour records (SSE hair tint materialized from a RaceMenu preset). NEW ones take a self-index
-        ' FormID via draftRemap; OVERRIDE ones (authored by a prior save of this plugin) keep their real FormID.
-        Dim clfmBuffers As New List(Of Byte())
-        For Each ce In clfmEntries
-            clfmBuffers.Add(SerializeClfmRecord(ce, remapper, game))
-        Next
+        Dim emitted As EmittedBuffers = emitAll(remapper)
+        Dim recordBuffers As List(Of Byte()) = emitted.Records
+        Dim otftBuffers As List(Of Byte()) = emitted.Otft
+        Dim lvliBuffers As List(Of Byte()) = emitted.Lvli
+        Dim lvlnBuffers As List(Of Byte()) = emitted.Lvln
+        Dim mswpBuffers As List(Of Byte()) = emitted.Mswp
+        Dim armaBuffers As List(Of Byte()) = emitted.Arma
+        Dim armoBuffers As List(Of Byte()) = emitted.Armo
+        Dim clfmBuffers As List(Of Byte()) = emitted.Clfm
 
         ' ====================================================================
         ' Paso 5: envolver cada tipo de record en su GRUP de primer nivel, en orden referenced-first:
@@ -857,365 +866,6 @@ Public Module SaveNpcEspWriter
 
         Return result
     End Function
-
-    ' ========================================================================
-    ' FormID collection helpers — walk an NPC_Data and report every FormID.
-    ' Mirrors NpcSubrecordWriter emission paths. Anything new added to the
-    ' writer must be added here too.
-    ' ========================================================================
-
-    Private Sub CollectFormIDs(npc As NPC_Data, sink As HashSet(Of UInteger))
-        ' AddNZ: only adds non-zero FormIDs. Zero means NULL reference / absent — it does NOT
-        ' contribute a master, and adding it would cause GetOriginatingPluginName(0) to return
-        ' the plugin at load-order-index 0 (typically Fallout4.esm) which is innocuous (game
-        ' master is forced anyway), but it pollutes the audit and risks false positives in
-        ' "preserve survivor" logic if the same FormID resolves to an unloaded plugin.
-        If npc.HasPreviewTransform AndAlso npc.PreviewTransformFormID <> 0UI Then sink.Add(npc.PreviewTransformFormID)
-        If npc.HasAnimationSound AndAlso npc.AnimationSoundFormID <> 0UI Then sink.Add(npc.AnimationSoundFormID)
-        For Each f In npc.Factions
-            If f.FactionFormID <> 0UI Then sink.Add(f.FactionFormID)
-        Next
-        If npc.HasDeathItem AndAlso npc.DeathItemFormID <> 0UI Then sink.Add(npc.DeathItemFormID)
-        If npc.HasVoice AndAlso npc.VoiceFormID <> 0UI Then sink.Add(npc.VoiceFormID)
-        If npc.HasTemplate AndAlso npc.TemplateFormID <> 0UI Then sink.Add(npc.TemplateFormID)
-        If npc.HasLegendaryTemplate AndAlso npc.LegendaryTemplateFormID <> 0UI Then sink.Add(npc.LegendaryTemplateFormID)
-        If npc.HasLegendaryChance AndAlso npc.LegendaryChanceFormID <> 0UI Then sink.Add(npc.LegendaryChanceFormID)
-        For Each kv In npc.TemplateActorFormIDs
-            If kv.Value <> 0UI Then sink.Add(kv.Value)
-        Next
-        If npc.HasRace AndAlso npc.RaceFormID <> 0UI Then sink.Add(npc.RaceFormID)
-        For Each fid In npc.ActorEffectFormIDs
-            If fid <> 0UI Then sink.Add(fid)
-        Next
-        If npc.Destruction IsNot Nothing Then
-            For Each r In npc.Destruction.Resistances
-                If r.DamageTypeFormID <> 0UI Then sink.Add(r.DamageTypeFormID)
-            Next
-            For Each s In npc.Destruction.Stages
-                If s.ExplosionFormID <> 0UI Then sink.Add(s.ExplosionFormID)
-                If s.DebrisFormID <> 0UI Then sink.Add(s.DebrisFormID)
-                If s.MaterialSwapFormID <> 0UI Then sink.Add(s.MaterialSwapFormID)
-            Next
-        End If
-        If npc.HasSkin AndAlso npc.SkinFormID <> 0UI Then sink.Add(npc.SkinFormID)
-        If npc.HasFarAwayModel AndAlso npc.FarAwayModelFormID <> 0UI Then sink.Add(npc.FarAwayModelFormID)
-        If npc.HasAttackRace AndAlso npc.AttackRaceFormID <> 0UI Then sink.Add(npc.AttackRaceFormID)
-        For Each a In npc.Attacks
-            If a.AttackSpellFormID <> 0UI Then sink.Add(a.AttackSpellFormID)
-            If a.HasWeaponSlot AndAlso a.WeaponSlotFormID <> 0UI Then sink.Add(a.WeaponSlotFormID)
-            If a.HasRequiredSlot AndAlso a.RequiredSlotFormID <> 0UI Then sink.Add(a.RequiredSlotFormID)
-        Next
-        If npc.HasSpectatorOverride AndAlso npc.SpectatorOverrideFormID <> 0UI Then sink.Add(npc.SpectatorOverrideFormID)
-        If npc.HasObserveDeadBodyOverride AndAlso npc.ObserveDeadBodyOverrideFormID <> 0UI Then sink.Add(npc.ObserveDeadBodyOverrideFormID)
-        If npc.HasGuardWarnOverride AndAlso npc.GuardWarnOverrideFormID <> 0UI Then sink.Add(npc.GuardWarnOverrideFormID)
-        If npc.HasCombatOverride AndAlso npc.CombatOverrideFormID <> 0UI Then sink.Add(npc.CombatOverrideFormID)
-        If npc.HasFollowerCommand AndAlso npc.FollowerCommandFormID <> 0UI Then sink.Add(npc.FollowerCommandFormID)
-        If npc.HasFollowerElevator AndAlso npc.FollowerElevatorFormID <> 0UI Then sink.Add(npc.FollowerElevatorFormID)
-        For Each p In npc.Perks
-            If p.PerkFormID <> 0UI Then sink.Add(p.PerkFormID)
-        Next
-        For Each pr In npc.Properties
-            If pr.ActorValueFormID <> 0UI Then sink.Add(pr.ActorValueFormID)
-        Next
-        If npc.HasForcedLocRefType AndAlso npc.ForcedLocRefTypeFormID <> 0UI Then sink.Add(npc.ForcedLocRefTypeFormID)
-        If npc.HasNativeTerminal AndAlso npc.NativeTerminalFormID <> 0UI Then sink.Add(npc.NativeTerminalFormID)
-        For Each item In npc.Inventory
-            If item.ItemFormID <> 0UI Then sink.Add(item.ItemFormID)
-            If item.HasCoed AndAlso item.CoedOwnerFormID <> 0UI Then sink.Add(item.CoedOwnerFormID)
-            ' COED extra slot is a GLOB FormID when Owner is NPC_ (wbCOEDOwnerDecider). Including
-            ' it here ensures the master defining that Global Variable lands in the new MAST list.
-            If item.HasCoed AndAlso item.CoedExtraIsFormID AndAlso item.CoedOwnerExtra <> 0UI Then sink.Add(item.CoedOwnerExtra)
-        Next
-        For Each fid In npc.AiPackageFormIDs
-            If fid <> 0UI Then sink.Add(fid)
-        Next
-        For Each fid In npc.KeywordFormIDs
-            If fid <> 0UI Then sink.Add(fid)
-        Next
-        For Each fid In npc.AttachParentSlotFormIDs
-            If fid <> 0UI Then sink.Add(fid)
-        Next
-        For Each combo In npc.ObjectTemplateCombinations
-            If combo.Combination IsNot Nothing Then
-                For Each fid In combo.Combination.IncludeOMODFormIDs
-                    If fid <> 0UI Then sink.Add(fid)
-                Next
-                For Each fid In combo.Combination.Keywords
-                    If fid <> 0UI Then sink.Add(fid)
-                Next
-                ' OBTS Properties: Value1 is a FormID when ValueType is FormIDInt(4) or FormIDFloat(6)
-                ' — per wbObjectModProperties (wbDefinitionsFO4.pas:5826-5865). Must enter the master
-                ' audit so an ESL/light-master Actor Value (AVIF) reference brings its plugin into the
-                ' new MAST list and the writer remap doesn't fall back to "keep raw FormID".
-                For Each prop In combo.Combination.Properties
-                    If (prop.ValueType = OMOD_ValueType.FormIDInt OrElse prop.ValueType = OMOD_ValueType.FormIDFloat) AndAlso prop.Value1FormID <> 0UI Then
-                        sink.Add(prop.Value1FormID)
-                    End If
-                Next
-            End If
-        Next
-        If npc.HasClass AndAlso npc.ClassFormID <> 0UI Then sink.Add(npc.ClassFormID)
-        For Each fid In npc.HeadPartFormIDs
-            If fid <> 0UI Then sink.Add(fid)
-        Next
-        If npc.HasHairColor AndAlso npc.HairColorFormID <> 0UI Then sink.Add(npc.HairColorFormID)
-        If npc.HasFacialHairColor AndAlso npc.FacialHairColorFormID <> 0UI Then sink.Add(npc.FacialHairColorFormID)
-        If npc.HasCombatStyle AndAlso npc.CombatStyleFormID <> 0UI Then sink.Add(npc.CombatStyleFormID)
-        If npc.HasGiftFilter AndAlso npc.GiftFilterFormID <> 0UI Then sink.Add(npc.GiftFilterFormID)
-        For Each s In npc.ActorSounds
-            If s.KeywordFormID <> 0UI Then sink.Add(s.KeywordFormID)
-            If s.SoundFormID <> 0UI Then sink.Add(s.SoundFormID)
-        Next
-        If npc.HasInheritsSoundsFrom AndAlso npc.InheritsSoundsFromFormID <> 0UI Then sink.Add(npc.InheritsSoundsFromFormID)
-        If npc.HasPowerArmorStand AndAlso npc.PowerArmorStandFormID <> 0UI Then sink.Add(npc.PowerArmorStandFormID)
-        If npc.HasDefaultOutfit AndAlso npc.DefaultOutfitFormID <> 0UI Then sink.Add(npc.DefaultOutfitFormID)
-        If npc.HasSleepOutfit AndAlso npc.SleepOutfitFormID <> 0UI Then sink.Add(npc.SleepOutfitFormID)
-        If npc.HasDefaultPackageList AndAlso npc.DefaultPackageListFormID <> 0UI Then sink.Add(npc.DefaultPackageListFormID)
-        If npc.HasCrimeFaction AndAlso npc.CrimeFactionFormID <> 0UI Then sink.Add(npc.CrimeFactionFormID)
-        If npc.HasHeadTexture AndAlso npc.HeadTextureFormID <> 0UI Then sink.Add(npc.HeadTextureFormID)
-        ' VMAD FormIDs (already resolved by scanner).
-        If npc.Vmad IsNot Nothing Then
-            For Each ref In npc.Vmad.FormIdPositions
-                If ref.ResolvedFormID <> 0UI Then sink.Add(ref.ResolvedFormID)
-            Next
-        End If
-    End Sub
-
-    ''' <summary>Walk an existing PluginRecord (loaded via PluginReader) and collect every
-    ''' FormID candidate. Since PluginRecord stores raw subrecord bytes, we scan known
-    ''' FormID positions per signature. This is conservative: unknown subrecords are
-    ''' skipped (their FormIDs will resolve as raw and may break — caller's responsibility
-    ''' to flag this if "Update existing" is used with non-NPC records).</summary>
-    Private Sub CollectFormIDsFromSubrecords(rec As PluginRecord,
-                                             existingMasters As List(Of String),
-                                             pluginManager As PluginManager,
-                                             sink As HashSet(Of UInteger))
-        ' For now we only support NPC_ records when preserving existing — the parser
-        ' has already extracted everything via ParseNPC, so it's enough to re-parse
-        ' and feed CollectFormIDs.
-        If rec.Header.Signature = "NPC_" Then
-            ' Build a temporary parsed view to enumerate FormIDs.
-            Dim parsedNpc = RecordParsers.ParseNPC(rec, rec.SourcePluginName, pluginManager)
-            CollectFormIDs(parsedNpc, sink)
-        Else
-            ' For non-NPC records, conservatively walk subrecords and collect any 4-byte
-            ' payload as a candidate FormID. Acceptable for "preserve existing" since the
-            ' alternative (losing them) is worse. False positives don't break: PluginManager
-            ' just resolves them as no-ops.
-            For Each subrec In rec.Subrecords
-                If subrec.Data IsNot Nothing AndAlso subrec.Data.Length = 4 Then
-                    Dim raw = BitConverter.ToUInt32(subrec.Data, 0)
-                    If raw <> 0UI Then
-                        ' Resolve via the source plugin's MAST list (rec.SourcePluginName).
-                        Dim resolved = pluginManager.ResolveReferencedFormID(rec.SourcePluginName, raw)
-                        sink.Add(resolved)
-                    End If
-                End If
-            Next
-        End If
-    End Sub
-
-    ''' <summary>Collect every FormID an ARMA record references so the defining plugin lands in the new
-    ''' MAST list (mirror of xEdit ReportRequiredMasters). Provisional draft FormIDs (0xFF high byte) are
-    ''' skipped — they resolve via draftRemap, not a master (same rule as the OTFT/LVLI collectors). NEW
-    ''' records do NOT add their own (provisional) FormID; OVERRIDE records add it. For OVERRIDE we ALSO walk
-    ''' the preserved source subrecords (YNAM/DEST/OBTS/MO4S/...) so every master they reference enters the
-    ''' new MAST list — otherwise the override-merge remapper would fall back to "keep raw" and corrupt them.</summary>
-    Private Sub CollectFormIDsFromArma(entry As ArmaRecordEntry, sink As HashSet(Of UInteger), pluginManager As PluginManager)
-        AddRefFormID(sink, entry.RaceFormID)
-        AddRefFormID(sink, entry.FootstepSetFormID)             ' SNDD (owned)
-        For Each fid In entry.AdditionalRaces
-            AddRefFormID(sink, fid)
-        Next
-        AddRefFormID(sink, entry.MaleSkinTextureFormID)         ' NAM0
-        AddRefFormID(sink, entry.FemaleSkinTextureFormID)       ' NAM1
-        AddRefFormID(sink, entry.MaleSkinTextureSwapListFormID) ' NAM2
-        AddRefFormID(sink, entry.FemaleSkinTextureSwapListFormID) ' NAM3
-        AddRefFormID(sink, entry.MaleMaterialSwapFormID)        ' MO2S
-        AddRefFormID(sink, entry.FemaleMaterialSwapFormID)      ' MO3S
-        AddRefFormID(sink, entry.MaleFPMaterialSwapFormID)      ' MO4S (owned)
-        AddRefFormID(sink, entry.FemaleFPMaterialSwapFormID)    ' MO5S (owned)
-        AddRefFormID(sink, entry.ArtObjectFormID)               ' ONAM (owned)
-        If entry.IsOverride AndAlso entry.FormID <> 0UI AndAlso Not IsProvisionalDraftFormID(entry.FormID) Then sink.Add(entry.FormID)
-        If entry.IsOverride AndAlso entry.SourceRecord IsNot Nothing Then
-            CollectPreservedSourceFormIDs(entry.SourceRecord, pluginManager, sink)
-        End If
-    End Sub
-
-    ''' <summary>Collect every FormID an ARMO record references. See <see cref="CollectFormIDsFromArma"/>
-    ''' for the draft-skip / own-FormID / OVERRIDE-preserved rules.</summary>
-    Private Sub CollectFormIDsFromArmo(entry As ArmoRecordEntry, sink As HashSet(Of UInteger), pluginManager As PluginManager)
-        AddRefFormID(sink, entry.RaceFormID)             ' RNAM
-        AddRefFormID(sink, entry.InstanceNamingFormID)   ' INRD (owned)
-        AddRefFormID(sink, entry.EnchantmentFormID)      ' EITM (owned)
-        AddRefFormID(sink, entry.PatternFormID)          ' PTRN (owned)
-        AddRefFormID(sink, entry.EquipTypeFormID)        ' ETYP (owned)
-        AddRefFormID(sink, entry.PickupSoundFormID)      ' YNAM (owned)
-        AddRefFormID(sink, entry.DropSoundFormID)        ' ZNAM (owned)
-        AddRefFormID(sink, entry.AlternateBlockMaterialFormID) ' BAMT (owned)
-        For Each dr In entry.DamageResistances
-            AddRefFormID(sink, dr.DamageTypeFormID)      ' DAMA Type [DMGT] (owned)
-        Next
-        AddRefFormID(sink, entry.TemplateArmorFormID)    ' TNAM
-        For Each addon In entry.ArmorAddons
-            AddRefFormID(sink, addon.ArmaFormID)         ' MODL
-        Next
-        For Each fid In entry.KeywordFormIDs
-            AddRefFormID(sink, fid)                      ' KWDA
-        Next
-        For Each fid In entry.AttachParentSlotFormIDs
-            AddRefFormID(sink, fid)                      ' APPR
-        Next
-        AddRefFormID(sink, entry.MaleMaterialSwapFormID)   ' MO2S
-        AddRefFormID(sink, entry.FemaleMaterialSwapFormID) ' MO4S
-        ' OBTS Object Template combinations: when the record emits its OBTS block FROM THE MODEL — a NEW record
-        ' ALWAYS does; an OVERRIDE only when CombinationsAuthored (else the source bytes are preserved verbatim and
-        ' their masters arrive via existingMasters) — the referenced FormIDs live in entry.Combinations, NOT in a
-        ' source record. Without collecting them here the defining plugin of an authored Include OMOD / FormID
-        ' Property Value1 / combination Keyword never enters the MAST list → the OBTS FormID is written raw
-        ' (dangling) by the remapper's "unknown plugin" fallback. Matches BuildObtsPayload's own remap set
-        ' (NpcSubrecordWriter: keywords, Include.ModFormID, FormID-typed Property Value1).
-        If (Not entry.IsOverride) OrElse entry.CombinationsAuthored Then
-            For Each combo In entry.Combinations
-                If combo Is Nothing Then Continue For
-                For Each kw In combo.Keywords
-                    AddRefFormID(sink, kw)
-                Next
-                For Each inc In combo.Includes
-                    AddRefFormID(sink, inc.ModFormID)
-                Next
-                For Each prop In combo.Properties
-                    If prop.ValueType = OMOD_ValueType.FormIDInt OrElse prop.ValueType = OMOD_ValueType.FormIDFloat Then
-                        AddRefFormID(sink, prop.Value1FormID)
-                    End If
-                Next
-            Next
-        End If
-        If entry.IsOverride AndAlso entry.FormID <> 0UI AndAlso Not IsProvisionalDraftFormID(entry.FormID) Then sink.Add(entry.FormID)
-        If entry.IsOverride AndAlso entry.SourceRecord IsNot Nothing Then
-            CollectPreservedSourceFormIDs(entry.SourceRecord, pluginManager, sink)
-        End If
-    End Sub
-
-    ''' <summary>Collect every FormID an MSWP record references. MSWP has NO embedded FormIDs in its body
-    ''' (per wbDefinitionsFO4.pas:12798) — only its own FormID matters, and only when overriding.</summary>
-    Private Sub CollectFormIDsFromMswp(entry As MswpRecordEntry, sink As HashSet(Of UInteger))
-        If entry.IsOverride AndAlso entry.FormID <> 0UI AndAlso Not IsProvisionalDraftFormID(entry.FormID) Then sink.Add(entry.FormID)
-    End Sub
-
-    ''' <summary>For an OVERRIDE, walk the source record's subrecords and add every FormID the PRESERVED
-    ''' subrecords reference to the master-discovery sink (resolved to GLOBAL via the source plugin's MAST
-    ''' list). This guarantees the defining plugins land in the new MAST list so the override-merge remapper
-    ''' never falls back to "keep raw" on a preserved FormID. We do NOT filter by owned-vs-preserved here: a
-    ''' FormID an OWNED subrecord references is already collected from the entry, and adding the same FormID
-    ''' twice (via the source) is harmless (the sink is a HashSet). Classification mirrors EmitPreservedSubrecord:
-    ''' single-FormID sigs @0, DAMC stride 8, DSTD @8/@12, DAMA, OBTS, VMAD (via scanner). Unknown FormID-
-    ''' bearing sigs are NOT special-cased here (collection is best-effort for the master walk; the SERIALIZER
-    ''' is where an unclassified FormID-bearing sig throws). Non-FormID sigs contribute nothing.</summary>
-    Private Sub CollectPreservedSourceFormIDs(src As PluginRecord, pluginManager As PluginManager, sink As HashSet(Of UInteger))
-        Dim srcName = src.SourcePluginName
-        Dim addLocal = Sub(rawLocal As UInteger)
-                           If rawLocal = 0UI Then Return
-                           Dim g = pluginManager.ResolveReferencedFormID(srcName, rawLocal)
-                           If g <> 0UI AndAlso Not IsProvisionalDraftFormID(g) Then sink.Add(g)
-                       End Sub
-        For Each sr In src.Subrecords
-            Dim data = If(sr.Data, Array.Empty(Of Byte)())
-            Select Case sr.Signature
-                Case "BIDS", "DMDS"
-                    ' Owned single-FormID sigs are collected from the entry, NOT here: ARMO INRD/EITM/PTRN/YNAM/
-                    ' ZNAM/ETYP/BAMT (CollectFormIDsFromArmo) and ARMA SNDD/ONAM/MO4S/MO5S (CollectFormIDsFromArma).
-                    ' Only BIDS (still preserved) and DMDS (inside DEST) remain preserved single-FormID here.
-                    If data.Length >= 4 Then addLocal(BitConverter.ToUInt32(data, 0))
-                Case "DAMC"
-                    Dim n = data.Length \ 8
-                    For i = 0 To n - 1
-                        addLocal(BitConverter.ToUInt32(data, i * 8))
-                    Next
-                Case "DSTD"
-                    If data.Length >= 16 Then
-                        addLocal(BitConverter.ToUInt32(data, 8))
-                        addLocal(BitConverter.ToUInt32(data, 12))
-                    End If
-                ' DAMA is now OWNED by the ARMO entry (CollectFormIDsFromArmo walks its DamageResistances) —
-                ' no preserved-source collection here.
-                Case "MO2S", "MO3S", "MO4S", "MO5S"
-                    ' SKYRIM Alternate-Textures arrays (wbDefinitionsTES5.pas:3325). Each entry embeds a
-                    ' New-Texture [TXST] FormID whose defining plugin must enter the MAST list, else
-                    ' RemapAlternateTextures (emit) can't remap it and the ref dangles. Under FO4 these
-                    ' signatures are single MSWP FormIDs OWNED by the entry (collected in CollectFormIDsFromArma/
-                    ' Armo), so skip there — treating a 4-byte FormID as an array would misread the count.
-                    If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then _
-                        CollectAlternateTextureFormIDs(data, addLocal)
-                Case "OBTS"
-                    CollectObtsLocalFormIDs(data, addLocal)
-                Case "VMAD"
-                    Dim vmad = NpcVmadScanner.Scan(data, srcName, pluginManager)
-                    If vmad IsNot Nothing Then
-                        For Each ref In vmad.FormIdPositions
-                            If ref.ResolvedFormID <> 0UI AndAlso Not IsProvisionalDraftFormID(ref.ResolvedFormID) Then sink.Add(ref.ResolvedFormID)
-                        Next
-                    End If
-            End Select
-        Next
-    End Sub
-
-    ''' <summary>Read a SKYRIM Alternate-Textures array's embedded New-Texture [TXST] FormIDs (source-local)
-    ''' into <paramref name="addLocal"/>. Layout mirror of <see cref="RemapAlternateTextures"/>: u32 count, then
-    ''' per entry { u32 3D-Name length, ASCII name, u32 TXST FormID, s32 3D-Index }. Collect-only and lenient —
-    ''' stops at a truncated payload rather than throwing (the emit path fails loud if it's genuinely corrupt).</summary>
-    Private Sub CollectAlternateTextureFormIDs(raw As Byte(), addLocal As Action(Of UInteger))
-        If raw Is Nothing OrElse raw.Length < 4 Then Return
-        Dim count As Integer = CInt(BitConverter.ToUInt32(raw, 0))
-        Dim offset As Integer = 4
-        For i = 0 To count - 1
-            If offset + 4 > raw.Length Then Return                 ' truncated name length → stop
-            Dim nameLen As Integer = CInt(BitConverter.ToUInt32(raw, offset))
-            offset += 4 + nameLen                                  ' skip length + ASCII 3D-Name
-            If offset + 8 > raw.Length Then Return                 ' truncated FormID / index → stop
-            addLocal(BitConverter.ToUInt32(raw, offset))           ' New Texture [TXST]
-            offset += 4 + 4                                        ' skip FormID + s32 3D-Index
-        Next
-    End Sub
-
-    ''' <summary>Read an OBTS payload's FormIDs (source-local) into <paramref name="addLocal"/>. Layout per
-    ''' ParseOBTSPayload (RecordParsers.vb:1763): Keywords (@16+), Includes (Mod FormID), Property Value1
-    ''' (ValueType-gated). Mirror of RemapObtsPayload's walk but collect-only.</summary>
-    Private Sub CollectObtsLocalFormIDs(raw As Byte(), addLocal As Action(Of UInteger))
-        If raw Is Nothing OrElse raw.Length < 17 Then Return
-        Dim includeCount As Integer = CInt(BitConverter.ToUInt32(raw, 0))
-        Dim propertyCount As Integer = CInt(BitConverter.ToUInt32(raw, 4))
-        Dim offset As Integer = 15
-        Dim kwCount As Integer = CInt(raw(offset))
-        offset += 1
-        For i = 0 To kwCount - 1
-            If offset + 4 > raw.Length Then Exit For
-            addLocal(BitConverter.ToUInt32(raw, offset))
-            offset += 4
-        Next
-        offset += 2
-        For i = 0 To includeCount - 1
-            If offset + 7 > raw.Length Then Exit For
-            addLocal(BitConverter.ToUInt32(raw, offset))
-            offset += 7
-        Next
-        Const propertyEntrySize As Integer = 24
-        For i = 0 To propertyCount - 1
-            If offset + propertyEntrySize > raw.Length Then Exit For
-            Dim valueType As Byte = raw(offset)
-            If valueType = CByte(OMOD_ValueType.FormIDInt) OrElse valueType = CByte(OMOD_ValueType.FormIDFloat) Then
-                addLocal(BitConverter.ToUInt32(raw, offset + 12))
-            End If
-            offset += propertyEntrySize
-        Next
-    End Sub
-
-    ''' <summary>Add a referenced FormID to the master-discovery sink, skipping NULL (0) and provisional
-    ''' draft sentinels (0xFF high byte — resolved via draftRemap, never a master). Mirror of the inline
-    ''' guard the OTFT/LVLI collectors use.</summary>
-    Private Sub AddRefFormID(sink As HashSet(Of UInteger), fid As UInteger)
-        If fid <> 0UI AndAlso Not IsProvisionalDraftFormID(fid) Then sink.Add(fid)
-    End Sub
 
     ' ========================================================================
     ' Record / Group / Header serialization

@@ -4137,7 +4137,7 @@ Public Module RecordParsers
                 ' they are Alternate-Textures arrays ({u32 count, entries…}, wbDefinitionsTES5.pas:3325); reading
                 ' the count as a FormID yields garbage that would pollute the master list, so skip under Skyrim.
                 ' The SSE write path preserves the arrays verbatim (RemapAlternateTextures) and collects their
-                ' embedded TXST masters via CollectPreservedSourceFormIDs.
+                ' embedded TXST masters when the writer walks the preserved source subrecords.
                 Case "MO2S"
                     If IsFallout4() Then _
                         arma.MaleMaterialSwapFormID = ResolveFormIDReference(rec, sr, pluginManager)
