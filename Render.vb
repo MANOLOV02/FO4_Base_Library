@@ -251,6 +251,11 @@ Public Class PreviewControl
     ' es responsabilidad suya (el propio setter restaura el cursor, asi que no queda un cursor de cruz
     ' sin modo).
     Private _colorPickMode As Boolean = False
+    ''' <summary>Se traga el arrastre del boton izquierdo hasta que se suelte, aunque el modo picker ya se haya
+    ''' apagado en el medio. HACE FALTA porque <c>ColorPicked</c> se levanta DENTRO del MouseDown y el que lo
+    ''' escucha suele desarmar el modo ahi mismo (picker de un solo disparo): sin este latch, el primer MouseMove
+    ''' del MISMO click ya entra por la rama de orbita y la camara pega un salto.</summary>
+    Private _pickSwallowLeftDrag As Boolean = False
 
     ''' <summary>Cuando esta en True el boton IZQUIERDO deja de orbitar y pasa a MUESTREAR el pixel
     ''' clickeado: se levanta <see cref="ColorPicked"/> con la posicion y el color TAL COMO SE VE (el
@@ -1449,32 +1454,73 @@ Public Class PreviewControl
     '''
     ''' <para>Misma disciplina de estado que <see cref="CaptureBitmap"/>: se CAPTURA y se DEVUELVE el
     ''' ReadBuffer y el PackAlignment que habia - dejarlos pisados es el bug que "solo se ve a veces".</para></summary>
-    Public Function ReadPixelDisplay(x As Integer, y As Integer, Optional box As Integer = 3) As Color
-        If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return Color.Empty
-        If x < 0 OrElse y < 0 OrElse x >= Me.Width OrElse y >= Me.Height Then Return Color.Empty
+    Public Function ReadPixelDisplay(x As Integer, y As Integer, Optional box As Integer = 3,
+                                     Optional presentFrame As Boolean = True) As Color
+        Return ReadPixelPatch(x, y, box, presentFrame).Mean
+    End Function
+
+    ''' <summary>Igual que <see cref="ReadPixelDisplay"/> pero devuelve tambien la DISPERSION del parche:
+    ''' el mayor rango (max - min) entre los canales, en niveles de pantalla.
+    ''' <para>Para que sirve: una ventana de muestreo grande promedia el ruido y el moteado especular -por eso
+    ''' conviene- pero si el punto elegido cae sobre el borde de la silueta, sobre una costura o sobre el filo de
+    ''' una sombra, el parche mezcla piel con fondo o con penumbra y el promedio deja de representar al color que
+    ''' el usuario quiso elegir. La dispersion permite AVISARLO en vez de comparar dos numeros envenenados.</para>
+    ''' <para>Un parche de piel plana da tipicamente &lt; 10; arriba de ~25 casi siempre hay un borde adentro.</para></summary>
+    ''' <para><paramref name="wantImage"/> agrega la IMAGEN del parche (los pixeles crudos, sin escalar) para
+    ''' poder MOSTRAR la muestra en vez de un color plano. Es opt-in porque aloca un Bitmap por llamada y el
+    ''' lazo del auto-calc muestrea cientos de veces: ahi se pide sin imagen y no se aloca nada. El caller es
+    ''' duenio del Bitmap y tiene que hacerle Dispose.</para></summary>
+    Public Function ReadPixelPatch(x As Integer, y As Integer, Optional box As Integer = 3,
+                                   Optional presentFrame As Boolean = True,
+                                   Optional wantImage As Boolean = False) As (Mean As Color, Spread As Double, Image As Bitmap)
+        Dim failed = (CType(Color.Empty, Color), 0.0R, CType(Nothing, Bitmap))
+        If Me.IsInDesignMode OrElse Me.Width <= 0 OrElse Me.Height <= 0 Then Return failed
+        If x < 0 OrElse y < 0 OrElse x >= Me.Width OrElse y >= Me.Height Then Return failed
         If box < 1 Then box = 1
 
         Me.EnsureContextCurrent()
         ApplyResize(True)
-        If UpdateRequired Then
-            ' Mismo consumo up-front que CaptureBitmap: cualquier pedido nuevo que levante RenderScene
-            ' sobrevive a este frame y agenda el siguiente.
+        Dim readTarget As ReadBufferMode
+        If presentFrame Then
+            If UpdateRequired Then
+                ' Mismo consumo up-front que CaptureBitmap: cualquier pedido nuevo que levante RenderScene
+                ' sobrevive a este frame y agenda el siguiente.
+                UpdateRequired = False
+                RenderScene()
+                SwapBuffers()
+                FinishRenderFrame()
+            End If
+            readTarget = ReadBufferMode.Front
+        Else
+            ' MUESTREO DETERMINISTA (presentFrame:=False). Se dibuja SIEMPRE -no condicionado a
+            ' UpdateRequired- en el BACK buffer, se espera a que la GPU termine y se lee de ahi SIN
+            ' SwapBuffers.
+            '   * Por que no leer el FRONT despues de un swap: el swap puede encolarse, asi que el front
+            '     puede seguir teniendo el frame ANTERIOR. En un lazo de medicion (aplicar -> renderizar ->
+            '     leer) eso es un desfase de UNA iteracion: se mide el candidato viejo y la busqueda entera
+            '     queda envenenada. Es el modo de falla que NO se nota en una captura suelta.
+            '   * Por que renderizar siempre: tras un swap el contenido del back buffer es INDEFINIDO por
+            '     spec, asi que leerlo sin haber dibujado no garantiza nada.
+            '   * Efecto lateral querido: sin swap el lazo no parpadea en pantalla.
             UpdateRequired = False
             RenderScene()
-            SwapBuffers()
+            GL.Finish()
             FinishRenderFrame()
+            readTarget = ReadBufferMode.Back
         End If
 
-        ' Recorte de la ventana contra los bordes del control (en coordenadas GL, origen abajo).
+        ' Ventana EXACTA de box x box centrada en el punto, recortada contra los bordes del control (en
+        ' coordenadas GL, origen abajo). El calculo previo usaba [x-half, x+half], que para un box PAR daba
+        ' box+1 pixeles (8 -> 9): el tamano pedido tiene que ser el tamano leido.
         Dim half As Integer = box \ 2
         Dim x0 As Integer = Math.Max(0, x - half)
-        Dim x1 As Integer = Math.Min(Me.Width - 1, x + half)
+        Dim x1 As Integer = Math.Min(Me.Width - 1, x - half + box - 1)
         Dim glY As Integer = Me.Height - 1 - y
         Dim y0 As Integer = Math.Max(0, glY - half)
-        Dim y1 As Integer = Math.Min(Me.Height - 1, glY + half)
+        Dim y1 As Integer = Math.Min(Me.Height - 1, glY - half + box - 1)
         Dim w As Integer = x1 - x0 + 1
         Dim h As Integer = y1 - y0 + 1
-        If w <= 0 OrElse h <= 0 Then Return Color.Empty
+        If w <= 0 OrElse h <= 0 Then Return failed
 
         Dim buf(w * h * 4 - 1) As Byte
         Dim prevReadBuffer As Integer = CInt(ReadBufferMode.Back)
@@ -1487,11 +1533,11 @@ Public Class PreviewControl
         Dim handle As GCHandle = Nothing
         Try
             handle = GCHandle.Alloc(buf, GCHandleType.Pinned)
-            GL.ReadBuffer(ReadBufferMode.Front)
+            GL.ReadBuffer(readTarget)
             GL.PixelStore(PixelStoreParameter.PackAlignment, 1)
             GL.ReadPixels(x0, y0, w, h, OpenTK.Graphics.OpenGL4.PixelFormat.Bgra, PixelType.UnsignedByte, handle.AddrOfPinnedObject())
         Catch ex As Exception
-            Return Color.Empty
+            Return failed
         Finally
             Try
                 GL.ReadBuffer(CType(prevReadBuffer, ReadBufferMode))
@@ -1502,14 +1548,43 @@ Public Class PreviewControl
         End Try
 
         Dim sumB As Long = 0, sumG As Long = 0, sumR As Long = 0, sumA As Long = 0
+        Dim minR As Integer = 255, minG As Integer = 255, minB As Integer = 255
+        Dim maxR As Integer = 0, maxG As Integer = 0, maxB As Integer = 0
         Dim n As Integer = w * h
         For i As Integer = 0 To n - 1
-            sumB += buf(i * 4)
-            sumG += buf(i * 4 + 1)
-            sumR += buf(i * 4 + 2)
+            Dim pb As Integer = buf(i * 4)
+            Dim pg As Integer = buf(i * 4 + 1)
+            Dim pr As Integer = buf(i * 4 + 2)
+            sumB += pb : sumG += pg : sumR += pr
             sumA += buf(i * 4 + 3)
+            If pr < minR Then minR = pr
+            If pr > maxR Then maxR = pr
+            If pg < minG Then minG = pg
+            If pg > maxG Then maxG = pg
+            If pb < minB Then minB = pb
+            If pb > maxB Then maxB = pb
         Next
-        Return Color.FromArgb(CInt(sumA \ n), CInt(sumR \ n), CInt(sumG \ n), CInt(sumB \ n))
+        Dim spread As Double = Math.Max(maxR - minR, Math.Max(maxG - minG, maxB - minB))
+
+        Dim img As Bitmap = Nothing
+        If wantImage Then
+            ' GL entrega las filas de ABAJO hacia arriba: se copian invertidas para que el Bitmap quede
+            ' orientado como la pantalla. El formato de lectura ya es BGRA, que es el layout de
+            ' Format32bppArgb en memoria, asi que la fila se copia tal cual.
+            img = New Bitmap(w, h, Imaging.PixelFormat.Format32bppArgb)
+            Dim bd = img.LockBits(New Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, Imaging.PixelFormat.Format32bppArgb)
+            Try
+                For row As Integer = 0 To h - 1
+                    Dim srcOffset As Integer = (h - 1 - row) * w * 4
+                    Dim dstPtr = IntPtr.Add(bd.Scan0, row * bd.Stride)
+                    Runtime.InteropServices.Marshal.Copy(buf, srcOffset, dstPtr, w * 4)
+                Next
+            Finally
+                img.UnlockBits(bd)
+            End Try
+        End If
+
+        Return (Color.FromArgb(CInt(sumA \ n), CInt(sumR \ n), CInt(sumG \ n), CInt(sumB \ n)), spread, img)
     End Function
 
     Public Function CaptureBitmap() As Bitmap
@@ -1588,10 +1663,19 @@ Public Class PreviewControl
     End Sub
     Protected Overrides Sub OnMouseDown(e As MouseEventArgs)
         MyBase.OnMouseDown(e)
-        ' Modo picker: el click izquierdo MUESTREA y no orbita. No se tocan lastX/lastY a proposito -
-        ' OnMouseMove tambien sale temprano con el izquierdo, asi que no hay arrastre que continuar.
+        ' Modo picker: el click izquierdo MUESTREA y no orbita.
         If _colorPickMode AndAlso e.Button = MouseButtons.Left Then
-            Dim c = ReadPixelDisplay(e.X, e.Y)
+            ' lastX/lastY SE SIEMBRAN IGUAL. Antes se salteaban "porque no hay arrastre que continuar" y eso
+            ' era falso: el handler de ColorPicked desarma el modo dentro de este mismo MouseDown, asi que el
+            ' MouseMove siguiente -con el boton todavia apretado- caia en la orbita con un lastX de hace dos
+            ' interacciones y giraba la camara de golpe. Sembrarlos deja el delta en 0 aunque algo se filtre.
+            lastX = e.X
+            lastY = e.Y
+            _pickSwallowLeftDrag = True
+            ' presentFrame:=False = MISMA lectura que hace un lazo de medicion (dibuja al back y lee de ahi).
+            ' Importa que sea la misma: si el color de origen saliera del FRONT y los del destino del BACK,
+            ' cualquier diferencia entre los dos buffers entraria como sesgo constante en la comparacion.
+            Dim c = ReadPixelDisplay(e.X, e.Y, presentFrame:=False)
             RaiseEvent ColorPicked(Me, New ColorPickedEventArgs(e.X, e.Y, c))
             Return
         End If
@@ -1607,9 +1691,10 @@ Public Class PreviewControl
     Protected Overrides Sub OnMouseMove(e As MouseEventArgs)
         If Me.IsInDesignMode Then Return
         MyBase.OnMouseMove(e)
-        ' En modo picker el izquierdo esta reservado al muestreo: sin esto, mover el mouse con el boton
-        ' apretado orbitaba la camara y el punto recien elegido dejaba de estar donde el usuario lo eligio.
-        If _colorPickMode AndAlso e.Button = MouseButtons.Left Then Return
+        ' El izquierdo esta reservado al muestreo mientras dure el click del pick. Se consulta el LATCH y no
+        ' solo el modo: el modo puede haberse apagado dentro del MouseDown (picker de un solo disparo) y el
+        ' arrastre de ese mismo click no debe orbitar.
+        If (_colorPickMode OrElse _pickSwallowLeftDrag) AndAlso e.Button = MouseButtons.Left Then Return
         ' Left drag sin Ctrl ni Alt: salir de FreeMode (si aplica) y luego ROTATE orbit manteniendo el mismo radio
         ' Left drag sin Ctrl ni Alt: salimos de free-cam (si era el caso) y rotamos en orbit
         If e.Button = MouseButtons.Left AndAlso (Control.ModifierKeys And Keys.Control) = 0 AndAlso (Control.ModifierKeys And Keys.Alt) = 0 Then
@@ -1699,6 +1784,8 @@ Public Class PreviewControl
 
     Protected Overrides Sub OnMouseUp(e As MouseEventArgs)
         MyBase.OnMouseUp(e)
+        ' El latch del pick vive exactamente lo que dura el click que lo prendio.
+        _pickSwallowLeftDrag = False
         Cursor.Current = Cursors.Default
         If e.Button = MouseButtons.Right Then
             ShowPreviewContextMenu(e.Location)

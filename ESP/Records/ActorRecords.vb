@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Text
 
 ' ============================================================================
@@ -7,6 +7,22 @@ Imports System.Text
 ' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
+' ############################################################################
+' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' ############################################################################
+' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
+' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
+' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
+'
+' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
+' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
+'   SSE BPTD.Parts[] 114/114 + 38/38 + 12/12 -> FormID inexistentes: el BPND de SSE
+'        mide 84 bytes y tiene otro orden de campos que el de FO4.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
+' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
+' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ############################################################################
 #Region "Data Classes"
 
 ''' <summary>Faction rank entry.</summary>

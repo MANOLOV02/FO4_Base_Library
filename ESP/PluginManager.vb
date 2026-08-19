@@ -528,13 +528,19 @@ Public Class PluginManager
             "indexed only via IndexAndMergePlugin/MergeOverridePlugin, both of which assign the slot first.")
     End Function
 
-    ''' <summary>FormID global a partir del nombre del plugin y el <b>object ID CRUDO</b>: 12 bits útiles en
-    ''' un ESL, 24 en un plugin completo. Es la convención que muestran el CK y xEdit, y la que usan los JSON
-    ''' de f4ee (<c>haircolors.json</c>, "Form": "800").
-    ''' <para>⛔ NO confundir con <see cref="GlobalFormIDFromIdentifierLocal"/>: aquella recibe el local de 24
-    ''' bits de LooksMenu, que en un ESL YA trae el light slot en los bits 12..23, y por eso se limita a OR-ear
-    ''' 0xFE. Pasarle un object ID pelado de un ESL produce <c>0xFE000xxx</c> — el record xxx del ESL en el
-    ''' slot 0, o sea otro plugin. Devuelve 0 si el plugin no está cargado.</para></summary>
+    ''' <summary>FormID global a partir del nombre del plugin y el object id del record. Devuelve 0 si el
+    ''' plugin no está cargado.
+    ''' <para>Tolera las DOS formas que circulan por el proyecto: el object id PELADO (12 bits útiles en un ESL,
+    ''' 24 en uno completo — la convención del CK, de xEdit y de los JSON de f4ee) y el "local de 24 bits" de
+    ''' LooksMenu, que en un ESL trae además el light slot en los bits 12..23. <see cref="MakeGlobalFormID"/>
+    ''' enmascara al ancho del dueño, así que las dos entran al mismo resultado y un identificador viejo con el
+    ''' slot embebido sigue resolviendo sin migración.</para>
+    ''' <para>⛔ Acá había DOS funciones públicas con el cuerpo IDÉNTICO —ésta y
+    ''' <c>GlobalFormIDFromIdentifierLocal</c>— y un doc que afirmaba que se comportaban distinto. La diferencia
+    ''' existió mientras la segunda hacía un OR crudo de 0xFE, y dejó de existir cuando pasó a delegar en
+    ''' <see cref="MakeGlobalFormID"/>; el doc quedó describiendo un comportamiento muerto, que es peor que no
+    ''' documentar: manda al próximo lector a "restaurar" el OR crudo y a romper los 12 call sites de la otra.
+    ''' Ahora es UNA sola función y <c>GlobalFormIDFromIdentifierLocal</c> es un alias que reenvía.</para></summary>
     Public Function GlobalFormIDFromObjectID(pluginName As String, objectID As UInteger) As UInteger
         _rwLock.EnterReadLock()
         Try
@@ -563,31 +569,13 @@ Public Class PluginManager
         End Try
     End Function
 
-    ''' <summary>Combine a LooksMenu-style "Plugin|FormID" identifier back into a global FormID. The
-    ''' identifier's FormID part is the runtime FormID masked to 24 bits (Utilities.cpp:112
-    ''' <c>formID &amp; 0xFFFFFF</c>) — for an ESL it already carries the 12-bit light-slot in bits 12..23,
-    ''' so the global is just 0xFE | local; for a full plugin the global is (fullSlot &lt;&lt; 24) | local.
-    ''' Returns 0 when the named plugin isn't loaded. Inverse of <c>LooksmenuLoader.FormatFormIdentifier</c>.</summary>
+    ''' <summary>Alias histórico de <see cref="GlobalFormIDFromObjectID"/>, conservado porque lo nombran ~20 call
+    ''' sites (los persistidos de LooksMenu / RaceMenu / sidecar y una docena de probes) y renombrarlos sería
+    ''' churn sin beneficio. <b>Es un REENVÍO, no una segunda implementación</b>: las dos formas de entrada
+    ''' (object id pelado y local de 24 bits con el light slot embebido) las unifica
+    ''' <see cref="MakeGlobalFormID"/> al enmascarar por el ancho del dueño.</summary>
     Public Function GlobalFormIDFromIdentifierLocal(pluginName As String, identifierLocal As UInteger) As UInteger
-        _rwLock.EnterReadLock()
-        Try
-            Dim idx As Integer
-            If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, idx) Then Return 0UI
-            ' ⛔ Rebuild from the plugin's CURRENT slot; never trust a slot embedded in the stored
-            ' identifier. The old ESL branch was `0xFE000000 Or (local And 0xFFFFFF)`, which keeps
-            ' bits 12..23 — i.e. whatever light slot happened to be in effect when the row was
-            ' written. Our slot space is COMPACTED (the Preflight loads a subset), so it is not the
-            ' game's, and it shifts between sessions the moment a light plugin is added, removed or
-            ' unticked — one Creation Club item is enough. The row then resolved to a different
-            ' record, or to none, silently.
-            ' Masking to the owner's own width also makes this backward compatible: an OLD identifier
-            ' carrying a light slot masks down to the same object id as a new bare one, so existing
-            ' .bssliders and presets keep resolving and need no migration.
-            ' MakeGlobalFormID is that law, already written once (12 bits for light, 24 for full).
-            Return MakeGlobalFormID(Plugins(idx), identifierLocal)
-        Finally
-            _rwLock.ExitReadLock()
-        End Try
+        Return GlobalFormIDFromObjectID(pluginName, identifierLocal)
     End Function
 
     ''' <summary>Plugin occupying a given FULL FileID slot (high byte 0x00..0xFD). For light (ESL)
@@ -874,6 +862,22 @@ Public Class PluginManager
         _rwLock.EnterReadLock()
         Try
             Return _pluginIndex.ContainsKey(pluginName)
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+    End Function
+
+    ''' <summary>El <see cref="PluginReader"/> CARGADO con ese nombre, o Nothing si no está en la sesión.
+    ''' Para comparar contra una lectura fresca del disco (¿cambió el archivo desde que lo cargamos?), que es la
+    ''' única forma de detectar que la MAST en memoria y la del archivo ya no son la misma.</summary>
+    Public Function GetPluginByName(pluginName As String) As PluginReader
+        If String.IsNullOrEmpty(pluginName) Then Return Nothing
+        _rwLock.EnterReadLock()
+        Try
+            Dim idx As Integer
+            If Not _pluginIndex.TryGetValue(pluginName, idx) Then Return Nothing
+            If idx < 0 OrElse idx >= Plugins.Count Then Return Nothing
+            Return Plugins(idx)
         Finally
             _rwLock.ExitReadLock()
         End Try

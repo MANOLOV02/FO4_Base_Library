@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Text
 
 ' ============================================================================
@@ -9,6 +9,22 @@ Imports System.Text
 ' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
+' ############################################################################
+' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' ############################################################################
+' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
+' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
+' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
+'
+' Sin defectos MEDIDOS, que NO es lo mismo que validado: el sweep 2026-08-18 solo
+' verifico que no crashea y que los FormID que emite existan. NINGUN campo de este
+' archivo se comparo campo-a-campo contra wbDefinitionsFO4.pas / wbDefinitionsTES5.pas,
+' ni se distinguio FO4 de SSE donde el layout difiere.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
+' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
+' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ############################################################################
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 COLL record - Collision Layer.</summary>

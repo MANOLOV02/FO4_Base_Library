@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 
 ''' <summary>
@@ -408,6 +408,23 @@ Public NotInheritable Class LoadOrderActivator
         Else
             desired = Math.Min(previousIndex, entries.Count)
         End If
+
+        ' Tope del GRUPO DE MASTERS, aplicado a LAS DOS ramas.
+        ' ⛔ Estuvo primero sólo en la rama "ya listado" y usando `EndOfMasterBlock`, y las dos cosas estaban mal:
+        '   · EXCEPCIÓN A "respetar la posición del usuario": esa regla vale mientras el plugin siga en el MISMO
+        '     grupo. Tildar "Mark as master" lo pasa al de masters, y el motor lo sube ahí ESTÉ DONDE ESTÉ la
+        '     línea (mfIsESM por flag, wbLoadOrder.pas:344-350; comparador :212-215). Sin mover, Plugins.txt y el
+        '     motor discrepan, y como ReadActiveLoadOrder es LITERAL la app le da el ÚLTIMO slot mientras el
+        '     juego lo carga entre los masters ⇒ difieren en QUIÉN GANA el override, sin una sola señal.
+        '   · `EndOfMasterBlock` es "último master + 1" y CUENTA LAS INACTIVAS, así que un .esm destildado o un
+        '     .esl traspapelado al final empujaba el límite hasta el fin del archivo y el tope no hacía nada —
+        '     justo en la lista desordenada que hay que arreglar. El tope real es el PRIMER no-master ACTIVO.
+        ' `minIndex` (los masters que nos bloquean) se aplica DESPUÉS y sube: nunca se viola un master propio.
+        If ourIsEsmGroup Then
+            Dim firstNonMaster = FirstNonMasterIndex(entries, dataPath, cache)
+            If firstNonMaster >= 0 AndAlso desired > firstNonMaster Then desired = firstNonMaster
+        End If
+
         Dim minIndex = LastIndexOfAny(entries, blocking) + 1
         If desired < minIndex Then desired = minIndex
         If desired > entries.Count Then desired = entries.Count
@@ -449,6 +466,30 @@ Public NotInheritable Class LoadOrderActivator
         If last >= 0 Then Return last + 1
         If firstPlugin >= 0 Then Return firstPlugin
         Return entries.Count
+    End Function
+
+    ''' <summary>Índice de la PRIMERA línea de plugin que NO pertenece al grupo de masters, o -1 si no hay
+    ''' ninguna (todo el archivo es grupo master). Es el tope para colocar un plugin del grupo master, porque lo
+    ''' que el motor garantiza es que ningún master queda DETRÁS de un no-master.
+    ''' <para>⛔ Distinto de <see cref="EndOfMasterBlock"/>, que devuelve "último master + 1" y sirve para
+    ''' INSERTAR uno nuevo respetando el bloque existente. Usar aquél como tope hace que un .esl traspapelado al
+    ''' final del archivo empuje el límite hasta el fin de la lista y el clamp no haga nada.</para>
+    ''' <para>Un plugin no instalado (<c>IsEsmGroup</c> = Nothing) NO cuenta: no se puede saber su grupo y el
+    ''' motor tampoco lo carga.</para></summary>
+    Private Shared Function FirstNonMasterIndex(entries As List(Of Entry), dataPath As String,
+                                                cache As Dictionary(Of String, Boolean?)) As Integer
+        For i = 0 To entries.Count - 1
+            ' ⛔ SOLO las ACTIVAS, igual que LastIndexOfAny (:445-455, "Inactive entries don't order anything:
+            ' the engine never loads them"). Contando las inactivas, una línea destildada en el medio del bloque
+            ' de masters bajaba el tope y MOVÍA nuestro plugin por encima de un .esm ACTIVO que estaba después —
+            ' cambiándole la precedencia de overrides a un tercero sin que nada lo pidiera. Medido por el
+            ' revisor: `*Master1.esm / Inactive.esp / *Master2.esm / *Ours.esp` pasaba de NoOp a Moved y
+            ' Master2.esm empezaba a ganarle a Ours.
+            If Not entries(i).IsPlugin OrElse Not entries(i).Active Then Continue For
+            Dim g = IsEsmGroup(dataPath, entries(i).Name, cache)
+            If g.HasValue AndAlso Not g.Value Then Return i
+        Next
+        Return -1
     End Function
 
     ''' <summary>Insertion point right after the last plugin line, so trailing blank lines stay trailing.</summary>

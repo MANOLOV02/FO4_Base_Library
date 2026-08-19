@@ -1,4 +1,4 @@
-Imports System.Text
+﻿Imports System.Text
 
 ' ============================================================================
 ' Quest / Dialogue / AI Record Data Classes and Parsers
@@ -6,6 +6,23 @@ Imports System.Text
 ' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
+' ############################################################################
+' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' ############################################################################
+' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
+' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
+' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
+'
+' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
+' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
+'   FO4 SMEN.ParentFormID 18/18 -> FormID inexistente.
+'   QUST.Description 712/712 con bytes de control -> un solo Case "NNAM" atiende DOS
+'        subrecords distintos (el de texto y el otro) y se mezclan.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
+' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
+' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ############################################################################
 #Region "Data Classes"
 
 ''' <summary>Quest stage entry.</summary>

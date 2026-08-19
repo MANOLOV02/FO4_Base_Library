@@ -1,9 +1,57 @@
-Imports System.Text
+﻿Imports System.Text
 
 ' ============================================================================
 ' Unified Record Dispatcher
 ' Routes any PluginRecord to its appropriate parser based on signature.
 ' Returns the parsed data object, or Nothing for unsupported types.
+'
+' ############################################################################
+' # ⛔⛔⛔ NO USAR EN PRODUCCION HASTA ARREGLAR LOS PARSERS. NO ESTAN VALIDADOS. #
+' ############################################################################
+'
+' ESTE MODULO NO TIENE NI UN LLAMADOR en las tres apps, y eso NO es un descuido
+' que haya que "corregir" cableandolo: la mayoria de los ~130 parsers que rutea
+' NUNCA se ejecutaron, y los que se midieron TIENEN DEFECTOS CONFIRMADOS.
+'
+' La app alcanza hoy ~17 parsers (NPC_, RACE, ARMO, ARMA, OTFT, HDPT, TXST, CLFM,
+' LVLN, LVLI, FLST, MSWP, OMOD, IDLE, BPTD, OBTS, VMAD) y esos SI estan ejercitados
+' por el corpus real y por los oraculos byte-exactos. El resto (~6.000 lineas en
+' ItemRecords / MagicRecords / WorldRecords / AudioRecords / SystemRecords /
+' VisualRecords / MiscRecords / AdditionalRecords y casi todo QuestRecords y
+' ActorRecords) es codigo que compila y nada mas.
+'
+' MEDIDO 2026-08-18 con Tools\RecordParserSweepProbe sobre los DOS juegos reales
+' (FO4 420.731 records + SSE 330.953): 0 excepciones y 0 Nothing -> no crashean.
+' PERO 12 campos devuelven FormID que NO EXISTEN, que es la firma exacta de leer
+' del offset equivocado o de interpretar un entero como referencia:
+'
+'   SSE  WEAP.ResistFormID          3865/3865  <- es un ENUM, no un FormID
+'   SSE  WEAP.SkillFormID           1697/1700  <- idem
+'   SSE  MGEF.ResistValueFormID     2185/2192  <- idem
+'   FO4  WEAP.SoundAttackLoopFormID   169/169
+'   FO4  WEAP.SoundAttackFailFormID   289/290
+'   FO4  WEAP.SoundEquipFormID        249/310
+'   FO4  WEAP.SoundIdleFormID         146/152
+'   FO4  TERM.LoopingSoundFormID        37/37
+'   FO4  SMEN.ParentFormID              18/18
+'   SSE  BPTD.Parts[].*            114/114, 38/38, 12/12  <- BPND de SSE son 84 bytes y otro orden
+'        QUST.Description              712/712 con bytes de control <- un Case "NNAM" para DOS subrecords
+'        DMGT.ActorValueFormIDs           4/8  <- decide el layout por LONGITUD; el canonico usa
+'                                                 wbFormVersionDecider(78) (wbDefinitionsFO4.pas:12674)
+'
+' Prueba de que WEAP.Skill/Resist NO son referencias (canonico, verificado):
+'   wbDefinitionsTES5.pas:4477   wbInteger('Skill',  itS32, wbSkillEnum)
+'   wbDefinitionsTES5.pas:10863  wbInteger('Resist', itS32, wbActorValueEnum)
+' y nuestro parser hace ResolveFIDRaw sobre esos mismos bytes (ItemRecords.vb:503-504),
+' o sea que los pasa por el remapper de indices de master como si apuntaran a algo.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero PLAUSIBLE Y EQUIVOCADO, sin error. Si
+' un dia esto alimenta el writer, sale un ESP con referencias apuntando a otro mod.
+'
+' ANTES DE CABLEARLO hay que ir campo por campo contra wbDefinitionsFO4.pas /
+' wbDefinitionsTES5.pas, en los DOS juegos, y volver a correr el sweep hasta que la
+' tabla de arriba quede en cero. Decision del usuario 2026-08-18: NO se borran; se
+' arreglan cuando se aborde. Ver 20-app-parsers-muertos-hallazgos en memoria.
 ' ============================================================================
 
 Friend Module RecordDispatcher
@@ -12,7 +60,14 @@ Friend Module RecordDispatcher
     ''' Parse any Fallout 4 record into its strongly-typed data object.
     ''' Returns Nothing if the signature is not supported or parsing fails.
     ''' </summary>
+    ''' <remarks>⛔⛔ NO VALIDADO — ver la cabecera del archivo. La mayoria de los parsers que rutea nunca
+    ''' corrieron y 12 campos MEDIDOS devuelven FormID inexistentes. El unico consumidor legitimo hoy es
+    ''' Tools\RecordParserSweepProbe, que existe justamente para medirlos.</remarks>
+    <Obsolete("NO VALIDADO: la mayoria de los parsers que rutea nunca se ejercitaron y 12 campos medidos " &
+              "devuelven FormID inexistentes (ver la cabecera de RecordDispatcher.vb). Usarlo en produccion " &
+              "mete referencias equivocadas SIN error. Solo Tools\RecordParserSweepProbe deberia llamarlo.", False)>
     Friend Function ParseRecord(rec As PluginRecord, pluginManager As PluginManager) As Object
+
         If rec Is Nothing Then Return Nothing
 
         Try

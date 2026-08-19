@@ -93,7 +93,11 @@ Public Module PluginWriter
                 bw.Write(CByte(0))                         ' NUL terminator
 
                 ' --- MAST (master plugin name, ZSTRING) ---
-                Dim masterBytes = Encoding.ASCII.GetBytes(masterName)
+                ' Misma ley que SaveNpcEspWriter: General (cpNormal, lo que lee PluginReader) y rehusar si el
+                ' nombre no sobrevive. Hoy acá siempre es el master del juego (ASCII), pero la ley va en UN lugar
+                ' — que este archivo advirtiera del '?' silencioso para el CNAM nueve líneas arriba y lo cometiera
+                ' acá es exactamente el modo en que una ley duplicada diverge.
+                Dim masterBytes = PluginEncodingSettings.EncodeMasterFileName(masterName)
                 WriteSubrecordHeader(bw, "MAST", masterBytes.Length + 1)
                 bw.Write(masterBytes)
                 bw.Write(CByte(0))

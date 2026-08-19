@@ -90,6 +90,30 @@ Public Module NpcVmadScanner
         ScanValue(br, data, pluginName, pluginManager, ptype)
     End Sub
 
+    ''' <summary>Saltear <paramref name="byteCount"/> bytes, validando ANTES contra lo que queda del payload.
+    ''' <para>⛔ Acá había <c>br.ReadBytes(CInt(count) * 4)</c> con <c>count</c> leído del propio payload, y eso
+    ''' EVADÍA el gate que esta clase existe para sostener: <see cref="Scan"/> sólo captura
+    ''' <c>EndOfStreamException</c> e <c>IOException</c>, así que la <c>OverflowException</c> del <c>CInt</c>
+    ''' (VB tiene los checks de desborde PRENDIDOS — es el mismo motivo por el que los bucles de arriba usan
+    ''' <c>CLng</c>) y la <c>OutOfMemoryException</c> de reservar el array se escapaban. Con
+    ''' <c>count = 0xFFFFFFFF</c> la excepción atraviesa <c>ParseNPC</c> y la traga el <c>Catch</c> del parse
+    ''' masivo: el NPC desaparece del árbol sin un mensaje. Con <c>count = 0x08000000</c> no hay desborde y se
+    ''' piden 1 GB de una — que un <c>Catch</c> tampoco evita, porque la memoria ya se pidió.</para>
+    ''' <para>Validar primero convierte el desborde en imposible por construcción y expresa la falla en el
+    ''' vocabulario que el gate YA entiende: <c>IOException</c> ⇒ <c>ScanComplete = False</c> ⇒ el writer se
+    ''' niega a emitir en vez de patchear medio VMAD.</para></summary>
+    Private Sub SkipBytes(br As BinaryReader, byteCount As Long)
+        If byteCount < 0L Then Throw New IOException($"VMAD array length {byteCount} is negative.")
+        Dim s = br.BaseStream
+        Dim remaining = s.Length - s.Position
+        If byteCount > remaining Then
+            Throw New IOException(
+                $"VMAD array declares {byteCount} byte(s) but only {remaining} remain in the payload " &
+                "(structure desync).")
+        End If
+        s.Position += byteCount
+    End Sub
+
     ''' <summary>⛔ EMPTY ARRAYS ARE LEGAL AND MUST NOT CRASH. The array cases below iterate as
     ''' <c>For i As Long = 0 To CLng(count) - 1</c>, NOT <c>For i = 0UI To count - 1UI</c>: with
     ''' <c>count = 0</c> the unsigned form underflows to 4294967295 and, because VB.NET has integer
@@ -125,10 +149,10 @@ Public Module NpcVmadScanner
                 Next
             Case 13, 14
                 Dim count = br.ReadUInt32()
-                br.ReadBytes(CInt(count) * 4)
+                SkipBytes(br, CLng(count) * 4L)
             Case 15
                 Dim count = br.ReadUInt32()
-                br.ReadBytes(CInt(count))
+                SkipBytes(br, CLng(count))
             Case 16
                 ' Array of Variable — u32 count only per wbDefinitionsFO4.pas:4163.
                 br.ReadUInt32()

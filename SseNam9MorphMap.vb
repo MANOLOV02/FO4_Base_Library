@@ -1,4 +1,4 @@
-''' <summary>
+﻿''' <summary>
 ''' SSE (Skyrim) head-morph slider map — the engine's NAM9/NAMA -> chargen-morph mapping, byte-verified
 ''' against SkyrimSE.exe (slider table @0x1ff92a0). Single source of truth shared by the render/bake morph
 ''' resolver AND the face editor (so the UI sliders, the live render and the bake all agree).
@@ -62,6 +62,28 @@ Public NotInheritable Class SseNam9MorphMap
         New TypeFamily("LipType", "Mouth Type")}
 
     Public Const Nam9SliderCount As Integer = 18
+
+    ''' <summary>El vector NAMA por defecto: TODAS las familias en el centinela "sin tipo asignado"
+    ''' (<see cref="NamaUnset"/>), que NO es lo mismo que el tipo 0. Existe para que las cuatro ramas que
+    ''' construyen un NAMA vacio digan lo mismo — estaban repartidas entre MainForm y PresetCategoryFilter y
+    ''' dos de ellas devolvian CEROS, o sea el tipo 0 real.</summary>
+    Public Shared Function DefaultNamaVector() As UInteger()
+        Dim v(NamaFamilyCount - 1) As UInteger
+        For i = 0 To v.Length - 1 : v(i) = NamaUnset : Next
+        Return v
+    End Function
+
+    ''' <summary>El slot 18 del NAM9 (VampireMorph) de un payload crudo, o Nothing si no llega a ese slot.
+    ''' <para>Vive ACA y no en cada consumidor porque son TRES los que lo necesitan (BuildPresetFromState en sus
+    ''' dos ramas, y el revert de la categoria FaceVertexMorphs) y la primera version quedo escrita en una sola,
+    ''' con lo cual el arreglo era inerte en el camino normal.</para>
+    ''' <para>NAM9 son 19 floats (76 bytes); el modelo editable dimensiona 18 sliders, asi que este slot no entra
+    ''' en <c>SseNam9</c> y hay que llevarlo aparte.</para></summary>
+    Public Shared Function VampireMorphFromNam9Raw(nam9Raw As Byte()) As Single?
+        If nam9Raw Is Nothing OrElse nam9Raw.Length < (Nam9SliderCount + 1) * 4 Then Return Nothing
+        Return BitConverter.ToSingle(nam9Raw, Nam9SliderCount * 4)
+    End Function
+
     Public Const NamaFamilyCount As Integer = 4
     Public Const NamaUnset As UInteger = &HFFFFFFFFUI
 

@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Text
 
 ' ============================================================================
@@ -7,6 +7,23 @@ Imports System.Text
 ' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
+' ############################################################################
+' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' ############################################################################
+' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
+' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
+' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
+'
+' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
+' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
+'   SSE MGEF.ResistValueFormID 2185/2192 -> es un ENUM (actor value), NO un FormID.
+'   DMGT.ActorValueFormIDs 4/8 -> el layout se decide por LONGITUD del subrecord;
+'        el canonico usa wbFormVersionDecider(78) (wbDefinitionsFO4.pas:12674).
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
+' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
+' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ############################################################################
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 ENCH record - Enchantment (Object Effect).</summary>

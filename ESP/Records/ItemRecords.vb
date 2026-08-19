@@ -1,4 +1,4 @@
-Imports System.Drawing
+﻿Imports System.Drawing
 Imports System.Text
 
 ' ============================================================================
@@ -7,6 +7,25 @@ Imports System.Text
 ' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
+' ############################################################################
+' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' ############################################################################
+' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
+' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
+' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
+'
+' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
+' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
+'   FO4 WEAP.SoundAttackLoopFormID 169/169, .SoundAttackFailFormID 289/290,
+'        .SoundEquipFormID 249/310, .SoundIdleFormID 146/152 -> FormID inexistentes.
+'   SSE WEAP.ResistFormID 3865/3865 y .SkillFormID 1697/1700: son ENUM, NO FormID
+'        (wbDefinitionsTES5.pas:10863 itS32 wbActorValueEnum / :4477 itS32 wbSkillEnum)
+'        y aca (lineas 503-504) se los pasa por ResolveFIDRaw.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
+' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
+' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ############################################################################
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 WEAP record - Weapon.</summary>

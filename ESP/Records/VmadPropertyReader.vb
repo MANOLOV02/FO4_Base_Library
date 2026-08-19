@@ -109,6 +109,14 @@ Friend NotInheritable Class VmadPropertyReader
                                       rec As PluginRecord, pluginManager As PluginManager,
                                       game As Config_App.Game_Enum) As PropValue
         Select Case ptype
+            Case 0 ' Null — 0 bytes.
+                ' ⛔ Antes caía en el `Case Else` y LANZABA, y su `Catch` descarta ese script Y TODOS LOS QUE
+                ' SIGUEN — en un QUST eso puede costar el binding de GenericRaceController y dejar a una raza
+                ' custom sin head parts vanilla. xEdit declara `{00} wbNull` en los DOS juegos
+                ' (wbDefinitionsFO4.pas:4179 / wbDefinitionsTES5.pas:2995), o sea que el tipo es LEGAL y ocupa
+                ' cero bytes. NpcVmadScanner ya lo trataba así (`Case 0, 6`): eran DOS walkers de la misma tabla
+                ' de tipos y ya habían divergido.
+                Return New PropValue With {.Kind = PropKind.Unsupported}
             Case 1 ' Object union — 8 bytes. v1: FormID first. v2 (objFormat <> 1): FormID LAST.
                 Dim localFid As UInteger = If(objFormat = 1, BitConverter.ToUInt32(d, p), BitConverter.ToUInt32(d, p + 4))
                 p += 8

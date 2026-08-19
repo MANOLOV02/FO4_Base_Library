@@ -77,6 +77,11 @@ Public NotInheritable Class RaceMenuJslot
         Public Property Keys As New List(Of JslotBodyMorphKey)
     End Class
 
+    ''' <summary>Nombre de key con el que el motor absorbe la forma LEGACY <c>{name, value}</c> de un body morph:
+    ''' <c>presetData-&gt;bodyMorphData[name]["RSMLegacy"] = value</c> (skee64 PresetInterface.cpp:1220).
+    ''' Se usa al leer para que ese aporte no se pierda al re-serializar.</summary>
+    Friend Const SkeeLegacyMorphKey As String = "RSMLegacy"
+
     ''' <summary>One RaceMenu body overlay ("tattoo") — a decoded <c>overrides</c> node whose name matches
     ''' the skee64 overlay node convention (<c>Body/Hands/Feet [Ovl{n}]</c> or the <c>[SOvl{n}]</c> skin
     ''' variant, OverlayInterface.h:23-46). Unlike the FO4 f4ee overlay (a catalog template id), a RaceMenu
@@ -120,6 +125,19 @@ Public NotInheritable Class RaceMenuJslot
         ''' a RaceMenu-authored preset carries one, so it must round-trip or the overlay reloads fully opaque.</summary>
         Public Property Alpha As Single = 1.0F
         Public Property HasAlpha As Boolean
+
+        ''' <summary>El <c>index</c> con el que vinieron el tint (key 7) y el alpha (key 8) en el archivo, para
+        ''' re-emitirlos EN SU LUGAR. −1 es lo que escribe RaceMenu y el default de un overlay creado acá.
+        ''' <para>⛔ NO es decoración: el decode reconocía la key mirando sólo <c>(key,type)</c> mientras el encode
+        ''' parcheaba con <c>index := -1</c> cableado, así que un value que viniera en otro índice NO se encontraba
+        ''' y se APENDABA uno nuevo — quedaban los dos. Y no queda en empate: skee guarda los overrides en un
+        ''' <c>std::set</c> ordenado por <c>(key,index)</c> (OverrideVariant.h:19) y los aplica en ese orden
+        ''' (OverrideSet::Visit, OverrideInterface.cpp:1200-1206), así que el nuestro se aplica PRIMERO y el viejo
+        ''' lo pisa DESPUÉS. El archivo muestra una opacidad y el juego rinde otra.</para>
+        ''' <para>Medido sobre los 48 presets reales: 38 key-8 en index −1 y 4 en index 0. RaceMenu escribe −1,
+        ''' pero el índice distinto existe, así que el modelo tiene que poder representarlo.</para></summary>
+        Public Property TintIndex As Integer = -1
+        Public Property AlphaIndex As Integer = -1
         ''' <summary>The verbatim original <c>values</c> array of this overlay node; Save patches the modeled keys
         ''' (tint 7, alpha 8, diffuse 9/0, normal 9/1) into a clone of it and leaves every UNMODELED entry untouched
         ''' (extra texture slots ≥2, key 6 TextureSet, keys 0-5) — so those round-trip instead of being dropped.
@@ -133,6 +151,7 @@ Public NotInheritable Class RaceMenuJslot
                 .NodeName = NodeName, .DiffusePath = DiffusePath, .NormalPath = NormalPath,
                 .TintR = TintR, .TintG = TintG, .TintB = TintB, .TintA = TintA, .HasTint = HasTint,
                 .Alpha = Alpha, .HasAlpha = HasAlpha,
+                .TintIndex = TintIndex, .AlphaIndex = AlphaIndex,
                 .RawValues = If(RawValues Is Nothing, Nothing, JsonNode.Parse(RawValues.ToJsonString()))}
         End Function
     End Class
@@ -746,8 +765,49 @@ Public NotInheritable Class RaceMenuJslot
         Return v
     End Function
 
+    ''' <summary>El 0xAARRGGBB de un tint, en la forma que el motor sabe leer: <b>Int32 CON SIGNO</b>.
+    ''' <para>⛔ Es UNA sola ley y vive acá porque estaba escrita dos veces con distinto resultado: el encoder
+    ''' de overlays convertía a Int32 y el de skinOverrides emitía el UInteger tal cual como Long. Con alpha 255
+    ''' (el default al crear un skin override) el valor supera Int32.MaxValue, y ahí skee no lo lee mal — <b>lanza</b>:
+    ''' <c>value.data.i = jvalue["data"].asInt()</c> (PresetInterface.cpp:1196) sobre un literal que jsoncpp guardó
+    ''' como <c>uintValue</c> dispara <c>JSON_ASSERT_MESSAGE(isInt(), "LargestUInt out of Int range")</c>
+    ''' (json_value.cpp:636-638) con <c>JSON_USE_EXCEPTION 1</c> (json/config.h:33), y <c>LoadJsonPreset</c>
+    ''' (PresetInterface.cpp:898-1240) no tiene un solo try/catch. El preset entero deja de cargar.</para>
+    ''' <para>Que la forma firmada es la canónica no es preferencia: skee emite ese campo con
+    ''' <c>static_cast&lt;Json::Int&gt;</c> (PresetInterface.cpp:639) y los valores key-7 de los presets reales son
+    ''' todos negativos.</para></summary>
+    Private Shared Function SignedTintValue(u As UInteger) As Integer
+        Return BitConverter.ToInt32(BitConverter.GetBytes(u), 0)
+    End Function
+
+    ''' <summary>Repara IN PLACE todo value de tipo 3 (kType_Int) cuyo número no entre en un Int32 con signo,
+    ''' reescribiéndolo a su forma firmada. Se corre sobre los <c>values</c> ANTES de parchear los campos modelados.
+    ''' <para>Sin esto el fix sólo alcanzaría a lo que se re-emite desde el modelo: un value que viene por la rama
+    ''' de preservación verbatim (p. ej. el tint de un skinOverride cuyo checkbox está destildado) conservaría para
+    ''' siempre el número sin signo que escribió la versión anterior de esta app, y el preset seguiría sin cargar.
+    ''' Un solo re-guardado repara el archivo.</para>
+    ''' <para>Aplica a TODO tipo 3, no sólo a la key 7: skee lee cada uno con <c>asInt()</c>, así que cualquiera
+    ''' por encima de Int32.MaxValue tiene el mismo final.</para></summary>
+    Private Shared Sub NormalizeSignedIntValues(vals As JsonArray)
+        If vals Is Nothing Then Return
+        For Each v In vals
+            Dim vo = TryCast(v, JsonObject)
+            If vo Is Nothing OrElse GetInt(vo("type")) <> 3 Then Continue For
+            Dim jv = TryCast(vo("data"), JsonValue)
+            If jv Is Nothing Then Continue For
+            Dim raw As ULong
+            If Not jv.TryGetValue(Of ULong)(raw) Then Continue For   ' negativo o no numérico ⇒ ya está bien
+            If raw <= CULng(Integer.MaxValue) Then Continue For
+            If raw > CULng(UInteger.MaxValue) Then Continue For      ' fuera del ancho del campo: no es nuestro
+            vo("data") = JsonValue.Create(SignedTintValue(CUInt(raw)))
+        Next
+    End Sub
+
     ''' <summary>Patch (or append) a skinOverride value element matching key/type/index. <paramref name="isString"/>
-    ''' true → data is the texture path (skip when empty); false → data is a numeric (tint uint as Long).</summary>
+    ''' true → data is the texture path (skip when empty); false → data is a numeric.
+    ''' <para>⛔ El numérico de tipo ≠4 se emite como <b>Int32</b>, igual que <see cref="PatchOverlayValue"/>: los
+    ''' dos parchean la MISMA clase de value (key 7 type 3) y emitirlos distinto es lo que rompía el preset. Ver
+    ''' <see cref="SignedTintValue"/>.</para></summary>
     Private Shared Sub PatchSkinValue(vals As JsonArray, key As Integer, vtype As Integer, index As Integer, data As Object, isString As Boolean)
         If isString AndAlso String.IsNullOrEmpty(TryCast(data, String)) Then
             ' Empty texture path → remove any existing element for this slot so we don't emit an empty override.
@@ -758,7 +818,7 @@ Public NotInheritable Class RaceMenuJslot
             Return
         End If
         Dim jval As JsonNode = If(isString, JsonValue.Create(CStr(data)),
-                                  If(vtype = 4, JsonValue.Create(CDbl(data)), JsonValue.Create(CLng(data))))
+                                  If(vtype = 4, JsonValue.Create(CDbl(data)), JsonValue.Create(CInt(data))))
         For Each v In vals
             Dim vo = TryCast(v, JsonObject)
             If vo Is Nothing Then Continue For
@@ -799,6 +859,11 @@ Public NotInheritable Class RaceMenuJslot
         ''' <summary>kParam_ShaderAlpha (key 8) — the override's material alpha; independent of the tint colour.</summary>
         Public Property Alpha As Single = 1.0F
         Public Property HasAlpha As Boolean
+        ''' <summary>Índice de origen del tint / alpha, misma ley y mismo motivo que
+        ''' <see cref="JslotOverlayNode.TintIndex"/>: el value se re-emite EN SU índice en vez de en −1 cableado,
+        ''' porque skee ordena y aplica por <c>(key,index)</c> y un duplicado lo resuelve a favor del viejo.</summary>
+        Public Property TintIndex As Integer = -1
+        Public Property AlphaIndex As Integer = -1
         Friend Raw As JsonNode
         Public Function Clone() As JslotSkinOverride
             Return New JslotSkinOverride With {
@@ -806,6 +871,7 @@ Public NotInheritable Class RaceMenuJslot
                 .DiffusePath = DiffusePath, .NormalPath = NormalPath,
                 .TintR = TintR, .TintG = TintG, .TintB = TintB, .TintA = TintA, .HasTint = HasTint,
                 .Alpha = Alpha, .HasAlpha = HasAlpha,
+                .TintIndex = TintIndex, .AlphaIndex = AlphaIndex,
                 .Raw = If(Raw Is Nothing, Nothing, JsonNode.Parse(Raw.ToJsonString()))}
         End Function
     End Class
@@ -927,7 +993,16 @@ Public NotInheritable Class RaceMenuJslot
                 Dim o = TryCast(cm, JsonObject) : If o Is Nothing Then Continue For
                 j.CustomMorphs.Add(New JslotCustomMorph With {.Name = GetStr(o("name")), .Value = GetDbl(o("value"))})
             Next
-            If morphs("sculptDivisor") IsNot Nothing Then j.SculptDivisor = Math.Max(1, GetInt(morphs("sculptDivisor")))
+            ' ⛔ El formato del sculpt tiene DOS variantes y la decide la PRESENCIA de `sculptDivisor`:
+            '   presente  → los deltas son ENTEROS y se dividen por él  (skee PresetInterface.cpp:1094-1097)
+            '   ausente   → `multiplier = -1` y los deltas son FLOATS directos           (:1099-1102)
+            ' Leerlos siempre con GetInt truncaba a 0 los de la variante float, o sea que el sculpt entero se
+            ' perdía — y encima el Save inyectaba un `sculptDivisor`, dejando el archivo diciendo que esos ceros
+            ' eran enteros escalados. Doble daño sobre un preset ajeno.
+            ' Al escribir SIEMPRE emitimos la variante con divisor, que es la única que produce el propio motor
+            ' (`root["morphs"]["sculptDivisor"] = VERTEX_MULTIPLIER`, :694), así que normalizar al leer es canónico.
+            Dim sculptIsFloatForm As Boolean = (morphs("sculptDivisor") Is Nothing)
+            If Not sculptIsFloatForm Then j.SculptDivisor = Math.Max(1, GetInt(morphs("sculptDivisor")))
             For Each sp In AsArray(morphs("sculpt"))
                 Dim o = TryCast(sp, JsonObject) : If o Is Nothing Then Continue For
                 Dim part As New JslotSculptPart
@@ -937,7 +1012,15 @@ Public NotInheritable Class RaceMenuJslot
                 part.HadData = o("data") IsNot Nothing
                 For Each row In AsArray(o("data"))
                     Dim arr = TryCast(row, JsonArray) : If arr Is Nothing OrElse arr.Count < 4 Then Continue For
-                    part.Indices.Add(GetInt(arr(0))) : part.Dx.Add(GetInt(arr(1))) : part.Dy.Add(GetInt(arr(2))) : part.Dz.Add(GetInt(arr(3)))
+                    part.Indices.Add(GetInt(arr(0)))
+                    If sculptIsFloatForm Then
+                        ' Delta en unidades de mundo → al entero escalado que usa el resto del modelo.
+                        part.Dx.Add(CInt(Math.Round(GetDbl(arr(1)) * j.SculptDivisor)))
+                        part.Dy.Add(CInt(Math.Round(GetDbl(arr(2)) * j.SculptDivisor)))
+                        part.Dz.Add(CInt(Math.Round(GetDbl(arr(3)) * j.SculptDivisor)))
+                    Else
+                        part.Dx.Add(GetInt(arr(1))) : part.Dy.Add(GetInt(arr(2))) : part.Dz.Add(GetInt(arr(3)))
+                    End If
                 Next
                 j.Sculpt.Add(part)
             Next
@@ -948,6 +1031,16 @@ Public NotInheritable Class RaceMenuJslot
             For Each bm In AsArray(root("bodyMorphs"))
                 Dim o = TryCast(bm, JsonObject) : If o Is Nothing Then Continue For
                 Dim entry As New JslotBodyMorph With {.Name = GetStr(o("name"))}
+                ' ⛔ Forma LEGACY `{name, value}` (sin `keys`). El motor la lee y la mapea a una key llamada
+                ' "RSMLegacy": `presetData->bodyMorphData[name]["RSMLegacy"] = value`
+                ' (skee64 PresetInterface.cpp:1215-1221), y la lee ADEMÁS de `keys`, no en vez de.
+                ' Antes sólo mirábamos `keys`, así que el Save reconstruía `{name, keys:[]}` y el morph
+                ' DESAPARECÍA. Adoptarla como una key más es exactamente lo que hace el motor, y de paso la
+                ' normaliza a la forma moderna sin cambiar lo que rinde (el motor SUMA las keys de un morph).
+                Dim legacyValue = o("value")
+                If legacyValue IsNot Nothing Then
+                    entry.Keys.Add(New JslotBodyMorphKey With {.Key = SkeeLegacyMorphKey, .Value = CSng(GetDbl(legacyValue))})
+                End If
                 For Each k In AsArray(o("keys"))
                     Dim ko = TryCast(k, JsonObject) : If ko Is Nothing Then Continue For
                     entry.Keys.Add(New JslotBodyMorphKey With {.Key = GetStr(ko("key")), .Value = CSng(GetDbl(ko("value")))})
@@ -1179,11 +1272,13 @@ Public NotInheritable Class RaceMenuJslot
                         If index = 1 Then sk.NormalPath = path
                     ElseIf key = 8 AndAlso vtype = 4 Then
                         sk.Alpha = CSng(GetDbl(vo("data"))) : sk.HasAlpha = True
+                        sk.AlphaIndex = index   ' se re-emite EN SU índice; ver JslotOverlayNode.TintIndex
                     ElseIf key = 7 AndAlso vtype = 3 Then
                         Dim u As UInteger = CUInt(GetLong(vo("data")) And &HFFFFFFFFL)
                         sk.TintA = ((u >> 24) And &HFF) / 255.0F : sk.TintR = ((u >> 16) And &HFF) / 255.0F
                         sk.TintG = ((u >> 8) And &HFF) / 255.0F : sk.TintB = (u And &HFF) / 255.0F
                         sk.HasTint = True
+                        sk.TintIndex = index
                     End If
                 Next
                 j.SkinOverrides.Add(sk)
@@ -1249,12 +1344,14 @@ Public NotInheritable Class RaceMenuJslot
                 node.TintG = ((u >> 8) And &HFF) / 255.0F
                 node.TintB = (u And &HFF) / 255.0F
                 node.HasTint = True
+                node.TintIndex = index   ' se re-emite EN SU índice; ver JslotOverlayNode.TintIndex
             ElseIf key = 8 AndAlso vtype = 4 Then
                 ' kParam_ShaderAlpha (OverrideVariant.h:41) — the overlay's opacity, distinct from the tint
                 ' colour's alpha byte. Modeled (not ignored) so Save re-emits it instead of silently
                 ' resetting every authored overlay to fully opaque.
                 node.Alpha = CSng(GetDbl(vo("data")))
                 node.HasAlpha = True
+                node.AlphaIndex = index   ' idem: sin esto el Save apendaba un segundo alpha en index -1
             End If
         Next
         Return node
@@ -1304,8 +1401,15 @@ Public NotInheritable Class RaceMenuJslot
             ' Sin dato propio, se devuelve la forma que traía el archivo.
             actor("headTexture") = If(headTextureWasNull, Nothing, JsonValue.Create(""))
         End If
-        ' ⛔ SE EMITÍA SIEMPRE, y eso inyectaba `weight: 0` en un preset que nunca lo tuvo.
-        If HadWeight Then actor("weight") = Weight
+        ' `weight` se emite SIEMPRE, porque el motor lo lee SIN gate: `presetData->weight =
+        ' headData["weight"].asFloat()` (skee64 PresetInterface.cpp:1019 — una key ausente devuelve 0.0) y lo
+        ' aplica incondicionalmente (`npc->weight = presetData->weight`, :174). Su propio escritor la emite
+        ' siempre (:672), o sea que un preset SIN la key no es una forma válida del formato: en RaceMenu deja el
+        ' peso en 0. Omitirla no "preserva", adelgaza al actor.
+        ' ⚠️ El gate por HadWeight venía de arreglar el caso inverso (inyectar `weight: 0` en un preset que nunca
+        ' la tuvo). Ese arreglo era correcto para un round-trip VERBATIM, que esta app no hace: el único camino de
+        ' guardado es BuildPresetFromState, que siempre setea SseWeight (MainForm.vb:9930-9936, fallback 100.0F).
+        actor("weight") = Weight
         root("actor") = actor
         Dim hpArr As New JsonArray()
         ' ⛔ La key `formIdentifier` se emite SÓLO si tiene contenido, y no es una preferencia: es la única
@@ -1517,6 +1621,9 @@ Public NotInheritable Class RaceMenuJslot
                 End If
                 Dim vals = TryCast(raw("values"), JsonArray)
                 If vals Is Nothing Then vals = New JsonArray() : raw("values") = vals
+                ' Repara los tipo-3 sin signo que dejó una versión anterior de esta app ANTES de parchear lo
+                ' modelado, así también se sanea el tint que llega por la rama verbatim (checkbox destildado).
+                NormalizeSignedIntValues(vals)
                 PatchSkinValue(vals, 9, 2, 0, ToGameTexturePath(sk.DiffusePath), True)
                 PatchSkinValue(vals, 9, 2, 1, ToGameTexturePath(sk.NormalPath), True)
                 ' Higher texture slots (subsurface/specular/…) and alpha are the editor doesn't surface but skee
@@ -1527,11 +1634,12 @@ Public NotInheritable Class RaceMenuJslot
                     For Each kvp In sk.Slots
                         If kvp.Key >= 2 Then PatchSkinValue(vals, 9, 2, kvp.Key, ToGameTexturePath(kvp.Value), True)
                     Next
-                    If sk.HasAlpha Then PatchSkinValue(vals, 8, 4, -1, CDbl(sk.Alpha), False)
+                    If sk.HasAlpha Then PatchSkinValue(vals, 8, 4, sk.AlphaIndex, CDbl(sk.Alpha), False)
                 End If
                 If sk.HasTint Then
                     Dim u As UInteger = (CUInt(Math.Round(Clamp01(sk.TintA) * 255)) << 24) Or (CUInt(Math.Round(Clamp01(sk.TintR) * 255)) << 16) Or (CUInt(Math.Round(Clamp01(sk.TintG) * 255)) << 8) Or CUInt(Math.Round(Clamp01(sk.TintB) * 255))
-                    PatchSkinValue(vals, 7, 3, -1, CLng(u), False)
+                    ' En el índice de ORIGEN, no en -1 cableado: ver JslotOverlayNode.TintIndex.
+                    PatchSkinValue(vals, 7, 3, sk.TintIndex, SignedTintValue(u), False)
                 End If
                 soArr.Add(raw)
             Next
@@ -1652,6 +1760,9 @@ Public NotInheritable Class RaceMenuJslot
         Dim valuesArr As JsonArray = TryCast(If(ov.RawValues Is Nothing, Nothing, JsonNode.Parse(ov.RawValues.ToJsonString())), JsonArray)
         Dim fresh = valuesArr Is Nothing
         If fresh Then valuesArr = New JsonArray()
+        ' Mismo saneo que en skinOverrides: un tipo-3 sin signo heredado de una versión anterior se repara aunque
+        ' la key no se re-emita desde el modelo. Ver SignedTintValue.
+        NormalizeSignedIntValues(valuesArr)
 
         If ov.HasTint Then
             Dim a As UInteger = ClampToByte(ov.TintA)
@@ -1659,13 +1770,13 @@ Public NotInheritable Class RaceMenuJslot
             Dim g As UInteger = ClampToByte(ov.TintG)
             Dim b As UInteger = ClampToByte(ov.TintB)
             Dim u As UInteger = (a << 24) Or (r << 16) Or (g << 8) Or b
-            Dim signed As Integer = BitConverter.ToInt32(BitConverter.GetBytes(u), 0)
-            PatchOverlayValue(valuesArr, 7, 3, -1, signed, isString:=False)
+            ' ⛔ En el índice de ORIGEN, no en -1 cableado: ver JslotOverlayNode.TintIndex.
+            PatchOverlayValue(valuesArr, 7, 3, ov.TintIndex, SignedTintValue(u), isString:=False)
         Else
             RemoveOverlayKey(valuesArr, 7, Nothing)
         End If
         If ov.HasAlpha Then
-            PatchOverlayValue(valuesArr, 8, 4, -1, CDbl(ov.Alpha), isString:=False)
+            PatchOverlayValue(valuesArr, 8, 4, ov.AlphaIndex, CDbl(ov.Alpha), isString:=False)
         Else
             RemoveOverlayKey(valuesArr, 8, Nothing)
         End If

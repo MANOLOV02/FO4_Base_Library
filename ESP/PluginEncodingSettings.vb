@@ -493,6 +493,35 @@ Public Module PluginEncodingSettings
         Return General.GetBytes(value)
     End Function
 
+    ''' <summary>Codifica el NOMBRE DE ARCHIVO de un master (TES4.MAST) y REHÚSA si no sobrevive el viaje.
+    ''' <para>⛔ Acá vivía el peor caso de "lector ≠ escritor" del dominio: los dos writers usaban
+    ''' <c>Encoding.ASCII.GetBytes</c>, que SUSTITUYE por <c>?</c> sin lanzar, mientras el lector decodifica el
+    ''' MAST con la General (<see cref="DecodeGeneral"/>, PluginReader.ReadTES4) porque xEdit lo declara
+    ''' <c>wbStringForward(MAST,'FileName',0,cpNormal,True)</c> (wbDefinitionsFO4.pas:12475 y el TES4 de
+    ''' wbDefinitionsTES5.pas) ⇒ cpNormal ⇒ <c>wbEncoding</c>. Un master <c>Café Mod.esp</c> salía como
+    ''' <c>Caf? Mod.esp</c>: un archivo que no existe, así que el motor y el CK rechazan el plugin ENTERO y toda
+    ''' referencia a ese mod queda rota.</para>
+    ''' <para>El nombre de un master no es texto de presentación: es una CLAVE de búsqueda en disco, así que
+    ''' una sustitución silenciosa no degrada, invalida. Por eso, a diferencia de
+    ''' <see cref="EncodeTranslatable"/> (que se queda con el fallback de reemplazo de Delphi porque el chequeo
+    ''' de conflictos corre antes, aguas arriba), acá el único final aceptable es rehusar con el nombre en el
+    ''' mensaje.</para></summary>
+    ''' <exception cref="InvalidDataException">El nombre no se puede representar en la codificación General
+    ''' vigente, así que escribirlo produciría un MAST que apunta a un archivo inexistente.</exception>
+    Public Function EncodeMasterFileName(masterName As String) As Byte()
+        If String.IsNullOrEmpty(masterName) Then Return Array.Empty(Of Byte)()
+        Dim bytes = General.GetBytes(masterName)
+        ' Round-trip: si vuelve distinto es porque hubo sustitución (o una conversión con pérdida).
+        If Not String.Equals(General.GetString(bytes), masterName, StringComparison.Ordinal) Then
+            Throw New IO.InvalidDataException(
+                $"The master plugin name '{masterName}' cannot be written with the current plugin encoding " &
+                $"(code page {General.CodePage}), so the saved file would list a master that does not exist and " &
+                "the game would refuse to load it. Set the plugin encoding to one that covers this name " &
+                "(Setup → plugin encoding, or OverridePluginEncoding.ini), or rename the plugin.")
+        End If
+        Return bytes
+    End Function
+
     ''' <summary>
     ''' Encode a string that lives INSIDE a VMAD payload (script names, property names, String/
     ''' Array-of-String values). VMAD is the one place xEdit pins the encoding regardless of game or

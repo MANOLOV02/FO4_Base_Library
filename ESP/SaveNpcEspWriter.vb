@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Linq
 Imports System.Text
 
@@ -589,6 +589,34 @@ Public Module SaveNpcEspWriter
             End If
         Next
 
+        ' ⛔ Paso 2c: ORDENAR la MAST por LOAD ORDER, con el game master forzado al índice 0.
+        ' El invariante de xEdit es "la MAST está siempre en load order": `AddMasterIfMissing` /
+        ' `AddMastersIfMissing` (wbImplementation.pas:2494, :2511) van con `aSortMasters: Boolean = True` por
+        ' defecto y llaman a `TwbFile.SortMasters` (:6220), que reordena la lista COMPLETA con
+        ' `wbMergeSortPtr(@flMasters[0], Length(flMasters), CompareLoadOrder)` (:6255) y remapea todos los FormID.
+        ' `CleanMasters` (:3024-3120) —que es lo que el paso 2a replica— sólo SACA masters, nunca agrega; por eso
+        ' preserva el orden, que ya venía ordenado. Al AGREGAR uno que carga antes que otro ya presente, el
+        ' paso 2b lo dejaba al final y la lista quedaba fuera de orden.
+        ' In-game es inerte (el motor resuelve la MAST por NOMBRE y nuestros tres consumidores son posicionales),
+        ' pero el archivo dejaba de ser canónico: el primer guardado que le hiciera xEdit encima reordenaba todo
+        ' y movía el byte alto de cada referencia en un diff enorme e inexplicable.
+        ' ⚠️ Un plugin NUEVO ya salía ordenado (el paso 2b recorre pluginManager.Plugins en load order), así que
+        ' esto sólo mueve bytes en un "Update existing" cuyo MAST estaba desordenado.
+        Dim loadOrderRank As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
+        For i = 0 To pluginManager.Plugins.Count - 1
+            Dim pl = pluginManager.Plugins(i)
+            If pl IsNot Nothing AndAlso Not loadOrderRank.ContainsKey(pl.FileName) Then loadOrderRank(pl.FileName) = i
+        Next
+        sortedMasters = sortedMasters.
+            OrderBy(Function(m) If(String.Equals(m, gameMaster, StringComparison.OrdinalIgnoreCase), -1, 0)).
+            ThenBy(Function(m)
+                       Dim r As Integer
+                       ' Un master que no está en el load order cargado no puede ordenarse contra los demás;
+                       ' va al final, en su orden relativo previo (OrderBy es estable).
+                       Return If(loadOrderRank.TryGetValue(m, r), r, Integer.MaxValue)
+                   End Function).
+            ToList()
+
         ' ====================================================================
         ' Paso 3: armar el FormIdRemapper. Por cada FormID global: resolver el plugin de origen, buscar su nuevo
         ' indice de MAST (-1 = error) y devolver (newMastIdx << 24) | (FormID & 0xFFFFFF).
@@ -974,7 +1002,8 @@ Public Module SaveNpcEspWriter
         Dim tes4Bytes = BuildTes4Header(game, markAsMaster, lightMaster, sortedMasters, totalRecords, nextObjectId, gameMaster, Path.GetDirectoryName(outputPath))
 
         ' ====================================================================
-        ' Step 7: Atomic write (.tmp + rename).
+        ' Step 7: escritura atómica — .tmp y después File.Replace (ver el bloque de abajo; NO es un rename
+        ' a secas, que dejaba una ventana sin archivo).
         ' ====================================================================
         Dim outDir = Path.GetDirectoryName(outputPath)
         If Not String.IsNullOrEmpty(outDir) AndAlso Not Directory.Exists(outDir) Then
@@ -995,8 +1024,17 @@ Public Module SaveNpcEspWriter
             fs.Write(grupNpcBytes, 0, grupNpcBytes.Length)
         End Using
 
-        If File.Exists(outputPath) Then File.Delete(outputPath)
-        File.Move(tmpPath, outputPath)
+        ' ⛔ `Delete` + `Move` NO es atómico y el docstring de arriba afirmaba que sí: entre las dos llamadas el
+        ' plugin NO EXISTE. Si el Delete sale bien y el Move falla (un handle con FILE_SHARE_DELETE de un
+        ' antivirus o del mod manager deja el borrado pendiente, un corte), el usuario se queda SIN el .esp y con
+        ' un .esp.tmp al lado — después de haber guardado 300 NPC.
+        ' `File.Replace` es el primitivo correcto y ya se usaba en este árbol (LoadOrderActivator.vb:376); exige
+        ' que el destino exista, así que el Move queda para el caso "archivo nuevo".
+        If File.Exists(outputPath) Then
+            File.Replace(tmpPath, outputPath, Nothing, ignoreMetadataErrors:=True)
+        Else
+            File.Move(tmpPath, outputPath)
+        End If
 
         Return result
     End Function
@@ -1201,10 +1239,15 @@ Public Module SaveNpcEspWriter
     ''' per wbDefinitionsCommon.pas:5704. The record FormID is the draft's real self-index (via draftRemap).</summary>
     Private Function SerializeLvliRecord(entry As LvliRecordEntry, remapper As NpcSubrecordWriter.FormIdRemapper, game As Config_App.Game_Enum) As Byte()
         Dim body As Byte()
+        ' ⛔ El cuerpo de esta función era FO4 puro y `game` sólo decidía la Version del header. Los esquemas
+        ' DIFIEREN: FO4 (wbDefinitionsFO4.pas:10329-10374) tiene LVLM, LLKC, LVSG y ONAM; TES5 (:8332-8371) NO
+        ' tiene ninguno de los cuatro. Ver el gate de cada uno abajo.
+        Dim isFo4 As Boolean = (game = Config_App.Game_Enum.Fallout4)
         Using bms As New MemoryStream()
             Using bw As New BinaryWriter(bms)
                 ' Subrecord order mirrors wbDefinitionsFO4.pas:10352-10374:
                 ' EDID, OBND(req), LVLD, LVLM, LVLF(req), LVLG(opt), LLCT, N×(LVLO + COED?), LLKC(opt), LVSG(opt), ONAM(opt)
+                ' En Skyrim: EDID, OBND, LVLD, LVLF, LVLG(opt), LLCT, N×(LVLO + COED?) [, generic model en LVLN].
                 ' EDID (ZSTRING, cp1252 — non-translatable, mirrors SerializeOtftRecord / NpcSubrecordWriter).
                 Dim edidBytes = PluginEncodingSettings.EncodeGeneral(If(entry.EditorID, ""))
                 WriteSubrecordHeader(bw, "EDID", edidBytes.Length + 1)
@@ -1224,9 +1267,17 @@ Public Module SaveNpcEspWriter
                 ' LVLD (Chance None, u8).
                 WriteSubrecordHeader(bw, "LVLD", 1)
                 bw.Write(entry.ChanceNone)
-                ' LVLM (Max Count, u8).
-                WriteSubrecordHeader(bw, "LVLM", 1)
-                bw.Write(entry.MaxCount)
+                ' LVLM (Max Count, u8) — ⛔ FO4-ONLY. `grep -c LVLM wbDefinitionsTES5.pas` = 0: el subrecord NO
+                ' EXISTE en Skyrim. El esquema TES5 es EDID, OBND, LVLD, LVLF, LVLG, LLCT, entries [, model],
+                ' así que emitirlo metía un subrecord desconocido Y fuera de orden entre LVLD y LVLF.
+                ' Esta función sólo usaba `game` para la Version del header; el cuerpo era FO4 puro. Alcanzable
+                ' con un clic: CheckBoxAddToLvlList no tiene gate de juego (SaveEsp_Form.vb:1001) ni lo tiene
+                ' BuildLeveledNpcListEntries (NpcOverrideSaver.vb:929).
+                ' Mismo gate para LLKC, LVSG y ONAM más abajo: los cuatro son FO4-only.
+                If isFo4 Then
+                    WriteSubrecordHeader(bw, "LVLM", 1)
+                    bw.Write(entry.MaxCount)
+                End If
                 ' LVLF (Flags, u8).
                 WriteSubrecordHeader(bw, "LVLF", 1)
                 bw.Write(entry.Flags)
@@ -1275,7 +1326,10 @@ Public Module SaveNpcEspWriter
                 Next
                 ' LLKC (Filter Keyword Chances, optional) — wbDefinitionsFO4.pas:10322-10327. xEdit
                 ' emits as a single subrecord with N×(Keyword FormID u32 + Chance u32). 0 entries → skip.
-                Dim filters = entry.FilterKeywords.Where(Function(f) f.KeywordFormID <> 0UI).ToList()
+                ' ⛔ FO4-ONLY: el esquema TES5 de LVLN (wbDefinitionsTES5.pas:8332-8350) y de LVLI (:8352-8371)
+                ' NO declara LLKC. Ver el gate de LVLM más arriba para el porqué de la familia entera.
+                Dim filters = If(isFo4, entry.FilterKeywords.Where(Function(f) f.KeywordFormID <> 0UI).ToList(),
+                                        New List(Of LvliFilterKeywordData))
                 If filters.Count > 0 Then
                     WriteSubrecordHeader(bw, "LLKC", filters.Count * 8)
                     For Each f In filters
@@ -1287,20 +1341,33 @@ Public Module SaveNpcEspWriter
                 '   LVLN (wbDefinitionsFO4.pas:10349): generic model (MODL/MODT/MODC/MODS/MODF). NO LVSG/ONAM.
                 '   LVLI (wbDefinitionsFO4.pas:10372-10373): LVSG (Epic Loot Chance) + ONAM (Override Name). NO model.
                 If entry.IsNpcList Then
-                    ' LVLN generic model, preserved verbatim in source order. MODS = Material Swap FormID
-                    ' ([MSWP], wbDefinitionsFO4.pas:4616), remapped like any other FormID; all other model
-                    ' subrecords are FormID-free and copied byte-for-byte.
+                    ' LVLN generic model, preserved verbatim in source order salvo el MODS, que LLEVA FormID.
+                    ' ⛔ `MODS` no significa lo mismo en los dos juegos y NO se puede decidir por longitud:
+                    '   FO4  (wbDefinitionsFO4.pas:4616)  = un u32 [MSWP]
+                    '   SSE  (wbDefinitionsTES5.pas:3329) = array de Alternate Textures con FormID de TXST
+                    ' El parser ya los dejó GLOBALES en las dos variantes (RecordParsers, Case "MODS"), así que
+                    ' acá sólo hay que aplicar el remapper con el layout que corresponde al juego.
                     For Each m In entry.ModelSubrecords
                         Dim mdata = If(m.Data, Array.Empty(Of Byte)())
-                        If m.Signature = "MODS" AndAlso mdata.Length = 4 Then
+                        If m.Signature = "MODS" AndAlso isFo4 Then
+                            If mdata.Length <> 4 Then _
+                                Throw New NotSupportedException(
+                                    $"LVLN MODS (Material Swap) has {mdata.Length} bytes; Fallout 4 declares it as a " &
+                                    "single FormID (4 bytes). Refusing to emit rather than mis-remapping it.")
                             WriteSubrecordHeader(bw, "MODS", 4)
                             bw.Write(remapper(BitConverter.ToUInt32(mdata, 0)))
+                        ElseIf m.Signature = "MODS" Then
+                            Dim remapped = RemapAlternateTextures(mdata, Function(g) remapper(g), "LVLN", "MODS")
+                            WriteSubrecordHeader(bw, "MODS", remapped.Length)
+                            bw.Write(remapped)
                         Else
                             WriteSubrecordHeader(bw, m.Signature, mdata.Length)
                             bw.Write(mdata)
                         End If
                     Next
-                Else
+                ElseIf isFo4 Then
+                    ' ⛔ LVSG y ONAM son FO4-only: el LVLI de TES5 (wbDefinitionsTES5.pas:8352-8371) termina en
+                    ' las entries. Mismo gate que LVLM/LLKC.
                     ' LVSG (Epic Loot Chance FormID, optional) — wbDefinitionsFO4.pas:10372.
                     If entry.HasEpicLootChance Then
                         WriteSubrecordHeader(bw, "LVSG", 4)
@@ -2030,17 +2097,23 @@ Public Module SaveNpcEspWriter
         Dim buf(raw.Length - 1) As Byte
         If raw.Length > 0 Then Buffer.BlockCopy(raw, 0, buf, 0, raw.Length)
         If raw.Length < 4 Then Return buf   ' no count field → nothing to remap
-        Dim count As Integer = CInt(BitConverter.ToUInt32(raw, 0))
-        Dim offset As Integer = 4
-        For i = 0 To count - 1
-            If offset + 4 > raw.Length Then _
+        ' ⛔ TODO en Long, igual que el lector gemelo (RecordParsers.ResolveAlternateTexturesToGlobal). Con
+        ' Integer, un `count`/`nameLen` basura hacía que `CInt` de un UInteger >= 2^31 tirara OverflowException
+        ' —los checks de desborde de VB están ON— en vez de la NotSupportedException declarada, y el mensaje no
+        ' nombraba el subrecord. Acá importa MÁS que en el lector: los MO2S/MO3S/MO4S/MO5S de SSE llegan
+        ' VERBATIM (el parser los saltea bajo Skyrim), así que este es el ÚNICO punto que los valida.
+        Dim count As Long = CLng(BitConverter.ToUInt32(raw, 0))
+        Dim offset As Long = 4L
+        For i As Long = 0 To count - 1L
+            If offset + 4L > raw.Length Then _
                 Throw New NotSupportedException($"{recSig} override: preserved {sig} (Alternate Textures) truncated reading entry {i} name length.")
-            Dim nameLen As Integer = CInt(BitConverter.ToUInt32(raw, offset))
-            offset += 4 + nameLen                         ' skip the u32 length + the ASCII 3D-Name bytes
-            If offset + 8 > raw.Length Then _
+            Dim nameLen As Long = CLng(BitConverter.ToUInt32(raw, CInt(offset)))
+            offset += 4L + nameLen                        ' skip the u32 length + the ASCII 3D-Name bytes
+            If offset + 8L > raw.Length Then _
                 Throw New NotSupportedException($"{recSig} override: preserved {sig} (Alternate Textures) truncated reading entry {i} TXST FormID / 3D-Index.")
-            PatchFormIdAt(buf, offset, mapLocal(BitConverter.ToUInt32(raw, offset)))   ' New Texture [TXST]
-            offset += 4 + 4                               ' skip the FormID + the s32 3D-Index
+            Dim o = CInt(offset)                          ' seguro: el chequeo de arriba acota offset + 8 <= Length
+            PatchFormIdAt(buf, o, mapLocal(BitConverter.ToUInt32(raw, o)))   ' New Texture [TXST]
+            offset += 8L                                  ' skip the FormID + the s32 3D-Index
         Next
         Return buf
     End Function
@@ -2873,7 +2946,9 @@ Public Module SaveNpcEspWriter
                 ' by CK but usually null". The engine ignores the field at runtime — the canonical
                 ' CK output is 8 zero bytes, so we match that and skip the file-size lookup.
                 For Each masterName In masters
-                    Dim masterBytes = Encoding.ASCII.GetBytes(masterName)
+                    ' ⛔ NO Encoding.ASCII: sustituye por '?' en silencio y el lector decodifica con la General.
+                    ' Ver PluginEncodingSettings.EncodeMasterFileName — rehúsa en vez de escribir un master roto.
+                    Dim masterBytes = PluginEncodingSettings.EncodeMasterFileName(masterName)
                     WriteSubrecordHeader(bw, "MAST", masterBytes.Length + 1)
                     bw.Write(masterBytes)
                     bw.Write(CByte(0))

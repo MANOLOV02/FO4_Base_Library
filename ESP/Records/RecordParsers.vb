@@ -2111,6 +2111,45 @@ Public Module RecordParsers
         Return ParserHelpers.ResolveFID(rec, sr, pluginManager)
     End Function
 
+    ''' <summary>Resuelve a GLOBAL los FormID de TXST embebidos en un array de Alternate Textures de SKYRIM
+    ''' (<c>wbArrayS(sig, wbAlternateTexture, -1)</c>, wbDefinitionsTES5.pas:3325-3329), devolviendo una COPIA
+    ''' con el resto de los bytes intacto.
+    ''' <para>Layout: <c>u32 count</c>, y por entrada <c>{ u32 largo del 3D-Name, ASCII sin NUL, u32 TXST, s32
+    ''' 3D-Index }</c>. Es el espejo exacto de <c>SaveNpcEspWriter.RemapAlternateTextures</c>, que hace el mismo
+    ''' recorrido en la dirección contraria — las dos puntas tienen que leer el mismo layout o el array se
+    ''' desincroniza.</para>
+    ''' <para>⛔ Ante un payload truncado se LANZA en vez de adivinar: dejar la mitad de los TXST sin resolver
+    ''' produce referencias que apuntan a otro plugin sin ningún error.</para></summary>
+    Private Function ResolveAlternateTexturesToGlobal(raw As Byte(), rec As PluginRecord, pluginManager As PluginManager) As Byte()
+        If raw Is Nothing OrElse raw.Length = 0 Then Return If(raw, Array.Empty(Of Byte)())
+        Dim buf(raw.Length - 1) As Byte
+        Buffer.BlockCopy(raw, 0, buf, 0, raw.Length)
+        If raw.Length < 4 Then Return buf   ' sin campo de conteo no hay nada que resolver
+        ' ⛔ TODO en Long. `CInt` de un UInteger >= 2^31 LANZA OverflowException (los checks de desborde de VB
+        ' están ON: no hay RemoveIntegerChecks en el .vbproj), así que un `count`/`nameLen` basura reventaba con
+        ' una excepción que NO es la declarada — y `offset += 4 + nameLen` podía desbordar Integer ANTES del
+        ' chequeo de largo. Es exactamente la fuga que NpcVmadScanner.SkipBytes vino a cerrar; reintroducirla acá
+        ' habría sido escribir el mismo bug dos veces en el mismo cambio.
+        Dim count As Long = CLng(BitConverter.ToUInt32(raw, 0))
+        Dim offset As Long = 4L
+        For i As Long = 0 To count - 1L
+            If offset + 4L > raw.Length Then _
+                Throw New IO.InvalidDataException($"Alternate Textures truncated reading entry {i} name length.")
+            Dim nameLen As Long = CLng(BitConverter.ToUInt32(raw, CInt(offset)))
+            offset += 4L + nameLen
+            If offset + 8L > raw.Length Then _
+                Throw New IO.InvalidDataException($"Alternate Textures truncated reading entry {i} TXST FormID / 3D-Index.")
+            Dim o = CInt(offset)   ' seguro: el chequeo de arriba ya garantizó offset + 8 <= raw.Length
+            Dim g = ResolveFormIDReference(rec, BitConverter.ToUInt32(raw, o), pluginManager)
+            buf(o + 0) = CByte(g And &HFFUI)
+            buf(o + 1) = CByte((g >> 8) And &HFFUI)
+            buf(o + 2) = CByte((g >> 16) And &HFFUI)
+            buf(o + 3) = CByte((g >> 24) And &HFFUI)
+            offset += 8L
+        Next
+        Return buf
+    End Function
+
     ''' <summary>Parsea el payload OBTS (Object Mod Template Item). Layout, con los prefijos de array segun las
     ''' reglas de xEdit (arCount=-1 -> u32, -2 -> u16, -4 -> u8):
     '''   u32 IncludeCount @0 Â· u32 PropertyCount @4 Â· u8 LevelMin @8 + pad Â· u8 LevelMax @10 + pad
@@ -4371,6 +4410,25 @@ Public Module RecordParsers
         Return txst
     End Function
 
+    ''' <summary>ParseLVLN TOLERANTE: devuelve Nothing en vez de lanzar cuando el record esta malformado.
+    ''' <para>Existe porque `ParseLVLN` pasó a LANZAR (el gate game-aware de MODS: Material Swap en FO4 vs
+    ''' Alternate Textures en SSE) y hay CINCO caminos que lo llaman. Tapar el Try en algunos y no en otros
+    ''' deja la ley "un record roto se saltea, no cuesta la sesion" escrita a mano en varios lugares — y ya
+    ''' pasó: se taparon 3 de 5 y un LVLN roto seguía tumbando la carga entera por la boca de
+    ''' `ResolveInheritedFullName`, que corre ANTES de que exista la cache.</para>
+    ''' <para>⛔ Donde lanzar es lo CORRECTO —el writer, que no puede emitir un record que no entiende— se
+    ''' sigue llamando a `ParseLVLN` directo. La tolerancia es para los caminos de LECTURA/DISPLAY.</para></summary>
+    Public Function TryParseLVLN(rec As PluginRecord, pluginManager As PluginManager) As LVLN_Data
+        If rec Is Nothing Then Return Nothing
+        Try
+            Return ParseLVLN(rec, pluginManager)
+        Catch ex As Exception
+            Logger.LogLazy(Function() $"[LVLN] {rec.SourcePluginName}:{rec.Header.FormID:X8} no parsea " &
+                                      $"({ex.GetType().Name}: {ex.Message}); se saltea.")
+            Return Nothing
+        End Try
+    End Function
+
     ''' <summary>Full LVLN (Leveled NPC) parse — byte-equivalent round-trip coverage
     ''' (wbDefinitionsFO4.pas:10329). Mirrors <see cref="ParseLVLI"/> for the shared subrecords
     ''' (OBND/LVLD/LVLM/LVLF/LVLG/LLCT/N×(LVLO+COED)/LLKC) and captures the LVLN-specific generic
@@ -4452,14 +4510,29 @@ Public Module RecordParsers
                         Next
                     End If
                 Case "MODS"
-                    ' Generic model Material Swap = FormID [MSWP] (wbDefinitionsFO4.pas:4616). Store the
-                    ' GLOBAL FormID in the preserved bytes (resolved here, remapped on emit) so the model
-                    ' subrecord list stays uniform: all FormIDs are GLOBAL by the time they reach the writer.
-                    If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then
-                        Dim globalMods = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
-                        lvln.ModelSubrecords.Add(("MODS", BitConverter.GetBytes(globalMods)))
+                    ' ⛔⛔ `MODS` SIGNIFICA COSAS DISTINTAS EN CADA JUEGO, y acá se decidía por LONGITUD:
+                    '   FO4  wbDefinitionsFO4.pas:4616  → wbFormIDCk(MODS,'Material Swap',[MSWP])  = UN u32
+                    '   SSE  wbDefinitionsTES5.pas:3329 → wbArrayS(MODS,'Alternate Textures', wbAlternateTexture, -1)
+                    ' El test `Length = 4` mandaba el array de SSE a la rama verbatim, así que sus FormID de TXST
+                    ' viajaban LOCALES al plugin de origen hasta un archivo con OTRA MAST — el writer los copiaba
+                    ' sin remapear y quedaban apuntando a quien ocupara ese índice. El mismo predicado equivocado
+                    ' estaba escrito en las DOS puntas (acá y en SaveNpcEspWriter), así que no había un lado sano.
+                    ' Ahora se decide por JUEGO, igual que los cinco sitios hermanos (ARMO MO2S/MO4S :4017-4030,
+                    ' ARMA MO2S/MO3S/MO4S/MO5S :4137-4155) y se resuelven los TXST a GLOBAL, que es la convención
+                    ' del modelo: todo FormID que llega al writer ya es global.
+                    If IsFallout4() Then
+                        If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then
+                            Dim globalMods = ResolveFormIDReference(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
+                            lvln.ModelSubrecords.Add(("MODS", BitConverter.GetBytes(globalMods)))
+                        Else
+                            ' Un MODS de FO4 que no mide 4 bytes no es un Material Swap. No se adivina.
+                            Throw New IO.InvalidDataException(
+                                $"LVLN MODS (Material Swap) has {If(sr.Data Is Nothing, 0, sr.Data.Length)} bytes; " &
+                                "Fallout 4 declares it as a single FormID (4 bytes). Refusing to guess rather than " &
+                                "silently mis-remapping the reference.")
+                        End If
                     Else
-                        lvln.ModelSubrecords.Add((sr.Signature, sr.Data))
+                        lvln.ModelSubrecords.Add(("MODS", ResolveAlternateTexturesToGlobal(sr.Data, rec, pluginManager)))
                     End If
                 Case "MODL", "MODT", "MODC", "MODF"
                     ' FormID-free model subrecords — preserved verbatim in source order.
