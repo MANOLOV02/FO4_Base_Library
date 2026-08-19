@@ -1,4 +1,4 @@
-Imports System.Text
+﻿Imports System.Text
 
 ' ============================================================================
 ' Shared helper functions used by all record parser modules.
@@ -39,7 +39,23 @@ Friend Module ParserHelpers
     ''' soportado un modo que corrompe, mientras los llamadores reales habían concluido por separado que
     ''' no lo era (se sacó el Optional y compiló limpio: nadie lo omitía). Esta guarda queda como red para
     ''' quien pase Nothing a propósito — que ahora es un acto explícito, no un default.</para></summary>
+    ''' <summary>Centinela <c>0xFFFFFFFF</c>: NO es una referencia y pasa SIN TOCAR.
+    ''' <para>El canónico lo declara campo por campo agregando la pseudo-firma <c>FFFF</c> a la lista de
+    ''' destinos permitidos — p. ej. <c>wbFormIDCk('Emotion', [KYWD, FFFF])</c> (wbDefinitionsFO4.pas:10074) y
+    ''' <c>wbFormIDCk(ANAM, 'Condition Actor Value', [AVIF, NULL, FFFF])</c> en EQUP. Significa "ninguno / todos",
+    ''' no "el record 0xFFFFFFFF".</para>
+    ''' <para>⛔ Sin este corte el valor se remapeaba: el byte alto <c>0xFF</c> nunca es un índice de master
+    ''' válido (el tope es 0xFD full / 0xFE light), así que caía en la rama "self", se le tomaba el object id
+    ''' 0xFFFFFF y salía como un FormID del propio archivo. MEDIDO: el peor ejemplo de
+    ''' <c>INFO.Responses[].EmotionFormID</c> era exactamente <c>0x00FFFFFF</c> — el centinela reconstruido —
+    ''' con 41.668/96.828 casos en FO4.</para>
+    ''' <para>Va acá y no en cada campo porque <c>0xFFFFFFFF</c> no puede ser una referencia real en NINGÚN
+    ''' campo: el índice de master no existe. Un campo que no admita el centinela lo va a ver igual como
+    ''' 0xFFFFFFFF y podrá tratarlo como inválido, que es lo correcto.</para></summary>
+    Friend Const FORMID_SENTINEL_NONE As UInteger = &HFFFFFFFFUI
+
     Friend Function ResolveFIDRaw(rec As PluginRecord, rawFormID As UInteger, pluginManager As PluginManager) As UInteger
+        If rawFormID = FORMID_SENTINEL_NONE Then Return rawFormID
         If pluginManager Is Nothing OrElse rec Is Nothing Then Return rawFormID
         Return pluginManager.ResolveReferencedFormID(rec.SourcePluginName, rawFormID)
     End Function

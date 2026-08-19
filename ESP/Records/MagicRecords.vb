@@ -96,7 +96,16 @@ Friend Class MGEF_Data
     Friend EffectFlags As UInteger
     Friend BaseCost As Single
     Friend AssociatedItemFormID As UInteger
+    ''' <summary>Sólo FO4: <c>wbFormIDCk('Resist Value', [AVIF, NULL])</c> (wbDefinitionsFO4.pas:10498).
+    ''' En SSE queda en 0 — ahí el campo NO es una referencia, ver <see cref="ResistValueEnum"/>.</summary>
     Friend ResistValueFormID As UInteger
+
+    ''' <summary>Sólo SSE: <c>wbInteger('Resist Value', itS32, wbActorValueEnum)</c>
+    ''' (wbDefinitionsTES5.pas:8490) — un ÍNDICE de actor value, con -1 (0xFFFFFFFF) como "ninguno".
+    ''' <para>⛔ Está en un campo aparte y no reusa <c>ResistValueFormID</c> a propósito: meter un índice de
+    ''' enum en un campo llamado <c>...FormID</c> es exactamente cómo un número plausible termina pasando por
+    ''' el remapper de masters y saliendo como una referencia a otro mod. El nombre es parte del contrato.</para></summary>
+    Friend ResistValueEnum As Integer
     Friend CounterEffectCount As UShort
     Friend CastingLightFormID As UInteger
     Friend TaperWeight As Single
@@ -412,7 +421,16 @@ Friend Module MagicRecordParsers
         m.EffectFlags = BitConverter.ToUInt32(d, 0)
         m.BaseCost = BitConverter.ToSingle(d, 4)
         m.AssociatedItemFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 8), pm)
-        m.ResistValueFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 16), pm)
+        ' ⛔ Game-dependent, no es una constante:
+        '   FO4  → wbFormIDCk('Resist Value', [AVIF, NULL])            (wbDefinitionsFO4.pas:10498)
+        '   TES5 → wbInteger('Resist Value', itS32, wbActorValueEnum)  (wbDefinitionsTES5.pas:8490)
+        ' En SSE es un INDICE DE ENUM, no una referencia, y su "ninguno" es -1 (0xFFFFFFFF). Pasarlo por el
+        ' remapper daba 2.192/2.192 FormID inexistentes. Se guarda el valor crudo, que es el indice.
+        If IsFallout4() Then
+            m.ResistValueFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 16), pm)
+        Else
+            m.ResistValueEnum = BitConverter.ToInt32(d, 16)
+        End If
         m.CounterEffectCount = BitConverter.ToUInt16(d, 20)
         m.CastingLightFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 24), pm)
         m.TaperWeight = BitConverter.ToSingle(d, 28)

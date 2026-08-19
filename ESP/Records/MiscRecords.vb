@@ -447,6 +447,8 @@ Friend Module MiscRecordParsers
         Dim t As New TERM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         Dim currentMenuItem As TERM_MenuItem = Nothing
+        ' Ver el Case "SNAM": el record tiene DOS SNAM y sólo la posición los distingue.
+        Dim seenMarkerBlock As Boolean = False
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -455,7 +457,18 @@ Friend Module MiscRecordParsers
                 Case "NAM0" : t.HeaderText = ResolveStr(rec, sr, pluginManager)
                 Case "WNAM" : t.WelcomeText = ResolveStr(rec, sr, pluginManager)
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, t.KeywordFormIDs)
-                Case "SNAM" : t.LoopingSoundFormID = ResolveFID(rec, sr, pluginManager)
+                Case "XMRK"
+                    ' XMRK ('Marker Model') abre el bloque de marcador: el SNAM que viene después ya no es el
+                    ' Looping Sound. Ver el Case "SNAM".
+                    seenMarkerBlock = True
+                Case "SNAM"
+                    ' ⛔ TERM tiene DOS subrecords SNAM y sólo la posición los separa:
+                    '   · arriba, wbFormIDCk(SNAM, 'Looping Sound', [SNDR]) — el único que es referencia;
+                    '   · abajo, wbSNAMMarkerParams — una STRUCT de parámetros de marcador, no un FormID,
+                    '     que en el canónico viene después de wbString(XMRK, 'Marker Model').
+                    ' Un Select Case plano tomaba el segundo y pisaba el primero con bytes de la struct.
+                    ' MEDIDO: 37/37 apuntando a records inexistentes.
+                    If Not seenMarkerBlock Then t.LoopingSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "FNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
                         t.TerminalFlags = BitConverter.ToUInt16(sr.Data, 0)

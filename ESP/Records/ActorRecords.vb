@@ -133,6 +133,14 @@ Public Class BPTD_Part
     Public VATSTarget As String = ""
     ' BPND — Node Data struct (101 bytes); fields below are the parsed members per xEdit:
     Public DamageMult As Single = 0.0F                     ' offset 0  (float)
+    ''' <summary>SOLO SSE: <c>wbInteger('Actor Value', itS8, wbActorValueEnum)</c>
+    ''' (wbDefinitionsTES5.pas BPND). Es UN BYTE CON SIGNO y un índice de enum, no una referencia — por eso no
+    ''' comparte campo con <see cref="ActorValueFormID"/>, que en FO4 sí es <c>wbFormIDCk([AVIF, NULL])</c>.</summary>
+    Public ActorValueEnum As Integer
+
+    ''' <summary>SOLO SSE: <c>wbFloat('Tracking Max Angle')</c>. No existe en el BPND de FO4.</summary>
+    Public TrackingMaxAngle As Single = 0.0F
+
     Public ExplodableDebrisFormID As UInteger              ' offset 4  (FormID DEBR/NULL)
     Public ExplodableExplosionFormID As UInteger           ' offset 8  (FormID EXPL/NULL)
     Public ExplodableDebrisScale As Single = 0.0F          ' offset 12 (float)
@@ -528,7 +536,9 @@ Public Module ActorRecordParsers
                     '   95..98 On Cripple - Debris Scale (float)
                     '   99     On Cripple - Debris Count (u8)
                     '   100    On Cripple - Decal Count (u8)
-                    If currentPart IsNot Nothing AndAlso sr.Data IsNot Nothing Then
+                    ' ⛔ El BPND de FO4 (101 bytes) y el de SSE (84) tienen ORDENES DISTINTOS: no alcanza
+                    ' con recortar. Se despacha por juego; ver cada rama.
+                    If IsFallout4() AndAlso currentPart IsNot Nothing AndAlso sr.Data IsNot Nothing Then
                         Dim d = sr.Data
                         If d.Length >= 4 Then currentPart.DamageMult = BitConverter.ToSingle(d, 0)
                         If d.Length >= 8 Then currentPart.ExplodableDebrisFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 4), pluginManager)
@@ -565,6 +575,70 @@ Public Module ActorRecordParsers
                         If d.Length >= 99 Then currentPart.OnCrippleDebrisScale = BitConverter.ToSingle(d, 95)
                         If d.Length >= 100 Then currentPart.OnCrippleDebrisCount = d(99)
                         If d.Length >= 101 Then currentPart.OnCrippleDecalCount = d(100)
+                    ElseIf currentPart IsNot Nothing AndAlso sr.Data IsNot Nothing Then
+                        ' ───────────────── SKYRIM SE — BPND de 84 bytes, OTRO ORDEN ─────────────────
+                        ' wbDefinitionsTES5.pas:6343-6385. No es "el de FO4 recortado": los campos están en
+                        ' posiciones distintas y el Actor Value ni siquiera es del mismo tipo.
+                        '   0..3   Damage Mult (float)
+                        '   4      Flags (u8)
+                        '   5      Part Type (u8)
+                        '   6      Health Percent (u8)
+                        '   7      Actor Value  ⛔ itS8 CON wbActorValueEnum — UN BYTE Y UN ENUM, no un FormID
+                        '   8      To Hit Chance (u8)
+                        '   9      Explodable - Explosion Chance % (u8)
+                        '   10..11 Explodable - Debris Count (u16)
+                        '   12..15 Explodable - Debris (FormID DEBR/NULL)
+                        '   16..19 Explodable - Explosion (FormID EXPL/NULL)
+                        '   20..23 Tracking Max Angle (float)
+                        '   24..27 Explodable - Debris Scale (float)
+                        '   28..31 Severable - Debris Count (itS32)
+                        '   32..35 Severable - Debris (FormID DEBR/NULL)
+                        '   36..39 Severable - Explosion (FormID EXPL/NULL)
+                        '   40..43 Severable - Debris Scale (float)
+                        '   44..67 Gore Effects Positioning (wbVec3PosRot: pos XYZ + rot XYZ = 6 floats)
+                        '   68..71 Severable - Impact DataSet (FormID IPDS/NULL)
+                        '   72..75 Explodable - Impact DataSet (FormID IPDS/NULL)
+                        '   76     Severable - Decal Count (u8)
+                        '   77     Explodable - Decal Count (u8)
+                        '   78..79 Unknown (2 bytes)
+                        '   80..83 Limb Replacement Scale (float)
+                        ' MEDIDO con los offsets de FO4 aplicados acá: OnCrippleArtObject 35/35,
+                        ' ActorValue 12/12, SeverableExplosion 1/1 y ExplodableDebris 38/114 apuntando a
+                        ' records inexistentes. Los campos de "On Cripple" NO EXISTEN en SSE: leerlos sacaba
+                        ' referencias de bytes que pertenecen a otra cosa.
+                        Dim d = sr.Data
+                        If d.Length >= 4 Then currentPart.DamageMult = BitConverter.ToSingle(d, 0)
+                        If d.Length >= 5 Then currentPart.Flags = d(4)
+                        If d.Length >= 6 Then currentPart.PartType = d(5)
+                        If d.Length >= 7 Then currentPart.HealthPercent = d(6)
+                        If d.Length >= 8 Then
+                            ' ⛔ itS8: se REINTERPRETA el byte como con signo. CSByte(d(7)) tira
+                            ' OverflowException con cualquier valor > 127 porque VB convierte con chequeo, no
+                            ' reinterpreta — MEDIDO: 50/50 records de BPTD reventaban.
+                            Dim avRaw As Integer = d(7)
+                            If avRaw > 127 Then avRaw -= 256
+                            currentPart.ActorValueEnum = avRaw
+                        End If
+                        If d.Length >= 9 Then currentPart.ToHitChance = d(8)
+                        If d.Length >= 10 Then currentPart.ExplodableExplosionChance = d(9)
+                        If d.Length >= 12 Then currentPart.ExplodableDebrisCount = BitConverter.ToUInt16(d, 10)
+                        If d.Length >= 16 Then currentPart.ExplodableDebrisFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 12), pluginManager)
+                        If d.Length >= 20 Then currentPart.ExplodableExplosionFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 16), pluginManager)
+                        If d.Length >= 24 Then currentPart.TrackingMaxAngle = BitConverter.ToSingle(d, 20)
+                        If d.Length >= 28 Then currentPart.ExplodableDebrisScale = BitConverter.ToSingle(d, 24)
+                        If d.Length >= 32 Then currentPart.SeverableDebrisCount = BitConverter.ToInt32(d, 28)
+                        If d.Length >= 36 Then currentPart.SeverableDebrisFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 32), pluginManager)
+                        If d.Length >= 40 Then currentPart.SeverableExplosionFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 36), pluginManager)
+                        If d.Length >= 44 Then currentPart.SeverableDebrisScale = BitConverter.ToSingle(d, 40)
+                        If d.Length >= 68 Then
+                            currentPart.GoreLocalRotateX = BitConverter.ToSingle(d, 56)
+                            currentPart.GoreLocalRotateY = BitConverter.ToSingle(d, 60)
+                        End If
+                        If d.Length >= 72 Then currentPart.SeverableImpactDataSetFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 68), pluginManager)
+                        If d.Length >= 76 Then currentPart.ExplodableImpactDataSetFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 72), pluginManager)
+                        If d.Length >= 77 Then currentPart.SeverableDecalCount = d(76)
+                        If d.Length >= 78 Then currentPart.ExplodableDecalCount = d(77)
+                        If d.Length >= 84 Then currentPart.ExplodableLimbReplacementScale = BitConverter.ToSingle(d, 80)
                     End If
                 Case "NAM1"
                     If currentPart IsNot Nothing Then currentPart.LimbReplacementModel = sr.AsStringGeneral

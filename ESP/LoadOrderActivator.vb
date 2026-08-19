@@ -147,13 +147,19 @@ Public NotInheritable Class LoadOrderActivator
 
             ' Our own header: masters + the two facts that decide our sort group and our slot cost.
             Dim ourMasters As New List(Of String)
+            Dim groupCache As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
             Dim ourIsEsmGroup As Boolean
             Dim ourIsLight As Boolean
             Try
                 Dim rdr As New PluginReader()
                 rdr.LoadHeaderOnly(pluginFullPath)
                 ourMasters.AddRange(rdr.Masters)
-                ourIsEsmGroup = rdr.IsESM OrElse HasEsmExtension(pluginName)
+                ' ⛔ NO se re-escribe la disyunción acá. La ley del grupo master vive en UN solo lugar
+                ' (PluginManager.IsMasterGroup, wbLoadOrder.pas:326-347) y tiene una precondición que es fácil
+                ' perder: el disyunto por extensión .esl no vale en VR sin el plugin VRESL. Con la copia local
+                ' (`rdr.IsESM OrElse HasEsmExtension(...)`) este archivo clasificaba NUESTRO plugin con una ley
+                ' y al resto de las líneas con otra. El File.Exists ya está garantizado más arriba.
+                ourIsEsmGroup = PluginManager.IsMasterGroup(dataPath, pluginName, groupCache).GetValueOrDefault()
                 ' IsESL already folds in the .esl extension (PluginReader.ReadTES4, per wbLoadOrder.pas:362-363).
                 ourIsLight = rdr.IsESL
             Catch ex As Exception
@@ -210,7 +216,6 @@ Public NotInheritable Class LoadOrderActivator
 
             ' Masters that can actually be violated: same sort group (a master in an earlier group is always
             ' ahead of us) and listed as active (an inactive master is a broken dependency, not an ordering bug).
-            Dim groupCache As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
             Dim unfixable As New List(Of String)
             Dim blocking As New List(Of String)
             For Each m In ourMasters
@@ -409,22 +414,27 @@ Public NotInheritable Class LoadOrderActivator
             desired = Math.Min(previousIndex, entries.Count)
         End If
 
-        ' Tope del GRUPO DE MASTERS, aplicado a LAS DOS ramas.
-        ' ⛔ Estuvo primero sólo en la rama "ya listado" y usando `EndOfMasterBlock`, y las dos cosas estaban mal:
-        '   · EXCEPCIÓN A "respetar la posición del usuario": esa regla vale mientras el plugin siga en el MISMO
-        '     grupo. Tildar "Mark as master" lo pasa al de masters, y el motor lo sube ahí ESTÉ DONDE ESTÉ la
-        '     línea (mfIsESM por flag, wbLoadOrder.pas:344-350; comparador :212-215). Sin mover, Plugins.txt y el
-        '     motor discrepan, y como ReadActiveLoadOrder es LITERAL la app le da el ÚLTIMO slot mientras el
-        '     juego lo carga entre los masters ⇒ difieren en QUIÉN GANA el override, sin una sola señal.
-        '   · `EndOfMasterBlock` es "último master + 1" y CUENTA LAS INACTIVAS, así que un .esm destildado o un
-        '     .esl traspapelado al final empujaba el límite hasta el fin del archivo y el tope no hacía nada —
-        '     justo en la lista desordenada que hay que arreglar. El tope real es el PRIMER no-master ACTIVO.
-        ' `minIndex` (los masters que nos bloquean) se aplica DESPUÉS y sube: nunca se viola un master propio.
-        If ourIsEsmGroup Then
-            Dim firstNonMaster = FirstNonMasterIndex(entries, dataPath, cache)
-            If firstNonMaster >= 0 AndAlso desired > firstNonMaster Then desired = firstNonMaster
-        End If
-
+        ' ⛔⛔ ACÁ VIVÍA UN "TOPE DEL GRUPO DE MASTERS" (bajar nuestra línea hasta el primer no-master) Y SE
+        ' BORRÓ ENTERO. No era un tope mal calibrado: NO TENÍA QUE EXISTIR, y lo pagué con tres rondas de
+        ' revisión persiguiendo sus efectos.
+        '
+        ' La ley canónica es que el motor PARTICIONA (wbLoadOrder.pas:202-216): con dos módulos del MISMO
+        ' grupo desempata por índice literal de Plugins.txt, y con dos de grupos DISTINTOS el master gana
+        ' siempre, esté donde esté la línea. O sea que la posición de un plugin del grupo master RESPECTO DE
+        ' LOS NO-MASTERS no puede cambiar quién gana un override. Un tope que sólo mueve esa relación no
+        ' arregla nada por construcción.
+        '
+        ' Lo que sí hacía, MEDIDO por el revisor: (a) en la rama "plugin nuevo" bajaba nuestro ESP por encima
+        ' de OTRO grupo-master que estaba más abajo, y ahí sí le cambiaba la precedencia — a un tercero le
+        ' ganaba a nuestro propio output; (b) `MirrorToLoadOrderTxt` fuerza `Active = True` en todas las
+        ' líneas y llamaba a ESTA MISMA función, cuyo tope filtraba por `.Active`: una ley con dos verdades,
+        ' que dejaba Plugins.txt y loadorder.txt en desacuerdo sobre quién gana.
+        '
+        ' El síntoma que este tope intentaba tapar (la app y el motor discrepando sobre quién gana) era real,
+        ' pero vivía en el LECTOR: `PluginManager.ReadActiveLoadOrder` no aplicaba la partición del motor.
+        ' Se arregló ahí, en `StablePartitionMasterGroup`. ⛔ NO REPONER ESTE TOPE.
+        '
+        ' `minIndex` (los masters que nos bloquean) sí se queda: es la otra ley, "después de tus masters".
         Dim minIndex = LastIndexOfAny(entries, blocking) + 1
         If desired < minIndex Then desired = minIndex
         If desired > entries.Count Then desired = entries.Count
@@ -468,29 +478,6 @@ Public NotInheritable Class LoadOrderActivator
         Return entries.Count
     End Function
 
-    ''' <summary>Índice de la PRIMERA línea de plugin que NO pertenece al grupo de masters, o -1 si no hay
-    ''' ninguna (todo el archivo es grupo master). Es el tope para colocar un plugin del grupo master, porque lo
-    ''' que el motor garantiza es que ningún master queda DETRÁS de un no-master.
-    ''' <para>⛔ Distinto de <see cref="EndOfMasterBlock"/>, que devuelve "último master + 1" y sirve para
-    ''' INSERTAR uno nuevo respetando el bloque existente. Usar aquél como tope hace que un .esl traspapelado al
-    ''' final del archivo empuje el límite hasta el fin de la lista y el clamp no haga nada.</para>
-    ''' <para>Un plugin no instalado (<c>IsEsmGroup</c> = Nothing) NO cuenta: no se puede saber su grupo y el
-    ''' motor tampoco lo carga.</para></summary>
-    Private Shared Function FirstNonMasterIndex(entries As List(Of Entry), dataPath As String,
-                                                cache As Dictionary(Of String, Boolean?)) As Integer
-        For i = 0 To entries.Count - 1
-            ' ⛔ SOLO las ACTIVAS, igual que LastIndexOfAny (:445-455, "Inactive entries don't order anything:
-            ' the engine never loads them"). Contando las inactivas, una línea destildada en el medio del bloque
-            ' de masters bajaba el tope y MOVÍA nuestro plugin por encima de un .esm ACTIVO que estaba después —
-            ' cambiándole la precedencia de overrides a un tercero sin que nada lo pidiera. Medido por el
-            ' revisor: `*Master1.esm / Inactive.esp / *Master2.esm / *Ours.esp` pasaba de NoOp a Moved y
-            ' Master2.esm empezaba a ganarle a Ours.
-            If Not entries(i).IsPlugin OrElse Not entries(i).Active Then Continue For
-            Dim g = IsEsmGroup(dataPath, entries(i).Name, cache)
-            If g.HasValue AndAlso Not g.Value Then Return i
-        Next
-        Return -1
-    End Function
 
     ''' <summary>Insertion point right after the last plugin line, so trailing blank lines stay trailing.</summary>
     Private Shared Function EndOfPluginList(entries As List(Of Entry)) As Integer
@@ -500,34 +487,13 @@ Public NotInheritable Class LoadOrderActivator
         Return entries.Count
     End Function
 
-    Private Shared Function HasEsmExtension(name As String) As Boolean
-        Return name.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) OrElse
-               name.EndsWith(".esl", StringComparison.OrdinalIgnoreCase)
-    End Function
 
     ''' <summary>Whether a plugin is in the engine's master group (wbLoadOrder.pas:331-348: .esm/.esl extension
     ''' OR the ESM header flag; the light flag alone is NOT enough). Nothing when the file is not in Data — an
     ''' entry pointing at an uninstalled plugin orders nothing. Header reads are cached per call site.</summary>
     Private Shared Function IsEsmGroup(dataPath As String, name As String,
                                        cache As Dictionary(Of String, Boolean?)) As Boolean?
-        Dim hit As Boolean?
-        If cache.TryGetValue(name, hit) Then Return hit
-
-        Dim value As Boolean? = Nothing
-        Dim full = Path.Combine(dataPath, name)
-        If HasEsmExtension(name) Then
-            value = If(File.Exists(full), CType(True, Boolean?), Nothing)
-        ElseIf File.Exists(full) Then
-            Try
-                Dim rdr As New PluginReader()
-                rdr.LoadHeaderOnly(full)
-                value = rdr.IsESM
-            Catch
-                value = Nothing
-            End Try
-        End If
-        cache(name) = value
-        Return value
+        Return PluginManager.IsMasterGroup(dataPath, name, cache)
     End Function
 
     ''' <summary>"" when the plugin fits, else the refusal message. Counts the CURRENT effective load order

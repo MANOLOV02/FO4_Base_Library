@@ -478,6 +478,30 @@ Public Class PluginManager
             Dim masterIndex = CInt(localFormID >> 24)
             Dim objectID = localFormID And &HFFFFFFUI
 
+            ' ⛔ RANGO HARDCODED. Primera rama del canónico `TwbFile.FileFormIDtoLoadOrderFormID`
+            ' (wbImplementation.pas:3460-3473), que faltaba entera acá:
+            '     if Result.ObjectID < $800 then
+            '       if GetAllowHardcodedRangeUse then begin
+            '         if Result.IsHardcoded then Exit;            // pasa SIN TOCAR
+            '       end else begin
+            '         Result.FileID := TwbFileID.Null; Exit;      // ⇒ GAME MASTER
+            '       end;
+            ' Son TRES casos, no dos, y el del medio CAE al mapeo normal:
+            '   (a) permitido + FormID entero < 0x800 (IsHardcoded, wbInterface.pas:22718-22721) ⇒ tal cual;
+            '   (b) permitido + FileID != 0 ⇒ sigue de largo, el archivo posee records ahí legítimamente;
+            '   (c) NO permitido ⇒ FileID := 0. En espacio de load order el slot 0 es el master del juego,
+            '       y como el objectID ya es < 0x800 el resultado ES el objectID.
+            ' El escritor ya cortaba en 0x800 (TryMapGlobalToFileLocal); el lector no, o sea que las dos
+            ' direcciones estaban asimétricas y un ida-y-vuelta podía no cerrar.
+            If objectID < &H800UI Then
+                If AllowsHardcodedRange(plugin.HeaderVersion, plugin.Masters.Count, Config_App.Current.DataPath) Then
+                    If localFormID < &H800UI Then Return localFormID          ' (a)
+                    ' (b) cae al mapeo normal
+                Else
+                    Return objectID                                           ' (c)
+                End If
+            End If
+
             Dim owner As PluginReader = Nothing
             If masterIndex < plugin.Masters.Count Then
                 ' Reference into one of this plugin's masters. The master index is full-style (xEdit
@@ -591,6 +615,40 @@ Public Class PluginManager
             _rwLock.ExitReadLock()
         End Try
     End Function
+
+    ''' <summary>Posición EFECTIVA del plugin en la carga: su índice en <see cref="Plugins"/>, es decir el
+    ''' orden en que este manager lo mergeó — partición por grupo master, orden topológico por masters y
+    ''' exclusión de los que tienen masters faltantes YA aplicados. Es el eje de OVERRIDE: a mayor índice,
+    ''' más tarde carga y más pisa (last-override-wins de <c>MergeRecords</c>).
+    ''' <para>⛔ NO es el FileID slot. El slot está PARTICIONADO en full (0x00..0xFD) y light (0xFE + 12 bits)
+    ''' y es lo que viaja en el FormID; para eso están <see cref="GetPluginNameByLoadOrderIndex"/> y
+    ''' <see cref="GetOriginatingPluginName"/>. Dos plugins distintos pueden tener el mismo número de slot
+    ''' (uno full, uno light) pero nunca la misma posición efectiva.</para>
+    ''' <para>-1 cuando el plugin no está cargado (nombre vacío, o quedó fuera por masters faltantes).</para></summary>
+    Public Function GetLoadOrderPosition(pluginName As String) As Integer
+        _rwLock.EnterReadLock()
+        Try
+            Dim idx As Integer
+            If String.IsNullOrEmpty(pluginName) OrElse Not _pluginIndex.TryGetValue(pluginName, idx) Then Return -1
+            Return idx
+        Finally
+            _rwLock.ExitReadLock()
+        End Try
+    End Function
+
+    ''' <summary>Cuántos plugins quedaron efectivamente cargados. Los excluidos por masters faltantes
+    ''' (<see cref="LastExcludedForMissingMasters"/>) NO cuentan, así que <c>Count - 1</c> es la posición
+    ''' efectiva más alta que puede devolver <see cref="GetLoadOrderPosition"/>.</summary>
+    Public ReadOnly Property LoadedPluginCount As Integer
+        Get
+            _rwLock.EnterReadLock()
+            Try
+                Return Plugins.Count
+            Finally
+                _rwLock.ExitReadLock()
+            End Try
+        End Get
+    End Property
 
     ''' <summary>Resolve the master plugin that "owns" a FormID for engine-faithful asset
     ''' resolution (e.g. FaceGen path lookup). Critical: this must NOT return the override
@@ -1156,6 +1214,262 @@ Public Class PluginManager
         Return GamePathsResolver.ResolveIniPath(iniFileName)
     End Function
 
+    ''' <summary>Si está instalado el plugin VRESL, que es lo que le agrega soporte de light/update a los builds
+    ''' de VR. Canónico xeInit.pas:1057-1059 (SkyrimVR) y 1069-1071 (FO4VR):
+    ''' <code>
+    ''' wbVRESL                 := (wbGameMode in [gmTES5VR]) and FileExists(wbDataPath + 'SKSE\Plugins\skyrimvresl.dll');
+    ''' wbHasAddedLightSupport  := wbVRESL;
+    ''' wbHasAddedUpdateSupport := wbVRESL;
+    ''' </code>
+    ''' <para>⛔ Es UN SOLO booleano del que cuelgan las DOS capacidades. Por eso vive en una función sola y
+    ''' <see cref="LightIsSupported"/> y <see cref="UpdateIsSupported"/> la llaman: si algún día cambia la
+    ''' detección, cambia para las dos, como en el canónico.</para></summary>
+    Private Shared Function VreslInstalled(dataPath As String) As Boolean
+        If Not IsVrBuild() Then Return False
+        If String.IsNullOrEmpty(dataPath) Then Return False
+        Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
+        Dim dll = If(isFO4, Path.Combine(dataPath, "F4SE", "Plugins", "falloutvresl.dll"),
+                            Path.Combine(dataPath, "SKSE", "Plugins", "skyrimvresl.dll"))
+        Return File.Exists(dll)
+    End Function
+
+    ''' <summary>Réplica de <c>wbIsLightSupported</c> (wbInterface.pas:5602):
+    ''' <c>(gmSSE, gmEnderalSE, gmFO4, gmSF1) or wbHasAddedLightSupport</c>. Nuestros dos juegos planos están en
+    ''' la lista; los dos de VR NO, y ahí depende de <see cref="VreslInstalled"/>.</summary>
+    Private Shared Function LightIsSupported(dataPath As String) As Boolean
+        If Not IsVrBuild() Then Return True          ' gmFO4 / gmSSE: soportado siempre
+        Return VreslInstalled(dataPath)
+    End Function
+
+    ''' <summary>Réplica de <c>wbIsUpdateSupported</c> (wbInterface.pas:5615-5618):
+    ''' <c>(gmSF1) or wbHasAddedUpdateSupport</c>.
+    ''' <para>⛔ Ojo con la asimetría respecto de <see cref="LightIsSupported"/>: acá los juegos planos
+    ''' <b>NO</b> están en la lista (sólo Starfield, que no soportamos), así que el flag 0x100 sólo significa
+    ''' algo en VR con VRESL. En FO4/SSE normales <c>wbMastersForFile</c> devuelve <c>IsUpdate = False</c>
+    ''' SIEMPRE, esté o no puesto el bit — el corte está en <c>TwbFile.GetIsUpdate</c>
+    ''' (wbImplementation.pas:4364, <c>if not wbIsUpdateSupported ... then Exit(False)</c>), no en el header.
+    ''' MEDIDO 2026-08-18: 0 de 71 plugins de FO4 y 0 de 103 de SSE tienen 0x100, así que hoy es inerte en los
+    ''' dos rigs — pero la ley se implementa igual, porque VR con VRESL sí lo activa.</para>
+    ''' <para><c>wbPseudoUpdate</c> del canónico NO se replica: es un switch de línea de comandos de xEdit
+    ''' (<c>-PseudoUpdate</c>, xeInit.pas:1405-1406), no una propiedad del juego.</para></summary>
+    Private Shared Function UpdateIsSupported(dataPath As String) As Boolean
+        Return VreslInstalled(dataPath)              ' gmSF1 no lo soportamos
+    End Function
+
+    ''' <summary>Si el plugin ocupa un slot LIGHT (0xFE + índice de 12 bits) en vez de un slot full. Ley
+    ''' canónica COMPLETA, wbLoadOrder.pas:358-369:
+    ''' <code>
+    ''' if IsUpdate then begin
+    '''   if IsLight or IsMedium then IsUpdate := False;
+    ''' end else
+    '''   if miExtension in [meESL] then Include(miFlags, mfHasLightFlag);   ' &lt;- SOLO en el ELSE
+    ''' if IsLight then Include(miFlags, mfHasLightFlag);
+    ''' </code>
+    ''' o sea <c>light = 0x200 OR (extensión .esl AND NOT IsUpdate)</c>.
+    ''' <para>⛔ El <c>if/else</c> despacha sobre el valor de <c>IsUpdate</c> AL ENTRAR: aunque adentro se lo
+    ''' ponga en False, la rama <c>else</c> ya no corre. Por eso un <c>.esl</c> con 0x100 NO se vuelve light por
+    ''' su extensión. Leer sólo <c>if IsLight then ...</c> y escribir un OR simple pierde esa condición.</para>
+    ''' <para>⛔ Y <c>IsUpdate</c> no es el bit pelado: <c>TwbFile.GetIsUpdate</c> (wbImplementation.pas:4364)
+    ''' arranca con <c>if not wbIsUpdateSupported ... then Exit(False)</c>. En FO4/SSE no-VR eso es siempre
+    ''' False ⇒ ahí la ley COLAPSA al OR simple y las dos formas coinciden. La diferencia aparece sólo en VR con
+    ''' VRESL. Ver <see cref="UpdateIsSupported"/>.</para>
+    ''' <para><c>IsMedium</c> no se replica: <c>wbIsMediumSupported</c> es sólo Starfield
+    ''' (wbInterface.pas:5596-5598), y sólo influye para volver <c>IsUpdate</c> False — o sea que ignorarlo no
+    ''' puede darnos un light de más, sólo evitarnos uno de menos en un juego que no soportamos.</para></summary>
+    ''' <param name="headerFlags">El campo de flags del registro TES4, crudo.</param>
+    Public Shared Function IsLightSlot(dataPath As String, name As String, headerFlags As UInteger) As Boolean
+        If (headerFlags And FLAG_ESL) <> 0 Then Return True                     ' IsLight (0x200)
+        If name Is Nothing OrElse Not name.EndsWith(".esl", StringComparison.OrdinalIgnoreCase) Then Return False
+        Dim isUpdate As Boolean = (headerFlags And FLAG_UPDATE) <> 0 AndAlso UpdateIsSupported(dataPath)
+        Return Not isUpdate                                                     ' extensión .esl, sólo en el ELSE
+    End Function
+
+    ''' <summary>Memo de <see cref="IsMasterGroup"/> con vida de proceso, clavada a la IDENTIDAD del archivo
+    ''' (ruta + fecha de modificación + tamaño) y no sólo al nombre: la app REESCRIBE plugins, y un ESP al que
+    ''' se le acaba de tildar "Mark as master" cambia de grupo sin cambiar de nombre.
+    ''' <para>Por qué existe: MEDIDO por el revisor sobre el rig real (50 activos, 49 <c>.esp</c>),
+    ''' <b>4,558 ms por barrido</b> de sólo I/O, y <c>ReadActiveLoadOrder</c> no cachea nada. Peor:
+    ''' <c>CheckSlotCap</c> lo llama y acto seguido vuelve a abrir el header de cada plugin, o sea 2× el
+    ''' barrido por activación. Lineal en la cantidad de <c>.esp</c>: ~23 ms con 250.</para></summary>
+    Private Shared ReadOnly _masterGroupMemo As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
+
+    ''' <summary>Si un archivo puede usar el RANGO HARDCODED, o sea object ids por debajo de <c>0x800</c>.
+    ''' Réplica de <c>TwbFile.GetAllowHardcodedRangeUse</c> (wbImplementation.pas:3941-3961):
+    ''' <code>
+    ''' Result :=
+    '''   ( (wbGameMode = gmTES3)
+    '''     or (((wbGameMode in [gmSSE, gmEnderalSE]) or ((wbGameMode = gmTES5VR) and wbHasAddedLightSupport))
+    '''          and (GetVersion &gt;= 1.709))
+    '''     or ((wbGameMode = gmFO4) and (GetVersion &gt;= 1.0))
+    '''     or (wbGameMode = gmSF1) )
+    '''   and (GetMasterCount(True) &gt; 0);
+    ''' </code>
+    ''' <para>⛔ Es POR ARCHIVO, no una constante del juego: depende de la VERSION DEL HEDR de ESE plugin y de
+    ''' que tenga al menos un master. Dos plugins del mismo juego pueden dar respuestas distintas.</para>
+    ''' <para>⛔⛔ Y es asimétrico en VR, que es donde se pierde al leer rápido:
+    ''' <list type="bullet">
+    ''' <item><b>gmFO4VR NO ESTÁ EN LA LISTA.</b> Sólo <c>gmFO4</c>. Un FO4VR jamás permite el rango, tenga la
+    ''' versión que tenga.</item>
+    ''' <item><c>gmTES5VR</c> sí está, pero exige <c>wbHasAddedLightSupport</c>, o sea el plugin VRESL
+    ''' (<see cref="VreslInstalled"/>).</item>
+    ''' </list></para>
+    ''' <para><c>gmTES3</c> y <c>gmSF1</c> no se replican: no son juegos que esta app soporte.</para>
+    ''' <para>Esta es la ÚNICA implementación de la ley. La usan el LECTOR
+    ''' (<see cref="ResolveFormID"/>, con la versión leída del archivo) y el ESCRITOR
+    ''' (<c>PluginWriter.AllowsHardcodedRange</c>, con la versión que emitimos). Un lector y un escritor con
+    ''' dos copias de esta regla se desincronizan sin que nada avise.</para></summary>
+    ''' <param name="hedrVersion">Campo Version del HEDR del archivo en cuestión.</param>
+    ''' <param name="masterCount">Cuántos masters lista. <c>GetMasterCount(True) &gt; 0</c> del canónico.</param>
+    ''' <param name="dataPath">Carpeta Data, sólo para detectar VRESL en un rig de VR.</param>
+    Public Shared Function AllowsHardcodedRange(hedrVersion As Single, masterCount As Integer,
+                                                dataPath As String) As Boolean
+        If masterCount <= 0 Then Return False
+        Dim isVr As Boolean = IsVrBuild()
+        If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then
+            ' gmSSE / gmEnderalSE siempre; gmTES5VR sólo con VRESL.
+            If isVr AndAlso Not VreslInstalled(dataPath) Then Return False
+            Return hedrVersion >= 1.709F
+        End If
+        ' gmFO4 sí, gmFO4VR NO — el canónico no lo lista.
+        If isVr Then Return False
+        Return hedrVersion >= 1.0F
+    End Function
+
+    ''' <summary>Si el plugin pertenece al GRUPO MASTER del motor. Ley canónica, wbLoadOrder.pas:326-347,
+    ''' que son DOS disyuntos independientes y hay que evaluar los dos:
+    ''' <code>
+    ''' if wbGameMode >= gmFO4 then
+    '''   if miExtension in [meESM, meESL] then Include(miFlags, mfIsESM);  ' (A) por EXTENSIÓN
+    ''' if IsESM then Include(miFlags, mfIsESM);                            ' (B) por FLAG 0x01 del header
+    ''' </code>
+    ''' <para>(A) aplica a nuestros dos juegos: el enum es
+    ''' <c>gmTES3, gmTES4, gmTES4R, gmFO3, gmFNV, gmTES5, gmEnderal, gmFO4, gmSSE, ...</c>
+    ''' (wbInterface.pas:4877), o sea gmFO4=7 y gmSSE=8, los dos &gt;= gmFO4. Pero para <c>.esl</c> hay además
+    ''' la precondición de <see cref="LightIsSupported"/> — ver ahí, es la parte que se me pasó por leer sólo
+    ''' el cuerpo del <c>if</c> y no su guarda.</para>
+    ''' <para>⛔ El flag LIGHT (0x200) por sí solo NO alcanza: mfHasLightFlag y mfIsESM son banderas distintas
+    ''' y el comparador (:202-216) sólo mira mfIsESM. Un <c>.esp</c> con 0x200 y sin 0x01 es light y NO es grupo
+    ''' master; un <c>.esp</c> con 0x201 SÍ lo es por (B). MEDIDO en el rig del usuario: los 30
+    ''' <c>WM_ClonePack*.esp</c> son 0x201 (grupo master con extensión .esp) y <c>ShowCollectibles.esl</c> es
+    ''' 0x200 (light SIN flag ESM, grupo master por (A)). Mirar un solo disyunto se equivoca en los dos.</para>
+    ''' <para>⛔ Un archivo que no está en Data devuelve <c>Nothing</c>: no se puede saber su grupo, y el motor
+    ''' tampoco lo carga. NO es lo mismo que False — ver <see cref="StablePartitionMasterGroup"/>, que por eso
+    ''' no lo mueve.</para>
+    ''' <para>Esta es la ÚNICA implementación de la ley; <c>LoadOrderActivator</c> la llama, no la copia
+    ''' (00-reglas-paridad-canonica §15).</para></summary>
+    Public Shared Function IsMasterGroup(dataPath As String, name As String,
+                                         cache As Dictionary(Of String, Boolean?)) As Boolean?
+        Dim hit As Boolean?
+        If cache IsNot Nothing AndAlso cache.TryGetValue(name, hit) Then Return hit
+
+        Dim value As Boolean? = Nothing
+        Dim full = Path.Combine(dataPath, name)
+        Dim fi As New FileInfo(full)
+        If fi.Exists Then
+            ' Clave por IDENTIDAD del archivo: si lo reescribimos, la memo caduca sola.
+            Dim key = full & "|" & fi.LastWriteTimeUtc.Ticks.ToString() & "|" & fi.Length.ToString()
+            Dim memo As Boolean?
+            Dim found As Boolean
+            SyncLock _masterGroupMemo
+                found = _masterGroupMemo.TryGetValue(key, memo)
+            End SyncLock
+            If found Then
+                If cache IsNot Nothing Then cache(name) = memo
+                Return memo
+            End If
+
+            If name.EndsWith(".esm", StringComparison.OrdinalIgnoreCase) Then
+                value = True                                              ' (A) .esm
+            ElseIf name.EndsWith(".esl", StringComparison.OrdinalIgnoreCase) AndAlso
+                   LightIsSupported(dataPath) Then
+                value = True                                              ' (A) .esl, con su precondición
+            Else
+                Try
+                    Dim rdr As New PluginReader()
+                    rdr.LoadHeaderOnly(full)
+                    value = rdr.IsESM                                     ' (B)
+                Catch
+                    value = Nothing
+                End Try
+            End If
+            SyncLock _masterGroupMemo
+                _masterGroupMemo(key) = value
+            End SyncLock
+        End If
+        If cache IsNot Nothing Then cache(name) = value
+        Return value
+    End Function
+
+    ''' <summary>Aplica el 3er desempate del comparador canónico (wbLoadOrder.pas:202-216): dentro del
+    ''' tramo NO forzado, todo el GRUPO MASTER va antes que todo el resto, y adentro de cada grupo se
+    ''' conserva el orden previo (partición ESTABLE).
+    ''' <code>
+    ''' if ((mfIsESM in a.miFlags) = (mfIsESM in b.miFlags)) then
+    '''     Result := CmpI32(a.miPluginsTxtIndex, b.miPluginsTxtIndex)   ' mismo grupo: orden literal
+    ''' else if mfIsESM in a.miFlags then Result := -1 else Result := 1  ' distinto grupo: master primero
+    ''' </code>
+    ''' <para>⛔ Es <c>Public</c> y toma <paramref name="dataPath"/> explícito, las dos cosas a propósito.
+    ''' Explícito, porque leyendo <c>Config_App.Current.DataPath</c> por su cuenta era INGATEABLE: el revisor
+    ''' invirtió la partición entera y el probe siguió dando 33/33. Pública, porque no la usa sólo el lector:
+    ''' el Preflight de NPC Manager ordena con ELLA la selección del usuario, que es otro Plugins.txt virtual.
+    ''' Una ley, una implementación (00-reglas-paridad-canonica §15).</para>
+    ''' <para>⛔ Arranca en <paramref name="forcedCount"/> y no antes: los masters implícitos y el
+    ''' Creation Club se ordenan por <c>miOfficialIndex</c> / <c>miCCIndex</c>, que en el comparador
+    ''' están ANTES del grupo (wbLoadOrder.pas:198-201). Particionarlos los reordenaría contra el motor.</para>
+    ''' <para>⛔ Un plugin cuyo grupo NO se puede determinar (no está en Data) se queda CLAVADO en su índice:
+    ''' no entra en ningún bucket. Para el motor ese módulo no existe (wbLoadOrder.pas:338-339 hace
+    ''' <c>Continue</c> si no puede leer el header), pero la app sí lo conserva en la lista, y esta lista es la
+    ''' que <c>FilesDictionary.BuildArchivePriority</c> usa para dar prioridad a los BA2/BSA POR POSICIÓN. Si lo
+    ''' mandáramos al fondo con los no-masters, el <c>.ba2</c> de un plugin desinstalado pasaría a ganarle el
+    ''' conflicto de texturas a todos los mods que estaban después. <c>Nothing</c> no es False ni True: es
+    ''' "no lo toques".</para>
+    ''' <para>Por qué esto FALTABA y por qué importa aunque hoy no se note: MEDIDO 2026-08-18 sobre los dos
+    ''' rigs reales del usuario, 0 posiciones y 0 slots de diferencia — pero sólo porque los dos
+    ''' <c>Plugins.txt</c> ya venían particionados. Control negativo del mismo arnés: moviendo UN grupo-master
+    ''' (<c>ShowCollectibles.esl</c>) detrás de los no-masters, la lista se corre 20 posiciones y 9 plugins
+    ''' cambian de slot. Sin esto, en ese rig la app le asigna a 9 mods un FileID que el motor no usa.</para></summary>
+    ''' <param name="cache">Caché de grupo por NOMBRE, opcional. Pasar uno compartido cuando esto se llama en
+    ''' bucle: sin él cada llamada arma el suyo y vuelve a hacer un <c>stat</c> por archivo. Con 1500 plugins y
+    ''' un planner que itera, eso es la diferencia entre una pasada y N pasadas de I/O.</param>
+    Public Shared Sub StablePartitionMasterGroup(ordered As List(Of String), forcedCount As Integer,
+                                                 dataPath As String,
+                                                 Optional cache As Dictionary(Of String, Boolean?) = Nothing)
+        If ordered Is Nothing OrElse ordered.Count - forcedCount < 2 Then Exit Sub
+        ' Sin Data no se puede leer un solo header, así que no hay grupo que decidir. La lista tampoco sirve
+        ' para nada en ese estado (LoadAllPlugins falla igual), así que se devuelve el orden literal.
+        If String.IsNullOrEmpty(dataPath) Then Exit Sub
+        If cache Is Nothing Then cache = New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
+        Dim tail = ordered.GetRange(forcedCount, ordered.Count - forcedCount)
+
+        Dim masters As New List(Of String)()
+        Dim rest As New List(Of String)()
+        Dim pinned As New Dictionary(Of Integer, String)()      ' índice EN EL TRAMO -> entrada sin grupo
+        For k = 0 To tail.Count - 1
+            Dim g = IsMasterGroup(dataPath, tail(k), cache)
+            If Not g.HasValue Then
+                pinned(k) = tail(k)                             ' grupo desconocido: NO se mueve
+            ElseIf g.Value Then
+                masters.Add(tail(k))
+            Else
+                rest.Add(tail(k))
+            End If
+        Next
+
+        Dim rebuilt As New List(Of String)(tail.Count)
+        Dim feed = masters.Concat(rest).GetEnumerator()
+        For k = 0 To tail.Count - 1
+            Dim stuck As String = Nothing
+            If pinned.TryGetValue(k, stuck) Then
+                rebuilt.Add(stuck)
+            ElseIf feed.MoveNext() Then
+                rebuilt.Add(feed.Current)
+            End If
+        Next
+
+        ordered.RemoveRange(forcedCount, tail.Count)
+        ordered.AddRange(rebuilt)
+    End Sub
+
     Public Shared Function ReadActiveLoadOrder() As List(Of String)
         Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
         Dim gameDir = ResolveGameAppDataDir()
@@ -1262,6 +1576,10 @@ Public Class PluginManager
                 ordered.Add(p)
             Next
 
+            ' ⛔ Fin del tramo FORZADO (miOfficialIndex + miCCIndex). Todo lo que sigue se particiona
+            ' por grupo master al final; ver StablePartitionMasterGroup.
+            Dim forcedCount = ordered.Count
+
             ' 3) Everything else from loadorder.txt, in its order, skipping implicits + CC (already
             '    placed above) and inactive plugins (must also be in Plugins.txt with `*`).
             For Each line In File.ReadAllLines(loadorderTxt, Encoding.UTF8)
@@ -1282,6 +1600,7 @@ Public Class PluginManager
             For Each p In activeFromPluginsTxt
                 If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
             Next
+            StablePartitionMasterGroup(ordered, forcedCount, Config_App.Current.DataPath)
             Return FilterOfficialIfRequested(ordered)
         End If
 
@@ -1290,9 +1609,11 @@ Public Class PluginManager
         For Each p In ccEntries
             If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
         Next
+        Dim forcedCountFallback = ordered.Count
         For Each p In activeFromPluginsTxt
             If Not ordered.Any(Function(x) String.Equals(x, p, StringComparison.OrdinalIgnoreCase)) Then ordered.Add(p)
         Next
+        StablePartitionMasterGroup(ordered, forcedCountFallback, Config_App.Current.DataPath)
         Return FilterOfficialIfRequested(ordered)
     End Function
 

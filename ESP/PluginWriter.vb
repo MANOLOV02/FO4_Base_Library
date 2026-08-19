@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 
 ''' <summary>
@@ -39,10 +39,13 @@ Public Module PluginWriter
     ''' recuperación y el agotamiento (<c>NewFormID</c> :5085-5097, <c>GetHighObjectID</c> :4216-4219).
     ''' NO cambia de dónde arranca un guardado normal: eso sale del contador del HEDR, que esta app siembra
     ''' en 0x800 igual que el CK, así que los FormID de un guardado corriente no se mueven.</para></summary>
+    ''' <para>⛔ Ya NO reimplementa la regla: reenvía a <c>PluginManager.AllowsHardcodedRange</c>, la única
+    ''' implementación, pasándole la versión de HEDR que ESTE escritor emite. La copia local ignoraba las dos
+    ''' precondiciones de VR del canónico (gmFO4VR no está en la lista; gmTES5VR exige VRESL), o sea que en un
+    ''' rig de VR el escritor y el lector habrían usado pisos distintos para el mismo archivo.</para>
     Friend Function AllowsHardcodedRange(game As Config_App.Game_Enum, masterCount As Integer) As Boolean
-        If masterCount <= 0 Then Return False
-        If game = Config_App.Game_Enum.Skyrim Then Return HEDR_VERSION_SSE >= 1.709F
-        Return HEDR_VERSION_FO4 >= 1.0F
+        Dim version As Single = If(game = Config_App.Game_Enum.Skyrim, HEDR_VERSION_SSE, HEDR_VERSION_FO4)
+        Return PluginManager.AllowsHardcodedRange(version, masterCount, Config_App.Current.DataPath)
     End Function
 
     ' ========================================================================

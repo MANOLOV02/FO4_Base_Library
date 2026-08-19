@@ -9,6 +9,11 @@ Public Module PluginConstants
     ' Record flags
     Public Const FLAG_ESM As UInteger = &H1UI
     Public Const FLAG_LOCALIZED As UInteger = &H80UI
+    ''' <summary>0x100. En FO4/SSE NO significa nada: `wbIsUpdateSupported` es sólo Starfield o VR con
+    ''' VRESL (wbInterface.pas:5615-5618), y `TwbFile.GetIsUpdate` corta antes de mirar el bit
+    ''' (wbImplementation.pas:4364). Donde SÍ vale, suprime la regla "extensión .esl ⇒ light"
+    ''' (wbLoadOrder.pas:358-363). Ver `PluginManager.IsLightSlot`.</summary>
+    Public Const FLAG_UPDATE As UInteger = &H100UI
     Public Const FLAG_ESL As UInteger = &H200UI
     Public Const FLAG_COMPRESSED As UInteger = &H40000UI
 

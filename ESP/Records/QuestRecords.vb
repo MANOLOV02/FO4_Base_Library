@@ -34,6 +34,10 @@ End Class
 
 ''' <summary>Quest objective entry.</summary>
 Public Class QUST_Objective
+    ''' <summary><c>wbLStringKC(NNAM, 'Display Text')</c> del Objective (wbDefinitionsFO4.pas QUST:95 ·
+    ''' wbDefinitionsTES5.pas QUST:86). Es una LString: en un plugin localizado son 4 bytes de id, no texto.
+    ''' <para>⛔ Existe porque QUST tiene DOS NNAM y antes los atendía un solo <c>Case</c>, así que estos bytes
+    ''' terminaban dentro de <c>QUST_Data.Description</c>.</para></summary>
     Public ObjectiveIndex As UShort
     Public ObjectiveFlags As UInteger
     Public DisplayText As String = ""
@@ -254,14 +258,26 @@ Public Module QuestRecordParsers
         Dim currentObjective As QUST_Objective = Nothing
         Dim currentAlias As QUST_Alias = Nothing
         Dim inAliasSection As Boolean = False
+        ' ⛔ QUST tiene DOS subrecords NNAM y sólo el CONTEXTO los distingue:
+        '   · dentro de un OBJECTIVE (que abre QOBJ) es wbLStringKC(NNAM, 'Display Text')  — una LString, o sea
+        '     4 BYTES DE ID en un plugin localizado (wbDefinitionsFO4.pas QUST:95 · TES5 QUST:86);
+        '   · a nivel de record es wbString(NNAM, 'Description') — texto plano, al final (FO4 :247 · TES5 :242).
+        ' Un Select Case plano sobre la firma no puede separarlos: el Display Text pisaba la Description con
+        ' bytes crudos. MEDIDO: 712/712 en SSE y 460/725 en FO4 con bytes de control.
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "FULL"
                     q.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "NNAM"
-                    ' QUST NNAM Description is wbString cpTranslate (wbDefinitionsFO4.pas:11313) → TRANSLATABLE (not General).
-                    q.Description = sr.AsString
+                    If currentObjective IsNot Nothing Then
+                        ' Dentro de un Objective: wbLStringKC(NNAM, 'Display Text').
+                        currentObjective.DisplayText = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.Strings)
+                    Else
+                        ' wbString(NNAM, 'Description', 0, cpTranslate, False) — wbDefinitionsFO4.pas:11313;
+                        ' en TES5 es wbString(NNAM, 'Description') a secas. Es un string PLANO, no una LString.
+                        q.Description = sr.AsString
+                    End If
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                         q.QuestFlags = BitConverter.ToUInt16(sr.Data, 0)
@@ -326,12 +342,24 @@ Public Module QuestRecordParsers
                     End If
                     inAliasSection = True
                 Case "ALST"
+                    ' Empieza el bloque de aliases: se cierra el Objective en curso para que el NNAM
+                    ' final del record (Description) no se le atribuya a el.
+                    If currentObjective IsNot Nothing Then
+                        q.Objectives.Add(currentObjective)
+                        currentObjective = Nothing
+                    End If
                     If currentAlias IsNot Nothing Then q.Aliases.Add(currentAlias)
                     currentAlias = New QUST_Alias()
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         currentAlias.AliasID = BitConverter.ToInt32(sr.Data, 0)
                     End If
                 Case "ALLS"
+                    ' Empieza el bloque de aliases: se cierra el Objective en curso para que el NNAM
+                    ' final del record (Description) no se le atribuya a el.
+                    If currentObjective IsNot Nothing Then
+                        q.Objectives.Add(currentObjective)
+                        currentObjective = Nothing
+                    End If
                     If currentAlias IsNot Nothing Then q.Aliases.Add(currentAlias)
                     currentAlias = New QUST_Alias With {.IsLocation = True}
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
@@ -463,6 +491,9 @@ Public Module QuestRecordParsers
             .EditorID = rec.EditorID
         }
 
+        ' Ver el Case "CNAM": el record tiene TRES subrecords CNAM distintos y sólo la posición los separa.
+        Dim inPackageData As Boolean = False
+
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "PKDT"
@@ -489,10 +520,22 @@ Public Module QuestRecordParsers
                 Case "INAM"
                     p.IdleAnimationFormID = ResolveFID(rec, sr, pluginManager)
                 Case "CNAM"
-                    p.CombatStyleFormID = ResolveFID(rec, sr, pluginManager)
+                    ' ⛔ PACK tiene TRES subrecords CNAM y sólo el contexto los distingue:
+                    '   · a nivel de record, ANTES de PKCU: wbFormIDCk(CNAM, 'Combat Style', [CSTY]) — el único
+                    '     que es una referencia (wbDefinitionsFO4.pas PACK:104 · TES5 PACK:103);
+                    '   · dentro de Package Data → Data Input Values: wbUnion(CNAM, 'Value', …) con ramas
+                    '     byte array / bool u8 / int u32 / float (:115-120). NUNCA un FormID;
+                    '   · más abajo: wbLStringKC(CNAM, 'Log Entry') (:286), texto localizado.
+                    ' Un Select Case plano los tomaba todos como Combat Style y remapeaba enteros y floats como
+                    ' referencias. MEDIDO: 509/1.155 en FO4 y 1.565/1.643 en SSE, con ejemplos 0x00FA0000 y
+                    ' 0x00480000 que son floats.
+                    If Not inPackageData Then p.CombatStyleFormID = ResolveFID(rec, sr, pluginManager)
                 Case "QNAM"
                     p.OwnerQuestFormID = ResolveFID(rec, sr, pluginManager)
                 Case "PKCU"
+                    ' PKCU es SetRequired y va justo antes de 'Package Data': desde acá ningún CNAM es
+                    ' Combat Style.
+                    inPackageData = True
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                         p.PackageTemplateFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 4), pluginManager)
                     End If

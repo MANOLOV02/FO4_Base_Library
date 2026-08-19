@@ -477,7 +477,10 @@ Friend Module ItemRecordParsers
                 Case "CNAM"
                     w.TemplateFormID = ResolveFID(rec, sr, pluginManager)
                 Case "NNAM"
-                    w.EmbeddedWeaponModFormID = ResolveFID(rec, sr, pluginManager)
+                    ' ⛔ Game-dependent: FO4 es wbFormIDCk(NNAM, 'Embedded Weapon Mod', [OMOD]); TES5 es
+                    ' wbByteArray(NNAM, 'Unused', 0, cpIgnore, False) — un sobrante, NO una referencia.
+                    ' Resolverlo en SSE daba 11/11 FormID inexistentes, con ejemplo 0x006C6F42 = ASCII "Blo".
+                    If IsFallout4() Then w.EmbeddedWeaponModFormID = ResolveFID(rec, sr, pluginManager)
                 Case "INAM"
                     w.ImpactDataSetFormID = ResolveFID(rec, sr, pluginManager)
                 Case "LNAM"
@@ -506,68 +509,54 @@ Friend Module ItemRecordParsers
         Return w
     End Function
 
+    ''' <summary>⛔⛔⛔ ESTE PARSER DE <c>DNAM</c> ESTÁ INVENTADO Y YA NO EMITE FormID. NO CABLEARLO.
+    '''
+    ''' <para>Se comparó campo a campo contra el canónico y <b>no corresponde a NINGUNO de los dos juegos</b>:
+    ''' <list type="bullet">
+    ''' <item><b>TES5/SSE</b> (<c>wbDefinitionsTES5.pas</c>, WEAP → <c>wbStruct(DNAM)</c>) arranca con
+    ''' <c>Animation Type</c> <c>itU8</c> + <c>wbUnused(3)</c> + <c>Speed</c> float + <c>Reach</c> float +
+    ''' <c>Flags</c> <c>itU16</c> + <c>wbUnused(2)</c> + <c>Sight FOV</c> float + 4 bytes desconocidos +
+    ''' <c>Base VATS To-Hit</c> u8 + <c>Attack Animation</c> u8 + <c>#Projectiles</c> u8 +
+    ''' <c>Embedded Weapon AV</c> u8 + <c>Range Min</c> float…</item>
+    ''' <item><b>FO4</b> (<c>wbDefinitionsFO4.pas</c>, WEAP → <c>wbStruct(DNAM)</c>) es OTRA estructura, más
+    ''' grande y con un bloque de flags de 32 bits que no existe en TES5.</item>
+    ''' </list>
+    ''' Este código leía un FormID de munición en el offset 0 — que en TES5 son el <c>Animation Type</c> y tres
+    ''' bytes sin usar, y en FO4 otra cosa distinta. O sea que los offsets no salieron de ninguna spec.</para>
+    '''
+    ''' <para><b>MEDIDO</b> (<c>Tools\RecordParserSweepProbe</c>, los dos juegos reales): con esos offsets,
+    ''' <c>SoundAttackLoop</c> 107/107, <c>SoundAttackFail</c> 289/290, <c>SoundAttack</c> 47/49,
+    ''' <c>SoundIdle</c> 110/116, <c>SoundEquip</c> 216/277, <c>SoundUnequip</c> 104/366,
+    ''' <c>SoundFastEquip</c> 6/6 en FO4; <c>Resist</c> 3865/3865, <c>Skill</c> 1697/1700,
+    ''' <c>Ammo</c> 573/3846, <c>EmbeddedWeaponMod</c> 11/11 en SSE — todos apuntando a records que NO
+    ''' EXISTEN.</para>
+    '''
+    ''' <para><b>Y aunque los offsets fueran correctos, dos de esos campos NO SON FormID en SSE</b>:
+    ''' <c>wbInteger('Skill', itS32, wbSkillEnum)</c> (wbDefinitionsTES5.pas:4477) y
+    ''' <c>wbInteger('Resist', itS32, wbActorValueEnum)</c> (:10863). En FO4 el equivalente de
+    ''' <c>Resist Value</c> sí es <c>wbFormIDCk([AVIF, NULL])</c> (wbDefinitionsFO4.pas:10498). Es
+    ''' game-dependent, no una constante.</para>
+    '''
+    ''' <para><b>Por qué se desactiva en vez de "arreglar los offsets"</b>: un FormID leído del lugar equivocado
+    ''' NO falla — devuelve un número plausible, pasa por el remapper de índices de master y sale como una
+    ''' referencia válida a otro mod. Dejarlo emitiendo mientras se reescribe la estructura es peor que no
+    ''' emitir: cero es visiblemente "no parseado", un FormID inventado no. Los campos numéricos que no son
+    ''' referencias tampoco se conservan, porque salen de los MISMOS offsets inventados.</para>
+    '''
+    ''' <para><b>Qué falta para reactivarlo</b>: escribir las DOS estructuras (FO4 y TES5) campo por campo desde
+    ''' <c>wbDefinitions*.pas</c>, despachar por juego, y volver a correr el sweep hasta que las 11 filas de
+    ''' arriba den 0/N. Hasta entonces esto deja los campos en su valor por defecto, a propósito.</para></summary>
     Private Sub ParseWEAP_DNAM(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
-        Dim d = sr.Data
-        If d Is Nothing OrElse d.Length < 100 Then Return
-
-        w.AmmoFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 0), pm)
-        w.Speed = BitConverter.ToSingle(d, 4)
-        w.ReloadSpeed = BitConverter.ToSingle(d, 8)
-        w.Reach = BitConverter.ToSingle(d, 12)
-        w.MinRange = BitConverter.ToSingle(d, 16)
-        w.MaxRange = BitConverter.ToSingle(d, 20)
-        w.AttackDelay = BitConverter.ToSingle(d, 24)
-        w.OutOfRangeDamageMult = BitConverter.ToSingle(d, 32)
-        w.OnHit = BitConverter.ToUInt32(d, 36)
-        w.SkillFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 40), pm)
-        w.ResistFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 44), pm)
-        w.WeaponFlags = BitConverter.ToUInt32(d, 48)
-        w.Capacity = BitConverter.ToUInt16(d, 52)
-        w.AnimationType = d(54)
-        w.SecondaryDamage = BitConverter.ToSingle(d, 56)
-        w.Weight = BitConverter.ToSingle(d, 60)
-        w.Value = BitConverter.ToUInt32(d, 64)
-        w.BaseDamage = BitConverter.ToUInt16(d, 68)
-        w.SoundLevel = BitConverter.ToUInt32(d, 70)
-
-        If d.Length >= 102 Then
-            w.SoundAttackFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 74), pm)
-            w.SoundAttack2DFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 78), pm)
-            w.SoundAttackLoopFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 82), pm)
-            w.SoundAttackFailFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 86), pm)
-            w.SoundIdleFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 90), pm)
-            w.SoundEquipFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 94), pm)
-            w.SoundUnequipFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 98), pm)
-        End If
-
-        If d.Length >= 106 Then
-            w.SoundFastEquipFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 102), pm)
-        End If
-
-        If d.Length >= 107 Then
-            w.AccuracyBonus = d(106)
-        End If
-
-        If d.Length >= 111 Then
-            w.AnimAttackSeconds = BitConverter.ToSingle(d, 107)
-        End If
-
-        If d.Length >= 117 Then
-            w.ActionPointCost = BitConverter.ToSingle(d, 113)
-        End If
-
-        If d.Length >= 121 Then
-            w.FullPowerSeconds = BitConverter.ToSingle(d, 117)
-        End If
-
-        If d.Length >= 125 Then
-            w.MinPowerPerShot = BitConverter.ToSingle(d, 121)
-        End If
-
-        If d.Length >= 129 Then
-            w.Stagger = BitConverter.ToUInt32(d, 125)
-        End If
+        ' ⛔ Intencionalmente vacío. Ver el summary: los offsets no corresponden a ninguno de los dos juegos y
+        ' emitir desde acá fabrica referencias. Los parámetros se conservan para no tocar el call site cuando
+        ' se implementen las dos estructuras de verdad.
+        Return
     End Sub
+
+    ''' <summary>Igual que <see cref="ParseWEAP_DNAM"/>: los offsets de esta estructura no se verificaron contra
+    ''' el canónico y el sweep no pudo medirla por separado (sus campos caen en los mismos contadores). Se deja
+    ''' viva porque no emitió ningún FormID marcado como inexistente, pero NO está validada — vale el banner del
+    ''' encabezado del archivo.</summary>
 
     Private Sub ParseWEAP_FNAM(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
         Dim d = sr.Data

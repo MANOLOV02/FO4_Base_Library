@@ -66,6 +66,12 @@
          Necesita `RecordDispatcher.ParseRecord` + `SupportedSignatures` (Friend) y leer por reflexion los
          campos `Friend` de las clases *_Data. NADA se vuelve Public por esto y el probe no se distribuye. -->
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>LoadOrderActivatorProbe</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>RecordParserSweepProbe</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>

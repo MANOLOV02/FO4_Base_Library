@@ -1,4 +1,4 @@
-Imports System.IO
+﻿Imports System.IO
 Imports System.Text
 Imports ICSharpCode.SharpZipLib.Zip.Compression
 
@@ -18,6 +18,12 @@ Public Class PluginReader
     ''' must seed its own dispense pointer with <c>max(disk, computed)</c> to avoid re-issuing
     ''' an ID that CK already consumed between saves (mirror of TwbFile.NewFormID's
     ''' GetNextObjectID/SetNextObjectID at wbImplementation.pas:5083/5122).</summary>
+    ''' <summary>Campo Version del HEDR, crudo (wbDefinitionsCommon.pas:6965-6970: float Version + u32
+    ''' NumRecords + u32 NextObjectID). Decide, junto con el juego y la cantidad de masters, si el archivo
+    ''' puede direccionar object ids por debajo de 0x800. 0 si el HEDR no se pudo leer, que es lo mismo que
+    ''' "version vieja" y por lo tanto NO permite el rango — el default seguro.</summary>
+    Public Property HeaderVersion As Single = 0.0F
+
     Public Property NextObjectId As UInteger
     ''' <summary>
     ''' Per-file translatable encoding captured from TES4.SNAM &lt;cp:XXXX&gt; at load time.
@@ -97,16 +103,13 @@ Public Class PluginReader
         If header.Signature <> "TES4" Then Throw New InvalidDataException("Not a valid plugin file: missing TES4 header")
 
         IsESM = (header.Flags And FLAG_ESM) <> 0
-        ' xEdit forces the light flag from the EXTENSION, not just from the header bit
-        ' (wbLoadOrder.pas:362-363 `if miExtension in [meESL] then Include(miFlags, mfHasLightFlag)`,
-        ' whose own comment reads "if the extension is .esl then force 0x100 flag"). A .esl WITHOUT
-        ' the bit would otherwise be handed a FULL slot here while the engine and xEdit hand it a
-        ' LIGHT one — shifting the high byte of that plugin AND of every full plugin after it, so
-        ' every FormID they own resolves to the wrong file. One law, one place: LoadOrderActivator
-        ' used to OR the extension in on its own copy of this rule and now just reads IsESL.
-        IsESL = (header.Flags And FLAG_ESL) <> 0 OrElse
-                (FileName IsNot Nothing AndAlso
-                 FileName.EndsWith(".esl", StringComparison.OrdinalIgnoreCase))
+        ' Slot LIGHT o full. La ley COMPLETA (0x200 OR (.esl AND NOT IsUpdate), wbLoadOrder.pas:358-369)
+        ' vive en UN solo lugar, `PluginManager.IsLightSlot`, con sus dos precondiciones de VR. Acá no se
+        ' re-escribe: una copia local fue exactamente lo que dejo a `LoadOrderActivator` clasificando con
+        ' una ley distinta del resto del arbol.
+        ' Si esto se equivoca, un .esl se lleva un slot FULL y corre el high byte de ese plugin Y de todos
+        ' los full que vengan despues: cada FormID que poseen resuelve al archivo equivocado.
+        IsESL = PluginManager.IsLightSlot(Config_App.Current.DataPath, FileName, header.Flags)
         IsLocalized = (header.Flags And FLAG_LOCALIZED) <> 0
 
         Dim endPos = br.BaseStream.Position + header.DataSize
@@ -143,6 +146,11 @@ Public Class PluginReader
         For Each subrecord In tes4Subrecords
             If subrecord.Signature <> "HEDR" Then Continue For
             If subrecord.Data IsNot Nothing AndAlso subrecord.Data.Length >= 12 Then
+                ' ⛔ La VERSION no es decorativa: `TwbFile.GetAllowHardcodedRangeUse`
+                ' (wbImplementation.pas:3946-3957) la compara contra 1.709 (SSE) / 1.0 (FO4) para decidir si
+                ' este archivo puede usar object ids POR DEBAJO de 0x800. Antes se descartaba y el lector no
+                ' podia aplicar esa rama. Se guarda cruda; la ley vive en PluginManager.AllowsHardcodedRange.
+                HeaderVersion = BitConverter.ToSingle(subrecord.Data, 0)
                 NextObjectId = BitConverter.ToUInt32(subrecord.Data, 8)
             End If
             Exit For
