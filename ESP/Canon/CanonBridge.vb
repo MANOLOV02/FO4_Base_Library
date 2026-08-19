@@ -1,4 +1,4 @@
-Namespace Canon
+﻿Namespace Canon
 
     ''' <summary>Puerta única entre un record leído del archivo y su árbol de campos.
     '''
@@ -38,20 +38,44 @@ Namespace Canon
         ''' <para>Los avisos de cobertura quedan en el contexto: quien quiera saber si la lectura
         ''' explicó todos los bytes puede mirarlos, pero un campo que falta nunca hace fallar la
         ''' lectura — devuelve el valor por defecto de la vista, igual que antes.</para></summary>
-        Public Function Tree(rec As PluginRecord, ByRef ctx As WbContext) As WbNode
+        Public Function Tree(rec As PluginRecord, plugins As PluginManager, ByRef ctx As WbContext) As WbNode
             If rec Is Nothing OrElse rec.Header.Signature Is Nothing Then Return Nothing
             Dim game = SessionGame()
             Dim def = WbSchema.Get(game, rec.Header.Signature)
             If def Is Nothing Then Return Nothing
             ctx = ContextFor(rec, game)
-            Return WbReader.Parse(def, rec, ctx)
+            Dim raiz = WbReader.Parse(def, rec, ctx)
+            NormalizarReferencias(raiz, rec, plugins)
+            Return raiz
         End Function
 
         ''' <summary>Igual que <see cref="Tree"/> cuando no interesa inspeccionar los avisos.</summary>
-        Public Function Tree(rec As PluginRecord) As WbNode
+        Public Function Tree(rec As PluginRecord, plugins As PluginManager) As WbNode
             Dim ctx As WbContext = Nothing
-            Return Tree(rec, ctx)
+            Return Tree(rec, plugins, ctx)
         End Function
+
+        ''' <summary>Pasa TODAS las referencias del record de locales al archivo a globales del
+        ''' orden de carga, de una sola vez.
+        '''
+        ''' <para>El FormID guardado en un record es local: su byte alto es un indice dentro de la
+        ''' lista de masters de ESE archivo. Dos archivos distintos usan el mismo numero para cosas
+        ''' distintas, asi que fuera del archivo un FormID local no significa nada.</para>
+        '''
+        ''' <para>Se hace al leer y no en cada campo por dos razones. La primera es que asi leer y
+        ''' escribir son simetricos: la propiedad devuelve lo mismo que acepta, y guardar lo que se
+        ''' leyo no puede corromper la referencia. La segunda es que el paso inverso ya existe y
+        ''' ocurre una sola vez, al escribir, cuando se sabe cual es el archivo destino.</para>
+        '''
+        ''' <para>Sin gestor de plugins no hay orden de carga contra el cual traducir y el arbol
+        ''' queda con los valores del archivo. Es lo correcto para inspeccionar un archivo suelto.</para>
+        ''' </summary>
+        Public Sub NormalizarReferencias(raiz As WbNode, rec As PluginRecord, plugins As PluginManager)
+            If raiz Is Nothing OrElse plugins Is Nothing OrElse rec Is Nothing Then Return
+            Dim origen = rec.SourcePluginName
+            If String.IsNullOrEmpty(origen) Then Return
+            WbFormIdWalker.Remap(raiz, Function(local) plugins.ResolveReferencedFormID(origen, local))
+        End Sub
 
         '==========================================================================================
         ' Lectura de campos por nombre. Devuelven el valor por defecto cuando el campo no está, que

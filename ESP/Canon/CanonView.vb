@@ -1,16 +1,13 @@
-Imports System.Runtime.CompilerServices
+﻿Namespace Canon
 
-Namespace Canon
-
-    ''' <summary>Base de las vistas tipadas de un record.
+    ''' <summary>Base de las vistas de un record.
     '''
-    ''' <para>Una vista NO copia nada: envuelve el árbol de campos y cada propiedad lee y escribe
-    ''' directamente sobre él. Eso es lo que evita tener dos representaciones del mismo record —
-    ''' una para leer y otra para escribir— que puedan desincronizarse.</para>
+    ''' <para>Una vista NO copia nada: envuelve el árbol de campos y cada propiedad lo consulta en el
+    ''' momento. Eso es lo que evita tener dos representaciones del mismo record —una para leer y
+    ''' otra para escribir— que puedan desincronizarse.</para>
     '''
-    ''' <para>Consecuencia práctica: editar una propiedad de la vista y después emitir el árbol
-    ''' produce el archivo con ese cambio y nada más. No hay un paso intermedio donde alguien tenga
-    ''' que acordarse de volcar los campos de la vista a otra estructura.</para></summary>
+    ''' <para>Las clases concretas están generadas a partir de la declaración del formato: el nombre
+    ''' de cada propiedad es el nombre del campo. Acá viven sólo las operaciones comunes a todas.</para></summary>
     Public MustInherit Class CanonView
 
         ''' <summary>El árbol del record. Es el único estado de la vista.</summary>
@@ -20,9 +17,13 @@ Namespace Canon
         ''' estructura no supo ubicar. Nunca impiden leer; están para poder mirarlos.</summary>
         Public ReadOnly Property Context As WbContext
 
-        Protected Sub New(node As WbNode, ctx As WbContext)
+        ''' <summary>Traduce referencias al orden de carga y resuelve los textos de tablas externas.</summary>
+        Public ReadOnly Property Resolver As CanonResolver
+
+        Protected Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             _Node = node
             _Context = ctx
+            _Resolver = resolver
         End Sub
 
         Public ReadOnly Property IsEmpty As Boolean
@@ -32,76 +33,123 @@ Namespace Canon
         End Property
 
         '==========================================================================================
-        ' Lectura. Un campo ausente devuelve el valor por defecto del tipo: un record que no trae
-        ' cierto subrecord simplemente no tiene ese dato.
+        ' Lectura de campos. Un campo ausente devuelve el valor por defecto de su tipo: un record que
+        ' no trae cierto subrecord simplemente no tiene ese dato.
         '==========================================================================================
 
-        <MethodImpl(MethodImplOptions.AggressiveInlining)>
-        Protected Function N(path As String) As WbNode
-            Return CanonBridge.Find(Node, path)
+        Protected Function Entero(ruta As String) As Long
+            Dim n = CanonBridge.Find(Node, ruta)
+            If n Is Nothing OrElse n.Value Is Nothing Then Return 0L
+            Try
+                Return Convert.ToInt64(n.Value)
+            Catch
+                Return 0L
+            End Try
         End Function
 
-        Protected Function U32(path As String) As UInteger
-            Return CanonBridge.U32(Node, path)
+        Protected Function Flt(ruta As String) As Single
+            Return CanonBridge.Flt(Node, ruta)
         End Function
 
-        Protected Function U16(path As String) As UShort
-            Return CUShort(CanonBridge.I64(Node, path) And &HFFFFL)
+        Protected Function Txt(ruta As String) As String
+            Return CanonBridge.Txt(Node, ruta)
         End Function
 
-        Protected Function U8(path As String) As Byte
-            Return CByte(CanonBridge.I64(Node, path) And &HFFL)
+        Protected Function Bytes(ruta As String) As Byte()
+            Dim n = CanonBridge.Find(Node, ruta)
+            Dim b = TryCast(If(n Is Nothing, Nothing, n.Value), Byte())
+            Return If(b, Array.Empty(Of Byte)())
         End Function
 
-        Protected Function I32(path As String) As Integer
-            Return CInt(CanonBridge.I64(Node, path))
+        ''' <summary>Referencia a otro record. El árbol ya viene con las referencias en el espacio
+        ''' del orden de carga, así que leer y escribir usan el mismo valor.</summary>
+        Protected Function Referencia(ruta As String) As UInteger
+            Return CanonBridge.U32(Node, ruta)
         End Function
 
-        Protected Function Flt(path As String) As Single
-            Return CanonBridge.Flt(Node, path)
+        Protected Sub PonerReferencia(ruta As String, valor As UInteger)
+            Escribir(ruta, CLng(valor))
+        End Sub
+
+        ''' <summary>Texto de un campo traducible. Si el archivo guarda los textos en tablas
+        ''' externas, el record sólo tiene un identificador y se resuelve contra ellas.</summary>
+        Protected Function TextoTraducible(ruta As String) As String
+            Dim n = CanonBridge.Find(Node, ruta)
+            If n Is Nothing Then Return ""
+            If Resolver Is Nothing Then Return If(n.Value Is Nothing, "", Convert.ToString(n.Value))
+            Return Resolver.Text(n)
         End Function
 
-        Protected Function Txt(path As String) As String
-            Return CanonBridge.Txt(Node, path)
+        ''' <summary>Un bit con nombre de un campo de banderas.</summary>
+        Protected Function Bit(ruta As String, bitIndex As Integer) As Boolean
+            Return (Entero(ruta) And (1L << bitIndex)) <> 0L
         End Function
 
-        Protected Function Bool(path As String) As Boolean
-            Return CanonBridge.I64(Node, path) <> 0L
+        ''' <summary>Nombre del valor de un campo enumerado, o el número si no está declarado.</summary>
+        Protected Function NombreDeValor(ruta As String) As String
+            Dim n = CanonBridge.Find(Node, ruta)
+            If n Is Nothing OrElse n.Value Is Nothing Then Return ""
+            Dim def = TryCast(n.Def, WbIntegerDef)
+            Dim v As Long
+            Try
+                v = Convert.ToInt64(n.Value)
+            Catch
+                Return ""
+            End Try
+            Dim nombre As String = Nothing
+            If def IsNot Nothing AndAlso def.EnumValues IsNot Nothing AndAlso
+               def.EnumValues.TryGetValue(v, nombre) AndAlso Not String.IsNullOrEmpty(nombre) Then
+                Return nombre
+            End If
+            Return v.ToString()
         End Function
 
-        ''' <summary>True si el campo está presente en el record, más allá de su valor. Distingue
-        ''' "vale cero" de "no está", que para varios campos son cosas distintas.</summary>
-        Protected Function Present(path As String) As Boolean
-            Return CanonBridge.Has(Node, path)
+        ''' <summary>Campo presente en el record, más allá de su valor. Distingue "vale cero" de
+        ''' "no está", que para varios campos son cosas distintas.</summary>
+        Protected Function Presente(ruta As String) As Boolean
+            Return CanonBridge.Has(Node, ruta)
         End Function
 
         '==========================================================================================
-        ' Escritura. Escribe sobre el árbol; si el campo no existe todavía se crea el subrecord que
-        ' lo contiene en la posición que le corresponde en la estructura.
+        ' Escritura. Escribe sobre el mismo árbol que se leyó: no hay una copia aparte que alguien
+        ' tenga que acordarse de volcar. Guardar el record emite exactamente lo que se ve acá.
         '==========================================================================================
 
-        ''' <summary>Escribe un campo. Devuelve False si el campo no existe en el record: crear un
-        ''' subrecord nuevo tiene que respetar la posición que le da la estructura, y eso se pide
-        ''' aparte.</summary>
-        Protected Function Put(path As String, value As Object) As Boolean
-            Return WbEdit.SetValue(Node, path, value)
+        ''' <summary>Escribe una hoja. Devuelve False si el campo no está presente en el record:
+        ''' crear un subrecord que no existe cambia la forma del record y se pide aparte.</summary>
+        Protected Function Escribir(ruta As String, valor As Object) As Boolean
+            Return WbEdit.SetValue(Node, ruta, valor)
+        End Function
+
+        ''' <summary>Enciende o apaga un bit con nombre de un campo de banderas.</summary>
+        Protected Sub PonerBit(ruta As String, bitIndex As Integer, encendido As Boolean)
+            Dim actual = Entero(ruta)
+            Dim mascara = 1L << bitIndex
+            Escribir(ruta, If(encendido, actual Or mascara, actual And Not mascara))
+        End Sub
+
+        ''' <summary>Escribe un texto traducible. Si el archivo usa tablas externas el campo guarda
+        ''' un identificador, no el texto, y cambiarlo requiere darlo de alta en esa tabla: por eso
+        ''' acá se rechaza en vez de escribir algo que el juego no podría mostrar.</summary>
+        Protected Function EscribirTextoTraducible(ruta As String, valor As String) As Boolean
+            If Context IsNot Nothing AndAlso Context.Localized Then Return False
+            Return Escribir(ruta, valor)
         End Function
 
         '==========================================================================================
-        ' Listas. Devuelven los nodos hijos de un arreglo para que la vista concreta los proyecte.
+        ' Arreglos
         '==========================================================================================
 
-        Protected Function Items(path As String) As IList(Of WbNode)
-            Dim n = CanonBridge.Find(Node, path)
-            If n Is Nothing Then Return Array.Empty(Of WbNode)()
-            Return n.Children
-        End Function
-
-        ''' <summary>Todos los subrecords del record con esa firma, en orden. Sirve para los campos
-        ''' que en la estructura son un arreglo suelto de subrecords repetidos.</summary>
-        Protected Function Repeated(signature As String) As IEnumerable(Of WbNode)
-            If Node Is Nothing Then Return Array.Empty(Of WbNode)()
-            Return Node.Walk().Where(Function(x) String.Equals(x.Signature, signature, StringComparison.Ordinal))
+        ''' <summary>Elementos de un arreglo, cada uno envuelto en su propia vista. La lista se arma
+        ''' al pedirla; el árbol sigue siendo el único dueño de los datos.</summary>
+        Protected Function Elementos(Of T As CanonView)(ruta As String, envolver As Func(Of WbNode, T)) As IReadOnlyList(Of T)
+            Dim cont = CanonBridge.Find(Node, ruta)
+            If cont Is Nothing Then Return Array.Empty(Of T)()
+            Dim salida As New List(Of T)(cont.Children.Count)
+            For Each hijo In cont.Children
+                salida.Add(envolver(hijo))
+            Next
+            Return salida
         End Function
 
     End Class

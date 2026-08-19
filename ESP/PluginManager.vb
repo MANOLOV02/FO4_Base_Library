@@ -780,6 +780,17 @@ Public Class PluginManager
         Return FileLocalMapResult.OwnerNotInMasterList
     End Function
 
+    ''' <summary>Texto de una tabla externa por su identificador.
+    ''' <para>Existe porque un campo traducible ya no llega como bytes crudos sino como el valor
+    ''' que se leyo de el: cuando el archivo usa tablas externas ese valor ES el identificador.
+    ''' El identificador cero significa 'sin texto' y devuelve cadena vacia; solo uno distinto de
+    ''' cero que no resuelve es un error de verdad.</para></summary>
+    Public Function ResolveLocalizedString(pluginFileName As String, stringId As UInteger,
+                                           Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
+        If stringId = 0UI OrElse _localizedStrings Is Nothing Then Return ""
+        Return _localizedStrings.Resolve(pluginFileName, stringId, kind)
+    End Function
+
     Public Function ResolveFieldString(rec As PluginRecord, sr As SubrecordData, Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
         If sr.Data Is Nothing OrElse sr.Data.Length = 0 Then Return ""
 

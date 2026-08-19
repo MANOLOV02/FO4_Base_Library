@@ -89,11 +89,34 @@ Namespace Canon
         ''' número es un ÍNDICE, no una referencia.</summary>
         Public ReadOnly Property EnumName As String
 
-        Public Sub New(name As String, t As WbIntType, Optional enumName As String = "")
+        ''' <summary>Nombre de cada bit, indexado por número de bit. Vacío cuando el campo no es
+        ''' un conjunto de banderas.
+        ''' <para>Está para que preguntar por una bandera sea preguntar por su nombre en vez de
+        ''' hacer una cuenta de bits en el sitio que la usa. La cuenta escrita a mano es correcta
+        ''' hasta que alguien mueve un bit.</para></summary>
+        Public ReadOnly Property FlagNames As String()
+
+        ''' <summary>Nombre de cada valor posible, cuando el campo es una enumeración.</summary>
+        Public ReadOnly Property EnumValues As IReadOnlyDictionary(Of Long, String)
+
+        Public Sub New(name As String, t As WbIntType, Optional enumName As String = "",
+                       Optional flagNames As String() = Nothing,
+                       Optional enumValues As IReadOnlyDictionary(Of Long, String) = Nothing)
             Me.Name = name
             _IntType = t
             _EnumName = enumName
+            _FlagNames = flagNames
+            _EnumValues = enumValues
         End Sub
+
+        ''' <summary>Número de bit de una bandera por su nombre, o -1 si el campo no la declara.</summary>
+        Public Function BitOf(flagName As String) As Integer
+            If FlagNames Is Nothing Then Return -1
+            For i = 0 To FlagNames.Length - 1
+                If String.Equals(FlagNames(i), flagName, StringComparison.OrdinalIgnoreCase) Then Return i
+            Next
+            Return -1
+        End Function
 
         ''' <summary>Ancho en bytes de cada tipo de entero.</summary>
         Public Shared Function WidthOf(t As WbIntType) As Integer
@@ -418,11 +441,9 @@ Namespace Canon
                 i += 1
             End While
             Dim textLen = i - offset
-            Dim terms = 0
-            While i < limit AndAlso data(i) = 0
-                terms += 1
-                i += 1
-            End While
+            ' Un solo cero de cierre, igual que en el texto no traducible: tragarse los ceros
+            ' siguientes le come los bytes al campo que viene detras cuando ese campo vale cero.
+            Dim terms = If(i < limit, 1, 0)
             n.TerminatorCount = terms
             n.Value = If(textLen > 0, PluginEncodingSettings.DecodeTranslatable(data, offset, textLen), "")
             n.SourceLength = textLen + terms

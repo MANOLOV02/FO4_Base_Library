@@ -13,6 +13,17 @@
             Return New WbIntegerDef(name, t, enumName)
         End Function
 
+        ''' <summary>Entero que es un conjunto de banderas, con el nombre de cada bit.</summary>
+        Public Function Bits(name As String, t As WbIntType, flagNames As String()) As WbValueDef
+            Return New WbIntegerDef(name, t, "wbFlags", flagNames)
+        End Function
+
+        ''' <summary>Entero que es una enumeración, con el nombre de cada valor.</summary>
+        Public Function Enumerated(name As String, t As WbIntType,
+                                   values As IReadOnlyDictionary(Of Long, String)) As WbValueDef
+            Return New WbIntegerDef(name, t, "wbEnum", Nothing, values)
+        End Function
+
         Public Function Flt(name As String) As WbValueDef
             Return New WbFloatDef(name)
         End Function
