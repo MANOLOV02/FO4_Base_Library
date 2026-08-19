@@ -1155,8 +1155,26 @@ Public Class PluginManager
     ''' cuatro nombres canónicos en vez de mirar si la ruta TERMINA en "VR". El criterio viejo daba False
     ''' para un usuario que apuntaba a <c>skse64_loader.exe</c> al lado de <c>SkyrimVR.exe</c> — y de esa
     ''' respuesta cuelga el master implícito de VR del load order.</para>
+    ''' <para>⛔ MEMOIZADO. <c>ResolveFormID</c> lo llama por CADA FormID con object id &lt; 0x800, y por debajo
+    ''' hace <c>GamePathsResolver.IdentifyExe</c>, que cuando el exe configurado no es uno de los cuatro
+    ''' canónicos (caso REAL y documentado: <c>f4se_loader.exe</c>) prueba hasta cuatro <c>File.Exists</c>.
+    ''' MEDIDO por el revisor, 200k llamadas: 0,095 µs con <c>Fallout4.exe</c> contra <b>5,6 µs</b> con
+    ''' <c>f4se_loader.exe</c> y <b>8,0 µs</b> con <c>SkyrimVR.exe</c> — 58× y 84×.
+    ''' <c>GamePathsResolver.Resolve()</c> ya está memoizado; esto se había quedado afuera.</para>
+    ''' <para>La clave es la ruta del exe configurado, así que cambiar de juego o de exe lo recalcula solo.</para>
+    Private Shared _vrBuildMemoExe As String = Nothing
+    Private Shared _vrBuildMemoValue As Boolean = False
     Public Shared Function IsVrBuild() As Boolean
-        Return GamePathsResolver.IsVrBuild()
+        Dim exe = If(Config_App.Current?.FO4ExePath, "")
+        SyncLock _masterGroupMemo
+            If String.Equals(exe, _vrBuildMemoExe, StringComparison.OrdinalIgnoreCase) Then Return _vrBuildMemoValue
+        End SyncLock
+        Dim v = GamePathsResolver.IsVrBuild()
+        SyncLock _masterGroupMemo
+            _vrBuildMemoExe = exe
+            _vrBuildMemoValue = v
+        End SyncLock
+        Return v
     End Function
 
     ''' <summary>Resolves the LocalAppData game directory that holds Plugins.txt / loadorder.txt.
@@ -1278,6 +1296,14 @@ Public Class PluginManager
     ''' puede darnos un light de más, sólo evitarnos uno de menos en un juego que no soportamos.</para></summary>
     ''' <param name="headerFlags">El campo de flags del registro TES4, crudo.</param>
     Public Shared Function IsLightSlot(dataPath As String, name As String, headerFlags As UInteger) As Boolean
+        ' ⛔⛔ GUARDA QUE ENVUELVE A LOS DOS DISYUNTOS, no sólo al de la extensión. `TwbFile.GetIsLight`
+        ' (wbImplementation.pas:4332) arranca con `if not wbIsLightSupported or GetIsNotPlugin then Exit(False)`,
+        ' o sea que SIN soporte light NINGÚN plugin es light — ni siquiera con el flag 0x200 puesto. Y en
+        ' wbLoadOrder.pas:325-330 un `.esl` sin soporte ni siquiera entra al load order.
+        ' Es la MISMA guarda que ya estaba en IsMasterGroup y que acá se me había pasado: en un rig VR sin el
+        ' plugin VRESL, darle un slot light a un .esl lo mete en el espacio 0xFE y corre a TODOS los full que
+        ' vengan después — cada FormID que poseen resuelve al archivo equivocado.
+        If Not LightIsSupported(dataPath) Then Return False
         If (headerFlags And FLAG_ESL) <> 0 Then Return True                     ' IsLight (0x200)
         If name Is Nothing OrElse Not name.EndsWith(".esl", StringComparison.OrdinalIgnoreCase) Then Return False
         Dim isUpdate As Boolean = (headerFlags And FLAG_UPDATE) <> 0 AndAlso UpdateIsSupported(dataPath)
@@ -1291,6 +1317,19 @@ Public Class PluginManager
     ''' <b>4,558 ms por barrido</b> de sólo I/O, y <c>ReadActiveLoadOrder</c> no cachea nada. Peor:
     ''' <c>CheckSlotCap</c> lo llama y acto seguido vuelve a abrir el header de cada plugin, o sea 2× el
     ''' barrido por activación. Lineal en la cantidad de <c>.esp</c>: ~23 ms con 250.</para></summary>
+    ''' <summary>Discriminante de la memo de grupo: "flat" / "vr" / "vr+esl". Va en la CLAVE porque el valor
+    ''' depende de VR y de VRESL, no sólo del archivo.
+    ''' <para>⛔ NO se memoiza. Lo intenté y rompió <c>Case17c</c> del LoadOrderActivatorProbe: el memo cachea
+    ''' un estado del FILESYSTEM (si está el dll de VRESL) que puede cambiar mientras el proceso vive — en el
+    ''' caso del gate, el dll se planta DESPUÉS de la primera consulta y el memo se quedaba con "vr". Un memo
+    ''' que oculta un cambio de disco es el mismo defecto que la clave sin variante que vino a arreglar.</para>
+    ''' <para>El costo real es acotado: fuera de VR <see cref="IsVrBuild"/> está memoizado y devuelve False sin
+    ''' tocar disco, así que no hay ni un <c>File.Exists</c>. Sólo en un rig VR se paga un stat por consulta.</para></summary>
+    Private Shared Function GroupMemoVariant(dataPath As String) As String
+        If Not IsVrBuild() Then Return "flat"
+        Return If(VreslInstalled(dataPath), "vr+esl", "vr")
+    End Function
+
     Private Shared ReadOnly _masterGroupMemo As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
 
     ''' <summary>Si un archivo puede usar el RANGO HARDCODED, o sea object ids por debajo de <c>0x800</c>.
@@ -1367,7 +1406,11 @@ Public Class PluginManager
         Dim fi As New FileInfo(full)
         If fi.Exists Then
             ' Clave por IDENTIDAD del archivo: si lo reescribimos, la memo caduca sola.
-            Dim key = full & "|" & fi.LastWriteTimeUtc.Ticks.ToString() & "|" & fi.Length.ToString()
+            ' ⛔ La variante VR entra en la CLAVE: el valor depende de LightIsSupported (VR + VRESL), no sólo
+            ' del archivo. Sin esto, cambiar el exe de Fallout4.exe a Fallout4VR.exe deja las mismas rutas,
+            ' mtime y tamaño, y la memo seguiría devolviendo la respuesta del juego anterior.
+            Dim variante = GroupMemoVariant(dataPath)
+            Dim key = full & "|" & fi.LastWriteTimeUtc.Ticks.ToString() & "|" & fi.Length.ToString() & "|" & variante
             Dim memo As Boolean?
             Dim found As Boolean
             SyncLock _masterGroupMemo

@@ -8,27 +8,50 @@ Imports System.Text
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
 ' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
 '
-' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
-' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
-'   FO4 WEAP.SoundAttackLoopFormID 169/169, .SoundAttackFailFormID 289/290,
-'        .SoundEquipFormID 249/310, .SoundIdleFormID 146/152 -> FormID inexistentes.
-'   SSE WEAP.ResistFormID 3865/3865 y .SkillFormID 1697/1700: son ENUM, NO FormID
-'        (wbDefinitionsTES5.pas:10863 itS32 wbActorValueEnum / :4477 itS32 wbSkillEnum)
-'        y aca (lineas 503-504) se los pasa por ResolveFIDRaw.
+' ESTADO 2026-08-19: los defectos MEDIDOS que fabricaban FormID inexistentes SE
+' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
+' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
-' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
-' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' inventan referencias", que es otra cosa.
+'
+' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
+' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
+' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
+' reconstruido a mano. El arreglo de fondo es parsear con el anidamiento que el
+' canonico declara. Decision del usuario: se encara despues.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
+' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
+' contra el .pas y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 WEAP record - Weapon.</summary>
+
+''' <summary>Una entrada de <c>DAMA</c>: tipo de daño, cantidad y (desde la versión de formato 152) la curva.
+''' <code>wbStructSK([0], 'Damage Type', [ wbFormIDCk('Type', [DMGT]), wbInteger('Amount', itU32),
+''' wbFromVersion(152, wbFormIDCk('Curve Table', [CURV, NULL])) ])</code>
+''' (wbDefinitionsCommon.pas:5677-5687). Los tres son u32: sin nombres, nada distingue la referencia del
+''' entero.</summary>
+Public Class WEAP_DamageType
+    ''' <summary><c>wbFormIDCk('Type', [DMGT])</c> — referencia.</summary>
+    Public TypeFormID As UInteger
+    ''' <summary><c>wbInteger('Amount', itU32)</c> — ENTERO, no float y no referencia.</summary>
+    Public Amount As UInteger
+    ''' <summary><c>wbFormIDCk('Curve Table', [CURV, NULL])</c>, sólo desde la versión de formato 152.
+    ''' 0 cuando la entrada mide 8 bytes.</summary>
+    Public CurveTableFormID As UInteger
+End Class
+
 Friend Class WEAP_Data
     Friend FormID As UInteger
     Friend EditorID As String = ""
@@ -96,12 +119,28 @@ Friend Class WEAP_Data
     Friend FiringPattern As UInteger
 
     ' CRDT critical data
+    ''' <summary>Sólo SSE: <c>wbInteger('Damage', itU16)</c> del CRDT. En FO4 no existe.</summary>
+    Friend CritDamage As UShort
+
+    ''' <summary>Sólo SSE: <c>wbFloat('% Mult')</c> del CRDT. En FO4 el equivalente conceptual es
+    ''' <see cref="CritDamageMult"/>, que está en OTRO offset y es otra cosa.</summary>
+    Friend CritPercentMult As Single
+
+    ''' <summary>Sólo SSE: <c>wbInteger('On Death', itU8, wbBoolEnum)</c> del CRDT.</summary>
+    Friend CritOnDeath As Boolean
+
     Friend CritDamageMult As Single = 2.0F
     Friend CritChargeBonus As Single
     Friend CritEffectFormID As UInteger
 
     ' Damage types (DAMA)
-    Friend DamageTypes As New List(Of KeyValuePair(Of UInteger, Single))
+    ''' <summary>DAMA — <c>wbArrayS(DAMA, 'Damage Types', wbStructSK([0], 'Damage Type', [Type, Amount,
+    ''' Curve Table]))</c> (wbDefinitionsCommon.pas:5677-5687).
+    ''' <para>⛔ Era un <c>List(Of KeyValuePair(Of UInteger, Single))</c>, con DOS errores que el par escondía:
+    ''' el <c>Amount</c> es <c>wbInteger(itU32)</c> y se leía como <c>Single</c>, y el tercer miembro
+    ''' (<c>Curve Table</c>, desde la versión de formato 152) no se leía. Con campos nombrados el sweep además
+    ''' puede ver cuál de los dos u32 es la referencia.</para></summary>
+    Friend DamageTypes As New List(Of WEAP_DamageType)
 
     ' Melee speed
     Friend MeleeSpeed As UInteger
@@ -509,48 +548,84 @@ Friend Module ItemRecordParsers
         Return w
     End Function
 
-    ''' <summary>⛔⛔⛔ ESTE PARSER DE <c>DNAM</c> ESTÁ INVENTADO Y YA NO EMITE FormID. NO CABLEARLO.
+    ''' <summary>WEAP DNAM. ⛔ Es GAME-DEPENDENT y sólo está implementado FO4.
     '''
-    ''' <para>Se comparó campo a campo contra el canónico y <b>no corresponde a NINGUNO de los dos juegos</b>:
-    ''' <list type="bullet">
-    ''' <item><b>TES5/SSE</b> (<c>wbDefinitionsTES5.pas</c>, WEAP → <c>wbStruct(DNAM)</c>) arranca con
-    ''' <c>Animation Type</c> <c>itU8</c> + <c>wbUnused(3)</c> + <c>Speed</c> float + <c>Reach</c> float +
-    ''' <c>Flags</c> <c>itU16</c> + <c>wbUnused(2)</c> + <c>Sight FOV</c> float + 4 bytes desconocidos +
-    ''' <c>Base VATS To-Hit</c> u8 + <c>Attack Animation</c> u8 + <c>#Projectiles</c> u8 +
-    ''' <c>Embedded Weapon AV</c> u8 + <c>Range Min</c> float…</item>
-    ''' <item><b>FO4</b> (<c>wbDefinitionsFO4.pas</c>, WEAP → <c>wbStruct(DNAM)</c>) es OTRA estructura, más
-    ''' grande y con un bloque de flags de 32 bits que no existe en TES5.</item>
-    ''' </list>
-    ''' Este código leía un FormID de munición en el offset 0 — que en TES5 son el <c>Animation Type</c> y tres
-    ''' bytes sin usar, y en FO4 otra cosa distinta. O sea que los offsets no salieron de ninguna spec.</para>
+    ''' <para><b>FO4 — 132 bytes, packed, verificado contra wbDefinitionsFO4.pas:13271-13355:</b>
+    ''' <code>
+    '''   0 Ammo(FormID AMMO/NULL) ·  4 Speed ·  8 Reload Speed · 12 Reach · 16 Min Range · 20 Max Range
+    '''  24 Attack Delay · 28 Unused(float) · 32 Damage-OutOfRange Mult · 36 On Hit(itU32)
+    '''  40 Skill(FormID AVIF/NULL) · 44 Resist(FormID AVIF/NULL) · 48 Flags(itU32)
+    '''  52 Capacity(itU16) · 54 Animation Type(itU8)
+    '''  55 Damage-Secondary · 59 Weight · 63 Value(itU32) · 67 Damage-Base(itU16) · 69 Sound Level(itU32)
+    '''  73..104 los OCHO SNDR · 105 Accuracy Bonus(itU8) · 106 Animation Attack Seconds
+    ''' 110 Unknown(2) · 112 Action Point Cost · 116 Full Power Seconds · 120 Min Power Per Shot
+    ''' 124 Stagger(itU32) · 128 Unknown(4)
+    ''' </code></para>
     '''
-    ''' <para><b>MEDIDO</b> (<c>Tools\RecordParserSweepProbe</c>, los dos juegos reales): con esos offsets,
-    ''' <c>SoundAttackLoop</c> 107/107, <c>SoundAttackFail</c> 289/290, <c>SoundAttack</c> 47/49,
-    ''' <c>SoundIdle</c> 110/116, <c>SoundEquip</c> 216/277, <c>SoundUnequip</c> 104/366,
-    ''' <c>SoundFastEquip</c> 6/6 en FO4; <c>Resist</c> 3865/3865, <c>Skill</c> 1697/1700,
-    ''' <c>Ammo</c> 573/3846, <c>EmbeddedWeaponMod</c> 11/11 en SSE — todos apuntando a records que NO
-    ''' EXISTEN.</para>
+    ''' <para>⛔⛔ EL DEFECTO ERA UN SOLO BYTE, y yo lo diagnostiqué mal. Hasta el offset 54 los offsets viejos
+    ''' eran CORRECTOS; a partir de <c>Damage-Secondary</c> estaban corridos en +1 (leían 56 donde va 55), y ese
+    ''' corrimiento arrastraba todo lo de atrás, incluidos los ocho FormID de sonido. Yo concluí que "no
+    ''' correspondía a ninguno de los dos juegos" y DESACTIVÉ el parser entero, tirando 13 campos que estaban
+    ''' bien. Medido con bytes reales de Fallout4.esm (496 DNAM, todos de 132 B):
+    ''' <c>weight@59 = 3.0 / 8.0 / 2.0</c> contra <c>weight@60 = -769 / -772 / -768</c>;
+    ''' <c>value@63 = 2500 / 1180</c> contra <c>value@64 = 4194304009</c>;
+    ''' <c>sonido@73 = 0x00245C2F</c> contra <c>sonido@74 = 0x0000245C</c> — shifteado, que es exactamente la
+    ''' firma de un desfase de un byte. Los 107/107 y 289/290 del sweep eran ESO.</para>
     '''
-    ''' <para><b>Y aunque los offsets fueran correctos, dos de esos campos NO SON FormID en SSE</b>:
-    ''' <c>wbInteger('Skill', itS32, wbSkillEnum)</c> (wbDefinitionsTES5.pas:4477) y
-    ''' <c>wbInteger('Resist', itS32, wbActorValueEnum)</c> (:10863). En FO4 el equivalente de
-    ''' <c>Resist Value</c> sí es <c>wbFormIDCk([AVIF, NULL])</c> (wbDefinitionsFO4.pas:10498). Es
-    ''' game-dependent, no una constante.</para>
-    '''
-    ''' <para><b>Por qué se desactiva en vez de "arreglar los offsets"</b>: un FormID leído del lugar equivocado
-    ''' NO falla — devuelve un número plausible, pasa por el remapper de índices de master y sale como una
-    ''' referencia válida a otro mod. Dejarlo emitiendo mientras se reescribe la estructura es peor que no
-    ''' emitir: cero es visiblemente "no parseado", un FormID inventado no. Los campos numéricos que no son
-    ''' referencias tampoco se conservan, porque salen de los MISMOS offsets inventados.</para>
-    '''
-    ''' <para><b>Qué falta para reactivarlo</b>: escribir las DOS estructuras (FO4 y TES5) campo por campo desde
-    ''' <c>wbDefinitions*.pas</c>, despachar por juego, y volver a correr el sweep hasta que las 11 filas de
-    ''' arriba den 0/N. Hasta entonces esto deja los campos en su valor por defecto, a propósito.</para></summary>
+    ''' <para><b>TES5/SSE — NO implementado, a propósito.</b> Es otra estructura: arranca con
+    ''' <c>Animation Type itU8 + wbUnused(3) + Speed + Reach + Flags itU16 + wbUnused(2) + Sight FOV …</c>
+    ''' Aplicarle los offsets de FO4 daba <c>Resist</c> 3865/3865, <c>Skill</c> 1697/1700, <c>Ammo</c> 573/3846
+    ''' apuntando a records inexistentes — y además <c>Skill</c> y <c>Resist</c> en TES5 ni siquiera son
+    ''' referencias, son <c>wbInteger(itS32, wbSkillEnum)</c> (:4477) y <c>wbInteger(itS32, wbActorValueEnum)</c>
+    ''' (:10863). Se deja sin parsear en vez de fabricar: cero es visiblemente "no leído", un FormID inventado
+    ''' pasa por el remapper y sale como una referencia válida a otro mod.</para></summary>
     Private Sub ParseWEAP_DNAM(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
-        ' ⛔ Intencionalmente vacío. Ver el summary: los offsets no corresponden a ninguno de los dos juegos y
-        ' emitir desde acá fabrica referencias. Los parámetros se conservan para no tocar el call site cuando
-        ' se implementen las dos estructuras de verdad.
-        Return
+        If Not IsFallout4() Then Return          ' TES5: estructura distinta, ver el summary
+        Dim d = sr.Data
+        If d Is Nothing OrElse d.Length < 55 Then Return
+
+        w.AmmoFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 0), pm)
+        w.Speed = BitConverter.ToSingle(d, 4)
+        w.ReloadSpeed = BitConverter.ToSingle(d, 8)
+        w.Reach = BitConverter.ToSingle(d, 12)
+        w.MinRange = BitConverter.ToSingle(d, 16)
+        w.MaxRange = BitConverter.ToSingle(d, 20)
+        w.AttackDelay = BitConverter.ToSingle(d, 24)
+        ' 28..31 wbFloat('Unused')
+        w.OutOfRangeDamageMult = BitConverter.ToSingle(d, 32)
+        w.OnHit = BitConverter.ToUInt32(d, 36)
+        w.SkillFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 40), pm)
+        w.ResistFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 44), pm)
+        w.WeaponFlags = BitConverter.ToUInt32(d, 48)
+        w.Capacity = BitConverter.ToUInt16(d, 52)
+        w.AnimationType = d(54)
+
+        ' ⛔ Desde acá iba el +1. Todo lo de abajo se corre con el offset del canónico, no con el viejo.
+        If d.Length >= 59 Then w.SecondaryDamage = BitConverter.ToSingle(d, 55)
+        If d.Length >= 63 Then w.Weight = BitConverter.ToSingle(d, 59)
+        If d.Length >= 67 Then w.Value = BitConverter.ToUInt32(d, 63)
+        If d.Length >= 69 Then w.BaseDamage = BitConverter.ToUInt16(d, 67)
+        If d.Length >= 73 Then w.SoundLevel = BitConverter.ToUInt32(d, 69)
+
+        If d.Length >= 105 Then
+            w.SoundAttackFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 73), pm)
+            w.SoundAttack2DFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 77), pm)
+            w.SoundAttackLoopFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 81), pm)
+            w.SoundAttackFailFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 85), pm)
+            w.SoundIdleFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 89), pm)
+            w.SoundEquipFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 93), pm)
+            w.SoundUnequipFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 97), pm)
+            w.SoundFastEquipFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 101), pm)
+        End If
+
+        If d.Length >= 106 Then w.AccuracyBonus = d(105)
+        If d.Length >= 110 Then w.AnimAttackSeconds = BitConverter.ToSingle(d, 106)
+        ' 110..111 wbByteArray('Unknown', 2)
+        If d.Length >= 116 Then w.ActionPointCost = BitConverter.ToSingle(d, 112)
+        If d.Length >= 120 Then w.FullPowerSeconds = BitConverter.ToSingle(d, 116)
+        If d.Length >= 124 Then w.MinPowerPerShot = BitConverter.ToSingle(d, 120)
+        If d.Length >= 128 Then w.Stagger = BitConverter.ToUInt32(d, 124)
+        ' 128..131 wbByteArray('Unknown', 4) — cierra los 132 bytes del struct.
     End Sub
 
     ''' <summary>Igual que <see cref="ParseWEAP_DNAM"/>: los offsets de esta estructura no se verificaron contra
@@ -585,25 +660,55 @@ Friend Module ItemRecordParsers
         End If
     End Sub
 
+    ''' <summary>CRDT — Critical Data. ⛔ Las dos leyes NO comparten ni un offset:
+    ''' <code>
+    ''' FO4  (wbDefinitionsFO4.pas:13373-13377)      TES5 (wbDefinitionsTES5.pas:10867-10880)
+    '''   0  Crit Damage Mult  (float)                 0  Damage            (itU16)
+    '''   4  Crit Charge Bonus (float)                 2  wbUnused(2)
+    '''   8  Crit Effect       (FormID SPEL/NULL)      4  % Mult            (float)
+    '''                                                8  On Death          (itU8, bool)
+    '''                                                9  wbUnused(7) en SSE / wbUnused(3) en Oldrim
+    '''                                               16  Effect            (FormID SPEL/NULL)   ← SSE
+    '''                                               20  wbUnused(4) en SSE
+    ''' </code>
+    ''' <para>Leyendo el offset 8 en SSE se toma el <c>On Death</c> más basura de relleno. MEDIDO: 11/11
+    ''' apuntando a records inexistentes, con ejemplo <c>0x1DFFFF01</c>.</para>
+    ''' <para>⛔ El <c>IsSSE(wbUnused(7), wbUnused(3))</c> del canónico es un discriminador SSE vs Oldrim, no
+    ''' FO4 vs Skyrim: en Oldrim el Effect cae en 12 y el struct mide 16. Acá sólo se soporta SSE (que es lo
+    ''' que la app carga), y por eso se exige el largo completo antes de leer — un CRDT de 16 bytes se deja sin
+    ''' Effect en vez de leerlo del lugar equivocado.</para></summary>
     Private Sub ParseWEAP_CRDT(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
         Dim d = sr.Data
-        If d Is Nothing OrElse d.Length < 8 Then Return
+        If d Is Nothing Then Return
 
-        w.CritDamageMult = BitConverter.ToSingle(d, 0)
-        w.CritChargeBonus = BitConverter.ToSingle(d, 4)
-
-        If d.Length >= 12 Then
-            w.CritEffectFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 8), pm)
+        If IsFallout4() Then
+            If d.Length < 8 Then Return
+            w.CritDamageMult = BitConverter.ToSingle(d, 0)
+            w.CritChargeBonus = BitConverter.ToSingle(d, 4)
+            If d.Length >= 12 Then w.CritEffectFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 8), pm)
+        Else
+            If d.Length < 9 Then Return
+            w.CritDamage = BitConverter.ToUInt16(d, 0)
+            w.CritPercentMult = BitConverter.ToSingle(d, 4)
+            w.CritOnDeath = (d(8) <> 0)
+            If d.Length >= 20 Then w.CritEffectFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 16), pm)
         End If
     End Sub
 
     Private Sub ParseWEAP_DAMA(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
         Dim d = sr.Data
         If d Is Nothing OrElse d.Length < 8 Then Return
-        For i = 0 To d.Length - 8 Step 8
-            Dim dmgType = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, i), pm)
-            Dim dmgValue = BitConverter.ToSingle(d, i + 4)
-            w.DamageTypes.Add(New KeyValuePair(Of UInteger, Single)(dmgType, dmgValue))
+        ' ⛔ El paso lo decide el LARGO del array, no una constante: desde la versión de formato 152 cada
+        ' entrada gana un tercer miembro (Curve Table) y pasa de 8 a 12 bytes. Con paso fijo de 8 sobre un
+        ' DAMA de 12 se leería el Curve Table de la primera entrada como el Type de la segunda.
+        Dim paso As Integer = If(d.Length > 0 AndAlso (d.Length Mod 12) = 0, 12, 8)
+        For i = 0 To d.Length - paso Step paso
+            Dim e As New WEAP_DamageType With {
+                .TypeFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, i), pm),
+                .Amount = BitConverter.ToUInt32(d, i + 4)
+            }
+            If paso = 12 Then e.CurveTableFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, i + 8), pm)
+            w.DamageTypes.Add(e)
         Next
     End Sub
 

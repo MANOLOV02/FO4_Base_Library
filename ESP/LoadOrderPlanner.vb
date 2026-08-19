@@ -63,15 +63,25 @@ Public NotInheritable Class LoadOrderPlanner
                                    dataPath As String) As Plan
         Dim order As New List(Of String)(If(literalOrder, Enumerable.Empty(Of String)()))
         Dim masterMap = If(mastersByName, New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase))
+        ' ⛔ La firma acepta cualquier ICollection, pero la correctitud depende de que la pertenencia sea
+        ' case-INSENSITIVE (los nombres de plugin lo son en todo el resto del árbol) y O(1). Un List(Of String)
+        ' daría comparación sensible a mayúsculas y búsqueda lineal, en silencio. Se normaliza acá en vez de
+        ' confiar en el llamador.
+        Dim tildados As New HashSet(Of String)(
+            If(checkedNames, CType(Array.Empty(Of String)(), ICollection(Of String))), StringComparer.OrdinalIgnoreCase)
         Dim groupCache As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
         Dim isMasterGroup = Function(n As String) PluginManager.IsMasterGroup(dataPath, n, groupCache).GetValueOrDefault()
-        Dim isChecked = Function(n As String) checkedNames IsNot Nothing AndAlso checkedNames.Contains(n)
+        Dim isChecked = Function(n As String) tildados.Contains(n)
 
         ' ── 1. Los tildados, en el orden literal del usuario, partidos por grupo master.
         ' El motor pone todo el grupo master adelante (wbLoadOrder.pas:202-216), así que un master del grupo
         ' master NUNCA puede cargar después de un dependiente que no lo es: esas aristas no pueden violarse y
         ' no hay nada que ordenar entre buckets.
         Dim sel = order.Where(isChecked).ToList()
+        ' ⛔ Los dos buckets usan EL MISMO predicado que la partición (PluginManager.IsMasterGroup con
+        ' GetValueOrDefault), así que un grupo desconocido cae del mismo lado en los dos lugares. Antes acá se
+        ' decidía con GetValueOrDefault y allá se lo clavaba en su índice: dos reglas para la misma pregunta
+        ' dentro de la misma función.
         Dim buckets As New List(Of List(Of String))() From {
             sel.Where(Function(n) isMasterGroup(n)).ToList(),
             sel.Where(Function(n) Not isMasterGroup(n)).ToList()
@@ -113,7 +123,7 @@ Public NotInheritable Class LoadOrderPlanner
         order = resultado
 
         ' ── 4. Diagnóstico sobre el orden ya estable.
-        Dim finalEff = ComputeEffective(order, checkedNames, dataPath, groupCache)
+        Dim finalEff = ComputeEffective(order, tildados, dataPath, groupCache)
         Dim groupConf As New List(Of String)()
         Dim orderConf As New List(Of String)()
         For Each p In finalEff.Keys
@@ -216,20 +226,13 @@ Public NotInheritable Class LoadOrderPlanner
     Private Shared Function ComputeEffective(order As List(Of String), checkedNames As ICollection(Of String),
                                              dataPath As String,
                                              cache As Dictionary(Of String, Boolean?)) As Dictionary(Of String, Integer)
-        Dim sel = order.Where(Function(n) checkedNames IsNot Nothing AndAlso checkedNames.Contains(n)).ToList()
+        Dim sel = order.Where(Function(n) checkedNames.Contains(n)).ToList()
         PluginManager.StablePartitionMasterGroup(sel, 0, dataPath, cache)
         Dim map As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
         For i = 0 To sel.Count - 1
             map(sel(i)) = i
         Next
         Return map
-    End Function
-
-    Private Shared Function IndexOf(order As List(Of String), name As String) As Integer
-        For i = 0 To order.Count - 1
-            If String.Equals(order(i), name, StringComparison.OrdinalIgnoreCase) Then Return i
-        Next
-        Return -1
     End Function
 
 End Class

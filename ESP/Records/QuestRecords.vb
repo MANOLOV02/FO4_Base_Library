@@ -7,21 +7,30 @@
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
 ' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
 '
-' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
-' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
-'   FO4 SMEN.ParentFormID 18/18 -> FormID inexistente.
-'   QUST.Description 712/712 con bytes de control -> un solo Case "NNAM" atiende DOS
-'        subrecords distintos (el de texto y el otro) y se mezclan.
+' ESTADO 2026-08-19: los defectos MEDIDOS que fabricaban FormID inexistentes SE
+' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
+' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
-' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
-' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' inventan referencias", que es otra cosa.
+'
+' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
+' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
+' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
+' reconstruido a mano. El arreglo de fondo es parsear con el anidamiento que el
+' canonico declara. Decision del usuario: se encara despues.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
+' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
+' contra el .pas y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -45,6 +54,9 @@ End Class
 
 ''' <summary>Quest alias entry.</summary>
 Public Class QUST_Alias
+    ''' <summary>El alias es una COLECCIÓN (abierto por <c>ALCS</c>) en vez de una referencia (<c>ALST</c>) o
+    ''' una ubicación (<c>ALLS</c>). Los tres son miembros de la misma unión en el canónico.</summary>
+    Public IsCollection As Boolean = False
     Public AliasID As Integer
     Public AliasName As String = ""
     Public AliasFlags As UInteger
@@ -335,33 +347,37 @@ Public Module QuestRecordParsers
 
                 ' Aliases
                 Case "ANAM"
-                    ' Next Alias ID marker - start of alias section
+                    ' Next Alias ID marker — arranca la sección de aliases, y por lo tanto CIERRA el Objective
+                    ' en curso. Eso es lo que hace que el NNAM final del record se atribuya a Description y no
+                    ' al último Objective (ver el Case "NNAM").
+                    ' ⛔ Acá y en ningún otro lado: `wbInteger(ANAM, 'Next Alias ID').SetRequired` (QUST rel:123)
+                    ' garantiza que ANAM SIEMPRE está entre los Objectives y los Aliases. Llegué a copiar este
+                    ' cierre a ALST/ALLS: era redundante Y incompleto, porque en FO4 el tercer miembro de la
+                    ' unión de alias es ALCS y esa copia no lo cubría.
                     If currentObjective IsNot Nothing Then
                         q.Objectives.Add(currentObjective)
                         currentObjective = Nothing
                     End If
                     inAliasSection = True
                 Case "ALST"
-                    ' Empieza el bloque de aliases: se cierra el Objective en curso para que el NNAM
-                    ' final del record (Description) no se le atribuya a el.
-                    If currentObjective IsNot Nothing Then
-                        q.Objectives.Add(currentObjective)
-                        currentObjective = Nothing
-                    End If
                     If currentAlias IsNot Nothing Then q.Aliases.Add(currentAlias)
                     currentAlias = New QUST_Alias()
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         currentAlias.AliasID = BitConverter.ToInt32(sr.Data, 0)
                     End If
                 Case "ALLS"
-                    ' Empieza el bloque de aliases: se cierra el Objective en curso para que el NNAM
-                    ' final del record (Description) no se le atribuya a el.
-                    If currentObjective IsNot Nothing Then
-                        q.Objectives.Add(currentObjective)
-                        currentObjective = Nothing
-                    End If
                     If currentAlias IsNot Nothing Then q.Aliases.Add(currentAlias)
                     currentAlias = New QUST_Alias With {.IsLocation = True}
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
+                        currentAlias.AliasID = BitConverter.ToInt32(sr.Data, 0)
+                    End If
+                Case "ALCS"
+                    ' ⛔ TERCER abridor de alias: wbInteger(ALCS, 'Collection Alias ID', itU32) — el miembro
+                    ' que faltaba de la unión (ALST = Reference, ALLS = Location, ALCS = Collection).
+                    ' Sin este Case, los ALID/ALFR/ALUA de un alias de colección se le atribuían al alias
+                    ' ANTERIOR, que es el mismo defecto de "el último gana" pero un nivel más adentro.
+                    If currentAlias IsNot Nothing Then q.Aliases.Add(currentAlias)
+                    currentAlias = New QUST_Alias With {.IsCollection = True}
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         currentAlias.AliasID = BitConverter.ToInt32(sr.Data, 0)
                     End If
@@ -520,12 +536,13 @@ Public Module QuestRecordParsers
                 Case "INAM"
                     p.IdleAnimationFormID = ResolveFID(rec, sr, pluginManager)
                 Case "CNAM"
-                    ' ⛔ PACK tiene TRES subrecords CNAM y sólo el contexto los distingue:
+                    ' ⛔ PACK tiene DOS subrecords CNAM y sólo el contexto los distingue:
                     '   · a nivel de record, ANTES de PKCU: wbFormIDCk(CNAM, 'Combat Style', [CSTY]) — el único
-                    '     que es una referencia (wbDefinitionsFO4.pas PACK:104 · TES5 PACK:103);
+                    '     que es una referencia (wbDefinitionsFO4.pas PACK rel:104 · TES5 PACK rel:103);
                     '   · dentro de Package Data → Data Input Values: wbUnion(CNAM, 'Value', …) con ramas
-                    '     byte array / bool u8 / int u32 / float (:115-120). NUNCA un FormID;
-                    '   · más abajo: wbLStringKC(CNAM, 'Log Entry') (:286), texto localizado.
+                    '     byte array / bool u8 / int u32 / float (rel:115-120). NUNCA un FormID.
+                    ' (Llegué a citar acá un tercer CNAM de 'Log Entry'. Es FALSO: ese pertenece a QUST, que en
+                    '  wbDefinitionsFO4.pas empieza recién en 11067 — PACK termina en 11066.)
                     ' Un Select Case plano los tomaba todos como Combat Style y remapeaba enteros y floats como
                     ' referencias. MEDIDO: 509/1.155 en FO4 y 1.565/1.643 en SSE, con ejemplos 0x00FA0000 y
                     ' 0x00480000 que son floats.
@@ -551,10 +568,25 @@ Public Module QuestRecordParsers
             .EditorID = rec.EditorID
         }
 
+        ' ⛔ SCEN mete PNAM y TNAM DOS VECES cada uno, y sólo el contexto los separa:
+        '   · dentro del array 'Actions': wbFormIDCk(PNAM,'AnimArchType',[KYWD]), wbFormIDCk(PNAM,'Package',
+        '     [PACK]) y wbFloat(TNAM,'Timer - Min Seconds')  ← el TNAM de ahí es un FLOAT, no una referencia;
+        '   · a nivel de record, DESPUÉS de las actions: wbFormIDCk(PNAM,'Parent Quest',[QUST]).SetRequired y
+        '     wbFormIDCk(TNAM,'Template Scene',[SCEN]).
+        ' El canónico cierra el bloque con wbMarkerReq(ANAM) — un marcador de LONGITUD CERO — mientras que el
+        ' ANAM que ABRE cada action es wbInteger(itU16), de 2 bytes. Ese largo es el discriminador exacto.
+        ' MEDIDO antes del corte: TemplateScene 96/649 apuntando a records inexistentes, con ejemplo
+        ' 0x00400000, que son los bytes de un float de timer.
+        Dim inActions As Boolean = False
+
         For Each sr In rec.Subrecords
             Select Case sr.Signature
+                Case "ANAM"
+                    ' Largo 0 = wbMarkerReq(ANAM), el terminador requerido del bloque de actions.
+                    ' Largo >= 2 = wbInteger(ANAM, 'Type', itU16), que abre una action.
+                    inActions = (sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2)
                 Case "PNAM"
-                    s.ParentQuestFormID = ResolveFID(rec, sr, pluginManager)
+                    If Not inActions Then s.ParentQuestFormID = ResolveFID(rec, sr, pluginManager)
                 Case "FNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         s.SceneFlags = BitConverter.ToUInt32(sr.Data, 0)
@@ -566,7 +598,7 @@ Public Module QuestRecordParsers
                 Case "NNAM"
                     s.Notes = sr.AsStringGeneral
                 Case "TNAM"
-                    s.TemplateSceneFormID = ResolveFID(rec, sr, pluginManager)
+                    If Not inActions Then s.TemplateSceneFormID = ResolveFID(rec, sr, pluginManager)
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, s.KeywordFormIDs)
             End Select

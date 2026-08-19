@@ -515,6 +515,10 @@ Public Class NPC_VmadFormIdRef
     ''' <summary>Byte offset inside NPC_VmadData.RawBytes where the u32 FormID begins.</summary>
     Public Offset As Integer
     ''' <summary>Raw 4 bytes as stored (high byte = master index in source plugin).</summary>
+    ''' <summary>FormID LOCAL, tal cual está escrito en el archivo: el byte alto es un índice en la MAST de
+    ''' ESE plugin, no un slot de la sesión. ⛔ NO es comparable contra nada global — para eso está
+    ''' <see cref="ResolvedFormID"/>. Se conserva crudo porque el writer lo necesita para reescribir el VMAD
+    ''' byte a byte en su offset original.</summary>
     Public RawFormID As UInteger
     ''' <summary>Resolved global FormID (master index swapped to load-order index).</summary>
     Public ResolvedFormID As UInteger
@@ -1697,8 +1701,17 @@ Public Class ARMO_Data
     Public DropSoundFormID As UInteger
     ''' <summary>BAMT — Alternate Block Material (wbDefinitionsFO4.pas:6182 → [MATT]). 0 = absent.</summary>
     Public AlternateBlockMaterialFormID As UInteger
-    ''' <summary>DESC — Description (wbDefinitionsFO4.pas:6185, translatable lstring, optional). Empty = absent.</summary>
+    ''' <summary>DESC — Description (wbDefinitionsFO4.pas:6185, translatable lstring, optional).</summary>
     Public Description As String = ""
+
+    ''' <summary>Si el record de origen TRAÍA el subrecord DESC, independientemente de que su texto resuelva a
+    ''' vacío. Mismo patrón que <c>ARMA_Data.HasDescription</c>.
+    ''' <para>⛔ Existe porque "" y "ausente" NO son lo mismo y el modelo no podía distinguirlos: en un master
+    ''' localizado el DESC es un id de lstring que puede resolver a texto vacío, y ahí el subrecord SÍ está.
+    ''' Sin esta bandera el escritor tenía que preguntarle al record fuente (<c>src.GetSubrecord("DESC")</c>),
+    ''' con lo cual era IMPOSIBLE expresar "sacale la descripción": limpiar el texto no quitaba nada.</para>
+    ''' <para>El doc viejo decía "Empty = absent", que era el contrato que el escritor no respetaba.</para></summary>
+    Public HasDescription As Boolean = False
     ''' <summary>OBND — Object Bounds (wbDefinitionsFO4.pas:6160, required 6×i16 min/max XYZ). Modelled as 6
     ''' signed shorts so the editor can adjust each; re-emitted verbatim from these on an unedited override.</summary>
     Public ObndX1 As Short
@@ -3968,6 +3981,7 @@ Public Module RecordParsers
                 Case "DESC"
                     ' Description (wbDefinitionsFO4.pas:6185, translatable lstring).
                     armo.Description = ResolveDisplayString(rec, sr, pluginManager)
+                    armo.HasDescription = True      ' presencia, no contenido — ver el doc del campo
                 Case "OBND"
                     ' Object Bounds (wbDefinitionsFO4.pas:6160, 6×i16 min/max XYZ).
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then

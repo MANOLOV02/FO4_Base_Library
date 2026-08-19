@@ -14,20 +14,30 @@ Imports System.Text
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
 ' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
 '
-' Sin defectos MEDIDOS, que NO es lo mismo que validado: el sweep 2026-08-18 solo
-' verifico que no crashea y que los FormID que emite existan. NINGUN campo de este
-' archivo se comparo campo-a-campo contra wbDefinitionsFO4.pas / wbDefinitionsTES5.pas,
-' ni se distinguio FO4 de SSE donde el layout difiere.
+' ESTADO 2026-08-19: los defectos MEDIDOS que fabricaban FormID inexistentes SE
+' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
+' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
-' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
-' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' inventan referencias", que es otra cosa.
+'
+' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
+' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
+' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
+' reconstruido a mano. El arreglo de fondo es parsear con el anidamiento que el
+' canonico declara. Decision del usuario: se encara despues.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
+' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
+' contra el .pas y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 

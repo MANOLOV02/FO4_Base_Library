@@ -10,20 +10,30 @@ Imports System.Text
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
 ' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
 '
-' Sin defectos MEDIDOS, que NO es lo mismo que validado: el sweep 2026-08-18 solo
-' verifico que no crashea y que los FormID que emite existan. NINGUN campo de este
-' archivo se comparo campo-a-campo contra wbDefinitionsFO4.pas / wbDefinitionsTES5.pas,
-' ni se distinguio FO4 de SSE donde el layout difiere.
+' ESTADO 2026-08-19: los defectos MEDIDOS que fabricaban FormID inexistentes SE
+' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
+' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
-' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
-' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' inventan referencias", que es otra cosa.
+'
+' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
+' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
+' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
+' reconstruido a mano. El arreglo de fondo es parsear con el anidamiento que el
+' canonico declara. Decision del usuario: se encara despues.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
+' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
+' contra el .pas y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -226,15 +236,43 @@ Public Class FSTP_Data
     Public Tag As String = ""
 End Class
 
-''' <summary>Fallout 4 FSTS record - Footstep Set.</summary>
+''' <summary>Record FSTS — Footstep Set. Estructura IDÉNTICA en FO4 y TES5 (verificado en los dos .pas), así
+''' que no hay despacho por juego.
+''' <code>
+''' XCNT (requerido) : 5 × itU32 — Walking, Running, Sprinting, Sneaking, Swimming
+''' DATA (requerido) : CINCO arrays de FormID [FSTP], con el largo de cada uno tomado de XCNT vía
+'''                    SetCountPath, y en ESTE orden: Swimming, Sneaking, Sprinting, Running, Walking
+''' </code>
+''' <para>⛔⛔ EL ORDEN DE DATA ES EL INVERSO DEL DE XCNT. Es la trampa del record: los contadores van
+''' Walking→Swimming y los arrays Swimming→Walking. Emparejarlos en el mismo orden da cinco listas cruzadas
+''' entre sí, con largos que casi siempre "cierran" y por lo tanto sin ningún síntoma.</para>
+''' <para>⛔ Reemplaza a un parser que leía CINCO FormID de offsets fijos DENTRO DE XCNT — o sea que remapeaba
+''' los CONTADORES como si fueran referencias — y los guardaba en campos inventados
+''' (<c>WalkForwardFormID</c>, <c>RunForwardAltFormID</c>, <c>WalkForwardAlt2FormID</c>) que no existen en
+''' ninguna de las dos definiciones canónicas. MEDIDO: los cinco campos daban 100 % de FormID inexistentes en
+''' los dos juegos, con valores 0x8/0x9/0xC/0xD — que son los contadores.</para></summary>
 Public Class FSTS_Data
     Public FormID As UInteger
     Public EditorID As String = ""
-    Public WalkForwardFormID As UInteger
-    Public RunForwardFormID As UInteger
-    Public WalkForwardAltFormID As UInteger
-    Public RunForwardAltFormID As UInteger
-    Public WalkForwardAlt2FormID As UInteger
+
+    ''' <summary>Los cinco contadores de XCNT, en el orden del canónico.</summary>
+    Public WalkingCount As UInteger
+    Public RunningCount As UInteger
+    Public SprintingCount As UInteger
+    Public SneakingCount As UInteger
+    Public SwimmingCount As UInteger
+
+    ''' <summary>Los cinco arrays de DATA, cada uno con FormID de FSTP ya resueltos a global.</summary>
+    Public SwimmingFootsteps As New List(Of UInteger)
+    Public SneakingFootsteps As New List(Of UInteger)
+    Public SprintingFootsteps As New List(Of UInteger)
+    Public RunningFootsteps As New List(Of UInteger)
+    Public WalkingFootsteps As New List(Of UInteger)
+
+    ''' <summary>True cuando DATA no trae exactamente los <c>Walking+Running+Sprinting+Sneaking+Swimming</c>
+    ''' FormID que anuncia XCNT. No se adivina: se parsea lo que entre y se deja la marca, porque partir el
+    ''' bloque con contadores que no cierran cruza los cinco arrays entre sí.</summary>
+    Public CountsMismatch As Boolean = False
 End Class
 
 ''' <summary>Fallout 4 IDLM record - Idle Marker.</summary>
@@ -513,17 +551,53 @@ Public Module SystemRecordParsers
         Return f
     End Function
 
+    ''' <summary>Parsea FSTS según la ley canónica: XCNT trae los cinco contadores y DATA los cinco arrays de
+    ''' FormID [FSTP] — <b>en orden inverso al de los contadores</b>. Ver el doc de <see cref="FSTS_Data"/>.
+    ''' <para>⛔ XCNT se lee SIEMPRE antes que DATA, sin depender del orden en que vengan los subrecords: se
+    ''' hacen dos pasadas. El canónico los declara XCNT→DATA y en los datos reales vienen así, pero atar la
+    ''' correctitud a ese orden es gratis de evitar y caro de descubrir.</para></summary>
     Public Function ParseFSTS(rec As PluginRecord, pluginManager As PluginManager) As FSTS_Data
         Dim f As New FSTS_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
+
+        ' Pasada 1 — XCNT: 5 × itU32, orden Walking, Running, Sprinting, Sneaking, Swimming.
         For Each sr In rec.Subrecords
-            If sr.Signature = "XCNT" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 20 Then
-                f.WalkForwardFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
-                f.RunForwardFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 4), pluginManager)
-                f.WalkForwardAltFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 8), pluginManager)
-                f.RunForwardAltFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 12), pluginManager)
-                f.WalkForwardAlt2FormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 16), pluginManager)
-            End If
+            If sr.Signature <> "XCNT" Then Continue For
+            If sr.Data Is Nothing OrElse sr.Data.Length < 20 Then Exit For
+            f.WalkingCount = BitConverter.ToUInt32(sr.Data, 0)
+            f.RunningCount = BitConverter.ToUInt32(sr.Data, 4)
+            f.SprintingCount = BitConverter.ToUInt32(sr.Data, 8)
+            f.SneakingCount = BitConverter.ToUInt32(sr.Data, 12)
+            f.SwimmingCount = BitConverter.ToUInt32(sr.Data, 16)
+            Exit For
         Next
+
+        ' Pasada 2 — DATA: los cinco arrays, en el orden del canónico (Swimming primero, Walking último).
+        For Each sr In rec.Subrecords
+            If sr.Signature <> "DATA" Then Continue For
+            Dim d = sr.Data
+            If d Is Nothing Then Exit For
+
+            Dim disponibles As Long = d.Length \ 4
+            Dim anunciados As Long = CLng(f.SwimmingCount) + f.SneakingCount + f.SprintingCount +
+                                     f.RunningCount + f.WalkingCount
+            f.CountsMismatch = (anunciados <> disponibles)
+
+            Dim pos As Integer = 0
+            Dim tomar = Sub(cuantos As UInteger, destino As List(Of UInteger))
+                            For k = 1UI To cuantos
+                                If pos + 4 > d.Length Then Exit For
+                                destino.Add(ResolveFIDRaw(rec, BitConverter.ToUInt32(d, pos), pluginManager))
+                                pos += 4
+                            Next
+                        End Sub
+            tomar(f.SwimmingCount, f.SwimmingFootsteps)
+            tomar(f.SneakingCount, f.SneakingFootsteps)
+            tomar(f.SprintingCount, f.SprintingFootsteps)
+            tomar(f.RunningCount, f.RunningFootsteps)
+            tomar(f.WalkingCount, f.WalkingFootsteps)
+            Exit For
+        Next
+
         Return f
     End Function
 

@@ -8,21 +8,30 @@ Imports System.Text
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
 ' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
 '
-' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
-' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
-'   SSE MGEF.ResistValueFormID 2185/2192 -> es un ENUM (actor value), NO un FormID.
-'   DMGT.ActorValueFormIDs 4/8 -> el layout se decide por LONGITUD del subrecord;
-'        el canonico usa wbFormVersionDecider(78) (wbDefinitionsFO4.pas:12674).
+' ESTADO 2026-08-19: los defectos MEDIDOS que fabricaban FormID inexistentes SE
+' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
+' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
-' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
-' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' inventan referencias", que es otra cosa.
+'
+' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
+' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
+' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
+' reconstruido a mano. El arreglo de fondo es parsear con el anidamiento que el
+' canonico declara. Decision del usuario: se encara despues.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
+' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
+' contra el .pas y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -81,6 +90,16 @@ Friend Class SPEL_Data
             Return SpellType = 10
         End Get
     End Property
+End Class
+
+''' <summary>Una entrada de <c>SNDD</c> de MGEF: el TIPO de sonido (un enum) y el SNDR al que apunta.
+''' <code>wbStructSK([0], 'Sound', [ wbInteger('Type', itU32, wbEnum(…)), wbFormIDCk('Sound', [SNDR]) ])</code>
+''' (wbDefinitionsCommon.pas:7131-7134). Los dos son u32 y por eso hace falta que el NOMBRE los distinga.</summary>
+Public Class MGEF_SoundEntry
+    ''' <summary>Índice de enum (0 = Sheathe/Draw, 1 = Charge, 2 = Ready, …). NO es una referencia.</summary>
+    Public SoundType As UInteger
+    ''' <summary><c>wbFormIDCk('Sound', [SNDR])</c> — esto sí es una referencia.</summary>
+    Public SoundFormID As UInteger
 End Class
 
 ''' <summary>Fallout 4 MGEF record - Magic Effect.</summary>
@@ -144,7 +163,14 @@ Friend Class MGEF_Data
     Friend CounterEffectFormIDs As New List(Of UInteger)
 
     ' Sounds
-    Friend Sounds As New List(Of KeyValuePair(Of UInteger, UInteger)) ' Type, SNDR FormID
+    ''' <summary>SNDD — <c>wbArrayS(SNDD, 'Sounds', wbStructSK([0], 'Sound', [Type, Sound]))</c>
+    ''' (wbDefinitionsCommon.pas:7131-7134).
+    ''' <para>⛔ Era un <c>List(Of KeyValuePair(Of UInteger, UInteger))</c> con un comentario que decía
+    ''' "Type, SNDR FormID". Un comentario no es un contrato: el sweep, que camina el modelo por reflexión,
+    ''' asume que en una lista de pares la Key es un FormID (cierto para <c>WEAP.DamageTypes</c>) y estaba
+    ''' remapeando 3.433 ÍNDICES DE ENUM como si fueran referencias. Con campos nombrados el oráculo ve la
+    ''' diferencia sin que nadie le explique nada — el nombre es parte del contrato.</para></summary>
+    Friend Sounds As New List(Of MGEF_SoundEntry)
 End Class
 
 ''' <summary>Fallout 4 PERK record - Perk.</summary>
@@ -405,7 +431,7 @@ Friend Module MagicRecordParsers
                         For i = 0 To sr.Data.Length - 8 Step 8
                             Dim sndType = BitConverter.ToUInt32(sr.Data, i)
                             Dim sndFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, i + 4), pluginManager)
-                            m.Sounds.Add(New KeyValuePair(Of UInteger, UInteger)(sndType, sndFormID))
+                            m.Sounds.Add(New MGEF_SoundEntry With {.SoundType = sndType, .SoundFormID = sndFormID})
                         Next
                     End If
             End Select

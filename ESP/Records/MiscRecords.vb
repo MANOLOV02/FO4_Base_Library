@@ -9,19 +9,30 @@ Imports System.Text
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔⛔⛔ NO USAR: PARSERS SIN VALIDAR. NO CABLEAR HASTA ARREGLARLOS.          #
+' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
 ' desde produccion. LEER LA CABECERA DE RecordDispatcher.vb ANTES DE TOCAR ESTO.
 '
-' DEFECTOS MEDIDOS 2026-08-18 (Tools\RecordParserSweepProbe, dos juegos reales,
-' FO4 420.731 + SSE 330.953 records: 0 excepciones, pero FormID que NO EXISTEN):
-'   FO4 TERM.LoopingSoundFormID 37/37 -> FormID inexistente.
+' ESTADO 2026-08-19: los defectos MEDIDOS que fabricaban FormID inexistentes SE
+' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
+' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error. Si
-' esto llega al writer, sale un ESP con referencias apuntando a otro mod.
-' Decision del usuario 2026-08-18: NO se borran; se arreglan cuando se aborde.
+' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' inventan referencias", que es otra cosa.
+'
+' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
+' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
+' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
+' reconstruido a mano. El arreglo de fondo es parsear con el anidamiento que el
+' canonico declara. Decision del usuario: se encara despues.
+'
+' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
+' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
+' contra el .pas y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -447,8 +458,6 @@ Friend Module MiscRecordParsers
         Dim t As New TERM_Data With {.FormID = rec.Header.FormID, .EditorID = rec.EditorID}
 
         Dim currentMenuItem As TERM_MenuItem = Nothing
-        ' Ver el Case "SNAM": el record tiene DOS SNAM y sólo la posición los distingue.
-        Dim seenMarkerBlock As Boolean = False
 
         For Each sr In rec.Subrecords
             Select Case sr.Signature
@@ -457,10 +466,6 @@ Friend Module MiscRecordParsers
                 Case "NAM0" : t.HeaderText = ResolveStr(rec, sr, pluginManager)
                 Case "WNAM" : t.WelcomeText = ResolveStr(rec, sr, pluginManager)
                 Case "KWDA" : ParseFormIDArray(sr, rec, pluginManager, t.KeywordFormIDs)
-                Case "XMRK"
-                    ' XMRK ('Marker Model') abre el bloque de marcador: el SNAM que viene después ya no es el
-                    ' Looping Sound. Ver el Case "SNAM".
-                    seenMarkerBlock = True
                 Case "SNAM"
                     ' ⛔ TERM tiene DOS subrecords SNAM y sólo la posición los separa:
                     '   · arriba, wbFormIDCk(SNAM, 'Looping Sound', [SNDR]) — el único que es referencia;
@@ -468,7 +473,20 @@ Friend Module MiscRecordParsers
                     '     que en el canónico viene después de wbString(XMRK, 'Marker Model').
                     ' Un Select Case plano tomaba el segundo y pisaba el primero con bytes de la struct.
                     ' MEDIDO: 37/37 apuntando a records inexistentes.
-                    If Not seenMarkerBlock Then t.LoopingSoundFormID = ResolveFID(rec, sr, pluginManager)
+                    ' ⛔ El discriminador FUERTE es el LARGO, no la posición: wbSNAMMarkerParams es un
+                    ' wbArray de structs de >= 20 bytes (4 floats + FormID + flags desde la versión 125,
+                    ' wbDefinitionsFO4.pas:5682-5694), mientras que el Looping Sound es un FormID de
+                    ' EXACTAMENTE 4. El corte por XMRK solo no alcanzaba: XMRK ('Marker Model') es opcional y
+                    ' hay TERM con marker params sin él — MEDIDO, quedaban 5/5.
+                    ' ⛔ UN solo discriminador: el LARGO. `wbSNAMMarkerParams` es un wbArray de structs de 20 B
+                    ' (24 desde la versión 125, wbDefinitionsFO4.pas:5682-5700) y el Looping Sound es un FormID
+                    ' de EXACTAMENTE 4, así que el largo separa los dos casos por construcción. La bandera de
+                    ' XMRK que había además era redundante Y engañosa: XMRK es OPCIONAL, y medido sobre los 6
+                    ' .esm de FO4 hay 284 SNAM de marcador que aparecen ANTES de cualquier XMRK. Dos reglas
+                    ' para una sola ley es cómo se desincronizan.
+                    If sr.Data IsNot Nothing AndAlso sr.Data.Length = 4 Then
+                        t.LoopingSoundFormID = ResolveFID(rec, sr, pluginManager)
+                    End If
                 Case "FNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then
                         t.TerminalFlags = BitConverter.ToUInt16(sr.Data, 0)

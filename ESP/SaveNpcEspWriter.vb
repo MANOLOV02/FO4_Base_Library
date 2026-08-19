@@ -306,6 +306,10 @@ Public Module SaveNpcEspWriter
         Public DropSoundFormID As UInteger          ' ZNAM (SNDR) — owned optional
         Public AlternateBlockMaterialFormID As UInteger ' BAMT (MATT) — owned optional
         Public Description As String = ""           ' DESC (translatable) — owned optional
+        ''' <summary>Si el DESC tiene que emitirse. Se copia de <c>ARMO_Data.HasDescription</c> (presencia en
+        ''' el record fuente), NO de que el texto sea no vacío: en un master localizado el id puede resolver a
+        ''' "" y el subrecord igual está. Ponerlo en False es la forma de decir "sacá la descripción".</summary>
+        Public HasDescription As Boolean = False
         Public NonPlayable As Boolean = False       ' header flag bit 2 — owned
         ''' <summary>OBND — Object Bounds 6×i16 min/max XYZ (required, always emitted).</summary>
         Public ObndX1 As Short
@@ -1765,7 +1769,7 @@ Public Module SaveNpcEspWriter
                 EmitArmoBamt(bw, entry, remapper)                ' BAMT
                 EmitArmoRnam(bw, entry, remapper)
                 EmitArmoKeywords(bw, entry, remapper)
-                EmitArmoDesc(bw, entry)                          ' DESC
+                EmitArmoDesc(bw, entry)                          ' DESC — presencia de la fuente; ver EmitArmoDesc
                 EmitArmoInrd(bw, entry, remapper)
                 EmitArmoModels(bw, entry, remapper, game)
                 EmitArmoData(bw, entry, game)
@@ -1886,11 +1890,24 @@ Public Module SaveNpcEspWriter
     End Sub
 
     Private Sub EmitArmoDesc(bw As BinaryWriter, entry As ArmoRecordEntry, Optional required As Boolean = False)
-        ' DESC — translatable lstring. FO4 (wbDESC, wbDefinitionsFO4.pas:6185): OPTIONAL → omit when empty.
-        ' SKYRIM (wbDESC.SetRequired, wbDefinitionsTES5.pas:4399): REQUIRED → always emit, even when the resolved
-        ' text is empty (armor pieces frequently ship an empty description; on a localized master DESC is a string
-        ' ID that resolves to ""). Dropping it corrupts the record's subrecord order (every following member shifts).
-        If required OrElse Not String.IsNullOrEmpty(entry.Description) Then
+        ' DESC — translatable lstring. FO4 (wbDESC, wbDefinitionsFO4.pas ARMO): OPTIONAL. SKYRIM
+        ' (wbDESC.SetRequired, wbDefinitionsTES5.pas:4399): REQUIRED → se emite siempre, aunque el texto resuelto
+        ' sea vacío (las piezas de armadura suelen traer descripción vacía; en un master localizado el DESC es un
+        ' id de lstring que resuelve a ""). Tirarlo corrompe el orden de subrecords: todo lo siguiente se corre.
+        '
+        ' ⛔ La PRESENCIA la decide <c>entry.HasDescription</c>, no que el texto esté vacío. Antes esto se
+        ' preguntaba al record fuente en el call site, y por eso era imposible expresar "sacá la descripción":
+        ' limpiar el texto no quitaba el subrecord. El parámetro <paramref name="required"/> queda para el caso
+        ' del FORMATO (Skyrim) y para los call sites que aún derivan la presencia de la fuente.
+        ' ⛔ <paramref name="required"/> lo pasa SÓLO el camino de records NUEVOS de Skyrim, donde el DESC es
+        ' `wbDESC.SetRequired` (wbDefinitionsTES5.pas:4399) y hay que emitirlo aunque el texto sea vacío.
+        '
+        ' ⛔⛔ En los OVERRIDES manda la PRESENCIA DE LA FUENTE (<c>entry.HasDescription</c>), NO el "required"
+        ' del formato. Llegué a poner `required:=True` en el override de Skyrim "para respetar la ley" y eso
+        ' INYECTA un DESC en records que no lo traían: MEDIDO, el oráculo byte-exacto pasó de 2762/2762 a
+        ' 2752/2762 con `DESC-presence-only=10`. Un override reproduce lo que había; el `SetRequired` del
+        ' canónico describe qué debe tener un record NUEVO, no autoriza a agregarle subrecords a uno ajeno.
+        If required OrElse entry.HasDescription OrElse Not String.IsNullOrEmpty(entry.Description) Then
             Dim descBytes = PluginEncodingSettings.EncodeTranslatable(If(entry.Description, ""))
             WriteSubrecordHeader(bw, "DESC", descBytes.Length + 1)
             bw.Write(descBytes)
@@ -2453,7 +2470,7 @@ Public Module SaveNpcEspWriter
                 ' master (Fallout4.esm) DESC holds a 4-byte string ID that resolves to "" for most armor, and
                 ' dropping it rewrites a record the user never edited. Mirror the SOURCE's DESC presence so an
                 ' untouched override round-trips byte-exact; a brand-new ARMO still omits an empty DESC.
-                EmitArmoDesc(bw, entry, required:=src.GetSubrecord("DESC").HasValue)
+                EmitArmoDesc(bw, entry)
                 EmitArmoInrd(bw, entry, remapper)                                        ' INRD  [owned] (was preserved)
                 EmitArmoModels(bw, entry, remapper, game)                                ' INDX + MODL [owned]
                 EmitArmoData(bw, entry, game)                                            ' DATA  [owned]
@@ -2600,7 +2617,7 @@ Public Module SaveNpcEspWriter
                 ' DESC :4399 — schema-required, but a handful of vanilla creature-skin ARMOs (SkinDraugr,
                 ' SkinSabrecat, …) ship WITHOUT it. Mirror the SOURCE's DESC presence so those round-trip exactly:
                 ' emit when the source had a DESC (even one whose localized text resolves to empty), omit otherwise.
-                EmitArmoDesc(bw, entry, required:=src.GetSubrecord("DESC").HasValue)                        ' DESC :4399
+                EmitArmoDesc(bw, entry)                                                    ' DESC :4399
                 EmitArmoModels(bw, entry, remapper, game)                                                  ' Armature MODL :4400 (no INDX)
                 EmitArmoData(bw, entry, game)                                                              ' DATA :4401 (8 bytes)
                 EmitArmoDnamSkyrim(bw, entry)                                                              ' DNAM :4405 (s32 armor rating)
