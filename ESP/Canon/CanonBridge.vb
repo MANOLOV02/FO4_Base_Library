@@ -29,6 +29,7 @@
                 .Localized = rec.SourcePluginIsLocalized,
                 .TranslatableEncoding = rec.SourcePluginTranslatableEncoding,
                 .RecordSignature = rec.Header.Signature,
+                .FormID = rec.Header.FormID,
                 .RecordFlags = rec.Header.Flags,
                 .EditorId = rec.EditorID
             }

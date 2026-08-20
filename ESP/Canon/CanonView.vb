@@ -26,6 +26,13 @@
             _Resolver = resolver
         End Sub
 
+        ''' <summary>Identificador del record.</summary>
+        Public ReadOnly Property FormID As UInteger
+            Get
+                If Context Is Nothing Then Return 0UI
+                Return Context.FormID
+            End Get
+        End Property
         Public ReadOnly Property IsEmpty As Boolean
             Get
                 Return Node Is Nothing

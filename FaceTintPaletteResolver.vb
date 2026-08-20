@@ -2,6 +2,7 @@
 Imports System.Drawing
 Imports System.Linq
 Imports System.Text
+Imports FO4_Base_Library.Canon.CanonInterpretacion
 
 ''' <summary>
 ''' Resolver canónico para BlendOp / OpacityScale de las Palette layers (Discriminator=1)
@@ -122,9 +123,9 @@ Public Module FaceTintPaletteResolver
             If tplCol.ColorFormID = 0UI Then Continue For
             Dim clfmRec = pm.GetRecord(tplCol.ColorFormID)
             If clfmRec Is Nothing OrElse clfmRec.Header.Signature <> "CLFM" Then Continue For
-            Dim clfm = Canon.CanonRecords.Color(clfmRec, pm)
-            If clfm Is Nothing OrElse Not clfm.HasColor Then Continue For
-            If clfm.Color.R = targetR AndAlso clfm.Color.G = targetG AndAlso clfm.Color.B = targetB Then
+            Dim clfm = Canon.CanonRecords.Clfm(clfmRec, pm)
+            If clfm Is Nothing OrElse Not clfm.TieneColor() Then Continue For
+            If clfm.ColorDe().R = targetR AndAlso clfm.ColorDe().G = targetG AndAlso clfm.ColorDe().B = targetB Then
                 matches.Add(tplCol)
             End If
         Next
@@ -179,9 +180,9 @@ Public Module FaceTintPaletteResolver
                 If tplByIdx.ColorFormID <> 0UI AndAlso pm IsNot Nothing Then
                     Dim tplRec = pm.GetRecord(tplByIdx.ColorFormID)
                     If tplRec IsNot Nothing AndAlso tplRec.Header.Signature = "CLFM" Then
-                        Dim tplClfm = Canon.CanonRecords.Color(tplRec, pm)
-                        If tplClfm IsNot Nothing AndAlso tplClfm.HasColor Then
-                            resolvedColor = tplClfm.Color
+                        Dim tplClfm = Canon.CanonRecords.Clfm(tplRec, pm)
+                        If tplClfm IsNot Nothing AndAlso tplClfm.TieneColor() Then
+                            resolvedColor = tplClfm.ColorDe()
                         End If
                     End If
                 End If
@@ -214,9 +215,9 @@ Public Module FaceTintPaletteResolver
             If tc Is Nothing OrElse tc.ColorFormID = 0UI Then Continue For
             Dim rec = pm.GetRecord(tc.ColorFormID)
             If rec Is Nothing OrElse rec.Header.Signature <> "CLFM" Then Continue For
-            Dim clfm = Canon.CanonRecords.Color(rec, pm)
-            If clfm Is Nothing OrElse Not clfm.HasColor Then Continue For
-            If clfm.Color.R = layerColor.R AndAlso clfm.Color.G = layerColor.G AndAlso clfm.Color.B = layerColor.B Then
+            Dim clfm = Canon.CanonRecords.Clfm(rec, pm)
+            If clfm Is Nothing OrElse Not clfm.TieneColor() Then Continue For
+            If clfm.ColorDe().R = layerColor.R AndAlso clfm.ColorDe().G = layerColor.G AndAlso clfm.ColorDe().B = layerColor.B Then
                 result = tc.BlendOperation
                 If tc.Alpha = vScaled Then Return result
             End If

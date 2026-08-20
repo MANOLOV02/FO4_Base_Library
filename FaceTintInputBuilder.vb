@@ -1,5 +1,6 @@
 ﻿Imports System.Drawing
 Imports FO4_Base_Library
+Imports FO4_Base_Library.Canon.CanonInterpretacion
 
 ''' <summary>
 ''' Builds the per-NPC face tint inputs (region swaps + ordered layer list) from records.
@@ -209,8 +210,8 @@ Public Module FaceTintInputBuilder
                     If pluginManager IsNot Nothing AndAlso tc.ColorFormID <> 0UI Then
                         Dim rec = pluginManager.GetRecord(tc.ColorFormID)
                         If rec IsNot Nothing AndAlso rec.Header.Signature = "CLFM" Then
-                            Dim clfm = Canon.CanonRecords.Color(rec, pluginManager)
-                            If clfm IsNot Nothing AndAlso clfm.HasColor Then seedColor = clfm.Color
+                            Dim clfm = Canon.CanonRecords.Clfm(rec, pluginManager)
+                            If clfm IsNot Nothing AndAlso clfm.TieneColor() Then seedColor = clfm.ColorDe()
                         End If
                     End If
                 Else
@@ -308,11 +309,11 @@ Public Module FaceTintInputBuilder
                 If baseP IsNot Nothing AndAlso baseP.TextureFormID <> 0UI Then
                     Dim baseTxstRec = pluginManager.GetRecord(baseP.TextureFormID)
                     If baseTxstRec IsNot Nothing AndAlso baseTxstRec.Header.Signature = "TXST" Then
-                        Dim baseTxst = RecordParsers.ParseTXST(baseTxstRec, pluginManager)
+                        Dim baseTxst = Canon.CanonRecords.Txst(baseTxstRec, pluginManager)
                         If baseTxst IsNot Nothing Then
-                            Dim bD = LoadTintLayerBytesAndKey(baseTxst.DiffuseTexture, tintBytesCache)
-                            Dim bN = LoadTintLayerBytesAndKey(baseTxst.NormalTexture, tintBytesCache)
-                            Dim bS = LoadTintLayerBytesAndKey(baseTxst.SmoothSpecTexture, tintBytesCache)
+                            Dim bD = LoadTintLayerBytesAndKey(baseTxst.Ranura(0), tintBytesCache)
+                            Dim bN = LoadTintLayerBytesAndKey(baseTxst.Ranura(1), tintBytesCache)
+                            Dim bS = LoadTintLayerBytesAndKey(baseTxst.Ranura(7), tintBytesCache)
                             If bD.Bytes IsNot Nothing OrElse bN.Bytes IsNot Nothing OrElse bS.Bytes IsNot Nothing Then
                                 Dim swBase As New FaceRegionSwapInput With {
                                     .RegionMaskDdsBytes = maskLoad.Bytes,
@@ -354,12 +355,12 @@ Public Module FaceTintInputBuilder
 
                 Dim txstRec = pluginManager.GetRecord(p.TextureFormID)
                 If txstRec Is Nothing OrElse txstRec.Header.Signature <> "TXST" Then Continue For
-                Dim txst = RecordParsers.ParseTXST(txstRec, pluginManager)
+                Dim txst = Canon.CanonRecords.Txst(txstRec, pluginManager)
                 If txst Is Nothing Then Continue For
 
-                Dim diffLoad = LoadTintLayerBytesAndKey(txst.DiffuseTexture, tintBytesCache)
-                Dim normLoad = LoadTintLayerBytesAndKey(txst.NormalTexture, tintBytesCache)
-                Dim specLoad = LoadTintLayerBytesAndKey(txst.SmoothSpecTexture, tintBytesCache)
+                Dim diffLoad = LoadTintLayerBytesAndKey(txst.Ranura(0), tintBytesCache)
+                Dim normLoad = LoadTintLayerBytesAndKey(txst.Ranura(1), tintBytesCache)
+                Dim specLoad = LoadTintLayerBytesAndKey(txst.Ranura(7), tintBytesCache)
 
                 If diffLoad.Bytes Is Nothing AndAlso normLoad.Bytes Is Nothing AndAlso specLoad.Bytes Is Nothing Then
                     Continue For
@@ -567,9 +568,9 @@ Public Module FaceTintInputBuilder
                         If tc.ColorFormID <> 0UI AndAlso pluginManager IsNot Nothing Then
                             Dim cr = pluginManager.GetRecord(tc.ColorFormID)
                             If cr IsNot Nothing AndAlso cr.Header.Signature = "CLFM" Then
-                                Dim cc = Canon.CanonRecords.Color(cr, pluginManager)
-                                If cc IsNot Nothing AndAlso cc.HasColor Then
-                                    rgbStr = $"({cc.Color.R},{cc.Color.G},{cc.Color.B})"
+                                Dim cc = Canon.CanonRecords.Clfm(cr, pluginManager)
+                                If cc IsNot Nothing AndAlso cc.TieneColor() Then
+                                    rgbStr = $"({cc.ColorDe().R},{cc.ColorDe().G},{cc.ColorDe().B})"
                                 End If
                             End If
                         End If
@@ -615,7 +616,7 @@ Public Module FaceTintInputBuilder
                 Dim browIdxLog = tl.Index, browDiscLog = tl.Discriminator, browKindLog = layerInput.Kind
                 Dim browHairFidLog = hairColorFormID, browLutLog = hairLutPath
                 Dim browAction As String = "no-op (default)"
-                Dim browClfm As Canon.ColorRecord = Nothing
+                Dim browClfm As Canon.IClfm = Nothing
                 If hairColorFormID = 0UI Then
                     browAction = "no-op (NPC has no HCLF -- race fallback returned 0)"
                 Else
@@ -623,18 +624,18 @@ Public Module FaceTintInputBuilder
                     If hairClfmRec Is Nothing OrElse hairClfmRec.Header.Signature <> "CLFM" Then
                         browAction = "no-op (HCLF record missing or wrong sig)"
                     Else
-                        browClfm = Canon.CanonRecords.Color(hairClfmRec, pluginManager)
+                        browClfm = Canon.CanonRecords.Clfm(hairClfmRec, pluginManager)
                         If browClfm Is Nothing Then
                             browAction = "no-op (CLFM parse failed)"
-                        ElseIf browClfm.HasColor Then
-                            layerInput.R = browClfm.Color.R
-                            layerInput.G = browClfm.Color.G
-                            layerInput.B = browClfm.Color.B
+                        ElseIf browClfm.TieneColor() Then
+                            layerInput.R = browClfm.ColorDe().R
+                            layerInput.G = browClfm.ColorDe().G
+                            layerInput.B = browClfm.ColorDe().B
                             If layerInput.Kind = FaceTintLayerKind.TextureSetDiffuse Then
                                 layerInput.ForceUniformColor = True
                             End If
-                            browAction = $"RGB override ({browClfm.Color.R},{browClfm.Color.G},{browClfm.Color.B}){If(layerInput.ForceUniformColor, " [ForceUniformColor=True]", "")}"
-                        ElseIf browClfm.HasRemappingIndex Then
+                            browAction = $"RGB override ({browClfm.ColorDe().R},{browClfm.ColorDe().G},{browClfm.ColorDe().B}){If(layerInput.ForceUniformColor, " [ForceUniformColor=True]", "")}"
+                        ElseIf browClfm.TieneIndiceDePaleta() Then
                             If String.IsNullOrEmpty(hairLutPath) Then
                                 browAction = "no-op (HasRemappingIndex but hairLutPath empty)"
                             Else
@@ -645,8 +646,8 @@ Public Module FaceTintInputBuilder
                                     layerInput.UseHairPalette = True
                                     layerInput.HairLutDdsBytes = lutLoad.Bytes
                                     layerInput.HairLutCacheKey = lutLoad.Key
-                                    layerInput.HairPaletteRow = browClfm.RemappingIndex
-                                    browAction = $"LUT remap (row={browClfm.RemappingIndex:F4}, key='{lutLoad.Key}')"
+                                    layerInput.HairPaletteRow = browClfm.IndiceDePaleta()
+                                    browAction = $"LUT remap (row={browClfm.IndiceDePaleta():F4}, key='{lutLoad.Key}')"
                                 End If
                             End If
                         Else
@@ -805,14 +806,14 @@ Public Module FaceTintInputBuilder
                     If tc.ColorFormID <> 0UI AndAlso pluginManager IsNot Nothing Then
                         Dim cr = pluginManager.GetRecord(tc.ColorFormID)
                         If cr IsNot Nothing AndAlso cr.Header.Signature = "CLFM" Then
-                            Dim cc = Canon.CanonRecords.Color(cr, pluginManager)
+                            Dim cc = Canon.CanonRecords.Clfm(cr, pluginManager)
                             If cc IsNot Nothing Then
-                                tcHasColor = cc.HasColor
-                                If cc.HasColor Then
-                                    tcR = cc.Color.R : tcG = cc.Color.G : tcB = cc.Color.B
+                                tcHasColor = cc.TieneColor()
+                                If cc.TieneColor() Then
+                                    tcR = cc.ColorDe().R : tcG = cc.ColorDe().G : tcB = cc.ColorDe().B
                                 End If
-                                tcHasRemap = cc.HasRemappingIndex
-                                tcRemapIdx = cc.RemappingIndex
+                                tcHasRemap = cc.TieneIndiceDePaleta()
+                                tcRemapIdx = cc.IndiceDePaleta()
                             End If
                         End If
                     End If

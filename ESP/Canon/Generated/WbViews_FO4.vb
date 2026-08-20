@@ -1,10 +1,10 @@
 ﻿' ============================================================================================
 ' ARCHIVO GENERADO — NO EDITAR A MANO.  Regenerar: Tools/CanonViewGen
 '
-' Una propiedad por campo de cada tipo de record de Fallout 4. El nombre de la
-' propiedad ES el nombre del campo en el formato: no hay ninguna tabla de
-' equivalencias que mantener, y si el formato cambia un campo el codigo que lo
-' usaba deja de compilar.
+' Campos de cada tipo de record de Fallout 4.
+' El nombre de cada propiedad ES el nombre del campo en el formato: no hay ninguna
+' tabla de equivalencias que mantener, y si el formato cambia un campo el codigo que
+' lo usaba deja de compilar.
 ' ============================================================================================
 
 Namespace Canon
@@ -12,13 +12,26 @@ Namespace Canon
     ''' <summary>Campos de un record ARMA de Fallout 4.</summary>
     Public NotInheritable Class ArmaFO4
         Inherits CanonView
+        Implements IArma
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArma.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IArma.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IArma.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -28,7 +41,7 @@ Namespace Canon
         End Property
 
         ''' <summary>BOD2\Biped Body Template\First Person Flags</summary>
-        Public Property BipedBodyTemplateFirstPersonFlags As UInteger
+        Public Property BipedBodyTemplateFirstPersonFlags As UInteger Implements IArma.BipedBodyTemplateFirstPersonFlags
             Get
                 Return CUInt(Entero("BOD2\Biped Body Template\First Person Flags"))
             End Get
@@ -38,7 +51,7 @@ Namespace Canon
         End Property
 
         ''' <summary>RNAM\Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
-        Public Property Race As UInteger
+        Public Property Race As UInteger Implements IArma.Race
             Get
                 Return Referencia("RNAM\Race")
             End Get
@@ -48,7 +61,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DNAM\Data\Male Priority</summary>
-        Public Property DataMalePriority As Byte
+        Public Property DataMalePriority As Byte Implements IArma.DataMalePriority
             Get
                 Return CByte(Entero("DNAM\Data\Male Priority"))
             End Get
@@ -58,7 +71,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DNAM\Data\Female Priority</summary>
-        Public Property DataFemalePriority As Byte
+        Public Property DataFemalePriority As Byte Implements IArma.DataFemalePriority
             Get
                 Return CByte(Entero("DNAM\Data\Female Priority"))
             End Get
@@ -68,7 +81,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DNAM\Data\Weight slider - Male</summary>
-        Public Property DataWeightSliderMale As Byte
+        Public Property DataWeightSliderMale As Byte Implements IArma.DataWeightSliderMale
             Get
                 Return CByte(Entero("DNAM\Data\Weight slider - Male"))
             End Get
@@ -78,7 +91,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 1 de DNAM\Data\Weight slider - Male: Enabled</summary>
-        Public Property DataWeightSliderMaleEnabled As Boolean
+        Public Property DataWeightSliderMaleEnabled As Boolean Implements IArma.DataWeightSliderMaleEnabled
             Get
                 Return Bit("DNAM\Data\Weight slider - Male", 1)
             End Get
@@ -88,7 +101,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DNAM\Data\Weight slider - Female</summary>
-        Public Property DataWeightSliderFemale As Byte
+        Public Property DataWeightSliderFemale As Byte Implements IArma.DataWeightSliderFemale
             Get
                 Return CByte(Entero("DNAM\Data\Weight slider - Female"))
             End Get
@@ -98,7 +111,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 1 de DNAM\Data\Weight slider - Female: Enabled</summary>
-        Public Property DataWeightSliderFemaleEnabled As Boolean
+        Public Property DataWeightSliderFemaleEnabled As Boolean Implements IArma.DataWeightSliderFemaleEnabled
             Get
                 Return Bit("DNAM\Data\Weight slider - Female", 1)
             End Get
@@ -108,7 +121,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DNAM\Data\Detection Sound Value</summary>
-        Public Property DataDetectionSoundValue As Byte
+        Public Property DataDetectionSoundValue As Byte Implements IArma.DataDetectionSoundValue
             Get
                 Return CByte(Entero("DNAM\Data\Detection Sound Value"))
             End Get
@@ -118,7 +131,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DNAM\Data\Weapon Adjust</summary>
-        Public Property DataWeaponAdjust As Single
+        Public Property DataWeaponAdjust As Single Implements IArma.DataWeaponAdjust
             Get
                 Return Flt("DNAM\Data\Weapon Adjust")
             End Get
@@ -128,7 +141,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Biped Model\Male\MOD2\Model Filename</summary>
-        Public Property MaleModelFilename As String
+        Public Property MaleModelFilename As String Implements IArma.MaleModelFilename
             Get
                 Return Txt("Biped Model\Male\MOD2\Model Filename")
             End Get
@@ -168,7 +181,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Biped Model\Female\MOD3\Model Filename</summary>
-        Public Property FemaleModelFilename As String
+        Public Property FemaleModelFilename As String Implements IArma.FemaleModelFilename
             Get
                 Return Txt("Biped Model\Female\MOD3\Model Filename")
             End Get
@@ -208,7 +221,7 @@ Namespace Canon
         End Property
 
         ''' <summary>1st Person\Male\MOD4\Model Filename</summary>
-        Public Property MaleModelFilename2 As String
+        Public Property MaleModelFilename2 As String Implements IArma.MaleModelFilename2
             Get
                 Return Txt("1st Person\Male\MOD4\Model Filename")
             End Get
@@ -248,7 +261,7 @@ Namespace Canon
         End Property
 
         ''' <summary>1st Person\Female\MOD5\Model Filename</summary>
-        Public Property FemaleModelFilename2 As String
+        Public Property FemaleModelFilename2 As String Implements IArma.FemaleModelFilename2
             Get
                 Return Txt("1st Person\Female\MOD5\Model Filename")
             End Get
@@ -288,7 +301,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM0\Male Skin Texture  -&gt;  TXST / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property MaleSkinTexture As UInteger
+        Public Property MaleSkinTexture As UInteger Implements IArma.MaleSkinTexture
             Get
                 Return Referencia("NAM0\Male Skin Texture")
             End Get
@@ -298,7 +311,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM1\Female Skin Texture  -&gt;  TXST / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property FemaleSkinTexture As UInteger
+        Public Property FemaleSkinTexture As UInteger Implements IArma.FemaleSkinTexture
             Get
                 Return Referencia("NAM1\Female Skin Texture")
             End Get
@@ -308,7 +321,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM2\Male Skin Texture Swap List  -&gt;  FLST / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property MaleSkinTextureSwapList As UInteger
+        Public Property MaleSkinTextureSwapList As UInteger Implements IArma.MaleSkinTextureSwapList
             Get
                 Return Referencia("NAM2\Male Skin Texture Swap List")
             End Get
@@ -318,7 +331,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM3\Female Skin Texture Swap List  -&gt;  FLST / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property FemaleSkinTextureSwapList As UInteger
+        Public Property FemaleSkinTextureSwapList As UInteger Implements IArma.FemaleSkinTextureSwapList
             Get
                 Return Referencia("NAM3\Female Skin Texture Swap List")
             End Get
@@ -328,7 +341,7 @@ Namespace Canon
         End Property
 
         ''' <summary>SNDD\Footstep Sound  -&gt;  FSTS / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property FootstepSound As UInteger
+        Public Property FootstepSound As UInteger Implements IArma.FootstepSound
             Get
                 Return Referencia("SNDD\Footstep Sound")
             End Get
@@ -338,7 +351,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ONAM\Art Object  -&gt;  ARTO. Referencia en el espacio del orden de carga.</summary>
-        Public Property ArtObject As UInteger
+        Public Property ArtObject As UInteger Implements IArma.ArtObject
             Get
                 Return Referencia("ONAM\Art Object")
             End Get
@@ -348,7 +361,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Additional Races</summary>
-        Public ReadOnly Property AdditionalRaces As IReadOnlyList(Of ArmaFO4_AdditionalRaces)
+        Public ReadOnly Property AdditionalRaces As IReadOnlyList(Of IArma_AdditionalRaces) Implements IArma.AdditionalRaces
             Get
                 Return Elementos(Of ArmaFO4_AdditionalRaces)("Additional Races", Function(n) New ArmaFO4_AdditionalRaces(n, Context, Resolver))
             End Get
@@ -373,13 +386,20 @@ Namespace Canon
     ''' <summary>Un elemento de Additional Races.</summary>
     Public NotInheritable Class ArmaFO4_AdditionalRaces
         Inherits CanonView
+        Implements IArma_AdditionalRaces
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArma_AdditionalRaces.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>MODL\Race  -&gt;  RACE / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property Race As UInteger
+        Public Property Race As UInteger Implements IArma_AdditionalRaces.Race
             Get
                 Return Referencia("MODL\Race")
             End Get
@@ -463,13 +483,26 @@ Namespace Canon
     ''' <summary>Campos de un record ARMO de Fallout 4.</summary>
     Public NotInheritable Class ArmoFO4
         Inherits CanonView
+        Implements IArmo
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IArmo.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IArmo.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -479,7 +512,7 @@ Namespace Canon
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Version</summary>
-        Public Property VirtualMachineAdapterVersion As Short
+        Public Property VirtualMachineAdapterVersion As Short Implements IArmo.VirtualMachineAdapterVersion
             Get
                 Return CShort(Entero("VMAD\Virtual Machine Adapter\Version"))
             End Get
@@ -489,7 +522,7 @@ Namespace Canon
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Object Format</summary>
-        Public Property VirtualMachineAdapterObjectFormat As Short
+        Public Property VirtualMachineAdapterObjectFormat As Short Implements IArmo.VirtualMachineAdapterObjectFormat
             Get
                 Return CShort(Entero("VMAD\Virtual Machine Adapter\Object Format"))
             End Get
@@ -499,7 +532,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short
+        Public Property ObjectBoundsX1 As Short Implements IArmo.ObjectBoundsX1
             Get
                 Return CShort(Entero("OBND\Object Bounds\X1"))
             End Get
@@ -509,7 +542,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short
+        Public Property ObjectBoundsY1 As Short Implements IArmo.ObjectBoundsY1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y1"))
             End Get
@@ -519,7 +552,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short
+        Public Property ObjectBoundsZ1 As Short Implements IArmo.ObjectBoundsZ1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z1"))
             End Get
@@ -529,7 +562,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short
+        Public Property ObjectBoundsX2 As Short Implements IArmo.ObjectBoundsX2
             Get
                 Return CShort(Entero("OBND\Object Bounds\X2"))
             End Get
@@ -539,7 +572,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short
+        Public Property ObjectBoundsY2 As Short Implements IArmo.ObjectBoundsY2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y2"))
             End Get
@@ -549,7 +582,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short
+        Public Property ObjectBoundsZ2 As Short Implements IArmo.ObjectBoundsZ2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z2"))
             End Get
@@ -569,7 +602,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IArmo.Name
             Get
                 Return TextoTraducible("FULL\Name")
             End Get
@@ -579,7 +612,7 @@ Namespace Canon
         End Property
 
         ''' <summary>EITM\Enchantment  -&gt;  ENCH. Referencia en el espacio del orden de carga.</summary>
-        Public Property Enchantment As UInteger
+        Public Property Enchantment As UInteger Implements IArmo.Enchantment
             Get
                 Return Referencia("EITM\Enchantment")
             End Get
@@ -589,7 +622,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Male\World Model\MOD2\Model Filename</summary>
-        Public Property WorldModelModelFilename As String
+        Public Property WorldModelModelFilename As String Implements IArmo.WorldModelModelFilename
             Get
                 Return Txt("Male\World Model\MOD2\Model Filename")
             End Get
@@ -619,7 +652,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Male\ICON\Icon Image</summary>
-        Public Property MaleIconImage As String
+        Public Property MaleIconImage As String Implements IArmo.MaleIconImage
             Get
                 Return Txt("Male\ICON\Icon Image")
             End Get
@@ -629,7 +662,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Male\MICO\Message Icon</summary>
-        Public Property MaleMessageIcon As String
+        Public Property MaleMessageIcon As String Implements IArmo.MaleMessageIcon
             Get
                 Return Txt("Male\MICO\Message Icon")
             End Get
@@ -639,7 +672,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Female\World Model\MOD4\Model Filename</summary>
-        Public Property WorldModelModelFilename2 As String
+        Public Property WorldModelModelFilename2 As String Implements IArmo.WorldModelModelFilename2
             Get
                 Return Txt("Female\World Model\MOD4\Model Filename")
             End Get
@@ -669,7 +702,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Female\ICO2\Icon Image</summary>
-        Public Property FemaleIconImage As String
+        Public Property FemaleIconImage As String Implements IArmo.FemaleIconImage
             Get
                 Return Txt("Female\ICO2\Icon Image")
             End Get
@@ -679,7 +712,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Female\MIC2\Message Icon</summary>
-        Public Property FemaleMessageIcon As String
+        Public Property FemaleMessageIcon As String Implements IArmo.FemaleMessageIcon
             Get
                 Return Txt("Female\MIC2\Message Icon")
             End Get
@@ -689,7 +722,7 @@ Namespace Canon
         End Property
 
         ''' <summary>BOD2\Biped Body Template\First Person Flags</summary>
-        Public Property BipedBodyTemplateFirstPersonFlags As UInteger
+        Public Property BipedBodyTemplateFirstPersonFlags As UInteger Implements IArmo.BipedBodyTemplateFirstPersonFlags
             Get
                 Return CUInt(Entero("BOD2\Biped Body Template\First Person Flags"))
             End Get
@@ -699,7 +732,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Destructible\DEST\Header\Health</summary>
-        Public Property HeaderHealth As Integer
+        Public Property HeaderHealth As Integer Implements IArmo.HeaderHealth
             Get
                 Return CInt(Entero("Destructible\DEST\Header\Health"))
             End Get
@@ -709,7 +742,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Destructible\DEST\Header\DEST Count</summary>
-        Public Property HeaderDESTCount As Byte
+        Public Property HeaderDESTCount As Byte Implements IArmo.HeaderDESTCount
             Get
                 Return CByte(Entero("Destructible\DEST\Header\DEST Count"))
             End Get
@@ -737,6 +770,7 @@ Namespace Canon
                 PonerBit("Destructible\DEST\Header\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de Destructible\DEST\Header\Flags: Large Actor Destroys</summary>
         Public Property HeaderFlagsLargeActorDestroys As Boolean
             Get
@@ -748,7 +782,7 @@ Namespace Canon
         End Property
 
         ''' <summary>YNAM\Sound - Pick Up  -&gt;  SNDR. Referencia en el espacio del orden de carga.</summary>
-        Public Property SoundPickUp As UInteger
+        Public Property SoundPickUp As UInteger Implements IArmo.SoundPickUp
             Get
                 Return Referencia("YNAM\Sound - Pick Up")
             End Get
@@ -758,7 +792,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ZNAM\Sound - Put Down  -&gt;  SNDR. Referencia en el espacio del orden de carga.</summary>
-        Public Property SoundPutDown As UInteger
+        Public Property SoundPutDown As UInteger Implements IArmo.SoundPutDown
             Get
                 Return Referencia("ZNAM\Sound - Put Down")
             End Get
@@ -768,7 +802,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ETYP\Equipment Type  -&gt;  EQUP / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property EquipmentType As UInteger
+        Public Property EquipmentType As UInteger Implements IArmo.EquipmentType
             Get
                 Return Referencia("ETYP\Equipment Type")
             End Get
@@ -788,7 +822,7 @@ Namespace Canon
         End Property
 
         ''' <summary>BAMT\Alternate Block Material  -&gt;  MATT / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property AlternateBlockMaterial As UInteger
+        Public Property AlternateBlockMaterial As UInteger Implements IArmo.AlternateBlockMaterial
             Get
                 Return Referencia("BAMT\Alternate Block Material")
             End Get
@@ -798,7 +832,7 @@ Namespace Canon
         End Property
 
         ''' <summary>RNAM\Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
-        Public Property Race As UInteger
+        Public Property Race As UInteger Implements IArmo.Race
             Get
                 Return Referencia("RNAM\Race")
             End Get
@@ -808,7 +842,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Keywords\KSIZ\Keyword Count</summary>
-        Public Property KeywordsKeywordCount As UInteger
+        Public Property KeywordsKeywordCount As UInteger Implements IArmo.KeywordsKeywordCount
             Get
                 Return CUInt(Entero("Keywords\KSIZ\Keyword Count"))
             End Get
@@ -818,7 +852,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Description As String
+        Public Property Description As String Implements IArmo.Description
             Get
                 Return TextoTraducible("DESC\Description")
             End Get
@@ -898,7 +932,7 @@ Namespace Canon
         End Property
 
         ''' <summary>TNAM\Template Armor  -&gt;  ARMO. Referencia en el espacio del orden de carga.</summary>
-        Public Property TemplateArmor As UInteger
+        Public Property TemplateArmor As UInteger Implements IArmo.TemplateArmor
             Get
                 Return Referencia("TNAM\Template Armor")
             End Get
@@ -918,14 +952,14 @@ Namespace Canon
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts</summary>
-        Public ReadOnly Property Scripts As IReadOnlyList(Of ArmoFO4_Scripts)
+        Public ReadOnly Property Scripts As IReadOnlyList(Of IArmo_Scripts) Implements IArmo.Scripts
             Get
                 Return Elementos(Of ArmoFO4_Scripts)("VMAD\Virtual Machine Adapter\Scripts", Function(n) New ArmoFO4_Scripts(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        Public ReadOnly Property Properties As IReadOnlyList(Of ArmoFO4_Properties)
+        Public ReadOnly Property Properties As IReadOnlyList(Of IArmo_Properties) Implements IArmo.Properties
             Get
                 Return Elementos(Of ArmoFO4_Properties)("VMAD\Virtual Machine Adapter\Scripts\Script\Properties", Function(n) New ArmoFO4_Properties(n, Context, Resolver))
             End Get
@@ -939,14 +973,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Destructible\Stages</summary>
-        Public ReadOnly Property Stages As IReadOnlyList(Of ArmoFO4_Stages)
+        Public ReadOnly Property Stages As IReadOnlyList(Of IArmo_Stages) Implements IArmo.Stages
             Get
                 Return Elementos(Of ArmoFO4_Stages)("Destructible\Stages", Function(n) New ArmoFO4_Stages(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Keywords\KWDA\Keywords</summary>
-        Public ReadOnly Property Keywords As IReadOnlyList(Of ArmoFO4_Keywords)
+        Public ReadOnly Property Keywords As IReadOnlyList(Of IArmo_Keywords) Implements IArmo.Keywords
             Get
                 Return Elementos(Of ArmoFO4_Keywords)("Keywords\KWDA\Keywords", Function(n) New ArmoFO4_Keywords(n, Context, Resolver))
             End Get
@@ -1006,13 +1040,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class ArmoFO4_Scripts
         Inherits CanonView
+        Implements IArmo_Scripts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Scripts.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptScriptName As String
+        Public Property ScriptScriptName As String Implements IArmo_Scripts.ScriptScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -1022,7 +1063,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte
+        Public Property ScriptFlags As Byte Implements IArmo_Scripts.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -1030,26 +1071,33 @@ Namespace Canon
                 Escribir("Script\Flags", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String
+        Public ReadOnly Property ScriptFlagsNombre As String Implements IArmo_Scripts.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
         End Property
-
 
     End Class
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class ArmoFO4_Properties
         Inherits CanonView
+        Implements IArmo_Properties
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Properties.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyPropertyName As String
+        Public Property PropertyPropertyName As String Implements IArmo_Properties.PropertyPropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -1059,7 +1107,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte
+        Public Property PropertyType As Byte Implements IArmo_Properties.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -1069,7 +1117,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte
+        Public Property PropertyFlags As Byte Implements IArmo_Properties.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -1077,16 +1125,16 @@ Namespace Canon
                 Escribir("Property\Flags", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IArmo_Properties.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
-
         ''' <summary>Property\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short
+        Public Property ObjectV2Alias As Short Implements IArmo_Properties.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Object v2\Alias"))
             End Get
@@ -1096,7 +1144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger
+        Public Property ObjectV2FormID As UInteger Implements IArmo_Properties.ObjectV2FormID
             Get
                 Return Referencia("Property\Object v2\FormID")
             End Get
@@ -1140,13 +1188,20 @@ Namespace Canon
     ''' <summary>Un elemento de Destructible\Stages.</summary>
     Public NotInheritable Class ArmoFO4_Stages
         Inherits CanonView
+        Implements IArmo_Stages
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Stages.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Stage\DSTD\Destruction Stage Data\Health %</summary>
-        Public Property DestructionStageDataHealth As Byte
+        Public Property DestructionStageDataHealth As Byte Implements IArmo_Stages.DestructionStageDataHealth
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Health %"))
             End Get
@@ -1156,7 +1211,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Index</summary>
-        Public Property DestructionStageDataIndex As Byte
+        Public Property DestructionStageDataIndex As Byte Implements IArmo_Stages.DestructionStageDataIndex
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Index"))
             End Get
@@ -1166,7 +1221,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Model Damage Stage</summary>
-        Public Property DestructionStageDataModelDamageStage As Byte
+        Public Property DestructionStageDataModelDamageStage As Byte Implements IArmo_Stages.DestructionStageDataModelDamageStage
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Model Damage Stage"))
             End Get
@@ -1176,7 +1231,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Flags</summary>
-        Public Property DestructionStageDataFlags As Byte
+        Public Property DestructionStageDataFlags As Byte Implements IArmo_Stages.DestructionStageDataFlags
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Flags"))
             End Get
@@ -1186,7 +1241,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 0 de Stage\DSTD\Destruction Stage Data\Flags: Cap Damage</summary>
-        Public Property DestructionStageDataFlagsCapDamage As Boolean
+        Public Property DestructionStageDataFlagsCapDamage As Boolean Implements IArmo_Stages.DestructionStageDataFlagsCapDamage
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 0)
             End Get
@@ -1194,8 +1249,9 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de Stage\DSTD\Destruction Stage Data\Flags: Disable</summary>
-        Public Property DestructionStageDataFlagsDisable As Boolean
+        Public Property DestructionStageDataFlagsDisable As Boolean Implements IArmo_Stages.DestructionStageDataFlagsDisable
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 1)
             End Get
@@ -1203,8 +1259,9 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de Stage\DSTD\Destruction Stage Data\Flags: Destroy</summary>
-        Public Property DestructionStageDataFlagsDestroy As Boolean
+        Public Property DestructionStageDataFlagsDestroy As Boolean Implements IArmo_Stages.DestructionStageDataFlagsDestroy
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 2)
             End Get
@@ -1212,8 +1269,9 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de Stage\DSTD\Destruction Stage Data\Flags: Ignore External Dmg</summary>
-        Public Property DestructionStageDataFlagsIgnoreExternalDmg As Boolean
+        Public Property DestructionStageDataFlagsIgnoreExternalDmg As Boolean Implements IArmo_Stages.DestructionStageDataFlagsIgnoreExternalDmg
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 3)
             End Get
@@ -1221,6 +1279,7 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de Stage\DSTD\Destruction Stage Data\Flags: Becomes Dynamic</summary>
         Public Property DestructionStageDataFlagsBecomesDynamic As Boolean
             Get
@@ -1232,7 +1291,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Self Damage per Second</summary>
-        Public Property DestructionStageDataSelfDamagePerSecond As Integer
+        Public Property DestructionStageDataSelfDamagePerSecond As Integer Implements IArmo_Stages.DestructionStageDataSelfDamagePerSecond
             Get
                 Return CInt(Entero("Stage\DSTD\Destruction Stage Data\Self Damage per Second"))
             End Get
@@ -1242,7 +1301,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Explosion  -&gt;  EXPL / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property DestructionStageDataExplosion As UInteger
+        Public Property DestructionStageDataExplosion As UInteger Implements IArmo_Stages.DestructionStageDataExplosion
             Get
                 Return Referencia("Stage\DSTD\Destruction Stage Data\Explosion")
             End Get
@@ -1252,7 +1311,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Debris  -&gt;  DEBR / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property DestructionStageDataDebris As UInteger
+        Public Property DestructionStageDataDebris As UInteger Implements IArmo_Stages.DestructionStageDataDebris
             Get
                 Return Referencia("Stage\DSTD\Destruction Stage Data\Debris")
             End Get
@@ -1262,7 +1321,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Debris Count</summary>
-        Public Property DestructionStageDataDebrisCount As Integer
+        Public Property DestructionStageDataDebrisCount As Integer Implements IArmo_Stages.DestructionStageDataDebrisCount
             Get
                 Return CInt(Entero("Stage\DSTD\Destruction Stage Data\Debris Count"))
             End Get
@@ -1282,7 +1341,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\Model\DMDL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements IArmo_Stages.ModelModelFileName
             Get
                 Return Txt("Stage\Model\DMDL\Model FileName")
             End Get
@@ -1316,13 +1375,20 @@ Namespace Canon
     ''' <summary>Un elemento de Keywords\KWDA\Keywords.</summary>
     Public NotInheritable Class ArmoFO4_Keywords
         Inherits CanonView
+        Implements IArmo_Keywords
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Keywords.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Keyword  -&gt;  KYWD / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property Keyword As UInteger
+        Public Property Keyword As UInteger Implements IArmo_Keywords.Keyword
             Get
                 Return Referencia("Keyword")
             End Get
@@ -1610,13 +1676,13 @@ Namespace Canon
                 Escribir("Property\Value Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Value Type.</summary>
         Public ReadOnly Property PropertyValueTypeNombre As String
             Get
                 Return NombreDeValor("Property\Value Type")
             End Get
         End Property
-
 
         ''' <summary>Property\Function Type</summary>
         Public Property PropertyFunctionType As Byte
@@ -1627,13 +1693,13 @@ Namespace Canon
                 Escribir("Property\Function Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Function Type.</summary>
         Public ReadOnly Property PropertyFunctionTypeNombre As String
             Get
                 Return NombreDeValor("Property\Function Type")
             End Get
         End Property
-
 
         ''' <summary>Property\Property</summary>
         Public Property PropertyProperty As UShort
@@ -1670,13 +1736,26 @@ Namespace Canon
     ''' <summary>Campos de un record BPTD de Fallout 4.</summary>
     Public NotInheritable Class BptdFO4
         Inherits CanonView
+        Implements IBptd
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBptd.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IBptd.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IBptd.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -1686,7 +1765,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements IBptd.ModelModelFileName
             Get
                 Return Txt("Model\MODL\Model FileName")
             End Get
@@ -1726,7 +1805,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Parts</summary>
-        Public ReadOnly Property BodyParts As IReadOnlyList(Of BptdFO4_BodyParts)
+        Public ReadOnly Property BodyParts As IReadOnlyList(Of IBptd_BodyParts) Implements IBptd.BodyParts
             Get
                 Return Elementos(Of BptdFO4_BodyParts)("Body Parts", Function(n) New BptdFO4_BodyParts(n, Context, Resolver))
             End Get
@@ -1737,13 +1816,20 @@ Namespace Canon
     ''' <summary>Un elemento de Body Parts.</summary>
     Public NotInheritable Class BptdFO4_BodyParts
         Inherits CanonView
+        Implements IBptd_BodyParts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBptd_BodyParts.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Body Part\BPTN\Part Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property BodyPartPartName As String
+        Public Property BodyPartPartName As String Implements IBptd_BodyParts.BodyPartPartName
             Get
                 Return TextoTraducible("Body Part\BPTN\Part Name")
             End Get
@@ -1753,7 +1839,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPNN\Part Node</summary>
-        Public Property BodyPartPartNode As String
+        Public Property BodyPartPartNode As String Implements IBptd_BodyParts.BodyPartPartNode
             Get
                 Return Txt("Body Part\BPNN\Part Node")
             End Get
@@ -1763,7 +1849,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPNT\VATS Target</summary>
-        Public Property BodyPartVATSTarget As String
+        Public Property BodyPartVATSTarget As String Implements IBptd_BodyParts.BodyPartVATSTarget
             Get
                 Return Txt("Body Part\BPNT\VATS Target")
             End Get
@@ -1773,7 +1859,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Damage Mult</summary>
-        Public Property NodeDataDamageMult As Single
+        Public Property NodeDataDamageMult As Single Implements IBptd_BodyParts.NodeDataDamageMult
             Get
                 Return Flt("Body Part\BPND\Node Data\Damage Mult")
             End Get
@@ -1783,7 +1869,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Explodable - Debris  -&gt;  DEBR / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property NodeDataExplodableDebris As UInteger
+        Public Property NodeDataExplodableDebris As UInteger Implements IBptd_BodyParts.NodeDataExplodableDebris
             Get
                 Return Referencia("Body Part\BPND\Node Data\Explodable - Debris")
             End Get
@@ -1793,7 +1879,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Explodable - Explosion  -&gt;  EXPL / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property NodeDataExplodableExplosion As UInteger
+        Public Property NodeDataExplodableExplosion As UInteger Implements IBptd_BodyParts.NodeDataExplodableExplosion
             Get
                 Return Referencia("Body Part\BPND\Node Data\Explodable - Explosion")
             End Get
@@ -1803,7 +1889,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Explodable - Debris Scale</summary>
-        Public Property NodeDataExplodableDebrisScale As Single
+        Public Property NodeDataExplodableDebrisScale As Single Implements IBptd_BodyParts.NodeDataExplodableDebrisScale
             Get
                 Return Flt("Body Part\BPND\Node Data\Explodable - Debris Scale")
             End Get
@@ -1813,7 +1899,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Severable - Debris  -&gt;  DEBR / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property NodeDataSeverableDebris As UInteger
+        Public Property NodeDataSeverableDebris As UInteger Implements IBptd_BodyParts.NodeDataSeverableDebris
             Get
                 Return Referencia("Body Part\BPND\Node Data\Severable - Debris")
             End Get
@@ -1823,7 +1909,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Severable - Explosion  -&gt;  EXPL / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property NodeDataSeverableExplosion As UInteger
+        Public Property NodeDataSeverableExplosion As UInteger Implements IBptd_BodyParts.NodeDataSeverableExplosion
             Get
                 Return Referencia("Body Part\BPND\Node Data\Severable - Explosion")
             End Get
@@ -1833,7 +1919,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Severable - Debris Scale</summary>
-        Public Property NodeDataSeverableDebrisScale As Single
+        Public Property NodeDataSeverableDebrisScale As Single Implements IBptd_BodyParts.NodeDataSeverableDebrisScale
             Get
                 Return Flt("Body Part\BPND\Node Data\Severable - Debris Scale")
             End Get
@@ -1903,7 +1989,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Severable - Impact DataSet  -&gt;  IPDS / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property NodeDataSeverableImpactDataSet As UInteger
+        Public Property NodeDataSeverableImpactDataSet As UInteger Implements IBptd_BodyParts.NodeDataSeverableImpactDataSet
             Get
                 Return Referencia("Body Part\BPND\Node Data\Severable - Impact DataSet")
             End Get
@@ -1913,7 +1999,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Explodable - Impact DataSet  -&gt;  IPDS / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property NodeDataExplodableImpactDataSet As UInteger
+        Public Property NodeDataExplodableImpactDataSet As UInteger Implements IBptd_BodyParts.NodeDataExplodableImpactDataSet
             Get
                 Return Referencia("Body Part\BPND\Node Data\Explodable - Impact DataSet")
             End Get
@@ -1933,7 +2019,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Flags</summary>
-        Public Property NodeDataFlags As Byte
+        Public Property NodeDataFlags As Byte Implements IBptd_BodyParts.NodeDataFlags
             Get
                 Return CByte(Entero("Body Part\BPND\Node Data\Flags"))
             End Get
@@ -1943,7 +2029,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 0 de Body Part\BPND\Node Data\Flags: Severable</summary>
-        Public Property NodeDataFlagsSeverable As Boolean
+        Public Property NodeDataFlagsSeverable As Boolean Implements IBptd_BodyParts.NodeDataFlagsSeverable
             Get
                 Return Bit("Body Part\BPND\Node Data\Flags", 0)
             End Get
@@ -1951,6 +2037,7 @@ Namespace Canon
                 PonerBit("Body Part\BPND\Node Data\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de Body Part\BPND\Node Data\Flags: Hit Reaction</summary>
         Public Property NodeDataFlagsHitReaction As Boolean
             Get
@@ -1960,6 +2047,7 @@ Namespace Canon
                 PonerBit("Body Part\BPND\Node Data\Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de Body Part\BPND\Node Data\Flags: Hit Reaction - Default</summary>
         Public Property NodeDataFlagsHitReactionDefault As Boolean
             Get
@@ -1969,8 +2057,9 @@ Namespace Canon
                 PonerBit("Body Part\BPND\Node Data\Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de Body Part\BPND\Node Data\Flags: Explodable</summary>
-        Public Property NodeDataFlagsExplodable As Boolean
+        Public Property NodeDataFlagsExplodable As Boolean Implements IBptd_BodyParts.NodeDataFlagsExplodable
             Get
                 Return Bit("Body Part\BPND\Node Data\Flags", 3)
             End Get
@@ -1978,6 +2067,7 @@ Namespace Canon
                 PonerBit("Body Part\BPND\Node Data\Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de Body Part\BPND\Node Data\Flags: Cut - Meat Cap Sever</summary>
         Public Property NodeDataFlagsCutMeatCapSever As Boolean
             Get
@@ -1987,6 +2077,7 @@ Namespace Canon
                 PonerBit("Body Part\BPND\Node Data\Flags", 4, value)
             End Set
         End Property
+
         ''' <summary>Bit 5 de Body Part\BPND\Node Data\Flags: On Cripple</summary>
         Public Property NodeDataFlagsOnCripple As Boolean
             Get
@@ -1996,6 +2087,7 @@ Namespace Canon
                 PonerBit("Body Part\BPND\Node Data\Flags", 5, value)
             End Set
         End Property
+
         ''' <summary>Bit 6 de Body Part\BPND\Node Data\Flags: Explodable - Absolute Chance</summary>
         Public Property NodeDataFlagsExplodableAbsoluteChance As Boolean
             Get
@@ -2005,6 +2097,7 @@ Namespace Canon
                 PonerBit("Body Part\BPND\Node Data\Flags", 6, value)
             End Set
         End Property
+
         ''' <summary>Bit 7 de Body Part\BPND\Node Data\Flags: Show Cripple Geometry</summary>
         Public Property NodeDataFlagsShowCrippleGeometry As Boolean
             Get
@@ -2016,7 +2109,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Part Type</summary>
-        Public Property NodeDataPartType As Byte
+        Public Property NodeDataPartType As Byte Implements IBptd_BodyParts.NodeDataPartType
             Get
                 Return CByte(Entero("Body Part\BPND\Node Data\Part Type"))
             End Get
@@ -2024,16 +2117,16 @@ Namespace Canon
                 Escribir("Body Part\BPND\Node Data\Part Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Body Part\BPND\Node Data\Part Type.</summary>
-        Public ReadOnly Property NodeDataPartTypeNombre As String
+        Public ReadOnly Property NodeDataPartTypeNombre As String Implements IBptd_BodyParts.NodeDataPartTypeNombre
             Get
                 Return NombreDeValor("Body Part\BPND\Node Data\Part Type")
             End Get
         End Property
 
-
         ''' <summary>Body Part\BPND\Node Data\Health Percent</summary>
-        Public Property NodeDataHealthPercent As Byte
+        Public Property NodeDataHealthPercent As Byte Implements IBptd_BodyParts.NodeDataHealthPercent
             Get
                 Return CByte(Entero("Body Part\BPND\Node Data\Health Percent"))
             End Get
@@ -2053,7 +2146,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\To Hit Chance</summary>
-        Public Property NodeDataToHitChance As Byte
+        Public Property NodeDataToHitChance As Byte Implements IBptd_BodyParts.NodeDataToHitChance
             Get
                 Return CByte(Entero("Body Part\BPND\Node Data\To Hit Chance"))
             End Get
@@ -2063,7 +2156,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Explodable - Explosion Chance %</summary>
-        Public Property NodeDataExplodableExplosionChance As Byte
+        Public Property NodeDataExplodableExplosionChance As Byte Implements IBptd_BodyParts.NodeDataExplodableExplosionChance
             Get
                 Return CByte(Entero("Body Part\BPND\Node Data\Explodable - Explosion Chance %"))
             End Get
@@ -2103,7 +2196,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Severable - Decal Count</summary>
-        Public Property NodeDataSeverableDecalCount As Byte
+        Public Property NodeDataSeverableDecalCount As Byte Implements IBptd_BodyParts.NodeDataSeverableDecalCount
             Get
                 Return CByte(Entero("Body Part\BPND\Node Data\Severable - Decal Count"))
             End Get
@@ -2113,7 +2206,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\BPND\Node Data\Explodable - Decal Count</summary>
-        Public Property NodeDataExplodableDecalCount As Byte
+        Public Property NodeDataExplodableDecalCount As Byte Implements IBptd_BodyParts.NodeDataExplodableDecalCount
             Get
                 Return CByte(Entero("Body Part\BPND\Node Data\Explodable - Decal Count"))
             End Get
@@ -2203,7 +2296,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\NAM1\Limb Replacement Model</summary>
-        Public Property BodyPartLimbReplacementModel As String
+        Public Property BodyPartLimbReplacementModel As String Implements IBptd_BodyParts.BodyPartLimbReplacementModel
             Get
                 Return Txt("Body Part\NAM1\Limb Replacement Model")
             End Get
@@ -2213,7 +2306,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Body Part\NAM4\Gore Effects - Target Bone</summary>
-        Public Property BodyPartGoreEffectsTargetBone As String
+        Public Property BodyPartGoreEffectsTargetBone As String Implements IBptd_BodyParts.BodyPartGoreEffectsTargetBone
             Get
                 Return Txt("Body Part\NAM4\Gore Effects - Target Bone")
             End Get
@@ -2307,13 +2400,26 @@ Namespace Canon
     ''' <summary>Campos de un record CLFM de Fallout 4.</summary>
     Public NotInheritable Class ClfmFO4
         Inherits CanonView
+        Implements IClfm
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IClfm.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IClfm.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IClfm.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -2323,7 +2429,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IClfm.Name
             Get
                 Return TextoTraducible("FULL\Name")
             End Get
@@ -2408,13 +2514,13 @@ Namespace Canon
                 Escribir("Condition\CTDA\Run On", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Condition\CTDA\Run On.</summary>
         Public ReadOnly Property ConditionRunOnNombre As String
             Get
                 Return NombreDeValor("Condition\CTDA\Run On")
             End Get
         End Property
-
 
         ''' <summary>Condition\CTDA\Parameter #3</summary>
         Public Property ConditionParameter3 As Integer
@@ -2451,13 +2557,26 @@ Namespace Canon
     ''' <summary>Campos de un record DFOB de Fallout 4.</summary>
     Public NotInheritable Class DfobFO4
         Inherits CanonView
+        Implements IDfob
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IDfob.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IDfob.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IDfob.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -2467,7 +2586,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Object. Referencia en el espacio del orden de carga.</summary>
-        Public Property [Object] As UInteger
+        Public Property [Object] As UInteger Implements IDfob.[Object]
             Get
                 Return Referencia("DATA\Object")
             End Get
@@ -2481,13 +2600,26 @@ Namespace Canon
     ''' <summary>Campos de un record FLST de Fallout 4.</summary>
     Public NotInheritable Class FlstFO4
         Inherits CanonView
+        Implements IFlst
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IFlst.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IFlst.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IFlst.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -2507,7 +2639,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FormIDs</summary>
-        Public ReadOnly Property FormIDs As IReadOnlyList(Of FlstFO4_FormIDs)
+        Public ReadOnly Property FormIDs As IReadOnlyList(Of IFlst_FormIDs) Implements IFlst.FormIDs
             Get
                 Return Elementos(Of FlstFO4_FormIDs)("FormIDs", Function(n) New FlstFO4_FormIDs(n, Context, Resolver))
             End Get
@@ -2518,13 +2650,20 @@ Namespace Canon
     ''' <summary>Un elemento de FormIDs.</summary>
     Public NotInheritable Class FlstFO4_FormIDs
         Inherits CanonView
+        Implements IFlst_FormIDs
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IFlst_FormIDs.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>LNAM\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property FormID As UInteger
+        Public Property FormID As UInteger Implements IFlst_FormIDs.FormID
             Get
                 Return Referencia("LNAM\FormID")
             End Get
@@ -2538,13 +2677,26 @@ Namespace Canon
     ''' <summary>Campos de un record HDPT de Fallout 4.</summary>
     Public NotInheritable Class HdptFO4
         Inherits CanonView
+        Implements IHdpt
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IHdpt.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IHdpt.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IHdpt.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -2554,7 +2706,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IHdpt.Name
             Get
                 Return TextoTraducible("FULL\Name")
             End Get
@@ -2564,7 +2716,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements IHdpt.ModelModelFileName
             Get
                 Return Txt("Model\MODL\Model FileName")
             End Get
@@ -2604,7 +2756,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Flags</summary>
-        Public Property Flags As Byte
+        Public Property Flags As Byte Implements IHdpt.Flags
             Get
                 Return CByte(Entero("DATA\Flags"))
             End Get
@@ -2614,7 +2766,7 @@ Namespace Canon
         End Property
 
         ''' <summary>PNAM\Type</summary>
-        Public Property Type As UInteger
+        Public Property Type As UInteger Implements IHdpt.Type
             Get
                 Return CUInt(Entero("PNAM\Type"))
             End Get
@@ -2624,7 +2776,7 @@ Namespace Canon
         End Property
 
         ''' <summary>TNAM\Texture Set  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
-        Public Property TextureSet As UInteger
+        Public Property TextureSet As UInteger Implements IHdpt.TextureSet
             Get
                 Return Referencia("TNAM\Texture Set")
             End Get
@@ -2634,7 +2786,7 @@ Namespace Canon
         End Property
 
         ''' <summary>CNAM\Color  -&gt;  CLFM. Referencia en el espacio del orden de carga.</summary>
-        Public Property Color As UInteger
+        Public Property Color As UInteger Implements IHdpt.Color
             Get
                 Return Referencia("CNAM\Color")
             End Get
@@ -2644,7 +2796,7 @@ Namespace Canon
         End Property
 
         ''' <summary>RNAM\Valid Races  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property ValidRaces As UInteger
+        Public Property ValidRaces As UInteger Implements IHdpt.ValidRaces
             Get
                 Return Referencia("RNAM\Valid Races")
             End Get
@@ -2654,14 +2806,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Extra Parts</summary>
-        Public ReadOnly Property ExtraParts As IReadOnlyList(Of HdptFO4_ExtraParts)
+        Public ReadOnly Property ExtraParts As IReadOnlyList(Of IHdpt_ExtraParts) Implements IHdpt.ExtraParts
             Get
                 Return Elementos(Of HdptFO4_ExtraParts)("Extra Parts", Function(n) New HdptFO4_ExtraParts(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Parts</summary>
-        Public ReadOnly Property Parts As IReadOnlyList(Of HdptFO4_Parts)
+        Public ReadOnly Property Parts As IReadOnlyList(Of IHdpt_Parts) Implements IHdpt.Parts
             Get
                 Return Elementos(Of HdptFO4_Parts)("Parts", Function(n) New HdptFO4_Parts(n, Context, Resolver))
             End Get
@@ -2679,13 +2831,20 @@ Namespace Canon
     ''' <summary>Un elemento de Extra Parts.</summary>
     Public NotInheritable Class HdptFO4_ExtraParts
         Inherits CanonView
+        Implements IHdpt_ExtraParts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IHdpt_ExtraParts.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>HNAM\Part  -&gt;  HDPT. Referencia en el espacio del orden de carga.</summary>
-        Public Property Part As UInteger
+        Public Property Part As UInteger Implements IHdpt_ExtraParts.Part
             Get
                 Return Referencia("HNAM\Part")
             End Get
@@ -2699,13 +2858,20 @@ Namespace Canon
     ''' <summary>Un elemento de Parts.</summary>
     Public NotInheritable Class HdptFO4_Parts
         Inherits CanonView
+        Implements IHdpt_Parts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IHdpt_Parts.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Part\NAM0\Part Type</summary>
-        Public Property PartPartType As UInteger
+        Public Property PartPartType As UInteger Implements IHdpt_Parts.PartPartType
             Get
                 Return CUInt(Entero("Part\NAM0\Part Type"))
             End Get
@@ -2715,7 +2881,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Part\NAM1\FileName</summary>
-        Public Property PartFileName As String
+        Public Property PartFileName As String Implements IHdpt_Parts.PartFileName
             Get
                 Return Txt("Part\NAM1\FileName")
             End Get
@@ -2773,13 +2939,13 @@ Namespace Canon
                 Escribir("Condition\CTDA\Run On", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Condition\CTDA\Run On.</summary>
         Public ReadOnly Property ConditionRunOnNombre As String
             Get
                 Return NombreDeValor("Condition\CTDA\Run On")
             End Get
         End Property
-
 
         ''' <summary>Condition\CTDA\Parameter #3</summary>
         Public Property ConditionParameter3 As Integer
@@ -2816,13 +2982,26 @@ Namespace Canon
     ''' <summary>Campos de un record LVLI de Fallout 4.</summary>
     Public NotInheritable Class LvliFO4
         Inherits CanonView
+        Implements ILvli
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements ILvli.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements ILvli.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements ILvli.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -2832,7 +3011,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short
+        Public Property ObjectBoundsX1 As Short Implements ILvli.ObjectBoundsX1
             Get
                 Return CShort(Entero("OBND\Object Bounds\X1"))
             End Get
@@ -2842,7 +3021,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short
+        Public Property ObjectBoundsY1 As Short Implements ILvli.ObjectBoundsY1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y1"))
             End Get
@@ -2852,7 +3031,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short
+        Public Property ObjectBoundsZ1 As Short Implements ILvli.ObjectBoundsZ1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z1"))
             End Get
@@ -2862,7 +3041,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short
+        Public Property ObjectBoundsX2 As Short Implements ILvli.ObjectBoundsX2
             Get
                 Return CShort(Entero("OBND\Object Bounds\X2"))
             End Get
@@ -2872,7 +3051,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short
+        Public Property ObjectBoundsY2 As Short Implements ILvli.ObjectBoundsY2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y2"))
             End Get
@@ -2882,7 +3061,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short
+        Public Property ObjectBoundsZ2 As Short Implements ILvli.ObjectBoundsZ2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z2"))
             End Get
@@ -2892,7 +3071,7 @@ Namespace Canon
         End Property
 
         ''' <summary>LVLD\Chance None</summary>
-        Public Property ChanceNone As Byte
+        Public Property ChanceNone As Byte Implements ILvli.ChanceNone
             Get
                 Return CByte(Entero("LVLD\Chance None"))
             End Get
@@ -2912,7 +3091,7 @@ Namespace Canon
         End Property
 
         ''' <summary>LVLF\Flags</summary>
-        Public Property Flags As Byte
+        Public Property Flags As Byte Implements ILvli.Flags
             Get
                 Return CByte(Entero("LVLF\Flags"))
             End Get
@@ -2932,7 +3111,7 @@ Namespace Canon
         End Property
 
         ''' <summary>LLCT\Count</summary>
-        Public Property Count As Byte
+        Public Property Count As Byte Implements ILvli.Count
             Get
                 Return CByte(Entero("LLCT\Count"))
             End Get
@@ -2962,7 +3141,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entries</summary>
-        Public ReadOnly Property LeveledListEntries As IReadOnlyList(Of LvliFO4_LeveledListEntries)
+        Public ReadOnly Property LeveledListEntries As IReadOnlyList(Of ILvli_LeveledListEntries) Implements ILvli.LeveledListEntries
             Get
                 Return Elementos(Of LvliFO4_LeveledListEntries)("Leveled List Entries", Function(n) New LvliFO4_LeveledListEntries(n, Context, Resolver))
             End Get
@@ -2980,13 +3159,20 @@ Namespace Canon
     ''' <summary>Un elemento de Leveled List Entries.</summary>
     Public NotInheritable Class LvliFO4_LeveledListEntries
         Inherits CanonView
+        Implements ILvli_LeveledListEntries
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements ILvli_LeveledListEntries.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Leveled List Entry\LVLO\Level</summary>
-        Public Property LeveledListEntryLevel As UShort
+        Public Property LeveledListEntryLevel As UShort Implements ILvli_LeveledListEntries.LeveledListEntryLevel
             Get
                 Return CUShort(Entero("Leveled List Entry\LVLO\Level"))
             End Get
@@ -2996,7 +3182,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\LVLO\Item. Referencia en el espacio del orden de carga.</summary>
-        Public Property LeveledListEntryItem As UInteger
+        Public Property LeveledListEntryItem As UInteger Implements ILvli_LeveledListEntries.LeveledListEntryItem
             Get
                 Return Referencia("Leveled List Entry\LVLO\Item")
             End Get
@@ -3006,7 +3192,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\LVLO\Count</summary>
-        Public Property LeveledListEntryCount As UShort
+        Public Property LeveledListEntryCount As UShort Implements ILvli_LeveledListEntries.LeveledListEntryCount
             Get
                 Return CUShort(Entero("Leveled List Entry\LVLO\Count"))
             End Get
@@ -3026,7 +3212,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\COED\Extra Data\Owner  -&gt;  NPC_ / FACT / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property ExtraDataOwner As UInteger
+        Public Property ExtraDataOwner As UInteger Implements ILvli_LeveledListEntries.ExtraDataOwner
             Get
                 Return Referencia("Leveled List Entry\COED\Extra Data\Owner")
             End Get
@@ -3036,7 +3222,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\COED\Extra Data\Item Condition</summary>
-        Public Property ExtraDataItemCondition As Single
+        Public Property ExtraDataItemCondition As Single Implements ILvli_LeveledListEntries.ExtraDataItemCondition
             Get
                 Return Flt("Leveled List Entry\COED\Extra Data\Item Condition")
             End Get
@@ -3080,13 +3266,26 @@ Namespace Canon
     ''' <summary>Campos de un record LVLN de Fallout 4.</summary>
     Public NotInheritable Class LvlnFO4
         Inherits CanonView
+        Implements ILvln
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements ILvln.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements ILvln.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements ILvln.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -3096,7 +3295,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short
+        Public Property ObjectBoundsX1 As Short Implements ILvln.ObjectBoundsX1
             Get
                 Return CShort(Entero("OBND\Object Bounds\X1"))
             End Get
@@ -3106,7 +3305,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short
+        Public Property ObjectBoundsY1 As Short Implements ILvln.ObjectBoundsY1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y1"))
             End Get
@@ -3116,7 +3315,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short
+        Public Property ObjectBoundsZ1 As Short Implements ILvln.ObjectBoundsZ1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z1"))
             End Get
@@ -3126,7 +3325,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short
+        Public Property ObjectBoundsX2 As Short Implements ILvln.ObjectBoundsX2
             Get
                 Return CShort(Entero("OBND\Object Bounds\X2"))
             End Get
@@ -3136,7 +3335,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short
+        Public Property ObjectBoundsY2 As Short Implements ILvln.ObjectBoundsY2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y2"))
             End Get
@@ -3146,7 +3345,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short
+        Public Property ObjectBoundsZ2 As Short Implements ILvln.ObjectBoundsZ2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z2"))
             End Get
@@ -3156,7 +3355,7 @@ Namespace Canon
         End Property
 
         ''' <summary>LVLD\Chance None</summary>
-        Public Property ChanceNone As Byte
+        Public Property ChanceNone As Byte Implements ILvln.ChanceNone
             Get
                 Return CByte(Entero("LVLD\Chance None"))
             End Get
@@ -3176,7 +3375,7 @@ Namespace Canon
         End Property
 
         ''' <summary>LVLF\Flags</summary>
-        Public Property Flags As Byte
+        Public Property Flags As Byte Implements ILvln.Flags
             Get
                 Return CByte(Entero("LVLF\Flags"))
             End Get
@@ -3196,7 +3395,7 @@ Namespace Canon
         End Property
 
         ''' <summary>LLCT\Count</summary>
-        Public Property Count As Byte
+        Public Property Count As Byte Implements ILvln.Count
             Get
                 Return CByte(Entero("LLCT\Count"))
             End Get
@@ -3206,7 +3405,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements ILvln.ModelModelFileName
             Get
                 Return Txt("Model\MODL\Model FileName")
             End Get
@@ -3246,7 +3445,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entries</summary>
-        Public ReadOnly Property LeveledListEntries As IReadOnlyList(Of LvlnFO4_LeveledListEntries)
+        Public ReadOnly Property LeveledListEntries As IReadOnlyList(Of ILvln_LeveledListEntries) Implements ILvln.LeveledListEntries
             Get
                 Return Elementos(Of LvlnFO4_LeveledListEntries)("Leveled List Entries", Function(n) New LvlnFO4_LeveledListEntries(n, Context, Resolver))
             End Get
@@ -3264,13 +3463,20 @@ Namespace Canon
     ''' <summary>Un elemento de Leveled List Entries.</summary>
     Public NotInheritable Class LvlnFO4_LeveledListEntries
         Inherits CanonView
+        Implements ILvln_LeveledListEntries
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements ILvln_LeveledListEntries.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Leveled List Entry\LVLO\Level</summary>
-        Public Property LeveledListEntryLevel As UShort
+        Public Property LeveledListEntryLevel As UShort Implements ILvln_LeveledListEntries.LeveledListEntryLevel
             Get
                 Return CUShort(Entero("Leveled List Entry\LVLO\Level"))
             End Get
@@ -3280,7 +3486,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\LVLO\NPC  -&gt;  LVLN / NPC_. Referencia en el espacio del orden de carga.</summary>
-        Public Property LeveledListEntryNPC As UInteger
+        Public Property LeveledListEntryNPC As UInteger Implements ILvln_LeveledListEntries.LeveledListEntryNPC
             Get
                 Return Referencia("Leveled List Entry\LVLO\NPC")
             End Get
@@ -3290,7 +3496,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\LVLO\Count</summary>
-        Public Property LeveledListEntryCount As UShort
+        Public Property LeveledListEntryCount As UShort Implements ILvln_LeveledListEntries.LeveledListEntryCount
             Get
                 Return CUShort(Entero("Leveled List Entry\LVLO\Count"))
             End Get
@@ -3310,7 +3516,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\COED\Extra Data\Owner  -&gt;  NPC_ / FACT / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property ExtraDataOwner As UInteger
+        Public Property ExtraDataOwner As UInteger Implements ILvln_LeveledListEntries.ExtraDataOwner
             Get
                 Return Referencia("Leveled List Entry\COED\Extra Data\Owner")
             End Get
@@ -3320,7 +3526,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Leveled List Entry\COED\Extra Data\Item Condition</summary>
-        Public Property ExtraDataItemCondition As Single
+        Public Property ExtraDataItemCondition As Single Implements ILvln_LeveledListEntries.ExtraDataItemCondition
             Get
                 Return Flt("Leveled List Entry\COED\Extra Data\Item Condition")
             End Get
@@ -3364,13 +3570,26 @@ Namespace Canon
     ''' <summary>Campos de un record MSWP de Fallout 4.</summary>
     Public NotInheritable Class MswpFO4
         Inherits CanonView
+        Implements IMswp
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IMswp.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IMswp.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IMswp.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -3380,7 +3599,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FNAM\Tree Folder</summary>
-        Public Property TreeFolder As String
+        Public Property TreeFolder As String Implements IMswp.TreeFolder
             Get
                 Return Txt("FNAM\Tree Folder")
             End Get
@@ -3390,7 +3609,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Material Substitutions</summary>
-        Public ReadOnly Property MaterialSubstitutions As IReadOnlyList(Of MswpFO4_MaterialSubstitutions)
+        Public ReadOnly Property MaterialSubstitutions As IReadOnlyList(Of IMswp_MaterialSubstitutions) Implements IMswp.MaterialSubstitutions
             Get
                 Return Elementos(Of MswpFO4_MaterialSubstitutions)("Material Substitutions", Function(n) New MswpFO4_MaterialSubstitutions(n, Context, Resolver))
             End Get
@@ -3401,13 +3620,20 @@ Namespace Canon
     ''' <summary>Un elemento de Material Substitutions.</summary>
     Public NotInheritable Class MswpFO4_MaterialSubstitutions
         Inherits CanonView
+        Implements IMswp_MaterialSubstitutions
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IMswp_MaterialSubstitutions.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Substitution\BNAM\Original Material</summary>
-        Public Property SubstitutionOriginalMaterial As String
+        Public Property SubstitutionOriginalMaterial As String Implements IMswp_MaterialSubstitutions.SubstitutionOriginalMaterial
             Get
                 Return Txt("Substitution\BNAM\Original Material")
             End Get
@@ -3417,7 +3643,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Substitution\SNAM\Replacement Material</summary>
-        Public Property SubstitutionReplacementMaterial As String
+        Public Property SubstitutionReplacementMaterial As String Implements IMswp_MaterialSubstitutions.SubstitutionReplacementMaterial
             Get
                 Return Txt("Substitution\SNAM\Replacement Material")
             End Get
@@ -3427,7 +3653,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Substitution\FNAM\Tree Folder (obsolete)</summary>
-        Public Property SubstitutionTreeFolderObsolete As String
+        Public Property SubstitutionTreeFolderObsolete As String Implements IMswp_MaterialSubstitutions.SubstitutionTreeFolderObsolete
             Get
                 Return Txt("Substitution\FNAM\Tree Folder (obsolete)")
             End Get
@@ -3437,7 +3663,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Substitution\CNAM\Color Remapping Index</summary>
-        Public Property SubstitutionColorRemappingIndex As Single
+        Public Property SubstitutionColorRemappingIndex As Single Implements IMswp_MaterialSubstitutions.SubstitutionColorRemappingIndex
             Get
                 Return Flt("Substitution\CNAM\Color Remapping Index")
             End Get
@@ -3451,13 +3677,26 @@ Namespace Canon
     ''' <summary>Campos de un record NPC_ de Fallout 4.</summary>
     Public NotInheritable Class NpcFO4
         Inherits CanonView
+        Implements INpc
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements INpc.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements INpc.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -3467,7 +3706,7 @@ Namespace Canon
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Version</summary>
-        Public Property VirtualMachineAdapterVersion As Short
+        Public Property VirtualMachineAdapterVersion As Short Implements INpc.VirtualMachineAdapterVersion
             Get
                 Return CShort(Entero("VMAD\Virtual Machine Adapter\Version"))
             End Get
@@ -3477,7 +3716,7 @@ Namespace Canon
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Object Format</summary>
-        Public Property VirtualMachineAdapterObjectFormat As Short
+        Public Property VirtualMachineAdapterObjectFormat As Short Implements INpc.VirtualMachineAdapterObjectFormat
             Get
                 Return CShort(Entero("VMAD\Virtual Machine Adapter\Object Format"))
             End Get
@@ -3487,7 +3726,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short
+        Public Property ObjectBoundsX1 As Short Implements INpc.ObjectBoundsX1
             Get
                 Return CShort(Entero("OBND\Object Bounds\X1"))
             End Get
@@ -3497,7 +3736,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short
+        Public Property ObjectBoundsY1 As Short Implements INpc.ObjectBoundsY1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y1"))
             End Get
@@ -3507,7 +3746,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short
+        Public Property ObjectBoundsZ1 As Short Implements INpc.ObjectBoundsZ1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z1"))
             End Get
@@ -3517,7 +3756,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short
+        Public Property ObjectBoundsX2 As Short Implements INpc.ObjectBoundsX2
             Get
                 Return CShort(Entero("OBND\Object Bounds\X2"))
             End Get
@@ -3527,7 +3766,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short
+        Public Property ObjectBoundsY2 As Short Implements INpc.ObjectBoundsY2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y2"))
             End Get
@@ -3537,7 +3776,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short
+        Public Property ObjectBoundsZ2 As Short Implements INpc.ObjectBoundsZ2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z2"))
             End Get
@@ -3567,7 +3806,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ACBS\Configuration\Flags</summary>
-        Public Property ConfigurationFlags As UInteger
+        Public Property ConfigurationFlags As UInteger Implements INpc.ConfigurationFlags
             Get
                 Return CUInt(Entero("ACBS\Configuration\Flags"))
             End Get
@@ -3577,7 +3816,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 0 de ACBS\Configuration\Flags: Female</summary>
-        Public Property ConfigurationFlagsFemale As Boolean
+        Public Property ConfigurationFlagsFemale As Boolean Implements INpc.ConfigurationFlagsFemale
             Get
                 Return Bit("ACBS\Configuration\Flags", 0)
             End Get
@@ -3585,8 +3824,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de ACBS\Configuration\Flags: Essential</summary>
-        Public Property ConfigurationFlagsEssential As Boolean
+        Public Property ConfigurationFlagsEssential As Boolean Implements INpc.ConfigurationFlagsEssential
             Get
                 Return Bit("ACBS\Configuration\Flags", 1)
             End Get
@@ -3594,8 +3834,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de ACBS\Configuration\Flags: Is CharGen Face Preset</summary>
-        Public Property ConfigurationFlagsIsCharGenFacePreset As Boolean
+        Public Property ConfigurationFlagsIsCharGenFacePreset As Boolean Implements INpc.ConfigurationFlagsIsCharGenFacePreset
             Get
                 Return Bit("ACBS\Configuration\Flags", 2)
             End Get
@@ -3603,8 +3844,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de ACBS\Configuration\Flags: Respawn</summary>
-        Public Property ConfigurationFlagsRespawn As Boolean
+        Public Property ConfigurationFlagsRespawn As Boolean Implements INpc.ConfigurationFlagsRespawn
             Get
                 Return Bit("ACBS\Configuration\Flags", 3)
             End Get
@@ -3612,8 +3854,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de ACBS\Configuration\Flags: Auto-calc stats</summary>
-        Public Property ConfigurationFlagsAutoCalcStats As Boolean
+        Public Property ConfigurationFlagsAutoCalcStats As Boolean Implements INpc.ConfigurationFlagsAutoCalcStats
             Get
                 Return Bit("ACBS\Configuration\Flags", 4)
             End Get
@@ -3621,8 +3864,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 4, value)
             End Set
         End Property
+
         ''' <summary>Bit 5 de ACBS\Configuration\Flags: Unique</summary>
-        Public Property ConfigurationFlagsUnique As Boolean
+        Public Property ConfigurationFlagsUnique As Boolean Implements INpc.ConfigurationFlagsUnique
             Get
                 Return Bit("ACBS\Configuration\Flags", 5)
             End Get
@@ -3630,8 +3874,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 5, value)
             End Set
         End Property
+
         ''' <summary>Bit 6 de ACBS\Configuration\Flags: Doesn't affect stealth meter</summary>
-        Public Property ConfigurationFlagsDoesnTAffectStealthMeter As Boolean
+        Public Property ConfigurationFlagsDoesnTAffectStealthMeter As Boolean Implements INpc.ConfigurationFlagsDoesnTAffectStealthMeter
             Get
                 Return Bit("ACBS\Configuration\Flags", 6)
             End Get
@@ -3639,8 +3884,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 6, value)
             End Set
         End Property
+
         ''' <summary>Bit 7 de ACBS\Configuration\Flags: PC Level Mult</summary>
-        Public Property ConfigurationFlagsPCLevelMult As Boolean
+        Public Property ConfigurationFlagsPCLevelMult As Boolean Implements INpc.ConfigurationFlagsPCLevelMult
             Get
                 Return Bit("ACBS\Configuration\Flags", 7)
             End Get
@@ -3648,6 +3894,7 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 7, value)
             End Set
         End Property
+
         ''' <summary>Bit 9 de ACBS\Configuration\Flags: Calc For Each Template</summary>
         Public Property ConfigurationFlagsCalcForEachTemplate As Boolean
             Get
@@ -3657,8 +3904,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 9, value)
             End Set
         End Property
+
         ''' <summary>Bit 11 de ACBS\Configuration\Flags: Protected</summary>
-        Public Property ConfigurationFlagsProtected As Boolean
+        Public Property ConfigurationFlagsProtected As Boolean Implements INpc.ConfigurationFlagsProtected
             Get
                 Return Bit("ACBS\Configuration\Flags", 11)
             End Get
@@ -3666,8 +3914,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 11, value)
             End Set
         End Property
+
         ''' <summary>Bit 14 de ACBS\Configuration\Flags: Summonable</summary>
-        Public Property ConfigurationFlagsSummonable As Boolean
+        Public Property ConfigurationFlagsSummonable As Boolean Implements INpc.ConfigurationFlagsSummonable
             Get
                 Return Bit("ACBS\Configuration\Flags", 14)
             End Get
@@ -3675,8 +3924,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 14, value)
             End Set
         End Property
+
         ''' <summary>Bit 16 de ACBS\Configuration\Flags: Doesn't bleed</summary>
-        Public Property ConfigurationFlagsDoesnTBleed As Boolean
+        Public Property ConfigurationFlagsDoesnTBleed As Boolean Implements INpc.ConfigurationFlagsDoesnTBleed
             Get
                 Return Bit("ACBS\Configuration\Flags", 16)
             End Get
@@ -3684,8 +3934,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 16, value)
             End Set
         End Property
+
         ''' <summary>Bit 18 de ACBS\Configuration\Flags: Bleedout Override</summary>
-        Public Property ConfigurationFlagsBleedoutOverride As Boolean
+        Public Property ConfigurationFlagsBleedoutOverride As Boolean Implements INpc.ConfigurationFlagsBleedoutOverride
             Get
                 Return Bit("ACBS\Configuration\Flags", 18)
             End Get
@@ -3693,8 +3944,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 18, value)
             End Set
         End Property
+
         ''' <summary>Bit 19 de ACBS\Configuration\Flags: Opposite Gender Anims</summary>
-        Public Property ConfigurationFlagsOppositeGenderAnims As Boolean
+        Public Property ConfigurationFlagsOppositeGenderAnims As Boolean Implements INpc.ConfigurationFlagsOppositeGenderAnims
             Get
                 Return Bit("ACBS\Configuration\Flags", 19)
             End Get
@@ -3702,8 +3954,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 19, value)
             End Set
         End Property
+
         ''' <summary>Bit 20 de ACBS\Configuration\Flags: Simple Actor</summary>
-        Public Property ConfigurationFlagsSimpleActor As Boolean
+        Public Property ConfigurationFlagsSimpleActor As Boolean Implements INpc.ConfigurationFlagsSimpleActor
             Get
                 Return Bit("ACBS\Configuration\Flags", 20)
             End Get
@@ -3711,6 +3964,7 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 20, value)
             End Set
         End Property
+
         ''' <summary>Bit 23 de ACBS\Configuration\Flags: No Activation/Hellos</summary>
         Public Property ConfigurationFlagsNoActivationHellos As Boolean
             Get
@@ -3720,6 +3974,7 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 23, value)
             End Set
         End Property
+
         ''' <summary>Bit 24 de ACBS\Configuration\Flags: Diffuse Alpha Test</summary>
         Public Property ConfigurationFlagsDiffuseAlphaTest As Boolean
             Get
@@ -3729,8 +3984,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 24, value)
             End Set
         End Property
+
         ''' <summary>Bit 29 de ACBS\Configuration\Flags: Is Ghost</summary>
-        Public Property ConfigurationFlagsIsGhost As Boolean
+        Public Property ConfigurationFlagsIsGhost As Boolean Implements INpc.ConfigurationFlagsIsGhost
             Get
                 Return Bit("ACBS\Configuration\Flags", 29)
             End Get
@@ -3738,8 +3994,9 @@ Namespace Canon
                 PonerBit("ACBS\Configuration\Flags", 29, value)
             End Set
         End Property
+
         ''' <summary>Bit 31 de ACBS\Configuration\Flags: Invulnerable</summary>
-        Public Property ConfigurationFlagsInvulnerable As Boolean
+        Public Property ConfigurationFlagsInvulnerable As Boolean Implements INpc.ConfigurationFlagsInvulnerable
             Get
                 Return Bit("ACBS\Configuration\Flags", 31)
             End Get
@@ -3759,7 +4016,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ACBS\Configuration\Level</summary>
-        Public Property ConfigurationLevel As UShort
+        Public Property ConfigurationLevel As UShort Implements INpc.ConfigurationLevel
             Get
                 Return CUShort(Entero("ACBS\Configuration\Level"))
             End Get
@@ -3769,7 +4026,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ACBS\Configuration\Calc min level</summary>
-        Public Property ConfigurationCalcMinLevel As UShort
+        Public Property ConfigurationCalcMinLevel As UShort Implements INpc.ConfigurationCalcMinLevel
             Get
                 Return CUShort(Entero("ACBS\Configuration\Calc min level"))
             End Get
@@ -3779,7 +4036,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ACBS\Configuration\Calc max level</summary>
-        Public Property ConfigurationCalcMaxLevel As UShort
+        Public Property ConfigurationCalcMaxLevel As UShort Implements INpc.ConfigurationCalcMaxLevel
             Get
                 Return CUShort(Entero("ACBS\Configuration\Calc max level"))
             End Get
@@ -3799,7 +4056,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ACBS\Configuration\Template Flags</summary>
-        Public Property ConfigurationTemplateFlags As UShort
+        Public Property ConfigurationTemplateFlags As UShort Implements INpc.ConfigurationTemplateFlags
             Get
                 Return CUShort(Entero("ACBS\Configuration\Template Flags"))
             End Get
@@ -3809,7 +4066,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ACBS\Configuration\Bleedout Override</summary>
-        Public Property ConfigurationBleedoutOverride As UShort
+        Public Property ConfigurationBleedoutOverride As UShort Implements INpc.ConfigurationBleedoutOverride
             Get
                 Return CUShort(Entero("ACBS\Configuration\Bleedout Override"))
             End Get
@@ -3819,7 +4076,7 @@ Namespace Canon
         End Property
 
         ''' <summary>INAM\Death item  -&gt;  LVLI. Referencia en el espacio del orden de carga.</summary>
-        Public Property DeathItem As UInteger
+        Public Property DeathItem As UInteger Implements INpc.DeathItem
             Get
                 Return Referencia("INAM\Death item")
             End Get
@@ -3829,7 +4086,7 @@ Namespace Canon
         End Property
 
         ''' <summary>VTCK\Voice  -&gt;  VTYP. Referencia en el espacio del orden de carga.</summary>
-        Public Property Voice As UInteger
+        Public Property Voice As UInteger Implements INpc.Voice
             Get
                 Return Referencia("VTCK\Voice")
             End Get
@@ -3999,7 +4256,7 @@ Namespace Canon
         End Property
 
         ''' <summary>RNAM\Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
-        Public Property Race As UInteger
+        Public Property Race As UInteger Implements INpc.Race
             Get
                 Return Referencia("RNAM\Race")
             End Get
@@ -4009,7 +4266,7 @@ Namespace Canon
         End Property
 
         ''' <summary>SPCT\Count</summary>
-        Public Property Count As UInteger
+        Public Property Count As UInteger Implements INpc.Count
             Get
                 Return CUInt(Entero("SPCT\Count"))
             End Get
@@ -4019,7 +4276,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Destructible\DEST\Header\Health</summary>
-        Public Property HeaderHealth As Integer
+        Public Property HeaderHealth As Integer Implements INpc.HeaderHealth
             Get
                 Return CInt(Entero("Destructible\DEST\Header\Health"))
             End Get
@@ -4029,7 +4286,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Destructible\DEST\Header\DEST Count</summary>
-        Public Property HeaderDESTCount As Byte
+        Public Property HeaderDESTCount As Byte Implements INpc.HeaderDESTCount
             Get
                 Return CByte(Entero("Destructible\DEST\Header\DEST Count"))
             End Get
@@ -4057,6 +4314,7 @@ Namespace Canon
                 PonerBit("Destructible\DEST\Header\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de Destructible\DEST\Header\Flags: Large Actor Destroys</summary>
         Public Property HeaderFlagsLargeActorDestroys As Boolean
             Get
@@ -4068,7 +4326,7 @@ Namespace Canon
         End Property
 
         ''' <summary>WNAM\Skin  -&gt;  ARMO. Referencia en el espacio del orden de carga.</summary>
-        Public Property Skin As UInteger
+        Public Property Skin As UInteger Implements INpc.Skin
             Get
                 Return Referencia("WNAM\Skin")
             End Get
@@ -4078,7 +4336,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ANAM\Far away model  -&gt;  ARMO. Referencia en el espacio del orden de carga.</summary>
-        Public Property FarAwayModel As UInteger
+        Public Property FarAwayModel As UInteger Implements INpc.FarAwayModel
             Get
                 Return Referencia("ANAM\Far away model")
             End Get
@@ -4088,7 +4346,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ATKR\Attack Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
-        Public Property AttackRace As UInteger
+        Public Property AttackRace As UInteger Implements INpc.AttackRace
             Get
                 Return Referencia("ATKR\Attack Race")
             End Get
@@ -4098,7 +4356,7 @@ Namespace Canon
         End Property
 
         ''' <summary>SPOR\Spectator Override Package List  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property SpectatorOverridePackageList As UInteger
+        Public Property SpectatorOverridePackageList As UInteger Implements INpc.SpectatorOverridePackageList
             Get
                 Return Referencia("SPOR\Spectator Override Package List")
             End Get
@@ -4108,7 +4366,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OCOR\Observe Dead Body Override Package List  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObserveDeadBodyOverridePackageList As UInteger
+        Public Property ObserveDeadBodyOverridePackageList As UInteger Implements INpc.ObserveDeadBodyOverridePackageList
             Get
                 Return Referencia("OCOR\Observe Dead Body Override Package List")
             End Get
@@ -4118,7 +4376,7 @@ Namespace Canon
         End Property
 
         ''' <summary>GWOR\Guard Warn Override Package List  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property GuardWarnOverridePackageList As UInteger
+        Public Property GuardWarnOverridePackageList As UInteger Implements INpc.GuardWarnOverridePackageList
             Get
                 Return Referencia("GWOR\Guard Warn Override Package List")
             End Get
@@ -4128,7 +4386,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ECOR\Combat Override Package List  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property CombatOverridePackageList As UInteger
+        Public Property CombatOverridePackageList As UInteger Implements INpc.CombatOverridePackageList
             Get
                 Return Referencia("ECOR\Combat Override Package List")
             End Get
@@ -4158,7 +4416,7 @@ Namespace Canon
         End Property
 
         ''' <summary>PRKZ\Perk Count</summary>
-        Public Property PerkCount As UInteger
+        Public Property PerkCount As UInteger Implements INpc.PerkCount
             Get
                 Return CUInt(Entero("PRKZ\Perk Count"))
             End Get
@@ -4188,7 +4446,7 @@ Namespace Canon
         End Property
 
         ''' <summary>COCT\Count</summary>
-        Public Property Count2 As UInteger
+        Public Property Count2 As UInteger Implements INpc.Count2
             Get
                 Return CUInt(Entero("COCT\Count"))
             End Get
@@ -4198,7 +4456,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Aggression</summary>
-        Public Property AIDataAggression As Byte
+        Public Property AIDataAggression As Byte Implements INpc.AIDataAggression
             Get
                 Return CByte(Entero("AIDT\AI Data\Aggression"))
             End Get
@@ -4208,7 +4466,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Confidence</summary>
-        Public Property AIDataConfidence As Byte
+        Public Property AIDataConfidence As Byte Implements INpc.AIDataConfidence
             Get
                 Return CByte(Entero("AIDT\AI Data\Confidence"))
             End Get
@@ -4218,7 +4476,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Energy Level</summary>
-        Public Property AIDataEnergyLevel As Byte
+        Public Property AIDataEnergyLevel As Byte Implements INpc.AIDataEnergyLevel
             Get
                 Return CByte(Entero("AIDT\AI Data\Energy Level"))
             End Get
@@ -4228,7 +4486,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Morality</summary>
-        Public Property AIDataMorality As Byte
+        Public Property AIDataMorality As Byte Implements INpc.AIDataMorality
             Get
                 Return CByte(Entero("AIDT\AI Data\Morality"))
             End Get
@@ -4238,7 +4496,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Mood</summary>
-        Public Property AIDataMood As Byte
+        Public Property AIDataMood As Byte Implements INpc.AIDataMood
             Get
                 Return CByte(Entero("AIDT\AI Data\Mood"))
             End Get
@@ -4248,7 +4506,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Assistance</summary>
-        Public Property AIDataAssistance As Byte
+        Public Property AIDataAssistance As Byte Implements INpc.AIDataAssistance
             Get
                 Return CByte(Entero("AIDT\AI Data\Assistance"))
             End Get
@@ -4258,7 +4516,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Aggro\Aggro Radius Behavior</summary>
-        Public Property AggroAggroRadiusBehavior As Byte
+        Public Property AggroAggroRadiusBehavior As Byte Implements INpc.AggroAggroRadiusBehavior
             Get
                 Return CByte(Entero("AIDT\AI Data\Aggro\Aggro Radius Behavior"))
             End Get
@@ -4268,7 +4526,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Aggro\Warn</summary>
-        Public Property AggroWarn As UInteger
+        Public Property AggroWarn As UInteger Implements INpc.AggroWarn
             Get
                 Return CUInt(Entero("AIDT\AI Data\Aggro\Warn"))
             End Get
@@ -4278,7 +4536,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Aggro\Warn/Attack</summary>
-        Public Property AggroWarnAttack As UInteger
+        Public Property AggroWarnAttack As UInteger Implements INpc.AggroWarnAttack
             Get
                 Return CUInt(Entero("AIDT\AI Data\Aggro\Warn/Attack"))
             End Get
@@ -4288,7 +4546,7 @@ Namespace Canon
         End Property
 
         ''' <summary>AIDT\AI Data\Aggro\Attack</summary>
-        Public Property AggroAttack As UInteger
+        Public Property AggroAttack As UInteger Implements INpc.AggroAttack
             Get
                 Return CUInt(Entero("AIDT\AI Data\Aggro\Attack"))
             End Get
@@ -4308,7 +4566,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Keywords\KSIZ\Keyword Count</summary>
-        Public Property KeywordsKeywordCount As UInteger
+        Public Property KeywordsKeywordCount As UInteger Implements INpc.KeywordsKeywordCount
             Get
                 Return CUInt(Entero("Keywords\KSIZ\Keyword Count"))
             End Get
@@ -4328,7 +4586,7 @@ Namespace Canon
         End Property
 
         ''' <summary>CNAM\Class  -&gt;  CLAS. Referencia en el espacio del orden de carga.</summary>
-        Public Property [Class] As UInteger
+        Public Property [Class] As UInteger Implements INpc.[Class]
             Get
                 Return Referencia("CNAM\Class")
             End Get
@@ -4338,7 +4596,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Name As String
+        Public Property Name As String Implements INpc.Name
             Get
                 Return TextoTraducible("FULL\Name")
             End Get
@@ -4348,7 +4606,7 @@ Namespace Canon
         End Property
 
         ''' <summary>SHRT\Short Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property ShortName As String
+        Public Property ShortName As String Implements INpc.ShortName
             Get
                 Return TextoTraducible("SHRT\Short Name")
             End Get
@@ -4398,7 +4656,7 @@ Namespace Canon
         End Property
 
         ''' <summary>HCLF\Hair Color  -&gt;  CLFM. Referencia en el espacio del orden de carga.</summary>
-        Public Property HairColor As UInteger
+        Public Property HairColor As UInteger Implements INpc.HairColor
             Get
                 Return Referencia("HCLF\Hair Color")
             End Get
@@ -4418,7 +4676,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ZNAM\Combat Style  -&gt;  CSTY. Referencia en el espacio del orden de carga.</summary>
-        Public Property CombatStyle As UInteger
+        Public Property CombatStyle As UInteger Implements INpc.CombatStyle
             Get
                 Return Referencia("ZNAM\Combat Style")
             End Get
@@ -4428,7 +4686,7 @@ Namespace Canon
         End Property
 
         ''' <summary>GNAM\Gift Filter  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property GiftFilter As UInteger
+        Public Property GiftFilter As UInteger Implements INpc.GiftFilter
             Get
                 Return Referencia("GNAM\Gift Filter")
             End Get
@@ -4488,7 +4746,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM8\Sound Level</summary>
-        Public Property SoundLevel As UInteger
+        Public Property SoundLevel As UInteger Implements INpc.SoundLevel
             Get
                 Return CUInt(Entero("NAM8\Sound Level"))
             End Get
@@ -4518,7 +4776,7 @@ Namespace Canon
         End Property
 
         ''' <summary>CSCR\Inherits Sounds From  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
-        Public Property InheritsSoundsFrom As UInteger
+        Public Property InheritsSoundsFrom As UInteger Implements INpc.InheritsSoundsFrom
             Get
                 Return Referencia("CSCR\Inherits Sounds From")
             End Get
@@ -4538,7 +4796,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DOFT\Default Outfit  -&gt;  OTFT. Referencia en el espacio del orden de carga.</summary>
-        Public Property DefaultOutfit As UInteger
+        Public Property DefaultOutfit As UInteger Implements INpc.DefaultOutfit
             Get
                 Return Referencia("DOFT\Default Outfit")
             End Get
@@ -4548,7 +4806,7 @@ Namespace Canon
         End Property
 
         ''' <summary>SOFT\Sleeping Outfit  -&gt;  OTFT. Referencia en el espacio del orden de carga.</summary>
-        Public Property SleepingOutfit As UInteger
+        Public Property SleepingOutfit As UInteger Implements INpc.SleepingOutfit
             Get
                 Return Referencia("SOFT\Sleeping Outfit")
             End Get
@@ -4558,7 +4816,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DPLT\Default Package List  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property DefaultPackageList As UInteger
+        Public Property DefaultPackageList As UInteger Implements INpc.DefaultPackageList
             Get
                 Return Referencia("DPLT\Default Package List")
             End Get
@@ -4568,7 +4826,7 @@ Namespace Canon
         End Property
 
         ''' <summary>CRIF\Crime Faction  -&gt;  FACT. Referencia en el espacio del orden de carga.</summary>
-        Public Property CrimeFaction As UInteger
+        Public Property CrimeFaction As UInteger Implements INpc.CrimeFaction
             Get
                 Return Referencia("CRIF\Crime Faction")
             End Get
@@ -4578,7 +4836,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FTST\Head Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
-        Public Property HeadTexture As UInteger
+        Public Property HeadTexture As UInteger Implements INpc.HeadTexture
             Get
                 Return Referencia("FTST\Head Texture")
             End Get
@@ -4588,7 +4846,7 @@ Namespace Canon
         End Property
 
         ''' <summary>QNAM\Texture lighting\Red</summary>
-        Public Property TextureLightingRed As Single
+        Public Property TextureLightingRed As Single Implements INpc.TextureLightingRed
             Get
                 Return Flt("QNAM\Texture lighting\Red")
             End Get
@@ -4598,7 +4856,7 @@ Namespace Canon
         End Property
 
         ''' <summary>QNAM\Texture lighting\Green</summary>
-        Public Property TextureLightingGreen As Single
+        Public Property TextureLightingGreen As Single Implements INpc.TextureLightingGreen
             Get
                 Return Flt("QNAM\Texture lighting\Green")
             End Get
@@ -4608,7 +4866,7 @@ Namespace Canon
         End Property
 
         ''' <summary>QNAM\Texture lighting\Blue</summary>
-        Public Property TextureLightingBlue As Single
+        Public Property TextureLightingBlue As Single Implements INpc.TextureLightingBlue
             Get
                 Return Flt("QNAM\Texture lighting\Blue")
             End Get
@@ -4698,28 +4956,28 @@ Namespace Canon
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts</summary>
-        Public ReadOnly Property Scripts As IReadOnlyList(Of NpcFO4_Scripts)
+        Public ReadOnly Property Scripts As IReadOnlyList(Of INpc_Scripts) Implements INpc.Scripts
             Get
                 Return Elementos(Of NpcFO4_Scripts)("VMAD\Virtual Machine Adapter\Scripts", Function(n) New NpcFO4_Scripts(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        Public ReadOnly Property Properties As IReadOnlyList(Of NpcFO4_Properties)
+        Public ReadOnly Property Properties As IReadOnlyList(Of INpc_Properties) Implements INpc.Properties
             Get
                 Return Elementos(Of NpcFO4_Properties)("VMAD\Virtual Machine Adapter\Scripts\Script\Properties", Function(n) New NpcFO4_Properties(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Factions</summary>
-        Public ReadOnly Property Factions As IReadOnlyList(Of NpcFO4_Factions)
+        Public ReadOnly Property Factions As IReadOnlyList(Of INpc_Factions) Implements INpc.Factions
             Get
                 Return Elementos(Of NpcFO4_Factions)("Factions", Function(n) New NpcFO4_Factions(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Actor Effects</summary>
-        Public ReadOnly Property ActorEffects As IReadOnlyList(Of NpcFO4_ActorEffects)
+        Public ReadOnly Property ActorEffects As IReadOnlyList(Of INpc_ActorEffects) Implements INpc.ActorEffects
             Get
                 Return Elementos(Of NpcFO4_ActorEffects)("Actor Effects", Function(n) New NpcFO4_ActorEffects(n, Context, Resolver))
             End Get
@@ -4733,21 +4991,21 @@ Namespace Canon
         End Property
 
         ''' <summary>Destructible\Stages</summary>
-        Public ReadOnly Property Stages As IReadOnlyList(Of NpcFO4_Stages)
+        Public ReadOnly Property Stages As IReadOnlyList(Of INpc_Stages) Implements INpc.Stages
             Get
                 Return Elementos(Of NpcFO4_Stages)("Destructible\Stages", Function(n) New NpcFO4_Stages(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Attacks</summary>
-        Public ReadOnly Property Attacks As IReadOnlyList(Of NpcFO4_Attacks)
+        Public ReadOnly Property Attacks As IReadOnlyList(Of INpc_Attacks) Implements INpc.Attacks
             Get
                 Return Elementos(Of NpcFO4_Attacks)("Attacks", Function(n) New NpcFO4_Attacks(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Perks</summary>
-        Public ReadOnly Property Perks As IReadOnlyList(Of NpcFO4_Perks)
+        Public ReadOnly Property Perks As IReadOnlyList(Of INpc_Perks) Implements INpc.Perks
             Get
                 Return Elementos(Of NpcFO4_Perks)("Perks", Function(n) New NpcFO4_Perks(n, Context, Resolver))
             End Get
@@ -4761,21 +5019,21 @@ Namespace Canon
         End Property
 
         ''' <summary>Items</summary>
-        Public ReadOnly Property Items As IReadOnlyList(Of NpcFO4_Items)
+        Public ReadOnly Property Items As IReadOnlyList(Of INpc_Items) Implements INpc.Items
             Get
                 Return Elementos(Of NpcFO4_Items)("Items", Function(n) New NpcFO4_Items(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Packages</summary>
-        Public ReadOnly Property Packages As IReadOnlyList(Of NpcFO4_Packages)
+        Public ReadOnly Property Packages As IReadOnlyList(Of INpc_Packages) Implements INpc.Packages
             Get
                 Return Elementos(Of NpcFO4_Packages)("Packages", Function(n) New NpcFO4_Packages(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Keywords\KWDA\Keywords</summary>
-        Public ReadOnly Property Keywords As IReadOnlyList(Of NpcFO4_Keywords)
+        Public ReadOnly Property Keywords As IReadOnlyList(Of INpc_Keywords) Implements INpc.Keywords
             Get
                 Return Elementos(Of NpcFO4_Keywords)("Keywords\KWDA\Keywords", Function(n) New NpcFO4_Keywords(n, Context, Resolver))
             End Get
@@ -4817,14 +5075,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Head Parts</summary>
-        Public ReadOnly Property HeadParts As IReadOnlyList(Of NpcFO4_HeadParts)
+        Public ReadOnly Property HeadParts As IReadOnlyList(Of INpc_HeadParts) Implements INpc.HeadParts
             Get
                 Return Elementos(Of NpcFO4_HeadParts)("Head Parts", Function(n) New NpcFO4_HeadParts(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Actor Sounds\Sounds</summary>
-        Public ReadOnly Property Sounds As IReadOnlyList(Of NpcFO4_Sounds)
+        Public ReadOnly Property Sounds As IReadOnlyList(Of INpc_Sounds) Implements INpc.Sounds
             Get
                 Return Elementos(Of NpcFO4_Sounds)("Actor Sounds\Sounds", Function(n) New NpcFO4_Sounds(n, Context, Resolver))
             End Get
@@ -4863,13 +5121,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class NpcFO4_Scripts
         Inherits CanonView
+        Implements INpc_Scripts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Scripts.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptScriptName As String
+        Public Property ScriptScriptName As String Implements INpc_Scripts.ScriptScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -4879,7 +5144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte
+        Public Property ScriptFlags As Byte Implements INpc_Scripts.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -4887,26 +5152,33 @@ Namespace Canon
                 Escribir("Script\Flags", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String
+        Public ReadOnly Property ScriptFlagsNombre As String Implements INpc_Scripts.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
         End Property
-
 
     End Class
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class NpcFO4_Properties
         Inherits CanonView
+        Implements INpc_Properties
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Properties.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyPropertyName As String
+        Public Property PropertyPropertyName As String Implements INpc_Properties.PropertyPropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -4916,7 +5188,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte
+        Public Property PropertyType As Byte Implements INpc_Properties.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -4926,7 +5198,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte
+        Public Property PropertyFlags As Byte Implements INpc_Properties.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -4934,16 +5206,16 @@ Namespace Canon
                 Escribir("Property\Flags", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String
+        Public ReadOnly Property PropertyFlagsNombre As String Implements INpc_Properties.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
-
         ''' <summary>Property\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short
+        Public Property ObjectV2Alias As Short Implements INpc_Properties.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Object v2\Alias"))
             End Get
@@ -4953,7 +5225,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger
+        Public Property ObjectV2FormID As UInteger Implements INpc_Properties.ObjectV2FormID
             Get
                 Return Referencia("Property\Object v2\FormID")
             End Get
@@ -4967,13 +5239,20 @@ Namespace Canon
     ''' <summary>Un elemento de Factions.</summary>
     Public NotInheritable Class NpcFO4_Factions
         Inherits CanonView
+        Implements INpc_Factions
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Factions.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>SNAM\Faction\Faction  -&gt;  FACT. Referencia en el espacio del orden de carga.</summary>
-        Public Property FactionFaction As UInteger
+        Public Property FactionFaction As UInteger Implements INpc_Factions.FactionFaction
             Get
                 Return Referencia("SNAM\Faction\Faction")
             End Get
@@ -4983,7 +5262,7 @@ Namespace Canon
         End Property
 
         ''' <summary>SNAM\Faction\Rank</summary>
-        Public Property FactionRank As SByte
+        Public Property FactionRank As SByte Implements INpc_Factions.FactionRank
             Get
                 Return CSByte(Entero("SNAM\Faction\Rank"))
             End Get
@@ -4997,13 +5276,20 @@ Namespace Canon
     ''' <summary>Un elemento de Actor Effects.</summary>
     Public NotInheritable Class NpcFO4_ActorEffects
         Inherits CanonView
+        Implements INpc_ActorEffects
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_ActorEffects.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>SPLO\Actor Effect  -&gt;  SPEL / LVSP. Referencia en el espacio del orden de carga.</summary>
-        Public Property ActorEffect As UInteger
+        Public Property ActorEffect As UInteger Implements INpc_ActorEffects.ActorEffect
             Get
                 Return Referencia("SPLO\Actor Effect")
             End Get
@@ -5047,13 +5333,20 @@ Namespace Canon
     ''' <summary>Un elemento de Destructible\Stages.</summary>
     Public NotInheritable Class NpcFO4_Stages
         Inherits CanonView
+        Implements INpc_Stages
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Stages.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Stage\DSTD\Destruction Stage Data\Health %</summary>
-        Public Property DestructionStageDataHealth As Byte
+        Public Property DestructionStageDataHealth As Byte Implements INpc_Stages.DestructionStageDataHealth
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Health %"))
             End Get
@@ -5063,7 +5356,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Index</summary>
-        Public Property DestructionStageDataIndex As Byte
+        Public Property DestructionStageDataIndex As Byte Implements INpc_Stages.DestructionStageDataIndex
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Index"))
             End Get
@@ -5073,7 +5366,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Model Damage Stage</summary>
-        Public Property DestructionStageDataModelDamageStage As Byte
+        Public Property DestructionStageDataModelDamageStage As Byte Implements INpc_Stages.DestructionStageDataModelDamageStage
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Model Damage Stage"))
             End Get
@@ -5083,7 +5376,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Flags</summary>
-        Public Property DestructionStageDataFlags As Byte
+        Public Property DestructionStageDataFlags As Byte Implements INpc_Stages.DestructionStageDataFlags
             Get
                 Return CByte(Entero("Stage\DSTD\Destruction Stage Data\Flags"))
             End Get
@@ -5093,7 +5386,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 0 de Stage\DSTD\Destruction Stage Data\Flags: Cap Damage</summary>
-        Public Property DestructionStageDataFlagsCapDamage As Boolean
+        Public Property DestructionStageDataFlagsCapDamage As Boolean Implements INpc_Stages.DestructionStageDataFlagsCapDamage
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 0)
             End Get
@@ -5101,8 +5394,9 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de Stage\DSTD\Destruction Stage Data\Flags: Disable</summary>
-        Public Property DestructionStageDataFlagsDisable As Boolean
+        Public Property DestructionStageDataFlagsDisable As Boolean Implements INpc_Stages.DestructionStageDataFlagsDisable
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 1)
             End Get
@@ -5110,8 +5404,9 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de Stage\DSTD\Destruction Stage Data\Flags: Destroy</summary>
-        Public Property DestructionStageDataFlagsDestroy As Boolean
+        Public Property DestructionStageDataFlagsDestroy As Boolean Implements INpc_Stages.DestructionStageDataFlagsDestroy
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 2)
             End Get
@@ -5119,8 +5414,9 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de Stage\DSTD\Destruction Stage Data\Flags: Ignore External Dmg</summary>
-        Public Property DestructionStageDataFlagsIgnoreExternalDmg As Boolean
+        Public Property DestructionStageDataFlagsIgnoreExternalDmg As Boolean Implements INpc_Stages.DestructionStageDataFlagsIgnoreExternalDmg
             Get
                 Return Bit("Stage\DSTD\Destruction Stage Data\Flags", 3)
             End Get
@@ -5128,6 +5424,7 @@ Namespace Canon
                 PonerBit("Stage\DSTD\Destruction Stage Data\Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de Stage\DSTD\Destruction Stage Data\Flags: Becomes Dynamic</summary>
         Public Property DestructionStageDataFlagsBecomesDynamic As Boolean
             Get
@@ -5139,7 +5436,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Self Damage per Second</summary>
-        Public Property DestructionStageDataSelfDamagePerSecond As Integer
+        Public Property DestructionStageDataSelfDamagePerSecond As Integer Implements INpc_Stages.DestructionStageDataSelfDamagePerSecond
             Get
                 Return CInt(Entero("Stage\DSTD\Destruction Stage Data\Self Damage per Second"))
             End Get
@@ -5149,7 +5446,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Explosion  -&gt;  EXPL / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property DestructionStageDataExplosion As UInteger
+        Public Property DestructionStageDataExplosion As UInteger Implements INpc_Stages.DestructionStageDataExplosion
             Get
                 Return Referencia("Stage\DSTD\Destruction Stage Data\Explosion")
             End Get
@@ -5159,7 +5456,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Debris  -&gt;  DEBR / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property DestructionStageDataDebris As UInteger
+        Public Property DestructionStageDataDebris As UInteger Implements INpc_Stages.DestructionStageDataDebris
             Get
                 Return Referencia("Stage\DSTD\Destruction Stage Data\Debris")
             End Get
@@ -5169,7 +5466,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\DSTD\Destruction Stage Data\Debris Count</summary>
-        Public Property DestructionStageDataDebrisCount As Integer
+        Public Property DestructionStageDataDebrisCount As Integer Implements INpc_Stages.DestructionStageDataDebrisCount
             Get
                 Return CInt(Entero("Stage\DSTD\Destruction Stage Data\Debris Count"))
             End Get
@@ -5189,7 +5486,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Stage\Model\DMDL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements INpc_Stages.ModelModelFileName
             Get
                 Return Txt("Stage\Model\DMDL\Model FileName")
             End Get
@@ -5223,13 +5520,20 @@ Namespace Canon
     ''' <summary>Un elemento de Attacks.</summary>
     Public NotInheritable Class NpcFO4_Attacks
         Inherits CanonView
+        Implements INpc_Attacks
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Attacks.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Attack\ATKD\Attack Data\Damage Mult</summary>
-        Public Property AttackDataDamageMult As Single
+        Public Property AttackDataDamageMult As Single Implements INpc_Attacks.AttackDataDamageMult
             Get
                 Return Flt("Attack\ATKD\Attack Data\Damage Mult")
             End Get
@@ -5239,7 +5543,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Chance</summary>
-        Public Property AttackDataAttackChance As Single
+        Public Property AttackDataAttackChance As Single Implements INpc_Attacks.AttackDataAttackChance
             Get
                 Return Flt("Attack\ATKD\Attack Data\Attack Chance")
             End Get
@@ -5249,7 +5553,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Spell  -&gt;  SPEL / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property AttackDataAttackSpell As UInteger
+        Public Property AttackDataAttackSpell As UInteger Implements INpc_Attacks.AttackDataAttackSpell
             Get
                 Return Referencia("Attack\ATKD\Attack Data\Attack Spell")
             End Get
@@ -5259,7 +5563,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Flags</summary>
-        Public Property AttackDataAttackFlags As UInteger
+        Public Property AttackDataAttackFlags As UInteger Implements INpc_Attacks.AttackDataAttackFlags
             Get
                 Return CUInt(Entero("Attack\ATKD\Attack Data\Attack Flags"))
             End Get
@@ -5269,7 +5573,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 0 de Attack\ATKD\Attack Data\Attack Flags: Ignore Weapon</summary>
-        Public Property AttackDataAttackFlagsIgnoreWeapon As Boolean
+        Public Property AttackDataAttackFlagsIgnoreWeapon As Boolean Implements INpc_Attacks.AttackDataAttackFlagsIgnoreWeapon
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 0)
             End Get
@@ -5277,8 +5581,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de Attack\ATKD\Attack Data\Attack Flags: Bash Attack</summary>
-        Public Property AttackDataAttackFlagsBashAttack As Boolean
+        Public Property AttackDataAttackFlagsBashAttack As Boolean Implements INpc_Attacks.AttackDataAttackFlagsBashAttack
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 1)
             End Get
@@ -5286,8 +5591,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de Attack\ATKD\Attack Data\Attack Flags: Power Attack</summary>
-        Public Property AttackDataAttackFlagsPowerAttack As Boolean
+        Public Property AttackDataAttackFlagsPowerAttack As Boolean Implements INpc_Attacks.AttackDataAttackFlagsPowerAttack
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 2)
             End Get
@@ -5295,6 +5601,7 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de Attack\ATKD\Attack Data\Attack Flags: Charge Attack</summary>
         Public Property AttackDataAttackFlagsChargeAttack As Boolean
             Get
@@ -5304,8 +5611,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de Attack\ATKD\Attack Data\Attack Flags: Rotating Attack</summary>
-        Public Property AttackDataAttackFlagsRotatingAttack As Boolean
+        Public Property AttackDataAttackFlagsRotatingAttack As Boolean Implements INpc_Attacks.AttackDataAttackFlagsRotatingAttack
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 4)
             End Get
@@ -5313,6 +5621,7 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 4, value)
             End Set
         End Property
+
         ''' <summary>Bit 5 de Attack\ATKD\Attack Data\Attack Flags: Continuous Attack</summary>
         Public Property AttackDataAttackFlagsContinuousAttack As Boolean
             Get
@@ -5322,8 +5631,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 5, value)
             End Set
         End Property
+
         ''' <summary>Bit 31 de Attack\ATKD\Attack Data\Attack Flags: Override Data</summary>
-        Public Property AttackDataAttackFlagsOverrideData As Boolean
+        Public Property AttackDataAttackFlagsOverrideData As Boolean Implements INpc_Attacks.AttackDataAttackFlagsOverrideData
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 31)
             End Get
@@ -5333,7 +5643,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Angle</summary>
-        Public Property AttackDataAttackAngle As Single
+        Public Property AttackDataAttackAngle As Single Implements INpc_Attacks.AttackDataAttackAngle
             Get
                 Return Flt("Attack\ATKD\Attack Data\Attack Angle")
             End Get
@@ -5343,7 +5653,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Strike Angle</summary>
-        Public Property AttackDataStrikeAngle As Single
+        Public Property AttackDataStrikeAngle As Single Implements INpc_Attacks.AttackDataStrikeAngle
             Get
                 Return Flt("Attack\ATKD\Attack Data\Strike Angle")
             End Get
@@ -5353,7 +5663,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Stagger</summary>
-        Public Property AttackDataStagger As Single
+        Public Property AttackDataStagger As Single Implements INpc_Attacks.AttackDataStagger
             Get
                 Return Flt("Attack\ATKD\Attack Data\Stagger")
             End Get
@@ -5363,7 +5673,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Knockdown</summary>
-        Public Property AttackDataKnockdown As Single
+        Public Property AttackDataKnockdown As Single Implements INpc_Attacks.AttackDataKnockdown
             Get
                 Return Flt("Attack\ATKD\Attack Data\Knockdown")
             End Get
@@ -5373,7 +5683,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Recovery Time</summary>
-        Public Property AttackDataRecoveryTime As Single
+        Public Property AttackDataRecoveryTime As Single Implements INpc_Attacks.AttackDataRecoveryTime
             Get
                 Return Flt("Attack\ATKD\Attack Data\Recovery Time")
             End Get
@@ -5403,7 +5713,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKE\Attack Event</summary>
-        Public Property AttackAttackEvent As String
+        Public Property AttackAttackEvent As String Implements INpc_Attacks.AttackAttackEvent
             Get
                 Return Txt("Attack\ATKE\Attack Event")
             End Get
@@ -5447,13 +5757,20 @@ Namespace Canon
     ''' <summary>Un elemento de Perks.</summary>
     Public NotInheritable Class NpcFO4_Perks
         Inherits CanonView
+        Implements INpc_Perks
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Perks.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>PRKR\Perk\Perk  -&gt;  PERK. Referencia en el espacio del orden de carga.</summary>
-        Public Property PerkPerk As UInteger
+        Public Property PerkPerk As UInteger Implements INpc_Perks.PerkPerk
             Get
                 Return Referencia("PRKR\Perk\Perk")
             End Get
@@ -5463,7 +5780,7 @@ Namespace Canon
         End Property
 
         ''' <summary>PRKR\Perk\Rank</summary>
-        Public Property PerkRank As Byte
+        Public Property PerkRank As Byte Implements INpc_Perks.PerkRank
             Get
                 Return CByte(Entero("PRKR\Perk\Rank"))
             End Get
@@ -5507,13 +5824,20 @@ Namespace Canon
     ''' <summary>Un elemento de Items.</summary>
     Public NotInheritable Class NpcFO4_Items
         Inherits CanonView
+        Implements INpc_Items
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Items.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Item\CNTO\Item\Item. Referencia en el espacio del orden de carga.</summary>
-        Public Property ItemItem As UInteger
+        Public Property ItemItem As UInteger Implements INpc_Items.ItemItem
             Get
                 Return Referencia("Item\CNTO\Item\Item")
             End Get
@@ -5523,7 +5847,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Item\CNTO\Item\Count</summary>
-        Public Property ItemCount As Integer
+        Public Property ItemCount As Integer Implements INpc_Items.ItemCount
             Get
                 Return CInt(Entero("Item\CNTO\Item\Count"))
             End Get
@@ -5533,7 +5857,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Item\COED\Extra Data\Owner  -&gt;  NPC_ / FACT / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property ExtraDataOwner As UInteger
+        Public Property ExtraDataOwner As UInteger Implements INpc_Items.ExtraDataOwner
             Get
                 Return Referencia("Item\COED\Extra Data\Owner")
             End Get
@@ -5543,7 +5867,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Item\COED\Extra Data\Item Condition</summary>
-        Public Property ExtraDataItemCondition As Single
+        Public Property ExtraDataItemCondition As Single Implements INpc_Items.ExtraDataItemCondition
             Get
                 Return Flt("Item\COED\Extra Data\Item Condition")
             End Get
@@ -5557,13 +5881,20 @@ Namespace Canon
     ''' <summary>Un elemento de Packages.</summary>
     Public NotInheritable Class NpcFO4_Packages
         Inherits CanonView
+        Implements INpc_Packages
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Packages.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>PKID\Package  -&gt;  PACK. Referencia en el espacio del orden de carga.</summary>
-        Public Property Package As UInteger
+        Public Property Package As UInteger Implements INpc_Packages.Package
             Get
                 Return Referencia("PKID\Package")
             End Get
@@ -5577,13 +5908,20 @@ Namespace Canon
     ''' <summary>Un elemento de Keywords\KWDA\Keywords.</summary>
     Public NotInheritable Class NpcFO4_Keywords
         Inherits CanonView
+        Implements INpc_Keywords
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Keywords.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Keyword  -&gt;  KYWD / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property Keyword As UInteger
+        Public Property Keyword As UInteger Implements INpc_Keywords.Keyword
             Get
                 Return Referencia("Keyword")
             End Get
@@ -5801,13 +6139,13 @@ Namespace Canon
                 Escribir("Property\Value Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Value Type.</summary>
         Public ReadOnly Property PropertyValueTypeNombre As String
             Get
                 Return NombreDeValor("Property\Value Type")
             End Get
         End Property
-
 
         ''' <summary>Property\Function Type</summary>
         Public Property PropertyFunctionType As Byte
@@ -5818,13 +6156,13 @@ Namespace Canon
                 Escribir("Property\Function Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Function Type.</summary>
         Public ReadOnly Property PropertyFunctionTypeNombre As String
             Get
                 Return NombreDeValor("Property\Function Type")
             End Get
         End Property
-
 
         ''' <summary>Property\Property</summary>
         Public Property PropertyProperty As UShort
@@ -5861,13 +6199,20 @@ Namespace Canon
     ''' <summary>Un elemento de Head Parts.</summary>
     Public NotInheritable Class NpcFO4_HeadParts
         Inherits CanonView
+        Implements INpc_HeadParts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_HeadParts.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>PNAM\Head Part  -&gt;  HDPT. Referencia en el espacio del orden de carga.</summary>
-        Public Property HeadPart As UInteger
+        Public Property HeadPart As UInteger Implements INpc_HeadParts.HeadPart
             Get
                 Return Referencia("PNAM\Head Part")
             End Get
@@ -5881,10 +6226,17 @@ Namespace Canon
     ''' <summary>Un elemento de Actor Sounds\Sounds.</summary>
     Public NotInheritable Class NpcFO4_Sounds
         Inherits CanonView
+        Implements INpc_Sounds
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Sounds.Node
+            Get
+                Return Node
+            End Get
+        End Property
 
         ''' <summary>Sound\CS2K\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
         Public Property SoundKeyword As UInteger
@@ -5897,7 +6249,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Sound\CS2D\Sound  -&gt;  SNDR. Referencia en el espacio del orden de carga.</summary>
-        Public Property SoundSound As UInteger
+        Public Property SoundSound As UInteger Implements INpc_Sounds.SoundSound
             Get
                 Return Referencia("Sound\CS2D\Sound")
             End Get
@@ -5965,13 +6317,13 @@ Namespace Canon
                 Escribir("Layer\TETI\Index\Data Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Layer\TETI\Index\Data Type.</summary>
         Public ReadOnly Property IndexDataTypeNombre As String
             Get
                 Return NombreDeValor("Layer\TETI\Index\Data Type")
             End Get
         End Property
-
 
         ''' <summary>Layer\TETI\Index\Index</summary>
         Public Property IndexIndex As UShort
@@ -6128,13 +6480,26 @@ Namespace Canon
     ''' <summary>Campos de un record OMOD de Fallout 4.</summary>
     Public NotInheritable Class OmodFO4
         Inherits CanonView
+        Implements IOmod
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOmod.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IOmod.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IOmod.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -6144,7 +6509,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IOmod.Name
             Get
                 Return TextoTraducible("FULL\Name")
             End Get
@@ -6154,7 +6519,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Description As String
+        Public Property Description As String Implements IOmod.Description
             Get
                 Return TextoTraducible("DESC\Description")
             End Get
@@ -6164,7 +6529,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements IOmod.ModelModelFileName
             Get
                 Return Txt("Model\MODL\Model FileName")
             End Get
@@ -6174,7 +6539,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Model\MODC\Color Remapping Index</summary>
-        Public Property ModelColorRemappingIndex As Single
+        Public Property ModelColorRemappingIndex As Single Implements IOmod.ModelColorRemappingIndex
             Get
                 Return Flt("Model\MODC\Color Remapping Index")
             End Get
@@ -6184,7 +6549,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Model\MODS\Material Swap  -&gt;  MSWP. Referencia en el espacio del orden de carga.</summary>
-        Public Property ModelMaterialSwap As UInteger
+        Public Property ModelMaterialSwap As UInteger Implements IOmod.ModelMaterialSwap
             Get
                 Return Referencia("Model\MODS\Material Swap")
             End Get
@@ -6194,7 +6559,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Model\MODF\Flags</summary>
-        Public Property ModelFlags As Byte
+        Public Property ModelFlags As Byte Implements IOmod.ModelFlags
             Get
                 Return CByte(Entero("Model\MODF\Flags"))
             End Get
@@ -6204,7 +6569,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Include Count</summary>
-        Public Property DataIncludeCount As UInteger
+        Public Property DataIncludeCount As UInteger Implements IOmod.DataIncludeCount
             Get
                 Return CUInt(Entero("DATA\Data\Include Count"))
             End Get
@@ -6214,7 +6579,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Property Count</summary>
-        Public Property DataPropertyCount As UInteger
+        Public Property DataPropertyCount As UInteger Implements IOmod.DataPropertyCount
             Get
                 Return CUInt(Entero("DATA\Data\Property Count"))
             End Get
@@ -6224,7 +6589,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Unknown Bool 1</summary>
-        Public Property DataUnknownBool1 As Byte
+        Public Property DataUnknownBool1 As Byte Implements IOmod.DataUnknownBool1
             Get
                 Return CByte(Entero("DATA\Data\Unknown Bool 1"))
             End Get
@@ -6234,7 +6599,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Unknown Bool 2</summary>
-        Public Property DataUnknownBool2 As Byte
+        Public Property DataUnknownBool2 As Byte Implements IOmod.DataUnknownBool2
             Get
                 Return CByte(Entero("DATA\Data\Unknown Bool 2"))
             End Get
@@ -6244,7 +6609,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Form Type</summary>
-        Public Property DataFormType As UInteger
+        Public Property DataFormType As UInteger Implements IOmod.DataFormType
             Get
                 Return CUInt(Entero("DATA\Data\Form Type"))
             End Get
@@ -6254,7 +6619,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Max Rank</summary>
-        Public Property DataMaxRank As Byte
+        Public Property DataMaxRank As Byte Implements IOmod.DataMaxRank
             Get
                 Return CByte(Entero("DATA\Data\Max Rank"))
             End Get
@@ -6264,7 +6629,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Level Tier Scaled Offset</summary>
-        Public Property DataLevelTierScaledOffset As Byte
+        Public Property DataLevelTierScaledOffset As Byte Implements IOmod.DataLevelTierScaledOffset
             Get
                 Return CByte(Entero("DATA\Data\Level Tier Scaled Offset"))
             End Get
@@ -6274,7 +6639,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Attach Point  -&gt;  KYWD / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property DataAttachPoint As UInteger
+        Public Property DataAttachPoint As UInteger Implements IOmod.DataAttachPoint
             Get
                 Return Referencia("DATA\Data\Attach Point")
             End Get
@@ -6284,7 +6649,7 @@ Namespace Canon
         End Property
 
         ''' <summary>LNAM\Loose Mod. Referencia en el espacio del orden de carga.</summary>
-        Public Property LooseMod As UInteger
+        Public Property LooseMod As UInteger Implements IOmod.LooseMod
             Get
                 Return Referencia("LNAM\Loose Mod")
             End Get
@@ -6294,7 +6659,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM1\Priority</summary>
-        Public Property Priority As Byte
+        Public Property Priority As Byte Implements IOmod.Priority
             Get
                 Return CByte(Entero("NAM1\Priority"))
             End Get
@@ -6304,7 +6669,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FLTR\Filter</summary>
-        Public Property Filter As String
+        Public Property Filter As String Implements IOmod.Filter
             Get
                 Return Txt("FLTR\Filter")
             End Get
@@ -6314,42 +6679,42 @@ Namespace Canon
         End Property
 
         ''' <summary>DATA\Data\Attach Parent Slots</summary>
-        Public ReadOnly Property AttachParentSlots As IReadOnlyList(Of OmodFO4_AttachParentSlots)
+        Public ReadOnly Property AttachParentSlots As IReadOnlyList(Of IOmod_AttachParentSlots) Implements IOmod.AttachParentSlots
             Get
                 Return Elementos(Of OmodFO4_AttachParentSlots)("DATA\Data\Attach Parent Slots", Function(n) New OmodFO4_AttachParentSlots(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>DATA\Data\Items</summary>
-        Public ReadOnly Property Items As IReadOnlyList(Of OmodFO4_Items)
+        Public ReadOnly Property Items As IReadOnlyList(Of IOmod_Items) Implements IOmod.Items
             Get
                 Return Elementos(Of OmodFO4_Items)("DATA\Data\Items", Function(n) New OmodFO4_Items(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>DATA\Data\Includes</summary>
-        Public ReadOnly Property Includes As IReadOnlyList(Of OmodFO4_Includes)
+        Public ReadOnly Property Includes As IReadOnlyList(Of IOmod_Includes) Implements IOmod.Includes
             Get
                 Return Elementos(Of OmodFO4_Includes)("DATA\Data\Includes", Function(n) New OmodFO4_Includes(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>DATA\Data\Properties</summary>
-        Public ReadOnly Property Properties As IReadOnlyList(Of OmodFO4_Properties)
+        Public ReadOnly Property Properties As IReadOnlyList(Of IOmod_Properties) Implements IOmod.Properties
             Get
                 Return Elementos(Of OmodFO4_Properties)("DATA\Data\Properties", Function(n) New OmodFO4_Properties(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>MNAM\Target OMOD Keywords</summary>
-        Public ReadOnly Property TargetOMODKeywords As IReadOnlyList(Of OmodFO4_TargetOMODKeywords)
+        Public ReadOnly Property TargetOMODKeywords As IReadOnlyList(Of IOmod_TargetOMODKeywords) Implements IOmod.TargetOMODKeywords
             Get
                 Return Elementos(Of OmodFO4_TargetOMODKeywords)("MNAM\Target OMOD Keywords", Function(n) New OmodFO4_TargetOMODKeywords(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>FNAM\Filter Keywords</summary>
-        Public ReadOnly Property FilterKeywords As IReadOnlyList(Of OmodFO4_FilterKeywords)
+        Public ReadOnly Property FilterKeywords As IReadOnlyList(Of IOmod_FilterKeywords) Implements IOmod.FilterKeywords
             Get
                 Return Elementos(Of OmodFO4_FilterKeywords)("FNAM\Filter Keywords", Function(n) New OmodFO4_FilterKeywords(n, Context, Resolver))
             End Get
@@ -6360,13 +6725,20 @@ Namespace Canon
     ''' <summary>Un elemento de DATA\Data\Attach Parent Slots.</summary>
     Public NotInheritable Class OmodFO4_AttachParentSlots
         Inherits CanonView
+        Implements IOmod_AttachParentSlots
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOmod_AttachParentSlots.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Keyword  -&gt;  KYWD / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property Keyword As UInteger
+        Public Property Keyword As UInteger Implements IOmod_AttachParentSlots.Keyword
             Get
                 Return Referencia("Keyword")
             End Get
@@ -6380,13 +6752,20 @@ Namespace Canon
     ''' <summary>Un elemento de DATA\Data\Items.</summary>
     Public NotInheritable Class OmodFO4_Items
         Inherits CanonView
+        Implements IOmod_Items
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOmod_Items.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Item\Value 1</summary>
-        Public Property ItemValue1 As Byte()
+        Public Property ItemValue1 As Byte() Implements IOmod_Items.ItemValue1
             Get
                 Return Bytes("Item\Value 1")
             End Get
@@ -6396,7 +6775,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Item\Value 2</summary>
-        Public Property ItemValue2 As Byte()
+        Public Property ItemValue2 As Byte() Implements IOmod_Items.ItemValue2
             Get
                 Return Bytes("Item\Value 2")
             End Get
@@ -6410,13 +6789,20 @@ Namespace Canon
     ''' <summary>Un elemento de DATA\Data\Includes.</summary>
     Public NotInheritable Class OmodFO4_Includes
         Inherits CanonView
+        Implements IOmod_Includes
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOmod_Includes.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Include\Mod  -&gt;  OMOD. Referencia en el espacio del orden de carga.</summary>
-        Public Property IncludeMod As UInteger
+        Public Property IncludeMod As UInteger Implements IOmod_Includes.IncludeMod
             Get
                 Return Referencia("Include\Mod")
             End Get
@@ -6426,7 +6812,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Include\Minimum Level</summary>
-        Public Property IncludeMinimumLevel As Byte
+        Public Property IncludeMinimumLevel As Byte Implements IOmod_Includes.IncludeMinimumLevel
             Get
                 Return CByte(Entero("Include\Minimum Level"))
             End Get
@@ -6436,7 +6822,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Include\Optional</summary>
-        Public Property IncludeOptional As Byte
+        Public Property IncludeOptional As Byte Implements IOmod_Includes.IncludeOptional
             Get
                 Return CByte(Entero("Include\Optional"))
             End Get
@@ -6446,7 +6832,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Include\Don't Use All</summary>
-        Public Property IncludeDonTUseAll As Byte
+        Public Property IncludeDonTUseAll As Byte Implements IOmod_Includes.IncludeDonTUseAll
             Get
                 Return CByte(Entero("Include\Don't Use All"))
             End Get
@@ -6460,13 +6846,20 @@ Namespace Canon
     ''' <summary>Un elemento de DATA\Data\Properties.</summary>
     Public NotInheritable Class OmodFO4_Properties
         Inherits CanonView
+        Implements IOmod_Properties
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOmod_Properties.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Property\Value Type</summary>
-        Public Property PropertyValueType As Byte
+        Public Property PropertyValueType As Byte Implements IOmod_Properties.PropertyValueType
             Get
                 Return CByte(Entero("Property\Value Type"))
             End Get
@@ -6474,16 +6867,16 @@ Namespace Canon
                 Escribir("Property\Value Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Value Type.</summary>
-        Public ReadOnly Property PropertyValueTypeNombre As String
+        Public ReadOnly Property PropertyValueTypeNombre As String Implements IOmod_Properties.PropertyValueTypeNombre
             Get
                 Return NombreDeValor("Property\Value Type")
             End Get
         End Property
 
-
         ''' <summary>Property\Function Type</summary>
-        Public Property PropertyFunctionType As Byte
+        Public Property PropertyFunctionType As Byte Implements IOmod_Properties.PropertyFunctionType
             Get
                 Return CByte(Entero("Property\Function Type"))
             End Get
@@ -6491,16 +6884,16 @@ Namespace Canon
                 Escribir("Property\Function Type", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Property\Function Type.</summary>
-        Public ReadOnly Property PropertyFunctionTypeNombre As String
+        Public ReadOnly Property PropertyFunctionTypeNombre As String Implements IOmod_Properties.PropertyFunctionTypeNombre
             Get
                 Return NombreDeValor("Property\Function Type")
             End Get
         End Property
 
-
         ''' <summary>Property\Property</summary>
-        Public Property PropertyProperty As UShort
+        Public Property PropertyProperty As UShort Implements IOmod_Properties.PropertyProperty
             Get
                 Return CUShort(Entero("Property\Property"))
             End Get
@@ -6510,7 +6903,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value 1 - Unknown</summary>
-        Public Property PropertyValue1Unknown As Byte()
+        Public Property PropertyValue1Unknown As Byte() Implements IOmod_Properties.PropertyValue1Unknown
             Get
                 Return Bytes("Property\Value 1 - Unknown")
             End Get
@@ -6520,7 +6913,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Step</summary>
-        Public Property PropertyStep As Single
+        Public Property PropertyStep As Single Implements IOmod_Properties.PropertyStep
             Get
                 Return Flt("Property\Step")
             End Get
@@ -6534,13 +6927,20 @@ Namespace Canon
     ''' <summary>Un elemento de MNAM\Target OMOD Keywords.</summary>
     Public NotInheritable Class OmodFO4_TargetOMODKeywords
         Inherits CanonView
+        Implements IOmod_TargetOMODKeywords
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOmod_TargetOMODKeywords.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
-        Public Property Keyword As UInteger
+        Public Property Keyword As UInteger Implements IOmod_TargetOMODKeywords.Keyword
             Get
                 Return Referencia("Keyword")
             End Get
@@ -6554,13 +6954,20 @@ Namespace Canon
     ''' <summary>Un elemento de FNAM\Filter Keywords.</summary>
     Public NotInheritable Class OmodFO4_FilterKeywords
         Inherits CanonView
+        Implements IOmod_FilterKeywords
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOmod_FilterKeywords.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
-        Public Property Keyword As UInteger
+        Public Property Keyword As UInteger Implements IOmod_FilterKeywords.Keyword
             Get
                 Return Referencia("Keyword")
             End Get
@@ -6574,13 +6981,26 @@ Namespace Canon
     ''' <summary>Campos de un record OTFT de Fallout 4.</summary>
     Public NotInheritable Class OtftFO4
         Inherits CanonView
+        Implements IOtft
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOtft.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IOtft.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IOtft.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -6590,7 +7010,7 @@ Namespace Canon
         End Property
 
         ''' <summary>INAM\Items</summary>
-        Public ReadOnly Property Items As IReadOnlyList(Of OtftFO4_Items)
+        Public ReadOnly Property Items As IReadOnlyList(Of IOtft_Items) Implements IOtft.Items
             Get
                 Return Elementos(Of OtftFO4_Items)("INAM\Items", Function(n) New OtftFO4_Items(n, Context, Resolver))
             End Get
@@ -6601,13 +7021,20 @@ Namespace Canon
     ''' <summary>Un elemento de INAM\Items.</summary>
     Public NotInheritable Class OtftFO4_Items
         Inherits CanonView
+        Implements IOtft_Items
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IOtft_Items.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Item  -&gt;  ARMO / LVLI. Referencia en el espacio del orden de carga.</summary>
-        Public Property Item As UInteger
+        Public Property Item As UInteger Implements IOtft_Items.Item
             Get
                 Return Referencia("Item")
             End Get
@@ -6621,13 +7048,26 @@ Namespace Canon
     ''' <summary>Campos de un record RACE de Fallout 4.</summary>
     Public NotInheritable Class RaceFO4
         Inherits CanonView
+        Implements IRace
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements IRace.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements IRace.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -6647,7 +7087,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IRace.Name
             Get
                 Return TextoTraducible("FULL\Name")
             End Get
@@ -6657,7 +7097,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
-        Public Property Description As String
+        Public Property Description As String Implements IRace.Description
             Get
                 Return TextoTraducible("DESC\Description")
             End Get
@@ -6667,7 +7107,7 @@ Namespace Canon
         End Property
 
         ''' <summary>SPCT\Count</summary>
-        Public Property Count As UInteger
+        Public Property Count As UInteger Implements IRace.Count
             Get
                 Return CUInt(Entero("SPCT\Count"))
             End Get
@@ -6677,7 +7117,7 @@ Namespace Canon
         End Property
 
         ''' <summary>WNAM\Skin  -&gt;  ARMO / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property Skin As UInteger
+        Public Property Skin As UInteger Implements IRace.Skin
             Get
                 Return Referencia("WNAM\Skin")
             End Get
@@ -6687,7 +7127,7 @@ Namespace Canon
         End Property
 
         ''' <summary>BOD2\Biped Body Template\First Person Flags</summary>
-        Public Property BipedBodyTemplateFirstPersonFlags As UInteger
+        Public Property BipedBodyTemplateFirstPersonFlags As UInteger Implements IRace.BipedBodyTemplateFirstPersonFlags
             Get
                 Return CUInt(Entero("BOD2\Biped Body Template\First Person Flags"))
             End Get
@@ -6697,7 +7137,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Keywords\KSIZ\Keyword Count</summary>
-        Public Property KeywordsKeywordCount As UInteger
+        Public Property KeywordsKeywordCount As UInteger Implements IRace.KeywordsKeywordCount
             Get
                 Return CUInt(Entero("Keywords\KSIZ\Keyword Count"))
             End Get
@@ -6805,6 +7245,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de DATA\Data\Flags: FaceGen Head</summary>
         Public Property DataFlagsFaceGenHead As Boolean
             Get
@@ -6814,6 +7255,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de DATA\Data\Flags: Child</summary>
         Public Property DataFlagsChild As Boolean
             Get
@@ -6823,6 +7265,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de DATA\Data\Flags: Tilt Front/Back</summary>
         Public Property DataFlagsTiltFrontBack As Boolean
             Get
@@ -6832,6 +7275,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de DATA\Data\Flags: Tilt Left/Right</summary>
         Public Property DataFlagsTiltLeftRight As Boolean
             Get
@@ -6841,6 +7285,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 4, value)
             End Set
         End Property
+
         ''' <summary>Bit 5 de DATA\Data\Flags: No Shadow</summary>
         Public Property DataFlagsNoShadow As Boolean
             Get
@@ -6850,6 +7295,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 5, value)
             End Set
         End Property
+
         ''' <summary>Bit 6 de DATA\Data\Flags: Swims</summary>
         Public Property DataFlagsSwims As Boolean
             Get
@@ -6859,6 +7305,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 6, value)
             End Set
         End Property
+
         ''' <summary>Bit 7 de DATA\Data\Flags: Flies</summary>
         Public Property DataFlagsFlies As Boolean
             Get
@@ -6868,6 +7315,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 7, value)
             End Set
         End Property
+
         ''' <summary>Bit 8 de DATA\Data\Flags: Walks</summary>
         Public Property DataFlagsWalks As Boolean
             Get
@@ -6877,6 +7325,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 8, value)
             End Set
         End Property
+
         ''' <summary>Bit 9 de DATA\Data\Flags: Immobile</summary>
         Public Property DataFlagsImmobile As Boolean
             Get
@@ -6886,6 +7335,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 9, value)
             End Set
         End Property
+
         ''' <summary>Bit 10 de DATA\Data\Flags: Not Pushable</summary>
         Public Property DataFlagsNotPushable As Boolean
             Get
@@ -6895,6 +7345,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 10, value)
             End Set
         End Property
+
         ''' <summary>Bit 11 de DATA\Data\Flags: No Combat In Water</summary>
         Public Property DataFlagsNoCombatInWater As Boolean
             Get
@@ -6904,6 +7355,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 11, value)
             End Set
         End Property
+
         ''' <summary>Bit 12 de DATA\Data\Flags: No Rotating to Head-Track</summary>
         Public Property DataFlagsNoRotatingToHeadTrack As Boolean
             Get
@@ -6913,6 +7365,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 12, value)
             End Set
         End Property
+
         ''' <summary>Bit 13 de DATA\Data\Flags: Don't Show Blood Spray</summary>
         Public Property DataFlagsDonTShowBloodSpray As Boolean
             Get
@@ -6922,6 +7375,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 13, value)
             End Set
         End Property
+
         ''' <summary>Bit 14 de DATA\Data\Flags: Don't Show Blood Decal</summary>
         Public Property DataFlagsDonTShowBloodDecal As Boolean
             Get
@@ -6931,6 +7385,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 14, value)
             End Set
         End Property
+
         ''' <summary>Bit 15 de DATA\Data\Flags: Uses Head Track Anims</summary>
         Public Property DataFlagsUsesHeadTrackAnims As Boolean
             Get
@@ -6940,6 +7395,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 15, value)
             End Set
         End Property
+
         ''' <summary>Bit 16 de DATA\Data\Flags: Spells Align w/Magic Node</summary>
         Public Property DataFlagsSpellsAlignWMagicNode As Boolean
             Get
@@ -6949,6 +7405,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 16, value)
             End Set
         End Property
+
         ''' <summary>Bit 17 de DATA\Data\Flags: Use World Raycasts For FootIK</summary>
         Public Property DataFlagsUseWorldRaycastsForFootIK As Boolean
             Get
@@ -6958,6 +7415,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 17, value)
             End Set
         End Property
+
         ''' <summary>Bit 18 de DATA\Data\Flags: Allow Ragdoll Collision</summary>
         Public Property DataFlagsAllowRagdollCollision As Boolean
             Get
@@ -6967,6 +7425,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 18, value)
             End Set
         End Property
+
         ''' <summary>Bit 19 de DATA\Data\Flags: Regen HP In Combat</summary>
         Public Property DataFlagsRegenHPInCombat As Boolean
             Get
@@ -6976,6 +7435,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 19, value)
             End Set
         End Property
+
         ''' <summary>Bit 20 de DATA\Data\Flags: Can't Open Doors</summary>
         Public Property DataFlagsCanTOpenDoors As Boolean
             Get
@@ -6985,6 +7445,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 20, value)
             End Set
         End Property
+
         ''' <summary>Bit 21 de DATA\Data\Flags: Allow PC Dialogue</summary>
         Public Property DataFlagsAllowPCDialogue As Boolean
             Get
@@ -6994,6 +7455,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 21, value)
             End Set
         End Property
+
         ''' <summary>Bit 22 de DATA\Data\Flags: No Knockdowns</summary>
         Public Property DataFlagsNoKnockdowns As Boolean
             Get
@@ -7003,6 +7465,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 22, value)
             End Set
         End Property
+
         ''' <summary>Bit 23 de DATA\Data\Flags: Allow Pickpocket</summary>
         Public Property DataFlagsAllowPickpocket As Boolean
             Get
@@ -7012,6 +7475,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 23, value)
             End Set
         End Property
+
         ''' <summary>Bit 24 de DATA\Data\Flags: Always Use Proxy Controller</summary>
         Public Property DataFlagsAlwaysUseProxyController As Boolean
             Get
@@ -7021,6 +7485,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 24, value)
             End Set
         End Property
+
         ''' <summary>Bit 25 de DATA\Data\Flags: Don't Show Weapon Blood</summary>
         Public Property DataFlagsDonTShowWeaponBlood As Boolean
             Get
@@ -7030,6 +7495,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 25, value)
             End Set
         End Property
+
         ''' <summary>Bit 26 de DATA\Data\Flags: Overlay Head Part List</summary>
         Public Property DataFlagsOverlayHeadPartList As Boolean
             Get
@@ -7039,6 +7505,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 26, value)
             End Set
         End Property
+
         ''' <summary>Bit 27 de DATA\Data\Flags: Override Head Part List</summary>
         Public Property DataFlagsOverrideHeadPartList As Boolean
             Get
@@ -7048,6 +7515,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 27, value)
             End Set
         End Property
+
         ''' <summary>Bit 28 de DATA\Data\Flags: Can Pickup Items</summary>
         Public Property DataFlagsCanPickupItems As Boolean
             Get
@@ -7057,6 +7525,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 28, value)
             End Set
         End Property
+
         ''' <summary>Bit 29 de DATA\Data\Flags: Allow Multiple Membrane Shaders</summary>
         Public Property DataFlagsAllowMultipleMembraneShaders As Boolean
             Get
@@ -7066,6 +7535,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 29, value)
             End Set
         End Property
+
         ''' <summary>Bit 30 de DATA\Data\Flags: Can Dual Wield</summary>
         Public Property DataFlagsCanDualWield As Boolean
             Get
@@ -7075,6 +7545,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags", 30, value)
             End Set
         End Property
+
         ''' <summary>Bit 31 de DATA\Data\Flags: Avoids Roads</summary>
         Public Property DataFlagsAvoidsRoads As Boolean
             Get
@@ -7114,13 +7585,13 @@ Namespace Canon
                 Escribir("DATA\Data\Size", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de DATA\Data\Size.</summary>
         Public ReadOnly Property DataSizeNombre As String
             Get
                 Return NombreDeValor("DATA\Data\Size")
             End Get
         End Property
-
 
         ''' <summary>DATA\Data\Unknown Bytes1</summary>
         Public Property DataUnknownBytes1 As Byte()
@@ -7241,6 +7712,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de DATA\Data\Flags 2: Non-Hostile</summary>
         Public Property DataFlags2NonHostile As Boolean
             Get
@@ -7250,6 +7722,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de DATA\Data\Flags 2: Floats</summary>
         Public Property DataFlags2Floats As Boolean
             Get
@@ -7259,6 +7732,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 5 de DATA\Data\Flags 2: Head Axis Bit 0</summary>
         Public Property DataFlags2HeadAxisBit0 As Boolean
             Get
@@ -7268,6 +7742,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 5, value)
             End Set
         End Property
+
         ''' <summary>Bit 6 de DATA\Data\Flags 2: Head Axis Bit 1</summary>
         Public Property DataFlags2HeadAxisBit1 As Boolean
             Get
@@ -7277,6 +7752,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 6, value)
             End Set
         End Property
+
         ''' <summary>Bit 7 de DATA\Data\Flags 2: Can Melee When Knocked Down</summary>
         Public Property DataFlags2CanMeleeWhenKnockedDown As Boolean
             Get
@@ -7286,6 +7762,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 7, value)
             End Set
         End Property
+
         ''' <summary>Bit 8 de DATA\Data\Flags 2: Use Idle Chatter During Combat</summary>
         Public Property DataFlags2UseIdleChatterDuringCombat As Boolean
             Get
@@ -7295,6 +7772,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 8, value)
             End Set
         End Property
+
         ''' <summary>Bit 9 de DATA\Data\Flags 2: Ungendered</summary>
         Public Property DataFlags2Ungendered As Boolean
             Get
@@ -7304,6 +7782,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 9, value)
             End Set
         End Property
+
         ''' <summary>Bit 10 de DATA\Data\Flags 2: Can Move When Knocked Down</summary>
         Public Property DataFlags2CanMoveWhenKnockedDown As Boolean
             Get
@@ -7313,6 +7792,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 10, value)
             End Set
         End Property
+
         ''' <summary>Bit 11 de DATA\Data\Flags 2: Use Large Actor Pathing</summary>
         Public Property DataFlags2UseLargeActorPathing As Boolean
             Get
@@ -7322,6 +7802,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 11, value)
             End Set
         End Property
+
         ''' <summary>Bit 12 de DATA\Data\Flags 2: Use Subsegmented Damage</summary>
         Public Property DataFlags2UseSubsegmentedDamage As Boolean
             Get
@@ -7331,6 +7812,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 12, value)
             End Set
         End Property
+
         ''' <summary>Bit 13 de DATA\Data\Flags 2: Flight - Defer Kill</summary>
         Public Property DataFlags2FlightDeferKill As Boolean
             Get
@@ -7340,6 +7822,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 13, value)
             End Set
         End Property
+
         ''' <summary>Bit 15 de DATA\Data\Flags 2: Flight - Allow Procedural Crash Land</summary>
         Public Property DataFlags2FlightAllowProceduralCrashLand As Boolean
             Get
@@ -7349,6 +7832,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 15, value)
             End Set
         End Property
+
         ''' <summary>Bit 16 de DATA\Data\Flags 2: Disable Weapon Culling</summary>
         Public Property DataFlags2DisableWeaponCulling As Boolean
             Get
@@ -7358,6 +7842,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 16, value)
             End Set
         End Property
+
         ''' <summary>Bit 17 de DATA\Data\Flags 2: Use Optimal Speeds</summary>
         Public Property DataFlags2UseOptimalSpeeds As Boolean
             Get
@@ -7367,6 +7852,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 17, value)
             End Set
         End Property
+
         ''' <summary>Bit 18 de DATA\Data\Flags 2: Has Facial Rig</summary>
         Public Property DataFlags2HasFacialRig As Boolean
             Get
@@ -7376,6 +7862,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 18, value)
             End Set
         End Property
+
         ''' <summary>Bit 19 de DATA\Data\Flags 2: Can Use Crippled Limbs</summary>
         Public Property DataFlags2CanUseCrippledLimbs As Boolean
             Get
@@ -7385,6 +7872,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 19, value)
             End Set
         End Property
+
         ''' <summary>Bit 20 de DATA\Data\Flags 2: Use Quadruped Controller</summary>
         Public Property DataFlags2UseQuadrupedController As Boolean
             Get
@@ -7394,6 +7882,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 20, value)
             End Set
         End Property
+
         ''' <summary>Bit 21 de DATA\Data\Flags 2: Low Priority Pushable</summary>
         Public Property DataFlags2LowPriorityPushable As Boolean
             Get
@@ -7403,6 +7892,7 @@ Namespace Canon
                 PonerBit("DATA\Data\Flags 2", 21, value)
             End Set
         End Property
+
         ''' <summary>Bit 22 de DATA\Data\Flags 2: Cannot Use Playable Items</summary>
         Public Property DataFlags2CannotUsePlayableItems As Boolean
             Get
@@ -7734,7 +8224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ANAM\Male Skeletal Model</summary>
-        Public Property MaleSkeletalModel As String
+        Public Property MaleSkeletalModel As String Implements IRace.MaleSkeletalModel
             Get
                 Return Txt("ANAM\Male Skeletal Model")
             End Get
@@ -7744,7 +8234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ANAM\Female Skeletal Model</summary>
-        Public Property FemaleSkeletalModel As String
+        Public Property FemaleSkeletalModel As String Implements IRace.FemaleSkeletalModel
             Get
                 Return Txt("ANAM\Female Skeletal Model")
             End Get
@@ -7754,7 +8244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>TINL\Total Number of Tints in List</summary>
-        Public Property TotalNumberOfTintsInList As UShort
+        Public Property TotalNumberOfTintsInList As UShort Implements IRace.TotalNumberOfTintsInList
             Get
                 Return CUShort(Entero("TINL\Total Number of Tints in List"))
             End Get
@@ -7764,7 +8254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>PNAM\FaceGen - Main clamp</summary>
-        Public Property FaceGenMainClamp As Single
+        Public Property FaceGenMainClamp As Single Implements IRace.FaceGenMainClamp
             Get
                 Return Flt("PNAM\FaceGen - Main clamp")
             End Get
@@ -7774,7 +8264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>UNAM\FaceGen - Face clamp</summary>
-        Public Property FaceGenFaceClamp As Single
+        Public Property FaceGenFaceClamp As Single Implements IRace.FaceGenFaceClamp
             Get
                 Return Flt("UNAM\FaceGen - Face clamp")
             End Get
@@ -7784,7 +8274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>ATKR\Attack Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
-        Public Property AttackRace As UInteger
+        Public Property AttackRace As UInteger Implements IRace.AttackRace
             Get
                 Return Referencia("ATKR\Attack Race")
             End Get
@@ -7794,7 +8284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>GNAM\Body Part Data  -&gt;  BPTD. Referencia en el espacio del orden de carga.</summary>
-        Public Property BodyPartData As UInteger
+        Public Property BodyPartData As UInteger Implements IRace.BodyPartData
             Get
                 Return Referencia("GNAM\Body Part Data")
             End Get
@@ -7804,7 +8294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Male Behavior Graph\Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements IRace.ModelModelFileName
             Get
                 Return Txt("Male Behavior Graph\Model\MODL\Model FileName")
             End Get
@@ -7844,7 +8334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Female Behavior Graph\Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName2 As String
+        Public Property ModelModelFileName2 As String Implements IRace.ModelModelFileName2
             Get
                 Return Txt("Female Behavior Graph\Model\MODL\Model FileName")
             End Get
@@ -7894,7 +8384,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM5\Impact Data Set  -&gt;  IPDS. Referencia en el espacio del orden de carga.</summary>
-        Public Property ImpactDataSet As UInteger
+        Public Property ImpactDataSet As UInteger Implements IRace.ImpactDataSet
             Get
                 Return Referencia("NAM5\Impact Data Set")
             End Get
@@ -7954,7 +8444,7 @@ Namespace Canon
         End Property
 
         ''' <summary>VNAM\Equipment Flags</summary>
-        Public Property EquipmentFlags As UInteger
+        Public Property EquipmentFlags As UInteger Implements IRace.EquipmentFlags
             Get
                 Return CUInt(Entero("VNAM\Equipment Flags"))
             End Get
@@ -7974,7 +8464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah As Single
+        Public Property PhonemeTargetWeightAahLipBigAah As Single Implements IRace.PhonemeTargetWeightAahLipBigAah
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -7984,7 +8474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST As Single
+        Public Property PhonemeTargetWeightBigAahLipDST As Single Implements IRace.PhonemeTargetWeightBigAahLipDST
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -7994,7 +8484,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee As Single
+        Public Property PhonemeTargetWeightBMPLipEee As Single Implements IRace.PhonemeTargetWeightBMPLipEee
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -8004,7 +8494,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV As Single
+        Public Property PhonemeTargetWeightChJshLipFV As Single Implements IRace.PhonemeTargetWeightChJshLipFV
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -8014,7 +8504,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK As Single
+        Public Property PhonemeTargetWeightDSTLipK As Single Implements IRace.PhonemeTargetWeightDSTLipK
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -8024,7 +8514,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL As Single
+        Public Property PhonemeTargetWeightEeeLipL As Single Implements IRace.PhonemeTargetWeightEeeLipL
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -8034,7 +8524,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR As Single
+        Public Property PhonemeTargetWeightEhLipR As Single Implements IRace.PhonemeTargetWeightEhLipR
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -8044,7 +8534,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh As Single
+        Public Property PhonemeTargetWeightFVLipTh As Single Implements IRace.PhonemeTargetWeightFVLipTh
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -8054,7 +8544,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI As Single
+        Public Property PhonemeTargetWeightI As Single Implements IRace.PhonemeTargetWeightI
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\I")
             End Get
@@ -8064,7 +8554,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK As Single
+        Public Property PhonemeTargetWeightK As Single Implements IRace.PhonemeTargetWeightK
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\K")
             End Get
@@ -8074,7 +8564,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN As Single
+        Public Property PhonemeTargetWeightN As Single Implements IRace.PhonemeTargetWeightN
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\N")
             End Get
@@ -8084,7 +8574,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh As Single
+        Public Property PhonemeTargetWeightOh As Single Implements IRace.PhonemeTargetWeightOh
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -8094,7 +8584,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ As Single
+        Public Property PhonemeTargetWeightOohQ As Single Implements IRace.PhonemeTargetWeightOohQ
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -8104,7 +8594,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR As Single
+        Public Property PhonemeTargetWeightR As Single Implements IRace.PhonemeTargetWeightR
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\R")
             End Get
@@ -8114,7 +8604,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH As Single
+        Public Property PhonemeTargetWeightTH As Single Implements IRace.PhonemeTargetWeightTH
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -8124,7 +8614,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW As Single
+        Public Property PhonemeTargetWeightW As Single Implements IRace.PhonemeTargetWeightW
             Get
                 Return Flt("FaceFX Phonemes\IY\PHWT\Phoneme Target Weight\W")
             End Get
@@ -8134,7 +8624,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah2 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah2 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -8144,7 +8634,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST2 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST2 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -8154,7 +8644,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee2 As Single
+        Public Property PhonemeTargetWeightBMPLipEee2 As Single Implements IRace.PhonemeTargetWeightBMPLipEee2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -8164,7 +8654,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV2 As Single
+        Public Property PhonemeTargetWeightChJshLipFV2 As Single Implements IRace.PhonemeTargetWeightChJshLipFV2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -8174,7 +8664,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK2 As Single
+        Public Property PhonemeTargetWeightDSTLipK2 As Single Implements IRace.PhonemeTargetWeightDSTLipK2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -8184,7 +8674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL2 As Single
+        Public Property PhonemeTargetWeightEeeLipL2 As Single Implements IRace.PhonemeTargetWeightEeeLipL2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -8194,7 +8684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR2 As Single
+        Public Property PhonemeTargetWeightEhLipR2 As Single Implements IRace.PhonemeTargetWeightEhLipR2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -8204,7 +8694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh2 As Single
+        Public Property PhonemeTargetWeightFVLipTh2 As Single Implements IRace.PhonemeTargetWeightFVLipTh2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -8214,7 +8704,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI2 As Single
+        Public Property PhonemeTargetWeightI2 As Single Implements IRace.PhonemeTargetWeightI2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -8224,7 +8714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK2 As Single
+        Public Property PhonemeTargetWeightK2 As Single Implements IRace.PhonemeTargetWeightK2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -8234,7 +8724,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN2 As Single
+        Public Property PhonemeTargetWeightN2 As Single Implements IRace.PhonemeTargetWeightN2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -8244,7 +8734,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh2 As Single
+        Public Property PhonemeTargetWeightOh2 As Single Implements IRace.PhonemeTargetWeightOh2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -8254,7 +8744,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ2 As Single
+        Public Property PhonemeTargetWeightOohQ2 As Single Implements IRace.PhonemeTargetWeightOohQ2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -8264,7 +8754,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR2 As Single
+        Public Property PhonemeTargetWeightR2 As Single Implements IRace.PhonemeTargetWeightR2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -8274,7 +8764,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH2 As Single
+        Public Property PhonemeTargetWeightTH2 As Single Implements IRace.PhonemeTargetWeightTH2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -8284,7 +8774,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW2 As Single
+        Public Property PhonemeTargetWeightW2 As Single Implements IRace.PhonemeTargetWeightW2
             Get
                 Return Flt("FaceFX Phonemes\IH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -8294,7 +8784,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah3 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah3 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -8304,7 +8794,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST3 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST3 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -8314,7 +8804,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee3 As Single
+        Public Property PhonemeTargetWeightBMPLipEee3 As Single Implements IRace.PhonemeTargetWeightBMPLipEee3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -8324,7 +8814,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV3 As Single
+        Public Property PhonemeTargetWeightChJshLipFV3 As Single Implements IRace.PhonemeTargetWeightChJshLipFV3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -8334,7 +8824,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK3 As Single
+        Public Property PhonemeTargetWeightDSTLipK3 As Single Implements IRace.PhonemeTargetWeightDSTLipK3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -8344,7 +8834,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL3 As Single
+        Public Property PhonemeTargetWeightEeeLipL3 As Single Implements IRace.PhonemeTargetWeightEeeLipL3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -8354,7 +8844,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR3 As Single
+        Public Property PhonemeTargetWeightEhLipR3 As Single Implements IRace.PhonemeTargetWeightEhLipR3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -8364,7 +8854,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh3 As Single
+        Public Property PhonemeTargetWeightFVLipTh3 As Single Implements IRace.PhonemeTargetWeightFVLipTh3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -8374,7 +8864,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI3 As Single
+        Public Property PhonemeTargetWeightI3 As Single Implements IRace.PhonemeTargetWeightI3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -8384,7 +8874,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK3 As Single
+        Public Property PhonemeTargetWeightK3 As Single Implements IRace.PhonemeTargetWeightK3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -8394,7 +8884,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN3 As Single
+        Public Property PhonemeTargetWeightN3 As Single Implements IRace.PhonemeTargetWeightN3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -8404,7 +8894,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh3 As Single
+        Public Property PhonemeTargetWeightOh3 As Single Implements IRace.PhonemeTargetWeightOh3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -8414,7 +8904,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ3 As Single
+        Public Property PhonemeTargetWeightOohQ3 As Single Implements IRace.PhonemeTargetWeightOohQ3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -8424,7 +8914,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR3 As Single
+        Public Property PhonemeTargetWeightR3 As Single Implements IRace.PhonemeTargetWeightR3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -8434,7 +8924,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH3 As Single
+        Public Property PhonemeTargetWeightTH3 As Single Implements IRace.PhonemeTargetWeightTH3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -8444,7 +8934,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW3 As Single
+        Public Property PhonemeTargetWeightW3 As Single Implements IRace.PhonemeTargetWeightW3
             Get
                 Return Flt("FaceFX Phonemes\EH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -8454,7 +8944,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah4 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah4 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -8464,7 +8954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST4 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST4 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -8474,7 +8964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee4 As Single
+        Public Property PhonemeTargetWeightBMPLipEee4 As Single Implements IRace.PhonemeTargetWeightBMPLipEee4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -8484,7 +8974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV4 As Single
+        Public Property PhonemeTargetWeightChJshLipFV4 As Single Implements IRace.PhonemeTargetWeightChJshLipFV4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -8494,7 +8984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK4 As Single
+        Public Property PhonemeTargetWeightDSTLipK4 As Single Implements IRace.PhonemeTargetWeightDSTLipK4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -8504,7 +8994,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL4 As Single
+        Public Property PhonemeTargetWeightEeeLipL4 As Single Implements IRace.PhonemeTargetWeightEeeLipL4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -8514,7 +9004,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR4 As Single
+        Public Property PhonemeTargetWeightEhLipR4 As Single Implements IRace.PhonemeTargetWeightEhLipR4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -8524,7 +9014,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh4 As Single
+        Public Property PhonemeTargetWeightFVLipTh4 As Single Implements IRace.PhonemeTargetWeightFVLipTh4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -8534,7 +9024,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI4 As Single
+        Public Property PhonemeTargetWeightI4 As Single Implements IRace.PhonemeTargetWeightI4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\I")
             End Get
@@ -8544,7 +9034,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK4 As Single
+        Public Property PhonemeTargetWeightK4 As Single Implements IRace.PhonemeTargetWeightK4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\K")
             End Get
@@ -8554,7 +9044,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN4 As Single
+        Public Property PhonemeTargetWeightN4 As Single Implements IRace.PhonemeTargetWeightN4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\N")
             End Get
@@ -8564,7 +9054,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh4 As Single
+        Public Property PhonemeTargetWeightOh4 As Single Implements IRace.PhonemeTargetWeightOh4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -8574,7 +9064,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ4 As Single
+        Public Property PhonemeTargetWeightOohQ4 As Single Implements IRace.PhonemeTargetWeightOohQ4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -8584,7 +9074,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR4 As Single
+        Public Property PhonemeTargetWeightR4 As Single Implements IRace.PhonemeTargetWeightR4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\R")
             End Get
@@ -8594,7 +9084,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH4 As Single
+        Public Property PhonemeTargetWeightTH4 As Single Implements IRace.PhonemeTargetWeightTH4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -8604,7 +9094,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW4 As Single
+        Public Property PhonemeTargetWeightW4 As Single Implements IRace.PhonemeTargetWeightW4
             Get
                 Return Flt("FaceFX Phonemes\EY\PHWT\Phoneme Target Weight\W")
             End Get
@@ -8614,7 +9104,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah5 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah5 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -8624,7 +9114,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST5 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST5 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -8634,7 +9124,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee5 As Single
+        Public Property PhonemeTargetWeightBMPLipEee5 As Single Implements IRace.PhonemeTargetWeightBMPLipEee5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -8644,7 +9134,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV5 As Single
+        Public Property PhonemeTargetWeightChJshLipFV5 As Single Implements IRace.PhonemeTargetWeightChJshLipFV5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -8654,7 +9144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK5 As Single
+        Public Property PhonemeTargetWeightDSTLipK5 As Single Implements IRace.PhonemeTargetWeightDSTLipK5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -8664,7 +9154,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL5 As Single
+        Public Property PhonemeTargetWeightEeeLipL5 As Single Implements IRace.PhonemeTargetWeightEeeLipL5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -8674,7 +9164,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR5 As Single
+        Public Property PhonemeTargetWeightEhLipR5 As Single Implements IRace.PhonemeTargetWeightEhLipR5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -8684,7 +9174,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh5 As Single
+        Public Property PhonemeTargetWeightFVLipTh5 As Single Implements IRace.PhonemeTargetWeightFVLipTh5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -8694,7 +9184,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI5 As Single
+        Public Property PhonemeTargetWeightI5 As Single Implements IRace.PhonemeTargetWeightI5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\I")
             End Get
@@ -8704,7 +9194,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK5 As Single
+        Public Property PhonemeTargetWeightK5 As Single Implements IRace.PhonemeTargetWeightK5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\K")
             End Get
@@ -8714,7 +9204,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN5 As Single
+        Public Property PhonemeTargetWeightN5 As Single Implements IRace.PhonemeTargetWeightN5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\N")
             End Get
@@ -8724,7 +9214,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh5 As Single
+        Public Property PhonemeTargetWeightOh5 As Single Implements IRace.PhonemeTargetWeightOh5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -8734,7 +9224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ5 As Single
+        Public Property PhonemeTargetWeightOohQ5 As Single Implements IRace.PhonemeTargetWeightOohQ5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -8744,7 +9234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR5 As Single
+        Public Property PhonemeTargetWeightR5 As Single Implements IRace.PhonemeTargetWeightR5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\R")
             End Get
@@ -8754,7 +9244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH5 As Single
+        Public Property PhonemeTargetWeightTH5 As Single Implements IRace.PhonemeTargetWeightTH5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -8764,7 +9254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW5 As Single
+        Public Property PhonemeTargetWeightW5 As Single Implements IRace.PhonemeTargetWeightW5
             Get
                 Return Flt("FaceFX Phonemes\AE\PHWT\Phoneme Target Weight\W")
             End Get
@@ -8774,7 +9264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah6 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah6 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -8784,7 +9274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST6 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST6 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -8794,7 +9284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee6 As Single
+        Public Property PhonemeTargetWeightBMPLipEee6 As Single Implements IRace.PhonemeTargetWeightBMPLipEee6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -8804,7 +9294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV6 As Single
+        Public Property PhonemeTargetWeightChJshLipFV6 As Single Implements IRace.PhonemeTargetWeightChJshLipFV6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -8814,7 +9304,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK6 As Single
+        Public Property PhonemeTargetWeightDSTLipK6 As Single Implements IRace.PhonemeTargetWeightDSTLipK6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -8824,7 +9314,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL6 As Single
+        Public Property PhonemeTargetWeightEeeLipL6 As Single Implements IRace.PhonemeTargetWeightEeeLipL6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -8834,7 +9324,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR6 As Single
+        Public Property PhonemeTargetWeightEhLipR6 As Single Implements IRace.PhonemeTargetWeightEhLipR6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -8844,7 +9334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh6 As Single
+        Public Property PhonemeTargetWeightFVLipTh6 As Single Implements IRace.PhonemeTargetWeightFVLipTh6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -8854,7 +9344,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI6 As Single
+        Public Property PhonemeTargetWeightI6 As Single Implements IRace.PhonemeTargetWeightI6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\I")
             End Get
@@ -8864,7 +9354,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK6 As Single
+        Public Property PhonemeTargetWeightK6 As Single Implements IRace.PhonemeTargetWeightK6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\K")
             End Get
@@ -8874,7 +9364,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN6 As Single
+        Public Property PhonemeTargetWeightN6 As Single Implements IRace.PhonemeTargetWeightN6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\N")
             End Get
@@ -8884,7 +9374,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh6 As Single
+        Public Property PhonemeTargetWeightOh6 As Single Implements IRace.PhonemeTargetWeightOh6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -8894,7 +9384,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ6 As Single
+        Public Property PhonemeTargetWeightOohQ6 As Single Implements IRace.PhonemeTargetWeightOohQ6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -8904,7 +9394,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR6 As Single
+        Public Property PhonemeTargetWeightR6 As Single Implements IRace.PhonemeTargetWeightR6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\R")
             End Get
@@ -8914,7 +9404,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH6 As Single
+        Public Property PhonemeTargetWeightTH6 As Single Implements IRace.PhonemeTargetWeightTH6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -8924,7 +9414,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW6 As Single
+        Public Property PhonemeTargetWeightW6 As Single Implements IRace.PhonemeTargetWeightW6
             Get
                 Return Flt("FaceFX Phonemes\AA\PHWT\Phoneme Target Weight\W")
             End Get
@@ -8934,7 +9424,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah7 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah7 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -8944,7 +9434,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST7 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST7 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -8954,7 +9444,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee7 As Single
+        Public Property PhonemeTargetWeightBMPLipEee7 As Single Implements IRace.PhonemeTargetWeightBMPLipEee7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -8964,7 +9454,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV7 As Single
+        Public Property PhonemeTargetWeightChJshLipFV7 As Single Implements IRace.PhonemeTargetWeightChJshLipFV7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -8974,7 +9464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK7 As Single
+        Public Property PhonemeTargetWeightDSTLipK7 As Single Implements IRace.PhonemeTargetWeightDSTLipK7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -8984,7 +9474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL7 As Single
+        Public Property PhonemeTargetWeightEeeLipL7 As Single Implements IRace.PhonemeTargetWeightEeeLipL7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -8994,7 +9484,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR7 As Single
+        Public Property PhonemeTargetWeightEhLipR7 As Single Implements IRace.PhonemeTargetWeightEhLipR7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -9004,7 +9494,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh7 As Single
+        Public Property PhonemeTargetWeightFVLipTh7 As Single Implements IRace.PhonemeTargetWeightFVLipTh7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -9014,7 +9504,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI7 As Single
+        Public Property PhonemeTargetWeightI7 As Single Implements IRace.PhonemeTargetWeightI7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\I")
             End Get
@@ -9024,7 +9514,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK7 As Single
+        Public Property PhonemeTargetWeightK7 As Single Implements IRace.PhonemeTargetWeightK7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\K")
             End Get
@@ -9034,7 +9524,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN7 As Single
+        Public Property PhonemeTargetWeightN7 As Single Implements IRace.PhonemeTargetWeightN7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\N")
             End Get
@@ -9044,7 +9534,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh7 As Single
+        Public Property PhonemeTargetWeightOh7 As Single Implements IRace.PhonemeTargetWeightOh7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -9054,7 +9544,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ7 As Single
+        Public Property PhonemeTargetWeightOohQ7 As Single Implements IRace.PhonemeTargetWeightOohQ7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -9064,7 +9554,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR7 As Single
+        Public Property PhonemeTargetWeightR7 As Single Implements IRace.PhonemeTargetWeightR7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\R")
             End Get
@@ -9074,7 +9564,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH7 As Single
+        Public Property PhonemeTargetWeightTH7 As Single Implements IRace.PhonemeTargetWeightTH7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -9084,7 +9574,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW7 As Single
+        Public Property PhonemeTargetWeightW7 As Single Implements IRace.PhonemeTargetWeightW7
             Get
                 Return Flt("FaceFX Phonemes\AW\PHWT\Phoneme Target Weight\W")
             End Get
@@ -9094,7 +9584,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah8 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah8 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -9104,7 +9594,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST8 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST8 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -9114,7 +9604,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee8 As Single
+        Public Property PhonemeTargetWeightBMPLipEee8 As Single Implements IRace.PhonemeTargetWeightBMPLipEee8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -9124,7 +9614,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV8 As Single
+        Public Property PhonemeTargetWeightChJshLipFV8 As Single Implements IRace.PhonemeTargetWeightChJshLipFV8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -9134,7 +9624,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK8 As Single
+        Public Property PhonemeTargetWeightDSTLipK8 As Single Implements IRace.PhonemeTargetWeightDSTLipK8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -9144,7 +9634,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL8 As Single
+        Public Property PhonemeTargetWeightEeeLipL8 As Single Implements IRace.PhonemeTargetWeightEeeLipL8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -9154,7 +9644,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR8 As Single
+        Public Property PhonemeTargetWeightEhLipR8 As Single Implements IRace.PhonemeTargetWeightEhLipR8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -9164,7 +9654,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh8 As Single
+        Public Property PhonemeTargetWeightFVLipTh8 As Single Implements IRace.PhonemeTargetWeightFVLipTh8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -9174,7 +9664,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI8 As Single
+        Public Property PhonemeTargetWeightI8 As Single Implements IRace.PhonemeTargetWeightI8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\I")
             End Get
@@ -9184,7 +9674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK8 As Single
+        Public Property PhonemeTargetWeightK8 As Single Implements IRace.PhonemeTargetWeightK8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\K")
             End Get
@@ -9194,7 +9684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN8 As Single
+        Public Property PhonemeTargetWeightN8 As Single Implements IRace.PhonemeTargetWeightN8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\N")
             End Get
@@ -9204,7 +9694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh8 As Single
+        Public Property PhonemeTargetWeightOh8 As Single Implements IRace.PhonemeTargetWeightOh8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -9214,7 +9704,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ8 As Single
+        Public Property PhonemeTargetWeightOohQ8 As Single Implements IRace.PhonemeTargetWeightOohQ8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -9224,7 +9714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR8 As Single
+        Public Property PhonemeTargetWeightR8 As Single Implements IRace.PhonemeTargetWeightR8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\R")
             End Get
@@ -9234,7 +9724,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH8 As Single
+        Public Property PhonemeTargetWeightTH8 As Single Implements IRace.PhonemeTargetWeightTH8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -9244,7 +9734,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW8 As Single
+        Public Property PhonemeTargetWeightW8 As Single Implements IRace.PhonemeTargetWeightW8
             Get
                 Return Flt("FaceFX Phonemes\AY\PHWT\Phoneme Target Weight\W")
             End Get
@@ -9254,7 +9744,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah9 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah9 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -9264,7 +9754,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST9 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST9 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -9274,7 +9764,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee9 As Single
+        Public Property PhonemeTargetWeightBMPLipEee9 As Single Implements IRace.PhonemeTargetWeightBMPLipEee9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -9284,7 +9774,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV9 As Single
+        Public Property PhonemeTargetWeightChJshLipFV9 As Single Implements IRace.PhonemeTargetWeightChJshLipFV9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -9294,7 +9784,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK9 As Single
+        Public Property PhonemeTargetWeightDSTLipK9 As Single Implements IRace.PhonemeTargetWeightDSTLipK9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -9304,7 +9794,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL9 As Single
+        Public Property PhonemeTargetWeightEeeLipL9 As Single Implements IRace.PhonemeTargetWeightEeeLipL9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -9314,7 +9804,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR9 As Single
+        Public Property PhonemeTargetWeightEhLipR9 As Single Implements IRace.PhonemeTargetWeightEhLipR9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -9324,7 +9814,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh9 As Single
+        Public Property PhonemeTargetWeightFVLipTh9 As Single Implements IRace.PhonemeTargetWeightFVLipTh9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -9334,7 +9824,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI9 As Single
+        Public Property PhonemeTargetWeightI9 As Single Implements IRace.PhonemeTargetWeightI9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -9344,7 +9834,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK9 As Single
+        Public Property PhonemeTargetWeightK9 As Single Implements IRace.PhonemeTargetWeightK9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -9354,7 +9844,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN9 As Single
+        Public Property PhonemeTargetWeightN9 As Single Implements IRace.PhonemeTargetWeightN9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -9364,7 +9854,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh9 As Single
+        Public Property PhonemeTargetWeightOh9 As Single Implements IRace.PhonemeTargetWeightOh9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -9374,7 +9864,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ9 As Single
+        Public Property PhonemeTargetWeightOohQ9 As Single Implements IRace.PhonemeTargetWeightOohQ9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -9384,7 +9874,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR9 As Single
+        Public Property PhonemeTargetWeightR9 As Single Implements IRace.PhonemeTargetWeightR9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -9394,7 +9884,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH9 As Single
+        Public Property PhonemeTargetWeightTH9 As Single Implements IRace.PhonemeTargetWeightTH9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -9404,7 +9894,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW9 As Single
+        Public Property PhonemeTargetWeightW9 As Single Implements IRace.PhonemeTargetWeightW9
             Get
                 Return Flt("FaceFX Phonemes\AH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -9414,7 +9904,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah10 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah10 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -9424,7 +9914,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST10 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST10 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -9434,7 +9924,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee10 As Single
+        Public Property PhonemeTargetWeightBMPLipEee10 As Single Implements IRace.PhonemeTargetWeightBMPLipEee10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -9444,7 +9934,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV10 As Single
+        Public Property PhonemeTargetWeightChJshLipFV10 As Single Implements IRace.PhonemeTargetWeightChJshLipFV10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -9454,7 +9944,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK10 As Single
+        Public Property PhonemeTargetWeightDSTLipK10 As Single Implements IRace.PhonemeTargetWeightDSTLipK10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -9464,7 +9954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL10 As Single
+        Public Property PhonemeTargetWeightEeeLipL10 As Single Implements IRace.PhonemeTargetWeightEeeLipL10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -9474,7 +9964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR10 As Single
+        Public Property PhonemeTargetWeightEhLipR10 As Single Implements IRace.PhonemeTargetWeightEhLipR10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -9484,7 +9974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh10 As Single
+        Public Property PhonemeTargetWeightFVLipTh10 As Single Implements IRace.PhonemeTargetWeightFVLipTh10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -9494,7 +9984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI10 As Single
+        Public Property PhonemeTargetWeightI10 As Single Implements IRace.PhonemeTargetWeightI10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\I")
             End Get
@@ -9504,7 +9994,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK10 As Single
+        Public Property PhonemeTargetWeightK10 As Single Implements IRace.PhonemeTargetWeightK10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\K")
             End Get
@@ -9514,7 +10004,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN10 As Single
+        Public Property PhonemeTargetWeightN10 As Single Implements IRace.PhonemeTargetWeightN10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\N")
             End Get
@@ -9524,7 +10014,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh10 As Single
+        Public Property PhonemeTargetWeightOh10 As Single Implements IRace.PhonemeTargetWeightOh10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -9534,7 +10024,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ10 As Single
+        Public Property PhonemeTargetWeightOohQ10 As Single Implements IRace.PhonemeTargetWeightOohQ10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -9544,7 +10034,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR10 As Single
+        Public Property PhonemeTargetWeightR10 As Single Implements IRace.PhonemeTargetWeightR10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\R")
             End Get
@@ -9554,7 +10044,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH10 As Single
+        Public Property PhonemeTargetWeightTH10 As Single Implements IRace.PhonemeTargetWeightTH10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -9564,7 +10054,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW10 As Single
+        Public Property PhonemeTargetWeightW10 As Single Implements IRace.PhonemeTargetWeightW10
             Get
                 Return Flt("FaceFX Phonemes\AO\PHWT\Phoneme Target Weight\W")
             End Get
@@ -9574,7 +10064,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah11 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah11 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -9584,7 +10074,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST11 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST11 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -9594,7 +10084,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee11 As Single
+        Public Property PhonemeTargetWeightBMPLipEee11 As Single Implements IRace.PhonemeTargetWeightBMPLipEee11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -9604,7 +10094,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV11 As Single
+        Public Property PhonemeTargetWeightChJshLipFV11 As Single Implements IRace.PhonemeTargetWeightChJshLipFV11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -9614,7 +10104,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK11 As Single
+        Public Property PhonemeTargetWeightDSTLipK11 As Single Implements IRace.PhonemeTargetWeightDSTLipK11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -9624,7 +10114,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL11 As Single
+        Public Property PhonemeTargetWeightEeeLipL11 As Single Implements IRace.PhonemeTargetWeightEeeLipL11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -9634,7 +10124,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR11 As Single
+        Public Property PhonemeTargetWeightEhLipR11 As Single Implements IRace.PhonemeTargetWeightEhLipR11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -9644,7 +10134,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh11 As Single
+        Public Property PhonemeTargetWeightFVLipTh11 As Single Implements IRace.PhonemeTargetWeightFVLipTh11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -9654,7 +10144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI11 As Single
+        Public Property PhonemeTargetWeightI11 As Single Implements IRace.PhonemeTargetWeightI11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\I")
             End Get
@@ -9664,7 +10154,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK11 As Single
+        Public Property PhonemeTargetWeightK11 As Single Implements IRace.PhonemeTargetWeightK11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\K")
             End Get
@@ -9674,7 +10164,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN11 As Single
+        Public Property PhonemeTargetWeightN11 As Single Implements IRace.PhonemeTargetWeightN11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\N")
             End Get
@@ -9684,7 +10174,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh11 As Single
+        Public Property PhonemeTargetWeightOh11 As Single Implements IRace.PhonemeTargetWeightOh11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -9694,7 +10184,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ11 As Single
+        Public Property PhonemeTargetWeightOohQ11 As Single Implements IRace.PhonemeTargetWeightOohQ11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -9704,7 +10194,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR11 As Single
+        Public Property PhonemeTargetWeightR11 As Single Implements IRace.PhonemeTargetWeightR11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\R")
             End Get
@@ -9714,7 +10204,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH11 As Single
+        Public Property PhonemeTargetWeightTH11 As Single Implements IRace.PhonemeTargetWeightTH11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -9724,7 +10214,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW11 As Single
+        Public Property PhonemeTargetWeightW11 As Single Implements IRace.PhonemeTargetWeightW11
             Get
                 Return Flt("FaceFX Phonemes\OY\PHWT\Phoneme Target Weight\W")
             End Get
@@ -9734,7 +10224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah12 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah12 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -9744,7 +10234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST12 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST12 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -9754,7 +10244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee12 As Single
+        Public Property PhonemeTargetWeightBMPLipEee12 As Single Implements IRace.PhonemeTargetWeightBMPLipEee12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -9764,7 +10254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV12 As Single
+        Public Property PhonemeTargetWeightChJshLipFV12 As Single Implements IRace.PhonemeTargetWeightChJshLipFV12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -9774,7 +10264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK12 As Single
+        Public Property PhonemeTargetWeightDSTLipK12 As Single Implements IRace.PhonemeTargetWeightDSTLipK12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -9784,7 +10274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL12 As Single
+        Public Property PhonemeTargetWeightEeeLipL12 As Single Implements IRace.PhonemeTargetWeightEeeLipL12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -9794,7 +10284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR12 As Single
+        Public Property PhonemeTargetWeightEhLipR12 As Single Implements IRace.PhonemeTargetWeightEhLipR12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -9804,7 +10294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh12 As Single
+        Public Property PhonemeTargetWeightFVLipTh12 As Single Implements IRace.PhonemeTargetWeightFVLipTh12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -9814,7 +10304,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI12 As Single
+        Public Property PhonemeTargetWeightI12 As Single Implements IRace.PhonemeTargetWeightI12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\I")
             End Get
@@ -9824,7 +10314,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK12 As Single
+        Public Property PhonemeTargetWeightK12 As Single Implements IRace.PhonemeTargetWeightK12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\K")
             End Get
@@ -9834,7 +10324,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN12 As Single
+        Public Property PhonemeTargetWeightN12 As Single Implements IRace.PhonemeTargetWeightN12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\N")
             End Get
@@ -9844,7 +10334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh12 As Single
+        Public Property PhonemeTargetWeightOh12 As Single Implements IRace.PhonemeTargetWeightOh12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -9854,7 +10344,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ12 As Single
+        Public Property PhonemeTargetWeightOohQ12 As Single Implements IRace.PhonemeTargetWeightOohQ12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -9864,7 +10354,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR12 As Single
+        Public Property PhonemeTargetWeightR12 As Single Implements IRace.PhonemeTargetWeightR12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\R")
             End Get
@@ -9874,7 +10364,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH12 As Single
+        Public Property PhonemeTargetWeightTH12 As Single Implements IRace.PhonemeTargetWeightTH12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -9884,7 +10374,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW12 As Single
+        Public Property PhonemeTargetWeightW12 As Single Implements IRace.PhonemeTargetWeightW12
             Get
                 Return Flt("FaceFX Phonemes\OW\PHWT\Phoneme Target Weight\W")
             End Get
@@ -9894,7 +10384,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah13 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah13 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -9904,7 +10394,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST13 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST13 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -9914,7 +10404,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee13 As Single
+        Public Property PhonemeTargetWeightBMPLipEee13 As Single Implements IRace.PhonemeTargetWeightBMPLipEee13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -9924,7 +10414,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV13 As Single
+        Public Property PhonemeTargetWeightChJshLipFV13 As Single Implements IRace.PhonemeTargetWeightChJshLipFV13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -9934,7 +10424,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK13 As Single
+        Public Property PhonemeTargetWeightDSTLipK13 As Single Implements IRace.PhonemeTargetWeightDSTLipK13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -9944,7 +10434,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL13 As Single
+        Public Property PhonemeTargetWeightEeeLipL13 As Single Implements IRace.PhonemeTargetWeightEeeLipL13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -9954,7 +10444,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR13 As Single
+        Public Property PhonemeTargetWeightEhLipR13 As Single Implements IRace.PhonemeTargetWeightEhLipR13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -9964,7 +10454,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh13 As Single
+        Public Property PhonemeTargetWeightFVLipTh13 As Single Implements IRace.PhonemeTargetWeightFVLipTh13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -9974,7 +10464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI13 As Single
+        Public Property PhonemeTargetWeightI13 As Single Implements IRace.PhonemeTargetWeightI13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -9984,7 +10474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK13 As Single
+        Public Property PhonemeTargetWeightK13 As Single Implements IRace.PhonemeTargetWeightK13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -9994,7 +10484,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN13 As Single
+        Public Property PhonemeTargetWeightN13 As Single Implements IRace.PhonemeTargetWeightN13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -10004,7 +10494,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh13 As Single
+        Public Property PhonemeTargetWeightOh13 As Single Implements IRace.PhonemeTargetWeightOh13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -10014,7 +10504,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ13 As Single
+        Public Property PhonemeTargetWeightOohQ13 As Single Implements IRace.PhonemeTargetWeightOohQ13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -10024,7 +10514,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR13 As Single
+        Public Property PhonemeTargetWeightR13 As Single Implements IRace.PhonemeTargetWeightR13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -10034,7 +10524,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH13 As Single
+        Public Property PhonemeTargetWeightTH13 As Single Implements IRace.PhonemeTargetWeightTH13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -10044,7 +10534,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW13 As Single
+        Public Property PhonemeTargetWeightW13 As Single Implements IRace.PhonemeTargetWeightW13
             Get
                 Return Flt("FaceFX Phonemes\UH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -10054,7 +10544,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah14 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah14 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -10064,7 +10554,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST14 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST14 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -10074,7 +10564,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee14 As Single
+        Public Property PhonemeTargetWeightBMPLipEee14 As Single Implements IRace.PhonemeTargetWeightBMPLipEee14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -10084,7 +10574,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV14 As Single
+        Public Property PhonemeTargetWeightChJshLipFV14 As Single Implements IRace.PhonemeTargetWeightChJshLipFV14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -10094,7 +10584,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK14 As Single
+        Public Property PhonemeTargetWeightDSTLipK14 As Single Implements IRace.PhonemeTargetWeightDSTLipK14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -10104,7 +10594,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL14 As Single
+        Public Property PhonemeTargetWeightEeeLipL14 As Single Implements IRace.PhonemeTargetWeightEeeLipL14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -10114,7 +10604,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR14 As Single
+        Public Property PhonemeTargetWeightEhLipR14 As Single Implements IRace.PhonemeTargetWeightEhLipR14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -10124,7 +10614,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh14 As Single
+        Public Property PhonemeTargetWeightFVLipTh14 As Single Implements IRace.PhonemeTargetWeightFVLipTh14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -10134,7 +10624,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI14 As Single
+        Public Property PhonemeTargetWeightI14 As Single Implements IRace.PhonemeTargetWeightI14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\I")
             End Get
@@ -10144,7 +10634,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK14 As Single
+        Public Property PhonemeTargetWeightK14 As Single Implements IRace.PhonemeTargetWeightK14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\K")
             End Get
@@ -10154,7 +10644,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN14 As Single
+        Public Property PhonemeTargetWeightN14 As Single Implements IRace.PhonemeTargetWeightN14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\N")
             End Get
@@ -10164,7 +10654,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh14 As Single
+        Public Property PhonemeTargetWeightOh14 As Single Implements IRace.PhonemeTargetWeightOh14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -10174,7 +10664,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ14 As Single
+        Public Property PhonemeTargetWeightOohQ14 As Single Implements IRace.PhonemeTargetWeightOohQ14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -10184,7 +10674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR14 As Single
+        Public Property PhonemeTargetWeightR14 As Single Implements IRace.PhonemeTargetWeightR14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\R")
             End Get
@@ -10194,7 +10684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH14 As Single
+        Public Property PhonemeTargetWeightTH14 As Single Implements IRace.PhonemeTargetWeightTH14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -10204,7 +10694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW14 As Single
+        Public Property PhonemeTargetWeightW14 As Single Implements IRace.PhonemeTargetWeightW14
             Get
                 Return Flt("FaceFX Phonemes\UW\PHWT\Phoneme Target Weight\W")
             End Get
@@ -10214,7 +10704,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah15 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah15 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -10224,7 +10714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST15 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST15 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -10234,7 +10724,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee15 As Single
+        Public Property PhonemeTargetWeightBMPLipEee15 As Single Implements IRace.PhonemeTargetWeightBMPLipEee15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -10244,7 +10734,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV15 As Single
+        Public Property PhonemeTargetWeightChJshLipFV15 As Single Implements IRace.PhonemeTargetWeightChJshLipFV15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -10254,7 +10744,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK15 As Single
+        Public Property PhonemeTargetWeightDSTLipK15 As Single Implements IRace.PhonemeTargetWeightDSTLipK15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -10264,7 +10754,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL15 As Single
+        Public Property PhonemeTargetWeightEeeLipL15 As Single Implements IRace.PhonemeTargetWeightEeeLipL15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -10274,7 +10764,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR15 As Single
+        Public Property PhonemeTargetWeightEhLipR15 As Single Implements IRace.PhonemeTargetWeightEhLipR15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -10284,7 +10774,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh15 As Single
+        Public Property PhonemeTargetWeightFVLipTh15 As Single Implements IRace.PhonemeTargetWeightFVLipTh15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -10294,7 +10784,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI15 As Single
+        Public Property PhonemeTargetWeightI15 As Single Implements IRace.PhonemeTargetWeightI15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\I")
             End Get
@@ -10304,7 +10794,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK15 As Single
+        Public Property PhonemeTargetWeightK15 As Single Implements IRace.PhonemeTargetWeightK15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\K")
             End Get
@@ -10314,7 +10804,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN15 As Single
+        Public Property PhonemeTargetWeightN15 As Single Implements IRace.PhonemeTargetWeightN15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\N")
             End Get
@@ -10324,7 +10814,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh15 As Single
+        Public Property PhonemeTargetWeightOh15 As Single Implements IRace.PhonemeTargetWeightOh15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -10334,7 +10824,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ15 As Single
+        Public Property PhonemeTargetWeightOohQ15 As Single Implements IRace.PhonemeTargetWeightOohQ15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -10344,7 +10834,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR15 As Single
+        Public Property PhonemeTargetWeightR15 As Single Implements IRace.PhonemeTargetWeightR15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\R")
             End Get
@@ -10354,7 +10844,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH15 As Single
+        Public Property PhonemeTargetWeightTH15 As Single Implements IRace.PhonemeTargetWeightTH15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -10364,7 +10854,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW15 As Single
+        Public Property PhonemeTargetWeightW15 As Single Implements IRace.PhonemeTargetWeightW15
             Get
                 Return Flt("FaceFX Phonemes\ER\PHWT\Phoneme Target Weight\W")
             End Get
@@ -10374,7 +10864,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah16 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah16 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -10384,7 +10874,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST16 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST16 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -10394,7 +10884,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee16 As Single
+        Public Property PhonemeTargetWeightBMPLipEee16 As Single Implements IRace.PhonemeTargetWeightBMPLipEee16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -10404,7 +10894,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV16 As Single
+        Public Property PhonemeTargetWeightChJshLipFV16 As Single Implements IRace.PhonemeTargetWeightChJshLipFV16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -10414,7 +10904,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK16 As Single
+        Public Property PhonemeTargetWeightDSTLipK16 As Single Implements IRace.PhonemeTargetWeightDSTLipK16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -10424,7 +10914,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL16 As Single
+        Public Property PhonemeTargetWeightEeeLipL16 As Single Implements IRace.PhonemeTargetWeightEeeLipL16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -10434,7 +10924,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR16 As Single
+        Public Property PhonemeTargetWeightEhLipR16 As Single Implements IRace.PhonemeTargetWeightEhLipR16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -10444,7 +10934,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh16 As Single
+        Public Property PhonemeTargetWeightFVLipTh16 As Single Implements IRace.PhonemeTargetWeightFVLipTh16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -10454,7 +10944,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI16 As Single
+        Public Property PhonemeTargetWeightI16 As Single Implements IRace.PhonemeTargetWeightI16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\I")
             End Get
@@ -10464,7 +10954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK16 As Single
+        Public Property PhonemeTargetWeightK16 As Single Implements IRace.PhonemeTargetWeightK16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\K")
             End Get
@@ -10474,7 +10964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN16 As Single
+        Public Property PhonemeTargetWeightN16 As Single Implements IRace.PhonemeTargetWeightN16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\N")
             End Get
@@ -10484,7 +10974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh16 As Single
+        Public Property PhonemeTargetWeightOh16 As Single Implements IRace.PhonemeTargetWeightOh16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -10494,7 +10984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ16 As Single
+        Public Property PhonemeTargetWeightOohQ16 As Single Implements IRace.PhonemeTargetWeightOohQ16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -10504,7 +10994,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR16 As Single
+        Public Property PhonemeTargetWeightR16 As Single Implements IRace.PhonemeTargetWeightR16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\R")
             End Get
@@ -10514,7 +11004,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH16 As Single
+        Public Property PhonemeTargetWeightTH16 As Single Implements IRace.PhonemeTargetWeightTH16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -10524,7 +11014,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW16 As Single
+        Public Property PhonemeTargetWeightW16 As Single Implements IRace.PhonemeTargetWeightW16
             Get
                 Return Flt("FaceFX Phonemes\AX\PHWT\Phoneme Target Weight\W")
             End Get
@@ -10534,7 +11024,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah17 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah17 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -10544,7 +11034,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST17 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST17 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -10554,7 +11044,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee17 As Single
+        Public Property PhonemeTargetWeightBMPLipEee17 As Single Implements IRace.PhonemeTargetWeightBMPLipEee17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -10564,7 +11054,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV17 As Single
+        Public Property PhonemeTargetWeightChJshLipFV17 As Single Implements IRace.PhonemeTargetWeightChJshLipFV17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -10574,7 +11064,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK17 As Single
+        Public Property PhonemeTargetWeightDSTLipK17 As Single Implements IRace.PhonemeTargetWeightDSTLipK17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -10584,7 +11074,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL17 As Single
+        Public Property PhonemeTargetWeightEeeLipL17 As Single Implements IRace.PhonemeTargetWeightEeeLipL17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -10594,7 +11084,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR17 As Single
+        Public Property PhonemeTargetWeightEhLipR17 As Single Implements IRace.PhonemeTargetWeightEhLipR17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -10604,7 +11094,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh17 As Single
+        Public Property PhonemeTargetWeightFVLipTh17 As Single Implements IRace.PhonemeTargetWeightFVLipTh17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -10614,7 +11104,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI17 As Single
+        Public Property PhonemeTargetWeightI17 As Single Implements IRace.PhonemeTargetWeightI17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\I")
             End Get
@@ -10624,7 +11114,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK17 As Single
+        Public Property PhonemeTargetWeightK17 As Single Implements IRace.PhonemeTargetWeightK17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\K")
             End Get
@@ -10634,7 +11124,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN17 As Single
+        Public Property PhonemeTargetWeightN17 As Single Implements IRace.PhonemeTargetWeightN17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\N")
             End Get
@@ -10644,7 +11134,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh17 As Single
+        Public Property PhonemeTargetWeightOh17 As Single Implements IRace.PhonemeTargetWeightOh17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -10654,7 +11144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ17 As Single
+        Public Property PhonemeTargetWeightOohQ17 As Single Implements IRace.PhonemeTargetWeightOohQ17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -10664,7 +11154,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR17 As Single
+        Public Property PhonemeTargetWeightR17 As Single Implements IRace.PhonemeTargetWeightR17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\R")
             End Get
@@ -10674,7 +11164,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH17 As Single
+        Public Property PhonemeTargetWeightTH17 As Single Implements IRace.PhonemeTargetWeightTH17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -10684,7 +11174,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\S\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW17 As Single
+        Public Property PhonemeTargetWeightW17 As Single Implements IRace.PhonemeTargetWeightW17
             Get
                 Return Flt("FaceFX Phonemes\S\PHWT\Phoneme Target Weight\W")
             End Get
@@ -10694,7 +11184,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah18 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah18 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -10704,7 +11194,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST18 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST18 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -10714,7 +11204,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee18 As Single
+        Public Property PhonemeTargetWeightBMPLipEee18 As Single Implements IRace.PhonemeTargetWeightBMPLipEee18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -10724,7 +11214,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV18 As Single
+        Public Property PhonemeTargetWeightChJshLipFV18 As Single Implements IRace.PhonemeTargetWeightChJshLipFV18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -10734,7 +11224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK18 As Single
+        Public Property PhonemeTargetWeightDSTLipK18 As Single Implements IRace.PhonemeTargetWeightDSTLipK18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -10744,7 +11234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL18 As Single
+        Public Property PhonemeTargetWeightEeeLipL18 As Single Implements IRace.PhonemeTargetWeightEeeLipL18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -10754,7 +11244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR18 As Single
+        Public Property PhonemeTargetWeightEhLipR18 As Single Implements IRace.PhonemeTargetWeightEhLipR18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -10764,7 +11254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh18 As Single
+        Public Property PhonemeTargetWeightFVLipTh18 As Single Implements IRace.PhonemeTargetWeightFVLipTh18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -10774,7 +11264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI18 As Single
+        Public Property PhonemeTargetWeightI18 As Single Implements IRace.PhonemeTargetWeightI18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -10784,7 +11274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK18 As Single
+        Public Property PhonemeTargetWeightK18 As Single Implements IRace.PhonemeTargetWeightK18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -10794,7 +11284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN18 As Single
+        Public Property PhonemeTargetWeightN18 As Single Implements IRace.PhonemeTargetWeightN18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -10804,7 +11294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh18 As Single
+        Public Property PhonemeTargetWeightOh18 As Single Implements IRace.PhonemeTargetWeightOh18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -10814,7 +11304,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ18 As Single
+        Public Property PhonemeTargetWeightOohQ18 As Single Implements IRace.PhonemeTargetWeightOohQ18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -10824,7 +11314,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR18 As Single
+        Public Property PhonemeTargetWeightR18 As Single Implements IRace.PhonemeTargetWeightR18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -10834,7 +11324,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH18 As Single
+        Public Property PhonemeTargetWeightTH18 As Single Implements IRace.PhonemeTargetWeightTH18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -10844,7 +11334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW18 As Single
+        Public Property PhonemeTargetWeightW18 As Single Implements IRace.PhonemeTargetWeightW18
             Get
                 Return Flt("FaceFX Phonemes\SH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -10854,7 +11344,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah19 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah19 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -10864,7 +11354,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST19 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST19 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -10874,7 +11364,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee19 As Single
+        Public Property PhonemeTargetWeightBMPLipEee19 As Single Implements IRace.PhonemeTargetWeightBMPLipEee19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -10884,7 +11374,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV19 As Single
+        Public Property PhonemeTargetWeightChJshLipFV19 As Single Implements IRace.PhonemeTargetWeightChJshLipFV19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -10894,7 +11384,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK19 As Single
+        Public Property PhonemeTargetWeightDSTLipK19 As Single Implements IRace.PhonemeTargetWeightDSTLipK19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -10904,7 +11394,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL19 As Single
+        Public Property PhonemeTargetWeightEeeLipL19 As Single Implements IRace.PhonemeTargetWeightEeeLipL19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -10914,7 +11404,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR19 As Single
+        Public Property PhonemeTargetWeightEhLipR19 As Single Implements IRace.PhonemeTargetWeightEhLipR19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -10924,7 +11414,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh19 As Single
+        Public Property PhonemeTargetWeightFVLipTh19 As Single Implements IRace.PhonemeTargetWeightFVLipTh19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -10934,7 +11424,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI19 As Single
+        Public Property PhonemeTargetWeightI19 As Single Implements IRace.PhonemeTargetWeightI19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\I")
             End Get
@@ -10944,7 +11434,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK19 As Single
+        Public Property PhonemeTargetWeightK19 As Single Implements IRace.PhonemeTargetWeightK19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\K")
             End Get
@@ -10954,7 +11444,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN19 As Single
+        Public Property PhonemeTargetWeightN19 As Single Implements IRace.PhonemeTargetWeightN19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\N")
             End Get
@@ -10964,7 +11454,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh19 As Single
+        Public Property PhonemeTargetWeightOh19 As Single Implements IRace.PhonemeTargetWeightOh19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -10974,7 +11464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ19 As Single
+        Public Property PhonemeTargetWeightOohQ19 As Single Implements IRace.PhonemeTargetWeightOohQ19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -10984,7 +11474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR19 As Single
+        Public Property PhonemeTargetWeightR19 As Single Implements IRace.PhonemeTargetWeightR19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\R")
             End Get
@@ -10994,7 +11484,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH19 As Single
+        Public Property PhonemeTargetWeightTH19 As Single Implements IRace.PhonemeTargetWeightTH19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -11004,7 +11494,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW19 As Single
+        Public Property PhonemeTargetWeightW19 As Single Implements IRace.PhonemeTargetWeightW19
             Get
                 Return Flt("FaceFX Phonemes\Z\PHWT\Phoneme Target Weight\W")
             End Get
@@ -11014,7 +11504,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah20 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah20 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -11024,7 +11514,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST20 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST20 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -11034,7 +11524,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee20 As Single
+        Public Property PhonemeTargetWeightBMPLipEee20 As Single Implements IRace.PhonemeTargetWeightBMPLipEee20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -11044,7 +11534,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV20 As Single
+        Public Property PhonemeTargetWeightChJshLipFV20 As Single Implements IRace.PhonemeTargetWeightChJshLipFV20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -11054,7 +11544,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK20 As Single
+        Public Property PhonemeTargetWeightDSTLipK20 As Single Implements IRace.PhonemeTargetWeightDSTLipK20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -11064,7 +11554,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL20 As Single
+        Public Property PhonemeTargetWeightEeeLipL20 As Single Implements IRace.PhonemeTargetWeightEeeLipL20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -11074,7 +11564,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR20 As Single
+        Public Property PhonemeTargetWeightEhLipR20 As Single Implements IRace.PhonemeTargetWeightEhLipR20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -11084,7 +11574,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh20 As Single
+        Public Property PhonemeTargetWeightFVLipTh20 As Single Implements IRace.PhonemeTargetWeightFVLipTh20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -11094,7 +11584,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI20 As Single
+        Public Property PhonemeTargetWeightI20 As Single Implements IRace.PhonemeTargetWeightI20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -11104,7 +11594,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK20 As Single
+        Public Property PhonemeTargetWeightK20 As Single Implements IRace.PhonemeTargetWeightK20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -11114,7 +11604,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN20 As Single
+        Public Property PhonemeTargetWeightN20 As Single Implements IRace.PhonemeTargetWeightN20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -11124,7 +11614,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh20 As Single
+        Public Property PhonemeTargetWeightOh20 As Single Implements IRace.PhonemeTargetWeightOh20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -11134,7 +11624,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ20 As Single
+        Public Property PhonemeTargetWeightOohQ20 As Single Implements IRace.PhonemeTargetWeightOohQ20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -11144,7 +11634,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR20 As Single
+        Public Property PhonemeTargetWeightR20 As Single Implements IRace.PhonemeTargetWeightR20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -11154,7 +11644,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH20 As Single
+        Public Property PhonemeTargetWeightTH20 As Single Implements IRace.PhonemeTargetWeightTH20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -11164,7 +11654,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW20 As Single
+        Public Property PhonemeTargetWeightW20 As Single Implements IRace.PhonemeTargetWeightW20
             Get
                 Return Flt("FaceFX Phonemes\ZH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -11174,7 +11664,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah21 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah21 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -11184,7 +11674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST21 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST21 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -11194,7 +11684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee21 As Single
+        Public Property PhonemeTargetWeightBMPLipEee21 As Single Implements IRace.PhonemeTargetWeightBMPLipEee21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -11204,7 +11694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV21 As Single
+        Public Property PhonemeTargetWeightChJshLipFV21 As Single Implements IRace.PhonemeTargetWeightChJshLipFV21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -11214,7 +11704,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK21 As Single
+        Public Property PhonemeTargetWeightDSTLipK21 As Single Implements IRace.PhonemeTargetWeightDSTLipK21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -11224,7 +11714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL21 As Single
+        Public Property PhonemeTargetWeightEeeLipL21 As Single Implements IRace.PhonemeTargetWeightEeeLipL21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -11234,7 +11724,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR21 As Single
+        Public Property PhonemeTargetWeightEhLipR21 As Single Implements IRace.PhonemeTargetWeightEhLipR21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -11244,7 +11734,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh21 As Single
+        Public Property PhonemeTargetWeightFVLipTh21 As Single Implements IRace.PhonemeTargetWeightFVLipTh21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -11254,7 +11744,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI21 As Single
+        Public Property PhonemeTargetWeightI21 As Single Implements IRace.PhonemeTargetWeightI21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\I")
             End Get
@@ -11264,7 +11754,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK21 As Single
+        Public Property PhonemeTargetWeightK21 As Single Implements IRace.PhonemeTargetWeightK21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\K")
             End Get
@@ -11274,7 +11764,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN21 As Single
+        Public Property PhonemeTargetWeightN21 As Single Implements IRace.PhonemeTargetWeightN21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\N")
             End Get
@@ -11284,7 +11774,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh21 As Single
+        Public Property PhonemeTargetWeightOh21 As Single Implements IRace.PhonemeTargetWeightOh21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -11294,7 +11784,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ21 As Single
+        Public Property PhonemeTargetWeightOohQ21 As Single Implements IRace.PhonemeTargetWeightOohQ21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -11304,7 +11794,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR21 As Single
+        Public Property PhonemeTargetWeightR21 As Single Implements IRace.PhonemeTargetWeightR21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\R")
             End Get
@@ -11314,7 +11804,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH21 As Single
+        Public Property PhonemeTargetWeightTH21 As Single Implements IRace.PhonemeTargetWeightTH21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -11324,7 +11814,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\F\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW21 As Single
+        Public Property PhonemeTargetWeightW21 As Single Implements IRace.PhonemeTargetWeightW21
             Get
                 Return Flt("FaceFX Phonemes\F\PHWT\Phoneme Target Weight\W")
             End Get
@@ -11334,7 +11824,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah22 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah22 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -11344,7 +11834,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST22 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST22 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -11354,7 +11844,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee22 As Single
+        Public Property PhonemeTargetWeightBMPLipEee22 As Single Implements IRace.PhonemeTargetWeightBMPLipEee22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -11364,7 +11854,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV22 As Single
+        Public Property PhonemeTargetWeightChJshLipFV22 As Single Implements IRace.PhonemeTargetWeightChJshLipFV22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -11374,7 +11864,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK22 As Single
+        Public Property PhonemeTargetWeightDSTLipK22 As Single Implements IRace.PhonemeTargetWeightDSTLipK22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -11384,7 +11874,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL22 As Single
+        Public Property PhonemeTargetWeightEeeLipL22 As Single Implements IRace.PhonemeTargetWeightEeeLipL22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -11394,7 +11884,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR22 As Single
+        Public Property PhonemeTargetWeightEhLipR22 As Single Implements IRace.PhonemeTargetWeightEhLipR22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -11404,7 +11894,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh22 As Single
+        Public Property PhonemeTargetWeightFVLipTh22 As Single Implements IRace.PhonemeTargetWeightFVLipTh22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -11414,7 +11904,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI22 As Single
+        Public Property PhonemeTargetWeightI22 As Single Implements IRace.PhonemeTargetWeightI22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -11424,7 +11914,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK22 As Single
+        Public Property PhonemeTargetWeightK22 As Single Implements IRace.PhonemeTargetWeightK22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -11434,7 +11924,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN22 As Single
+        Public Property PhonemeTargetWeightN22 As Single Implements IRace.PhonemeTargetWeightN22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -11444,7 +11934,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh22 As Single
+        Public Property PhonemeTargetWeightOh22 As Single Implements IRace.PhonemeTargetWeightOh22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -11454,7 +11944,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ22 As Single
+        Public Property PhonemeTargetWeightOohQ22 As Single Implements IRace.PhonemeTargetWeightOohQ22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -11464,7 +11954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR22 As Single
+        Public Property PhonemeTargetWeightR22 As Single Implements IRace.PhonemeTargetWeightR22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -11474,7 +11964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH22 As Single
+        Public Property PhonemeTargetWeightTH22 As Single Implements IRace.PhonemeTargetWeightTH22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -11484,7 +11974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW22 As Single
+        Public Property PhonemeTargetWeightW22 As Single Implements IRace.PhonemeTargetWeightW22
             Get
                 Return Flt("FaceFX Phonemes\TH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -11494,7 +11984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah23 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah23 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -11504,7 +11994,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST23 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST23 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -11514,7 +12004,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee23 As Single
+        Public Property PhonemeTargetWeightBMPLipEee23 As Single Implements IRace.PhonemeTargetWeightBMPLipEee23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -11524,7 +12014,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV23 As Single
+        Public Property PhonemeTargetWeightChJshLipFV23 As Single Implements IRace.PhonemeTargetWeightChJshLipFV23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -11534,7 +12024,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK23 As Single
+        Public Property PhonemeTargetWeightDSTLipK23 As Single Implements IRace.PhonemeTargetWeightDSTLipK23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -11544,7 +12034,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL23 As Single
+        Public Property PhonemeTargetWeightEeeLipL23 As Single Implements IRace.PhonemeTargetWeightEeeLipL23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -11554,7 +12044,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR23 As Single
+        Public Property PhonemeTargetWeightEhLipR23 As Single Implements IRace.PhonemeTargetWeightEhLipR23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -11564,7 +12054,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh23 As Single
+        Public Property PhonemeTargetWeightFVLipTh23 As Single Implements IRace.PhonemeTargetWeightFVLipTh23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -11574,7 +12064,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI23 As Single
+        Public Property PhonemeTargetWeightI23 As Single Implements IRace.PhonemeTargetWeightI23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\I")
             End Get
@@ -11584,7 +12074,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK23 As Single
+        Public Property PhonemeTargetWeightK23 As Single Implements IRace.PhonemeTargetWeightK23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\K")
             End Get
@@ -11594,7 +12084,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN23 As Single
+        Public Property PhonemeTargetWeightN23 As Single Implements IRace.PhonemeTargetWeightN23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\N")
             End Get
@@ -11604,7 +12094,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh23 As Single
+        Public Property PhonemeTargetWeightOh23 As Single Implements IRace.PhonemeTargetWeightOh23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -11614,7 +12104,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ23 As Single
+        Public Property PhonemeTargetWeightOohQ23 As Single Implements IRace.PhonemeTargetWeightOohQ23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -11624,7 +12114,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR23 As Single
+        Public Property PhonemeTargetWeightR23 As Single Implements IRace.PhonemeTargetWeightR23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\R")
             End Get
@@ -11634,7 +12124,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH23 As Single
+        Public Property PhonemeTargetWeightTH23 As Single Implements IRace.PhonemeTargetWeightTH23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -11644,7 +12134,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\V\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW23 As Single
+        Public Property PhonemeTargetWeightW23 As Single Implements IRace.PhonemeTargetWeightW23
             Get
                 Return Flt("FaceFX Phonemes\V\PHWT\Phoneme Target Weight\W")
             End Get
@@ -11654,7 +12144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah24 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah24 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -11664,7 +12154,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST24 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST24 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -11674,7 +12164,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee24 As Single
+        Public Property PhonemeTargetWeightBMPLipEee24 As Single Implements IRace.PhonemeTargetWeightBMPLipEee24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -11684,7 +12174,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV24 As Single
+        Public Property PhonemeTargetWeightChJshLipFV24 As Single Implements IRace.PhonemeTargetWeightChJshLipFV24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -11694,7 +12184,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK24 As Single
+        Public Property PhonemeTargetWeightDSTLipK24 As Single Implements IRace.PhonemeTargetWeightDSTLipK24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -11704,7 +12194,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL24 As Single
+        Public Property PhonemeTargetWeightEeeLipL24 As Single Implements IRace.PhonemeTargetWeightEeeLipL24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -11714,7 +12204,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR24 As Single
+        Public Property PhonemeTargetWeightEhLipR24 As Single Implements IRace.PhonemeTargetWeightEhLipR24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -11724,7 +12214,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh24 As Single
+        Public Property PhonemeTargetWeightFVLipTh24 As Single Implements IRace.PhonemeTargetWeightFVLipTh24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -11734,7 +12224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI24 As Single
+        Public Property PhonemeTargetWeightI24 As Single Implements IRace.PhonemeTargetWeightI24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -11744,7 +12234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK24 As Single
+        Public Property PhonemeTargetWeightK24 As Single Implements IRace.PhonemeTargetWeightK24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -11754,7 +12244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN24 As Single
+        Public Property PhonemeTargetWeightN24 As Single Implements IRace.PhonemeTargetWeightN24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -11764,7 +12254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh24 As Single
+        Public Property PhonemeTargetWeightOh24 As Single Implements IRace.PhonemeTargetWeightOh24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -11774,7 +12264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ24 As Single
+        Public Property PhonemeTargetWeightOohQ24 As Single Implements IRace.PhonemeTargetWeightOohQ24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -11784,7 +12274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR24 As Single
+        Public Property PhonemeTargetWeightR24 As Single Implements IRace.PhonemeTargetWeightR24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -11794,7 +12284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH24 As Single
+        Public Property PhonemeTargetWeightTH24 As Single Implements IRace.PhonemeTargetWeightTH24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -11804,7 +12294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW24 As Single
+        Public Property PhonemeTargetWeightW24 As Single Implements IRace.PhonemeTargetWeightW24
             Get
                 Return Flt("FaceFX Phonemes\DH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -11814,7 +12304,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah25 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah25 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -11824,7 +12314,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST25 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST25 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -11834,7 +12324,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee25 As Single
+        Public Property PhonemeTargetWeightBMPLipEee25 As Single Implements IRace.PhonemeTargetWeightBMPLipEee25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -11844,7 +12334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV25 As Single
+        Public Property PhonemeTargetWeightChJshLipFV25 As Single Implements IRace.PhonemeTargetWeightChJshLipFV25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -11854,7 +12344,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK25 As Single
+        Public Property PhonemeTargetWeightDSTLipK25 As Single Implements IRace.PhonemeTargetWeightDSTLipK25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -11864,7 +12354,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL25 As Single
+        Public Property PhonemeTargetWeightEeeLipL25 As Single Implements IRace.PhonemeTargetWeightEeeLipL25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -11874,7 +12364,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR25 As Single
+        Public Property PhonemeTargetWeightEhLipR25 As Single Implements IRace.PhonemeTargetWeightEhLipR25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -11884,7 +12374,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh25 As Single
+        Public Property PhonemeTargetWeightFVLipTh25 As Single Implements IRace.PhonemeTargetWeightFVLipTh25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -11894,7 +12384,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI25 As Single
+        Public Property PhonemeTargetWeightI25 As Single Implements IRace.PhonemeTargetWeightI25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\I")
             End Get
@@ -11904,7 +12394,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK25 As Single
+        Public Property PhonemeTargetWeightK25 As Single Implements IRace.PhonemeTargetWeightK25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\K")
             End Get
@@ -11914,7 +12404,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN25 As Single
+        Public Property PhonemeTargetWeightN25 As Single Implements IRace.PhonemeTargetWeightN25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\N")
             End Get
@@ -11924,7 +12414,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh25 As Single
+        Public Property PhonemeTargetWeightOh25 As Single Implements IRace.PhonemeTargetWeightOh25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -11934,7 +12424,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ25 As Single
+        Public Property PhonemeTargetWeightOohQ25 As Single Implements IRace.PhonemeTargetWeightOohQ25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -11944,7 +12434,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR25 As Single
+        Public Property PhonemeTargetWeightR25 As Single Implements IRace.PhonemeTargetWeightR25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\R")
             End Get
@@ -11954,7 +12444,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH25 As Single
+        Public Property PhonemeTargetWeightTH25 As Single Implements IRace.PhonemeTargetWeightTH25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -11964,7 +12454,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\M\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW25 As Single
+        Public Property PhonemeTargetWeightW25 As Single Implements IRace.PhonemeTargetWeightW25
             Get
                 Return Flt("FaceFX Phonemes\M\PHWT\Phoneme Target Weight\W")
             End Get
@@ -11974,7 +12464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah26 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah26 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -11984,7 +12474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST26 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST26 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -11994,7 +12484,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee26 As Single
+        Public Property PhonemeTargetWeightBMPLipEee26 As Single Implements IRace.PhonemeTargetWeightBMPLipEee26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -12004,7 +12494,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV26 As Single
+        Public Property PhonemeTargetWeightChJshLipFV26 As Single Implements IRace.PhonemeTargetWeightChJshLipFV26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -12014,7 +12504,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK26 As Single
+        Public Property PhonemeTargetWeightDSTLipK26 As Single Implements IRace.PhonemeTargetWeightDSTLipK26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -12024,7 +12514,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL26 As Single
+        Public Property PhonemeTargetWeightEeeLipL26 As Single Implements IRace.PhonemeTargetWeightEeeLipL26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -12034,7 +12524,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR26 As Single
+        Public Property PhonemeTargetWeightEhLipR26 As Single Implements IRace.PhonemeTargetWeightEhLipR26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -12044,7 +12534,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh26 As Single
+        Public Property PhonemeTargetWeightFVLipTh26 As Single Implements IRace.PhonemeTargetWeightFVLipTh26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -12054,7 +12544,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI26 As Single
+        Public Property PhonemeTargetWeightI26 As Single Implements IRace.PhonemeTargetWeightI26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\I")
             End Get
@@ -12064,7 +12554,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK26 As Single
+        Public Property PhonemeTargetWeightK26 As Single Implements IRace.PhonemeTargetWeightK26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\K")
             End Get
@@ -12074,7 +12564,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN26 As Single
+        Public Property PhonemeTargetWeightN26 As Single Implements IRace.PhonemeTargetWeightN26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\N")
             End Get
@@ -12084,7 +12574,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh26 As Single
+        Public Property PhonemeTargetWeightOh26 As Single Implements IRace.PhonemeTargetWeightOh26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -12094,7 +12584,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ26 As Single
+        Public Property PhonemeTargetWeightOohQ26 As Single Implements IRace.PhonemeTargetWeightOohQ26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -12104,7 +12594,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR26 As Single
+        Public Property PhonemeTargetWeightR26 As Single Implements IRace.PhonemeTargetWeightR26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\R")
             End Get
@@ -12114,7 +12604,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH26 As Single
+        Public Property PhonemeTargetWeightTH26 As Single Implements IRace.PhonemeTargetWeightTH26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -12124,7 +12614,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\N\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW26 As Single
+        Public Property PhonemeTargetWeightW26 As Single Implements IRace.PhonemeTargetWeightW26
             Get
                 Return Flt("FaceFX Phonemes\N\PHWT\Phoneme Target Weight\W")
             End Get
@@ -12134,7 +12624,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah27 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah27 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -12144,7 +12634,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST27 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST27 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -12154,7 +12644,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee27 As Single
+        Public Property PhonemeTargetWeightBMPLipEee27 As Single Implements IRace.PhonemeTargetWeightBMPLipEee27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -12164,7 +12654,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV27 As Single
+        Public Property PhonemeTargetWeightChJshLipFV27 As Single Implements IRace.PhonemeTargetWeightChJshLipFV27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -12174,7 +12664,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK27 As Single
+        Public Property PhonemeTargetWeightDSTLipK27 As Single Implements IRace.PhonemeTargetWeightDSTLipK27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -12184,7 +12674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL27 As Single
+        Public Property PhonemeTargetWeightEeeLipL27 As Single Implements IRace.PhonemeTargetWeightEeeLipL27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -12194,7 +12684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR27 As Single
+        Public Property PhonemeTargetWeightEhLipR27 As Single Implements IRace.PhonemeTargetWeightEhLipR27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -12204,7 +12694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh27 As Single
+        Public Property PhonemeTargetWeightFVLipTh27 As Single Implements IRace.PhonemeTargetWeightFVLipTh27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -12214,7 +12704,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI27 As Single
+        Public Property PhonemeTargetWeightI27 As Single Implements IRace.PhonemeTargetWeightI27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\I")
             End Get
@@ -12224,7 +12714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK27 As Single
+        Public Property PhonemeTargetWeightK27 As Single Implements IRace.PhonemeTargetWeightK27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\K")
             End Get
@@ -12234,7 +12724,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN27 As Single
+        Public Property PhonemeTargetWeightN27 As Single Implements IRace.PhonemeTargetWeightN27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\N")
             End Get
@@ -12244,7 +12734,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh27 As Single
+        Public Property PhonemeTargetWeightOh27 As Single Implements IRace.PhonemeTargetWeightOh27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -12254,7 +12744,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ27 As Single
+        Public Property PhonemeTargetWeightOohQ27 As Single Implements IRace.PhonemeTargetWeightOohQ27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -12264,7 +12754,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR27 As Single
+        Public Property PhonemeTargetWeightR27 As Single Implements IRace.PhonemeTargetWeightR27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\R")
             End Get
@@ -12274,7 +12764,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH27 As Single
+        Public Property PhonemeTargetWeightTH27 As Single Implements IRace.PhonemeTargetWeightTH27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -12284,7 +12774,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW27 As Single
+        Public Property PhonemeTargetWeightW27 As Single Implements IRace.PhonemeTargetWeightW27
             Get
                 Return Flt("FaceFX Phonemes\NG\PHWT\Phoneme Target Weight\W")
             End Get
@@ -12294,7 +12784,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah28 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah28 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -12304,7 +12794,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST28 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST28 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -12314,7 +12804,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee28 As Single
+        Public Property PhonemeTargetWeightBMPLipEee28 As Single Implements IRace.PhonemeTargetWeightBMPLipEee28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -12324,7 +12814,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV28 As Single
+        Public Property PhonemeTargetWeightChJshLipFV28 As Single Implements IRace.PhonemeTargetWeightChJshLipFV28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -12334,7 +12824,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK28 As Single
+        Public Property PhonemeTargetWeightDSTLipK28 As Single Implements IRace.PhonemeTargetWeightDSTLipK28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -12344,7 +12834,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL28 As Single
+        Public Property PhonemeTargetWeightEeeLipL28 As Single Implements IRace.PhonemeTargetWeightEeeLipL28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -12354,7 +12844,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR28 As Single
+        Public Property PhonemeTargetWeightEhLipR28 As Single Implements IRace.PhonemeTargetWeightEhLipR28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -12364,7 +12854,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh28 As Single
+        Public Property PhonemeTargetWeightFVLipTh28 As Single Implements IRace.PhonemeTargetWeightFVLipTh28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -12374,7 +12864,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI28 As Single
+        Public Property PhonemeTargetWeightI28 As Single Implements IRace.PhonemeTargetWeightI28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\I")
             End Get
@@ -12384,7 +12874,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK28 As Single
+        Public Property PhonemeTargetWeightK28 As Single Implements IRace.PhonemeTargetWeightK28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\K")
             End Get
@@ -12394,7 +12884,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN28 As Single
+        Public Property PhonemeTargetWeightN28 As Single Implements IRace.PhonemeTargetWeightN28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\N")
             End Get
@@ -12404,7 +12894,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh28 As Single
+        Public Property PhonemeTargetWeightOh28 As Single Implements IRace.PhonemeTargetWeightOh28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -12414,7 +12904,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ28 As Single
+        Public Property PhonemeTargetWeightOohQ28 As Single Implements IRace.PhonemeTargetWeightOohQ28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -12424,7 +12914,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR28 As Single
+        Public Property PhonemeTargetWeightR28 As Single Implements IRace.PhonemeTargetWeightR28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\R")
             End Get
@@ -12434,7 +12924,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH28 As Single
+        Public Property PhonemeTargetWeightTH28 As Single Implements IRace.PhonemeTargetWeightTH28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -12444,7 +12934,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\L\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW28 As Single
+        Public Property PhonemeTargetWeightW28 As Single Implements IRace.PhonemeTargetWeightW28
             Get
                 Return Flt("FaceFX Phonemes\L\PHWT\Phoneme Target Weight\W")
             End Get
@@ -12454,7 +12944,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah29 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah29 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -12464,7 +12954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST29 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST29 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -12474,7 +12964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee29 As Single
+        Public Property PhonemeTargetWeightBMPLipEee29 As Single Implements IRace.PhonemeTargetWeightBMPLipEee29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -12484,7 +12974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV29 As Single
+        Public Property PhonemeTargetWeightChJshLipFV29 As Single Implements IRace.PhonemeTargetWeightChJshLipFV29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -12494,7 +12984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK29 As Single
+        Public Property PhonemeTargetWeightDSTLipK29 As Single Implements IRace.PhonemeTargetWeightDSTLipK29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -12504,7 +12994,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL29 As Single
+        Public Property PhonemeTargetWeightEeeLipL29 As Single Implements IRace.PhonemeTargetWeightEeeLipL29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -12514,7 +13004,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR29 As Single
+        Public Property PhonemeTargetWeightEhLipR29 As Single Implements IRace.PhonemeTargetWeightEhLipR29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -12524,7 +13014,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh29 As Single
+        Public Property PhonemeTargetWeightFVLipTh29 As Single Implements IRace.PhonemeTargetWeightFVLipTh29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -12534,7 +13024,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI29 As Single
+        Public Property PhonemeTargetWeightI29 As Single Implements IRace.PhonemeTargetWeightI29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\I")
             End Get
@@ -12544,7 +13034,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK29 As Single
+        Public Property PhonemeTargetWeightK29 As Single Implements IRace.PhonemeTargetWeightK29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\K")
             End Get
@@ -12554,7 +13044,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN29 As Single
+        Public Property PhonemeTargetWeightN29 As Single Implements IRace.PhonemeTargetWeightN29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\N")
             End Get
@@ -12564,7 +13054,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh29 As Single
+        Public Property PhonemeTargetWeightOh29 As Single Implements IRace.PhonemeTargetWeightOh29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -12574,7 +13064,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ29 As Single
+        Public Property PhonemeTargetWeightOohQ29 As Single Implements IRace.PhonemeTargetWeightOohQ29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -12584,7 +13074,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR29 As Single
+        Public Property PhonemeTargetWeightR29 As Single Implements IRace.PhonemeTargetWeightR29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\R")
             End Get
@@ -12594,7 +13084,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH29 As Single
+        Public Property PhonemeTargetWeightTH29 As Single Implements IRace.PhonemeTargetWeightTH29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -12604,7 +13094,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\R\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW29 As Single
+        Public Property PhonemeTargetWeightW29 As Single Implements IRace.PhonemeTargetWeightW29
             Get
                 Return Flt("FaceFX Phonemes\R\PHWT\Phoneme Target Weight\W")
             End Get
@@ -12614,7 +13104,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah30 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah30 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -12624,7 +13114,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST30 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST30 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -12634,7 +13124,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee30 As Single
+        Public Property PhonemeTargetWeightBMPLipEee30 As Single Implements IRace.PhonemeTargetWeightBMPLipEee30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -12644,7 +13134,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV30 As Single
+        Public Property PhonemeTargetWeightChJshLipFV30 As Single Implements IRace.PhonemeTargetWeightChJshLipFV30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -12654,7 +13144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK30 As Single
+        Public Property PhonemeTargetWeightDSTLipK30 As Single Implements IRace.PhonemeTargetWeightDSTLipK30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -12664,7 +13154,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL30 As Single
+        Public Property PhonemeTargetWeightEeeLipL30 As Single Implements IRace.PhonemeTargetWeightEeeLipL30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -12674,7 +13164,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR30 As Single
+        Public Property PhonemeTargetWeightEhLipR30 As Single Implements IRace.PhonemeTargetWeightEhLipR30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -12684,7 +13174,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh30 As Single
+        Public Property PhonemeTargetWeightFVLipTh30 As Single Implements IRace.PhonemeTargetWeightFVLipTh30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -12694,7 +13184,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI30 As Single
+        Public Property PhonemeTargetWeightI30 As Single Implements IRace.PhonemeTargetWeightI30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\I")
             End Get
@@ -12704,7 +13194,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK30 As Single
+        Public Property PhonemeTargetWeightK30 As Single Implements IRace.PhonemeTargetWeightK30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\K")
             End Get
@@ -12714,7 +13204,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN30 As Single
+        Public Property PhonemeTargetWeightN30 As Single Implements IRace.PhonemeTargetWeightN30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\N")
             End Get
@@ -12724,7 +13214,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh30 As Single
+        Public Property PhonemeTargetWeightOh30 As Single Implements IRace.PhonemeTargetWeightOh30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -12734,7 +13224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ30 As Single
+        Public Property PhonemeTargetWeightOohQ30 As Single Implements IRace.PhonemeTargetWeightOohQ30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -12744,7 +13234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR30 As Single
+        Public Property PhonemeTargetWeightR30 As Single Implements IRace.PhonemeTargetWeightR30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\R")
             End Get
@@ -12754,7 +13244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH30 As Single
+        Public Property PhonemeTargetWeightTH30 As Single Implements IRace.PhonemeTargetWeightTH30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -12764,7 +13254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\W\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW30 As Single
+        Public Property PhonemeTargetWeightW30 As Single Implements IRace.PhonemeTargetWeightW30
             Get
                 Return Flt("FaceFX Phonemes\W\PHWT\Phoneme Target Weight\W")
             End Get
@@ -12774,7 +13264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah31 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah31 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -12784,7 +13274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST31 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST31 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -12794,7 +13284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee31 As Single
+        Public Property PhonemeTargetWeightBMPLipEee31 As Single Implements IRace.PhonemeTargetWeightBMPLipEee31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -12804,7 +13294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV31 As Single
+        Public Property PhonemeTargetWeightChJshLipFV31 As Single Implements IRace.PhonemeTargetWeightChJshLipFV31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -12814,7 +13304,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK31 As Single
+        Public Property PhonemeTargetWeightDSTLipK31 As Single Implements IRace.PhonemeTargetWeightDSTLipK31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -12824,7 +13314,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL31 As Single
+        Public Property PhonemeTargetWeightEeeLipL31 As Single Implements IRace.PhonemeTargetWeightEeeLipL31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -12834,7 +13324,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR31 As Single
+        Public Property PhonemeTargetWeightEhLipR31 As Single Implements IRace.PhonemeTargetWeightEhLipR31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -12844,7 +13334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh31 As Single
+        Public Property PhonemeTargetWeightFVLipTh31 As Single Implements IRace.PhonemeTargetWeightFVLipTh31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -12854,7 +13344,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI31 As Single
+        Public Property PhonemeTargetWeightI31 As Single Implements IRace.PhonemeTargetWeightI31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\I")
             End Get
@@ -12864,7 +13354,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK31 As Single
+        Public Property PhonemeTargetWeightK31 As Single Implements IRace.PhonemeTargetWeightK31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\K")
             End Get
@@ -12874,7 +13364,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN31 As Single
+        Public Property PhonemeTargetWeightN31 As Single Implements IRace.PhonemeTargetWeightN31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\N")
             End Get
@@ -12884,7 +13374,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh31 As Single
+        Public Property PhonemeTargetWeightOh31 As Single Implements IRace.PhonemeTargetWeightOh31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -12894,7 +13384,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ31 As Single
+        Public Property PhonemeTargetWeightOohQ31 As Single Implements IRace.PhonemeTargetWeightOohQ31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -12904,7 +13394,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR31 As Single
+        Public Property PhonemeTargetWeightR31 As Single Implements IRace.PhonemeTargetWeightR31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\R")
             End Get
@@ -12914,7 +13404,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH31 As Single
+        Public Property PhonemeTargetWeightTH31 As Single Implements IRace.PhonemeTargetWeightTH31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -12924,7 +13414,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW31 As Single
+        Public Property PhonemeTargetWeightW31 As Single Implements IRace.PhonemeTargetWeightW31
             Get
                 Return Flt("FaceFX Phonemes\Y\PHWT\Phoneme Target Weight\W")
             End Get
@@ -12934,7 +13424,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah32 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah32 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -12944,7 +13434,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST32 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST32 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -12954,7 +13444,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee32 As Single
+        Public Property PhonemeTargetWeightBMPLipEee32 As Single Implements IRace.PhonemeTargetWeightBMPLipEee32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -12964,7 +13454,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV32 As Single
+        Public Property PhonemeTargetWeightChJshLipFV32 As Single Implements IRace.PhonemeTargetWeightChJshLipFV32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -12974,7 +13464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK32 As Single
+        Public Property PhonemeTargetWeightDSTLipK32 As Single Implements IRace.PhonemeTargetWeightDSTLipK32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -12984,7 +13474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL32 As Single
+        Public Property PhonemeTargetWeightEeeLipL32 As Single Implements IRace.PhonemeTargetWeightEeeLipL32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -12994,7 +13484,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR32 As Single
+        Public Property PhonemeTargetWeightEhLipR32 As Single Implements IRace.PhonemeTargetWeightEhLipR32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -13004,7 +13494,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh32 As Single
+        Public Property PhonemeTargetWeightFVLipTh32 As Single Implements IRace.PhonemeTargetWeightFVLipTh32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -13014,7 +13504,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI32 As Single
+        Public Property PhonemeTargetWeightI32 As Single Implements IRace.PhonemeTargetWeightI32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -13024,7 +13514,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK32 As Single
+        Public Property PhonemeTargetWeightK32 As Single Implements IRace.PhonemeTargetWeightK32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -13034,7 +13524,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN32 As Single
+        Public Property PhonemeTargetWeightN32 As Single Implements IRace.PhonemeTargetWeightN32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -13044,7 +13534,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh32 As Single
+        Public Property PhonemeTargetWeightOh32 As Single Implements IRace.PhonemeTargetWeightOh32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -13054,7 +13544,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ32 As Single
+        Public Property PhonemeTargetWeightOohQ32 As Single Implements IRace.PhonemeTargetWeightOohQ32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -13064,7 +13554,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR32 As Single
+        Public Property PhonemeTargetWeightR32 As Single Implements IRace.PhonemeTargetWeightR32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -13074,7 +13564,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH32 As Single
+        Public Property PhonemeTargetWeightTH32 As Single Implements IRace.PhonemeTargetWeightTH32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -13084,7 +13574,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW32 As Single
+        Public Property PhonemeTargetWeightW32 As Single Implements IRace.PhonemeTargetWeightW32
             Get
                 Return Flt("FaceFX Phonemes\HH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -13094,7 +13584,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah33 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah33 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -13104,7 +13594,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST33 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST33 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -13114,7 +13604,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee33 As Single
+        Public Property PhonemeTargetWeightBMPLipEee33 As Single Implements IRace.PhonemeTargetWeightBMPLipEee33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -13124,7 +13614,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV33 As Single
+        Public Property PhonemeTargetWeightChJshLipFV33 As Single Implements IRace.PhonemeTargetWeightChJshLipFV33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -13134,7 +13624,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK33 As Single
+        Public Property PhonemeTargetWeightDSTLipK33 As Single Implements IRace.PhonemeTargetWeightDSTLipK33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -13144,7 +13634,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL33 As Single
+        Public Property PhonemeTargetWeightEeeLipL33 As Single Implements IRace.PhonemeTargetWeightEeeLipL33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -13154,7 +13644,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR33 As Single
+        Public Property PhonemeTargetWeightEhLipR33 As Single Implements IRace.PhonemeTargetWeightEhLipR33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -13164,7 +13654,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh33 As Single
+        Public Property PhonemeTargetWeightFVLipTh33 As Single Implements IRace.PhonemeTargetWeightFVLipTh33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -13174,7 +13664,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI33 As Single
+        Public Property PhonemeTargetWeightI33 As Single Implements IRace.PhonemeTargetWeightI33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\I")
             End Get
@@ -13184,7 +13674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK33 As Single
+        Public Property PhonemeTargetWeightK33 As Single Implements IRace.PhonemeTargetWeightK33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\K")
             End Get
@@ -13194,7 +13684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN33 As Single
+        Public Property PhonemeTargetWeightN33 As Single Implements IRace.PhonemeTargetWeightN33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\N")
             End Get
@@ -13204,7 +13694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh33 As Single
+        Public Property PhonemeTargetWeightOh33 As Single Implements IRace.PhonemeTargetWeightOh33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -13214,7 +13704,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ33 As Single
+        Public Property PhonemeTargetWeightOohQ33 As Single Implements IRace.PhonemeTargetWeightOohQ33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -13224,7 +13714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR33 As Single
+        Public Property PhonemeTargetWeightR33 As Single Implements IRace.PhonemeTargetWeightR33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\R")
             End Get
@@ -13234,7 +13724,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH33 As Single
+        Public Property PhonemeTargetWeightTH33 As Single Implements IRace.PhonemeTargetWeightTH33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -13244,7 +13734,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\B\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW33 As Single
+        Public Property PhonemeTargetWeightW33 As Single Implements IRace.PhonemeTargetWeightW33
             Get
                 Return Flt("FaceFX Phonemes\B\PHWT\Phoneme Target Weight\W")
             End Get
@@ -13254,7 +13744,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah34 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah34 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -13264,7 +13754,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST34 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST34 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -13274,7 +13764,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee34 As Single
+        Public Property PhonemeTargetWeightBMPLipEee34 As Single Implements IRace.PhonemeTargetWeightBMPLipEee34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -13284,7 +13774,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV34 As Single
+        Public Property PhonemeTargetWeightChJshLipFV34 As Single Implements IRace.PhonemeTargetWeightChJshLipFV34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -13294,7 +13784,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK34 As Single
+        Public Property PhonemeTargetWeightDSTLipK34 As Single Implements IRace.PhonemeTargetWeightDSTLipK34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -13304,7 +13794,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL34 As Single
+        Public Property PhonemeTargetWeightEeeLipL34 As Single Implements IRace.PhonemeTargetWeightEeeLipL34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -13314,7 +13804,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR34 As Single
+        Public Property PhonemeTargetWeightEhLipR34 As Single Implements IRace.PhonemeTargetWeightEhLipR34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -13324,7 +13814,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh34 As Single
+        Public Property PhonemeTargetWeightFVLipTh34 As Single Implements IRace.PhonemeTargetWeightFVLipTh34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -13334,7 +13824,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI34 As Single
+        Public Property PhonemeTargetWeightI34 As Single Implements IRace.PhonemeTargetWeightI34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\I")
             End Get
@@ -13344,7 +13834,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK34 As Single
+        Public Property PhonemeTargetWeightK34 As Single Implements IRace.PhonemeTargetWeightK34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\K")
             End Get
@@ -13354,7 +13844,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN34 As Single
+        Public Property PhonemeTargetWeightN34 As Single Implements IRace.PhonemeTargetWeightN34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\N")
             End Get
@@ -13364,7 +13854,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh34 As Single
+        Public Property PhonemeTargetWeightOh34 As Single Implements IRace.PhonemeTargetWeightOh34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -13374,7 +13864,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ34 As Single
+        Public Property PhonemeTargetWeightOohQ34 As Single Implements IRace.PhonemeTargetWeightOohQ34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -13384,7 +13874,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR34 As Single
+        Public Property PhonemeTargetWeightR34 As Single Implements IRace.PhonemeTargetWeightR34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\R")
             End Get
@@ -13394,7 +13884,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH34 As Single
+        Public Property PhonemeTargetWeightTH34 As Single Implements IRace.PhonemeTargetWeightTH34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -13404,7 +13894,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\D\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW34 As Single
+        Public Property PhonemeTargetWeightW34 As Single Implements IRace.PhonemeTargetWeightW34
             Get
                 Return Flt("FaceFX Phonemes\D\PHWT\Phoneme Target Weight\W")
             End Get
@@ -13414,7 +13904,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah35 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah35 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -13424,7 +13914,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST35 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST35 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -13434,7 +13924,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee35 As Single
+        Public Property PhonemeTargetWeightBMPLipEee35 As Single Implements IRace.PhonemeTargetWeightBMPLipEee35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -13444,7 +13934,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV35 As Single
+        Public Property PhonemeTargetWeightChJshLipFV35 As Single Implements IRace.PhonemeTargetWeightChJshLipFV35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -13454,7 +13944,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK35 As Single
+        Public Property PhonemeTargetWeightDSTLipK35 As Single Implements IRace.PhonemeTargetWeightDSTLipK35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -13464,7 +13954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL35 As Single
+        Public Property PhonemeTargetWeightEeeLipL35 As Single Implements IRace.PhonemeTargetWeightEeeLipL35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -13474,7 +13964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR35 As Single
+        Public Property PhonemeTargetWeightEhLipR35 As Single Implements IRace.PhonemeTargetWeightEhLipR35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -13484,7 +13974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh35 As Single
+        Public Property PhonemeTargetWeightFVLipTh35 As Single Implements IRace.PhonemeTargetWeightFVLipTh35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -13494,7 +13984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI35 As Single
+        Public Property PhonemeTargetWeightI35 As Single Implements IRace.PhonemeTargetWeightI35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -13504,7 +13994,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK35 As Single
+        Public Property PhonemeTargetWeightK35 As Single Implements IRace.PhonemeTargetWeightK35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -13514,7 +14004,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN35 As Single
+        Public Property PhonemeTargetWeightN35 As Single Implements IRace.PhonemeTargetWeightN35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -13524,7 +14014,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh35 As Single
+        Public Property PhonemeTargetWeightOh35 As Single Implements IRace.PhonemeTargetWeightOh35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -13534,7 +14024,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ35 As Single
+        Public Property PhonemeTargetWeightOohQ35 As Single Implements IRace.PhonemeTargetWeightOohQ35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -13544,7 +14034,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR35 As Single
+        Public Property PhonemeTargetWeightR35 As Single Implements IRace.PhonemeTargetWeightR35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -13554,7 +14044,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH35 As Single
+        Public Property PhonemeTargetWeightTH35 As Single Implements IRace.PhonemeTargetWeightTH35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -13564,7 +14054,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW35 As Single
+        Public Property PhonemeTargetWeightW35 As Single Implements IRace.PhonemeTargetWeightW35
             Get
                 Return Flt("FaceFX Phonemes\JH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -13574,7 +14064,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah36 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah36 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -13584,7 +14074,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST36 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST36 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -13594,7 +14084,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee36 As Single
+        Public Property PhonemeTargetWeightBMPLipEee36 As Single Implements IRace.PhonemeTargetWeightBMPLipEee36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -13604,7 +14094,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV36 As Single
+        Public Property PhonemeTargetWeightChJshLipFV36 As Single Implements IRace.PhonemeTargetWeightChJshLipFV36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -13614,7 +14104,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK36 As Single
+        Public Property PhonemeTargetWeightDSTLipK36 As Single Implements IRace.PhonemeTargetWeightDSTLipK36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -13624,7 +14114,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL36 As Single
+        Public Property PhonemeTargetWeightEeeLipL36 As Single Implements IRace.PhonemeTargetWeightEeeLipL36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -13634,7 +14124,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR36 As Single
+        Public Property PhonemeTargetWeightEhLipR36 As Single Implements IRace.PhonemeTargetWeightEhLipR36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -13644,7 +14134,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh36 As Single
+        Public Property PhonemeTargetWeightFVLipTh36 As Single Implements IRace.PhonemeTargetWeightFVLipTh36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -13654,7 +14144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI36 As Single
+        Public Property PhonemeTargetWeightI36 As Single Implements IRace.PhonemeTargetWeightI36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\I")
             End Get
@@ -13664,7 +14154,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK36 As Single
+        Public Property PhonemeTargetWeightK36 As Single Implements IRace.PhonemeTargetWeightK36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\K")
             End Get
@@ -13674,7 +14164,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN36 As Single
+        Public Property PhonemeTargetWeightN36 As Single Implements IRace.PhonemeTargetWeightN36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\N")
             End Get
@@ -13684,7 +14174,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh36 As Single
+        Public Property PhonemeTargetWeightOh36 As Single Implements IRace.PhonemeTargetWeightOh36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -13694,7 +14184,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ36 As Single
+        Public Property PhonemeTargetWeightOohQ36 As Single Implements IRace.PhonemeTargetWeightOohQ36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -13704,7 +14194,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR36 As Single
+        Public Property PhonemeTargetWeightR36 As Single Implements IRace.PhonemeTargetWeightR36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\R")
             End Get
@@ -13714,7 +14204,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH36 As Single
+        Public Property PhonemeTargetWeightTH36 As Single Implements IRace.PhonemeTargetWeightTH36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -13724,7 +14214,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\G\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW36 As Single
+        Public Property PhonemeTargetWeightW36 As Single Implements IRace.PhonemeTargetWeightW36
             Get
                 Return Flt("FaceFX Phonemes\G\PHWT\Phoneme Target Weight\W")
             End Get
@@ -13734,7 +14224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah37 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah37 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -13744,7 +14234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST37 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST37 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -13754,7 +14244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee37 As Single
+        Public Property PhonemeTargetWeightBMPLipEee37 As Single Implements IRace.PhonemeTargetWeightBMPLipEee37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -13764,7 +14254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV37 As Single
+        Public Property PhonemeTargetWeightChJshLipFV37 As Single Implements IRace.PhonemeTargetWeightChJshLipFV37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -13774,7 +14264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK37 As Single
+        Public Property PhonemeTargetWeightDSTLipK37 As Single Implements IRace.PhonemeTargetWeightDSTLipK37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -13784,7 +14274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL37 As Single
+        Public Property PhonemeTargetWeightEeeLipL37 As Single Implements IRace.PhonemeTargetWeightEeeLipL37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -13794,7 +14284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR37 As Single
+        Public Property PhonemeTargetWeightEhLipR37 As Single Implements IRace.PhonemeTargetWeightEhLipR37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -13804,7 +14294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh37 As Single
+        Public Property PhonemeTargetWeightFVLipTh37 As Single Implements IRace.PhonemeTargetWeightFVLipTh37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -13814,7 +14304,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI37 As Single
+        Public Property PhonemeTargetWeightI37 As Single Implements IRace.PhonemeTargetWeightI37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\I")
             End Get
@@ -13824,7 +14314,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK37 As Single
+        Public Property PhonemeTargetWeightK37 As Single Implements IRace.PhonemeTargetWeightK37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\K")
             End Get
@@ -13834,7 +14324,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN37 As Single
+        Public Property PhonemeTargetWeightN37 As Single Implements IRace.PhonemeTargetWeightN37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\N")
             End Get
@@ -13844,7 +14334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh37 As Single
+        Public Property PhonemeTargetWeightOh37 As Single Implements IRace.PhonemeTargetWeightOh37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -13854,7 +14344,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ37 As Single
+        Public Property PhonemeTargetWeightOohQ37 As Single Implements IRace.PhonemeTargetWeightOohQ37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -13864,7 +14354,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR37 As Single
+        Public Property PhonemeTargetWeightR37 As Single Implements IRace.PhonemeTargetWeightR37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\R")
             End Get
@@ -13874,7 +14364,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH37 As Single
+        Public Property PhonemeTargetWeightTH37 As Single Implements IRace.PhonemeTargetWeightTH37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -13884,7 +14374,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\P\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW37 As Single
+        Public Property PhonemeTargetWeightW37 As Single Implements IRace.PhonemeTargetWeightW37
             Get
                 Return Flt("FaceFX Phonemes\P\PHWT\Phoneme Target Weight\W")
             End Get
@@ -13894,7 +14384,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah38 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah38 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -13904,7 +14394,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST38 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST38 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -13914,7 +14404,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee38 As Single
+        Public Property PhonemeTargetWeightBMPLipEee38 As Single Implements IRace.PhonemeTargetWeightBMPLipEee38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -13924,7 +14414,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV38 As Single
+        Public Property PhonemeTargetWeightChJshLipFV38 As Single Implements IRace.PhonemeTargetWeightChJshLipFV38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -13934,7 +14424,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK38 As Single
+        Public Property PhonemeTargetWeightDSTLipK38 As Single Implements IRace.PhonemeTargetWeightDSTLipK38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -13944,7 +14434,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL38 As Single
+        Public Property PhonemeTargetWeightEeeLipL38 As Single Implements IRace.PhonemeTargetWeightEeeLipL38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -13954,7 +14444,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR38 As Single
+        Public Property PhonemeTargetWeightEhLipR38 As Single Implements IRace.PhonemeTargetWeightEhLipR38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -13964,7 +14454,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh38 As Single
+        Public Property PhonemeTargetWeightFVLipTh38 As Single Implements IRace.PhonemeTargetWeightFVLipTh38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -13974,7 +14464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI38 As Single
+        Public Property PhonemeTargetWeightI38 As Single Implements IRace.PhonemeTargetWeightI38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\I")
             End Get
@@ -13984,7 +14474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK38 As Single
+        Public Property PhonemeTargetWeightK38 As Single Implements IRace.PhonemeTargetWeightK38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\K")
             End Get
@@ -13994,7 +14484,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN38 As Single
+        Public Property PhonemeTargetWeightN38 As Single Implements IRace.PhonemeTargetWeightN38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\N")
             End Get
@@ -14004,7 +14494,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh38 As Single
+        Public Property PhonemeTargetWeightOh38 As Single Implements IRace.PhonemeTargetWeightOh38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -14014,7 +14504,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ38 As Single
+        Public Property PhonemeTargetWeightOohQ38 As Single Implements IRace.PhonemeTargetWeightOohQ38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -14024,7 +14514,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR38 As Single
+        Public Property PhonemeTargetWeightR38 As Single Implements IRace.PhonemeTargetWeightR38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\R")
             End Get
@@ -14034,7 +14524,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH38 As Single
+        Public Property PhonemeTargetWeightTH38 As Single Implements IRace.PhonemeTargetWeightTH38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -14044,7 +14534,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\T\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW38 As Single
+        Public Property PhonemeTargetWeightW38 As Single Implements IRace.PhonemeTargetWeightW38
             Get
                 Return Flt("FaceFX Phonemes\T\PHWT\Phoneme Target Weight\W")
             End Get
@@ -14054,7 +14544,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah39 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah39 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -14064,7 +14554,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST39 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST39 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -14074,7 +14564,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee39 As Single
+        Public Property PhonemeTargetWeightBMPLipEee39 As Single Implements IRace.PhonemeTargetWeightBMPLipEee39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -14084,7 +14574,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV39 As Single
+        Public Property PhonemeTargetWeightChJshLipFV39 As Single Implements IRace.PhonemeTargetWeightChJshLipFV39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -14094,7 +14584,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK39 As Single
+        Public Property PhonemeTargetWeightDSTLipK39 As Single Implements IRace.PhonemeTargetWeightDSTLipK39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -14104,7 +14594,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL39 As Single
+        Public Property PhonemeTargetWeightEeeLipL39 As Single Implements IRace.PhonemeTargetWeightEeeLipL39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -14114,7 +14604,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR39 As Single
+        Public Property PhonemeTargetWeightEhLipR39 As Single Implements IRace.PhonemeTargetWeightEhLipR39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -14124,7 +14614,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh39 As Single
+        Public Property PhonemeTargetWeightFVLipTh39 As Single Implements IRace.PhonemeTargetWeightFVLipTh39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -14134,7 +14624,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI39 As Single
+        Public Property PhonemeTargetWeightI39 As Single Implements IRace.PhonemeTargetWeightI39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\I")
             End Get
@@ -14144,7 +14634,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK39 As Single
+        Public Property PhonemeTargetWeightK39 As Single Implements IRace.PhonemeTargetWeightK39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\K")
             End Get
@@ -14154,7 +14644,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN39 As Single
+        Public Property PhonemeTargetWeightN39 As Single Implements IRace.PhonemeTargetWeightN39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\N")
             End Get
@@ -14164,7 +14654,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh39 As Single
+        Public Property PhonemeTargetWeightOh39 As Single Implements IRace.PhonemeTargetWeightOh39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -14174,7 +14664,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ39 As Single
+        Public Property PhonemeTargetWeightOohQ39 As Single Implements IRace.PhonemeTargetWeightOohQ39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -14184,7 +14674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR39 As Single
+        Public Property PhonemeTargetWeightR39 As Single Implements IRace.PhonemeTargetWeightR39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\R")
             End Get
@@ -14194,7 +14684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH39 As Single
+        Public Property PhonemeTargetWeightTH39 As Single Implements IRace.PhonemeTargetWeightTH39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -14204,7 +14694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\K\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW39 As Single
+        Public Property PhonemeTargetWeightW39 As Single Implements IRace.PhonemeTargetWeightW39
             Get
                 Return Flt("FaceFX Phonemes\K\PHWT\Phoneme Target Weight\W")
             End Get
@@ -14214,7 +14704,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah40 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah40 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -14224,7 +14714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST40 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST40 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -14234,7 +14724,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee40 As Single
+        Public Property PhonemeTargetWeightBMPLipEee40 As Single Implements IRace.PhonemeTargetWeightBMPLipEee40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -14244,7 +14734,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV40 As Single
+        Public Property PhonemeTargetWeightChJshLipFV40 As Single Implements IRace.PhonemeTargetWeightChJshLipFV40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -14254,7 +14744,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK40 As Single
+        Public Property PhonemeTargetWeightDSTLipK40 As Single Implements IRace.PhonemeTargetWeightDSTLipK40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -14264,7 +14754,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL40 As Single
+        Public Property PhonemeTargetWeightEeeLipL40 As Single Implements IRace.PhonemeTargetWeightEeeLipL40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -14274,7 +14764,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR40 As Single
+        Public Property PhonemeTargetWeightEhLipR40 As Single Implements IRace.PhonemeTargetWeightEhLipR40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -14284,7 +14774,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh40 As Single
+        Public Property PhonemeTargetWeightFVLipTh40 As Single Implements IRace.PhonemeTargetWeightFVLipTh40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -14294,7 +14784,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI40 As Single
+        Public Property PhonemeTargetWeightI40 As Single Implements IRace.PhonemeTargetWeightI40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\I")
             End Get
@@ -14304,7 +14794,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK40 As Single
+        Public Property PhonemeTargetWeightK40 As Single Implements IRace.PhonemeTargetWeightK40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\K")
             End Get
@@ -14314,7 +14804,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN40 As Single
+        Public Property PhonemeTargetWeightN40 As Single Implements IRace.PhonemeTargetWeightN40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\N")
             End Get
@@ -14324,7 +14814,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh40 As Single
+        Public Property PhonemeTargetWeightOh40 As Single Implements IRace.PhonemeTargetWeightOh40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -14334,7 +14824,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ40 As Single
+        Public Property PhonemeTargetWeightOohQ40 As Single Implements IRace.PhonemeTargetWeightOohQ40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -14344,7 +14834,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR40 As Single
+        Public Property PhonemeTargetWeightR40 As Single Implements IRace.PhonemeTargetWeightR40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\R")
             End Get
@@ -14354,7 +14844,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH40 As Single
+        Public Property PhonemeTargetWeightTH40 As Single Implements IRace.PhonemeTargetWeightTH40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -14364,7 +14854,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW40 As Single
+        Public Property PhonemeTargetWeightW40 As Single Implements IRace.PhonemeTargetWeightW40
             Get
                 Return Flt("FaceFX Phonemes\CH\PHWT\Phoneme Target Weight\W")
             End Get
@@ -14374,7 +14864,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah41 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah41 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -14384,7 +14874,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST41 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST41 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -14394,7 +14884,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee41 As Single
+        Public Property PhonemeTargetWeightBMPLipEee41 As Single Implements IRace.PhonemeTargetWeightBMPLipEee41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -14404,7 +14894,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV41 As Single
+        Public Property PhonemeTargetWeightChJshLipFV41 As Single Implements IRace.PhonemeTargetWeightChJshLipFV41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -14414,7 +14904,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK41 As Single
+        Public Property PhonemeTargetWeightDSTLipK41 As Single Implements IRace.PhonemeTargetWeightDSTLipK41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -14424,7 +14914,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL41 As Single
+        Public Property PhonemeTargetWeightEeeLipL41 As Single Implements IRace.PhonemeTargetWeightEeeLipL41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -14434,7 +14924,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR41 As Single
+        Public Property PhonemeTargetWeightEhLipR41 As Single Implements IRace.PhonemeTargetWeightEhLipR41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -14444,7 +14934,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh41 As Single
+        Public Property PhonemeTargetWeightFVLipTh41 As Single Implements IRace.PhonemeTargetWeightFVLipTh41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -14454,7 +14944,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI41 As Single
+        Public Property PhonemeTargetWeightI41 As Single Implements IRace.PhonemeTargetWeightI41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\I")
             End Get
@@ -14464,7 +14954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK41 As Single
+        Public Property PhonemeTargetWeightK41 As Single Implements IRace.PhonemeTargetWeightK41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\K")
             End Get
@@ -14474,7 +14964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN41 As Single
+        Public Property PhonemeTargetWeightN41 As Single Implements IRace.PhonemeTargetWeightN41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\N")
             End Get
@@ -14484,7 +14974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh41 As Single
+        Public Property PhonemeTargetWeightOh41 As Single Implements IRace.PhonemeTargetWeightOh41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -14494,7 +14984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ41 As Single
+        Public Property PhonemeTargetWeightOohQ41 As Single Implements IRace.PhonemeTargetWeightOohQ41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -14504,7 +14994,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR41 As Single
+        Public Property PhonemeTargetWeightR41 As Single Implements IRace.PhonemeTargetWeightR41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\R")
             End Get
@@ -14514,7 +15004,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH41 As Single
+        Public Property PhonemeTargetWeightTH41 As Single Implements IRace.PhonemeTargetWeightTH41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -14524,7 +15014,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW41 As Single
+        Public Property PhonemeTargetWeightW41 As Single Implements IRace.PhonemeTargetWeightW41
             Get
                 Return Flt("FaceFX Phonemes\SIL\PHWT\Phoneme Target Weight\W")
             End Get
@@ -14534,7 +15024,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah42 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah42 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -14544,7 +15034,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST42 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST42 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -14554,7 +15044,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee42 As Single
+        Public Property PhonemeTargetWeightBMPLipEee42 As Single Implements IRace.PhonemeTargetWeightBMPLipEee42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -14564,7 +15054,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV42 As Single
+        Public Property PhonemeTargetWeightChJshLipFV42 As Single Implements IRace.PhonemeTargetWeightChJshLipFV42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -14574,7 +15064,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK42 As Single
+        Public Property PhonemeTargetWeightDSTLipK42 As Single Implements IRace.PhonemeTargetWeightDSTLipK42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -14584,7 +15074,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL42 As Single
+        Public Property PhonemeTargetWeightEeeLipL42 As Single Implements IRace.PhonemeTargetWeightEeeLipL42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -14594,7 +15084,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR42 As Single
+        Public Property PhonemeTargetWeightEhLipR42 As Single Implements IRace.PhonemeTargetWeightEhLipR42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -14604,7 +15094,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh42 As Single
+        Public Property PhonemeTargetWeightFVLipTh42 As Single Implements IRace.PhonemeTargetWeightFVLipTh42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -14614,7 +15104,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI42 As Single
+        Public Property PhonemeTargetWeightI42 As Single Implements IRace.PhonemeTargetWeightI42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\I")
             End Get
@@ -14624,7 +15114,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK42 As Single
+        Public Property PhonemeTargetWeightK42 As Single Implements IRace.PhonemeTargetWeightK42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\K")
             End Get
@@ -14634,7 +15124,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN42 As Single
+        Public Property PhonemeTargetWeightN42 As Single Implements IRace.PhonemeTargetWeightN42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\N")
             End Get
@@ -14644,7 +15134,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh42 As Single
+        Public Property PhonemeTargetWeightOh42 As Single Implements IRace.PhonemeTargetWeightOh42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -14654,7 +15144,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ42 As Single
+        Public Property PhonemeTargetWeightOohQ42 As Single Implements IRace.PhonemeTargetWeightOohQ42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -14664,7 +15154,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR42 As Single
+        Public Property PhonemeTargetWeightR42 As Single Implements IRace.PhonemeTargetWeightR42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\R")
             End Get
@@ -14674,7 +15164,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH42 As Single
+        Public Property PhonemeTargetWeightTH42 As Single Implements IRace.PhonemeTargetWeightTH42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -14684,7 +15174,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW42 As Single
+        Public Property PhonemeTargetWeightW42 As Single Implements IRace.PhonemeTargetWeightW42
             Get
                 Return Flt("FaceFX Phonemes\SHOTSIL\PHWT\Phoneme Target Weight\W")
             End Get
@@ -14694,7 +15184,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Aah / LipBigAah</summary>
-        Public Property PhonemeTargetWeightAahLipBigAah43 As Single
+        Public Property PhonemeTargetWeightAahLipBigAah43 As Single Implements IRace.PhonemeTargetWeightAahLipBigAah43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Aah / LipBigAah")
             End Get
@@ -14704,7 +15194,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\BigAah / LipDST</summary>
-        Public Property PhonemeTargetWeightBigAahLipDST43 As Single
+        Public Property PhonemeTargetWeightBigAahLipDST43 As Single Implements IRace.PhonemeTargetWeightBigAahLipDST43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\BigAah / LipDST")
             End Get
@@ -14714,7 +15204,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\BMP / LipEee</summary>
-        Public Property PhonemeTargetWeightBMPLipEee43 As Single
+        Public Property PhonemeTargetWeightBMPLipEee43 As Single Implements IRace.PhonemeTargetWeightBMPLipEee43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\BMP / LipEee")
             End Get
@@ -14724,7 +15214,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\ChJsh / LipFV</summary>
-        Public Property PhonemeTargetWeightChJshLipFV43 As Single
+        Public Property PhonemeTargetWeightChJshLipFV43 As Single Implements IRace.PhonemeTargetWeightChJshLipFV43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\ChJsh / LipFV")
             End Get
@@ -14734,7 +15224,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\DST / LipK</summary>
-        Public Property PhonemeTargetWeightDSTLipK43 As Single
+        Public Property PhonemeTargetWeightDSTLipK43 As Single Implements IRace.PhonemeTargetWeightDSTLipK43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\DST / LipK")
             End Get
@@ -14744,7 +15234,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Eee / LipL</summary>
-        Public Property PhonemeTargetWeightEeeLipL43 As Single
+        Public Property PhonemeTargetWeightEeeLipL43 As Single Implements IRace.PhonemeTargetWeightEeeLipL43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Eee / LipL")
             End Get
@@ -14754,7 +15244,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Eh / LipR</summary>
-        Public Property PhonemeTargetWeightEhLipR43 As Single
+        Public Property PhonemeTargetWeightEhLipR43 As Single Implements IRace.PhonemeTargetWeightEhLipR43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Eh / LipR")
             End Get
@@ -14764,7 +15254,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\FV / LipTh</summary>
-        Public Property PhonemeTargetWeightFVLipTh43 As Single
+        Public Property PhonemeTargetWeightFVLipTh43 As Single Implements IRace.PhonemeTargetWeightFVLipTh43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\FV / LipTh")
             End Get
@@ -14774,7 +15264,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\I</summary>
-        Public Property PhonemeTargetWeightI43 As Single
+        Public Property PhonemeTargetWeightI43 As Single Implements IRace.PhonemeTargetWeightI43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\I")
             End Get
@@ -14784,7 +15274,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\K</summary>
-        Public Property PhonemeTargetWeightK43 As Single
+        Public Property PhonemeTargetWeightK43 As Single Implements IRace.PhonemeTargetWeightK43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\K")
             End Get
@@ -14794,7 +15284,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\N</summary>
-        Public Property PhonemeTargetWeightN43 As Single
+        Public Property PhonemeTargetWeightN43 As Single Implements IRace.PhonemeTargetWeightN43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\N")
             End Get
@@ -14804,7 +15294,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Oh</summary>
-        Public Property PhonemeTargetWeightOh43 As Single
+        Public Property PhonemeTargetWeightOh43 As Single Implements IRace.PhonemeTargetWeightOh43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\Oh")
             End Get
@@ -14814,7 +15304,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\OohQ</summary>
-        Public Property PhonemeTargetWeightOohQ43 As Single
+        Public Property PhonemeTargetWeightOohQ43 As Single Implements IRace.PhonemeTargetWeightOohQ43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\OohQ")
             End Get
@@ -14824,7 +15314,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\R</summary>
-        Public Property PhonemeTargetWeightR43 As Single
+        Public Property PhonemeTargetWeightR43 As Single Implements IRace.PhonemeTargetWeightR43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\R")
             End Get
@@ -14834,7 +15324,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\TH</summary>
-        Public Property PhonemeTargetWeightTH43 As Single
+        Public Property PhonemeTargetWeightTH43 As Single Implements IRace.PhonemeTargetWeightTH43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\TH")
             End Get
@@ -14844,7 +15334,7 @@ Namespace Canon
         End Property
 
         ''' <summary>FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\W</summary>
-        Public Property PhonemeTargetWeightW43 As Single
+        Public Property PhonemeTargetWeightW43 As Single Implements IRace.PhonemeTargetWeightW43
             Get
                 Return Flt("FaceFX Phonemes\FLAP\PHWT\Phoneme Target Weight\W")
             End Get
@@ -14974,7 +15464,7 @@ Namespace Canon
         End Property
 
         ''' <summary>NAM8\Morph Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
-        Public Property MorphRace As UInteger
+        Public Property MorphRace As UInteger Implements IRace.MorphRace
             Get
                 Return Referencia("NAM8\Morph Race")
             End Get
@@ -14984,7 +15474,7 @@ Namespace Canon
         End Property
 
         ''' <summary>RNAM\Armor Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
-        Public Property ArmorRace As UInteger
+        Public Property ArmorRace As UInteger Implements IRace.ArmorRace
             Get
                 Return Referencia("RNAM\Armor Race")
             End Get
@@ -15074,14 +15564,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Actor Effects</summary>
-        Public ReadOnly Property ActorEffects As IReadOnlyList(Of RaceFO4_ActorEffects)
+        Public ReadOnly Property ActorEffects As IReadOnlyList(Of IRace_ActorEffects) Implements IRace.ActorEffects
             Get
                 Return Elementos(Of RaceFO4_ActorEffects)("Actor Effects", Function(n) New RaceFO4_ActorEffects(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Keywords\KWDA\Keywords</summary>
-        Public ReadOnly Property Keywords As IReadOnlyList(Of RaceFO4_Keywords)
+        Public ReadOnly Property Keywords As IReadOnlyList(Of IRace_Keywords) Implements IRace.Keywords
             Get
                 Return Elementos(Of RaceFO4_Keywords)("Keywords\KWDA\Keywords", Function(n) New RaceFO4_Keywords(n, Context, Resolver))
             End Get
@@ -15102,49 +15592,49 @@ Namespace Canon
         End Property
 
         ''' <summary>Movement Type Names</summary>
-        Public ReadOnly Property MovementTypeNames As IReadOnlyList(Of RaceFO4_MovementTypeNames)
+        Public ReadOnly Property MovementTypeNames As IReadOnlyList(Of IRace_MovementTypeNames) Implements IRace.MovementTypeNames
             Get
                 Return Elementos(Of RaceFO4_MovementTypeNames)("Movement Type Names", Function(n) New RaceFO4_MovementTypeNames(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>VTCK\Voices</summary>
-        Public ReadOnly Property Voices As IReadOnlyList(Of RaceFO4_Voices)
+        Public ReadOnly Property Voices As IReadOnlyList(Of IRace_Voices) Implements IRace.Voices
             Get
                 Return Elementos(Of RaceFO4_Voices)("VTCK\Voices", Function(n) New RaceFO4_Voices(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>HCLF\Default Hair Colors</summary>
-        Public ReadOnly Property DefaultHairColors As IReadOnlyList(Of RaceFO4_DefaultHairColors)
+        Public ReadOnly Property DefaultHairColors As IReadOnlyList(Of IRace_DefaultHairColors) Implements IRace.DefaultHairColors
             Get
                 Return Elementos(Of RaceFO4_DefaultHairColors)("HCLF\Default Hair Colors", Function(n) New RaceFO4_DefaultHairColors(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Attacks</summary>
-        Public ReadOnly Property Attacks As IReadOnlyList(Of RaceFO4_Attacks)
+        Public ReadOnly Property Attacks As IReadOnlyList(Of IRace_Attacks) Implements IRace.Attacks
             Get
                 Return Elementos(Of RaceFO4_Attacks)("Attacks", Function(n) New RaceFO4_Attacks(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Body Data\Male Body Data\Parts</summary>
-        Public ReadOnly Property Parts As IReadOnlyList(Of RaceFO4_Parts)
+        Public ReadOnly Property Parts As IReadOnlyList(Of IRace_Parts) Implements IRace.Parts
             Get
                 Return Elementos(Of RaceFO4_Parts)("Body Data\Male Body Data\Parts", Function(n) New RaceFO4_Parts(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Body Data\Female Body Data\Parts</summary>
-        Public ReadOnly Property Parts2 As IReadOnlyList(Of RaceFO4_Parts2)
+        Public ReadOnly Property Parts2 As IReadOnlyList(Of IRace_Parts2) Implements IRace.Parts2
             Get
                 Return Elementos(Of RaceFO4_Parts2)("Body Data\Female Body Data\Parts", Function(n) New RaceFO4_Parts2(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Biped Object Names</summary>
-        Public ReadOnly Property BipedObjectNames As IReadOnlyList(Of RaceFO4_BipedObjectNames)
+        Public ReadOnly Property BipedObjectNames As IReadOnlyList(Of IRace_BipedObjectNames) Implements IRace.BipedObjectNames
             Get
                 Return Elementos(Of RaceFO4_BipedObjectNames)("Biped Object Names", Function(n) New RaceFO4_BipedObjectNames(n, Context, Resolver))
             End Get
@@ -15165,14 +15655,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Equip Slots</summary>
-        Public ReadOnly Property EquipSlots As IReadOnlyList(Of RaceFO4_EquipSlots)
+        Public ReadOnly Property EquipSlots As IReadOnlyList(Of IRace_EquipSlots) Implements IRace.EquipSlots
             Get
                 Return Elementos(Of RaceFO4_EquipSlots)("Equip Slots", Function(n) New RaceFO4_EquipSlots(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Phoneme Target Names</summary>
-        Public ReadOnly Property PhonemeTargetNames As IReadOnlyList(Of RaceFO4_PhonemeTargetNames)
+        Public ReadOnly Property PhonemeTargetNames As IReadOnlyList(Of IRace_PhonemeTargetNames) Implements IRace.PhonemeTargetNames
             Get
                 Return Elementos(Of RaceFO4_PhonemeTargetNames)("Phoneme Target Names", Function(n) New RaceFO4_PhonemeTargetNames(n, Context, Resolver))
             End Get
@@ -15421,13 +15911,20 @@ Namespace Canon
     ''' <summary>Un elemento de Actor Effects.</summary>
     Public NotInheritable Class RaceFO4_ActorEffects
         Inherits CanonView
+        Implements IRace_ActorEffects
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_ActorEffects.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>SPLO\Actor Effect  -&gt;  SPEL / LVSP. Referencia en el espacio del orden de carga.</summary>
-        Public Property ActorEffect As UInteger
+        Public Property ActorEffect As UInteger Implements IRace_ActorEffects.ActorEffect
             Get
                 Return Referencia("SPLO\Actor Effect")
             End Get
@@ -15441,13 +15938,20 @@ Namespace Canon
     ''' <summary>Un elemento de Keywords\KWDA\Keywords.</summary>
     Public NotInheritable Class RaceFO4_Keywords
         Inherits CanonView
+        Implements IRace_Keywords
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_Keywords.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Keyword  -&gt;  KYWD / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property Keyword As UInteger
+        Public Property Keyword As UInteger Implements IRace_Keywords.Keyword
             Get
                 Return Referencia("Keyword")
             End Get
@@ -15511,13 +16015,20 @@ Namespace Canon
     ''' <summary>Un elemento de Movement Type Names.</summary>
     Public NotInheritable Class RaceFO4_MovementTypeNames
         Inherits CanonView
+        Implements IRace_MovementTypeNames
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_MovementTypeNames.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>MTNM\Name</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IRace_MovementTypeNames.Name
             Get
                 Return Txt("MTNM\Name")
             End Get
@@ -15531,13 +16042,20 @@ Namespace Canon
     ''' <summary>Un elemento de VTCK\Voices.</summary>
     Public NotInheritable Class RaceFO4_Voices
         Inherits CanonView
+        Implements IRace_Voices
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_Voices.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Voice  -&gt;  VTYP. Referencia en el espacio del orden de carga.</summary>
-        Public Property Voice As UInteger
+        Public Property Voice As UInteger Implements IRace_Voices.Voice
             Get
                 Return Referencia("Voice")
             End Get
@@ -15551,13 +16069,20 @@ Namespace Canon
     ''' <summary>Un elemento de HCLF\Default Hair Colors.</summary>
     Public NotInheritable Class RaceFO4_DefaultHairColors
         Inherits CanonView
+        Implements IRace_DefaultHairColors
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_DefaultHairColors.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Default Hair Color  -&gt;  NULL / CLFM. Referencia en el espacio del orden de carga.</summary>
-        Public Property DefaultHairColor As UInteger
+        Public Property DefaultHairColor As UInteger Implements IRace_DefaultHairColors.DefaultHairColor
             Get
                 Return Referencia("Default Hair Color")
             End Get
@@ -15571,13 +16096,20 @@ Namespace Canon
     ''' <summary>Un elemento de Attacks.</summary>
     Public NotInheritable Class RaceFO4_Attacks
         Inherits CanonView
+        Implements IRace_Attacks
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_Attacks.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Attack\ATKD\Attack Data\Damage Mult</summary>
-        Public Property AttackDataDamageMult As Single
+        Public Property AttackDataDamageMult As Single Implements IRace_Attacks.AttackDataDamageMult
             Get
                 Return Flt("Attack\ATKD\Attack Data\Damage Mult")
             End Get
@@ -15587,7 +16119,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Chance</summary>
-        Public Property AttackDataAttackChance As Single
+        Public Property AttackDataAttackChance As Single Implements IRace_Attacks.AttackDataAttackChance
             Get
                 Return Flt("Attack\ATKD\Attack Data\Attack Chance")
             End Get
@@ -15597,7 +16129,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Spell  -&gt;  SPEL / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property AttackDataAttackSpell As UInteger
+        Public Property AttackDataAttackSpell As UInteger Implements IRace_Attacks.AttackDataAttackSpell
             Get
                 Return Referencia("Attack\ATKD\Attack Data\Attack Spell")
             End Get
@@ -15607,7 +16139,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Flags</summary>
-        Public Property AttackDataAttackFlags As UInteger
+        Public Property AttackDataAttackFlags As UInteger Implements IRace_Attacks.AttackDataAttackFlags
             Get
                 Return CUInt(Entero("Attack\ATKD\Attack Data\Attack Flags"))
             End Get
@@ -15617,7 +16149,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 0 de Attack\ATKD\Attack Data\Attack Flags: Ignore Weapon</summary>
-        Public Property AttackDataAttackFlagsIgnoreWeapon As Boolean
+        Public Property AttackDataAttackFlagsIgnoreWeapon As Boolean Implements IRace_Attacks.AttackDataAttackFlagsIgnoreWeapon
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 0)
             End Get
@@ -15625,8 +16157,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de Attack\ATKD\Attack Data\Attack Flags: Bash Attack</summary>
-        Public Property AttackDataAttackFlagsBashAttack As Boolean
+        Public Property AttackDataAttackFlagsBashAttack As Boolean Implements IRace_Attacks.AttackDataAttackFlagsBashAttack
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 1)
             End Get
@@ -15634,8 +16167,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de Attack\ATKD\Attack Data\Attack Flags: Power Attack</summary>
-        Public Property AttackDataAttackFlagsPowerAttack As Boolean
+        Public Property AttackDataAttackFlagsPowerAttack As Boolean Implements IRace_Attacks.AttackDataAttackFlagsPowerAttack
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 2)
             End Get
@@ -15643,6 +16177,7 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de Attack\ATKD\Attack Data\Attack Flags: Charge Attack</summary>
         Public Property AttackDataAttackFlagsChargeAttack As Boolean
             Get
@@ -15652,8 +16187,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de Attack\ATKD\Attack Data\Attack Flags: Rotating Attack</summary>
-        Public Property AttackDataAttackFlagsRotatingAttack As Boolean
+        Public Property AttackDataAttackFlagsRotatingAttack As Boolean Implements IRace_Attacks.AttackDataAttackFlagsRotatingAttack
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 4)
             End Get
@@ -15661,6 +16197,7 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 4, value)
             End Set
         End Property
+
         ''' <summary>Bit 5 de Attack\ATKD\Attack Data\Attack Flags: Continuous Attack</summary>
         Public Property AttackDataAttackFlagsContinuousAttack As Boolean
             Get
@@ -15670,8 +16207,9 @@ Namespace Canon
                 PonerBit("Attack\ATKD\Attack Data\Attack Flags", 5, value)
             End Set
         End Property
+
         ''' <summary>Bit 31 de Attack\ATKD\Attack Data\Attack Flags: Override Data</summary>
-        Public Property AttackDataAttackFlagsOverrideData As Boolean
+        Public Property AttackDataAttackFlagsOverrideData As Boolean Implements IRace_Attacks.AttackDataAttackFlagsOverrideData
             Get
                 Return Bit("Attack\ATKD\Attack Data\Attack Flags", 31)
             End Get
@@ -15681,7 +16219,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Attack Angle</summary>
-        Public Property AttackDataAttackAngle As Single
+        Public Property AttackDataAttackAngle As Single Implements IRace_Attacks.AttackDataAttackAngle
             Get
                 Return Flt("Attack\ATKD\Attack Data\Attack Angle")
             End Get
@@ -15691,7 +16229,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Strike Angle</summary>
-        Public Property AttackDataStrikeAngle As Single
+        Public Property AttackDataStrikeAngle As Single Implements IRace_Attacks.AttackDataStrikeAngle
             Get
                 Return Flt("Attack\ATKD\Attack Data\Strike Angle")
             End Get
@@ -15701,7 +16239,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Stagger</summary>
-        Public Property AttackDataStagger As Single
+        Public Property AttackDataStagger As Single Implements IRace_Attacks.AttackDataStagger
             Get
                 Return Flt("Attack\ATKD\Attack Data\Stagger")
             End Get
@@ -15711,7 +16249,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Knockdown</summary>
-        Public Property AttackDataKnockdown As Single
+        Public Property AttackDataKnockdown As Single Implements IRace_Attacks.AttackDataKnockdown
             Get
                 Return Flt("Attack\ATKD\Attack Data\Knockdown")
             End Get
@@ -15721,7 +16259,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKD\Attack Data\Recovery Time</summary>
-        Public Property AttackDataRecoveryTime As Single
+        Public Property AttackDataRecoveryTime As Single Implements IRace_Attacks.AttackDataRecoveryTime
             Get
                 Return Flt("Attack\ATKD\Attack Data\Recovery Time")
             End Get
@@ -15751,7 +16289,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Attack\ATKE\Attack Event</summary>
-        Public Property AttackAttackEvent As String
+        Public Property AttackAttackEvent As String Implements IRace_Attacks.AttackAttackEvent
             Get
                 Return Txt("Attack\ATKE\Attack Event")
             End Get
@@ -15795,13 +16333,20 @@ Namespace Canon
     ''' <summary>Un elemento de Body Data\Male Body Data\Parts.</summary>
     Public NotInheritable Class RaceFO4_Parts
         Inherits CanonView
+        Implements IRace_Parts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_Parts.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Part\Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements IRace_Parts.ModelModelFileName
             Get
                 Return Txt("Part\Model\MODL\Model FileName")
             End Get
@@ -15845,13 +16390,20 @@ Namespace Canon
     ''' <summary>Un elemento de Body Data\Female Body Data\Parts.</summary>
     Public NotInheritable Class RaceFO4_Parts2
         Inherits CanonView
+        Implements IRace_Parts2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_Parts2.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>Part\Model\MODL\Model FileName</summary>
-        Public Property ModelModelFileName As String
+        Public Property ModelModelFileName As String Implements IRace_Parts2.ModelModelFileName
             Get
                 Return Txt("Part\Model\MODL\Model FileName")
             End Get
@@ -15895,13 +16447,20 @@ Namespace Canon
     ''' <summary>Un elemento de Biped Object Names.</summary>
     Public NotInheritable Class RaceFO4_BipedObjectNames
         Inherits CanonView
+        Implements IRace_BipedObjectNames
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_BipedObjectNames.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>NAME\Name</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IRace_BipedObjectNames.Name
             Get
                 Return Txt("NAME\Name")
             End Get
@@ -16055,10 +16614,17 @@ Namespace Canon
     ''' <summary>Un elemento de Equip Slots.</summary>
     Public NotInheritable Class RaceFO4_EquipSlots
         Inherits CanonView
+        Implements IRace_EquipSlots
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_EquipSlots.Node
+            Get
+                Return Node
+            End Get
+        End Property
 
         ''' <summary>Equip Slot\QNAM\Equip Slot  -&gt;  EQUP. Referencia en el espacio del orden de carga.</summary>
         Public Property EquipSlotEquipSlot As UInteger
@@ -16085,13 +16651,20 @@ Namespace Canon
     ''' <summary>Un elemento de Phoneme Target Names.</summary>
     Public NotInheritable Class RaceFO4_PhonemeTargetNames
         Inherits CanonView
+        Implements IRace_PhonemeTargetNames
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IRace_PhonemeTargetNames.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
         ''' <summary>PHTN\Name</summary>
-        Public Property Name As String
+        Public Property Name As String Implements IRace_PhonemeTargetNames.Name
             Get
                 Return Txt("PHTN\Name")
             End Get
@@ -16339,13 +16912,13 @@ Namespace Canon
                 Escribir("Condition\CTDA\Run On", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Condition\CTDA\Run On.</summary>
         Public ReadOnly Property ConditionRunOnNombre As String
             Get
                 Return NombreDeValor("Condition\CTDA\Run On")
             End Get
         End Property
-
 
         ''' <summary>Condition\CTDA\Parameter #3</summary>
         Public Property ConditionParameter3 As Integer
@@ -16836,13 +17409,13 @@ Namespace Canon
                 Escribir("Condition\CTDA\Run On", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Condition\CTDA\Run On.</summary>
         Public ReadOnly Property ConditionRunOnNombre As String
             Get
                 Return NombreDeValor("Condition\CTDA\Run On")
             End Get
         End Property
-
 
         ''' <summary>Condition\CTDA\Parameter #3</summary>
         Public Property ConditionParameter3 As Integer
@@ -17143,13 +17716,13 @@ Namespace Canon
                 Escribir("Data\SRAF\Flags\Role", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Data\SRAF\Flags\Role.</summary>
         Public ReadOnly Property FlagsRoleNombre As String
             Get
                 Return NombreDeValor("Data\SRAF\Flags\Role")
             End Get
         End Property
-
 
         ''' <summary>Data\SRAF\Flags\Perspective</summary>
         Public Property FlagsPerspective As UShort
@@ -17160,13 +17733,13 @@ Namespace Canon
                 Escribir("Data\SRAF\Flags\Perspective", CLng(value))
             End Set
         End Property
+
         ''' <summary>Nombre del valor de Data\SRAF\Flags\Perspective.</summary>
         Public ReadOnly Property FlagsPerspectiveNombre As String
             Get
                 Return NombreDeValor("Data\SRAF\Flags\Perspective")
             End Get
         End Property
-
 
     End Class
 
@@ -17453,13 +18026,26 @@ Namespace Canon
     ''' <summary>Campos de un record TXST de Fallout 4.</summary>
     Public NotInheritable Class TxstFO4
         Inherits CanonView
+        Implements ITxst
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements ITxst.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        Private ReadOnly Property IdDeLaInterfaz As UInteger Implements ITxst.FormID
+            Get
+                Return FormID
+            End Get
+        End Property
+
         ''' <summary>EDID\Editor ID</summary>
-        Public Property EditorID As String
+        Public Property EditorID As String Implements ITxst.EditorID
             Get
                 Return Txt("EDID\Editor ID")
             End Get
@@ -17469,7 +18055,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short
+        Public Property ObjectBoundsX1 As Short Implements ITxst.ObjectBoundsX1
             Get
                 Return CShort(Entero("OBND\Object Bounds\X1"))
             End Get
@@ -17479,7 +18065,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short
+        Public Property ObjectBoundsY1 As Short Implements ITxst.ObjectBoundsY1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y1"))
             End Get
@@ -17489,7 +18075,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short
+        Public Property ObjectBoundsZ1 As Short Implements ITxst.ObjectBoundsZ1
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z1"))
             End Get
@@ -17499,7 +18085,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short
+        Public Property ObjectBoundsX2 As Short Implements ITxst.ObjectBoundsX2
             Get
                 Return CShort(Entero("OBND\Object Bounds\X2"))
             End Get
@@ -17509,7 +18095,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short
+        Public Property ObjectBoundsY2 As Short Implements ITxst.ObjectBoundsY2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Y2"))
             End Get
@@ -17519,7 +18105,7 @@ Namespace Canon
         End Property
 
         ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short
+        Public Property ObjectBoundsZ2 As Short Implements ITxst.ObjectBoundsZ2
             Get
                 Return CShort(Entero("OBND\Object Bounds\Z2"))
             End Get
@@ -17529,7 +18115,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Textures (RGB/A)\TX00\Diffuse</summary>
-        Public Property TexturesRGBADiffuse As String
+        Public Property TexturesRGBADiffuse As String Implements ITxst.TexturesRGBADiffuse
             Get
                 Return Txt("Textures (RGB/A)\TX00\Diffuse")
             End Get
@@ -17539,7 +18125,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Textures (RGB/A)\TX01\Normal/Gloss</summary>
-        Public Property TexturesRGBANormalGloss As String
+        Public Property TexturesRGBANormalGloss As String Implements ITxst.TexturesRGBANormalGloss
             Get
                 Return Txt("Textures (RGB/A)\TX01\Normal/Gloss")
             End Get
@@ -17559,7 +18145,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Textures (RGB/A)\TX04\Height</summary>
-        Public Property TexturesRGBAHeight As String
+        Public Property TexturesRGBAHeight As String Implements ITxst.TexturesRGBAHeight
             Get
                 Return Txt("Textures (RGB/A)\TX04\Height")
             End Get
@@ -17569,7 +18155,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Textures (RGB/A)\TX05\Environment</summary>
-        Public Property TexturesRGBAEnvironment As String
+        Public Property TexturesRGBAEnvironment As String Implements ITxst.TexturesRGBAEnvironment
             Get
                 Return Txt("Textures (RGB/A)\TX05\Environment")
             End Get
@@ -17589,7 +18175,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Textures (RGB/A)\TX06\Multilayer</summary>
-        Public Property TexturesRGBAMultilayer As String
+        Public Property TexturesRGBAMultilayer As String Implements ITxst.TexturesRGBAMultilayer
             Get
                 Return Txt("Textures (RGB/A)\TX06\Multilayer")
             End Get
@@ -17609,7 +18195,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Min Width</summary>
-        Public Property DecalDataMinWidth As Single
+        Public Property DecalDataMinWidth As Single Implements ITxst.DecalDataMinWidth
             Get
                 Return Flt("DODT\Decal Data\Min Width")
             End Get
@@ -17619,7 +18205,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Max Width</summary>
-        Public Property DecalDataMaxWidth As Single
+        Public Property DecalDataMaxWidth As Single Implements ITxst.DecalDataMaxWidth
             Get
                 Return Flt("DODT\Decal Data\Max Width")
             End Get
@@ -17629,7 +18215,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Min Height</summary>
-        Public Property DecalDataMinHeight As Single
+        Public Property DecalDataMinHeight As Single Implements ITxst.DecalDataMinHeight
             Get
                 Return Flt("DODT\Decal Data\Min Height")
             End Get
@@ -17639,7 +18225,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Max Height</summary>
-        Public Property DecalDataMaxHeight As Single
+        Public Property DecalDataMaxHeight As Single Implements ITxst.DecalDataMaxHeight
             Get
                 Return Flt("DODT\Decal Data\Max Height")
             End Get
@@ -17649,7 +18235,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Depth</summary>
-        Public Property DecalDataDepth As Single
+        Public Property DecalDataDepth As Single Implements ITxst.DecalDataDepth
             Get
                 Return Flt("DODT\Decal Data\Depth")
             End Get
@@ -17659,7 +18245,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Shininess</summary>
-        Public Property DecalDataShininess As Single
+        Public Property DecalDataShininess As Single Implements ITxst.DecalDataShininess
             Get
                 Return Flt("DODT\Decal Data\Shininess")
             End Get
@@ -17669,7 +18255,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Parallax\Scale</summary>
-        Public Property ParallaxScale As Single
+        Public Property ParallaxScale As Single Implements ITxst.ParallaxScale
             Get
                 Return Flt("DODT\Decal Data\Parallax\Scale")
             End Get
@@ -17679,7 +18265,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Parallax\Passes</summary>
-        Public Property ParallaxPasses As Byte
+        Public Property ParallaxPasses As Byte Implements ITxst.ParallaxPasses
             Get
                 Return CByte(Entero("DODT\Decal Data\Parallax\Passes"))
             End Get
@@ -17689,7 +18275,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Flags</summary>
-        Public Property DecalDataFlags As Byte
+        Public Property DecalDataFlags As Byte Implements ITxst.DecalDataFlags
             Get
                 Return CByte(Entero("DODT\Decal Data\Flags"))
             End Get
@@ -17707,8 +18293,9 @@ Namespace Canon
                 PonerBit("DODT\Decal Data\Flags", 0, value)
             End Set
         End Property
+
         ''' <summary>Bit 1 de DODT\Decal Data\Flags: Alpha - Blending</summary>
-        Public Property DecalDataFlagsAlphaBlending As Boolean
+        Public Property DecalDataFlagsAlphaBlending As Boolean Implements ITxst.DecalDataFlagsAlphaBlending
             Get
                 Return Bit("DODT\Decal Data\Flags", 1)
             End Get
@@ -17716,8 +18303,9 @@ Namespace Canon
                 PonerBit("DODT\Decal Data\Flags", 1, value)
             End Set
         End Property
+
         ''' <summary>Bit 2 de DODT\Decal Data\Flags: Alpha - Testing</summary>
-        Public Property DecalDataFlagsAlphaTesting As Boolean
+        Public Property DecalDataFlagsAlphaTesting As Boolean Implements ITxst.DecalDataFlagsAlphaTesting
             Get
                 Return Bit("DODT\Decal Data\Flags", 2)
             End Get
@@ -17725,8 +18313,9 @@ Namespace Canon
                 PonerBit("DODT\Decal Data\Flags", 2, value)
             End Set
         End Property
+
         ''' <summary>Bit 3 de DODT\Decal Data\Flags: No Subtextures</summary>
-        Public Property DecalDataFlagsNoSubtextures As Boolean
+        Public Property DecalDataFlagsNoSubtextures As Boolean Implements ITxst.DecalDataFlagsNoSubtextures
             Get
                 Return Bit("DODT\Decal Data\Flags", 3)
             End Get
@@ -17734,6 +18323,7 @@ Namespace Canon
                 PonerBit("DODT\Decal Data\Flags", 3, value)
             End Set
         End Property
+
         ''' <summary>Bit 4 de DODT\Decal Data\Flags: Multiplicative Blending</summary>
         Public Property DecalDataFlagsMultiplicativeBlending As Boolean
             Get
@@ -17755,7 +18345,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Color\Red</summary>
-        Public Property ColorRed As Byte
+        Public Property ColorRed As Byte Implements ITxst.ColorRed
             Get
                 Return CByte(Entero("DODT\Decal Data\Color\Red"))
             End Get
@@ -17765,7 +18355,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Color\Green</summary>
-        Public Property ColorGreen As Byte
+        Public Property ColorGreen As Byte Implements ITxst.ColorGreen
             Get
                 Return CByte(Entero("DODT\Decal Data\Color\Green"))
             End Get
@@ -17775,7 +18365,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DODT\Decal Data\Color\Blue</summary>
-        Public Property ColorBlue As Byte
+        Public Property ColorBlue As Byte Implements ITxst.ColorBlue
             Get
                 Return CByte(Entero("DODT\Decal Data\Color\Blue"))
             End Get
@@ -17785,7 +18375,7 @@ Namespace Canon
         End Property
 
         ''' <summary>DNAM\Flags</summary>
-        Public Property Flags As UShort
+        Public Property Flags As UShort Implements ITxst.Flags
             Get
                 Return CUShort(Entero("DNAM\Flags"))
             End Get

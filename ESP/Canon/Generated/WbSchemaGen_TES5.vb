@@ -159,7 +159,7 @@ Namespace Canon
 
     ''' <summary>ACTI — Activator</summary>
     Private Function Rec_ACTI() As WbRecordDef
-        Dim m As WbMemberDef() = {
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -175,13 +175,13 @@ Namespace Canon
             Wb.Sub_("FNAM", Wb.Int("Flags", WbIntType.u16, "wbFlags")).AsRequired(),
             Wb.Sub_("KNAM", Wb.Fid("Interaction Keyword", "KYWD"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ACTI", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ACTI", m)
+            Return d
+        End Function
 
-    ''' <summary>TACT — Talking Activator</summary>
-    Private Function Rec_TACT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>TACT — Talking Activator</summary>
+        Private Function Rec_TACT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -194,13 +194,13 @@ Namespace Canon
             Wb.Sub_("FNAM", Wb.Bytes("Unknown", -1)),
             Wb.Sub_("VNAM", Wb.Fid("Voice Type", "VTYP"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "TACT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "TACT", m)
+            Return d
+        End Function
 
-    ''' <summary>ALCH — Ingestible</summary>
-    Private Function Rec_ALCH() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ALCH — Ingestible</summary>
+        Private Function Rec_ALCH() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -216,13 +216,13 @@ Namespace Canon
             Wb.Sub_("ENIT", Wb.StructV("Effect Data", Wb.Int("Value", WbIntType.s32), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F004), Wb.Fid("Addiction"), Wb.Flt("Addiction Chance"), Wb.Fid("Sound - Consume", "SNDR", "NULL"))).AsRequired(),
             Wb.RArray("Effects", Wb.RStruct("Effect", Wb.Sub_("EFID", Wb.Fid("Base Effect", "MGEF")), Wb.Sub_("EFIT", Wb.StructV("", Wb.Flt("Magnitude"), Wb.Int("Area", WbIntType.u32), Wb.Int("Duration", WbIntType.u32))).AsRequired(), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ALCH", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ALCH", m)
+            Return d
+        End Function
 
-    ''' <summary>AMMO — Ammunition</summary>
-    Private Function Rec_AMMO() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>AMMO — Ammunition</summary>
+        Private Function Rec_AMMO() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -236,24 +236,24 @@ Namespace Canon
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Fid("Projectile", "PROJ", "NULL"), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F009), Wb.Flt("Damage"), Wb.Int("Value", WbIntType.u32), Wb.Flt("Weight")).OptionalFrom(4)).AsRequired(),
             Wb.Sub_("ONAM", Wb.Str("Short Name", 0))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "AMMO", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "AMMO", m)
+            Return d
+        End Function
 
-    ''' <summary>ANIO — Animated Object</summary>
-    Private Function Rec_ANIO() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ANIO — Animated Object</summary>
+        Private Function Rec_ANIO() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.Sub_("BNAM", Wb.Str("Unload Event", 0))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ANIO", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ANIO", m)
+            Return d
+        End Function
 
-    ''' <summary>ARMO — Armor</summary>
-    Private Function Rec_ARMO() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ARMO — Armor</summary>
+        Private Function Rec_ARMO() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -277,13 +277,13 @@ Namespace Canon
             Wb.Sub_("DNAM", Wb.Int("Armor Rating", WbIntType.s32, "wbDiv")).AsRequired(),
             Wb.Sub_("TNAM", Wb.Fid("Template Armor", "ARMO"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ARMO", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ARMO", m)
+            Return d
+        End Function
 
-    ''' <summary>ARMA — Armor Addon</summary>
-    Private Function Rec_ARMA() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ARMA — Armor Addon</summary>
+        Private Function Rec_ARMA() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RUnion("Biped Body Template", Wb.Sub_("BOD2", Wb.StructV("Biped Body Template", Wb.Int("First Person Flags", WbIntType.u32, "wbBipedObjectFlags"), Wb.Bits("General Flags", WbIntType.i0, FmtTES5.F010), Wb.Unused(), Wb.Int("Armor Type", WbIntType.u32, "wbArmorTypeEnum"))).AsRequired(), Wb.Sub_("BODT", Wb.StructV("Body Template", Wb.Int("First Person Flags", WbIntType.u32, "wbBipedObjectFlags"), Wb.Bits("General Flags", WbIntType.u8, FmtTES5.F010), Wb.Unused(3), Wb.Int("Armor Type", WbIntType.u32, "wbArmorTypeEnum")).OptionalFrom(3)).AsRequired()).AsRequired(),
             Wb.Sub_("RNAM", Wb.Fid("Race", "RACE")),
@@ -298,13 +298,13 @@ Namespace Canon
             Wb.Sub_("SNDD", Wb.Fid("Footstep Sound", "FSTS", "NULL")),
             Wb.Sub_("ONAM", Wb.Fid("Art Object", "ARTO"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ARMA", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ARMA", m)
+            Return d
+        End Function
 
-    ''' <summary>BOOK — Book</summary>
-    Private Function Rec_BOOK() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>BOOK — Book</summary>
+        Private Function Rec_BOOK() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -320,13 +320,13 @@ Namespace Canon
             Wb.Sub_("INAM", Wb.Fid("Inventory Art", "STAT")),
             Wb.Sub_("CNAM", Wb.LStr("Description"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "BOOK", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "BOOK", m)
+            Return d
+        End Function
 
-    ''' <summary>CELL — Cell</summary>
-    Private Function Rec_CELL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CELL — Cell</summary>
+        Private Function Rec_CELL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("DATA", Wb.Int("Flags", WbIntType.u16, "wbFlags")).AsRequired(),
@@ -351,27 +351,27 @@ Namespace Canon
             Wb.Sub_("XCMO", Wb.Fid("Music Type", "MUSC")),
             Wb.Sub_("XCIM", Wb.Fid("Image Space", "IMGS"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CELL", m)
-        d.AllowUnordered = True
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CELL", m)
+            d.AllowUnordered = True
+            Return d
+        End Function
 
-    ''' <summary>CLAS — Class</summary>
-    Private Function Rec_CLAS() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CLAS — Class</summary>
+        Private Function Rec_CLAS() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")).AsRequired(),
             Wb.Sub_("DESC", Wb.LStr("Description")).AsRequired(),
             Wb.RStruct("Icon", Wb.Sub_("ICON", Wb.Str("Large Icon FileName", 0)).AsRequired(), Wb.Sub_("MICO", Wb.Str("Small Icon FileName", 0))).WithUnordered(),
             Wb.Sub_("DATA", Wb.StructV("", Wb.Bytes("Unknown", 4), Wb.Enumerated("Teaches", WbIntType.s8, FmtTES5.F015), Wb.Int("Maximum training level", WbIntType.u8), Wb.ArrayV("Skill Weights", Wb.Int("Weight", WbIntType.u8), 18, Nothing, New String() {"One Handed", "Two Handed", "Archery", "Block", "Smithing", "Heavy Armor", "Light Armor", "Pickpocket", "Lockpicking", "Sneak", "Alchemy", "Speech", "Alteration", "Conjuration", "Destruction", "Illusion", "Restoration", "Enchanting"}), Wb.Flt("Bleedout Default"), Wb.Int("Voice Points", WbIntType.u32), Wb.ArrayV("Attribute Weights", Wb.Int("Weight", WbIntType.u8), 4, Nothing, New String() {"Health", "Magicka", "Stamina", "Unknown"}))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CLAS", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CLAS", m)
+            Return d
+        End Function
 
-    ''' <summary>CLMT — Climate</summary>
-    Private Function Rec_CLMT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CLMT — Climate</summary>
+        Private Function Rec_CLMT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("WLST", Wb.ArrayV("Weather Types", Wb.StructV("Weather Type", Wb.Fid("Weather", "WTHR", "NULL"), Wb.Int("Chance", WbIntType.s32), Wb.Fid("Global", "GLOB", "NULL")), 0, Nothing)),
             Wb.Sub_("FNAM", Wb.Str("Sun Texture", 0)),
@@ -379,34 +379,34 @@ Namespace Canon
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.Sub_("TNAM", Wb.StructV("Timing", Wb.StructV("Sunrise", Wb.Int("Begin", WbIntType.u8), Wb.Int("End", WbIntType.u8)), Wb.StructV("Sunset", Wb.Int("Begin", WbIntType.u8), Wb.Int("End", WbIntType.u8)), Wb.Int("Volatility", WbIntType.u8), Wb.Int("Moons / Phase Length", WbIntType.u8))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CLMT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CLMT", m)
+            Return d
+        End Function
 
-    ''' <summary>SPGD — Shader Particle Geometry</summary>
-    Private Function Rec_SPGD() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SPGD — Shader Particle Geometry</summary>
+        Private Function Rec_SPGD() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Flt("Gravity Velocity"), Wb.Flt("Rotation Velocity"), Wb.Flt("Particle Size X"), Wb.Flt("Particle Size Y"), Wb.Flt("Center Offset Min"), Wb.Flt("Center Offset Max"), Wb.Flt("Initial Rotation Range"), Wb.Int("# of Subtextures X", WbIntType.u32), Wb.Int("# of Subtextures Y", WbIntType.u32), Wb.Enumerated("Type", WbIntType.u32, FmtTES5.F016), Wb.Int("Box Size", WbIntType.u32), Wb.Flt("Particle Density")).OptionalFrom(10)).AsRequired(),
             Wb.Sub_("ICON", Wb.Str("Particle Texture", 0))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SPGD", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SPGD", m)
+            Return d
+        End Function
 
-    ''' <summary>RFCT — Visual Effect</summary>
-    Private Function Rec_RFCT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>RFCT — Visual Effect</summary>
+        Private Function Rec_RFCT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DATA", Wb.StructV("Effect Data", Wb.Fid("Effect Art", "ARTO", "NULL"), Wb.Fid("Shader", "EFSH", "NULL"), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F017))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "RFCT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "RFCT", m)
+            Return d
+        End Function
 
-    ''' <summary>CONT — Container</summary>
-    Private Function Rec_CONT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CONT — Container</summary>
+        Private Function Rec_CONT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -419,13 +419,13 @@ Namespace Canon
             Wb.Sub_("SNAM", Wb.Fid("Sound - Open", "SNDR")),
             Wb.Sub_("QNAM", Wb.Fid("Sound - Close", "SNDR"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CONT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CONT", m)
+            Return d
+        End Function
 
-    ''' <summary>CSTY — Combat Style</summary>
-    Private Function Rec_CSTY() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CSTY — Combat Style</summary>
+        Private Function Rec_CSTY() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CSGD", Wb.StructV("General", Wb.Flt("Offensive Mult"), Wb.Flt("Defensive Mult"), Wb.Flt("Group Offensive Mult"), Wb.Flt("Equipment Score Mult - Melee"), Wb.Flt("Equipment Score Mult - Magic"), Wb.Flt("Equipment Score Mult - Ranged"), Wb.Flt("Equipment Score Mult - Shout"), Wb.Flt("Equipment Score Mult - Unarmed"), Wb.Flt("Equipment Score Mult - Staff"), Wb.Flt("Avoid Threat Chance")).OptionalFrom(0)).AsRequired(),
             Wb.Sub_("CSMD", Wb.Bytes("Unknown", -1)),
@@ -435,13 +435,13 @@ Namespace Canon
             Wb.Sub_("CSFL", Wb.StructV("Flight", Wb.Flt("Hover Chance"), Wb.Flt("Dive Bomb Chance"), Wb.Flt("Ground Attack Chance"), Wb.Flt("Hover Time"), Wb.Flt("Ground Attack Time"), Wb.Flt("Perch Attack Chance"), Wb.Flt("Perch Attack Time"), Wb.Flt("Flying Attack Chance")).OptionalFrom(0)).AsRequired(),
             Wb.Sub_("DATA", Wb.Int("Flags", WbIntType.u32, "wbFlags")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CSTY", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CSTY", m)
+            Return d
+        End Function
 
-    ''' <summary>DIAL — Dialog Topic</summary>
-    Private Function Rec_DIAL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>DIAL — Dialog Topic</summary>
+        Private Function Rec_DIAL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("PNAM", Wb.Flt("Priority")).AsRequired(),
@@ -453,13 +453,13 @@ Namespace Canon
             Wb.Sub_("INOM", Wb.ArrayV("INFO Order (Masters only)", Wb.Fid("INFO", "INFO"), 0, Nothing)),
             Wb.Sub_("INOA", Wb.ArrayV("INFO Order (All previous modules)", Wb.Fid("INFO", "INFO"), 0, Nothing))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "DIAL", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "DIAL", m)
+            Return d
+        End Function
 
-    ''' <summary>DOOR — Door</summary>
-    Private Function Rec_DOOR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>DOOR — Door</summary>
+        Private Function Rec_DOOR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -472,13 +472,13 @@ Namespace Canon
             Wb.Sub_("FNAM", Wb.Int("Flags", WbIntType.u8, "wbFlags")).AsRequired(),
             Wb.RArray("Random teleport destinations", Wb.Sub_("TNAM", Wb.Fid("Destination", "CELL", "WRLD")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "DOOR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "DOOR", m)
+            Return d
+        End Function
 
-    ''' <summary>EFSH — Effect Shader</summary>
-    Private Function Rec_EFSH() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>EFSH — Effect Shader</summary>
+        Private Function Rec_EFSH() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("ICON", Wb.Str("Fill Texture", 0)),
             Wb.Sub_("ICO2", Wb.Str("Particle Shader Texture", 0)),
@@ -487,38 +487,38 @@ Namespace Canon
             Wb.Sub_("NAM9", Wb.Str("Particle Palette Texture", 0)),
             Wb.Sub_("DATA", Wb.StructV("", Wb.Bits("Flags (Unused)", WbIntType.u8, FmtTES5.F021), Wb.Unused(3), Wb.Int("Membrane Shader - Source Blend Mode", WbIntType.u32, "wbBlendModeEnum"), Wb.Int("Membrane Shader - Blend Operation", WbIntType.u32, "wbBlendOpEnum"), Wb.Int("Membrane Shader - Z Test Function", WbIntType.u32, "wbZTestFuncEnum"), Wb.StructV("Fill/Texture Effect - Color Key 1", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.Flt("Fill/Texture Effect - Alpha Fade In Time"), Wb.Flt("Fill/Texture Effect - Full Alpha Time"), Wb.Flt("Fill/Texture Effect - Alpha Fade Out Time"), Wb.Flt("Fill/Texture Effect - Presistent Alpha Ratio"), Wb.Flt("Fill/Texture Effect - Alpha Pulse Amplitude"), Wb.Flt("Fill/Texture Effect - Alpha Pulse Frequency"), Wb.Flt("Fill/Texture Effect - Texture Animation Speed (U)"), Wb.Flt("Fill/Texture Effect - Texture Animation Speed (V)"), Wb.Flt("Edge Effect - Fall Off"), Wb.StructV("Edge Effect - Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.Flt("Edge Effect - Alpha Fade In Time"), Wb.Flt("Edge Effect - Full Alpha Time"), Wb.Flt("Edge Effect - Alpha Fade Out Time"), Wb.Flt("Edge Effect - Persistent Alpha Ratio"), Wb.Flt("Edge Effect - Alpha Pulse Amplitude"), Wb.Flt("Edge Effect - Alpha Pulse Frequency"), Wb.Flt("Fill/Texture Effect - Full Alpha Ratio"), Wb.Flt("Edge Effect - Full Alpha Ratio"), Wb.Int("Membrane Shader - Dest Blend Mode", WbIntType.u32, "wbBlendModeEnum"), Wb.Int("Particle Shader - Source Blend Mode", WbIntType.u32, "wbBlendModeEnum"), Wb.Int("Particle Shader - Blend Operation", WbIntType.u32, "wbBlendOpEnum"), Wb.Int("Particle Shader - Z Test Function", WbIntType.u32, "wbZTestFuncEnum"), Wb.Int("Particle Shader - Dest Blend Mode", WbIntType.u32, "wbBlendModeEnum"), Wb.Flt("Particle Shader - Particle Birth Ramp Up Time"), Wb.Flt("Particle Shader - Full Particle Birth Time"), Wb.Flt("Particle Shader - Particle Birth Ramp Down Time"), Wb.Flt("Particle Shader - Full Particle Birth Ratio"), Wb.Flt("Particle Shader - Persistant Particle Count"), Wb.Flt("Particle Shader - Particle Lifetime"), Wb.Flt("Particle Shader - Particle Lifetime +/-"), Wb.Flt("Particle Shader - Initial Speed Along Normal"), Wb.Flt("Particle Shader - Acceleration Along Normal"), Wb.Flt("Particle Shader - Initial Velocity #1"), Wb.Flt("Particle Shader - Initial Velocity #2"), Wb.Flt("Particle Shader - Initial Velocity #3"), Wb.Flt("Particle Shader - Acceleration #1"), Wb.Flt("Particle Shader - Acceleration #2"), Wb.Flt("Particle Shader - Acceleration #3"), Wb.Flt("Particle Shader - Scale Key 1"), Wb.Flt("Particle Shader - Scale Key 2"), Wb.Flt("Particle Shader - Scale Key 1 Time"), Wb.Flt("Particle Shader - Scale Key 2 Time"), Wb.StructV("Color Key 1 - Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Color Key 2 - Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Color Key 3 - Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.Flt("Color Key 1 - Color Alpha"), Wb.Flt("Color Key 2 - Color Alpha"), Wb.Flt("Color Key 3 - Color Alpha"), Wb.Flt("Color Key 1 - Color Key Time"), Wb.Flt("Color Key 2 - Color Key Time"), Wb.Flt("Color Key 3 - Color Key Time"), Wb.Flt("Particle Shader - Initial Speed Along Normal +/-"), Wb.Flt("Particle Shader - Initial Rotation (deg)"), Wb.Flt("Particle Shader - Initial Rotation (deg) +/-"), Wb.Flt("Particle Shader - Rotation Speed (deg/sec)"), Wb.Flt("Particle Shader - Rotation Speed (deg/sec) +/-"), Wb.Fid("Addon Models", "DEBR", "NULL"), Wb.Flt("Holes - Start Time"), Wb.Flt("Holes - End Time"), Wb.Flt("Holes - Start Val"), Wb.Flt("Holes - End Val"), Wb.Flt("Edge Width (alpha units)"), Wb.StructV("Edge Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.Flt("Explosion Wind Speed"), Wb.Int("Texture Count U", WbIntType.u32), Wb.Int("Texture Count V", WbIntType.u32), Wb.Flt("Addon Models - Fade In Time"), Wb.Flt("Addon Models - Fade Out Time"), Wb.Flt("Addon Models - Scale Start"), Wb.Flt("Addon Models - Scale End"), Wb.Flt("Addon Models - Scale In Time"), Wb.Flt("Addon Models - Scale Out Time"), Wb.Fid("Ambient Sound", "SNDR", "NULL"), Wb.StructV("Fill/Texture Effect - Color Key 2", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Fill/Texture Effect - Color Key 3", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Fill/Texture Effect - Color Key Scale/Time", Wb.Flt("Color Key 1 - Scale"), Wb.Flt("Color Key 2 - Scale"), Wb.Flt("Color Key 3 - Scale"), Wb.Flt("Color Key 1 - Time"), Wb.Flt("Color Key 2 - Time"), Wb.Flt("Color Key 3 - Time")), Wb.Flt("Color Scale"), Wb.Flt("Birth Position Offset"), Wb.Flt("Birth Position Offset Range +/-"), Wb.StructV("Particle Shader Animated", Wb.Int("Start Frame", WbIntType.u32), Wb.Int("Start Frame Variation", WbIntType.u32), Wb.Int("End Frame", WbIntType.u32), Wb.Int("Loop Start Frame", WbIntType.u32), Wb.Int("Loop Start Variation", WbIntType.u32), Wb.Int("Frame Count", WbIntType.u32), Wb.Int("Frame Count Variation", WbIntType.u32)), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F022), Wb.Flt("Fill/Texture Effect - Texture Scale (U)"), Wb.Flt("Fill/Texture Effect - Texture Scale (V)"), Wb.Int("Scene Graph Emit Depth Limit (unused)", WbIntType.u16), Wb.Unused(2)).OptionalFrom(0)).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "EFSH", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "EFSH", m)
+            Return d
+        End Function
 
-    ''' <summary>ENCH — Enchantment</summary>
-    Private Function Rec_ENCH() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ENCH — Enchantment</summary>
+        Private Function Rec_ENCH() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("ENIT", Wb.StructV("Effect Data", Wb.Int("Enchantment Cost", WbIntType.s32), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F023), Wb.Int("Cast Type", WbIntType.u32, "wbCastEnum"), Wb.Int("Enchantment Amount", WbIntType.s32), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Enumerated("Enchant Type", WbIntType.u32, FmtTES5.F024), Wb.Flt("Charge Time"), Wb.Fid("Base Enchantment", "ENCH", "NULL"), Wb.Fid("Worn Restrictions", "FLST", "NULL")).OptionalFrom(8)).AsRequired(),
             Wb.RArray("Effects", Wb.RStruct("Effect", Wb.Sub_("EFID", Wb.Fid("Base Effect", "MGEF")), Wb.Sub_("EFIT", Wb.StructV("", Wb.Flt("Magnitude"), Wb.Int("Area", WbIntType.u32), Wb.Int("Duration", WbIntType.u32))).AsRequired(), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ENCH", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ENCH", m)
+            Return d
+        End Function
 
-    ''' <summary>EYES — Eyes</summary>
-    Private Function Rec_EYES() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>EYES — Eyes</summary>
+        Private Function Rec_EYES() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")).AsRequired(),
             Wb.Sub_("ICON", Wb.Str("Texture", 0)).AsRequired(),
             Wb.Sub_("DATA", Wb.Int("Flags", WbIntType.u8, "wbFlags")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "EYES", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "EYES", m)
+            Return d
+        End Function
 
-    ''' <summary>FACT — Faction</summary>
-    Private Function Rec_FACT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>FACT — Faction</summary>
+        Private Function Rec_FACT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.RArray("Relations", Wb.Sub_("XNAM", Wb.StructV("Relation", Wb.Fid("Faction", "FACT", "RACE"), Wb.Int("Modifier", WbIntType.s32), Wb.Enumerated("Group Combat Reaction", WbIntType.u32, FmtTES5.F025)))),
@@ -538,13 +538,13 @@ Namespace Canon
             Wb.Sub_("CITC", Wb.Int("Condition Count", WbIntType.u32)),
             Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "FACT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "FACT", m)
+            Return d
+        End Function
 
-    ''' <summary>FURN — Furniture</summary>
-    Private Function Rec_FURN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>FURN — Furniture</summary>
+        Private Function Rec_FURN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -562,77 +562,77 @@ Namespace Canon
             Wb.RArray("Marker Entry Points", Wb.Sub_("FNPR", Wb.StructV("Marker", Wb.Int("Type", WbIntType.u16, "wbFurnitureAnimEnum"), Wb.Int("Entry Points", WbIntType.u16, "wbFurnitureEntryTypeFlags")))),
             Wb.Sub_("XMRK", Wb.Str("Model FileName", 0))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "FURN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "FURN", m)
+            Return d
+        End Function
 
-    ''' <summary>GLOB — Global</summary>
-    Private Function Rec_GLOB() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>GLOB — Global</summary>
+        Private Function Rec_GLOB() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FNAM", Wb.Int("Type", WbIntType.u8, "wbEnum")).AsRequired(),
             Wb.Sub_("FLTV", Wb.Flt("Value")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "GLOB", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "GLOB", m)
+            Return d
+        End Function
 
-    ''' <summary>GMST — Game Setting</summary>
-    Private Function Rec_GMST() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>GMST — Game Setting</summary>
+        Private Function Rec_GMST() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)).AsRequired(),
             Wb.Sub_("DATA", Wb.UnionV("Value", WbDeciders.GmstUnion(), Wb.LStr("Name"), Wb.Int("Int", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u32, "wbBoolEnum"))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "GMST", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "GMST", m)
+            Return d
+        End Function
 
-    ''' <summary>KYWD — Keyword</summary>
-    Private Function Rec_KYWD() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>KYWD — Keyword</summary>
+        Private Function Rec_KYWD() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CNAM", Wb.StructV("Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Int("Alpha", WbIntType.u8))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "KYWD", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "KYWD", m)
+            Return d
+        End Function
 
-    ''' <summary>LCRT — Location Reference Type</summary>
-    Private Function Rec_LCRT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LCRT — Location Reference Type</summary>
+        Private Function Rec_LCRT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CNAM", Wb.StructV("Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Int("Alpha", WbIntType.u8))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LCRT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LCRT", m)
+            Return d
+        End Function
 
-    ''' <summary>AACT — Action</summary>
-    Private Function Rec_AACT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>AACT — Action</summary>
+        Private Function Rec_AACT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CNAM", Wb.StructV("Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Int("Alpha", WbIntType.u8))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "AACT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "AACT", m)
+            Return d
+        End Function
 
-    ''' <summary>TXST — Texture Set</summary>
-    Private Function Rec_TXST() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>TXST — Texture Set</summary>
+        Private Function Rec_TXST() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.RStruct("Textures (RGB/A)", Wb.Sub_("TX00", Wb.Str("Diffuse", 0)), Wb.Sub_("TX01", Wb.Str("Normal/Gloss", 0)), Wb.Sub_("TX02", Wb.Str("Environment Mask/Subsurface Tint", 0)), Wb.Sub_("TX03", Wb.Str("Glow/Detail Map", 0)), Wb.Sub_("TX04", Wb.Str("Height", 0)), Wb.Sub_("TX05", Wb.Str("Environment", 0)), Wb.Sub_("TX06", Wb.Str("Multilayer", 0)), Wb.Sub_("TX07", Wb.Str("Backlight Mask/Specular", 0))),
             Wb.Sub_("DODT", Wb.StructV("Decal Data", Wb.Flt("Min Width"), Wb.Flt("Max Width"), Wb.Flt("Min Height"), Wb.Flt("Max Height"), Wb.Flt("Depth"), Wb.Flt("Shininess"), Wb.StructV("Parallax", Wb.Flt("Scale"), Wb.Int("Passes", WbIntType.u8)), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F028), Wb.Bytes("Unknown", 2), Wb.StructV("Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)))),
             Wb.Sub_("DNAM", Wb.Int("Flags", WbIntType.u16, "wbFlags"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "TXST", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "TXST", m)
+            Return d
+        End Function
 
-    ''' <summary>HDPT — Head Part</summary>
-    Private Function Rec_HDPT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>HDPT — Head Part</summary>
+        Private Function Rec_HDPT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
@@ -644,26 +644,26 @@ Namespace Canon
             Wb.Sub_("CNAM", Wb.Fid("Color", "CLFM", "NULL")),
             Wb.Sub_("RNAM", Wb.Fid("Valid Races", "FLST", "NULL"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "HDPT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "HDPT", m)
+            Return d
+        End Function
 
-    ''' <summary>ASPC — Acoustic Space</summary>
-    Private Function Rec_ASPC() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ASPC — Acoustic Space</summary>
+        Private Function Rec_ASPC() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("SNAM", Wb.Fid("Ambient Sound", "SNDR")),
             Wb.Sub_("RDAT", Wb.Fid("Use Sound from Region (Interiors Only)", "REGN")),
             Wb.Sub_("BNAM", Wb.Fid("Environment Type (reverb)", "REVB"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ASPC", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ASPC", m)
+            Return d
+        End Function
 
-    ''' <summary>MSTT — Moveable Static</summary>
-    Private Function Rec_MSTT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MSTT — Moveable Static</summary>
+        Private Function Rec_MSTT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -672,25 +672,25 @@ Namespace Canon
             Wb.Sub_("DATA", Wb.Int("Flags", WbIntType.u8, "wbFlags")).AsRequired(),
             Wb.Sub_("SNAM", Wb.Fid("Looping Sound", "SNDR"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MSTT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MSTT", m)
+            Return d
+        End Function
 
-    ''' <summary>IDLM — Idle Marker</summary>
-    Private Function Rec_IDLM() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>IDLM — Idle Marker</summary>
+        Private Function Rec_IDLM() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.RStruct("Idle Animations", Wb.Sub_("IDLF", Wb.Int("Flags", WbIntType.u8, "wbFlags")), Wb.Sub_("IDLC", Wb.Int("Animation Count", WbIntType.u8)), Wb.Sub_("IDLT", Wb.Flt("Idle Timer Setting")), Wb.Sub_("IDLA", Wb.ArrayV("Animations", Wb.Fid("Animation", "IDLE", "NULL"), 0, Nothing)), Wb.Sub_("IDLB", Wb.Bytes("Unknown", -1))),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "IDLM", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "IDLM", m)
+            Return d
+        End Function
 
-    ''' <summary>PROJ — Projectile</summary>
-    Private Function Rec_PROJ() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>PROJ — Projectile</summary>
+        Private Function Rec_PROJ() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -700,13 +700,13 @@ Namespace Canon
             Wb.RStruct("Muzzle Flash Model", Wb.Sub_("NAM1", Wb.Str("Model FileName", 0)), WbCommon.ModelInfoSub("NAM2", WbGame.Skyrim)),
             Wb.Sub_("VNAM", Wb.Int("Sound Level", WbIntType.u32, "wbSoundLevelEnum")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "PROJ", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "PROJ", m)
+            Return d
+        End Function
 
-    ''' <summary>HAZD — Hazard</summary>
-    Private Function Rec_HAZD() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>HAZD — Hazard</summary>
+        Private Function Rec_HAZD() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -714,13 +714,13 @@ Namespace Canon
             Wb.Sub_("MNAM", Wb.Fid("Image Space Modifier", "IMAD", "NULL")),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Int("Limit", WbIntType.u32), Wb.Flt("Radius"), Wb.Flt("Lifetime"), Wb.Flt("Image Space Radius"), Wb.Flt("Target Interval"), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F031), Wb.Fid("Spell", "SPEL", "ENCH", "NULL"), Wb.Fid("Light", "LIGH", "NULL"), Wb.Fid("Impact Data Set", "IPDS", "NULL"), Wb.Fid("Sound", "SNDR", "NULL")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "HAZD", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "HAZD", m)
+            Return d
+        End Function
 
-    ''' <summary>SLGM — Soul Gem</summary>
-    Private Function Rec_SLGM() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SLGM — Soul Gem</summary>
+        Private Function Rec_SLGM() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -735,39 +735,39 @@ Namespace Canon
             Wb.Sub_("SLCP", Wb.Int("Maximum Capacity", WbIntType.u8, "wbSoulGemEnum")).AsRequired(),
             Wb.Sub_("NAM0", Wb.Fid("Linked To", "SLGM"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SLGM", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SLGM", m)
+            Return d
+        End Function
 
-    ''' <summary>NAVM — Navmesh</summary>
-    Private Function Rec_NAVM() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>NAVM — Navmesh</summary>
+        Private Function Rec_NAVM() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("NVNM", Wb.StructV("Geometry", Wb.Int("Version", WbIntType.u32), Wb.StructV("Pathing Cell", Wb.Int("CRC Hash", WbIntType.u32, "wbCRCValuesEnum"), Wb.Fid("Parent World", "WRLD", "NULL"), Wb.UnionV("Parent Cell", WbDeciders.NvnmParent(), Wb.StructV("Coordinates", Wb.Int("Grid Y", WbIntType.s16), Wb.Int("Grid X", WbIntType.s16)), Wb.Fid("Parent Cell", "CELL"))), Wb.ArrayV("Vertices", Wb.Bytes("Vertex", 12), -1, Nothing), Wb.ArrayV("Triangles", Wb.Bytes("Triangles", 16), -1, Nothing), Wb.ArrayV("Edge Links", Wb.StructV("Edge Link", Wb.Int("Type", WbIntType.u32, "wbNavmeshEdgeLinkEnum"), Wb.Fid("Navmesh", "NAVM"), Wb.Int("Triangle", WbIntType.s16)), -1, Nothing), Wb.ArrayV("Door Links", Wb.StructV("Door Link", Wb.Int("Triangle", WbIntType.s16), Wb.Int("CRC Hash", WbIntType.u32, "wbCRCValuesEnum"), Wb.Fid("Door Ref", "REFR")), -1, Nothing), Wb.ArrayV("Cover Triangles", Wb.Bytes("Triangle", 2), -1, Nothing), Wb.StructV("Navmesh Grid", Wb.Int("Divisor", WbIntType.u32), Wb.StructV("Grid Size", Wb.Flt("X"), Wb.Flt("Y")), Wb.StructV("Navmesh Bounds", Wb.StructV("Min", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z")), Wb.StructV("Max", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z"))), Wb.ArrayV("Cells", Wb.ArrayV("Cell", Wb.Bytes("Triangle", 2), -1, Nothing), 0, Nothing)))),
             Wb.Sub_("ONAM", Wb.ArrayV("Base Objects", Wb.Fid("Base Object"), 0, Nothing)),
             Wb.Sub_("PNAM", Wb.ArrayV("Preferred Connectors", Wb.Int("Vertex", WbIntType.u16), 0, Nothing)),
             Wb.Sub_("NNAM", Wb.ArrayV("Non Connectors", Wb.Int("Vertex", WbIntType.u16), 0, Nothing))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "NAVM", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "NAVM", m)
+            Return d
+        End Function
 
-    ''' <summary>NAVI — Navmesh Info Map</summary>
-    Private Function Rec_NAVI() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>NAVI — Navmesh Info Map</summary>
+        Private Function Rec_NAVI() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("NVER", Wb.Int("Version", WbIntType.u32)),
             Wb.RArray("Navmesh Infos", Wb.Sub_("NVMI", Wb.StructV("Navmesh Info", Wb.Fid("Navmesh", "NAVM"), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F032), Wb.StructV("Approx Location", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z")), Wb.Flt("Preferred %"), Wb.ArrayV("Edge Links", Wb.Fid("Navmesh", "NAVM"), -1, Nothing), Wb.ArrayV("Preferred Edge Links", Wb.Fid("Navmesh", "NAVM"), -1, Nothing), Wb.ArrayV("Door Links", Wb.StructV("Door Link", Wb.Int("CRC Hash", WbIntType.u32, "wbCRCValuesEnum"), Wb.Fid("Door Ref", "REFR")), -1, Nothing), Wb.StructV("Optional Island Data", Wb.Int("Has Island Data", WbIntType.u8, "wbBoolEnum"), Wb.UnionV("Island Data", WbDeciders.NaviIslandData(), Wb.StructV("Unused", Wb.EmptyV("Unused")), Wb.StructV("Island Data", Wb.StructV("Navmesh Bounds", Wb.StructV("Min", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z")), Wb.StructV("Max", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z"))), Wb.ArrayV("Triangles", Wb.StructV("Triangle", Wb.Int("Vertex 0", WbIntType.u16), Wb.Int("Vertex 1", WbIntType.u16), Wb.Int("Vertex 2", WbIntType.u16)), -1, Nothing), Wb.ArrayV("Vertices", Wb.StructV("Vertex", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z")), -1, Nothing)))), Wb.StructV("Pathing Cell", Wb.Int("CRC Hash", WbIntType.u32, "wbCRCValuesEnum"), Wb.Fid("Parent World", "WRLD", "NULL"), Wb.UnionV("", WbDeciders.NaviParent(), Wb.StructV("Coordinates", Wb.Int("Grid Y", WbIntType.s16), Wb.Int("Grid X", WbIntType.s16)), Wb.Fid("Parent Cell", "CELL")))))),
             Wb.Sub_("NVPP", Wb.StructV("Precomputed Pathing", Wb.ArrayV("Precomputed Paths", Wb.ArrayV("Path", Wb.Fid("Navmesh", "NAVM"), -1, Nothing), -1, Nothing), Wb.ArrayV("Road Marker Index", Wb.StructV("Road Marker", Wb.Fid("Navmesh", "NAVM"), Wb.Int("Index", WbIntType.u32)), -1, Nothing))),
             Wb.Sub_("NVSI", Wb.ArrayV("Deleted Navmeshes", Wb.Fid("Navmesh", "NAVM"), 0, Nothing))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "NAVI", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "NAVI", m)
+            Return d
+        End Function
 
-    ''' <summary>EXPL — Explosion</summary>
-    Private Function Rec_EXPL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>EXPL — Explosion</summary>
+        Private Function Rec_EXPL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -777,23 +777,23 @@ Namespace Canon
             Wb.Sub_("MNAM", Wb.Fid("Image Space Modifier", "IMAD")),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Fid("Light", "LIGH", "NULL"), Wb.Fid("Sound 1", "SNDR", "NULL"), Wb.Fid("Sound 2", "SNDR", "NULL"), Wb.Fid("Impact Data Set", "IPDS", "NULL"), Wb.Fid("Placed Object"), Wb.Fid("Spawn Projectile", "PROJ", "NULL"), Wb.Flt("Force"), Wb.Flt("Damage"), Wb.Flt("Radius"), Wb.Flt("IS Radius"), Wb.Flt("Vertical Offset Mult"), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F033), Wb.Int("Sound Level", WbIntType.u32, "wbSoundLevelEnum")).OptionalFrom(10)).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "EXPL", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "EXPL", m)
+            Return d
+        End Function
 
-    ''' <summary>DEBR — Debris</summary>
-    Private Function Rec_DEBR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>DEBR — Debris</summary>
+        Private Function Rec_DEBR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RArray("Models", Wb.RStruct("Model", Wb.Sub_("DATA", Wb.StructV("Data", Wb.Int("Percentage", WbIntType.u8), Wb.Str("Model FileName", 0), Wb.Int("Has Collision", WbIntType.u8, "wbBoolEnum"))).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim)).AsRequired())
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "DEBR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "DEBR", m)
+            Return d
+        End Function
 
-    ''' <summary>IMGS — Image Space</summary>
-    Private Function Rec_IMGS() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>IMGS — Image Space</summary>
+        Private Function Rec_IMGS() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("ENAM", Wb.StructV("Data", Wb.StructV("HDR", Wb.Flt("Eye Adapt Speed"), Wb.Flt("Bloom Blur Radius"), Wb.Flt("Bloom Threshold"), Wb.Flt("Bloom Scale"), Wb.Flt("Receive Bloom Threshold"), Wb.Flt("Sunlight Scale"), Wb.Flt("Sky Scale")), Wb.StructV("Cinematic", Wb.Flt("Saturation"), Wb.Flt("Brightness"), Wb.Flt("Contrast")), Wb.StructV("Tint", Wb.Flt("Amount"), Wb.StructV("Color", Wb.Flt("Red"), Wb.Flt("Green"), Wb.Flt("Blue"))))),
             Wb.Sub_("HNAM", Wb.StructV("HDR", Wb.Flt("Eye Adapt Speed"), Wb.Flt("Bloom Blur Radius"), Wb.Flt("Bloom Threshold"), Wb.Flt("Bloom Scale"), Wb.Flt("Receive Bloom Threshold"), Wb.Flt("White"), Wb.Flt("Sunlight Scale"), Wb.Flt("Sky Scale"), Wb.Flt("Eye Adapt Strength"))),
@@ -801,13 +801,13 @@ Namespace Canon
             Wb.Sub_("TNAM", Wb.StructV("Tint", Wb.Flt("Amount"), Wb.StructV("Color", Wb.Flt("Red"), Wb.Flt("Green"), Wb.Flt("Blue")))),
             Wb.Sub_("DNAM", Wb.StructV("Depth of Field", Wb.Flt("Strength"), Wb.Flt("Distance"), Wb.Flt("Range"), Wb.Unused(2), Wb.Enumerated("Sky / Blur Radius", WbIntType.u16, FmtTES5.F034)).OptionalFrom(3))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "IMGS", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "IMGS", m)
+            Return d
+        End Function
 
-    ''' <summary>IMAD — Image Space Adapter</summary>
-    Private Function Rec_IMAD() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>IMAD — Image Space Adapter</summary>
+        Private Function Rec_IMAD() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DNAM", Wb.StructV("Data", Wb.Int("Animatable", WbIntType.u32, "wbBoolEnum"), Wb.Flt("Duration"), Wb.StructV("HDR", Wb.StructV("Eye Adapt Speed", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Bloom Blur Radius", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Bloom Threshold", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Scale", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Target Lum Min", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Target Lum Max", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Sunlight Scale", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Sky Scale", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32))), Wb.StructV("Cinematic", Wb.StructV("Saturation", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Brightness", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Contrast", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32)), Wb.StructV("Unused", Wb.Int("Mult Count", WbIntType.u32), Wb.Int("Add Count", WbIntType.u32))), Wb.Int("Tint Color", WbIntType.u32), Wb.Int("Blur Radius", WbIntType.u32), Wb.Int("Double Vision Strength", WbIntType.u32), Wb.Int("Radial Blur Strength", WbIntType.u32), Wb.Int("Radial Blur Ramp Up", WbIntType.u32), Wb.Int("Radial Blur Start", WbIntType.u32), Wb.Int("Radial Blur - Use Target", WbIntType.u32, "wbBoolEnum"), Wb.Flt("Radial Blur Center X"), Wb.Flt("Radial Blur Center Y"), Wb.Int("DoF Strength", WbIntType.u32), Wb.Int("DoF Distance", WbIntType.u32), Wb.Int("DoF Range", WbIntType.u32), Wb.Int("DoF - Use Target", WbIntType.u8, "wbBoolEnum"), Wb.Bits("DoF Flags", WbIntType.u8, FmtTES5.F035), Wb.Unused(2), Wb.Int("Radial Blur Ramp Down", WbIntType.u32), Wb.Int("Radial Blur Down Start", WbIntType.u32), Wb.Int("Fade Color", WbIntType.u32), Wb.Int("Motion Blur Strength", WbIntType.u32))).AsRequired(),
             Wb.Sub_("BNAM", Wb.ArrayV("", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(),
@@ -820,23 +820,23 @@ Namespace Canon
             Wb.RStruct("HDR", Wb.RStruct("Eye Adapt Speed", Wb.Sub_(ChrW(0) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("@IAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Bloom Blur Radius", Wb.Sub_(ChrW(1) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("AIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Bloom Threshold", Wb.Sub_(ChrW(2) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("BIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Bloom Scale", Wb.Sub_(ChrW(3) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("CIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Target Lum Min", Wb.Sub_(ChrW(4) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("DIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Target Lum Max", Wb.Sub_(ChrW(5) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("EIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Sunlight Scale", Wb.Sub_(ChrW(6) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("FIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Sky Scale", Wb.Sub_(ChrW(7) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("GIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(8) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("HIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(9) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("IIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(10) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("JIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(11) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("KIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(12) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("LIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(13) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("MIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(14) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("NIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(15) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("OIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(16) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("PIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired()).AsRequired(),
             Wb.RStruct("Cinematic", Wb.RStruct("Saturation", Wb.Sub_(ChrW(17) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("QIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Brightness", Wb.Sub_(ChrW(18) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("RIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Contrast", Wb.Sub_(ChrW(19) & "IAD", Wb.ArrayV("Mult", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("SIAD", Wb.ArrayV("Add", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired(), Wb.RStruct("Unused", Wb.Sub_(ChrW(20) & "IAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired(), Wb.Sub_("TIAD", Wb.ArrayV("Unused", Wb.StructV("Data", Wb.Flt("Time"), Wb.Flt("Value")), 0, Nothing)).AsRequired()).AsRequired()).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "IMAD", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "IMAD", m)
+            Return d
+        End Function
 
-    ''' <summary>FLST — FormID List</summary>
-    Private Function Rec_FLST() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>FLST — FormID List</summary>
+        Private Function Rec_FLST() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)).AsRequired(),
             Wb.RArray("FormIDs", Wb.Sub_("LNAM", Wb.Fid("FormID")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "FLST", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "FLST", m)
+            Return d
+        End Function
 
-    ''' <summary>PERK — Perk</summary>
-    Private Function Rec_PERK() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>PERK — Perk</summary>
+        Private Function Rec_PERK() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing), Wb.StructV("Script Fragments", Wb.Int("Extra bind data version", WbIntType.s8), Wb.LenStr("FileName", 2), Wb.ArrayV("Fragments", Wb.StructV("Fragment", Wb.Int("Fragment Index", WbIntType.u16), Wb.Int("Unknown", WbIntType.s16), Wb.Int("Unknown", WbIntType.s8), Wb.LenStr("ScriptName", 2), Wb.LenStr("FragmentName", 2)), -2, Nothing))).OptionalFrom(3)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -847,24 +847,24 @@ Namespace Canon
             Wb.Sub_("NNAM", Wb.Fid("Next Perk", "PERK", "NULL")),
             Wb.RArray("Effects", Wb.RStruct("Effect", Wb.Sub_("PRKE", Wb.StructV("Header", Wb.Enumerated("Type", WbIntType.u8, FmtTES5.F036), Wb.Int("Rank", WbIntType.u8), Wb.Int("Priority", WbIntType.u8))), Wb.Sub_("DATA", Wb.UnionV("Effect Data", WbDeciders.PerkData(), Wb.StructV("Quest + Stage", Wb.Fid("Quest", "QUST"), Wb.Int("Quest Stage", WbIntType.u8, "wbPerkDATAQuestStageToStr"), Wb.Unused(3)), Wb.Fid("Ability", "SPEL"), Wb.StructV("Entry Point", Wb.Int("Entry Point", WbIntType.u8, "wbEntryPointsEnum"), Wb.Enumerated("Function", WbIntType.u8, FmtTES5.F037), Wb.Int("Perk Condition Tab Count", WbIntType.u8)))).AsRequired(), Wb.RArray("Perk Conditions", Wb.RStruct("Perk Condition", Wb.Sub_("PRKC", Wb.Int("Run On (Tab Index)", WbIntType.s8)), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC"))), Wb.RStruct("Function Parameters", Wb.Sub_("EPFT", Wb.Int("Type", WbIntType.u8, "wbEnum")), Wb.Sub_("EPF2", Wb.LStr("Button Label")), Wb.Sub_("EPF3", Wb.StructV("Script Flags", Wb.Bits("Script Flags", WbIntType.u16, FmtTES5.F038), Wb.Int("Fragment Index", WbIntType.u16))), Wb.Sub_("EPFD", Wb.UnionV("Data", WbDeciders.Epfd(), Wb.Bytes("Unknown", -1), Wb.Flt("Float"), Wb.StructV("Float, Float", Wb.Flt("Float 1"), Wb.Flt("Float 2")), Wb.Fid("Leveled Item", "LVLI"), Wb.Fid("Spell", "SPEL"), Wb.Fid("Spell", "SPEL"), Wb.Str("Text", 0), Wb.LStr("Text"), Wb.StructV("Actor Value, Float", Wb.Int("Actor Value", WbIntType.u32, "wbEPFDActorValueToStr"), Wb.Flt("Float"))))), Wb.Sub_("PRKF", Wb.EmptyV("End Marker")).AsRequired()))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "PERK", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "PERK", m)
+            Return d
+        End Function
 
-    ''' <summary>BPTD — Body Part Data</summary>
-    Private Function Rec_BPTD() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>BPTD — Body Part Data</summary>
+        Private Function Rec_BPTD() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.RArray("Body Parts", Wb.RStruct("Body Part", Wb.Sub_("BPTN", Wb.LStr("Part Name")), Wb.Sub_("PNAM", Wb.Str("Pose Matching", 0)), Wb.Sub_("BPNN", Wb.Str("Part Node", 0)).AsRequired(), Wb.Sub_("BPNT", Wb.Str("VATS Target", 0)).AsRequired(), Wb.Sub_("BPNI", Wb.Str("IK Data - Start Node", 0)).AsRequired(), Wb.Sub_("BPND", Wb.StructV("Node Data", Wb.Flt("Damage Mult"), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F039), Wb.Enumerated("Part Type", WbIntType.u8, FmtTES5.F040), Wb.Int("Health Percent", WbIntType.u8), Wb.Int("Actor Value", WbIntType.s8, "wbActorValueEnum"), Wb.Int("To Hit Chance", WbIntType.u8), Wb.Int("Explodable - Explosion Chance %", WbIntType.u8), Wb.Int("Explodable - Debris Count", WbIntType.u16), Wb.Fid("Explodable - Debris", "DEBR", "NULL"), Wb.Fid("Explodable - Explosion", "EXPL", "NULL"), Wb.Flt("Tracking Max Angle"), Wb.Flt("Explodable - Debris Scale"), Wb.Int("Severable - Debris Count", WbIntType.s32), Wb.Fid("Severable - Debris", "DEBR", "NULL"), Wb.Fid("Severable - Explosion", "EXPL", "NULL"), Wb.Flt("Severable - Debris Scale"), Wb.StructV("Gore Effects Positioning", Wb.StructV("Position", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z")), Wb.StructV("Rotation", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z"))), Wb.Fid("Severable - Impact DataSet", "IPDS", "NULL"), Wb.Fid("Explodable - Impact DataSet", "IPDS", "NULL"), Wb.Int("Severable - Decal Count", WbIntType.u8), Wb.Int("Explodable - Decal Count", WbIntType.u8), Wb.Bytes("Unknown", 2), Wb.Flt("Limb Replacement Scale"))).AsRequired(), Wb.Sub_("NAM1", Wb.Str("Limb Replacement Model", 0)).AsRequired(), Wb.Sub_("NAM4", Wb.Str("Gore Effects - Target Bone", 0)).AsRequired(), WbCommon.ModelInfoSub("NAM5", WbGame.Skyrim)).WithAnyMember()).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "BPTD", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "BPTD", m)
+            Return d
+        End Function
 
-    ''' <summary>ADDN — Addon Node</summary>
-    Private Function Rec_ADDN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ADDN — Addon Node</summary>
+        Private Function Rec_ADDN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
@@ -872,13 +872,13 @@ Namespace Canon
             Wb.Sub_("SNAM", Wb.Fid("Sound", "SNDR", "NULL")),
             Wb.Sub_("DNAM", Wb.StructV("Data", Wb.Int("Master Particle System Cap", WbIntType.u16), Wb.Enumerated("Flags", WbIntType.u16, FmtTES5.F041))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ADDN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ADDN", m)
+            Return d
+        End Function
 
-    ''' <summary>AVIF — Actor Value Information</summary>
-    Private Function Rec_AVIF() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>AVIF — Actor Value Information</summary>
+        Private Function Rec_AVIF() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("DESC", Wb.LStr("Description")).AsRequired(),
@@ -888,48 +888,48 @@ Namespace Canon
             Wb.Sub_("AVSK", Wb.StructV("Skill", Wb.Flt("Skill Use Mult"), Wb.Flt("Skill Offset Mult"), Wb.Flt("Skill Improve Mult"), Wb.Flt("Skill Improve Offset"))),
             Wb.RArray("Perk Tree", Wb.RStruct("Node", Wb.Sub_("PNAM", Wb.Fid("Perk", "PERK", "NULL")).AsRequired(), Wb.Sub_("FNAM", Wb.Int("Parent Required", WbIntType.u32, "wbBoolEnum")).AsRequired(), Wb.Sub_("XNAM", Wb.Int("Perk-Grid X", WbIntType.u32)).AsRequired(), Wb.Sub_("YNAM", Wb.Int("Perk-Grid Y", WbIntType.u32)).AsRequired(), Wb.Sub_("HNAM", Wb.Flt("Horizontal Position")).AsRequired(), Wb.Sub_("VNAM", Wb.Flt("Vertical Position")).AsRequired(), Wb.Sub_("SNAM", Wb.Fid("Associated Skill", "AVIF", "NULL")).AsRequired(), Wb.RArray("Connections", Wb.Sub_("CNAM", Wb.Int("Line to Index", WbIntType.u32))), Wb.Sub_("INAM", Wb.Int("Index", WbIntType.u32)).AsRequired()))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "AVIF", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "AVIF", m)
+            Return d
+        End Function
 
-    ''' <summary>CAMS — Camera Shot</summary>
-    Private Function Rec_CAMS() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CAMS — Camera Shot</summary>
+        Private Function Rec_CAMS() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Enumerated("Action", WbIntType.u32, FmtTES5.F042), Wb.Enumerated("Location", WbIntType.u32, FmtTES5.F043), Wb.Enumerated("Target", WbIntType.u32, FmtTES5.F043), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F044), Wb.StructV("Time Multipliers", Wb.Flt("Player"), Wb.Flt("Target"), Wb.Flt("Global")), Wb.Flt("Max Time"), Wb.Flt("Min Time"), Wb.Flt("Target % Between Actors"), Wb.Flt("Near Target Distance")).OptionalFrom(8)).AsRequired(),
             Wb.Sub_("MNAM", Wb.Fid("Image Space Modifier", "IMAD"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CAMS", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CAMS", m)
+            Return d
+        End Function
 
-    ''' <summary>CPTH — Camera Path</summary>
-    Private Function Rec_CPTH() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CPTH — Camera Path</summary>
+        Private Function Rec_CPTH() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC"),
             Wb.Sub_("ANAM", Wb.StructV("Camera Paths", Wb.Fid("Parent", "CPTH", "NULL"), Wb.Fid("Previous", "CPTH", "NULL"))).AsRequired(),
             Wb.Sub_("DATA", Wb.Int("Camera Zoom", WbIntType.u8, "wbEnum")).AsRequired(),
             Wb.RArray("Camera Shots", Wb.Sub_("SNAM", Wb.Fid("Camera Shot", "CAMS")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CPTH", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CPTH", m)
+            Return d
+        End Function
 
-    ''' <summary>VTYP — Voice Type</summary>
-    Private Function Rec_VTYP() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>VTYP — Voice Type</summary>
+        Private Function Rec_VTYP() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DNAM", Wb.Int("Flags", WbIntType.u8, "wbFlags")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "VTYP", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "VTYP", m)
+            Return d
+        End Function
 
-    ''' <summary>MATT — Material Type</summary>
-    Private Function Rec_MATT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MATT — Material Type</summary>
+        Private Function Rec_MATT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("PNAM", Wb.Fid("Material Parent", "MATT", "NULL")),
             Wb.Sub_("MNAM", Wb.Str("Material Name", 0)),
@@ -938,13 +938,13 @@ Namespace Canon
             Wb.Sub_("FNAM", Wb.Int("Flags", WbIntType.u32, "wbFlags")),
             Wb.Sub_("HNAM", Wb.Fid("Havok Impact Data Set", "IPDS", "NULL"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MATT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MATT", m)
+            Return d
+        End Function
 
-    ''' <summary>IPCT — Impact</summary>
-    Private Function Rec_IPCT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>IPCT — Impact</summary>
+        Private Function Rec_IPCT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.Sub_("DATA", Wb.StructV("", Wb.Flt("Effect - Duration"), Wb.Enumerated("Effect - Orientation", WbIntType.u32, FmtTES5.F045), Wb.Flt("Angle Threshold"), Wb.Flt("Placement Radius"), Wb.Int("Sound Level", WbIntType.u32, "wbSoundLevelEnum"), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F046), Wb.Enumerated("Impact Result", WbIntType.u8, FmtTES5.F047), Wb.Bytes("Unknown", 2)).OptionalFrom(4)).AsRequired(),
@@ -955,33 +955,33 @@ Namespace Canon
             Wb.Sub_("NAM1", Wb.Fid("Sound 2", "SNDR", "NULL")),
             Wb.Sub_("NAM2", Wb.Fid("Hazard", "HAZD", "NULL"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "IPCT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "IPCT", m)
+            Return d
+        End Function
 
-    ''' <summary>IPDS — Impact Data Set</summary>
-    Private Function Rec_IPDS() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>IPDS — Impact Data Set</summary>
+        Private Function Rec_IPDS() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RArray("Data", Wb.Sub_("PNAM", Wb.StructV("", Wb.Fid("Material", "MATT"), Wb.Fid("Impact", "IPCT"))))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "IPDS", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "IPDS", m)
+            Return d
+        End Function
 
-    ''' <summary>ECZN — Encounter Zone</summary>
-    Private Function Rec_ECZN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ECZN — Encounter Zone</summary>
+        Private Function Rec_ECZN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DATA", Wb.UnionV("", Wb.VersionDecider(34), Wb.StructV("", Wb.Fid("Owner", "NPC_", "FACT", "NULL"), Wb.Fid("Location", "LCTN", "NULL")), Wb.StructV("", Wb.Fid("Owner", "NPC_", "FACT", "NULL"), Wb.Fid("Location", "LCTN", "NULL"), Wb.Int("Rank", WbIntType.s8), Wb.Int("Min Level", WbIntType.s8), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F048), Wb.Int("Max Level", WbIntType.s8))))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ECZN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ECZN", m)
+            Return d
+        End Function
 
-    ''' <summary>LCTN — Location</summary>
-    Private Function Rec_LCTN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LCTN — Location</summary>
+        Private Function Rec_LCTN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("ACPR", Wb.ArrayV("Added Persist Location References", Wb.StructV("Reference", Wb.Fid("Ref", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA"), Wb.Fid("World/Cell", "WRLD", "CELL"), Wb.Int("Grid Y", WbIntType.s16), Wb.Int("Grid X", WbIntType.s16)), 0, Nothing)),
             Wb.Sub_("LCPR", Wb.ArrayV("Location Persist Location References", Wb.StructV("Reference", Wb.Fid("Ref", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA"), Wb.Fid("World/Cell", "WRLD", "CELL"), Wb.Int("Grid Y", WbIntType.s16), Wb.Int("Grid X", WbIntType.s16)), 0, Nothing)),
@@ -1009,13 +1009,13 @@ Namespace Canon
             Wb.Sub_("NAM0", Wb.Fid("Horse Marker Ref", "REFR")),
             Wb.Sub_("CNAM", Wb.StructV("Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Int("Alpha", WbIntType.u8)))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LCTN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LCTN", m)
+            Return d
+        End Function
 
-    ''' <summary>MESG — Message</summary>
-    Private Function Rec_MESG() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MESG — Message</summary>
+        Private Function Rec_MESG() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DESC", Wb.LStr("Description")).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -1025,69 +1025,69 @@ Namespace Canon
             Wb.Sub_("TNAM", Wb.Int("Display Time", WbIntType.u32)),
             Wb.RArray("Menu Buttons", Wb.RStruct("Menu Button", Wb.Sub_("ITXT", Wb.LStr("Button Text")), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MESG", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MESG", m)
+            Return d
+        End Function
 
-    ''' <summary>DOBJ — Default Object Manager</summary>
-    Private Function Rec_DOBJ() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>DOBJ — Default Object Manager</summary>
+        Private Function Rec_DOBJ() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DNAM", Wb.ArrayV("Objects", Wb.StructV("Object", Wb.Int("Use", WbIntType.u32, "wbEnum"), Wb.Fid("Object ID")), 0, Nothing)).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "DOBJ", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "DOBJ", m)
+            Return d
+        End Function
 
-    ''' <summary>LGTM — Lighting Template</summary>
-    Private Function Rec_LGTM() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LGTM — Lighting Template</summary>
+        Private Function Rec_LGTM() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DATA", Wb.StructV("Lighting", Wb.StructV("Ambient Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Directional Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Fog Color Near", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.Flt("Fog Near"), Wb.Flt("Fog Far"), Wb.Int("Directional Rotation XY", WbIntType.s32), Wb.Int("Directional Rotation Z", WbIntType.s32), Wb.Flt("Directional Fade"), Wb.Flt("Fog Clip Dist"), Wb.Flt("Fog Power"), Wb.Unused(32), Wb.FromVersion(34, Wb.StructV("Fog Color Far", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1))), Wb.FromVersion(34, Wb.Flt("Fog Max")), Wb.FromVersion(34, Wb.StructV("Light Fade Distances", Wb.Flt("Start"), Wb.Flt("End"))), Wb.FromVersion(34, Wb.Unused(4)))).AsRequired(),
             Wb.Sub_("DALC", Wb.StructV("Directional Ambient Lighting Colors", Wb.StructV("Directional", Wb.StructV("X+", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("X-", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Y+", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Y-", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Z+", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1)), Wb.StructV("Z-", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1))), Wb.FromVersion(34, Wb.StructV("Specular", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1))), Wb.FromVersion(34, Wb.Flt("Fresnel Power"))))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LGTM", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LGTM", m)
+            Return d
+        End Function
 
-    ''' <summary>MUSC — Music Type</summary>
-    Private Function Rec_MUSC() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MUSC — Music Type</summary>
+        Private Function Rec_MUSC() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FNAM", Wb.Int("Flags", WbIntType.u32, "wbFlags")).AsRequired(),
             Wb.Sub_("PNAM", Wb.StructV("Data", Wb.Int("Priority", WbIntType.u16), Wb.Int("Ducking (dB)", WbIntType.u16, "wbDiv"))),
             Wb.Sub_("WNAM", Wb.Flt("Fade Duration")),
             Wb.Sub_("TNAM", Wb.ArrayV("Music Tracks", Wb.Fid("Track", "MUST", "NULL"), 0, Nothing))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MUSC", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MUSC", m)
+            Return d
+        End Function
 
-    ''' <summary>FSTP — Footstep</summary>
-    Private Function Rec_FSTP() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>FSTP — Footstep</summary>
+        Private Function Rec_FSTP() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DATA", Wb.Fid("Impact Data Set", "IPDS", "NULL")).AsRequired(),
             Wb.Sub_("ANAM", Wb.Str("Tag", 0)).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "FSTP", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "FSTP", m)
+            Return d
+        End Function
 
-    ''' <summary>FSTS — Footstep Set</summary>
-    Private Function Rec_FSTS() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>FSTS — Footstep Set</summary>
+        Private Function Rec_FSTS() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("XCNT", Wb.StructV("Footstep Counts", Wb.Int("Walking Count", WbIntType.u32), Wb.Int("Running Count", WbIntType.u32), Wb.Int("Sprinting Count", WbIntType.u32), Wb.Int("Sneaking Count", WbIntType.u32), Wb.Int("Swimming Count", WbIntType.u32))).AsRequired(),
             Wb.Sub_("DATA", Wb.StructV("Footsteps", Wb.ArrayV("Swimming Footsteps", Wb.Fid("Footstep", "FSTP"), 0, "..\XCNT\Swimming Count"), Wb.ArrayV("Sneaking Footsteps", Wb.Fid("Footstep", "FSTP"), 0, "..\XCNT\Sneaking Count"), Wb.ArrayV("Sprinting Footsteps", Wb.Fid("Footstep", "FSTP"), 0, "..\XCNT\Sprinting Count"), Wb.ArrayV("Running Footsteps", Wb.Fid("Footstep", "FSTP"), 0, "..\XCNT\Running Count"), Wb.ArrayV("Walking Footsteps", Wb.Fid("Footstep", "FSTP"), 0, "..\XCNT\Walking Count"))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "FSTS", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "FSTS", m)
+            Return d
+        End Function
 
-    ''' <summary>SMBN — Story Manager Branch Node</summary>
-    Private Function Rec_SMBN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SMBN — Story Manager Branch Node</summary>
+        Private Function Rec_SMBN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("PNAM", Wb.Fid("Parent Node", "SMQN", "SMBN", "SMEN", "NULL")),
             Wb.Sub_("SNAM", Wb.Fid("Previous Node", "SMQN", "SMBN", "SMEN", "NULL")),
@@ -1096,13 +1096,13 @@ Namespace Canon
             Wb.Sub_("DNAM", Wb.Int("Flags", WbIntType.u32, "wbFlags")),
             Wb.Sub_("XNAM", Wb.Int("Max concurrent quests", WbIntType.u32))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SMBN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SMBN", m)
+            Return d
+        End Function
 
-    ''' <summary>SMQN — Story Manager Quest Node</summary>
-    Private Function Rec_SMQN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SMQN — Story Manager Quest Node</summary>
+        Private Function Rec_SMQN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("PNAM", Wb.Fid("Parent Node", "SMQN", "SMBN", "SMEN", "NULL")),
             Wb.Sub_("SNAM", Wb.Fid("Previous Node ", "SMQN", "SMBN", "SMEN", "NULL")),
@@ -1114,13 +1114,13 @@ Namespace Canon
             Wb.Sub_("QNAM", Wb.Int("Quest Count", WbIntType.u32)).AsRequired(),
             Wb.RArray("Quests", Wb.RStruct("Quest", Wb.Sub_("NNAM", Wb.Fid("Quest", "QUST")), Wb.Sub_("FNAM", Wb.Int("24 Hours Till Reset", WbIntType.u32, "wbBoolEnum")), Wb.Sub_("RNAM", Wb.Flt("Hours until reset")))).WithCountPath("QNAM")
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SMQN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SMQN", m)
+            Return d
+        End Function
 
-    ''' <summary>SMEN — Story Manager Event Node</summary>
-    Private Function Rec_SMEN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SMEN — Story Manager Event Node</summary>
+        Private Function Rec_SMEN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("PNAM", Wb.Fid("Parent Node", "SMQN", "SMBN", "SMEN", "NULL")),
             Wb.Sub_("SNAM", Wb.Fid("Previous Node", "SMQN", "SMBN", "SMEN", "NULL")),
@@ -1130,26 +1130,26 @@ Namespace Canon
             Wb.Sub_("XNAM", Wb.Int("Max concurrent quests", WbIntType.u32)),
             Wb.Sub_("ENAM", Wb.Int("Type", WbIntType.u32, "wbQuestEventEnum"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SMEN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SMEN", m)
+            Return d
+        End Function
 
-    ''' <summary>DLBR — Dialog Branch</summary>
-    Private Function Rec_DLBR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>DLBR — Dialog Branch</summary>
+        Private Function Rec_DLBR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("QNAM", Wb.Fid("Quest", "QUST")).AsRequired(),
             Wb.Sub_("TNAM", Wb.Int("Category", WbIntType.u32, "wbEnum")),
             Wb.Sub_("DNAM", Wb.Int("Flags", WbIntType.u32, "wbFlags")),
             Wb.Sub_("SNAM", Wb.Fid("Starting Topic", "DIAL")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "DLBR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "DLBR", m)
+            Return d
+        End Function
 
-    ''' <summary>MUST — Music Track</summary>
-    Private Function Rec_MUST() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MUST — Music Track</summary>
+        Private Function Rec_MUST() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CNAM", Wb.Int("Track Type", WbIntType.u32, "wbEnum")).AsRequired(),
             Wb.Sub_("FLTV", Wb.Flt("Duration")),
@@ -1162,14 +1162,14 @@ Namespace Canon
             Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC"),
             Wb.Sub_("SNAM", Wb.ArrayV("Tracks", Wb.Fid("Track", "MUST", "NULL"), 0, Nothing))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MUST", m)
-        d.AllowUnordered = True
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MUST", m)
+            d.AllowUnordered = True
+            Return d
+        End Function
 
-    ''' <summary>DLVW — Dialog View</summary>
-    Private Function Rec_DLVW() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>DLVW — Dialog View</summary>
+        Private Function Rec_DLVW() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("QNAM", Wb.Fid("Quest", "QUST")).AsRequired(),
             Wb.RArray("Branches", Wb.Sub_("BNAM", Wb.Fid("Branch", "DLBR"))),
@@ -1177,13 +1177,13 @@ Namespace Canon
             Wb.Sub_("ENAM", Wb.Int("Topic Type", WbIntType.u32, "wbEnum")).AsRequired(),
             Wb.Sub_("DNAM", Wb.Int("Show All Text", WbIntType.u8, "wbBoolEnum")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "DLVW", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "DLVW", m)
+            Return d
+        End Function
 
-    ''' <summary>SHOU — Shout</summary>
-    Private Function Rec_SHOU() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SHOU — Shout</summary>
+        Private Function Rec_SHOU() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("MDOB", Wb.Fid("Menu Display Object")),
@@ -1191,34 +1191,34 @@ Namespace Canon
             Wb.Sub_("DESC", Wb.LStr("Description")),
             Wb.RArray("Words of Power", Wb.Sub_("SNAM", Wb.StructV("", Wb.Fid("Word", "WOOP", "NULL"), Wb.Fid("Spell", "SPEL", "NULL"), Wb.Flt("Recovery Time"))))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SHOU", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SHOU", m)
+            Return d
+        End Function
 
-    ''' <summary>EQUP — Equip Type</summary>
-    Private Function Rec_EQUP() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>EQUP — Equip Type</summary>
+        Private Function Rec_EQUP() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("PNAM", Wb.ArrayV("Slot Parents", Wb.Fid("Can Be Equipped"), 0, Nothing)),
             Wb.Sub_("DATA", Wb.Int("Use All Parents", WbIntType.u32, "wbBoolEnum"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "EQUP", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "EQUP", m)
+            Return d
+        End Function
 
-    ''' <summary>RELA — Relationship</summary>
-    Private Function Rec_RELA() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>RELA — Relationship</summary>
+        Private Function Rec_RELA() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Fid("Parent", "NPC_", "NULL"), Wb.Fid("Child", "NPC_", "NULL"), Wb.Enumerated("Rank", WbIntType.u16, FmtTES5.F050), Wb.Bytes("Unknown", 1), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F051), Wb.Fid("Association Type", "ASTP", "NULL")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "RELA", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "RELA", m)
+            Return d
+        End Function
 
-    ''' <summary>SCEN — Scene</summary>
-    Private Function Rec_SCEN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SCEN — Scene</summary>
+        Private Function Rec_SCEN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing), Wb.StructV("Script Fragments", Wb.Int("Extra bind data version", WbIntType.s8), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F052), Wb.LenStr("FileName", 2), Wb.ArrayC("Fragments", Wb.StructV("Fragment", Wb.Int("Unknown", WbIntType.s8), Wb.LenStr("ScriptName", 2), Wb.LenStr("FragmentName", 2)), WbDeciders.ScriptFragmentsPopCount()), Wb.ArrayV("Phase Fragments", Wb.StructV("Phase Fragment", Wb.Bits("Phase Flag", WbIntType.u8, FmtTES5.F053), Wb.Int("Phase Index", WbIntType.u8), Wb.Int("Unknown", WbIntType.s16), Wb.Int("Unknown", WbIntType.s8), Wb.Int("Unknown", WbIntType.s8), Wb.LenStr("ScriptName", 2), Wb.LenStr("FragmentName", 2)), -2, Nothing))).OptionalFrom(3)),
             Wb.Sub_("FNAM", Wb.Int("Flags", WbIntType.u32, "wbFlags")),
@@ -1233,13 +1233,13 @@ Namespace Canon
             Wb.Sub_("VNAM", Wb.StructV("Actor Behavior Settings", Wb.Enumerated("Death", WbIntType.u32, FmtTES5.F054), Wb.Enumerated("Combat", WbIntType.u32, FmtTES5.F055), Wb.Enumerated("Dialogue", WbIntType.u32, FmtTES5.F055), Wb.Enumerated("Observe Combat", WbIntType.u32, FmtTES5.F055))),
             Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SCEN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SCEN", m)
+            Return d
+        End Function
 
-    ''' <summary>ASTP — Association Type</summary>
-    Private Function Rec_ASTP() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ASTP — Association Type</summary>
+        Private Function Rec_ASTP() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("MPRT", Wb.Str("Male Parent Title", 0)),
             Wb.Sub_("FPRT", Wb.Str("Female Parent Title", 0)),
@@ -1247,59 +1247,59 @@ Namespace Canon
             Wb.Sub_("FCHT", Wb.Str("Female Child Title", 0)),
             Wb.Sub_("DATA", Wb.Int("Flags", WbIntType.u32, "wbFlags"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ASTP", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ASTP", m)
+            Return d
+        End Function
 
-    ''' <summary>OTFT — Outfit</summary>
-    Private Function Rec_OTFT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>OTFT — Outfit</summary>
+        Private Function Rec_OTFT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("INAM", Wb.ArrayV("Items", Wb.Fid("Item", "ARMO", "LVLI"), 0, Nothing))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "OTFT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "OTFT", m)
+            Return d
+        End Function
 
-    ''' <summary>ARTO — Art Object</summary>
-    Private Function Rec_ARTO() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>ARTO — Art Object</summary>
+        Private Function Rec_ARTO() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.Sub_("DNAM", Wb.Int("Art Type", WbIntType.u32, "wbEnum"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "ARTO", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "ARTO", m)
+            Return d
+        End Function
 
-    ''' <summary>MATO — Material Object</summary>
-    Private Function Rec_MATO() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MATO — Material Object</summary>
+        Private Function Rec_MATO() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.RArray("Property Data", Wb.Sub_("DNAM", Wb.Bytes("Data", -1))),
             Wb.Sub_("DATA", Wb.StructV("Directional Material Data", Wb.Flt("Falloff Scale"), Wb.Flt("Falloff Bias"), Wb.Flt("Noise UV Scale"), Wb.Flt("Material UV Scale"), Wb.StructV("Projection Vector", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z")), Wb.FromVersion(19, Wb.Flt("Normal Dampener")), Wb.FromVersion(25, Wb.StructV("Single Pass Color", Wb.Flt("Red"), Wb.Flt("Green"), Wb.Flt("Blue"))), Wb.FromVersion(25, Wb.Int("Single Pass", WbIntType.u32, "wbBoolEnum")), Wb.FromVersion(43, Wb.Int("Is Snow", WbIntType.u32, "wbBoolEnum"))).OptionalFrom(8)).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MATO", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MATO", m)
+            Return d
+        End Function
 
-    ''' <summary>MOVT — Movement Type</summary>
-    Private Function Rec_MOVT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MOVT — Movement Type</summary>
+        Private Function Rec_MOVT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("MNAM", Wb.Str("Name", 0)),
             Wb.Sub_("SPED", Wb.StructV("Default Data", Wb.Flt("Left Walk"), Wb.Flt("Left Run"), Wb.Flt("Right Walk"), Wb.Flt("Right Run"), Wb.Flt("Forward Walk"), Wb.Flt("Forward Run"), Wb.Flt("Back Walk"), Wb.Flt("Back Run"), Wb.Flt("Rotate In Place Walk"), Wb.Flt("Rotate In Place Run"), Wb.FromVersion(28, Wb.Flt("Rotate while Moving Run")))).AsRequired(),
             Wb.Sub_("INAM", Wb.StructV("Anim Change Thresholds", Wb.Flt("Directional"), Wb.Flt("Movement Speed"), Wb.Flt("Rotation Speed"))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MOVT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MOVT", m)
+            Return d
+        End Function
 
-    ''' <summary>SNDR — Sound Descriptor</summary>
-    Private Function Rec_SNDR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SNDR — Sound Descriptor</summary>
+        Private Function Rec_SNDR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CNAM", Wb.Int("Descriptor Type", WbIntType.u32, "wbEnum")),
             Wb.Sub_("GNAM", Wb.Fid("Category", "SNCT")),
@@ -1311,24 +1311,24 @@ Namespace Canon
             Wb.Sub_("LNAM", Wb.FromVersion(34, Wb.StructV("Values", Wb.Bytes("Unknown", 1), Wb.Enumerated("Looping", WbIntType.u8, FmtTES5.F057), Wb.Bytes("Unknown", 1), Wb.Int("Rumble Send Value = (Small / 7) + ((Big / 7) * 16)", WbIntType.u8)))),
             Wb.Sub_("BNAM", Wb.StructV("Values", Wb.Int("% Frequency Shift", WbIntType.s8), Wb.Int("% Frequency Variance", WbIntType.s8), Wb.Int("Priority", WbIntType.u8), Wb.Int("db Variance", WbIntType.u8), Wb.Int("Static Attenuation (db)", WbIntType.u16, "wbDiv")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SNDR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SNDR", m)
+            Return d
+        End Function
 
-    ''' <summary>DUAL — Dual Cast Data</summary>
-    Private Function Rec_DUAL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>DUAL — Dual Cast Data</summary>
+        Private Function Rec_DUAL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Fid("Projectile", "PROJ", "NULL"), Wb.Fid("Explosion", "EXPL", "NULL"), Wb.Fid("Effect Shader", "EFSH", "NULL"), Wb.Fid("Hit Effect Art", "ARTO", "NULL"), Wb.Fid("Impact Data Set", "IPDS", "NULL"), Wb.Bits("Inherit Scale", WbIntType.u32, FmtTES5.F058))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "DUAL", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "DUAL", m)
+            Return d
+        End Function
 
-    ''' <summary>SNCT — Sound Category</summary>
-    Private Function Rec_SNCT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SNCT — Sound Category</summary>
+        Private Function Rec_SNCT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("FNAM", Wb.Int("Flags", WbIntType.u32, "wbFlags")).AsRequired(),
@@ -1336,13 +1336,13 @@ Namespace Canon
             Wb.Sub_("VNAM", Wb.Int("Static Volume Multiplier", WbIntType.u16, "wbDiv")),
             Wb.Sub_("UNAM", Wb.Int("Default Menu Value", WbIntType.u16, "wbDiv"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SNCT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SNCT", m)
+            Return d
+        End Function
 
-    ''' <summary>SOPM — Sound Output Model</summary>
-    Private Function Rec_SOPM() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SOPM — Sound Output Model</summary>
+        Private Function Rec_SOPM() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("NAM1", Wb.StructV("Data", Wb.Bits("Flags", WbIntType.u8, FmtTES5.F059), Wb.Bytes("Unknown", 2), Wb.Int("Reverb Send %", WbIntType.u8))),
             Wb.Sub_("FNAM", Wb.Bytes("Unknown", -1)),
@@ -1352,13 +1352,13 @@ Namespace Canon
             Wb.Sub_("ONAM", Wb.StructV("Output Values", Wb.ArrayV("Channels", Wb.StructV("", Wb.Int("L", WbIntType.u8), Wb.Int("R", WbIntType.u8), Wb.Int("C", WbIntType.u8), Wb.Int("LFE", WbIntType.u8), Wb.Int("RL", WbIntType.u8), Wb.Int("RR", WbIntType.u8), Wb.Int("BL", WbIntType.u8), Wb.Int("BR", WbIntType.u8)), 3, Nothing, New String() {"Mono", "Stereo Left", "Stereo Right"}))),
             Wb.Sub_("ANAM", Wb.StructV("Attenuation Values", Wb.Unused(4), Wb.Flt("Min Distance"), Wb.Flt("Max Distance"), Wb.ArrayV("Curve", Wb.Int("Value", WbIntType.u8), 5, Nothing), Wb.Bytes("Unknown", 3)))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SOPM", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SOPM", m)
+            Return d
+        End Function
 
-    ''' <summary>COLL — Collision Layer</summary>
-    Private Function Rec_COLL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>COLL — Collision Layer</summary>
+        Private Function Rec_COLL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DESC", Wb.LStr("Description")).AsRequired(),
             Wb.Sub_("BNAM", Wb.Int("Index", WbIntType.u32)).AsRequired(),
@@ -1368,47 +1368,47 @@ Namespace Canon
             Wb.Sub_("INTV", Wb.Int("Interactables Count", WbIntType.u32)).AsRequired(),
             Wb.Sub_("CNAM", Wb.ArrayV("Collides With", Wb.Fid("Forms", "COLL"), 0, Nothing))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "COLL", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "COLL", m)
+            Return d
+        End Function
 
-    ''' <summary>CLFM — Color</summary>
-    Private Function Rec_CLFM() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>CLFM — Color</summary>
+        Private Function Rec_CLFM() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("CNAM", Wb.StructV("Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Int("Alpha", WbIntType.u8))).AsRequired(),
             Wb.Sub_("FNAM", Wb.Int("Playable", WbIntType.u32, "wbBoolEnum")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "CLFM", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "CLFM", m)
+            Return d
+        End Function
 
-    ''' <summary>REVB — Reverb Parameters</summary>
-    Private Function Rec_REVB() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>REVB — Reverb Parameters</summary>
+        Private Function Rec_REVB() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Int("Decay Time (ms)", WbIntType.u16), Wb.Int("HF Reference (Hz)", WbIntType.u16), Wb.Int("Room Filter", WbIntType.s8), Wb.Int("Room HF Filter", WbIntType.s8), Wb.Int("Reflections", WbIntType.s8), Wb.Int("Reverb Amp", WbIntType.s8), Wb.Int("Decay HF Ratio", WbIntType.u8, "wbDiv"), Wb.Int("Reflect Delay (ms), scaled", WbIntType.u8), Wb.Int("Reverb Delay (ms)", WbIntType.u8), Wb.Int("Diffusion %", WbIntType.u8), Wb.Int("Density %", WbIntType.u8), Wb.Int("Unknown", WbIntType.u8))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "REVB", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "REVB", m)
+            Return d
+        End Function
 
-    ''' <summary>GRAS — Grass</summary>
-    Private Function Rec_GRAS() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>GRAS — Grass</summary>
+        Private Function Rec_GRAS() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.Sub_("DATA", Wb.StructV("", Wb.Int("Density", WbIntType.u8), Wb.Int("Min Slope", WbIntType.u8), Wb.Int("Max Slope", WbIntType.u8), Wb.Unused(1), Wb.Int("Units From Water", WbIntType.u16), Wb.Unused(2), Wb.Enumerated("Units From Water Type", WbIntType.u32, FmtTES5.F060), Wb.Flt("Position Range"), Wb.Flt("Height Range"), Wb.Flt("Color Range"), Wb.Flt("Wave Period"), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F061), Wb.Unused(3))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "GRAS", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "GRAS", m)
+            Return d
+        End Function
 
-    ''' <summary>IDLE — Idle Animation</summary>
-    Private Function Rec_IDLE() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>IDLE — Idle Animation</summary>
+        Private Function Rec_IDLE() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC"),
             Wb.Sub_("DNAM", Wb.Str("FileName", 0)),
@@ -1416,13 +1416,13 @@ Namespace Canon
             Wb.Sub_("ANAM", Wb.StructV("Animations", Wb.Fid("Parent", "AACT", "IDLE", "NULL"), Wb.Fid("Previous", "AACT", "IDLE", "NULL"))).AsRequired(),
             Wb.Sub_("DATA", Wb.StructV("Data (unused)", Wb.StructV("Looping seconds (both 255 forever)", Wb.Int("Min", WbIntType.u8), Wb.Int("Max", WbIntType.u8)), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F062), Wb.Int("Animation Group Section", WbIntType.u8), Wb.Int("Replay Delay", WbIntType.u16))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "IDLE", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "IDLE", m)
+            Return d
+        End Function
 
-    ''' <summary>INFO — Dialog response</summary>
-    Private Function Rec_INFO() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>INFO — Dialog response</summary>
+        Private Function Rec_INFO() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing), Wb.StructV("Script Fragments", Wb.Int("Extra bind data version", WbIntType.s8), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F052), Wb.LenStr("FileName", 2), Wb.ArrayC("Fragments", Wb.StructV("Fragment", Wb.Int("Unknown", WbIntType.s8), Wb.LenStr("ScriptName", 2), Wb.LenStr("FragmentName", 2)), WbDeciders.ScriptFragmentsPopCount()))).OptionalFrom(3)),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Enumerated("Quest Dialogue Tab", WbIntType.u16, FmtTES5.F063), Wb.Bits("Response Flags", WbIntType.u16, FmtTES5.F064), Wb.Flt("Reset Days"))),
@@ -1440,13 +1440,13 @@ Namespace Canon
             Wb.Sub_("TWAT", Wb.Fid("Walk Away Topic", "DIAL")),
             Wb.Sub_("ONAM", Wb.Fid("Audio Output Override", "SOPM"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "INFO", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "INFO", m)
+            Return d
+        End Function
 
-    ''' <summary>INGR — Ingredient</summary>
-    Private Function Rec_INGR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>INGR — Ingredient</summary>
+        Private Function Rec_INGR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1462,13 +1462,13 @@ Namespace Canon
             Wb.Sub_("ENIT", Wb.StructV("Effect Data", Wb.Int("Ingredient Value", WbIntType.s32), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F066))).AsRequired(),
             Wb.RArray("Effects", Wb.RStruct("Effect", Wb.Sub_("EFID", Wb.Fid("Base Effect", "MGEF")), Wb.Sub_("EFIT", Wb.StructV("", Wb.Flt("Magnitude"), Wb.Int("Area", WbIntType.u32), Wb.Int("Duration", WbIntType.u32))).AsRequired(), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "INGR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "INGR", m)
+            Return d
+        End Function
 
-    ''' <summary>KEYM — Key</summary>
-    Private Function Rec_KEYM() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>KEYM — Key</summary>
+        Private Function Rec_KEYM() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1481,13 +1481,13 @@ Namespace Canon
             Wb.RStruct("Keywords", Wb.Sub_("KSIZ", Wb.Int("Keyword Count", WbIntType.u32)), Wb.Sub_("KWDA", Wb.ArrayV("Keywords", Wb.Fid("Keyword", "KYWD", "NULL"), 0, "KSIZ")).AsRequired()),
             Wb.Sub_("DATA", Wb.StructV("", Wb.Int("Value", WbIntType.s32), Wb.Flt("Weight"))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "KEYM", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "KEYM", m)
+            Return d
+        End Function
 
-    ''' <summary>LAND — Landscape</summary>
-    Private Function Rec_LAND() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LAND — Landscape</summary>
+        Private Function Rec_LAND() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("DATA", Wb.Int("Flags", WbIntType.u32, "wbFlags")),
             Wb.Sub_("VNML", Wb.Bytes("Vertex Normals", 3267)),
             Wb.Sub_("VHGT", Wb.Bytes("Vertex Height Map", -1)),
@@ -1495,13 +1495,13 @@ Namespace Canon
             Wb.RArray("Layers", Wb.RUnion("Layer", Wb.RStruct("Base Layer", Wb.Sub_("BTXT", Wb.StructV("Base Layer", Wb.Fid("Texture", "LTEX"), Wb.Int("Quadrant", WbIntType.u8, "wbQuadrantEnum"), Wb.Unused(1), Wb.Int("Layer", WbIntType.s16)))), Wb.RStruct("Alpha Layer", Wb.Sub_("ATXT", Wb.StructV("Alpha Layer Header", Wb.Fid("Texture", "LTEX"), Wb.Int("Quadrant", WbIntType.u8, "wbQuadrantEnum"), Wb.Unused(1), Wb.Int("Layer", WbIntType.s16))), Wb.Sub_("VTXT", Wb.Bytes("Alpha Layer Data", -1))))),
             Wb.RArray("Unknown", Wb.Sub_("MPCD", Wb.Bytes("Unknown", -1)))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LAND", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LAND", m)
+            Return d
+        End Function
 
-    ''' <summary>LIGH — Light</summary>
-    Private Function Rec_LIGH() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LIGH — Light</summary>
+        Private Function Rec_LIGH() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1514,13 +1514,13 @@ Namespace Canon
             Wb.Sub_("SNAM", Wb.Fid("Sound", "SNDR")),
             Wb.Sub_("LNAM", Wb.Fid("Lens Flare", "LENS"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LIGH", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LIGH", m)
+            Return d
+        End Function
 
-    ''' <summary>LSCR — Load Screen</summary>
-    Private Function Rec_LSCR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LSCR — Load Screen</summary>
+        Private Function Rec_LSCR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("DESC", Wb.LStr("Description")).AsRequired(),
             Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC"),
@@ -1531,13 +1531,13 @@ Namespace Canon
             Wb.Sub_("XNAM", Wb.StructV("Initial Translation Offset", Wb.Flt("X"), Wb.Flt("Y"), Wb.Flt("Z"))),
             Wb.Sub_("MOD2", Wb.Str("Camera Path", 0))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LSCR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LSCR", m)
+            Return d
+        End Function
 
-    ''' <summary>LTEX — Landscape Texture</summary>
-    Private Function Rec_LTEX() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LTEX — Landscape Texture</summary>
+        Private Function Rec_LTEX() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("TNAM", Wb.Fid("Texture Set", "TXST")),
             Wb.Sub_("MNAM", Wb.Fid("Material Type", "MATT", "NULL")).AsRequired(),
@@ -1546,13 +1546,13 @@ Namespace Canon
             Wb.RArray("Grasses", Wb.Sub_("GNAM", Wb.Fid("Grass", "GRAS"))),
             Wb.Sub_("INAM", Wb.Int("Is Snow", WbIntType.u32, "wbBoolEnum")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LTEX", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LTEX", m)
+            Return d
+        End Function
 
-    ''' <summary>LVLN — Leveled NPC</summary>
-    Private Function Rec_LVLN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LVLN — Leveled NPC</summary>
+        Private Function Rec_LVLN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("LVLD", Wb.Int("Chance None", WbIntType.u8)).AsRequired(),
@@ -1562,13 +1562,13 @@ Namespace Canon
             Wb.RArray("Leveled List Entries", Wb.RStruct("Leveled List Entry", Wb.Sub_("LVLO", Wb.StructV("", Wb.Int("Level", WbIntType.u16), Wb.Unused(2), Wb.Fid("NPC", "LVLN", "NPC_"), Wb.Int("Count", WbIntType.u16), Wb.Unused(2)).OptionalFrom(3)), Wb.Sub_("COED", Wb.StructV("Extra Data", Wb.Fid("Owner", "NPC_", "FACT", "NULL"), Wb.UnionV("Global Variable / Required Rank", WbDeciders.ItemExtraDataOwner(), Wb.Unused(4), Wb.Fid("Global Variable", "GLOB", "NULL"), Wb.Int("Required Rank", WbIntType.s32)), Wb.Flt("Item Condition"))))).WithCountPath("LLCT"),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LVLN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LVLN", m)
+            Return d
+        End Function
 
-    ''' <summary>LVLI — Leveled Item</summary>
-    Private Function Rec_LVLI() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LVLI — Leveled Item</summary>
+        Private Function Rec_LVLI() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("LVLD", Wb.Int("Chance None", WbIntType.u8)).AsRequired(),
@@ -1577,13 +1577,13 @@ Namespace Canon
             Wb.Sub_("LLCT", Wb.Int("Count", WbIntType.u8)),
             Wb.RArray("Leveled List Entries", Wb.RStruct("Leveled List Entry", Wb.Sub_("LVLO", Wb.StructV("", Wb.Int("Level", WbIntType.u16), Wb.Unused(2), Wb.Fid("Item", "ALCH", "AMMO", "APPA", "ARMO", "BOOK", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Int("Count", WbIntType.u16), Wb.Unused(2)).OptionalFrom(3)), Wb.Sub_("COED", Wb.StructV("Extra Data", Wb.Fid("Owner", "NPC_", "FACT", "NULL"), Wb.UnionV("Global Variable / Required Rank", WbDeciders.ItemExtraDataOwner(), Wb.Unused(4), Wb.Fid("Global Variable", "GLOB", "NULL"), Wb.Int("Required Rank", WbIntType.s32)), Wb.Flt("Item Condition"))))).WithCountPath("LLCT")
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LVLI", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LVLI", m)
+            Return d
+        End Function
 
-    ''' <summary>LVSP — Leveled Spell</summary>
-    Private Function Rec_LVSP() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LVSP — Leveled Spell</summary>
+        Private Function Rec_LVSP() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("LVLD", Wb.Int("Chance None", WbIntType.u8)).AsRequired(),
@@ -1591,13 +1591,13 @@ Namespace Canon
             Wb.Sub_("LLCT", Wb.Int("Count", WbIntType.u8)),
             Wb.RArray("Leveled List Entries", Wb.RStruct("Leveled List Entry", Wb.Sub_("LVLO", Wb.StructV("", Wb.Int("Level", WbIntType.u16), Wb.Unused(2), Wb.Fid("Spell", "LVSP", "SPEL"), Wb.Int("Count", WbIntType.u16), Wb.Unused(2)).OptionalFrom(3)))).WithCountPath("LLCT")
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LVSP", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LVSP", m)
+            Return d
+        End Function
 
-    ''' <summary>MGEF — Magic Effect</summary>
-    Private Function Rec_MGEF() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MGEF — Magic Effect</summary>
+        Private Function Rec_MGEF() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -1609,13 +1609,13 @@ Namespace Canon
             Wb.Sub_("DNAM", Wb.LStr("Magic Item Description")),
             Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MGEF", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MGEF", m)
+            Return d
+        End Function
 
-    ''' <summary>MISC — Misc. Item</summary>
-    Private Function Rec_MISC() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>MISC — Misc. Item</summary>
+        Private Function Rec_MISC() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1628,13 +1628,13 @@ Namespace Canon
             Wb.RStruct("Keywords", Wb.Sub_("KSIZ", Wb.Int("Keyword Count", WbIntType.u32)), Wb.Sub_("KWDA", Wb.ArrayV("Keywords", Wb.Fid("Keyword", "KYWD", "NULL"), 0, "KSIZ")).AsRequired()),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Int("Value", WbIntType.s32), Wb.Flt("Weight"))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "MISC", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "MISC", m)
+            Return d
+        End Function
 
-    ''' <summary>APPA — Alchemical Apparatus</summary>
-    Private Function Rec_APPA() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>APPA — Alchemical Apparatus</summary>
+        Private Function Rec_APPA() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1648,13 +1648,13 @@ Namespace Canon
             Wb.Sub_("DESC", Wb.LStr("Description")),
             Wb.Sub_("DATA", Wb.StructV("Data", Wb.Int("Value", WbIntType.u32), Wb.Flt("Weight")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "APPA", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "APPA", m)
+            Return d
+        End Function
 
-    ''' <summary>COBJ — Constructible Object</summary>
-    Private Function Rec_COBJ() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>COBJ — Constructible Object</summary>
+        Private Function Rec_COBJ() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("COCT", Wb.Int("Count", WbIntType.u32)),
             Wb.RArray("Items", Wb.RStruct("Item", Wb.Sub_("CNTO", Wb.StructV("Item", Wb.Fid("Item", "ARMO", "AMMO", "APPA", "MISC", "WEAP", "BOOK", "LVLI", "KEYM", "ALCH", "INGR", "LIGH", "SLGM", "SCRL"), Wb.Int("Count", WbIntType.s32))), Wb.Sub_("COED", Wb.StructV("Extra Data", Wb.Fid("Owner", "NPC_", "FACT", "NULL"), Wb.UnionV("Global Variable / Required Rank", WbDeciders.ItemExtraDataOwner(), Wb.Unused(4), Wb.Fid("Global Variable", "GLOB", "NULL"), Wb.Int("Required Rank", WbIntType.s32)), Wb.Flt("Item Condition"))))).WithCountPath("COCT"),
@@ -1663,13 +1663,13 @@ Namespace Canon
             Wb.Sub_("BNAM", Wb.Fid("Workbench Keyword", "KYWD")),
             Wb.Sub_("NAM1", Wb.Int("Created Object Count", WbIntType.u16))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "COBJ", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "COBJ", m)
+            Return d
+        End Function
 
-    ''' <summary>NPC_ — Non-Player Character</summary>
-    Private Function Rec_NPCx() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>NPC_ — Non-Player Character</summary>
+        Private Function Rec_NPCx() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1722,13 +1722,13 @@ Namespace Canon
             Wb.Sub_("NAMA", Wb.StructV("Face parts", Wb.Int("Nose", WbIntType.u32), Wb.Int("Unknown", WbIntType.s32), Wb.Int("Eyes", WbIntType.u32), Wb.Int("Mouth", WbIntType.u32))),
             Wb.RArray("Tint Layers", Wb.RStruct("Layer", Wb.Sub_("TINI", Wb.Int("Tint Index", WbIntType.u16, "wbTintLayerToStr")), Wb.Sub_("TINC", Wb.StructV("Tint Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Int("Alpha", WbIntType.u8))), Wb.Sub_("TINV", Wb.Int("Interpolation Value", WbIntType.u32, "wbDiv")), Wb.Sub_("TIAS", Wb.Int("Preset", WbIntType.s16))))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "NPC_", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "NPC_", m)
+            Return d
+        End Function
 
-    ''' <summary>PACK — Package</summary>
-    Private Function Rec_PACK() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>PACK — Package</summary>
+        Private Function Rec_PACK() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing), Wb.StructV("Script Fragments", Wb.Int("Extra bind data version", WbIntType.s8), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F073), Wb.LenStr("FileName", 2), Wb.ArrayC("Fragments", Wb.StructV("Fragment", Wb.Int("Unknown", WbIntType.s8), Wb.LenStr("ScriptName", 2), Wb.LenStr("FragmentName", 2)), WbDeciders.ScriptFragmentsPopCount()))).OptionalFrom(3)),
             Wb.Sub_("PKDT", Wb.StructV("Pack Data", Wb.Int("General Flags", WbIntType.u32, "wbPackageFlags"), Wb.Enumerated("Type", WbIntType.u8, FmtTES5.F074), Wb.Enumerated("Interrupt Override", WbIntType.u8, FmtTES5.F075), Wb.Enumerated("Preferred Speed", WbIntType.u8, FmtTES5.F076), Wb.Bytes("Unknown", 1), Wb.Int("Interrupt Flags", WbIntType.u16, "wbPKDTInterruptFlags"), Wb.Bytes("Unknown", 2))).AsRequired(),
@@ -1746,13 +1746,13 @@ Namespace Canon
             Wb.RStruct("OnEnd", Wb.Sub_("POEA", Wb.EmptyV("OnEnd Marker")).AsRequired(), Wb.Sub_("INAM", Wb.Fid("Idle", "IDLE", "NULL")).AsRequired(), Wb.RStruct("Unused", Wb.Sub_("SCHR", Wb.Bytes("Unused", 0)), Wb.Sub_("SCTX", Wb.Bytes("Unused", 0)), Wb.Sub_("QNAM", Wb.Bytes("Unused", 0)), Wb.Sub_("TNAM", Wb.Bytes("Unused", 0))), Wb.Sub_("PDTO", Wb.StructV("Topic Data", Wb.Enumerated("Type", WbIntType.u32, FmtTES5.F081), Wb.UnionV("Data", WbDeciders.TypeDecider(), Wb.Fid("Topic", "DIAL", "NULL"), Wb.Str("Subtype", 4))))).AsRequired(),
             Wb.RStruct("OnChange", Wb.Sub_("POCA", Wb.EmptyV("OnChange Marker")).AsRequired(), Wb.Sub_("INAM", Wb.Fid("Idle", "IDLE", "NULL")).AsRequired(), Wb.RStruct("Unused", Wb.Sub_("SCHR", Wb.Bytes("Unused", 0)), Wb.Sub_("SCDA", Wb.Bytes("Unused", 0)), Wb.Sub_("SCTX", Wb.Bytes("Unused", 0)), Wb.Sub_("QNAM", Wb.Bytes("Unused", 0)), Wb.Sub_("TNAM", Wb.Bytes("Unused", 0))), Wb.Sub_("PDTO", Wb.StructV("Topic Data", Wb.Enumerated("Type", WbIntType.u32, FmtTES5.F081), Wb.UnionV("Data", WbDeciders.TypeDecider(), Wb.Fid("Topic", "DIAL", "NULL"), Wb.Str("Subtype", 4))))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "PACK", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "PACK", m)
+            Return d
+        End Function
 
-    ''' <summary>QUST — Quest</summary>
-    Private Function Rec_QUST() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>QUST — Quest</summary>
+        Private Function Rec_QUST() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing), Wb.StructV("Script Fragments", Wb.Int("Extra bind data version", WbIntType.s8), Wb.Int("FragmentCount", WbIntType.u16), Wb.LenStr("FileName", 2), Wb.ArrayV("Fragments", Wb.StructV("Fragment", Wb.Int("Quest Stage", WbIntType.u16), Wb.Int("Unknown", WbIntType.s16), Wb.Int("Quest Stage Index", WbIntType.s32), Wb.Int("Unknown", WbIntType.s8), Wb.LenStr("ScriptName", 2), Wb.LenStr("FragmentName", 2)), 0, "FragmentCount")), Wb.ArrayV("Aliases", Wb.StructV("Alias", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Alias Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing)), -2, Nothing)).OptionalFrom(3)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -1770,13 +1770,13 @@ Namespace Canon
             Wb.Sub_("NNAM", Wb.Str("Description", 0)),
             Wb.RArray("Targets", Wb.RStruct("Target", Wb.Sub_("QSTA", Wb.StructV("Target", Wb.Fid("Target", "ACHR", "PARW", "PBAR", "PBEA", "PFLA", "PGRE", "PHZD", "PMIS", "REFR"), Wb.Int("Compass Marker Ignores Locks", WbIntType.u8, "wbBoolEnum"), Wb.Bytes("Unknown", 3))), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "QUST", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "QUST", m)
+            Return d
+        End Function
 
-    ''' <summary>RACE — Race</summary>
-    Private Function Rec_RACE() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>RACE — Race</summary>
+        Private Function Rec_RACE() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("DESC", Wb.LStr("Description")).AsRequired(),
@@ -1832,40 +1832,40 @@ Namespace Canon
             Wb.Sub_("NAM8", Wb.Fid("Morph race", "RACE", "NULL")),
             Wb.Sub_("RNAM", Wb.Fid("Armor race", "RACE", "NULL"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "RACE", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "RACE", m)
+            Return d
+        End Function
 
-    ''' <summary>REGN — Region</summary>
-    Private Function Rec_REGN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>REGN — Region</summary>
+        Private Function Rec_REGN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("RCLR", Wb.StructV("Map Color", Wb.Int("Red", WbIntType.u8), Wb.Int("Green", WbIntType.u8), Wb.Int("Blue", WbIntType.u8), Wb.Unused(1))),
             Wb.Sub_("WNAM", Wb.Fid("Worldspace", "WRLD")),
             Wb.RArray("Region Areas", Wb.RStruct("Region Area", Wb.Sub_("RPLI", Wb.Int("Edge Fall-off", WbIntType.u32)), Wb.Sub_("RPLD", Wb.ArrayV("Points", Wb.StructV("Point", Wb.Flt("X"), Wb.Flt("Y")), 0, Nothing)))),
             Wb.RArray("Region Data Entries", Wb.RStruct("Region Data Entry", Wb.Sub_("RDAT", Wb.StructV("Data Header", Wb.Enumerated("Type", WbIntType.u32, FmtTES5.F095), Wb.Int("Override", WbIntType.u8, "wbBoolEnum"), Wb.Int("Priority", WbIntType.u8), Wb.Bytes("Unknown", -1))).AsRequired(), Wb.RStruct("Icon", Wb.Sub_("ICON", Wb.Str("Large Icon FileName", 0)).AsRequired(), Wb.Sub_("MICO", Wb.Str("Small Icon FileName", 0))).WithUnordered(), Wb.Sub_("RDMO", Wb.Fid("Music", "MUSC")), Wb.Sub_("RDSA", Wb.ArrayV("Sounds", Wb.StructV("Sound", Wb.Fid("Sound", "SNDR", "SOUN", "NULL"), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F096), Wb.Flt("Chance")), 0, Nothing)), Wb.Sub_("RDMP", Wb.LStr("Map Name")), Wb.Sub_("RDOT", Wb.ArrayV("Objects", Wb.StructV("Object", Wb.Fid("Object", "TREE", "FLOR", "STAT", "LTEX", "MSTT"), Wb.Int("Parent Index", WbIntType.u16, "wbHideFFFF"), Wb.Bytes("Unknown", 2), Wb.Flt("Density"), Wb.Int("Clustering", WbIntType.u8), Wb.Int("Min Slope", WbIntType.u8), Wb.Int("Max Slope", WbIntType.u8), Wb.Bits("Flags", WbIntType.u8, FmtTES5.F097), Wb.Int("Radius wrt Parent", WbIntType.u16), Wb.Int("Radius", WbIntType.u16), Wb.Flt("Min Height"), Wb.Flt("Max Height"), Wb.Flt("Sink"), Wb.Flt("Sink Variance"), Wb.Flt("Size Variance"), Wb.StructV("Angle Variance", Wb.Int("X", WbIntType.u16), Wb.Int("Y", WbIntType.u16), Wb.Int("Z", WbIntType.u16)), Wb.Bytes("Unknown", 2), Wb.Bytes("Unknown", 4)), 0, Nothing)), Wb.Sub_("RDGS", Wb.ArrayV("Grasses", Wb.StructV("Grass", Wb.Fid("Grass", "GRAS"), Wb.Fid("Landscape Texture", "LTEX")), 0, Nothing)), Wb.Sub_("RDWT", Wb.ArrayV("Weather Types", Wb.StructV("Weather Type", Wb.Fid("Weather", "WTHR"), Wb.Int("Chance", WbIntType.u32), Wb.Fid("Global", "GLOB", "NULL")), 0, Nothing))))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "REGN", m)
-        d.AllowUnordered = True
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "REGN", m)
+            d.AllowUnordered = True
+            Return d
+        End Function
 
-    ''' <summary>SOUN — Sound Marker</summary>
-    Private Function Rec_SOUN() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SOUN — Sound Marker</summary>
+        Private Function Rec_SOUN() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FNAM", Wb.Bytes("Unknown", -1)),
             Wb.Sub_("SNDD", Wb.Bytes("Unknown", -1)),
             Wb.Sub_("SDSC", Wb.Fid("Sound Descriptor", "SNDR", "NULL"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SOUN", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SOUN", m)
+            Return d
+        End Function
 
-    ''' <summary>SPEL — Spell</summary>
-    Private Function Rec_SPEL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SPEL — Spell</summary>
+        Private Function Rec_SPEL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -1876,13 +1876,13 @@ Namespace Canon
             Wb.Sub_("SPIT", Wb.StructV("Data", Wb.Int("Base Cost", WbIntType.u32), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F098), Wb.Enumerated("Type", WbIntType.u32, FmtTES5.F099), Wb.Flt("Charge Time"), Wb.Int("Cast Type", WbIntType.u32, "wbCastEnum"), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Flt("Cast Duration"), Wb.Flt("Range"), Wb.Fid("Half-cost Perk", "NULL", "PERK"))).AsRequired(),
             Wb.RArray("Effects", Wb.RStruct("Effect", Wb.Sub_("EFID", Wb.Fid("Base Effect", "MGEF")), Wb.Sub_("EFIT", Wb.StructV("", Wb.Flt("Magnitude"), Wb.Int("Area", WbIntType.u32), Wb.Int("Duration", WbIntType.u32))).AsRequired(), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SPEL", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SPEL", m)
+            Return d
+        End Function
 
-    ''' <summary>SCRL — Scroll</summary>
-    Private Function Rec_SCRL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>SCRL — Scroll</summary>
+        Private Function Rec_SCRL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.Sub_("FULL", Wb.LStr("Name")),
@@ -1898,26 +1898,26 @@ Namespace Canon
             Wb.Sub_("SPIT", Wb.StructV("Data", Wb.Int("Base Cost", WbIntType.u32), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F100), Wb.Enumerated("Type", WbIntType.u32, FmtTES5.F101), Wb.Flt("Charge Time"), Wb.Enumerated("Cast Type", WbIntType.u32, FmtTES5.F102), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Flt("Cast Duration"), Wb.Flt("Range"), Wb.Fid("Half-cost Perk", "NULL", "PERK"))).AsRequired(),
             Wb.RArray("Effects", Wb.RStruct("Effect", Wb.Sub_("EFID", Wb.Fid("Base Effect", "MGEF")), Wb.Sub_("EFIT", Wb.StructV("", Wb.Flt("Magnitude"), Wb.Int("Area", WbIntType.u32), Wb.Int("Duration", WbIntType.u32))).AsRequired(), Wb.RArray("Conditions", Wb.RStruct("Condition", Wb.Sub_("CTDA", Wb.StructV("", Wb.Int("Type", WbIntType.u8, "wbConditionTypeToStr"), Wb.Unused(3), Wb.UnionV("Comparison Value", WbDeciders.ConditionCompValue(), Wb.Flt("Comparison Value - Float"), Wb.Fid("Comparison Value - Global", "GLOB")), Wb.Int("Function", WbIntType.u16, "wbConditionFunctionToStr"), Wb.Unused(2), Wb.UnionV("Parameter #1", WbDeciders.ConditionParam1(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.UnionV("Parameter #2", WbDeciders.ConditionParam2(), Wb.Bytes("Unknown", 4), Wb.Bytes("None", 4), Wb.Flt("Float"), Wb.Int("Integer", WbIntType.s32), Wb.Int("String", WbIntType.u32, "wbConditionStringToStr"), Wb.Int("Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Event", WbIntType.u32, "wbConditionEventToStr"), Wb.Int("Packdata ID", WbIntType.u32), Wb.Int("Quest Stage", WbIntType.s32, "wbConditionQuestStageToStr"), Wb.UnionV("VATS Value Param", WbDeciders.ConditionVatsValueParam(), Wb.Fid("Weapon", "WEAP"), Wb.Fid("Weapon List", "FLST"), Wb.Fid("Target", "NPC_"), Wb.Fid("Target List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Int("Target Part", WbIntType.s32, "wbActorValueEnum"), Wb.Enumerated("VATS Action", WbIntType.u32, FmtTES5.F005), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Fid("Critical Effect", "SPEL"), Wb.Fid("Critical Effect List", "FLST"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Int("Weapon Type", WbIntType.u32, "wbWeaponAnimTypeEnum"), Wb.Bytes("Unknown", 4), Wb.Bytes("Unknown", 4), Wb.Enumerated("Projectile Type", WbIntType.u32, FmtTES5.F006), Wb.Int("Delivery", WbIntType.u32, "wbDeliveryEnum"), Wb.Int("Casting Type", WbIntType.u32, "wbCastEnum")), Wb.Int("Actor Value", WbIntType.s32, "wbActorValueEnum"), Wb.Int("Alignment", WbIntType.u32, "wbAlignmentEnum"), Wb.Int("Axis", WbIntType.u32, "wbAxisEnum"), Wb.Int("Casting Source", WbIntType.u32, "wbCastingSourceEnum"), Wb.Int("Crime Type", WbIntType.u32, "wbCrimeTypeEnum"), Wb.Int("Critical Stage", WbIntType.u32, "wbCriticalStageEnum"), Wb.Int("Form Type", WbIntType.u32, "wbFormTypeEnum"), Wb.Int("Furniture Anim", WbIntType.u32, "wbFurnitureAnimEnum"), Wb.Int("Furniture Entry", WbIntType.u32, "wbFurnitureEntryEnum"), Wb.Int("Misc Stat", WbIntType.u32, "wbMiscStatEnum"), Wb.Int("Player Action", WbIntType.u32, "wbPlayerActionEnum"), Wb.Int("Sex", WbIntType.u32, "wbSexEnum"), Wb.Int("VATS Value Function", WbIntType.u32, "wbVATSValueFunctionEnum"), Wb.Int("Ward State", WbIntType.u32, "wbWardStateEnum"), Wb.Fid("Actor", "ACHR", "PLYR", "REFR", "TRGT"), Wb.Fid("Actor Base", "NPC_"), Wb.Fid("Association Type", "ASTP"), Wb.Fid("Base Object"), Wb.Fid("Cell", "CELL"), Wb.Fid("Class", "CLAS"), Wb.Fid("Effect Item", "ALCH", "ENCH", "INGR", "SCRL", "SPEL"), Wb.Fid("Encounter Zone", "ECZN"), Wb.Fid("Equip Type", "EQUP"), Wb.Fid("Event Data"), Wb.Fid("Faction", "FACT"), Wb.Fid("Faction", "FACT", "NULL"), Wb.Fid("Form List", "FLST"), Wb.Fid("Furniture", "FLST", "FURN"), Wb.Fid("Global", "GLOB"), Wb.Fid("Idle", "IDLE"), Wb.Fid("Inventory Object", "ALCH", "AMMO", "ARMO", "BOOK", "COBJ", "FLST", "INGR", "KEYM", "LIGH", "LVLI", "MISC", "SCRL", "SLGM", "WEAP"), Wb.Fid("Keyword", "KYWD", "NULL"), Wb.Fid("Knowable", "ENCH", "MGEF", "WOOP"), Wb.Fid("Location", "LCTN"), Wb.Fid("Location Ref Type", "LCRT"), Wb.Fid("Magic Effect", "MGEF"), Wb.Fid("Owner", "FACT", "NPC_"), Wb.Fid("Package", "PACK"), Wb.Fid("Perk", "PERK"), Wb.Fid("Quest", "QUST"), Wb.Fid("Race", "RACE"), Wb.Fid("Reference", "ACHR", "PARW", "PBAR", "PBEA", "PCON", "PFLA", "PGRE", "PHZD", "PLYR", "PMIS", "REFR", "TRGT"), Wb.Fid("Region", "REGN"), Wb.Fid("Scene", "SCEN"), Wb.Fid("Shout", "SHOU"), Wb.Fid("Voice Type", "FLST", "VTYP"), Wb.Fid("Weather", "WTHR"), Wb.Fid("Worldspace", "FLST", "WRLD")), Wb.Enumerated("Run On", WbIntType.u32, FmtTES5.F007), Wb.UnionV("Reference", WbDeciders.ConditionReference(), Wb.Int("Unused", WbIntType.u32), Wb.Fid("Reference", "NULL", "PLYR", "ACHR", "REFR", "PGRE", "PHZD", "PMIS", "PARW", "PBAR", "PBEA", "PCON", "PFLA")), Wb.UnionV("Parameter #3", WbDeciders.ConditionParam3(), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Parameter #3", WbIntType.s32), Wb.Int("Quest Alias", WbIntType.s32, "wbConditionAliasToStr"), Wb.Int("Parameter #3", WbIntType.s32), Wb.Enumerated("Event Data", WbIntType.s32, FmtTES5.F008)))), Wb.Sub_("CIS1", Wb.Str("Parameter #1", 0)), Wb.Sub_("CIS2", Wb.Str("Parameter #2", 0)))).WithCountPath("CITC")))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "SCRL", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "SCRL", m)
+            Return d
+        End Function
 
-    ''' <summary>STAT — Static</summary>
-    Private Function Rec_STAT() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>STAT — Static</summary>
+        Private Function Rec_STAT() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
             Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered(),
             Wb.Sub_("DNAM", Wb.StructV("Direction Material", Wb.Flt("Max Angle (30-120)"), Wb.Fid("Material", "MATO", "NULL"), Wb.Int("Considered Snow", WbIntType.u8, "wbBoolEnum"), Wb.Unused(3)).OptionalFrom(2)).AsRequired(),
             Wb.Sub_("MNAM", Wb.StructV("Distant LOD", Wb.Str("Level 0", 260), Wb.Str("Level 1", 260), Wb.Str("Level 2", 260), Wb.Str("Level 3", 260)))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "STAT", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "STAT", m)
+            Return d
+        End Function
 
-    ''' <summary>TES4 — Main File Header</summary>
-    Private Function Rec_TES4() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>TES4 — Main File Header</summary>
+        Private Function Rec_TES4() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("HEDR", Wb.StructV("Header", Wb.Flt("Version"), Wb.Int("Number of Records", WbIntType.u32), Wb.Int("Next Object ID", WbIntType.u32, "wbNextObjectIDToString"))).AsRequired(),
             Wb.Sub_("OFST", Wb.Bytes("Unknown", -1)),
             Wb.Sub_("DELE", Wb.Bytes("Unknown", -1)),
@@ -1929,24 +1929,24 @@ Namespace Canon
             Wb.Sub_("INTV", Wb.Bytes("Unknown", -1)),
             Wb.Sub_("INCC", Wb.Int("Interior Cell Count", WbIntType.u32)).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "TES4", m)
-        d.AllowUnordered = True
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "TES4", m)
+            d.AllowUnordered = True
+            Return d
+        End Function
 
-    ''' <summary>PLYR — Player Reference</summary>
-    Private Function Rec_PLYR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>PLYR — Player Reference</summary>
+        Private Function Rec_PLYR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("PLYR", Wb.Fid("Player")).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "PLYR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "PLYR", m)
+            Return d
+        End Function
 
-    ''' <summary>TREE — Tree</summary>
-    Private Function Rec_TREE() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>TREE — Tree</summary>
+        Private Function Rec_TREE() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1957,13 +1957,13 @@ Namespace Canon
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.Sub_("CNAM", Wb.StructV("Tree Data", Wb.Flt("Trunk Flexibility"), Wb.Flt("Branch Flexibility"), Wb.Flt("Trunk Amplitude"), Wb.Flt("Front Amplitude"), Wb.Flt("Back Amplitude"), Wb.Flt("Side Amplitude"), Wb.Flt("Front Frequency"), Wb.Flt("Back Frequency"), Wb.Flt("Side Frequency"), Wb.Flt("Leaf Flexibility"), Wb.Flt("Leaf Amplitude"), Wb.Flt("Leaf Frequency"))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "TREE", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "TREE", m)
+            Return d
+        End Function
 
-    ''' <summary>FLOR — Flora</summary>
-    Private Function Rec_FLOR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>FLOR — Flora</summary>
+        Private Function Rec_FLOR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -1978,13 +1978,13 @@ Namespace Canon
             Wb.Sub_("SNAM", Wb.Fid("Harvest Sound", "SNDR", "NULL")),
             Wb.Sub_("PFPC", Wb.StructV("Seasonal ingredient production", Wb.Int("Spring", WbIntType.u8), Wb.Int("Summer ", WbIntType.u8), Wb.Int("Fall", WbIntType.u8), Wb.Int("Winter", WbIntType.u8))).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "FLOR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "FLOR", m)
+            Return d
+        End Function
 
-    ''' <summary>VOLI — Volumetric Lighting</summary>
-    Private Function Rec_VOLI() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>VOLI — Volumetric Lighting</summary>
+        Private Function Rec_VOLI() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CNAM", Wb.Flt("Intensity")),
             Wb.Sub_("DNAM", Wb.Flt("Custom Color - Contribution")),
@@ -1997,26 +1997,26 @@ Namespace Canon
             Wb.Sub_("MNAM", Wb.Flt("Phase Function - Scattering")),
             Wb.Sub_("NNAM", Wb.Flt("Sampling Repartition - Range Factor"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "VOLI", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "VOLI", m)
+            Return d
+        End Function
 
-    ''' <summary>LENS — Lens Flare</summary>
-    Private Function Rec_LENS() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>LENS — Lens Flare</summary>
+        Private Function Rec_LENS() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("CNAM", Wb.Flt("Color Influence")),
             Wb.Sub_("DNAM", Wb.Flt("Fade Distance Radius Scale")),
             Wb.Sub_("LFSP", Wb.Int("Count", WbIntType.u32)),
             Wb.RArray("Lens Flare Sprites", Wb.RStruct("Flare", Wb.Sub_("DNAM", Wb.Str("Lens Flare Sprite ID", 0)), Wb.Sub_("FNAM", Wb.Str("Texture", 0)), Wb.Sub_("LFSD", Wb.StructV("Lens Flare Data", Wb.StructV("Tint", Wb.Flt("Red"), Wb.Flt("Green"), Wb.Flt("Blue")), Wb.Flt("Width"), Wb.Flt("Height"), Wb.Flt("Position"), Wb.Flt("Angular Fade"), Wb.Flt("Opacity"), Wb.Bits("Flags", WbIntType.u32, FmtTES5.F103))))).WithCountPath("LFSP")
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "LENS", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "LENS", m)
+            Return d
+        End Function
 
-    ''' <summary>RGDL — Ragdoll</summary>
-    Private Function Rec_RGDL() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>RGDL — Ragdoll</summary>
+        Private Function Rec_RGDL() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("NVER", Wb.Int("Version", WbIntType.u32)).AsRequired(),
             Wb.Sub_("DATA", Wb.StructV("General Data", Wb.Int("Dynamic Bone Count", WbIntType.u32), Wb.Unused(4), Wb.StructV("Enabled", Wb.Int("Feedback", WbIntType.u8, "wbBoolEnum"), Wb.Int("Foot IK (broken, don't use)", WbIntType.u8, "wbBoolEnum"), Wb.Int("Look IK (broken, don't use)", WbIntType.u8, "wbBoolEnum"), Wb.Int("Grab IK (broken, don't use)", WbIntType.u8, "wbBoolEnum"), Wb.Int("Pose Matching", WbIntType.u8, "wbBoolEnum")), Wb.Unused(1))).AsRequired(),
@@ -2027,13 +2027,13 @@ Namespace Canon
             Wb.Sub_("RAPS", Wb.StructV("Pose Matching Data", Wb.ArrayV("Match Bones", Wb.Int("Bone", WbIntType.u16, "wbHideFFFF"), 3, Nothing), Wb.Int("Disable On Move", WbIntType.u8, "wbBoolEnum"), Wb.Unused(1), Wb.Flt("Motors Strength"), Wb.Flt("Pose Activation Delay Time"), Wb.Flt("Match Error Allowance"), Wb.Flt("Displacement To Disable"))).AsRequired(),
             Wb.Sub_("ANAM", Wb.Str("Death Pose", 0))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "RGDL", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "RGDL", m)
+            Return d
+        End Function
 
-    ''' <summary>WATR — Water</summary>
-    Private Function Rec_WATR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>WATR — Water</summary>
+        Private Function Rec_WATR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("FULL", Wb.LStr("Name")),
             Wb.RStruct("Old Noise Textures", Wb.Sub_("NNAM", Wb.Str("Layer One", 0)), Wb.Sub_("NNAM", Wb.Str("Layer Two", 0)), Wb.Sub_("NNAM", Wb.Str("Layer Three", 0))),
@@ -2052,13 +2052,13 @@ Namespace Canon
             Wb.RStruct("Noise Textures", Wb.Sub_("NAM2", Wb.Str("Layer One", 0)).AsRequired(), Wb.Sub_("NAM3", Wb.Str("Layer Two", 0)).AsRequired(), Wb.Sub_("NAM4", Wb.Str("Layer Three", 0)).AsRequired()).AsRequired(),
             Wb.Sub_("NAM5", Wb.Str("Flow Normals - Noise Texture", 0)).AsRequired()
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "WATR", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "WATR", m)
+            Return d
+        End Function
 
-    ''' <summary>WEAP — Weapon</summary>
-    Private Function Rec_WEAP() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>WEAP — Weapon</summary>
+        Private Function Rec_WEAP() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.Sub_("VMAD", Wb.StructV("Virtual Machine Adapter", Wb.Int("Version", WbIntType.s16), Wb.Int("Object Format", WbIntType.s16), Wb.ArrayV("Scripts", Wb.StructV("Script", Wb.LenStr("ScriptName", 2), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F001), Wb.ArrayV("Properties", Wb.StructV("Property", Wb.LenStr("propertyName", 2), Wb.Int("Type", WbIntType.u8, "wbPropTypeEnum"), Wb.Enumerated("Flags", WbIntType.u8, FmtTES5.F002), Wb.UnionV("Value", WbDeciders.ScriptProperty(), Wb.EmptyV("Null"), Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), Wb.LenStr("String", 2, WbTextEncoding.Vmad), Wb.Int("Int32", WbIntType.s32), Wb.Flt("Float"), Wb.Int("Bool", WbIntType.u8, "wbBoolEnum"), Wb.ArrayV("Array of Object", Wb.UnionV("Object Union", WbDeciders.ScriptObjFormat(), Wb.StructV("Object v2", Wb.Int("Unused", WbIntType.u16), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Fid("FormID")), Wb.StructV("Object v1", Wb.Fid("FormID"), Wb.Int("Alias", WbIntType.s16, "wbScriptObjectAliasToStr"), Wb.Int("Unused", WbIntType.u16))), -1, Nothing), Wb.ArrayV("Array of String", Wb.LenStr("Element", 2, WbTextEncoding.Vmad), -1, Nothing), Wb.ArrayV("Array of Int32", Wb.Int("Element", WbIntType.s32), -1, Nothing), Wb.ArrayV("Array of Float", Wb.Flt("Element"), -1, Nothing), Wb.ArrayV("Array of Bool", Wb.Int("Element", WbIntType.u8, "wbBoolEnum"), -1, Nothing))), -2, Nothing)), -2, Nothing))),
             Wb.Sub_("OBND", Wb.StructV("Object Bounds", Wb.Int("X1", WbIntType.s16), Wb.Int("Y1", WbIntType.s16), Wb.Int("Z1", WbIntType.s16), Wb.Int("X2", WbIntType.s16), Wb.Int("Y2", WbIntType.s16), Wb.Int("Z2", WbIntType.s16))).AsRequired(),
@@ -2092,13 +2092,13 @@ Namespace Canon
             Wb.Sub_("VNAM", Wb.Int("Detection Sound Level", WbIntType.u32, "wbSoundlevelEnum")),
             Wb.Sub_("CNAM", Wb.Fid("Template", "WEAP"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "WEAP", m)
-        Return d
-    End Function
+            Dim d As New WbRecordDef(WbGame.Skyrim, "WEAP", m)
+            Return d
+        End Function
 
-    ''' <summary>WTHR — Weather</summary>
-    Private Function Rec_WTHR() As WbRecordDef
-        Dim m As WbMemberDef() = {
+        ''' <summary>WTHR — Weather</summary>
+        Private Function Rec_WTHR() As WbRecordDef
+            Dim m As WbMemberDef() = {
             Wb.Sub_("EDID", Wb.Str("Editor ID", 0)),
             Wb.RStruct("Old Cloud Textures", Wb.Sub_("DNAM", Wb.Str("Layer #0", 0)), Wb.Sub_("CNAM", Wb.Str("Layer #1", 0)), Wb.Sub_("ANAM", Wb.Str("Layer #2", 0)), Wb.Sub_("BNAM", Wb.Str("Layer #3", 0))),
             Wb.RStruct("Cloud Textures", Wb.Sub_("00TX", Wb.Str("Layer #0", 0)), Wb.Sub_("10TX", Wb.Str("Layer #1", 0)), Wb.Sub_("20TX", Wb.Str("Layer #2", 0)), Wb.Sub_("30TX", Wb.Str("Layer #3", 0)), Wb.Sub_("40TX", Wb.Str("Layer #4", 0)), Wb.Sub_("50TX", Wb.Str("Layer #5", 0)), Wb.Sub_("60TX", Wb.Str("Layer #6", 0)), Wb.Sub_("70TX", Wb.Str("Layer #7", 0)), Wb.Sub_("80TX", Wb.Str("Layer #8", 0)), Wb.Sub_("90TX", Wb.Str("Layer #9", 0)), Wb.Sub_(":0TX", Wb.Str("Layer #10", 0)), Wb.Sub_(";0TX", Wb.Str("Layer #11", 0)), Wb.Sub_("<0TX", Wb.Str("Layer #12", 0)), Wb.Sub_("=0TX", Wb.Str("Layer #13", 0)), Wb.Sub_(">0TX", Wb.Str("Layer #14", 0)), Wb.Sub_("?0TX", Wb.Str("Layer #15", 0)), Wb.Sub_("@0TX", Wb.Str("Layer #16", 0)), Wb.Sub_("A0TX", Wb.Str("Layer #17", 0)), Wb.Sub_("B0TX", Wb.Str("Layer #18", 0)), Wb.Sub_("C0TX", Wb.Str("Layer #19", 0)), Wb.Sub_("D0TX", Wb.Str("Layer #20", 0)), Wb.Sub_("E0TX", Wb.Str("Layer #21", 0)), Wb.Sub_("F0TX", Wb.Str("Layer #22", 0)), Wb.Sub_("G0TX", Wb.Str("Layer #23", 0)), Wb.Sub_("H0TX", Wb.Str("Layer #24", 0)), Wb.Sub_("I0TX", Wb.Str("Layer #25", 0)), Wb.Sub_("J0TX", Wb.Str("Layer #26", 0)), Wb.Sub_("K0TX", Wb.Str("Layer #27", 0)), Wb.Sub_("L0TX", Wb.Str("Layer #28", 0))).WithAnyMember(),
@@ -2123,7 +2123,7 @@ Namespace Canon
             Wb.RStruct("Aurora", Wb.RStruct("Model", Wb.Sub_("MODL", Wb.Str("Model FileName", 0)).AsRequired(), WbCommon.ModelInfoSub("MODT", WbGame.Skyrim), Wb.Sub_("MODS", Wb.ArrayV("Alternate Textures", Wb.StructV("Alternate Texture", Wb.LenStr("3D Name", 4), Wb.Fid("New Texture", "TXST"), Wb.Int("3D Index", WbIntType.s32)), -1, Nothing))).WithUnordered()),
             Wb.Sub_("GNAM", Wb.Fid("Sun Glare Lens Flare", "LENS"))
         }
-        Dim d As New WbRecordDef(WbGame.Skyrim, "WTHR", m)
+            Dim d As New WbRecordDef(WbGame.Skyrim, "WTHR", m)
         Return d
     End Function
 

@@ -1,4 +1,4 @@
-Namespace Canon
+﻿Namespace Canon
 
     ''' <summary>Edición del árbol parseado.
     '''
@@ -165,6 +165,46 @@ Namespace Canon
                 End If
             Next
             Return -1
+        End Function
+
+
+        ''' <summary>Agrega un elemento vacío al final de un arreglo y lo devuelve.
+        '''
+        ''' <para>El elemento se arma con la misma declaración que usa la lectura, así que sale con
+        ''' la forma que el formato le da: los campos obligatorios presentes y los opcionales no.
+        ''' Escribirle encima es lo mismo que escribirle a uno leído.</para>
+        '''
+        ''' <para>Devuelve Nothing si el nodo no es un arreglo. No inventa uno: agregar un elemento
+        ''' a algo que no es una lista es un error de quien llama, no algo que convenga tolerar.</para></summary>
+        Public Function AgregarElemento(contenedor As WbNode, ctx As WbContext) As WbNode
+            If contenedor Is Nothing Then Return Nothing
+
+            Dim porMiembro = TryCast(contenedor.Def, WbRArrayDef)
+            If porMiembro IsNot Nothing Then
+                Dim nuevo = porMiembro.Element.CreateRequired(ctx)
+                nuevo.Parent = contenedor
+                contenedor.AddChild(nuevo)
+                Return nuevo
+            End If
+
+            Dim porValor = TryCast(contenedor.Def, WbArrayDef)
+            If porValor IsNot Nothing Then
+                Dim nuevo = porValor.Element.CreateDefault(ctx)
+                nuevo.Parent = contenedor
+                contenedor.AddChild(nuevo)
+                Return nuevo
+            End If
+
+            Return Nothing
+        End Function
+
+        ''' <summary>Quita un elemento de un arreglo. Devuelve False si el índice no existe.
+        ''' <para>El contador del arreglo, si el formato lo declara aparte, se recalcula solo al
+        ''' escribir: no hay que acordarse de bajarlo a mano.</para></summary>
+        Public Function QuitarElemento(contenedor As WbNode, indice As Integer) As Boolean
+            If contenedor Is Nothing OrElse indice < 0 OrElse indice >= contenedor.Children.Count Then Return False
+            contenedor.Children.RemoveAt(indice)
+            Return True
         End Function
 
     End Module

@@ -1,4 +1,5 @@
-Imports FO4_Base_Library
+﻿Imports FO4_Base_Library
+Imports FO4_Base_Library.Canon.CanonInterpretacion
 
 ''' <summary>
 ''' Per-shape material override helpers shared by the human path and the OMOD path.
@@ -41,31 +42,31 @@ Public Module ShapeMaterialOverrides
             Return
         End If
 
-        Dim mswp = RecordParsers.ParseMSWP(mswpRec, pluginManager)
+        Dim mswp = Canon.CanonRecords.Mswp(mswpRec, pluginManager)
         ' Delegate the material-path matching + replacement CORE to the parsed-data overload (no PluginManager
         ' needed past this point — it's pure path matching on the shapes).
         ApplyMaterialSwap(mswp, funcType, shapes)
     End Sub
 
-    ''' <summary>Parsed-data overload (additive): applies an ALREADY-PARSED <see cref="MSWP_Data"/> to the
+    ''' <summary>Parsed-data overload (additive): applies an ALREADY-PARSED <see cref="Canon.IMswp"/> to the
     ''' shapes. Extracted from the FormID overload so the app can apply a DRAFT MSWP (no record to resolve by
     ''' FormID) directly from its parsed substitutions. No <see cref="PluginManager"/> is needed — this is pure
     ''' material-path matching + replacement on the shapes.</summary>
-    Public Sub ApplyMaterialSwap(mswp As MSWP_Data,
+    Public Sub ApplyMaterialSwap(mswp As Canon.IMswp,
                                  funcType As MaterialSwapFunction,
                                  shapes As IEnumerable(Of IRenderableShape))
         If mswp Is Nothing Then Return
         Dim logEnabled = Logger.Enabled
         Dim mswpFormID = mswp.FormID
 
-        If mswp.Substitutions.Count = 0 Then
+        If mswp.Sustituciones().Count = 0 Then
             If logEnabled Then
                 Logger.LogLazy(Function() $"[MSWP-LOAD] mswp=0x{mswpFormID:X8} subs=0 (empty MSWP)")
             End If
             Return
         End If
 
-        Dim subsCount = mswp.Substitutions.Count
+        Dim subsCount = mswp.Sustituciones().Count
         If logEnabled Then
             Logger.LogLazy(Function() $"[MSWP-LOAD] mswp=0x{mswpFormID:X8} subs={subsCount}")
         End If
@@ -101,13 +102,13 @@ Public Module ShapeMaterialOverrides
             End If
 
             Dim matched As Boolean = False
-            For Each sub_ In mswp.Substitutions
+            For Each sub_ In mswp.Sustituciones()
                 ' SET/ADD match Original->Replacement; REM matches Replacement->Original.
-                Dim fromPath = FO4UnifiedMaterial_Class.CorrectMaterialPath(If(If(isRemove, sub_.ReplacementMaterial, sub_.OriginalMaterial), ""))
+                Dim fromPath = FO4UnifiedMaterial_Class.CorrectMaterialPath(If(If(isRemove, sub_.SubstitutionReplacementMaterial, sub_.SubstitutionOriginalMaterial), ""))
                 If fromPath = "" Then Continue For
 
                 If String.Equals(correctedCurrentPath, fromPath, StringComparison.OrdinalIgnoreCase) Then
-                    Dim targetPath = If(If(isRemove, sub_.OriginalMaterial, sub_.ReplacementMaterial), "")
+                    Dim targetPath = If(If(isRemove, sub_.SubstitutionOriginalMaterial, sub_.SubstitutionReplacementMaterial), "")
                     If targetPath = "" Then
                         If logEnabled Then
                             Dim shapeNameLog = shape.ShapeName
@@ -131,15 +132,15 @@ Public Module ShapeMaterialOverrides
                         ' visual effect (same color regardless). Only on SET/ADD (the swap-in direction);
                         ' a REMOVE restores the original material, whose scale we must not touch. Setting
                         ' it on a non-grayscale material is a harmless visual no-op (matches ApplyColorRemap).
-                        If Not isRemove AndAlso sub_.HasColorRemapIndex Then
-                            newMaterial.GrayscaleToPaletteScale = sub_.ColorRemapIndex
+                        If Not isRemove AndAlso sub_.TieneIndiceDeColor() Then
+                            newMaterial.GrayscaleToPaletteScale = sub_.SubstitutionColorRemappingIndex
                         End If
                         If logEnabled Then
                             Dim shapeNameLog = shape.ShapeName
                             Dim fromL = fromPath
                             Dim toL = targetPath
                             Dim dirLog = If(isRemove, "REM", "SET/ADD")
-                            Dim cnamLog = If(sub_.HasColorRemapIndex, sub_.ColorRemapIndex.ToString("F4"), "none")
+                            Dim cnamLog = If(sub_.TieneIndiceDeColor(), sub_.SubstitutionColorRemappingIndex.ToString("F4"), "none")
                             Logger.LogLazy(Function() $"[MSWP-APPLIED] shape='{shapeNameLog}' from='{fromL}' -> to='{toL}' dir={dirLog} cnam={cnamLog} loadResult=OK")
                         End If
                     ElseIf logEnabled Then

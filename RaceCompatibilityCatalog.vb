@@ -1,4 +1,5 @@
-﻿''' <summary>Reconstruye ESTATICAMENTE la mutacion de FormLists que RaceCompatibility hace EN RUNTIME, para que
+﻿Imports FO4_Base_Library.Canon.CanonInterpretacion
+''' <summary>Reconstruye ESTATICAMENTE la mutacion de FormLists que RaceCompatibility hace EN RUNTIME, para que
 ''' una raza custom pueda usar head parts vanilla.
 ''' <para>EL PROBLEMA: un head part vanilla lleva en <c>HDPT.RNAM</c> la FormList de razas permitidas, y el
 ''' catalogo de chargen filtra por pertenencia a esa lista. Una raza inventada por un mod anos despues NO esta
@@ -272,6 +273,6 @@ Public Class RaceCompatibilityCatalog
         If flstFormID = 0UI Then Return New List(Of UInteger)
         Dim rec = pm.GetRecord(flstFormID)
         If rec Is Nothing OrElse rec.Header.Signature <> "FLST" Then Return New List(Of UInteger)
-        Return Canon.CanonRecords.FormList(rec, pm).ItemFormIDs
+        Return Canon.CanonRecords.Flst(rec, pm).Miembros()
     End Function
 End Class

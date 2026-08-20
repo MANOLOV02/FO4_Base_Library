@@ -67,6 +67,10 @@ Namespace Canon
         Public Property TranslatableEncoding As Encoding
         ''' <summary>Signature del record que se está parseando (para diagnósticos).</summary>
         Public Property RecordSignature As String = ""
+
+        ''' <summary>Identificador del record. No sale del arbol sino de la cabecera, y hace falta
+        ''' porque casi todo lo que la aplicacion hace con un record empieza por identificarlo.</summary>
+        Public Property FormID As UInteger
         ''' <summary>Flags del HEADER del record. Los consultan los deciders que dependen de ellos,
         ''' como el que distingue el tipo de un INFO mirando el bit 0x40.</summary>
         Public Property RecordFlags As UInteger
@@ -268,6 +272,36 @@ Namespace Canon
         ''' <summary>Resuelve una ruta relativa: <c>Counters\[0]</c>, <c>Flags</c>,
         ''' <c>..\Data\Value</c>. Admite nombres de campo, índices entre corchetes y <c>..</c> para
         ''' subir al padre — lo que necesitan las rutas de contador declaradas en el esquema.</summary>
+
+        ''' <summary>Copia profunda del nodo y de todo lo que cuelga de él.
+        '''
+        ''' <para>Hace falta para editar sobre una copia sin tocar el original: abrir un editor,
+        ''' cancelar y que el record quede como estaba. Copiar el árbol es la forma barata de tener
+        ''' ese "deshacer" sin inventar un modelo paralelo.</para></summary>
+        Public Function Clonar(Optional padre As WbNode = Nothing) As WbNode
+            Dim c As New WbNode(Def) With {
+                .Parent = padre,
+                .Signature = Signature,
+                .SourceLength = SourceLength,
+                .DataLength = DataLength,
+                .TerminatorCount = TerminatorCount,
+                .UnionBranch = UnionBranch,
+                .OverrideName = OverrideName,
+                .ParsedFormVersion = ParsedFormVersion,
+                .ShortRead = ShortRead,
+                .ParsedCount = ParsedCount
+            }
+            ' El valor es un tipo simple o un arreglo de bytes; el arreglo se copia para que las dos
+            ' ramas no compartan el mismo buffer.
+            Dim bytes = TryCast(Value, Byte())
+            c.Value = If(bytes IsNot Nothing, DirectCast(bytes.Clone(), Byte()), Value)
+            If RawOverride IsNot Nothing Then c.RawOverride = DirectCast(RawOverride.Clone(), Byte())
+            For Each h In Children
+                c.AddChild(h.Clonar(c))
+            Next
+            Return c
+        End Function
+
         Public Function ByPath(path As String) As WbNode
             If String.IsNullOrEmpty(path) Then Return Nothing
             Dim cur = Me

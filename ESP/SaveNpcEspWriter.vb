@@ -1,6 +1,7 @@
 ﻿Imports System.IO
 Imports System.Linq
 Imports System.Text
+Imports FO4_Base_Library.Canon.CanonInterpretacion
 
 ' Save NPC ESP/ESM — emite un plugin de Bethesda con uno o más overrides de NPC_, con limpieza de masters
 ' (el algoritmo CleanMasters de xEdit).
@@ -178,7 +179,7 @@ Public Module SaveNpcEspWriter
         ''' <summary>FNAM 'Tree Folder' (ZSTRING, first FNAM per wbDefinitionsFO4.pas:12803). Optional —
         ''' emitted only when non-empty.</summary>
         Public TreeFolder As String = ""
-        Public Substitutions As New List(Of MSWP_Substitution)
+        Public Substitutions As New List(Of Canon.IMswp_MaterialSubstitutions)
         Public IsOverride As Boolean = False
         Public OriginalVcs1 As UInteger = 0UI
         Public OriginalVcs2 As UShort = 0US
@@ -1438,11 +1439,11 @@ Public Module SaveNpcEspWriter
                 If Not String.IsNullOrEmpty(entry.TreeFolder) Then WriteZString(bw, "FNAM", entry.TreeFolder)
                 ' Material Substitutions — preserve list order (engine reads in stream order).
                 For Each subst In entry.Substitutions
-                    WriteZString(bw, "BNAM", subst.OriginalMaterial)
-                    WriteZString(bw, "SNAM", subst.ReplacementMaterial)
-                    If subst.HasColorRemapIndex Then
+                    WriteZString(bw, "BNAM", subst.SubstitutionOriginalMaterial)
+                    WriteZString(bw, "SNAM", subst.SubstitutionReplacementMaterial)
+                    If subst.TieneIndiceDeColor() Then
                         WriteSubrecordHeader(bw, "CNAM", 4)
-                        bw.Write(subst.ColorRemapIndex)
+                        bw.Write(subst.SubstitutionColorRemappingIndex)
                     End If
                 Next
             End Using
