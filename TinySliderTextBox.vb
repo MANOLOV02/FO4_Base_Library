@@ -575,7 +575,7 @@ Public Class TinySliderTextBox
         End Select
     End Sub
 
-    ''' <summary>⛔⭐ SI EL TEXTO ES EXACTAMENTE EL QUE ESCRIBIO ESTE CONTROL, NADIE LO EDITO: no se
+    ''' <summary>SI EL TEXTO ES EXACTAMENTE EL QUE ESCRIBIO ESTE CONTROL, NADIE LO EDITO: no se
     ''' re-parsea. Sin este guard, el solo hecho de TABULAR por la cajita (Validating dispara al perder el
     ''' foco, se haya tocado o no) cuantizaba el valor vivo al redondeo que muestra el formato, y eso solo
     ''' puede PERDER informacion — el texto se genero desde el valor, parsearlo de vuelta jamas devuelve
@@ -757,7 +757,7 @@ Public Class TinySliderTextBox
 
     ''' <summary>Parsea aceptando coma O punto como separador decimal, sea cual sea el locale.
     '''
-    ''' <para>⛔⛔ SIN <c>AllowThousands</c>, Y ESO ES EL PUNTO DEL METODO. Con esa bandera, en un
+    ''' <para>SIN <c>AllowThousands</c>, Y ESO ES EL PUNTO DEL METODO. Con esa bandera, en un
     ''' Windows es-AR (decimal ",", grupo ".") tipear <c>41.4</c> NO falla: .NET se come el punto como
     ''' SEPARADOR DE MILES —no valida el tamanio de los grupos— y devuelve <b>414</b>. Como devuelve
     ''' True, el intento invariante de abajo nunca corre. El 414 entra a <c>NormalizeValue</c>, que lo
@@ -799,7 +799,7 @@ Public Class TinySliderTextBox
     ''' <summary>Toma el primer numero del texto SIN interpretar los separadores: conserva el signo,
     ''' los digitos, los <c>.</c> y <c>,</c> y el exponente tal como se tipearon.
     '''
-    ''' <para>⛔⛔ NEUTRAL A LA CULTURA A PROPOSITO. La version anterior consultaba
+    ''' <para>NEUTRAL A LA CULTURA A PROPOSITO. La version anterior consultaba
     ''' <c>NumberFormat.NumberGroupSeparator</c> y DESCARTABA lo que pareciera separador de miles: en
     ''' es-AR el separador de grupo es "." y por lo tanto <c>41.4</c> salia de aca como <c>"414"</c>.
     ''' El numero ya venia arruinado y ninguna correccion posterior podia recuperarlo, porque el punto

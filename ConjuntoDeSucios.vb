@@ -5,7 +5,7 @@ Imports System.Collections.Generic
 ''' comporta igual para todo lo que los ~30 lectores hacen con el: sabe representar "estan sucios TODOS"
 ''' sin materializar nada.
 '''
-''' <para>⛔ LAS DIFERENCIAS CONTRA <c>HashSet</c>, ENUMERADAS. Decir "se comporta EXACTAMENTE igual" y
+''' <para>LAS DIFERENCIAS CONTRA <c>HashSet</c>, ENUMERADAS. Decir "se comporta EXACTAMENTE igual" y
 ''' dejar que el lector descubra las excepciones es peor que no decir nada:</para>
 ''' <list type="number">
 ''' <item>Representa "todos" en O(1) — la razon de existir.</item>
@@ -18,7 +18,7 @@ Imports System.Collections.Generic
 ''' <para>Y una que era diferencia y se cerro: <see cref="Add"/> con un indice fuera de <c>[0, n)</c> ya
 ''' no se pierde en silencio.</para>
 '''
-''' <para>⭐ POR QUE EXISTE. En modo CPU-skinning el camino de pose hacia esto POR FRAME y POR MALLA:</para>
+''' <para>POR QUE EXISTE. En modo CPU-skinning el camino de pose hacia esto POR FRAME y POR MALLA:</para>
 ''' <code>dirtyVertexIndices = New HashSet(Of Integer)(Enumerable.Range(0, nVertices))</code>
 ''' <para>o sea alocar un HashSet y HASHEAR 130.500 enteros para decir "todos". MEDIDO con
 ''' <c>ShadowGate --nif SG172_Serena_BattleSuit</c> (26 mallas, 130.500 vertices): <b>1,16 ms por
@@ -26,7 +26,7 @@ Imports System.Collections.Generic
 ''' conjunto cuyo CONTENIDO despues no se usa: cuando estan todos sucios la subida es completa y solo
 ''' se mira <c>.Count</c>. Con esta clase esa marca es O(1).</para>
 '''
-''' <para>⛔⛔ POR QUE UNA CLASE Y NO UN <c>Boolean TodosSucios</c> AL LADO. El campo es publico y lo
+''' <para>POR QUE UNA CLASE Y NO UN <c>Boolean TodosSucios</c> AL LADO. El campo es publico y lo
 ''' leen CUATRO repos en ~30 lugares (Render, MorphEngine, SkinningHelper, Wardrobe_Manager/
 ''' MorphingHelper, Editor_Form y tres arneses). Un flag paralelo obliga a que los 30 se acuerden de
 ''' consultarlo, y el que se olvide no falla: ve <c>.Count = 0</c> y silenciosamente no hace nada —el
@@ -34,7 +34,7 @@ Imports System.Collections.Generic
 ''' distancia. Con un tipo que responde <c>Count</c>, <c>Contains</c> y <c>For Each</c> igual que
 ''' antes, NINGUN lector cambia y no hay nada que olvidarse.</para>
 '''
-''' <para>⛔⭐ POR QUE EL ORDEN DE ENUMERACION IMPORTA, Y POR QUE ESTE ES BIT-IDENTICO.
+''' <para>POR QUE EL ORDEN DE ENUMERACION IMPORTA, Y POR QUE ESTE ES BIT-IDENTICO.
 ''' <c>RecalculateNormalsTangentsBitangents</c> hace <c>For Each vi In geo.dirtyVertexIndices</c> y con
 ''' eso siembra <c>vertArr</c>, que fija el ORDEN EN QUE SE ACUMULAN los aportes de cada triangulo al
 ''' TBN. Sumar en punto flotante NO es asociativo: cambiar ese orden cambia los ultimos bits de las
@@ -72,7 +72,7 @@ Public NotInheritable Class ConjuntoDeSucios
     ''' <summary>Pasa a "todos sucios" en O(1). Descartar lo que hubiera es correcto: el conjunto nuevo
     ''' CONTIENE al anterior.</summary>
     Public Sub MarcarTodos(n As Integer)
-        ' ⛔ UN NO-OP NO ES UNA MUTACION. Sin este corte, `MarcarTodos` con el MISMO n sobre un conjunto
+        ' UN NO-OP NO ES UNA MUTACION. Sin este corte, `MarcarTodos` con el MISMO n sobre un conjunto
         ' que ya estaba en modo "todos" subia la version igual, y un enumerador en vuelo tiraba por algo
         ' que no cambio nada. `HashSet` tampoco sube su version cuando un `Add` no agrega.
         If _todos AndAlso _n = n Then Return
@@ -82,7 +82,7 @@ Public NotInheritable Class ConjuntoDeSucios
         If _set.Count > 0 Then _set.Clear()
     End Sub
 
-    ''' <summary>⛔ VB TIENE EL CHEQUEO DE DESBORDAMIENTO ACTIVO (ningun .vbproj del repo pone
+    ''' <summary>VB TIENE EL CHEQUEO DE DESBORDAMIENTO ACTIVO (ningun .vbproj del repo pone
     ''' <c>RemoveIntegerChecks</c>), asi que un <c>_version += 1</c> pelado LANZA <c>OverflowException</c> al
     ''' llegar a <c>Integer.MaxValue</c> — desde el camino de morph de una app que se distribuye.
     ''' <para>Y es alcanzable: <c>MorphEngine</c> hace un <c>Add</c> por vertice cambiado por tick, o sea
@@ -110,7 +110,7 @@ Public NotInheritable Class ConjuntoDeSucios
 
     ''' <summary>Devuelve True si el indice no estaba, igual que <c>HashSet.Add</c>.
     '''
-    ''' <para>⛔ EL INDICE FUERA DE <c>[0, n)</c> NO SE PIERDE. La version anterior hacia
+    ''' <para>EL INDICE FUERA DE <c>[0, n)</c> NO SE PIERDE. La version anterior hacia
     ''' <c>If _todos Then Return False</c> a secas, y eso miente para todo indice que el modo "todos" NO
     ''' cubre: <c>Todos(100).Add(150)</c> devolvia False, <c>Contains(150)</c> devolvia False y la
     ''' enumeracion rendia 0..99 — mientras que el <c>HashSet</c> que esta clase reemplaza habria devuelto
@@ -121,7 +121,7 @@ Public NotInheritable Class ConjuntoDeSucios
     ''' EXACTAMENTE igual", y una excepcion no sirve: esto corre en el camino de dibujo de una app que se
     ''' distribuye. Se MATERIALIZA: se paga O(n) una vez, en un caso que no ocurre, y el resultado es
     ''' exacto.</para>
-    ''' <para>⛔ LA POLITICA, PORQUE ACA HAY DOS DECISIONES QUE PARECEN CONTRADICTORIAS. <c>Add</c> NO tira
+    ''' <para>LA POLITICA, PORQUE ACA HAY DOS DECISIONES QUE PARECEN CONTRADICTORIAS. <c>Add</c> NO tira
     ''' y <c>MoveNext</c> SI tira, y las dos corren en el camino de dibujo. El criterio no es "excepciones
     ''' si / excepciones no", es <b>imitar al <c>HashSet</c> que esta clase reemplaza</b>: donde el HashSet
     ''' resuelve, se resuelve (un <c>Add</c> fuera de rango es una operacion perfectamente valida para el);
@@ -138,7 +138,7 @@ Public NotInheritable Class ConjuntoDeSucios
 
     ''' <summary>Sale del modo "todos" poblando <c>_set</c> con [0, n). Solo lo llama <see cref="Add"/>
     ''' cuando le entra un indice que el modo compacto no puede representar.
-    ''' <para>⚠️ ES O(n) EN TIEMPO UNA VEZ, PERO LA MEMORIA QUEDA. <c>HashSet.Clear()</c> no encoge sus
+    ''' <para>ES O(n) EN TIEMPO UNA VEZ, PERO LA MEMORIA QUEDA. <c>HashSet.Clear()</c> no encoge sus
     ''' arrays internos, asi que ni el <c>MarcarTodos</c> siguiente ni un <c>Clear()</c> devuelven el ~1,5 MB
     ''' de una malla de 130.500 vertices: vive lo que viva la <c>SkinnedGeometry</c>. Es justo lo que esta
     ''' clase vino a evitar — y se acepta porque llega aca solo un indice fuera de rango, que hoy no ocurre
@@ -179,7 +179,7 @@ Public NotInheritable Class ConjuntoDeSucios
         Return GetEnumeratorGenerico()
     End Function
 
-    ''' <summary>⛔ Structure a proposito: <c>For Each</c> sobre el camino disperso corre por malla y por
+    ''' <summary>Structure a proposito: <c>For Each</c> sobre el camino disperso corre por malla y por
     ''' frame; con una clase serian 26 alocaciones Gen0 por frame para nada.</summary>
     Public Structure Enumerador
         Private _hs As HashSet(Of Integer).Enumerator
@@ -204,19 +204,19 @@ Public NotInheritable Class ConjuntoDeSucios
             End Get
         End Property
 
-        ''' <summary>⛔⛔ EL CHEQUEO DE MUTACION VA AL FINAL, NO EN CADA VUELTA, Y ES A PROPOSITO.
+        ''' <summary>EL CHEQUEO DE MUTACION VA AL FINAL, NO EN CADA VUELTA, Y ES A PROPOSITO.
         ''' <para>El modo disperso delega en <c>HashSet.Enumerator</c>, que ya tira
         ''' <c>InvalidOperationException</c> si el conjunto cambia. El modo "todos" no tenia NADA: mutar
         ''' durante la enumeracion quedaba INVISIBLE y el bucle seguia rindiendo la secuencia vieja. O sea
         ''' que el mismo error de programacion fallaba fuerte o fallaba mudo segun cuantos vertices hubiera
         ''' ensuciado el gesto del usuario — el peor reparto posible.</para>
-        ''' <para>⭐ POR QUE NO EN CADA <c>MoveNext</c>. Esta clase existe para sacar 1,16 ms por frame; el
+        ''' <para>POR QUE NO EN CADA <c>MoveNext</c>. Esta clase existe para sacar 1,16 ms por frame; el
         ''' modo "todos" es su camino caliente y corre 130.500 vueltas por malla, 26 mallas por frame. Un
         ''' <c>_duenio._version</c> por vuelta son 3,4 millones de lecturas del heap que el JIT NO puede
         ''' izar —justamente porque el campo puede cambiar, que es el punto del chequeo— y se comerian
         ''' buena parte de lo que la clase vino a ganar. Chequear al terminar cuesta O(1) por enumeracion y
         ''' convierte igual el resultado silenciosamente equivocado en una excepcion.</para>
-        ''' <para>⚠️ LIMITE DECLARADO: un <c>Exit For</c> antes del final no lo detecta, y la excepcion
+        ''' <para>LIMITE DECLARADO: un <c>Exit For</c> antes del final no lo detecta, y la excepcion
         ''' llega despues de que el cuerpo del bucle ya corrio con datos viejos. No es la garantia de
         ''' <c>HashSet</c>, es la que se puede pagar en este camino.</para></summary>
         Public Function MoveNext() As Boolean

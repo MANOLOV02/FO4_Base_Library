@@ -20,6 +20,9 @@
     ''' </summary>
     Public Module WbEdit
 
+        ''' <summary>Separador de tramos de una ruta de campo.</summary>
+        Private Const SEPARADOR As Char = "\"c
+
         ''' <summary>Valor de una hoja por ruta, o Nothing si el nodo no existe.
         ''' Nothing significa AUSENTE; una cadena vacía significa presente y vacía. Son cosas
         ''' distintas y el árbol las distingue sin necesidad de banderas paralelas.</summary>
@@ -39,6 +42,43 @@
             If n.Children.Count = 1 AndAlso n.Children(0).Children.Count = 0 Then n = n.Children(0)
             If n.Children.Count > 0 Then Return False
             n.Value = value
+            Return True
+        End Function
+
+        ''' <summary>Se asegura de que exista el subrecord donde vive la CUENTA de un arreglo.
+        ''' <para>Hay arreglos cuyo tamaño no va con ellos sino en un subrecord aparte. Al emitir, el
+        ''' arreglo actualiza ese valor — pero si el subrecord no existe no hay dónde escribirlo, y el
+        ''' record sale con la lista y sin su cuenta: al releerlo el lector cuenta cero y la lista
+        ''' entera desaparece. Pasa siempre que una lista va de vacía a tener algo.</para>
+        ''' <para>Se prueba en el nodo y en sus ancestros, igual que hace la resolución de esa ruta al
+        ''' emitir: la cuenta puede vivir a cualquier altura por encima del arreglo.</para></summary>
+        Private Sub AsegurarContador(arreglo As WbNode, ctx As WbContext, rutaDeCuenta As String)
+            If String.IsNullOrEmpty(rutaDeCuenta) Then Return
+            If WbPath.ResolveUpwards(arreglo, rutaDeCuenta) IsNot Nothing Then Return
+
+            Dim limpia = rutaDeCuenta
+            While limpia.StartsWith("..\", StringComparison.Ordinal)
+                limpia = limpia.Substring(3)
+            End While
+
+            Dim n = arreglo.Parent
+            While n IsNot Nothing
+                If EnsureFieldPath(n, ctx, limpia) IsNot Nothing Then Return
+                n = n.Parent
+            End While
+        End Sub
+
+        ''' <summary>Pone el valor en un nodo ya resuelto.
+        ''' <para>Existe para que quien ya encontró el nodo no tenga que volver a buscarlo por ruta: la
+        ''' segunda búsqueda puede usar otras reglas y no llegar al mismo lado, que es justo lo que
+        ''' hacía que un campo se pudiera leer y no escribir.</para>
+        ''' <para>Si el nodo es el envoltorio de un subrecord con una sola hoja adentro, el valor va en
+        ''' la hoja. Un nodo con estructura debajo no es una hoja y no se toca.</para></summary>
+        Public Function PonerValor(n As WbNode, valor As Object) As Boolean
+            If n Is Nothing Then Return False
+            If n.Children.Count = 1 AndAlso n.Children(0).Children.Count = 0 Then n = n.Children(0)
+            If n.Children.Count > 0 Then Return False
+            n.Value = valor
             Return True
         End Function
 
@@ -95,6 +135,184 @@
                 End If
             Next
             Return removed
+        End Function
+
+        ''' <summary>Devuelve el nodo de una ruta de campo, CREANDO los niveles que falten.
+        '''
+        ''' <para>Existe porque sin esto nada recién creado acepta campos: un record nuevo, o un elemento
+        ''' recién agregado a una lista, nacen sólo con lo que el formato marca como obligatorio, y
+        ''' escribirles cualquier otro campo no hacía nada y no avisaba.</para>
+        '''
+        ''' <para>Busca con BACKTRACKING, igual que la lectura: un tramo puede significar más de una cosa
+        ''' —bajar por un hijo, nombrar al nodo en el que ya estamos, o pedir otra rama de una
+        ''' alternativa— y hay que quedarse con la interpretación bajo la cual el RESTO de la ruta
+        ''' llega a destino. Elegir la primera que parece encajar falla en los casos reales: un elemento
+        ''' de lista puede tener un hijo que se llama igual que él.</para>
+        '''
+        ''' <para>No crea nada si la ruta ya resuelve, así que mirar un record no le agrega nada. Y lo que
+        ''' se crea probando un camino que después no llega se deshace, para no dejar basura.</para></summary>
+        Public Function EnsureFieldPath(nodo As WbNode, ctx As WbContext, ruta As String) As WbNode
+            If nodo Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return Nothing
+            Dim ya = nodo.ByFieldPath(ruta)
+            If ya IsNot Nothing Then Return ya
+            Dim pasos = ruta.Split(SEPARADOR).Where(Function(x) x.Trim().Length > 0).ToArray()
+            Return Asegurar(nodo, ctx, pasos, 0)
+        End Function
+
+        Private Function Asegurar(cur As WbNode, ctx As WbContext, pasos As String(), idx As Integer) As WbNode
+            If cur Is Nothing Then Return Nothing
+            If idx >= pasos.Length Then Return cur
+            Dim tramo = pasos(idx).Trim()
+
+            ' 1) Bajar por un hijo que ya está.
+            Dim hijo = cur.ByFieldPath(tramo)
+            If hijo IsNot Nothing Then
+                Dim r = Asegurar(hijo, ctx, pasos, idx + 1)
+                If r IsNot Nothing Then Return r
+            End If
+
+            ' 2) El tramo nombra al nodo en el que ya estamos. Pasa cuando la ruta de un campo de una
+            '    lista arranca nombrando al elemento, y también cuando un subrecord y la estructura que
+            '    lleva adentro se llaman igual.
+            If NombraA(cur, tramo) Then
+                Dim r = Asegurar(cur, ctx, pasos, idx + 1)
+                If r IsNot Nothing Then Return r
+            End If
+
+            ' 3) Otra rama de una alternativa.
+            Dim rama = ReevaluarAlternativa(cur, ctx, tramo)
+            If rama IsNot Nothing Then
+                Dim r = Asegurar(rama, ctx, pasos, idx + 1)
+                If r IsNot Nothing Then Return r
+            End If
+
+            ' 4) Crear el miembro que falta. Si el resto de la ruta igual no llega, se deshace.
+            Dim antes = cur.Children.Count
+            Dim nuevo = CrearMiembro(cur, ctx, tramo)
+            If nuevo IsNot Nothing Then
+                Dim r = Asegurar(nuevo, ctx, pasos, idx + 1)
+                If r IsNot Nothing Then Return r
+                If cur.Children.Count > antes Then cur.Children.Remove(nuevo)
+            End If
+
+            Return Nothing
+        End Function
+
+        ''' <summary>Vuelve a decidir qué rama de una alternativa corresponde, y la cambia si hace falta.
+        '''
+        ''' <para>La rama la elige otro campo del record. Al armar un elemento nuevo ese campo todavía
+        ''' vale cero, así que queda la rama por defecto; cuando después se le pone el valor real, la
+        ''' rama ya no es la que corresponde y escribir en ella no tiene dónde aterrizar — sin error y
+        ''' sin aviso.</para>
+        '''
+        ''' <para>Sólo cambia la rama si la que decide el discriminador ES la que se está pidiendo: así
+        ''' no puede reescribir una rama que ya tiene dato bueno.</para></summary>
+        Private Function ReevaluarAlternativa(nodo As WbNode, ctx As WbContext, tramo As String) As WbNode
+            Dim un = TryCast(nodo.Def, WbUnionDef)
+            If un Is Nothing OrElse un.Decider Is Nothing Then Return Nothing
+
+            Dim idx = un.Decider(ctx, Nothing, 0, 0, nodo.Parent)
+            If idx < 0 OrElse idx >= un.Members.Length Then Return Nothing
+            If idx = nodo.UnionBranch Then Return Nothing
+
+            Dim elegida = un.Members(idx)
+            If elegida Is Nothing OrElse Not String.Equals(elegida.Name, tramo, StringComparison.Ordinal) Then Return Nothing
+
+            Dim nuevo = elegida.CreateDefault(ctx)
+            If nuevo Is Nothing Then Return Nothing
+            nuevo.Parent = nodo
+            nodo.Children.Clear()
+            nodo.AddChild(nuevo)
+            nodo.UnionBranch = idx
+            Return nuevo
+        End Function
+
+        ''' <summary>Ese tramo es el nombre o la firma del nodo mismo.</summary>
+        Private Function NombraA(n As WbNode, tramo As String) As Boolean
+            If String.Equals(n.Signature, tramo, StringComparison.Ordinal) Then Return True
+            Return n.Def IsNot Nothing AndAlso String.Equals(n.Def.Name, tramo, StringComparison.Ordinal)
+        End Function
+
+        ''' <summary>Crea bajo el nodo actual el miembro que se llama o se firma así, en la posición que
+        ''' le da la declaración. Devuelve el nodo nuevo, o Nothing si ese nivel no tiene miembros de
+        ''' subrecord o el formato no declara ese campo ahí.</summary>
+        Private Function CrearMiembro(cur As WbNode, ctx As WbContext, tramo As String) As WbNode
+            Dim miembros = MiembrosDe(cur, ctx)
+            If miembros Is Nothing Then Return Nothing
+
+            Dim idx = IndiceDeMiembro(miembros, tramo)
+            If idx < 0 Then Return Nothing
+
+            Dim nuevo = miembros(idx).CreateRequired(ctx)
+            If nuevo Is Nothing Then Return Nothing
+            nuevo.Parent = cur
+            cur.Children.Insert(PosicionDe(cur, miembros, idx), nuevo)
+            Return cur.ByFieldPath(tramo)
+        End Function
+
+        ''' <summary>Los miembros que la declaración le da a este nodo, o Nothing si no es un nodo con
+        ''' miembros de subrecord.</summary>
+        Private Function MiembrosDe(nodo As WbNode, ctx As WbContext) As WbMemberDef()
+            Dim st = TryCast(nodo.Def, WbRStructDef)
+            If st IsNot Nothing Then Return st.Members
+            If TypeOf nodo.Def Is WbRootDef Then
+                If ctx Is Nothing Then Return Nothing
+                Dim d = WbSchema.Get(ctx.Game, ctx.RecordSignature)
+                Return If(d Is Nothing, Nothing, d.Members)
+            End If
+            Return Nothing
+        End Function
+
+        ''' <summary>Índice del miembro que se llama o se firma así.</summary>
+        Private Function IndiceDeMiembro(miembros As WbMemberDef(), nombreOFirma As String) As Integer
+            For i = 0 To miembros.Length - 1
+                Dim m = miembros(i)
+                Dim sd = TryCast(m, WbSubrecordDef)
+                If sd IsNot Nothing AndAlso String.Equals(sd.Signature, nombreOFirma, StringComparison.Ordinal) Then Return i
+                If Not String.IsNullOrEmpty(m.Name) AndAlso String.Equals(m.Name, nombreOFirma, StringComparison.Ordinal) Then Return i
+            Next
+            ' Una unión de miembros no crea nivel: la firma que se busca puede ser la de una de sus ramas,
+            ' y el miembro que hay que crear es la unión.
+            For i = 0 To miembros.Length - 1
+                Dim un = TryCast(miembros(i), WbRUnionDef)
+                If un Is Nothing Then Continue For
+                For Each rama In un.Members
+                    Dim sd = TryCast(rama, WbSubrecordDef)
+                    If sd IsNot Nothing AndAlso String.Equals(sd.Signature, nombreOFirma, StringComparison.Ordinal) Then Return i
+                Next
+            Next
+            Return -1
+        End Function
+
+        ''' <summary>Dónde insertar el miembro nuevo: delante del primer hijo que venga DESPUÉS en la
+        ''' declaración.
+        ''' <para>Un hijo que no se puede ubicar NO corta: hay estructuras que se leen aplanadas, y su
+        ''' contenido queda como hijo directo sin ser un miembro de este nivel. Antes esto tiraba, y
+        ''' entonces escribir CUALQUIER campo de un record que trajera una de esas estructuras fallaba
+        ''' entero. Se lo saltea: no dice nada sobre dónde va el nuevo.</para></summary>
+        Private Function PosicionDe(nodo As WbNode, miembros As WbMemberDef(), idx As Integer) As Integer
+            For c = 0 To nodo.Children.Count - 1
+                Dim i = IndiceDelHijo(miembros, nodo.Children(c))
+                If i < 0 Then Continue For
+                If i > idx Then Return c
+            Next
+            Return nodo.Children.Count
+        End Function
+
+        ''' <summary>A qué miembro corresponde un hijo, o -1.
+        ''' <para>Mira DENTRO de las uniones de subrecords: al leer una unión el nodo que queda es el del
+        ''' miembro elegido, no uno de la unión.</para></summary>
+        Private Function IndiceDelHijo(miembros As WbMemberDef(), child As WbNode) As Integer
+            For i = 0 To miembros.Length - 1
+                If miembros(i) Is child.Def Then Return i
+                Dim u = TryCast(miembros(i), WbRUnionDef)
+                If u IsNot Nothing Then
+                    For Each um In u.Members
+                        If um Is child.Def Then Return i
+                    Next
+                End If
+            Next
+            Return -1
         End Function
 
         ''' <summary>Se asegura de que exista el subrecord <paramref name="sig"/> de nivel superior,
@@ -181,6 +399,7 @@
 
             Dim porMiembro = TryCast(contenedor.Def, WbRArrayDef)
             If porMiembro IsNot Nothing Then
+                AsegurarContador(contenedor, ctx, porMiembro.CountPath)
                 Dim nuevo = porMiembro.Element.CreateRequired(ctx)
                 nuevo.Parent = contenedor
                 contenedor.AddChild(nuevo)
@@ -189,6 +408,7 @@
 
             Dim porValor = TryCast(contenedor.Def, WbArrayDef)
             If porValor IsNot Nothing Then
+                AsegurarContador(contenedor, ctx, porValor.CountPath)
                 Dim nuevo = porValor.Element.CreateDefault(ctx)
                 nuevo.Parent = contenedor
                 contenedor.AddChild(nuevo)

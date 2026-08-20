@@ -15,7 +15,7 @@ Imports System.Threading
 ''' los call sites en hot paths ya no serializan ni esperan I/O.
 ''' </summary>
 Public NotInheritable Class Logger
-    ''' <summary>⭐ EN RELEASE ESTO NO SE PUEDE PRENDER. El setter DESCARTA cualquier <c>True</c> en un build
+    ''' <summary>EN RELEASE ESTO NO SE PUEDE PRENDER. El setter DESCARTA cualquier <c>True</c> en un build
     ''' Release, asi que el logging (y todo lo que se gatea por <c>Logger.Enabled</c>) queda apagado por
     ''' CONSTRUCCION y no por que nadie se haya acordado de poner un <c>#If DEBUG</c> en el arranque.
     ''' <para>Motivo: <c>Logger.Enabled</c> no gobierna solo la escritura del archivo — es la compuerta de todos
@@ -38,7 +38,7 @@ Public NotInheritable Class Logger
     End Property
     Private Shared _enabled As Boolean = False
 
-    ''' <summary>⛔ ESCAPE HATCH SOLO PARA HERRAMIENTAS CLI, no para las apps. Habilita que
+    ''' <summary>ESCAPE HATCH SOLO PARA HERRAMIENTAS CLI, no para las apps. Habilita que
     ''' <see cref="Enabled"/> acepte <c>True</c> en un build Release.
     ''' <para>Existe porque el CLI (<c>FO4_FaceTint_CLI --buildfacegen</c>) usa <c>Logger.Enabled</c> como
     ''' interruptor SEMANTICO y no solo de log: <c>FaceGenBuilder.DebugMode</c> lo lee y de el sale el sufijo
@@ -70,7 +70,7 @@ Public NotInheritable Class Logger
     ''' <summary>
     ''' Inicializa el logger con la ruta de archivo. Idempotente. Si <see cref="Enabled"/>
     ''' está en False, no hace nada (call al Log() también será no-op).
-    ''' <para>⛔ EL CASO QUE ESTE DOC NO CONTEMPLABA: <c>Enabled = True</c> SIN <c>Initialize</c>. Ahí
+    ''' <para>EL CASO QUE ESTE DOC NO CONTEMPLABA: <c>Enabled = True</c> SIN <c>Initialize</c>. Ahí
     ''' no hay writer ni hilo que drene, y hasta que se agregó la guarda de <c>EnqueueInternal</c> cada
     ''' <c>Log</c>/<c>LogLazy</c> encolaba para siempre. Prender <c>Enabled</c> sin inicializar no es
     ''' "no-op": los mensajes se DESCARTAN, que es lo correcto, pero conviene saberlo antes de buscar
@@ -126,7 +126,7 @@ Public NotInheritable Class Logger
     End Sub
 
     Private Shared Sub EnqueueInternal(message As String)
-        ' ⛔⛔ SIN WRITER NO SE ENCOLA. `Enabled = True` sin `Initialize()` previo es un estado alcanzable
+        ' SIN WRITER NO SE ENCOLA. `Enabled = True` sin `Initialize()` previo es un estado alcanzable
         ' —el CLI de FaceTint prende `Enabled` en --buildfacegen y --vertexbatch y NUNCA llama a
         ' `Initialize`— y en ese estado esta cola NO LA DRENA NADIE: los ~700 call sites de la lib y del
         ' NPC Manager encolan un string con timestamp cada uno, algunos por hueso por malla, durante todo

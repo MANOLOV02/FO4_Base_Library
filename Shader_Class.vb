@@ -5,14 +5,14 @@ Imports OpenTK.Mathematics
 
 Public Class Floor_Shader_Class
     Inherits Shader_Base_Class
-    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
+    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
     ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
     ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
     ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
     ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
     ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
     ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>⛔ El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
+    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_Floor As String =
 "#version 430
@@ -134,14 +134,14 @@ End Class
 
 Public Class Shader_Class_Fo4
     Inherits Shader_Base_Class
-    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
+    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
     ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
     ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
     ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
     ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
     ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
     ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>⛔ El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
+    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_FO4 As String = "
 #version 430
@@ -1710,14 +1710,14 @@ End Class
 
 Public Class Shader_Class_SSE
     Inherits Shader_Base_Class
-    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
+    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
     ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
     ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
     ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
     ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
     ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
     ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>⛔ El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
+    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_SSE As String = "
 #version 430
@@ -3043,7 +3043,7 @@ if (bHide)
 End Class
 ''' <summary>El fragment del pase de profundidad del shadow map. UNA sola fuente para los dos juegos:
 ''' lo unico que hace es el alpha-test, y esa ley NO es la misma en FO4 y en SSE (ver bLeySse).
-''' <para>⛔⛔ NO LLEVA VERTEX SHADER PROPIO, y eso es el punto. El blend de skinning tiene CINCO sitios
+''' <para>NO LLEVA VERTEX SHADER PROPIO, y eso es el punto. El blend de skinning tiene CINCO sitios
 ''' gemelos declarados en el SYNC de Vertex_FO4; un VS de sombra seria el SEXTO, y desincronizarlo no
 ''' rompe el build ni tira: deja la sombra de una malla posada en la posicion de bind. En vez de eso el
 ''' pase reusa Vertex_FO4 / Vertex_SSE tal cual y les entrega matView = lightView y matProjection =
@@ -3052,7 +3052,7 @@ End Class
 ''' es legal en GLSL y es el precio de no duplicar el skinning.</para></summary>
 Friend Module ShadowDepthShaderSource
 
-    ''' <summary>⛔ UNA SOLA DEFINICION del lookup de sombra, concatenada dentro de los TRES fragments que
+    ''' <summary>UNA SOLA DEFINICION del lookup de sombra, concatenada dentro de los TRES fragments que
     ''' la usan (FO4, SSE y el receptor de suelo). Antes estaba copiada en el de FO4 y el de SSE: dos
     ''' copias de una convencion —el normal-offset, el signo del bias, el kernel del PCF— es exactamente
     ''' el modo de falla que documenta el SYNC del vertex shader, y ademas el suelo habria sido la tercera.
@@ -3149,14 +3149,14 @@ float shadowFactorAt(in vec3 worldPos, in vec3 worldNrm, in int layer)
 	return 1.0 - uShadowIntensity * (1.0 - sum / (side * side));
 }"
 
-    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
+    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
     ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
     ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
     ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
     ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
     ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
     ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>⛔ El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
+    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Fragment_ShadowDepth As String = "
 #version 430
@@ -3454,7 +3454,7 @@ End Module
 ''' <summary>Receptor de sombra del SUELO ("shadow catcher"): un quad en el plano del piso que NO pinta
 ''' superficie, solo OSCURECE lo que ya haya detras segun la sombra que le llega.
 '''
-''' <para>⛔ EL BLEND ES MULTIPLICATIVO (<c>ZERO, SRC_COLOR</c> ⇒ <c>resultado = destino x fuente</c>), no
+''' <para>EL BLEND ES MULTIPLICATIVO (<c>ZERO, SRC_COLOR</c> ⇒ <c>resultado = destino x fuente</c>), no
 ''' alpha sobre negro. La diferencia importa: el previewer no tiene suelo real, asi que detras del quad
 ''' puede haber el color de fondo, la grilla, o nada — pintar "negro con alpha" tine el fondo de un color
 ''' que el usuario eligio. Multiplicar lo OSCURECE sea cual sea, que es lo que hace una sombra.</para>
@@ -3463,14 +3463,14 @@ End Module
 ''' chapa rectangular apoyada en el aire.</para></summary>
 Friend Module GroundShadowShaderSource
 
-    ''' <summary>⛔⛔ CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
+    ''' <summary>CONTRATO DE SINCRONIA CON EL PASE DE SOMBRA.
     ''' <para>El contrato COMPLETO —que cambiar, en que direccion y por que— esta escrito DENTRO del GLSL,
     ''' arriba de todo, en <c>Fragment_FO4</c>, <c>Fragment_SSE</c> y <c>Fragment_ShadowDepth</c>: ahi lo
     ''' ve quien edita la logica, que es donde tiene que estar. Los tres se referencian entre si.</para>
     ''' <para>En una linea: <b>el pase de sombra decide QUE FRAGMENTO EXISTE con la misma ley de alpha que
     ''' el pase iluminado, y son DOS leyes (FO4 y SSE), no una.</b> Tocar una sin la otra rompe la silueta
     ''' de la sombra sin que nada lo reporte.</para>
-    ''' <para>⛔ El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
+    ''' <para>El GLSL va en ASCII PURO y SIN COMILLAS DOBLES (vive en un <c>Const String</c> de VB: una
     ''' comilla cierra el literal). El gate <c>glsl-ascii</c> lo cubre.</para></summary>
     Friend Const Vertex_Ground As String = "
 #version 430
@@ -3764,12 +3764,12 @@ Public MustInherit Class Shader_Base_Class
     End Sub
 
     ''' <summary>Sube un array de matrices de una sola llamada.
-    ''' <para>⛔ RESUELVE LA LOCATION DEL ELEMENTO [0] Y SUBE N DE CORRIDO. La alternativa —armar
+    ''' <para>RESUELVE LA LOCATION DEL ELEMENTO [0] Y SUBE N DE CORRIDO. La alternativa —armar
     ''' <c>"nombre[" &amp; i &amp; "]"</c> por elemento— aloca strings en el camino de dibujo, que es
     ''' justo lo que este archivo evita en todos lados. GLSL garantiza locations consecutivas para los
     ''' elementos de un array de uniforms, asi que una sola llamada con count=N es correcta.</para>
-    ''' <para>⚠️ El caller pasa un array REUTILIZADO de floats; no se aloca nada aca.</para></summary>
-    ''' <summary>⛔ EL NOMBRE LLEGA YA CON EL <c>[0]</c>, y no es un detalle de gusto. La version anterior
+    ''' <para>El caller pasa un array REUTILIZADO de floats; no se aloca nada aca.</para></summary>
+    ''' <summary>EL NOMBRE LLEGA YA CON EL <c>[0]</c>, y no es un detalle de gusto. La version anterior
     ''' recibia <c>"matShadowViewProj"</c> y hacia <c>name &amp; "[0]"</c> adentro — o sea alocaba una String
     ''' POR LLAMADA, en el camino de dibujo, mientras su propio doc decia que existia para NO alocar. Eran 8
     ''' por frame: poco, pero el comentario afirmaba cero y esa clase de mentira es la que hace que alguien
@@ -3811,7 +3811,7 @@ Public MustInherit Class Shader_Base_Class
     ''' <summary>Bindea una TEXTURE_2D_ARRAY. Existe aparte de <see cref="BindTexture"/> porque el target
     ''' es parte del ESTADO de la unidad, no del uniform: bindear un array con el metodo de 2D deja el
     ''' sampler leyendo un target que no tiene nada, y el sintoma es una sombra que no aparece nunca.
-    ''' <para>⛔ LAS UNIDADES 14 Y 15 SON EXCLUSIVAS DE SOMBRAS. Una unidad puede tener bindeados los dos
+    ''' <para>LAS UNIDADES 14 Y 15 SON EXCLUSIVAS DE SOMBRAS. Una unidad puede tener bindeados los dos
     ''' targets a la vez y el sampler elige por su tipo; mezclar ahi un texture2D de otro pase es como se
     ''' arma un bug que solo aparece con ciertos materiales.</para></summary>
     Public Sub BindTextureArray(uniformName As String, textureID As Integer, unit As TextureUnit)

@@ -9,13 +9,13 @@
 ''' ENTERA sin que un solo gate se pusiera en rojo. Acá todo entra por parámetro y es <c>Public Shared</c>, así
 ''' que el probe llama exactamente al mismo código que la UI. Ver 00-reglas-predicciones-que-no-pueden-fallar.</para>
 '''
-''' <para>Las dos leyes canónicas que aplica, las dos de wbLoadOrder.pas:
+''' <para>Las dos leyes canónicas del motor que aplica:
 ''' <list type="number">
-''' <item>ORDEN EFECTIVO = orden literal + partición estable por grupo master (:202-216), vía
+''' <item>ORDEN EFECTIVO = orden literal + partición estable por grupo master, vía
 ''' <see cref="PluginManager.StablePartitionMasterGroup"/> — la MISMA función que usa el lector del load order,
 ''' no una copia.</item>
-''' <item>Ningún plugin puede cargar antes de un master suyo — lo que xEdit resuelve marcando
-''' <c>mfMastersMissing</c> y desactivando al dependiente (:409-421).</item>
+''' <item>Ningún plugin puede cargar antes de un master suyo — el motor lo resuelve marcando al plugin como
+''' de masters faltantes y desactivando al dependiente.</item>
 ''' </list></para></summary>
 Public NotInheritable Class LoadOrderPlanner
 
@@ -43,7 +43,7 @@ Public NotInheritable Class LoadOrderPlanner
 
         ''' <summary>Cuántas FILAS quedaron en una posición distinta de la que tenían. Se muestra en la barra
         ''' de estado: mover filas por debajo del usuario sin decírselo es peor que no moverlas.
-        ''' <para>⛔ Se llamaba <c>MastersMoved</c> y contaba "cuántos masters subí", que con el orden
+        ''' <para>Se llamaba <c>MastersMoved</c> y contaba "cuántos masters subí", que con el orden
         ''' topológico ya no es una cantidad bien definida: subir un master baja a otro, y un solo intercambio
         ''' cambia DOS posiciones. Contar filas desplazadas es lo que realmente pasó y lo que el usuario puede
         ''' verificar mirando la grilla.</para></summary>
@@ -63,7 +63,7 @@ Public NotInheritable Class LoadOrderPlanner
                                    dataPath As String) As Plan
         Dim order As New List(Of String)(If(literalOrder, Enumerable.Empty(Of String)()))
         Dim masterMap = If(mastersByName, New Dictionary(Of String, List(Of String))(StringComparer.OrdinalIgnoreCase))
-        ' ⛔ La firma acepta cualquier ICollection, pero la correctitud depende de que la pertenencia sea
+        ' La firma acepta cualquier ICollection, pero la correctitud depende de que la pertenencia sea
         ' case-INSENSITIVE (los nombres de plugin lo son en todo el resto del árbol) y O(1). Un List(Of String)
         ' daría comparación sensible a mayúsculas y búsqueda lineal, en silencio. Se normaliza acá en vez de
         ' confiar en el llamador.
@@ -74,11 +74,11 @@ Public NotInheritable Class LoadOrderPlanner
         Dim isChecked = Function(n As String) tildados.Contains(n)
 
         ' ── 1. Los tildados, en el orden literal del usuario, partidos por grupo master.
-        ' El motor pone todo el grupo master adelante (wbLoadOrder.pas:202-216), así que un master del grupo
+        ' El motor pone todo el grupo master adelante, así que un master del grupo
         ' master NUNCA puede cargar después de un dependiente que no lo es: esas aristas no pueden violarse y
         ' no hay nada que ordenar entre buckets.
         Dim sel = order.Where(isChecked).ToList()
-        ' ⛔ Los dos buckets usan EL MISMO predicado que la partición (PluginManager.IsMasterGroup con
+        ' Los dos buckets usan EL MISMO predicado que la partición (PluginManager.IsMasterGroup con
         ' GetValueOrDefault), así que un grupo desconocido cae del mismo lado en los dos lugares. Antes acá se
         ' decidía con GetValueOrDefault y allá se lo clavaba en su índice: dos reglas para la misma pregunta
         ' dentro de la misma función.
@@ -89,7 +89,7 @@ Public NotInheritable Class LoadOrderPlanner
 
         ' ── 2. Dentro de cada bucket, orden topológico ESTABLE: los masters antes que sus dependientes y,
         ' entre nodos sin relación, se conserva el orden que eligió el usuario.
-        ' ⛔ Reemplaza a un bucle que subía UN master por vuelta y volvía a empezar, con tope de 500 vueltas.
+        ' Reemplaza a un bucle que subía UN master por vuelta y volvía a empezar, con tope de 500 vueltas.
         ' MEDIDO con 1500 plugins encadenados: se agotaba el tope y dejaba 999 conflictos sin resolver, o sea
         ' que en un rig grande la app se rendía en silencio. Kahn con desempate por posición original es
         ' O(n + aristas) y resuelve la cadena entera de una.
@@ -100,7 +100,7 @@ Public NotInheritable Class LoadOrderPlanner
         Next
 
         ' ── 3. Reinyectar CONSERVANDO EL LAYOUT LITERAL.
-        ' ⛔ Los buckets sirven SÓLO para acotar las aristas del topo-sort, NO para reordenar la lista que ve
+        ' Los buckets sirven SÓLO para acotar las aristas del topo-sort, NO para reordenar la lista que ve
         ' el usuario. Concatenarlos particionaba el orden LITERAL — o sea, le reescribía su Plugins.txt y
         ' dejaba sin sentido la columna "Load #", que existe justamente para mostrar que el motor particiona
         ' sin que el archivo cambie. Cada ranura literal se rellena desde el bucket al que pertenecía su
@@ -154,7 +154,7 @@ Public NotInheritable Class LoadOrderPlanner
     ''' <para>Kahn con desempate por posición original. Sólo se consideran aristas cuyos DOS extremos están en
     ''' <paramref name="items"/>: un master que no está tildado no es un problema de orden sino de presencia, y
     ''' lo reporta la otra validación.</para>
-    ''' <para>⛔ Un ciclo de masters es imposible en plugins válidos pero un header corrupto podría declararlo.
+    ''' <para>Un ciclo de masters es imposible en plugins válidos pero un header corrupto podría declararlo.
     ''' Los nodos que queden en el ciclo se emiten al final, en su orden original, en vez de perderse o de
     ''' colgar el bucle. El diagnóstico posterior los va a listar como conflictos sin resolver, que es
     ''' exactamente lo que son.</para></summary>

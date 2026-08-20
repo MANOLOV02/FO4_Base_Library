@@ -13,7 +13,7 @@ Imports OpenTK.Mathematics
 ''' its entire non-zero set, so it becomes null (identical to the fixed file). For the two eye morphs the
 ''' 22 mouth verts are zeroed and the legit eye deltas are left untouched (the checkbox is a MOUTH fix).
 '''
-''' <para>⛔ SYNC: RENDER == BAKE — se aplica al LEER el TRI, en los DOS caminos:
+''' <para>SYNC: RENDER == BAKE — se aplica al LEER el TRI, en los DOS caminos:
 ''' <c>NpcMorphResolver.TryLoadTriHead</c> (render) y <c>FaceGenBuildPipeline.ParseHeadTri</c> (bake).
 ''' Aplicarlo en uno solo deja el preview y el NIF horneado con bocas distintas.</para>
 ''' <para>Gateado por <see cref="Config_App.Setting_ApplyMouthVanillaFix"/> y sólo para este archivo;

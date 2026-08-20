@@ -51,13 +51,13 @@ Public Class Config_App
     ' —Epic, Microsoft Store, un juego bajo un mod manager— la única respuesta correcta es que la elija el
     ' usuario. Estas cuatro claves son esa elección.
     '
-    ' ⭐ "" = AUTOMÁTICO, y es el default. Un config.json existente no trae las claves ⇒ deserializan a ""
+    ' "" = AUTOMÁTICO, y es el default. Un config.json existente no trae las claves ⇒ deserializan a ""
     '    ⇒ resolución automática. Cero migración y cero cambio de comportamiento para quien ya funciona.
-    ' ⭐ ≠ "" = pisado por el usuario: GANA SIEMPRE y ni siquiera se toca el disco para comprobarlo.
-    ' ⭐ POR JUEGO, como el rig de luces y las sombras (ver Setting_LightRig_* y ActiveLights()). Alguien que
+    ' ≠ "" = pisado por el usuario: GANA SIEMPRE y ni siquiera se toca el disco para comprobarlo.
+    ' POR JUEGO, como el rig de luces y las sombras (ver Setting_LightRig_* y ActiveLights()). Alguien que
     '    alterna FO4 y Skyrim tiene DOS load orders reales y distintos; un slot único haría que configurar
     '    uno destruyera el otro en silencio.
-    ' ⛔ NO se persiste el valor AUTOMÁTICO, sólo el pisado. Guardar el derivado lo dejaría podrido en cuanto
+    ' NO se persiste el valor AUTOMÁTICO, sólo el pisado. Guardar el derivado lo dejaría podrido en cuanto
     '    el usuario mueva el juego, y volveríamos a tener una ruta que miente sin que nadie la haya elegido.
 
     ''' <summary>Ruta COMPLETA del Plugins.txt de Fallout 4 fijada por el usuario. "" = automático.</summary>
@@ -106,10 +106,10 @@ Public Class Config_App
     ''' <summary>Default POR APP de <see cref="Setting_ShowHelperShapes"/>. Lo declara el HOST antes de
     ''' <see cref="LoadConfig"/>: Wardrobe Manager = True (es un editor, muestra todo, como OutfitStudio);
     ''' NPC Manager y ShadowGate = False (son visores).
-    ''' <para>⛔ Nullable a propósito: si un host se olvida de declararlo, <c>LoadConfig</c> lo registra
+    ''' <para>Nullable a propósito: si un host se olvida de declararlo, <c>LoadConfig</c> lo registra
     ''' RUIDOSAMENTE en vez de asumir en silencio. Un default que se puede olvidar sin ruido es peor que
     ''' no tenerlo.</para>
-    ''' <para>⛔ NO es un ajuste del usuario: es el valor que se usa cuando la clave no está, y el que
+    ''' <para>NO es un ajuste del usuario: es el valor que se usa cuando la clave no está, y el que
     ''' repone el botón Reset del diálogo compartido (que es de la LIBRERÍA y no sabe en qué app corre).</para></summary>
     Public Shared Property DefaultShowHelperShapes As Boolean? = Nothing
 
@@ -119,17 +119,17 @@ Public Class Config_App
     ''' <para>Lo leen el menu contextual de la camara y —como DEFAULT— <c>LightRigForm.AllowHiddenSegments</c>,
     ''' para que la politica se declare UNA vez por app en vez de repetirse en cada consumidor. El
     ''' inicializador explicito del dialogo sigue mandando si alguien lo pone a mano.</para>
-    ''' <para>⭐ La casilla NO se oculta: se muestra DESHABILITADA, para que el usuario sepa que el ajuste
+    ''' <para>La casilla NO se oculta: se muestra DESHABILITADA, para que el usuario sepa que el ajuste
     ''' existe y por que esta forzado.</para></summary>
     Public Shared Property AllowDrawHiddenSegments As Boolean = True
 
     ''' <summary>Casilla "Show helper shapes" (ver <see cref="HelperShapeGate"/>).
-    ''' <para><c>Nothing</c> = el usuario NUNCA tocó la casilla. ⛔ NO se resuelve al cargar: se resuelve
+    ''' <para><c>Nothing</c> = el usuario NUNCA tocó la casilla. NO se resuelve al cargar: se resuelve
     ''' en LECTURA (<see cref="ShowHelperShapesEfectivo"/>) y sólo se escribe cuando el usuario la toca.
     ''' Así cambiar el default por app es cambiar UNA CONSTANTE — sin llave de versión, sin pisar lo que
     ''' el usuario eligió, y sin un segundo write-on-load (ver el aviso de JsonConfigIO sobre por qué
     ''' escribir al cargar es peligroso: si el Save falla, la migración re-dispara en cada arranque).</para>
-    ''' <para>⚠️ Funciona porque es una propiedad de la CLASE, no de una Structure: System.Text.Json
+    ''' <para>Funciona porque es una propiedad de la CLASE, no de una Structure: System.Text.Json
     ''' serializa el Nothing como <c>null</c> y lo devuelve como Nothing, o sea que "no eligió" es un
     ''' estado persistente y round-trippeable.</para></summary>
     Public Property Setting_ShowHelperShapes As Boolean? = Nothing
@@ -137,7 +137,7 @@ Public Class Config_App
     ''' <summary>ÚNICA resolución del fallback, leída por el gate Y por la casilla del diálogo. Si cada
     ''' uno resolviera por su lado, el viewport podría mostrar helpers mientras la casilla se pinta
     ''' destildada — un control mudo y mentiroso.
-    ''' <para>⛔ NO usar el ternario <c>If(...)</c> con un Nullable: devuelve HasValue=True.</para></summary>
+    ''' <para>NO usar el ternario <c>If(...)</c> con un Nullable: devuelve HasValue=True.</para></summary>
     Public Shared Function ShowHelperShapesEfectivo() As Boolean
         If Current Is Nothing Then Return True
         Return Current.Setting_ShowHelperShapes.GetValueOrDefault(DefaultShowHelperShapes.GetValueOrDefault(True))
@@ -146,17 +146,17 @@ Public Class Config_App
     Public Property Setting_RecalculateNormals As Boolean = True
 
     ''' <summary>El rig de luces gira CON la cámara en vez de quedar fijo al mundo.
-    ''' <para>⚠️ EL DEFAULT ES <b>True</b> — decisión del usuario, 2026-08-11. O sea que NO es el
+    ''' <para>EL DEFAULT ES <b>True</b> — decisión del usuario, 2026-08-11. O sea que NO es el
     ''' comportamiento histórico: un usuario existente cuyo config no traiga la clave va a ver el rig
     ''' acompañar a la cámara la primera vez que abra esta versión. Es intencional; queda dicho acá porque
     ''' es la clase de cambio que después se reporta como "se me movieron las luces solas".</para>
-    ''' <para>⭐ Son dos modelos y sirven para cosas distintas. <b>Fijo al mundo</b> (False) es lo que hace el
+    ''' <para>Son dos modelos y sirven para cosas distintas. <b>Fijo al mundo</b> (False) es lo que hace el
     ''' motor: la luz está en la escena, orbitar gira al personaje DENTRO de la luz y le ves la espalda a
     ''' contraluz — que es lo que hay que juzgar si querés saber cómo va a verse en el juego. <b>Pegado a la
     ''' cámara</b> (True) es lo que hacen los visores de malla (Substance, Marmoset, el viewport de Blender):
     ''' la luz te acompaña y el modelo se ve siempre igual de iluminado, que es lo que querés para inspeccionar
     ''' una prenda. Por eso es una opción y no una decisión.</para>
-    ''' <para>⛔ CON FALSE NO SE EJECUTA UNA SOLA LÍNEA NUEVA. La rama que rota las direcciones está detrás de
+    ''' <para>CON FALSE NO SE EJECUTA UNA SOLA LÍNEA NUEVA. La rama que rota las direcciones está detrás de
     ''' este flag en <c>ResolveFrameLights</c>, así que la paridad con el comportamiento anterior es EXACTA por
     ''' construcción y no por redondeo — que importa, porque `right*d.X + Forward*d.Y + upPlane*d.Z` con la
     ''' base identidad suma ceros y eso convierte un -0.0 en +0.0 (la trampa que ya documenta
@@ -190,7 +190,7 @@ Public Class Config_App
     Public Property Setting_FaceGenDiffuseCompression_SSE As FaceTintConvention.FaceTintDiffuseCompression = FaceTintConvention.FaceTintDiffuseCompression.Bc3
     ' Normal FO4 = BC5 (DEFAULT): el _n vanilla de FaceCustomization es tangent-space 2-canales = BC5 (y el modo All lo
     ' deriva del diffuse via NsCompressionFromDiffuse).
-    ' ⛔ Normal SSE = UNCOMPRESSED (DEFAULT) — el _msn es MODEL-SPACE (3 canales INDEPENDIENTES X/Y/Z). Cualquier BCn
+    ' Normal SSE = UNCOMPRESSED (DEFAULT) — el _msn es MODEL-SPACE (3 canales INDEPENDIENTES X/Y/Z). Cualquier BCn
     ' comprime RGB a una línea por bloque 4×4 y DESTRUYE la dirección de la normal. MEDIDO (probe --reencodetest, mismo
     ' encoder del bake, MaleHead_msn 1024²): BC3 → RGB RMS 5.07/255, max B 148/255, 97.5% de pixels alterados;
     ' UNCOMPRESSED → RMS 0.000 = round-trip EXACTO (pixel-idéntico al vanilla, que ES Uncompressed 32bpp, medido del BSA).
@@ -254,7 +254,7 @@ Public Class Config_App
     ' (byte-match con CK si no se tocan). El usuario los edita acá o desde la UI y ESOS pasan a ser la ley:
     ' FaceTintConvention.ResolveConvention los lee SIEMPRE. Blend NO está (record-driven / Replace, read-only).
     ' Un config.json viejo sin la key deserializa al default del constructor.
-    ' ⭐ El SETTER es el punto por el que el set ENTRA al sistema: la deserialización de System.Text.Json
+    ' El SETTER es el punto por el que el set ENTRA al sistema: la deserialización de System.Text.Json
     ' escribe por acá, y también los `--config` del CLI y FaceTintConvention.SetActiveSettings. Por eso el
     ' upgrade de versión va acá y no en cada lectura (ver FaceTintConventionSettings.UpgradeInPlace): un set
     ' de la versión 0 trae SeedMode/SeedConstant con el default del CONSTRUCTOR, que es el de Fallout.
@@ -305,11 +305,11 @@ Public Class Config_App
     ' === Rig de luces del previewer, SEPARADO POR JUEGO (misma convención que las opciones de CharGen) ===
     ' Nadie lee estas dos directamente: el render y LightRigForm van por ActiveLights()/SetActiveLights(),
     ' así cambiar Game cambia el rig sin que el caller se entere. Ver PreviewLightRig.vb.
-    ' ⛔ Reemplaza al viejo `Setting_Lightrig` (LightsRig_struct), BORRADO sin compatibilidad: guardaba los
+    ' Reemplaza al viejo `Setting_Lightrig` (LightsRig_struct), BORRADO sin compatibilidad: guardaba los
     ' colores como System.Numerics.Vector3 (X/Y/Z son CAMPOS) y System.Text.Json los escribía como `{}`,
     ' así que al releer volvían (0,0,0) = ambient negro. La key vieja del config.json se ignora al cargar
     ' (STJ saltea las desconocidas) y desaparece en el próximo guardado.
-    ''' <summary>⛔⭐ EL NOMBRE DE LA PROPIEDAD **ES** LA VERSION DEL ESQUEMA, y por eso no hay ninguna.
+    ''' <summary>EL NOMBRE DE LA PROPIEDAD **ES** LA VERSION DEL ESQUEMA, y por eso no hay ninguna.
     '''
     ''' <para>Estas claves se llamaban <c>Setting_PreviewLights_FO4/_SSE</c>. Al re-autorarse los presets y
     ''' agregarse el casteo por luz, el rig guardado de cualquier usuario dejo de tener sentido —no hay
@@ -320,14 +320,14 @@ Public Class Config_App
     ''' <c>Defaults()</c>, porque Config_App es una CLASS y sus inicializadores SI corren), y al re-guardar
     ''' se escribe sólo lo que existe hoy ⇒ <b>la clave vieja desaparece sola del archivo</b>.</para>
     '''
-    ''' <para>⭐ Lo que esto compra: CERO guards. No hay <c>SchemaVersion</c>, ni funcion de reparacion, ni
+    ''' <para>Lo que esto compra: CERO guards. No hay <c>SchemaVersion</c>, ni funcion de reparacion, ni
     ''' centinela, ni rama que pueda no dispararse. Un config viejo no se "detecta y repara": directamente
     ''' no se lee. Es la unica forma de invalidacion que no puede fallar en silencio, y este archivo tenia
     ''' TRES mecanismos distintos para el mismo problema (version en el rig, centinela <c>MapSize &lt;= 0</c>
     ''' en las sombras, version en TBN), uno de ellos —el centinela— incapaz de distinguir "nunca existio"
     ''' de "existio con otro significado".</para>
     '''
-    ''' <para>⛔ EL PRECIO, y hay que saberlo: esto sirve UNA VEZ POR NOMBRE. Si mañana cambia otra vez el
+    ''' <para>EL PRECIO, y hay que saberlo: esto sirve UNA VEZ POR NOMBRE. Si mañana cambia otra vez el
     ''' significado del rig hay que RENOMBRAR DE NUEVO; si alguien edita la semantica y se olvida, el dato
     ''' viejo se reinterpreta en silencio y no hay version que lo delate. A cambio, mientras se respete, no
     ''' existe el modo de falla contrario (un guard que se creia que corria y no corria). El gate
@@ -353,12 +353,12 @@ Public Class Config_App
 
     ' === Sombras proyectadas del previewer, POR JUEGO (misma convención que el rig de luces) ===
     ' Nadie las lee directo: Render y LightRigForm van por ActiveShadows()/SetActiveShadows().
-    ' ⛔ RENOMBRADAS junto con el rig (eran `Setting_PreviewShadows_FO4/_SSE`) y por el mismo motivo: ver el
+    ' RENOMBRADAS junto con el rig (eran `Setting_PreviewShadows_FO4/_SSE`) y por el mismo motivo: ver el
     ' bloque de Setting_LightRig_*. Renombrarlas ADEMAS elimina el centinela `MapSize <= 0` que tenían en
     ' LoadConfig: con la clave nueva ausente, la propiedad se queda con el `Defaults()` completo y no hay
     ' nada que detectar ni reparar. Ese centinela era el más débil de los tres mecanismos que convivían acá,
     ' porque sólo distinguía "la clave no estaba" y no "la clave estaba y significaba otra cosa".
-    ' ⚠️ El clamp de PreviewShadowSettings.Sanitized() NO se va: eso defiende el camino de dibujo de un
+    ' El clamp de PreviewShadowSettings.Sanitized() NO se va: eso defiende el camino de dibujo de un
     ' config editado a mano, que es otro problema.
     Public Property Setting_ShadowMaps_FO4 As PreviewShadowSettings = PreviewShadowSettings.Defaults()
     Public Property Setting_ShadowMaps_SSE As PreviewShadowSettings = PreviewShadowSettings.Defaults()
@@ -440,7 +440,7 @@ Public Class Config_App
         JsonConfigIO.Save(Current, ConfigFilePath, "configuration")
     End Sub
 
-    ' ⛔⭐ ACA VIVIA `RepararRigDeEsquemaViejo`, Y SE BORRO ENTERA. El rig y las sombras del preview ya no se
+    ' ACA VIVIA `RepararRigDeEsquemaViejo`, Y SE BORRO ENTERA. El rig y las sombras del preview ya no se
     ' versionan ni se reparan: sus propiedades se RENOMBRARON, con lo cual el dato viejo no se detecta —
     ' simplemente no se lee, y desaparece del archivo en el proximo guardado. Ver el bloque de
     ' `Setting_LightRig_*`, donde esta el mecanismo y su precio.
@@ -457,7 +457,7 @@ Public Class Config_App
             ' TBN que corria en cada arranque. Desde que esa rama es de UNA VEZ por version, sin esto la
             ' grilla se repara SOLO EN MEMORIA y se rehace el mismo trabajo en cada arranque.
             Dim hayQueGrabar As Boolean = False
-            ' ⛔ NO se resuelve ni se graba Setting_ShowHelperShapes acá: `Nothing` es un estado
+            ' NO se resuelve ni se graba Setting_ShowHelperShapes acá: `Nothing` es un estado
             ' persistente y round-trippeable, y resolverlo en lectura evita la llave de versión y el
             ' write-on-load. Ver el doc de esa propiedad. Lo único que se hace es DELATAR al host que no
             ' declaró su default, porque el fallback silencioso sería "mostrar" en un visor.
@@ -468,14 +468,14 @@ Public Class Config_App
                 Current.Settings_RenderGrid = Default_RenderGrid_Settings()
                 hayQueGrabar = True
             End If
-            ' ⛔⭐ ACA HABIA CUATRO RAMAS MAS —el centinela `MapSize <= 0` de las dos configs de sombra y la
+            ' ACA HABIA CUATRO RAMAS MAS —el centinela `MapSize <= 0` de las dos configs de sombra y la
             ' reparacion por version de los dos rigs— y NO SE REEMPLAZARON POR NADA: las cuatro propiedades
             ' se RENOMBRARON, asi que el dato viejo ya no se lee y no hay nada que detectar. Ver el bloque de
             ' `Setting_LightRig_*`.
-            ' ⭐ Y no hace falta grabar por eso: un config viejo se carga con los defaults en memoria, y la
+            ' Y no hace falta grabar por eso: un config viejo se carga con los defaults en memoria, y la
             ' clave vieja desaparece del archivo en el primer guardado que ocurra por cualquier motivo. Si
             ' nunca ocurre, tampoco importa — lo que hay en disco no se vuelve a leer.
-            ' ⛔ MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
+            ' MIGRACION POR VERSION DE OPCIONES. Una opcion NUEVA no esta en el config.json de un
             ' usuario existente, y TBNOptions es una Structure: el deserializador la deja en False/0, o sea
             ' que la estrenaria APAGADA sin haberlo pedido. Si el archivo declara una version anterior,
             ' `RepararOpcionesTBN` repone los defaults COMPLETOS — SI, eso pisa lo que el usuario haya
@@ -491,7 +491,7 @@ Public Class Config_App
         End If
     End Sub
 
-    ''' <summary>⭐ CONFIG VIEJO ⇒ DEFAULTS COMPLETOS. Sin ramas, sin centinelas, sin casos por campo.
+    ''' <summary>CONFIG VIEJO ⇒ DEFAULTS COMPLETOS. Sin ramas, sin centinelas, sin casos por campo.
     '''
     ''' <para><b>Decisión expresa del usuario (2026-08-12).</b> Antes esto eran tres ramas encadenadas
     ''' (v&lt;1, v&lt;2, v&lt;3), cada una reponiendo unos campos y respetando otros, con un centinela distinto
@@ -505,10 +505,10 @@ Public Class Config_App
     ''' es el precio, y está aceptado: un cambio de versión significa que los criterios cambiaron, y
     ''' arrancar con los defaults nuevos es preferible a arrastrar una mezcla que nadie eligió.</para>
     '''
-    ''' <para>⛔ Al agregar una opción: subir <c>RecalcTBN.VersionDeOpcionesTBN</c> y listo. No hay rama
+    ''' <para>Al agregar una opción: subir <c>RecalcTBN.VersionDeOpcionesTBN</c> y listo. No hay rama
     ''' que escribir, así que tampoco hay rama que olvidarse — que era el defecto de origen.</para>
     '''
-    ''' <para>⛔ ES PURA a propósito: no lee ni escribe <c>Current</c> ni el disco, así que el gate
+    ''' <para>ES PURA a propósito: no lee ni escribe <c>Current</c> ni el disco, así que el gate
     ''' <c>weld-epsilon</c> la puede probar sin arrancar la app con un config fabricado.</para></summary>
     Friend Shared Function RepararOpcionesTBN(original As RecalcTBN.TBNOptions) As RecalcTBN.TBNOptions
         If original.OptionsVersion >= RecalcTBN.VersionDeOpcionesTBN Then Return original

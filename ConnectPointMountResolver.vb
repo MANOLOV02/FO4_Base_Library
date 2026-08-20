@@ -3,7 +3,7 @@
 ''' en NIFs vanilla FO4: sockets parent con prefix "P-" matchean children con prefix "C-"
 ''' cuando comparten el suffix tras el prefix de 2 chars (ambos case-insensitive).
 '''
-''' ⚠ A VERIFICAR — la regla está INFERIDA, no confirmada contra spec del engine:
+''' A VERIFICAR — la regla está INFERIDA, no confirmada contra spec del engine:
 '''   Evidencia actual: ~10 pares observados en HandyRace (P-ArmsTypeA1|0/C-ArmsTypeA1|0,
 '''   P-BotCore/C-BotCore, P-BotLegs/C-BotLegs, P-ModSlotA/C-ModSlotA, etc.). Todos
 '''   siguen el patrón "P-X" ↔ "C-X".
@@ -18,7 +18,8 @@
 '''       exacto Name = PointName" (en vanilla ambas dan el mismo resultado, pero la
 '''       implementación correcta importa para mods con naming no-canónico).
 '''
-'''   Fuente canónica NO encontrada en xEdit, F4SE source ni nif.xml docs. Si aparece
+'''   Fuente canónica NO encontrada en herramientas de edición de plugins, F4SE source ni nif.xml
+'''   docs. Si aparece
 '''   evidencia que contradiga el patrón, esta clase debe revisarse ANTES de hardcodear
 '''   más excepciones (ver 00-reglas-scope-y-libreria.md).
 '''

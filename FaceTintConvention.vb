@@ -124,7 +124,7 @@ Public Module FaceTintConvention
     ''' color/cobertura de la capa ANTES del blend. Verificado en los .fx (switch(type)): Normal = tex×color
     ''' (RGBA), Mask = (color.rgb, tex.R×color.a), Color = color sólido. FO4 facegen no lo usa (queda en el
     ''' default histórico vía el layer-kind); lo consume el loader MASKT/TintData de skee.</summary>
-    ' ⛔ Sin un solo consumidor; su propio doc admite que "FO4 facegen no lo usa".
+    ' Sin un solo consumidor; su propio doc admite que "FO4 facegen no lo usa".
     Friend Enum FaceTintLayerType
         Normal = 0      ' b = layerTex * color
         Mask = 1        ' b = (color.rgb, layerTex.r * color.a)
@@ -196,12 +196,12 @@ Public Module FaceTintConvention
     '''   CompositeSpace = espacio donde corre el COMPOSITE (la lerp por cobertura base+cov*(blend−base)).
     '''                  Ley derivada gen3 (Tools/FaceTintDerive): el blend va en su espacio pero el
     '''                  composite-lerp va en LINEAR-light (D/N/S).
-    '''                  ⛔ NO forkea con forBake. Es `= bucket.CompositeSpace`, punto. (Este comentario
+    ''' NO forkea con forBake. Es `= bucket.CompositeSpace`, punto. (Este comentario
     '''                  afirmaba "para el render (forBake=False) = WorkingSpace": ERA FALSO —
     '''                  ResolveConvention no lee forBake NI UNA VEZ. Verificado 2026-07-30.)
     '''   OutputSpace  = espacio de ALMACENAMIENTO del canal: el espacio en el que el compose tiene que
     '''                  DEJAR el resultado. Default D=G22, N/S=Linear.
-    '''                  ⛔ Tampoco forkea render-vs-bake: la ley es UNICA (WYSIWYG, el render replica el
+    ''' Tampoco forkea render-vs-bake: la ley es UNICA (WYSIWYG, el render replica el
     '''                  bake). El texto viejo "D render=Srgb ; D bake=G22" era falso por el mismo motivo.
     '''   AccumSpace   = espacio en el que VIVE el acumulador DURANTE el compose (ver el campo mas abajo).
     ''' El compositor convierte prev(AccumSpace)->WorkingSpace y src(SrcSpace)->WorkingSpace, blendea,
@@ -224,7 +224,7 @@ Public Module FaceTintConvention
         ''' y de vuelta. Con <c>AccumSpace = CompositeSpace</c> el acumulador se queda en el espacio del
         ''' composite y esas dos conversiones por capa desaparecen (medido: el compose es el 94,9 % del bake y
         ''' su costo son los <c>Math.Pow</c> de estas conversiones).</para>
-        ''' <para>⛔ NO es solo velocidad: quitar el round-trip quita tambien su PERDIDA DE PRECISION, asi que
+        ''' <para>NO es solo velocidad: quitar el round-trip quita tambien su PERDIDA DE PRECISION, asi que
         ''' la salida CAMBIA. Que eso ACERQUE o ALEJE del CK es empirico y hay que medirlo — el RE del motor
         ''' (buffer <c>float4[16]</c> a UN pixel shader image-space) sugiere que el motor NO round-tripea entre
         ''' capas, con lo que el round-trip seria NUESTRO artefacto. Por eso el default NO cambia y esto se
@@ -303,7 +303,7 @@ Public Module FaceTintConvention
         ''' <summary>Bucket del PLIEGUE del facetint en el diffuse (SSE). Hasta la fase 7 la etapa Fold
         ''' caia en el bucket del CANAL y eso estaba declarado como PROVISIONAL. Ahora tiene el suyo.
         ''' <para>El default es un CLON del bucket del canal ⇒ byte-inerte: separar la etapa no cambia un
-        ''' byte hasta que el usuario mueva ESTE bucket. ⛔ Su <c>AccumInCompositeSpace</c> tiene que seguir
+        ''' byte hasta que el usuario mueva ESTE bucket. Su <c>AccumInCompositeSpace</c> tiene que seguir
         ''' coincidiendo con el del tint o el acumulador viviria en dos espacios: lo vigila el gate de BUILD
         ''' `accum-space` (Tools/ParityGate), que SI incluye Fold y Overlay.</para></summary>
         Public Property Fold As FaceTintBucketConvention
@@ -332,7 +332,7 @@ Public Module FaceTintConvention
         ''' plano. Inerte cuando SeedMode=BaseTexture. Serializado como array plano; null/short → 0.5.</summary>
         Public Property SeedConstant As Double() = New Double() {0.5, 0.5, 0.5}
 
-        ''' <summary>⭐ VERSION DE ESTE SET, para que un config viejo no aplique la ley de OTRO juego.
+        ''' <summary>VERSION DE ESTE SET, para que un config viejo no aplique la ley de OTRO juego.
         ''' <para>El problema concreto (plan §5.5): <see cref="SeedMode"/> y <see cref="SeedConstant"/> no
         ''' existían en los configs anteriores, así que un config.json de Skyrim sin esas claves deserializa
         ''' al default del CONSTRUCTOR, que es el de Fallout (<c>BaseTexture</c>). Mientras el compositor de
@@ -393,7 +393,7 @@ Public Module FaceTintConvention
             SeedConstant = New Double() {0.5, 0.5, 0.5}
             ' Fold y Overlay: CLON del bucket del canal ⇒ byte-inerte mientras el usuario no los toque.
             Overlay = CloneBucket(Diffuse)
-            ' ⭐ EL FOLD ARRANCA EN PEGTOP, no en el SoftLight del bucket del canal. El pliegue del albedo
+            ' EL FOLD ARRANCA EN PEGTOP, no en el SoftLight del bucket del canal. El pliegue del albedo
             ' facegen es una ley del MOTOR y su soft-light es pegtop (DXBC verificado: a² + 2ab(1−a) = el
             ' modelo 3). Clonar el bucket del canal le habría puesto GIMP y el fold habría cambiado de fórmula
             ' el día que dejara de estar cableado. El default de un bucket tiene que ser la ley del motor.
@@ -465,7 +465,7 @@ Public Module FaceTintConvention
         ''' un config de esa época los trae con el default del constructor (= el de Fallout) sin importar el
         ''' juego. Se les aplica el default DEL JUEGO. No se pierde ninguna elección del usuario: en la
         ''' versión 0 esos campos no tenían interfaz y el compositor de Skyrim los ignoraba.</para>
-        ''' <para>⛔ Se aplica donde el set ENTRA al sistema —los setters de los dos slots de
+        ''' <para>Se aplica donde el set ENTRA al sistema —los setters de los dos slots de
         ''' <c>Config_App</c>— y no en cada lectura: es el único punto por el que pasan la deserialización del
         ''' config.json, los <c>--config</c> del CLI y <see cref="SetActiveSettings"/>.</para></summary>
         Public Shared Sub UpgradeInPlace(s As FaceTintConventionSettings, game As Config_App.Game_Enum)
@@ -480,8 +480,8 @@ Public Module FaceTintConvention
             ' materializan para que la UI y el JSON tengan valores concretos (y sean editables).
             If s.Fold Is Nothing Then s.Fold = d.Fold
             If s.Overlay Is Nothing Then s.Overlay = d.Overlay
-            ' ⭐⭐ -> 4: `Fold` y `Overlay` se RESETEAN ENTEROS al default DEL JUEGO.
-            ' ⛔ MEDIDO en los config del arnés (2026-08-01): en el slot de SKYRIM los dos buckets traían la
+            ' -> 4: `Fold` y `Overlay` se RESETEAN ENTEROS al default DEL JUEGO.
+            ' MEDIDO en los config del arnés (2026-08-01): en el slot de SKYRIM los dos buckets traían la
             ' forma de FALLOUT — ws=G22, src=G22, out=G22, mask=G22Encode, accum=True — mientras el Diffuse de
             ' SSE es all-Linear/Raw/accum=False. Salieron del CONSTRUCTOR (que es el de FO4) cuando el slot se
             ' creó, y nadie los corrigió porque hasta ahora NINGÚN compositor los leía: el eje `stage` se
@@ -490,7 +490,7 @@ Public Module FaceTintConvention
             ' overlays de Skyrim. Resetearlos no pierde ninguna elección del usuario POR CONSTRUCCIÓN: un
             ' campo sin consumidor no pudo haber sido elegido — la UI los mostraba, pero lo que mostraba no
             ' movía un byte.
-            ' ⛔ Por eso la versión sube a 4 y no alcanzaba con la 3: los sets ya migrados a la 3 (que sólo
+            ' Por eso la versión sube a 4 y no alcanzaba con la 3: los sets ya migrados a la 3 (que sólo
             ' corregía Fold.SoftLight) salen por el `Return` de arriba y se habrían quedado con el resto de la
             ' forma equivocada.
             If s.Version < 4 Then
@@ -543,7 +543,7 @@ Public Module FaceTintConvention
     End Function
 
     ''' <summary>Escribe el set en el slot DEL JUEGO ACTIVO y devuelve el nombre del slot escrito.
-    ''' ⛔ Existe porque el slot lo elige el juego: escribir el de FO4 con SSE activo deja el valor
+    ''' Existe porque el slot lo elige el juego: escribir el de FO4 con SSE activo deja el valor
     ''' INVISIBLE para <see cref="ActiveSettings"/> y un barrido de N convenciones mide N veces la misma
     ''' sin fallar. El nombre devuelto es para que el caller lo imprima: un barrido que no dice en qué
     ''' slot escribió no se puede auditar.</summary>
@@ -558,7 +558,7 @@ Public Module FaceTintConvention
 
     ''' <summary>¿El seed del diffuse aplica la conversion de espacio? Lo leen ambos compositores (GL y CPU).
     ''' Vive en el config; esto solo lo reenvia, null-safe.
-    ''' <para>⛔ El nombre dice "G22" por historia: el seed ya NO lleva la base a G22 sino a <c>AccumSpace</c>
+    ''' <para>El nombre dice "G22" por historia: el seed ya NO lleva la base a G22 sino a <c>AccumSpace</c>
     ''' (ver <see cref="AccumSpaceForChannel"/>), que coincide con G22 solo mientras
     ''' <c>AccumInCompositeSpace</c> este apagado. Con el flag False este Boolean elige entre
     ''' "convertir SrcSpace-&gt;AccumSpace" y "sembrar crudo"; no fija el espacio destino.</para></summary>
@@ -579,11 +579,11 @@ Public Module FaceTintConvention
         End Get
     End Property
 
-    ''' <summary>⭐ MODO del seed del acumulador DIFFUSE, de la ley del juego activo. Es la propiedad que
+    ''' <summary>MODO del seed del acumulador DIFFUSE, de la ley del juego activo. Es la propiedad que
     ''' decide si el acumulador arranca de la textura base (FO4) o de un color plano (SSE) — los DOS
     ''' compositores CPU la leen de acá y arman su <c>FaceTintSeedSpec</c> con ella, en vez de que cada camino
     ''' tenga cableado el modo de su juego. Null-safe.
-    ''' <para>⛔ Es DIFFUSE-only por construcción: N/S no tienen "base de color", su seed es el src crudo. El
+    ''' <para>Es DIFFUSE-only por construcción: N/S no tienen "base de color", su seed es el src crudo. El
     ''' nombre lo dice y los compositores lo gatean por canal.</para></summary>
     Public ReadOnly Property SeedModeValue As FaceTintSeedMode
         Get
@@ -602,7 +602,7 @@ Public Module FaceTintConvention
         Return New Single() {CSng(k(0)), CSng(k(1)), CSng(k(2))}
     End Function
 
-    ' ⛔ ELIMINADA `SeedDiffuseOutputSpaceValue` (2026-07-30). Devolvia `Diffuse.OutputSpace` y su doc decia
+    ' ELIMINADA `SeedDiffuseOutputSpaceValue` (2026-07-30). Devolvia `Diffuse.OutputSpace` y su doc decia
     ' "el seed lleva la base a ESE espacio, lo leen ambos compositores". Las DOS cosas dejaron de ser ciertas:
     ' el seed ahora lleva la base a AccumSpace (ver AccumSpaceForChannel) y no quedaba UN solo lector en el
     ' repo. Su reemplazo exacto para el OutputSpace del diffuse es `OutputSpaceForChannel(Diffuse)`, que ademas
@@ -616,7 +616,7 @@ Public Module FaceTintConvention
     ''' <summary>CAPACIDAD DECLARADA del compositor CPU que hace de ESPEJO de un camino de compose. Es la
     ''' condicion REAL que gatea <see cref="FaceTintBucketConvention.AccumInCompositeSpace"/>: el acumulador solo
     ''' puede salir de OutputSpace si LOS DOS lados —el GL y su espejo CPU— implementan la misma ley.
-    ''' <para>⛔ LA CONDICION NO ES EL JUEGO. El compositor GL (<c>FaceTintCompositor</c>) es UNO SOLO y lo
+    ''' <para>LA CONDICION NO ES EL JUEGO. El compositor GL (<c>FaceTintCompositor</c>) es UNO SOLO y lo
     ''' comparten los dos motores; lo que cambia por camino es QUIEN es su espejo CPU. Por eso cada call site
     ''' declara el suyo pasando la constante que PUBLICA ese compositor
     ''' (<c>FaceTintCpuCompositor.AccumSpaceCapability</c> / <c>SseFaceTintComposer.AccumSpaceCapability</c>).
@@ -632,7 +632,7 @@ Public Module FaceTintConvention
         FourSpaceAccumulator = 1
     End Enum
 
-    ''' <summary>⭐ Espacio del ACUMULADOR del canal. UNICA fuente de verdad, para CPU y GL.
+    ''' <summary>Espacio del ACUMULADOR del canal. UNICA fuente de verdad, para CPU y GL.
     ''' <para>POR QUE EXISTE: el acumulador es UN buffer por canal (los <c>accR/accG/accB</c> del CPU, la textura
     ''' de ping-pong del GL) que sobrevive a TODAS las fases — seed, region swaps y capas de tint. No puede vivir
     ''' en dos espacios a la vez, asi que su espacio NO puede salir del bucket de cada fase: si el bucket Swap
@@ -640,10 +640,10 @@ Public Module FaceTintConvention
     ''' escribiendo el mismo buffer en espacios distintos. Se resuelve entonces SIEMPRE con
     ''' <c>forSwap:=False</c> — el bucket del CANAL manda — y el <c>AccumInCompositeSpace</c> del bucket Swap NO
     ''' participa (su WorkingSpace/CompositeSpace/SrcSpace si, que son de la FASE, no del storage).</para>
-    ''' <para>⛔ Llamar a esto y NO a ResolveConvention(...).AccumSpace en los caminos del acumulador: asi los dos
+    ''' <para>Llamar a esto y NO a ResolveConvention(...).AccumSpace en los caminos del acumulador: asi los dos
     ''' compositores leen el MISMO valor por construccion, y sigue siendo correcto si el usuario cambia los
     ''' settings (hoy en N/S es un no-op porque cs==os==Linear, pero deja de serlo si los cambia).</para>
-    ''' <para>⛔ NO TOMA <c>forBake</c> A PROPOSITO. La version previa de este comentario afirmaba que la
+    ''' <para>NO TOMA <c>forBake</c> A PROPOSITO. La version previa de este comentario afirmaba que la
     ''' convencion forkea con ese flag ("OutputSpace del diffuse G22 al hornear y Srgb al renderizar") y que por
     ''' eso el parametro tenia que ser obligatorio: ERA FALSO. <see cref="ResolveConvention"/> NO referencia
     ''' <c>forBake</c> ni una vez — la ley es UNICA para render y bake por decision de diseño (WYSIWYG, el render
@@ -661,7 +661,7 @@ Public Module FaceTintConvention
     ' =====================================================================================================
     ' ADVERTENCIAS DE CONVENCION (latcheadas, always-on).
     ' =====================================================================================================
-    ' ⛔ POR QUE NO ALCANZA `Logger.LogLazy`: sale por `If Enabled = False Then Exit Sub`, y `Logger.Enabled`
+    ' POR QUE NO ALCANZA `Logger.LogLazy`: sale por `If Enabled = False Then Exit Sub`, y `Logger.Enabled`
     ' esta APAGADO en release. Una advertencia que solo existe en debug NO es una advertencia — es la
     ' degradacion silenciosa que la regla del arnes prohibe ("toda condicion anomala ABORTA o se MARCA").
     ' Aca se MARCA: se latchea el primer caso y el runner lo imprime por su `log()`, que sale siempre (consola
@@ -707,9 +707,9 @@ Public Module FaceTintConvention
         End SyncLock
     End Sub
 
-    ''' <summary>⭐ LEY UNICA de la INTENSIDAD de un region swap (el MSDV del preset de FaceMorph), compartida
+    ''' <summary>LEY UNICA de la INTENSIDAD de un region swap (el MSDV del preset de FaceMorph), compartida
     ''' por el compositor CPU y el GL. Existe para que no haya DOS escrituras de la misma regla.
-    ''' <para>⛔ ESTABAN ESCRITAS DISTINTO (2026-07-30): el CPU hacia <c>Math.Max(0.0, CDbl(sw.Intensity))</c>
+    ''' <para>ESTABAN ESCRITAS DISTINTO (2026-07-30): el CPU hacia <c>Math.Max(0.0, CDbl(sw.Intensity))</c>
     ''' —piso en 0, SIN techo— y el GL <c>Math.Max(0.0F, Math.Min(1.0F, sw.Intensity))</c> —piso Y techo—.
     ''' Con los datos vanilla es un NO-OP (medido: los MSDV estan en [-1, 1]; sobre los 6 NPCs que cargan la
     ''' cola de divergencia, 54 valores, el maximo es 1,0000 exacto), asi que NO era la causa de ninguna
@@ -727,7 +727,7 @@ Public Module FaceTintConvention
         Return Math.Max(0.0F, Math.Min(1.0F, intensity))
     End Function
 
-    ' ⛔ EL GATE `accum-space` YA NO VIVE ACA. Se mudó a Tools/ParityGate
+    ' EL GATE `accum-space` YA NO VIVE ACA. Se mudó a Tools/ParityGate
     ' (LawGates.AccumSpaceConsistencyGate) el 2026-08-08: es una invariante de la LEY, sin aritmética ni
     ' SIMD, o sea que da lo mismo en toda máquina. Vigila que las 5 etapas × 3 canales resuelvan el MISMO
     ' AccumSpace — el acumulador es UN buffer compartido y no puede vivir en dos espacios.
@@ -743,7 +743,7 @@ Public Module FaceTintConvention
     ''' <para>Existe porque "qué bucket manda" no es función del canal: RegionSwap, Overlay y Fold escriben
     ''' el acumulador del canal Diffuse igual que el tint, y sin nombrarlas el resolver sólo podía
     ''' distinguirlas con un booleano por caso (era <c>forSwap</c>) que no escalaba a las otras dos.</para>
-    ''' <para>⚠️ <see cref="Overlay"/> y <see cref="Fold"/> se mapean HOY al bucket del canal: todavía no
+    ''' <para><see cref="Overlay"/> y <see cref="Fold"/> se mapean HOY al bucket del canal: todavía no
     ''' tienen el suyo. El mapeo es provisional y declarado, no un olvido.</para></summary>
     Public Enum FaceTintStage
         ''' <summary>Capas de tint sobre el canal Diffuse. Bucket <c>Diffuse</c>.</summary>
@@ -765,7 +765,7 @@ Public Module FaceTintConvention
     End Function
 
     ''' <summary>Resuelve la convención de composición para una capa+canal según la tabla derivada.
-    ''' <para>⛔ SYNC: CPU/GPU compositor — ÉSTE es el punto que hace que el contrato se cumpla por
+    ''' <para>SYNC: CPU/GPU compositor — ÉSTE es el punto que hace que el contrato se cumpla por
     ''' construcción: es el ÚNICO lugar donde vive la tabla, y la leen los DOS caminos (el GL de
     ''' <c>FaceTintCompositor.ApplyFaceTintPipeline</c> y el CPU de <c>FaceTintCpuCompositor</c>).
     ''' Cualquier ajuste va acá; hardcodear un valor en un compositor rompe la paridad en silencio, y el
@@ -776,7 +776,7 @@ Public Module FaceTintConvention
     ''' <param name="channel">0=Diffuse, 1=Normal, 2=Specular.</param>
     ''' <param name="isTextureSet">True = TextureSet (disc=2); False = Palette/Mask (disc=1).</param>
     ''' <param name="blendOp">BlendOp efectivo del resolver (0..4).</param>
-    ''' <remarks>⛔ SE PODARON TRES PARÁMETROS MUERTOS —<c>slot</c>, <c>useHairPalette</c> y <c>forBake</c>—
+    ''' <remarks>SE PODARON TRES PARÁMETROS MUERTOS —<c>slot</c>, <c>useHairPalette</c> y <c>forBake</c>—
     ''' verificados uno por uno: el cuerpo no referenciaba ninguno. <c>forBake</c> ya lo declaraba su propio
     ''' doc ("la ley es ÚNICA para render y bake"); los otros dos sobrevivían por inercia y le daban al caller
     ''' la impresión falsa de que la ley depende de ellos — tanto que un caller barría
@@ -794,7 +794,7 @@ Public Module FaceTintConvention
         Dim forSwap As Boolean = (stage = FaceTintStage.RegionSwap)
         ' Swaps: sólo el DIFFUSE swap tiene bucket propio (s.Swap). Los swaps de Normal/Specular usan la
         ' MISMA convención que su tint (s.NormalSpecular). Sólo el diffuse cambia.
-        ' ⚠️ Overlay y Fold caen al bucket del CANAL (Diffuse) A PROPÓSITO y de forma PROVISIONAL: todavía no
+        ' Overlay y Fold caen al bucket del CANAL (Diffuse) A PROPÓSITO y de forma PROVISIONAL: todavía no
         ' tienen bucket propio (lo reciben en las fases 6-8 del plan de unificación). Sin este mapeo el
         ' resolver no tendría qué devolverles. Mientras tanto se comportan exactamente como el tint, que es
         ' lo que hacían antes de existir el eje ⇒ byte-idéntico.
@@ -803,7 +803,7 @@ Public Module FaceTintConvention
         Dim bucket As FaceTintBucketConvention =
             If(channel = FaceTintChannel.Diffuse, s.Diffuse, s.NormalSpecular)
         If forSwap AndAlso channel = FaceTintChannel.Diffuse Then bucket = s.Swap
-        ' ⭐ Fold y Overlay: bucket propio y SOLO en el canal DIFFUSE — la MISMA gating que el swap, y por la
+        ' Fold y Overlay: bucket propio y SOLO en el canal DIFFUSE — la MISMA gating que el swap, y por la
         ' misma razón. Los dos son etapas del `_d` de SSE (el pliegue del facetint y las capas de RaceMenu);
         ' no existen en Normal/Specular, así que aplicarles su bucket en esos canales devolvería una convención
         ' con forma de Diffuse para un canal que acumula lineal. Sin el gate, un caller que pase stage=Fold a la
@@ -852,23 +852,23 @@ Public Module FaceTintConvention
             c.SrcSpace = If(isTextureSet, s.DiffuseTextureSrcSpace, bucket.SrcSpace)
         End If
 
-        ' ⭐ AccumSpace se resuelve AL FINAL, A PROPOSITO: `c.WorkingSpace` lo pisa el override por-blend-op de
+        ' AccumSpace se resuelve AL FINAL, A PROPOSITO: `c.WorkingSpace` lo pisa el override por-blend-op de
         ' arriba (:547-550) y resolverlo antes tomaria el valor previo a ese override.
-        ' ⛔ NO decir "y c.CompositeSpace depende de forBake": es FALSO. `c.CompositeSpace` se asigna una sola
+        ' NO decir "y c.CompositeSpace depende de forBake": es FALSO. `c.CompositeSpace` se asigna una sola
         ' vez, `= bucket.CompositeSpace`, y nada mas en este cuerpo lo toca; `forBake` no se lee NUNCA (ver el
         ' <param> de arriba). Esa frase estuvo escrita aca 60 lineas debajo del comentario que la declara falsa.
         ' El compositor —CPU y GL— NO ve el booleano: ve un espacio CONCRETO.
-        ' ⛔⛔ EL ACUMULADOR ES STORAGE DEL CANAL, NO DE LA ETAPA. `AccumSpace` sale SIEMPRE del bucket del
+        ' EL ACUMULADOR ES STORAGE DEL CANAL, NO DE LA ETAPA. `AccumSpace` sale SIEMPRE del bucket del
         ' CANAL — flag, CompositeSpace y OutputSpace —, nunca del bucket de la etapa. Es la misma ley que ya
         ' regía para el bucket Swap (ver AccumSpaceForChannel), pero ahora es ESTRUCTURAL en vez de vigilada.
-        ' ⭐ POR QUE SE CAMBIO: con Fold y Overlay ya alcanzables, sus buckets traían
+        ' POR QUE SE CAMBIO: con Fold y Overlay ya alcanzables, sus buckets traían
         ' `AccumInCompositeSpace = True` (el default del inicializador, que se llevó CloneBucket) mientras el
         ' Diffuse de SSE persistido tiene False — MEDIDO en los config del arnés, no supuesto. Hoy no se nota
         ' porque la ley SSE es all-Linear y las dos fórmulas dan Linear; el día que un espacio deje de serlo,
         ' las etapas escribirían EL MISMO buffer en dos espacios distintos y la salida sería basura sin que
         ' falle nada. Era exactamente el escenario que el gate de BUILD `accum-space` (Tools/ParityGate)
         ' declara vigilar.
-        ' ⛔ Con stage = la etapa de tint del canal (el caso de TODOS los callers previos) `storage` ES
+        ' Con stage = la etapa de tint del canal (el caso de TODOS los callers previos) `storage` ES
         ' `bucket` ⇒ byte-idéntico. Sólo cambia para las etapas con bucket propio, que es la corrección.
         Dim storage As FaceTintBucketConvention =
             If(channel = FaceTintChannel.Diffuse, s.Diffuse, s.NormalSpecular)

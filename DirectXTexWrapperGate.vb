@@ -5,7 +5,7 @@ Imports System.Text
 ''' <summary>Chequea que el <c>DirectXTexWrapper.dll</c> que hay al lado del exe es el que ESTA libreria
 ''' espera, y devuelve un diagnostico legible en vez de dejar que el desajuste salga como silencio.
 '''
-''' <para>⛔ POR QUE EXISTE. Hasta 1.5.2 la lib descubria <c>ConvertSubresources</c> por REFLEXION; 1.5.3 pasó
+''' <para>POR QUE EXISTE. Hasta 1.5.2 la lib descubria <c>ConvertSubresources</c> por REFLEXION; 1.5.3 pasó
 ''' a llamadas tipadas y consume ademas <c>DdsMetadata.ArraySize</c>, la sobrecarga
 ''' <c>LoadTextures(..., onlyMipLevel)</c> y <c>ConvertSubresourcesToDds</c>. Un wrapper viejo al lado de una
 ''' lib nueva ya no degrada: es <c>MissingMethodException</c> / <c>TypeLoadException</c>. Y el desajuste de
@@ -13,7 +13,7 @@ Imports System.Text
 ''' proceso x64 tira <c>BadImageFormatException</c> adentro del lector de BA2 y CADA textura DX10 devuelve
 ''' 0 bytes, sin un cartel.</para>
 '''
-''' <para>⛔ NO ES UN GATE DE ARRANQUE DE LA GUI, Y ES A PROPOSITO. Con el wrapper roto, NPC Manager sigue
+''' <para>NO ES UN GATE DE ARRANQUE DE LA GUI, Y ES A PROPOSITO. Con el wrapper roto, NPC Manager sigue
 ''' sirviendo para navegar el arbol y editar ESP, y el preview muestra el problema a la vista; abortar ahi
 ''' convierte una instalacion DEGRADADA en una app muerta. Los que abortan son los modos que ESCRIBEN
 ''' ARCHIVOS sin nadie mirando —los bakes headless y el CLI—, donde seguir significa dejar en disco DDS
@@ -22,7 +22,7 @@ Imports System.Text
 ''' todos: escribe un .dds vacio por textura y despues BORRA el .ba2, que era la unica copia. Su
 ''' <c>--build</c> escribe NIF y no decodifica una sola textura, y por eso no lo llama.</para>
 '''
-''' <para>⛔ NO PASA POR <c>CrashReport</c>. Ese modulo tiene un guard <c>_reported</c> de por vida: gastarlo
+''' <para>NO PASA POR <c>CrashReport</c>. Ese modulo tiene un guard <c>_reported</c> de por vida: gastarlo
 ''' acá dejaria MUDA cualquier caida posterior de la sesion, que es justo el diagnostico para el que
 ''' existe.</para></summary>
 Public Module DirectXTexWrapperGate
@@ -31,7 +31,7 @@ Public Module DirectXTexWrapperGate
     Private ReadOnly _candado As New Object()
 
     ''' <summary>Cadena vacia si el wrapper es el esperado; si no, el diagnostico para el usuario.
-    ''' <para>⛔ SE MEMOIZA TAMBIEN EL FALLO. Antes solo el exito, "por si el fallo era transitorio" — y eso
+    ''' <para>SE MEMOIZA TAMBIEN EL FALLO. Antes solo el exito, "por si el fallo era transitorio" — y eso
     ''' era tolerable con el gate en tres entry points, pero ahora vive en el chokepoint del bake: un barrido
     ''' de miles de NPC con el wrapper roto correria la sonda entera (4 llamadas nativas) una vez POR NPC y
     ''' serializada bajo este mismo SyncLock. Y los modos de falla reales —bitness equivocado, metodo que no
@@ -49,7 +49,7 @@ Public Module DirectXTexWrapperGate
         End SyncLock
     End Function
 
-    ''' <summary>⛔ <c>NoInlining</c> ES PARTE DEL CONTRATO, por el mismo motivo que <c>RealMain</c> en
+    ''' <summary><c>NoInlining</c> ES PARTE DEL CONTRATO, por el mismo motivo que <c>RealMain</c> en
     ''' <c>Program.vb</c>: el JIT resuelve las referencias del cuerpo ENTERO de un metodo antes de ejecutar su
     ''' primera linea. Con estas llamadas inlineadas en <see cref="Verificar"/>, la resolucion —y con ella el
     ''' <c>MissingMethodException</c> o el <c>BadImageFormatException</c>— ocurriria en el JIT de
@@ -57,7 +57,7 @@ Public Module DirectXTexWrapperGate
     ''' muda que vino a explicar.
     ''' <para>Las cuatro llamadas cubren las cuatro superficies del wrapper que la app consume hoy. Como el
     ''' JIT resuelve el cuerpo de una, que falte CUALQUIERA se ve acá.</para>
-    ''' <para>⛔ El camino esta elegido para no poder fallar en una instalacion sana: DXGI 87
+    ''' <para>El camino esta elegido para no poder fallar en una instalacion sana: DXGI 87
     ''' (B8G8R8A8_UNORM) esta en el mapa de formatos con <c>glInternalFormat</c> valido y
     ''' <c>isCompressed=false</c>, asi que con <c>useCompress:=False, forceOpenGL:=False</c> no hay
     ''' descompresion, ni generacion de mips, ni <c>Convert</c>, ni compresion BCn — y el header lo escribe y
@@ -98,7 +98,7 @@ Public Module DirectXTexWrapperGate
         End If
     End Sub
 
-    ''' <summary>⛔ NO TOCA UN SOLO TIPO DEL WRAPPER. Se llama desde el <c>Catch</c> del gate, o sea despues de
+    ''' <summary>NO TOCA UN SOLO TIPO DEL WRAPPER. Se llama desde el <c>Catch</c> del gate, o sea despues de
     ''' que la resolucion de esos tipos YA fallo: mirar <c>GetType(Loader).Assembly.Location</c> para "informar
     ''' mejor" volveria a dispararla ahi, donde no hay red, y el diagnostico terminaria siendo la caida.
     ''' Todo sale de rutas de archivo.

@@ -8,16 +8,16 @@
 ''' sin recargar la escena. Su default es DESTILDADO. OutfitStudio —el editor— no lo consulta y
 ''' muestra todo: la misma asimetría que acá hay entre NPC Manager (visor) y Wardrobe Manager (editor).</para>
 '''
-''' <para>⛔ <b>Esto decide qué se DIBUJA, nunca qué se CONSERVA.</b> Ningún camino de escritura
+''' <para><b>Esto decide qué se DIBUJA, nunca qué se CONSERVA.</b> Ningún camino de escritura
 ''' (guardar, construir, clonar, copiar, mergear, shapedata) puede perder una helper. La única
 ''' excepción es el exporter de NPC Manager, que tiene su PROPIA casilla y NO consulta este gate.</para>
 '''
-''' <para>⛔ El "Mask Occluded" de WM tampoco pasa por acá: usa <c>IsHelperShape</c> a secas. Un proxy
+''' <para>El "Mask Occluded" de WM tampoco pasa por acá: usa <c>IsHelperShape</c> a secas. Un proxy
 ''' de colisión no es un occluder legítimo lo estés mirando o no, y su máscara alimenta el zap, que al
 ''' construir puede llegar a borrar la shape. Una preferencia de VISIBILIDAD no puede decidir qué
 ''' geometría sobrevive.</para>
 '''
-''' <para>⛔ NO se gatea <c>RebuildRenderBuckets</c>: su detector de staleness es
+''' <para>NO se gatea <c>RebuildRenderBuckets</c>: su detector de staleness es
 ''' <c>(Opaque+Cutout+Decal+Blended).Count &lt;&gt; meshes.Count</c>, así que filtrar ahí lo dejaría
 ''' permanentemente falso y el rebuild correría en TODOS los frames.</para>
 ''' </summary>

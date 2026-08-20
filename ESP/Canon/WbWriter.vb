@@ -134,16 +134,90 @@ Namespace Canon
 
         Public Const SENTINEL As UInteger = &HFFFFFFFFUI
 
-        ''' <summary>Aplica <paramref name="map"/> a cada FormID del árbol. Devuelve cuántos tocó.</summary>
-        Public Shared Function Remap(root As WbNode, map As Func(Of UInteger, UInteger)) As Integer
+        ''' <summary>Pasada de LECTURA: traduce cada referencia del espacio del archivo al del orden
+        ''' de carga y deja anotado en el nodo de dónde salió. Devuelve cuántas tocó.
+        '''
+        ''' <para>La anotación es la que hace REVERSIBLE una traducción que no lo es. Un índice
+        ''' de master mayor que la cantidad de masters del archivo no apunta a ningún master: el
+        ''' motor lo pliega al propio archivo, igual que el índice canónico de "propio", así que
+        ''' dos valores distintos del archivo entran al mismo valor del orden de carga y la vuelta
+        ''' sola no puede saber cuál de los dos había. Con la anotación sí.</para></summary>
+        Public Shared Function NormalizarDesdeArchivo(root As WbNode,
+                                                      map As Func(Of UInteger, UInteger)) As Integer
             Dim touched = 0
             For Each n In Enumerate(root)
                 Dim v = CUInt(n.Value)
                 If v = SENTINEL AndAlso CType(n.Def, WbFormIdDef).AllowsSentinel Then Continue For
-                n.Value = map(v)
+                Dim g = map(v)
+                n.Value = g
+                n.ReferenciaDeArchivo = True
+                n.ReferenciaLocalDeArchivo = v
+                n.ReferenciaGlobalDeArchivo = g
                 touched += 1
             Next
             Return touched
+        End Function
+
+        ''' <summary>Pasada de ESCRITURA: traduce cada referencia del espacio del orden de carga al
+        ''' del archivo que se está grabando. Devuelve cuántas tocó.
+        '''
+        ''' <para><paramref name="indicePropioDelDestino"/> es el índice de master con el que el
+        ''' archivo de salida nombra a sus PROPIOS records, o sea la cantidad de entradas de su
+        ''' MAST. Con -1 no se restituye nada, que es lo que corresponde cuando el que emite no sabe
+        ''' contra qué lista de masters está escribiendo.</para>
+        '''
+        ''' <para>Un índice de master que la lista no tiene NO apunta a ningún master: el archivo
+        ''' de salida lo va a plegar a sus propios records, igual que el índice canónico de
+        ''' "propio". O sea que son DOS codificaciones del mismo destino, y la traducción devuelve
+        ''' siempre la canónica porque la otra no cabe en un FormID del orden de carga. Cuando la
+        ''' fuente traía la no canónica se la devuelve, y así el archivo sale como entró.</para>
+        '''
+        ''' <para>La equivalencia se COMPRUEBA, no se supone, y se comprueba contra el archivo
+        ''' DESTINO: el índice de origen tiene que quedar fuera de rango también ahí, la
+        ''' traducción tiene que haber dado justo "propio del destino", y el object id tiene que
+        ''' ser el mismo. Sin las tres, restituir cambia a dónde apunta la referencia — el mismo
+        ''' número es un master real en otra lista de masters. Se exige además que el valor del
+        ''' nodo siga siendo el que dejó la lectura: si alguien repuntó la referencia, lo que decía
+        ''' el archivo describe un destino que ya no es el que hay que grabar.</para>
+        '''
+        ''' <para><paramref name="map"/> se llama SIEMPRE, aunque después se restituya. No es
+        ''' redundante: el que graba corre este mismo recorrido una primera vez sólo para DESCUBRIR
+        ''' a qué archivos queda atado lo que emite, y eso lo anota el mapa. Saltearlo dejaría la
+        ''' lista de masters corta justo para las referencias restituidas.</para></summary>
+        Public Shared Function ReindexarADestino(root As WbNode, map As Func(Of UInteger, UInteger),
+                                                 indicePropioDelDestino As Integer) As Integer
+            Dim touched = 0
+            For Each n In Enumerate(root)
+                Dim v = CUInt(n.Value)
+                If v = SENTINEL AndAlso CType(n.Def, WbFormIdDef).AllowsSentinel Then Continue For
+                Dim traducido = map(v)
+                If EsLaMismaReferencia(n, v, traducido, indicePropioDelDestino) Then
+                    n.Value = n.ReferenciaLocalDeArchivo
+                Else
+                    n.Value = traducido
+                End If
+                touched += 1
+            Next
+            Return touched
+        End Function
+
+        ''' <summary>True si lo que decía el archivo de origen y lo que acaba de dar la traducción
+        ''' son dos escrituras del MISMO destino dentro del archivo que se está grabando.</summary>
+        Private Shared Function EsLaMismaReferencia(n As WbNode, valorActual As UInteger,
+                                                    traducido As UInteger,
+                                                    indicePropioDelDestino As Integer) As Boolean
+            If indicePropioDelDestino < 0 Then Return False
+            If Not n.ReferenciaDeArchivo Then Return False
+            ' Alguien repuntó la referencia después de leerla.
+            If valorActual <> n.ReferenciaGlobalDeArchivo Then Return False
+            Dim original = n.ReferenciaLocalDeArchivo
+            If original = traducido Then Return False
+            ' El índice de la fuente no existe en la MAST del destino.
+            If CInt(original >> 24) <= indicePropioDelDestino Then Return False
+            ' Y la traducción cayó justo en los records propios del destino, que es a donde el
+            ' archivo va a plegar ese índice inexistente.
+            If CInt(traducido >> 24) <> indicePropioDelDestino Then Return False
+            Return (original And &HFFFFFFUI) = (traducido And &HFFFFFFUI)
         End Function
 
         ''' <summary>Todos los nodos que SON una referencia. Nada más entra en esta lista.</summary>

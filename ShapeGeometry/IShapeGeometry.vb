@@ -46,7 +46,7 @@ Public Interface IShapeGeometry
     ''' <summary>
     ''' True si el bloque guarda la normal CUANTIZADA A BYTE (3 sbyte por vertice) en vez de en float.
     '''
-    ''' ⭐ No es un detalle de serializacion: <c>BSTriShape::CalcTangentSpace</c> llama
+    ''' No es un detalle de serializacion: <c>BSTriShape::CalcTangentSpace</c> llama
     ''' <c>UpdateRawNormals()</c> en su primera linea (nifly Geometry.cpp:975), y esa funcion
     ''' RE-DECODIFICA las normales desde esos bytes (Geometry.cpp:642), pisando la copia de plena
     ''' precision. O sea que el canonico ortogonaliza la base tangente contra la normal cuantizada, y
@@ -59,7 +59,7 @@ Public Interface IShapeGeometry
     ''' <summary>
     ''' True si el bloque guarda las UV en HALF (16 bits). <c>BSTriShape</c> lo hace SIEMPRE, en los
     ''' dos juegos y sin condicional de precision (nifly Geometry.cpp:535).
-    ''' ⭐ Importa porque <c>CalcTangentSpace</c> deriva s1/s2/t1/t2 de <c>vertData[i].uv</c>, o sea
+    ''' Importa porque <c>CalcTangentSpace</c> deriva s1/s2/t1/t2 de <c>vertData[i].uv</c>, o sea
     ''' de las UV ya redondeadas. El paso de half en [0,1] es ~5e-4: contra float es enorme, y en una
     ''' costura de UV espejado —donde los aportes de los dos lados casi se cancelan— es lo unico que
     ''' queda del acumulado, asi que define el SIGNO de la bitangente.

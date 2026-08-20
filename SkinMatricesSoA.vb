@@ -1,14 +1,14 @@
 Imports OpenTK.Mathematics
 
-''' <summary>⭐⭐ Las matrices de skin per-vertice, guardadas en SoA (12 arrays planos) en vez de en un
+''' <summary>Las matrices de skin per-vertice, guardadas en SoA (12 arrays planos) en vez de en un
 ''' <c>Matrix4()</c>.
 '''
-''' <para>⛔ POR QUE. El kernel de skinning (<see cref="FastSkin"/>) es memory-bound y para vectorizar
+''' <para>POR QUE. El kernel de skinning (<see cref="FastSkin"/>) es memory-bound y para vectorizar
 ''' necesita los datos en SoA — todos los M11 juntos, todos los M12 juntos. Con un array de structs hay que
 ''' COPIAR a arrays planos antes de operar (VB no tiene Span ni MemoryMarshal), y esa copia cuesta MAS que
 ''' lo que el ancho de vector ahorra. Guardandolos en SoA desde el vamos, la copia desaparece.</para>
 '''
-''' <para>⭐ MEDIDO antes de escribir esto (<c>ShadowGate --soa --heavy</c>, 3 corridas, 11 mallas /
+''' <para>MEDIDO antes de escribir esto (<c>ShadowGate --soa --heavy</c>, 3 corridas, 11 mallas /
 ''' 37.321 vertices):
 ''' <list type="bullet">
 ''' <item>D — el camino de produccion AoS→AoS: <b>0,85 ms</b></item>
@@ -19,7 +19,7 @@ Imports OpenTK.Mathematics
 ''' O sea el techo es 0,48 contra 0,85 = <b>~40 % mas rapido</b>, y lo que perdia era el envoltorio, no el
 ''' kernel. La medicion incluso SUBESTIMA a SoA (ver la nota de sesgo en SoaBench).</para>
 '''
-''' <para>⛔⛔ POR QUE ES UNA CLASE CON INDEXADOR Y NO 12 ARRAYS SUELTOS. Hay 78 call sites de
+''' <para>POR QUE ES UNA CLASE CON INDEXADOR Y NO 12 ARRAYS SUELTOS. Hay 78 call sites de
 ''' <c>PerVertexSkinMatrix</c> repartidos en 11 archivos —incluidos el bake, el exportador de NIF y tres
 ''' herramientas— y casi todos siguen el mismo patron: <c>Dim mats = geo.PerVertexSkinMatrix</c> y despues
 ''' <c>mats(i)</c>. Exponiendo un <c>Default Property</c> que reconstruye la <c>Matrix4</c>, TODOS esos
@@ -27,11 +27,11 @@ Imports OpenTK.Mathematics
 ''' <see cref="Secciones"/> directo. Cambiar 78 sitios a mano para ganar lo mismo habria sido un riesgo
 ''' enorme a cambio de nada.</para>
 '''
-''' <para>⚠️ EL PRECIO: cada <c>mats(i)</c> reconstruye una Matrix4 (12 lecturas dispersas). Lo pagan el
+''' <para>EL PRECIO: cada <c>mats(i)</c> reconstruye una Matrix4 (12 lecturas dispersas). Lo pagan el
 ''' world-cache, el bake y el exportador, que ya gastan MUCHO mas por vertice (una inversa 3x3, varias
 ''' normalizaciones, I/O). El que no lo paga es el bucle que domina el frame.</para>
 '''
-''' <para>⛔ SOLO SE GUARDAN 12 DE LOS 16 ELEMENTOS. La cuarta columna de una matriz de skin es siempre
+''' <para>SOLO SE GUARDAN 12 DE LOS 16 ELEMENTOS. La cuarta columna de una matriz de skin es siempre
 ''' (0,0,0,1) — es un blend de matrices afines con pesos que suman 1, y el arnes lo MIDIO sobre el corpus
 ''' (check <c>matriz-afin</c>) en vez de suponerlo. Si algun dia dejara de serlo, ese check se pone rojo
 ''' ANTES de que esto pierda datos en silencio.</para></summary>
@@ -41,7 +41,7 @@ Public NotInheritable Class SkinMatricesSoA
     Public ReadOnly Count As Integer
 
     ''' <summary>Las 12 secciones: M11 M12 M13 · M21 M22 M23 · M31 M32 M33 · M41 M42 M43.
-    ''' <para>⛔ El orden importa y es el mismo que espera <see cref="FastSkin"/>. No reordenar sin tocar
+    ''' <para>El orden importa y es el mismo que espera <see cref="FastSkin"/>. No reordenar sin tocar
     ''' el kernel: ahi los indices estan escritos a mano por velocidad.</para></summary>
     Friend ReadOnly Secciones(11)() As Single
 
@@ -79,13 +79,13 @@ Public NotInheritable Class SkinMatricesSoA
 
     ''' <summary>Escribe las 12 secciones DIRECTO desde una <c>Matrix4d</c>, sin materializar la
     ''' <c>Matrix4</c> intermedia.
-    ''' <para>⭐ Lo usa el BLEND, que es el bucle mas caliente del skinning de CPU (11,85 ms de un frame de
+    ''' <para>Lo usa el BLEND, que es el bucle mas caliente del skinning de CPU (11,85 ms de un frame de
     ''' 17,4 sobre el Serena Battle Suit). El camino largo era <c>Matrix4d</c> (128 B, devuelta por valor)
     ''' → <c>AMatrix4</c> → <c>Matrix4</c> (64 B) → indexador → 12 escrituras: dos copias de struct por
     ''' vertice para terminar guardando los mismos 12 Single.</para>
-    ''' <para>⛔ BIT A BIT IDENTICO: es el mismo <c>CSng</c> sobre los mismos Double. Lo unico que cambia es
+    ''' <para>BIT A BIT IDENTICO: es el mismo <c>CSng</c> sobre los mismos Double. Lo unico que cambia es
     ''' cuantas veces se copia el struct por el camino.</para>
-    ''' <para>⚠️ EL <c>AggressiveInlining</c> DE ACA NO APORTO NADA — medido. Con y sin el atributo, el
+    ''' <para>EL <c>AggressiveInlining</c> DE ACA NO APORTO NADA — medido. Con y sin el atributo, el
     ''' blend completo da 5,07/5,08/5,08 contra 5,11/5,13 ms: 0,04 ms de diferencia, o sea ruido. Se deja
     ''' porque no molesta y porque este comentario es mas util que el atributo: el JIT ya inlineaba estos
     ''' cuerpos, y el envoltorio que queda NO es la llamada a estos metodos. Quien busque los ~2,4 ms que
@@ -113,7 +113,7 @@ Public NotInheritable Class SkinMatricesSoA
     End Sub
 
     ''' <summary>Copia la matriz del vertice <paramref name="desde"/> al <paramref name="i"/>.
-    ''' <para>⭐ Lo usa el memo por vertice-previo del blend: cuando dos vertices consecutivos tienen la
+    ''' <para>Lo usa el memo por vertice-previo del blend: cuando dos vertices consecutivos tienen la
     ''' misma tupla (indices, pesos) el resultado es identico por construccion —el blend es funcion pura de
     ''' esa tupla y de la paleta— y copiar 12 floats sale mucho mas barato que rehacerlo.</para></summary>
     <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
@@ -126,10 +126,10 @@ Public NotInheritable Class SkinMatricesSoA
 
     ''' <summary>Posicion transformada por la matriz del vertice <paramref name="i"/>, SIN construir
     ''' ninguna matriz.
-    ''' <para>⛔ REEMPLAZA A <c>Vector3d.TransformPosition(v, AMatrix4d(mats(i)))</c>, que hacia DOS
+    ''' <para>REEMPLAZA A <c>Vector3d.TransformPosition(v, AMatrix4d(mats(i)))</c>, que hacia DOS
     ''' pasadas: el indexador reconstruia una <c>Matrix4</c> de 64 B desde las 12 secciones y despues se
     ''' ensanchaba a <c>Matrix4d</c> de 128 B — dos structs para usar 12 floats.</para>
-    ''' <para>⛔ BIT A BIT IDENTICO: <c>TransformPosition</c> acumula en Double y <c>Single → Double</c> es
+    ''' <para>BIT A BIT IDENTICO: <c>TransformPosition</c> acumula en Double y <c>Single → Double</c> es
     ''' exacto, asi que el producto da el mismo bit. Mismo orden de acumulacion, ademas.</para>
     ''' <para>Existe como metodo publico —y no exponiendo <c>Secciones</c>— porque el exportador de NIF
     ''' vive en otro assembly y no deberia conocer el layout interno.</para></summary>

@@ -1,6 +1,7 @@
-﻿Imports System.Linq
+﻿Imports FO4_Base_Library.Canon.CanonInterpretacion
+Imports System.Linq
 
-''' <summary>⭐ LEY ÚNICA DE EQUIP. Quién sobrevive cuando dos prendas se pisan, y con qué máscara se
+''' <summary>LEY ÚNICA DE EQUIP. Quién sobrevive cuando dos prendas se pisan, y con qué máscara se
 ''' decide. Vive acá —al lado de <see cref="OutfitResolver"/>, que resuelve OTFT→ARMO— porque es ley del
 ''' MOTOR sobre registros: no necesita UI, ni GL, ni mallas, ni estado de ninguna app. Antes estaba
 ''' repartida en seis lugares (el render, el bake vía un delegado a un <c>Friend Shared</c> de un
@@ -23,10 +24,10 @@
 '''   · <see cref="ArmoFootprint.GeometryMask"/>   unión de ARMA válidas    → particiones, segmentos, dedup.
 '''   · <see cref="ArmoFootprint.OcclusionMask"/>  geometría ∪ (ARMO ∩ headwear) → oclusión de head-parts,
 '''     categoría Headwear del toggle de render, cobertura de piel. Es la que el render venía usando como
-'''     `candidate.SlotMask` — ⚠️ salvo que el render le suma además los slots de oclusión que declara la
+''' `candidate.SlotMask` — salvo que el render le suma además los slots de oclusión que declara la
 '''     RACE (`headOcclGate`, NpcMeshCollector.vb:396), así que para razas modeadas su candidate.SlotMask
 '''     puede traer bits que este footprint no tiene. NO migrar el render a este campo sin contemplarlo.
-'''     ⛔ La cobertura de piel se queda acá y NO sube a EquipMask: subirla le da a dos ARMO de guantes los
+''' La cobertura de piel se queda acá y NO sube a EquipMask: subirla le da a dos ARMO de guantes los
 '''     bits 34/35 y vuelve la regresión histórica "broke hands".
 '''
 ''' ══ EL JUEGO ENTRA UNA SOLA VEZ ══
@@ -40,7 +41,7 @@ Public Module EquipResolver
     ' LA LEY, VERIFICADA EN LOS DOS MOTORES (RE 2026-08-19 sobre los binarios instalados)
     ' ════════════════════════════════════════════════════════════════════════════════════════════════
 
-    ''' <summary>⭐ Gana el ÚLTIMO equipado: el ítem nuevo entra y el motor DESEQUIPA al viejo con el que
+    ''' <summary>Gana el ÚLTIMO equipado: el ítem nuevo entra y el motor DESEQUIPA al viejo con el que
     ''' choca. Verificado por desensamblado en LOS DOS juegos, no heredado de notas:
     '''
     ''' · FO4 (`Fallout4.exe` instalado, base 0x140000000) — resolver `0x140988CD0`: recorre los equipados
@@ -57,14 +58,14 @@ Public Module EquipResolver
     '''   El motor tiene además dos particularidades: (a) el ARMO de PIEL está exento de ser tratado como
     '''   ocupante desplazable — eso la app SÍ lo cumple, la piel ni entra al torneo
     '''   (`NpcMeshCollector.SelectWinningCandidates`); (b) si el ocupante viejo está protegido por quest la
-    '''   llamada ABORTA y se rechaza el ítem NUEVO — ⛔ eso la app NO lo modela: no hay estado de quest en
+    ''' llamada ABORTA y se rechaza el ítem NUEVO — eso la app NO lo modela: no hay estado de quest en
     '''   un editor, y la app siempre deja ganar al nuevo. PENDIENTE declarado, no cubierto.
     '''
     ''' Antes de este RE la app usaba first-wins en Skyrim, y eso es lo que dejaba a `Beem-Ja`
     ''' (`dunIronbindBarrowBeemJaOutfit`) con el torso desnudo: su INAM es botas[37], circlet[42],
     ''' guantes[33], anillo y túnica de mago[31,32,42]; con first-wins el circlet reclamaba el 42 y la
     ''' túnica ENTERA se caía. 98 de 2382 realizaciones vanilla SSE dependían de esto.</summary>
-    ''' <summary>⭐ Y el ORDEN con el que se resuelve el torneo ES el del INAM, ascendente — también
+    ''' <summary>Y el ORDEN con el que se resuelve el torneo ES el del INAM, ascendente — también
     ''' verificado con bytes (SSE 1.6.1170.0), porque con last-wins el resultado depende enteramente de él:
     ''' `InitOutfitItems 0x14022E730` → worker `0x14023A2B0` recorre `BGSOutfit::outfitItems`
     ''' (data `+0x20`, count `+0x30`) hacia ADELANTE (`add rsi,8` / `cmp rsi,end`), y por cada ítem inserta
@@ -73,7 +74,7 @@ Public Module EquipResolver
     ''' `entryList` de cabeza a cola equipando cada entrada tageada con el FormID del outfit. Leer-adelante
     ''' + insertar-al-final + recorrer-adelante ⇒ el orden del INAM se preserva de punta a punta.
     '''
-    ''' ⚠️ Lo que ESO todavía no explica: `DA13MissileOutfit` (30 NPC, los Afflicted de Bthardamz) lleva el
+    ''' Lo que ESO todavía no explica: `DA13MissileOutfit` (30 NPC, los Afflicted de Bthardamz) lleva el
     ''' LVLI de sombrero DESPUÉS del de cuerpo, así que con last-wins un sombrero {31,42} desequipa una
     ''' túnica con capucha {31,32,42} y el NPC queda sin torso en el 3,2 % de las realizaciones. El orden es
     ''' el correcto y la dirección también, así que falta OTRA regla del motor. Único candidato vivo: una
@@ -81,7 +82,7 @@ Public Module EquipResolver
     ''' persistente del NPC_ (`TESNPC+0x241`, que arranca en 1, no en 0) y por un predicado virtual del
     ''' actor; no está confirmado que corra al instanciar un NPC genérico. Divergencia conocida y medida.</summary>
 
-    ''' <summary>⭐ CON QUÉ MÁSCARA se decide el mutex: el BOD2 CRUDO DEL ARMO, en los DOS juegos. La ARMA
+    ''' <summary>CON QUÉ MÁSCARA se decide el mutex: el BOD2 CRUDO DEL ARMO, en los DOS juegos. La ARMA
     ''' NUNCA entra — sus bits (34 Forearms, 38 Calves, 41 LongHair…) gobiernan particiones, no equip.
     '''
     ''' · FO4: `SlotsOverlap 0x1402FCB00` = `mov eax,[rdx+8]; test [rcx+8],eax; setne al`; sus llamadores de
@@ -131,7 +132,7 @@ Public Module EquipResolver
         Public RecordGeometryMask As UInteger
         Public OcclusionMask As UInteger
         ''' <summary>Al menos un armature matchea raza Y tiene malla del género ⇒ este ARMO aporta algo a
-        ''' ESTE actor. ⛔ Es un GATE, no un adorno: el bake (ResolveOutfitHeadwearSlots) sólo ocluye
+        ''' ESTE actor. Es un GATE, no un adorno: el bake (ResolveOutfitHeadwearSlots) sólo ocluye
         ''' pelo/barba con footprints válidos, porque las máscaras de abajo caen a un fallback de display
         ''' cuando no hay ningún addon aplicable y ocluir con eso tapa pelo que el motor no tapa.</summary>
         Public Valid As Boolean
@@ -153,14 +154,14 @@ Public Module EquipResolver
         ''' <summary>Raza del NPC + la cadena de redirect RACE.RNAM ("Armor Race"). La calcula el caller
         ''' porque la cadena es suya; el match por ARMA es aditivo (ver 23-armor-race-redirect-rnam).</summary>
         Public EffectiveArmorRaces As ICollection(Of UInteger)
-        Public ArmoResolver As Func(Of UInteger, ARMO_Data)
-        Public ArmaResolver As Func(Of UInteger, ARMA_Data)
+        Public ArmoResolver As Func(Of UInteger, Canon.IArmo)
+        Public ArmaResolver As Func(Of UInteger, Canon.IArma)
         ''' <summary>Gate de power-armor del caller (necesita el catálogo de keywords, que es suyo).
         ''' Nothing ⇒ sin gate.</summary>
         Public IsPowerArmorArmo As Func(Of UInteger, Boolean)
         Public IsPowerArmorRace As Boolean
 
-        Friend Function Armo(fid As UInteger) As ARMO_Data
+        Friend Function Armo(fid As UInteger) As Canon.IArmo
             If ArmoResolver IsNot Nothing Then
                 Dim a = ArmoResolver(fid)
                 If a IsNot Nothing Then Return a
@@ -168,10 +169,10 @@ Public Module EquipResolver
             If PluginManager Is Nothing Then Return Nothing
             Dim rec = PluginManager.GetRecord(fid)
             If rec Is Nothing OrElse rec.Header.Signature <> "ARMO" Then Return Nothing
-            Return RecordParsers.ParseARMO(rec, PluginManager)
+            Return Canon.CanonRecords.Armo(rec, PluginManager)
         End Function
 
-        Friend Function Arma(fid As UInteger) As ARMA_Data
+        Friend Function Arma(fid As UInteger) As Canon.IArma
             If ArmaResolver IsNot Nothing Then
                 Dim a = ArmaResolver(fid)
                 If a IsNot Nothing Then Return a
@@ -179,7 +180,7 @@ Public Module EquipResolver
             If PluginManager Is Nothing Then Return Nothing
             Dim rec = PluginManager.GetRecord(fid)
             If rec Is Nothing OrElse rec.Header.Signature <> "ARMA" Then Return Nothing
-            Return RecordParsers.ParseARMA(rec, PluginManager)
+            Return Canon.CanonRecords.Arma(rec, PluginManager)
         End Function
     End Class
 
@@ -204,8 +205,9 @@ Public Module EquipResolver
         Dim armo = ctx.Armo(armoFid)
         If armo Is Nothing Then Return fp
 
-        fp.EquipMask = armo.SlotMask
-        Dim headwearBits As UInteger = armo.SlotMask And BipedSlots.HeadwearMaskForGame()
+        Dim mascaraDelArmo = armo.SlotMaskDe()
+        fp.EquipMask = mascaraDelArmo
+        Dim headwearBits As UInteger = mascaraDelArmo And BipedSlots.HeadwearMaskForGame()
 
         ' recordSlot = footprint del REGISTRO (todos los armatures, sin filtrar por raza/género): sirve de
         ' fallback de DISPLAY para que un ítem no se lea "(none)" sólo porque este actor no lo puede usar.
@@ -215,13 +217,13 @@ Public Module EquipResolver
 
         Dim walk As IEnumerable(Of UInteger)
         If addonFormIDs Is Nothing Then
-            walk = armo.ArmorAddons.Select(Function(e) e.ArmaFormID)
+            walk = armo.ComplementosDe()
         Else
             walk = addonFormIDs
         End If
 
         For Each armaFid In walk
-            Dim arma As ARMA_Data = Nothing
+            Dim arma As Canon.IArma = Nothing
             Try
                 arma = ctx.Arma(armaFid)
             Catch
@@ -230,12 +232,12 @@ Public Module EquipResolver
             If arma Is Nothing Then Continue For
 
             Dim af As New ArmaFootprint With {.ArmaFormID = armaFid}
-            af.GeometryMask = ArmaGeometryMask(arma, armo.SlotMask)
+            af.GeometryMask = ArmaGeometryMask(arma, mascaraDelArmo)
             recordSlot = recordSlot Or af.GeometryMask
 
             af.RaceOk = ArmaMatchesRace(arma, ctx.RaceFormID, ctx.EffectiveArmorRaces)
-            Dim genderMesh = If(ctx.IsFemale, arma.FemaleMeshPath, arma.MaleMeshPath)
-            If genderMesh = "" Then genderMesh = If(arma.MaleMeshPath <> "", arma.MaleMeshPath, arma.FemaleMeshPath)
+            Dim genderMesh = If(ctx.IsFemale, arma.FemaleModelFilename, arma.MaleModelFilename)
+            If genderMesh = "" Then genderMesh = If(arma.MaleModelFilename <> "", arma.MaleModelFilename, arma.FemaleModelFilename)
             af.HasGenderMesh = (genderMesh <> "")
 
             If af.RaceOk AndAlso af.HasGenderMesh Then
@@ -249,7 +251,7 @@ Public Module EquipResolver
             fp.Addons.Add(af)
         Next
 
-        fp.RecordGeometryMask = If(recordSlot <> 0UI, recordSlot, armo.SlotMask)
+        fp.RecordGeometryMask = If(recordSlot <> 0UI, recordSlot, mascaraDelArmo)
         fp.GeometryMask = If(raceSlot <> 0UI, raceSlot, fp.RecordGeometryMask)
         fp.OcclusionMask = fp.GeometryMask Or headwearBits
         Return fp
@@ -259,23 +261,35 @@ Public Module EquipResolver
     ''' declara ninguno. Átomo compartido — lo usan <see cref="BuildFootprint"/> y el editor de ARMO, que
     ''' muestra el slot efectivo de un addon contra el BOD2 que el usuario está editando (todavía sin
     ''' registro). Una sola definición de la regla ARMA-primero.</summary>
-    Public Function ArmaGeometryMask(arma As ARMA_Data, owningArmoSlotMask As UInteger) As UInteger
+    Public Function ArmaGeometryMask(arma As Canon.IArma, owningArmoSlotMask As UInteger) As UInteger
         If arma Is Nothing Then Return owningArmoSlotMask
-        Return If(arma.SlotMask <> 0UI, arma.SlotMask, owningArmoSlotMask)
+        Return If(arma.SlotMaskDe() <> 0UI, arma.SlotMaskDe(), owningArmoSlotMask)
     End Function
 
     ''' <summary>Match de raza por ARMA: la propia o AdditionalRaces, contra la raza del NPC más la cadena
     ''' de redirect que el caller ya resolvió. raza 0 ⇒ sin filtro (evita que un NPC cuya raza no resolvió
     ''' se renderice desnudo). Ver 23-armor-race-redirect-rnam.</summary>
-    Public Function ArmaMatchesRace(arma As ARMA_Data, npcRaceFormID As UInteger,
+    Public Function ArmaMatchesRace(arma As Canon.IArma, npcRaceFormID As UInteger,
                                     effectiveArmorRaces As ICollection(Of UInteger)) As Boolean
         If arma Is Nothing Then Return False
+        Return ArmaMatchesRace(arma.Race, arma.RazasAdicionalesDe(), npcRaceFormID, effectiveArmorRaces)
+    End Function
+
+    ''' <summary>La misma regla, sobre los VALORES sueltos en vez de sobre un record.
+    ''' <para>La necesita el editor: mientras el usuario está tocando los paneles todavía no hay
+    ''' record que leer, y el identificador seguiría resolviendo a los valores de ANTES de la edición.
+    ''' Que la forma con record delegue en ésta es lo que evita tener la ley escrita dos veces.</para></summary>
+    Public Function ArmaMatchesRace(armaRace As UInteger, razasAdicionales As IEnumerable(Of UInteger),
+                                    npcRaceFormID As UInteger,
+                                    effectiveArmorRaces As ICollection(Of UInteger)) As Boolean
         If npcRaceFormID = 0UI Then Return True
-        If arma.RaceFormID = npcRaceFormID OrElse arma.AdditionalRaces.Contains(npcRaceFormID) Then Return True
+        Dim razas As New List(Of UInteger)
+        If razasAdicionales IsNot Nothing Then razas.AddRange(razasAdicionales)
+        If armaRace = npcRaceFormID OrElse razas.Contains(npcRaceFormID) Then Return True
         If effectiveArmorRaces IsNot Nothing Then
             For Each r In effectiveArmorRaces
                 If r <> npcRaceFormID AndAlso
-                   (arma.RaceFormID = r OrElse arma.AdditionalRaces.Contains(r)) Then Return True
+                   (armaRace = r OrElse razas.Contains(r)) Then Return True
             Next
         End If
         Return False
@@ -307,7 +321,7 @@ Public Module EquipResolver
         ''' <summary>Excepción "underarmor extendido" (caso Bridget/DCGuard, pedida por el usuario contra el
         ''' clipping): una pieza que declara capa de abajo (BODY o [U]) Y ADEMÁS bits [A] reserva esos [A] y
         ''' blinda su máscara, así que una pieza [A]-pura posterior que los pise se descarta entera.
-        ''' ⛔ NO es ley del motor. Medido sobre 581 realizaciones vanilla FO4: se activa en 45, elimina a
+        ''' NO es ley del motor. Medido sobre 581 realizaciones vanilla FO4: se activa en 45, elimina a
         ''' alguien que el any-bit puro no eliminaría en 30, y en 12 el veredicto final difiere del motor.
         ''' Clasifica con <see cref="EquipItem.GeometryMask"/> porque su premisa es geométrica ("esta malla
         ''' ya cubre el brazo"): moverla a EquipMask hace calificar a ~105 ARMO vanilla que hoy no y empeora
@@ -318,7 +332,7 @@ Public Module EquipResolver
     Public Class EquipResolution
         Public ReadOnly Winners As New List(Of EquipItem)
         Public ReadOnly Losers As New List(Of EquipItem)
-        ''' <summary>Unión de <see cref="EquipItem.OcclusionMask"/> de los ganadores. ⛔ NO es la unión de
+        ''' <summary>Unión de <see cref="EquipItem.OcclusionMask"/> de los ganadores. NO es la unión de
         ''' EquipMask: aguas abajo la consumen la cobertura de piel y la oclusión de head-parts, que razonan
         ''' sobre particiones (bits de la ARMA), no sobre el equip.</summary>
         Public OccupiedSlots As UInteger
@@ -359,7 +373,7 @@ Public Module EquipResolver
                 If Not (hasUnderlayer AndAlso (g And aMask) <> 0UI) Then Continue For
                 extendedSet.Add(it)
                 Dim m = MutexMaskOf(it)
-                ' ⛔ La MISMA máscara que acumula `occupied`. Mezclar las dos (EquipMask acá y MutexMaskOf
+                ' La MISMA máscara que acumula `occupied`. Mezclar las dos (EquipMask acá y MutexMaskOf
                 ' allá) dejaba el bit 60 fuera de `occupied` para siempre ⇒ `freeBits` nunca daba 0 para un
                 ' ítem que lo declarara y el guard de abajo quedaba decorativo: dos underarmor extendidos con
                 ' BOD2 idéntico {33,41,60} ganaban LOS DOS (dos torsos dibujados uno sobre otro). Sin
@@ -378,7 +392,7 @@ Public Module EquipResolver
         End If
 
         ' Pasada 1b — mutex atómico any-bit. Descendente por Order = gana el último equipado, que es la ley
-        ' verificada en LOS DOS motores (ver LAST_EQUIPPED_WINS). ⚠️ Que `Order` sea el orden del INAM del
+        ' verificada en LOS DOS motores (ver LAST_EQUIPPED_WINS). Que `Order` sea el orden del INAM del
         ' outfit es premisa NUESTRA: el RE estableció la DIRECCIÓN, no en qué orden el motor equipa los
         ' ítems de un outfit. Ver el comentario de LAST_EQUIPPED_WINS.
         Dim ordered = contenders.Where(Function(x) Not extendedSet.Contains(x)).

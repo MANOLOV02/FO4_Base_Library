@@ -24,40 +24,45 @@ Public Module FaceTintInputBuilder
         Public Property Layers As New List(Of FaceTintLayerInput)
         Public Property RegionSwaps As New List(Of FaceRegionSwapInput)
         Public Property NpcData As NPC_Data
-        Public Property Race As RACE_Data
+        Public Property Race As Canon.IRace
     End Class
 
     ''' <summary>Build the layer + region-swap inputs from an ALREADY-RESOLVED npcData + race.
     ''' The caller is responsible for resolving npcData (record parse + any LooksMenu/overlay)
-    ''' and race (RecordParsers.ParseRACE) before calling — this keeps the generic builder free
+    ''' and race (Canon.CanonRecords.Race) before calling — this keeps the generic builder free
     ''' of app-specific overlay concerns. Returns an empty result if any input is Nothing.
     '''
     ''' <paramref name="tintBytesCache"/> is a process-lifetime cache of decoded DDS bytes
     ''' keyed by normalized texture path. Pass <c>Nothing</c> for an uncached one-shot read.
     ''' </summary>
+    ''' <param name="tintGroups">Los grupos de tinte de esta raza+género YA FUSIONADOS (record + tints
+    ''' custom de LooksMenu, si los hay). El caller los arma con <c>LmCustomTintLoader.Fusionar</c>
+    ''' (FO4_NPC_Manager) — esta librería no conoce LooksMenu, sólo consume la lista que le pasan.</param>
     ''' <param name="dataPath">Data\ desde el que leer el registro de LUTs de LooksMenu. Nothing = el global
     ''' <see cref="Config_App"/> (camino de la app); el CLI headless thread-ea el suyo.</param>
     Public Function Build(npcData As NPC_Data,
-                          race As RACE_Data,
+                          race As Canon.IRace,
                           isFemale As Boolean,
                           pluginManager As PluginManager,
                           tintBytesCache As Dictionary(Of String, Byte()),
+                          tintGroups As List(Of GrupoDeTinteEfectivo),
                           Optional hairColorFormID As UInteger = 0UI,
                           Optional hasTextureLighting As Boolean = False,
                           Optional textureLightingColorArgb As Integer = 0,
                           Optional dataPath As String = Nothing) As TintBuildResult
         Dim result As New TintBuildResult()
         If pluginManager Is Nothing OrElse npcData Is Nothing OrElse race Is Nothing Then Return result
+        Dim grupos = If(tintGroups, New List(Of GrupoDeTinteEfectivo))
 
         result.NpcData = npcData
         result.Race = race
-        result.RegionSwaps = BuildFaceRegionSwaps(npcData, race, isFemale, pluginManager, tintBytesCache)
+        result.RegionSwaps = BuildFaceRegionSwaps(npcData, race, isFemale, pluginManager, tintBytesCache, grupos)
 
         ' Merge NPC-declared layers with RACE defaults: for each TintTemplateGroup the NPC
         ' doesn't touch, inject every Option whose TTED is present (HasDefaultValue=True).
         ' Mirrors the engine's CK behaviour: groups not overridden by the NPC fall back to
         ' the race-authored defaults. The merged list is what the compositor consumes.
-        Dim mergedLayers = MergeTintLayersWithRaceDefaults(npcData.FaceTintLayers, race, isFemale, pluginManager)
+        Dim mergedLayers = MergeTintLayersWithRaceDefaults(npcData.Record, grupos, pluginManager)
 
         ' Single skin-tone path: when the compositor reaches the slot-12 (SkinTone) rank it must
         ' apply the NPC's authored layer if present, else a synthetic stand-in built from QNAM
@@ -66,8 +71,8 @@ Public Module FaceTintInputBuilder
         ' tints compose under it, higher-rank details (brow slot 23, scars slot 21) on top, so
         ' details are no longer washed out. No-op when QNAM is absent, when the race has no
         ' slot-12 catalog (non-skin races), or when the NPC already authors a slot-12 layer.
-        InjectSyntheticSkinToneLayer(mergedLayers, npcData, race, isFemale, hasTextureLighting, textureLightingColorArgb)
-        ' ⭐ La paleta de la CEJA se resuelve ACÁ ADENTRO, desde el RACE que este builder ya tiene, y NO la
+        InjectSyntheticSkinToneLayer(mergedLayers, grupos, hasTextureLighting, textureLightingColorArgb)
+        ' La paleta de la CEJA se resuelve ACÁ ADENTRO, desde el RACE que este builder ya tiene, y NO la
         ' pasa el caller. Antes era un parámetro y había TRES implementaciones de la regla (dos en
         ' NpcMaterialResolver, una en el CLI), las tres recorriendo la malla de pelo — que es la ley del
         ' MESH (ProcessHairColor), no la de la cara. El motor saca este LUT del RACE dentro de
@@ -81,7 +86,7 @@ Public Module FaceTintInputBuilder
         ' (NPC.HCLF + TPLT chain + LM overlay + RACE.HCLF fallback) resolved by the caller's
         ' state pipeline. The builder must not second-guess it; if the caller decides the NPC
         ' has no hair colour (0), the brow override silently no-ops.
-        result.Layers = BuildLayerList(npcData, race, isFemale, mergedLayers, pluginManager, tintBytesCache, hairLutPath, hairColorFormID)
+        result.Layers = BuildLayerList(npcData, mergedLayers, pluginManager, tintBytesCache, hairLutPath, hairColorFormID, grupos)
         Return result
     End Function
 
@@ -93,13 +98,11 @@ Public Module FaceTintInputBuilder
     ''' the slot-12 fallback. No-op if QNAM absent, race has no slot-12 option, or the NPC already
     ''' authors one.</summary>
     Private Sub InjectSyntheticSkinToneLayer(mergedLayers As List(Of MergedTintLayer),
-                                             npcData As NPC_Data,
-                                             race As RACE_Data,
-                                             isFemale As Boolean,
+                                             tintGroups As List(Of GrupoDeTinteEfectivo),
                                              hasTextureLighting As Boolean,
                                              textureLightingColorArgb As Integer)
-        If Not hasTextureLighting OrElse race Is Nothing Then Return
-        Dim skinOpts = race.FindTintOptionsBySlot(TintSlot.SkinTone, isFemale)
+        If Not hasTextureLighting Then Return
+        Dim skinOpts = tintGroups.BuscarOpcionesPorSlot(TintSlot.SkinTone)
         If skinOpts Is Nothing OrElse skinOpts.Count = 0 Then Return
 
         ' ¿Ya hay un slot-12 en la lista MERGED (autorado por el NPC O inyectado como RACE-default por
@@ -112,36 +115,33 @@ Public Module FaceTintInputBuilder
         ' labios (slot 13) nunca tuvieron este doble path, por eso si aplicaban heredados. Ver
         ' [[50-facetint-leyes-y-compositor]].
         Dim skinIndices As New HashSet(Of UShort)(skinOpts.Select(Function(o) o.Index))
-        If mergedLayers.Any(Function(m) m.Layer IsNot Nothing AndAlso skinIndices.Contains(m.Layer.Index)) Then
-            Return
-        End If
+        If mergedLayers.Any(Function(m) skinIndices.Contains(m.Index)) Then Return
 
         Dim skinOpt = skinOpts(0)
         Dim qa As Integer = (textureLightingColorArgb >> 24) And &HFF
         Dim qr As Integer = (textureLightingColorArgb >> 16) And &HFF
         Dim qg As Integer = (textureLightingColorArgb >> 8) And &HFF
         Dim qb As Integer = textureLightingColorArgb And &HFF
-        ' QNAM.A is the SoftLight intensity (0..255). NPC_FaceTintLayerData.Value is 0..100
-        ' (opacity = Value/100 downstream), matching what the old uniform pass used (opacity =
-        ' QNAM.A/255). 0 alpha -> Value 0 -> skipped by the zero-opacity gate, same as before.
+        ' QNAM.A is the SoftLight intensity (0..255) and the layer's Value is 0..100 (opacity =
+        ' Value/100 downstream), matching what the old uniform pass used (opacity = QNAM.A/255).
+        ' 0 alpha -> Value 0 -> skipped by the zero-opacity gate, same as before.
         Dim qValue As Integer = CInt(Math.Round(qa / 2.55))
-        Dim disc As UShort = If(skinOpt.EntryType = RACE_TintEntryType.TextureSet, CUShort(2), CUShort(1))
-        Dim synthSkin As New NPC_FaceTintLayerData With {
+        Dim disc As UShort = If(skinOpt.EntryType = ClaseDeTinte.TextureSet, CUShort(2), CUShort(1))
+        mergedLayers.Add(New MergedTintLayer With {
             .Index = skinOpt.Index,
             .Value = qValue,
             .Discriminator = disc,
             .Color = Color.FromArgb(255, qr, qg, qb),
-            .TemplateColorIndex = -1
-        }
-        mergedLayers.Add(New MergedTintLayer With {.Layer = synthSkin, .IsRaceDefault = False})
+            .TemplateColorIndex = -1,
+            .IsRaceDefault = False})
     End Sub
 
     ''' <summary>Merge an NPC's authored FaceTintLayers with the race-authored defaults.
     ''' PER-OPTION rule (CK-faithful, derivado 2026-06-06 vs CK + scan de TTED denormales): por cada
     ''' Option de tint de la RACE que el NPC NO autora (no hay TEND con ese Index), si la Option trae un
-    ''' TTED ('Default') se inyecta una capa default virtual. El campo TTED es float en xEdit
-    ''' (wbDefinitionsFO4.pas:3510) pero CK lo SOBRECARGA segun el tipo de Option (error de diseno: un int
-    ''' index guardado en un campo float aparece como denormal):
+    ''' TTED ('Default') se inyecta una capa default virtual. El campo TTED es un float pero CK lo
+    ''' SOBRECARGA segun el tipo de Option (error de diseno: un int index guardado en un campo float
+    ''' aparece como denormal):
     '''   - Palette (tiene TemplateColors): TTED raw-bits = INDICE POSICIONAL en TemplateColors. El default
     '''     es ESE color: Value = TemplateColors[idx].Alpha*100 (el engine NO re-aplica el Alpha en runtime,
     '''     ver :546 -> horneamos el alpha en Value), Color = su CLFM, TemplateColorIndex = su TemplateIndex
@@ -156,23 +156,56 @@ Public Module FaceTintInputBuilder
     ''' explicitamente con Value 0 en el record del NPC cuando se elige una no-default. Los virtuales con
     ''' Value=0 entran a la lista y se gatean downstream (y dejan al editor mostrar filas "default OFF").
     ''' Las capas del NPC se preservan verbatim. </summary>
-    Public Function MergeTintLayersWithRaceDefaults(npcLayers As IList(Of NPC_FaceTintLayerData),
-                                                    race As RACE_Data,
-                                                    isFemale As Boolean,
+    Public Function MergeTintLayersWithRaceDefaults(npc As Canon.INpc,
+                                                    tintGroups As List(Of GrupoDeTinteEfectivo),
+                                                    pluginManager As PluginManager) As List(Of MergedTintLayer)
+        Return MergeTintLayersWithRaceDefaults(CapasAutoradasDelRecord(npc), tintGroups, pluginManager)
+    End Function
+
+    ''' <summary>Las capas que el NPC AUTORA en su record (TETI/TEND), ya como capas efectivas.
+    ''' <para>El color y el indice de paleta solo tienen sentido en las capas de PALETA (discriminador 1):
+    ''' en las de conjunto de texturas esos bytes son otra cosa y leerlos daria un color inventado.</para>
+    ''' <para>Solo Fallout 4: Skyrim no declara TETI/TEND y la lista sale vacia.</para></summary>
+    Public Function CapasAutoradasDelRecord(npc As Canon.INpc) As List(Of MergedTintLayer)
+        Dim salida As New List(Of MergedTintLayer)
+        Dim nf = TryCast(npc, Canon.NpcFO4)
+        If nf Is Nothing Then Return salida
+        For Each capa In nf.FaceTintingLayers
+            Dim discr = capa.IndexDataType
+            Dim m As New MergedTintLayer With {
+                .Discriminator = discr, .Index = capa.LayerIndex, .Value = CInt(capa.DataValue),
+                .IsRaceDefault = False}
+            If discr = 1 Then
+                If capa.ColorRedPresente Then
+                    m.Color = Color.FromArgb(255, capa.ColorRed, capa.ColorGreen, capa.ColorBlue)
+                End If
+                If capa.DataTemplateColorIndexPresente Then
+                    m.TemplateColorIndex = CInt(capa.DataTemplateColorIndex)
+                End If
+            End If
+            salida.Add(m)
+        Next
+        Return salida
+    End Function
+
+    ''' <summary>Igual que el de arriba, pero partiendo de capas autoradas que NO salieron del record
+    ''' -las que el editor de cara tiene en mano mientras se edita-. Las capas de entrada se copian tal
+    ''' cual y el merge agrega encima los defaults de la RACE.</summary>
+    Public Function MergeTintLayersWithRaceDefaults(npcLayers As IEnumerable(Of MergedTintLayer),
+                                                    tintGroups As List(Of GrupoDeTinteEfectivo),
                                                     pluginManager As PluginManager) As List(Of MergedTintLayer)
         Dim result As New List(Of MergedTintLayer)
-        Dim safeNpc As IList(Of NPC_FaceTintLayerData) = If(npcLayers, CType(New List(Of NPC_FaceTintLayerData)(), IList(Of NPC_FaceTintLayerData)))
+        If npcLayers IsNot Nothing Then
+            For Each tl In npcLayers
+                If tl Is Nothing Then Continue For
+                result.Add(tl)
+            Next
+        End If
 
-        For Each tl In safeNpc
-            result.Add(New MergedTintLayer With {.Layer = tl, .IsRaceDefault = False})
-        Next
-
-        If race Is Nothing Then Return result
-
-        Dim groups = If(isFemale, race.FemaleTintTemplateGroups, race.MaleTintTemplateGroups)
+        Dim groups = tintGroups
         If groups Is Nothing OrElse groups.Count = 0 Then Return result
 
-        Dim npcIndices As New HashSet(Of UShort)(safeNpc.Select(Function(tl) tl.Index))
+        Dim npcIndices As New HashSet(Of UShort)(result.Select(Function(tl) tl.Index))
         For Each grp In groups
             If grp.Options Is Nothing Then Continue For
 
@@ -196,7 +229,7 @@ Public Module FaceTintInputBuilder
                 If ((opt.Flags And &H1US) <> 0US) AndAlso groupHasAuthoredOnOff Then Continue For
 
                 Dim valueInt As Integer
-                Dim disc As UShort = If(opt.EntryType = RACE_TintEntryType.TextureSet, CUShort(2), CUShort(1))
+                Dim disc As UShort = If(opt.EntryType = ClaseDeTinte.TextureSet, CUShort(2), CUShort(1))
                 Dim seedColor As Color = Color.FromArgb(255, 255, 255, 255)
                 Dim seedTplIdx As Integer = -1
 
@@ -220,25 +253,39 @@ Public Module FaceTintInputBuilder
                 End If
 
                 result.Add(New MergedTintLayer With {
-                    .Layer = New NPC_FaceTintLayerData With {
-                        .Index = opt.Index,
-                        .Value = valueInt,
-                        .Discriminator = disc,
-                        .Color = seedColor,
-                        .TemplateColorIndex = seedTplIdx
-                    },
+                    .Index = opt.Index,
+                    .Value = valueInt,
+                    .Discriminator = disc,
+                    .Color = seedColor,
+                    .TemplateColorIndex = seedTplIdx,
                     .IsRaceDefault = True})
             Next
         Next
         Return result
     End Function
 
-    ''' <summary>One layer fed to the compositor + a flag marking whether it came from the
-    ''' NPC's own FaceTintLayers (False) or was synthesized from a RACE default (True). The
-    ''' editor uses the flag to render race-default rows in gray and refuse Remove on them;
-    ''' the compositor ignores it.</summary>
+    ''' <summary>UNA capa de tinte tal como la compone el motor: el dato efectivo mas de donde salio.
+    '''
+    ''' <para>No es un espejo del record. Una capa efectiva puede venir de tres lados: la autora el NPC en
+    ''' su TETI/TEND, la hereda de un default de la RACE, o la sintetiza el propio builder a partir del
+    ''' QNAM cuando el NPC no autora la ranura del tono de piel. Las dos ultimas NO existen en ningun
+    ''' archivo, asi que este tipo es de la composicion y no del formato.</para>
+    '''
+    ''' <para><see cref="IsRaceDefault"/> distingue "lo escribio el NPC" de "lo hereda de la RACE": el
+    ''' editor pinta en gris las heredadas y no deja borrarlas; el compositor no mira la bandera.</para></summary>
     Public Class MergedTintLayer
-        Public Property Layer As NPC_FaceTintLayerData
+        ''' <summary>Discriminador de la capa: 1 = paleta, 2 = conjunto de texturas.</summary>
+        Public Property Discriminator As UShort
+        ''' <summary>Indice de la opcion de tinte de la RACE que esta capa realiza.</summary>
+        Public Property Index As UShort
+        ''' <summary>Intensidad de la capa, 0..100.</summary>
+        Public Property Value As Integer
+        ''' <summary>Color final aplicado. Solo las capas de paleta lo llevan.</summary>
+        Public Property Color As Color = Color.Empty
+        ''' <summary>Posicion en la paleta de colores de la opcion, o -1 cuando el color es propio y no
+        ''' sale de la paleta.</summary>
+        Public Property TemplateColorIndex As Integer = -1
+        ''' <summary>La capa la hereda la RACE en vez de autorarla el NPC.</summary>
         Public Property IsRaceDefault As Boolean
     End Class
 
@@ -246,15 +293,19 @@ Public Module FaceTintInputBuilder
     ''' Empty for NPCs whose chosen presets are vertex-only (no MPPT) — the typical case
     ''' for non-aged NPCs.</summary>
     Private Function BuildFaceRegionSwaps(npcData As NPC_Data,
-                                          race As RACE_Data,
+                                          race As Canon.IRace,
                                           isFemale As Boolean,
                                           pluginManager As PluginManager,
-                                          tintBytesCache As Dictionary(Of String, Byte())) As List(Of FaceRegionSwapInput)
+                                          tintBytesCache As Dictionary(Of String, Byte()),
+                                          tintGroups As List(Of GrupoDeTinteEfectivo)) As List(Of FaceRegionSwapInput)
         Dim swaps As New List(Of FaceRegionSwapInput)
-        If npcData Is Nothing OrElse race Is Nothing Then Return swaps
-        If npcData.MorphValues Is Nothing OrElse npcData.MorphValues.Count = 0 Then Return swaps
+        If npcData Is Nothing OrElse npcData.Record Is Nothing OrElse race Is Nothing Then Return swaps
+        Dim morfos = npcData.Record.MorfosDeCara()
+        If morfos.Count = 0 Then Return swaps
 
-        Dim morphGroups = If(isFemale, race.FemaleMorphGroups, race.MaleMorphGroups)
+        ' Morph Groups son exclusivos de Fallout 4 — Skyrim no los declara en RACE.
+        Dim raceFo4 = TryCast(race, Canon.RaceFO4)
+        Dim morphGroups = raceFo4.ReadMorphGroups(isFemale)
         If morphGroups Is Nothing OrElse morphGroups.Count = 0 Then Return swaps
 
         ' Orden del morph DENTRO del NPC (= orden de NPC.MorphValues), para la clave de orden NpcOrder.
@@ -262,7 +313,7 @@ Public Module FaceTintInputBuilder
         ' OverflowException (CUShort) en NPCs con morfos de índice >65535 (p.ej. envejecidas con region swaps).
         Dim npcMorphOrder As New Dictionary(Of UInteger, Integer)
         Dim moi As Integer = 0
-        For Each kv In npcData.MorphValues
+        For Each kv In morfos
             If Not npcMorphOrder.ContainsKey(kv.Key) Then npcMorphOrder(kv.Key) = moi
             moi += 1
         Next
@@ -283,7 +334,7 @@ Public Module FaceTintInputBuilder
             gPhys += 1
             Dim slot As TintSlot
             If Not g.TryGetMaskSlot(slot) Then Continue For
-            Dim slotOpts = race.FindTintOptionsBySlot(slot, isFemale)
+            Dim slotOpts = tintGroups.BuscarOpcionesPorSlot(slot)
             If slotOpts.Count = 0 Then Continue For
             Dim maskOpt = slotOpts(0)
             If maskOpt.Textures Is Nothing OrElse maskOpt.Textures.Count = 0 Then Continue For
@@ -347,7 +398,7 @@ Public Module FaceTintInputBuilder
                 pPhys += 1   ' posicion fisica del preset en el grupo (cuenta todos, antes de los Continue)
                 If p.TextureFormID = 0UI Then Continue For
                 Dim msdvVal As Single = 0F
-                If Not npcData.MorphValues.TryGetValue(p.Index, msdvVal) Then Continue For
+                If Not morfos.TryGetValue(p.Index, msdvVal) Then Continue For
                 ' Gate de msdv<=0.001 REMOVIDO (a pedido): se incluye el swap aunque el msdv sea bajo o 0
                 ' (Intensity baja -> running con cov chica; 0 = no-op). build_3 compone todo msdv>0; el
                 ' gate viejo se comia valores fraccionarios bajos. (El TryGetValue de arriba sigue: si el
@@ -408,20 +459,19 @@ Public Module FaceTintInputBuilder
     ''' LM emits the RACE-Group order). SoftLight and other non-commutative blend ops give
     ''' visibly different results when the order changes.</summary>
     Private Function BuildLayerList(npcData As NPC_Data,
-                                    race As RACE_Data,
-                                    isFemale As Boolean,
                                     mergedLayers As List(Of MergedTintLayer),
                                     pluginManager As PluginManager,
                                     tintBytesCache As Dictionary(Of String, Byte()),
                                     hairLutPath As String,
-                                    hairColorFormID As UInteger) As List(Of FaceTintLayerInput)
+                                    hairColorFormID As UInteger,
+                                    tintGroups As List(Of GrupoDeTinteEfectivo)) As List(Of FaceTintLayerInput)
         Dim layerInputs As New List(Of FaceTintLayerInput)
 
         ' SkipEyebrowsTone.ini (appdir, case-insensitive): si existe, en vez del color de pelo (HCLF)
         ' las cejas usan una LUT SINTÉTICA de degradé entre Dark y Light (campos del INI, default negro).
         Dim eyebrowLut = BuildSyntheticEyebrowLut(tintBytesCache)
 
-        Dim tintGroupsForRender = If(isFemale, race.FemaleTintTemplateGroups, race.MaleTintTemplateGroups)
+        Dim tintGroupsForRender = tintGroups
 
         ' Orden de composicion = ORDEN FISICO del record del template del RACE (reverse). El engine itera las
         ' tint-options en el orden en que estan ALMACENADAS en el RACE (grupo por grupo, opcion por opcion) y la
@@ -461,36 +511,16 @@ Public Module FaceTintInputBuilder
         ' Orden de composicion = Config_App.Setting_FaceTintSort.TintRules (multi-clave asc/desc) +
         ' SkinTonePlacement. Default config = [PhysIndex desc] (+ tiebreak NpcListOrder asc) = el orden previo
         ' EXACTO. Over-running: 1ro de la lista = fondo (compone primero); ultimo = encima.
-        Dim orderedLayers = OrderMergedLayers(mergedLayers, race, isFemale, pluginManager,
+        Dim orderedLayers = OrderMergedLayers(mergedLayers, tintGroups, pluginManager,
                                               groupIndexByOption, optionInGroupByOption, categoryIndexByOption)
 
         For Each tl In orderedLayers
-            Dim opt = race.FindTintOption(tl.Index, isFemale)
+            Dim opt = tintGroups.BuscarOpcion(tl.Index)
             If opt Is Nothing OrElse opt.Textures Is Nothing OrElse opt.Textures.Count = 0 Then
                 Continue For
             End If
 
             Dim takesSkinTone As Boolean = (opt.Flags And &H4US) <> 0US
-
-            If tl.RawTendBytes IsNot Nothing AndAlso tl.RawTendBytes.Length > 0 Then
-                Dim hex As New System.Text.StringBuilder()
-                For i As Integer = 0 To tl.RawTendBytes.Length - 1
-                    If i > 0 Then hex.Append(",")
-                    hex.Append($"0x{tl.RawTendBytes(i):X2}")
-                Next
-                Dim unusedByte As String = "N/A"
-                Dim tplLo As String = "N/A"
-                Dim tplHi As String = "N/A"
-                Dim unusedFlag As String = ""
-                If tl.RawTendBytes.Length >= 5 Then
-                    unusedByte = $"0x{tl.RawTendBytes(4):X2}"
-                    If tl.RawTendBytes(4) <> 0 Then unusedFlag = " *** UNUSED-BYTE NON-ZERO ***"
-                End If
-                If tl.RawTendBytes.Length >= 7 Then
-                    tplLo = $"0x{tl.RawTendBytes(5):X2}"
-                    tplHi = $"0x{tl.RawTendBytes(6):X2}"
-                End If
-            End If
 
             Dim opacity As Single = CSng(tl.Value) / 100.0F
             ' Gate de zero-opacity REMOVIDO (a pedido): se incluyen TODAS las capas sin filtrar por
@@ -552,7 +582,7 @@ Public Module FaceTintInputBuilder
                 ' op por Alpha=0.5 el residual byte saltó de 0.39 a 8.46 → el engine NO multiplica
                 ' TEND.Value por tplCol.Alpha. OpacityScale del resolver se preserva como info
                 ' contextual del match pero no afecta el cómputo.
-                ' ⛔ NO gatear tampoco cuando la template matcheada es la 'None' (CLFM 0x001ABFD5, Alpha=0):
+                ' NO gatear tampoco cuando la template matcheada es la 'None' (CLFM 0x001ABFD5, Alpha=0):
                 ' hipótesis "template None ⇒ capa apagada" PROBADA Y REFUTADA (2026-07-16, NPC 00007CFD +
                 ' correlación de máscaras vs CK): CK SÍ compone las capas autoradas con tpl→'None' (el
                 ' maquillaje de su _d cae 96,5% dentro de FacePaint4, más EyeLiner05/EyeShadowLower1/Dirt1,
@@ -753,7 +783,6 @@ Public Module FaceTintInputBuilder
             Dim tlTplIdxLocal = tl.TemplateColorIndex
             Dim tlValueLocal = tl.Value
             Dim tlColorLocal = tl.Color
-            Dim tendBytesLocal = If(tl.RawTendBytes Is Nothing, 0, tl.RawTendBytes.Length)
             Dim optSlotLocal = opt.Slot
             Dim optNameLocal = opt.Name
             Dim optFlagsHexLocal = $"0x{opt.Flags:X4}"
@@ -791,7 +820,7 @@ Public Module FaceTintInputBuilder
             Dim tlRed = tlColorLocal.R
             Dim tlGreen = tlColorLocal.G
             Dim tlBlue = tlColorLocal.B
-            Logger.LogLazy(Function() $"[FACETINT-BUILD] npc=0x{npcFidLocal:X8} buildIdx={buildIdx} tl(idx={tlIdxLocal} disc={tlDiscLocal} tplIdx={tlTplIdxLocal} val={tlValueLocal} color=({tlRed},{tlGreen},{tlBlue}) tendLen={tendBytesLocal}) opt(slot={optSlotLocal}/{slotNm} '{optNameLocal}' flags={optFlagsHexLocal}/{optFlagsNameLocal} entryType={optEntryTypeLocal} blendOp={optBlendOpLocal} hasDefault={optHasDefaultLocal} defaultVal={optDefaultValLocal:F3} tplColors={optTplColorsCountLocal} textures={optTexturesCountLocal}) palette({palMatched} alpha={palAlpha}) li(kind={lyrKind} rgb=({lyrR},{lyrG},{lyrBlue}) blend={lyrBlendOp}/{opName} op={lyrOpacity:F3} takesSkin={lyrTakesSkin} isSkin={lyrIsSkin} hairPal={lyrHairPal} forceUni={lyrForceUni} row={lyrRow:F3}) chans={chans}")
+            Logger.LogLazy(Function() $"[FACETINT-BUILD] npc=0x{npcFidLocal:X8} buildIdx={buildIdx} tl(idx={tlIdxLocal} disc={tlDiscLocal} tplIdx={tlTplIdxLocal} val={tlValueLocal} color=({tlRed},{tlGreen},{tlBlue})) opt(slot={optSlotLocal}/{slotNm} '{optNameLocal}' flags={optFlagsHexLocal}/{optFlagsNameLocal} entryType={optEntryTypeLocal} blendOp={optBlendOpLocal} hasDefault={optHasDefaultLocal} defaultVal={optDefaultValLocal:F3} tplColors={optTplColorsCountLocal} textures={optTexturesCountLocal}) palette({palMatched} alpha={palAlpha}) li(kind={lyrKind} rgb=({lyrR},{lyrG},{lyrBlue}) blend={lyrBlendOp}/{opName} op={lyrOpacity:F3} takesSkin={lyrTakesSkin} isSkin={lyrIsSkin} hairPal={lyrHairPal} forceUni={lyrForceUni} row={lyrRow:F3}) chans={chans}")
 
             ' [FACETINT-PALETTE] for Palette-type layers (tplColors > 0): dump every CLFM
             ' colour the palette holds so the python derivation can test "src varies per pixel
@@ -846,10 +875,10 @@ Public Module FaceTintInputBuilder
     ''' aplica SkinTonePlacement (slot 12 al frente=FirstOfAll / al final=LastOfAll). Devuelve la lista en
     ''' orden de composicion (1ro=fondo, over-running). Default de config (PhysIndex desc) = orden previo.</summary>
     Private Function OrderMergedLayers(mergedLayers As List(Of MergedTintLayer),
-                                       race As RACE_Data, isFemale As Boolean, pluginManager As PluginManager,
+                                       tintGroups As List(Of GrupoDeTinteEfectivo), pluginManager As PluginManager,
                                        groupIndexByOption As Dictionary(Of UShort, Integer),
                                        optionInGroupByOption As Dictionary(Of UShort, Integer),
-                                       categoryIndexByOption As Dictionary(Of UShort, UInteger)) As List(Of NPC_FaceTintLayerData)
+                                       categoryIndexByOption As Dictionary(Of UShort, UInteger)) As List(Of MergedTintLayer)
         Dim sortCfg = Config_App.Current?.Setting_FaceTintSort
         Dim rules = If(sortCfg IsNot Nothing, sortCfg.TintRules, Nothing)
         Dim placement = If(sortCfg IsNot Nothing, sortCfg.SkinTonePlacement, CInt(FaceTintSkinTonePlacement.Positional))
@@ -860,8 +889,8 @@ Public Module FaceTintInputBuilder
         Dim isSkin(n - 1) As Boolean
         Dim usesBlend As Boolean = (rules IsNot Nothing AndAlso rules.Any(Function(r) r.Key = CInt(FaceTintSortKey.Blend_Operation)))
         For i = 0 To n - 1
-            Dim tl = mergedLayers(i).Layer
-            Dim opt = race.FindTintOption(tl.Index, isFemale)
+            Dim tl = mergedLayers(i)
+            Dim opt = tintGroups.BuscarOpcion(tl.Index)
             Dim flags As UShort = If(opt IsNot Nothing, opt.Flags, CUShort(0))
             Dim k(13) As Double
             k(CInt(FaceTintSortKey.Group_Index)) = If(groupIndexByOption.ContainsKey(tl.Index), groupIndexByOption(tl.Index), BIG)
@@ -899,7 +928,7 @@ Public Module FaceTintInputBuilder
             idx = idx.Where(Function(i) Not isSkin(i)).Concat(idx.Where(Function(i) isSkin(i))).ToList()
         End If
 
-        Return idx.Select(Function(i) mergedLayers(i).Layer).ToList()
+        Return idx.Select(Function(i) mergedLayers(i)).ToList()
     End Function
 
     ''' <summary>Comparador multi-clave generico (Double() de claves precomputadas). Por cada regla compara
@@ -920,13 +949,13 @@ Public Module FaceTintInputBuilder
 
     ''' <summary>Delegate to FO4_Base_Library.FaceTintPaletteResolver — single source of truth.
     ''' Mantenido como wrapper local para compat con call sites de NPC_Manager.</summary>
-    Public Function ResolveFallbackBlendOp(opt As RACE_TintTemplateOption, npcOpacity As Single) As UInteger
+    Public Function ResolveFallbackBlendOp(opt As OpcionDeTinteEfectiva, npcOpacity As Single) As UInteger
         Return FaceTintPaletteResolver.ResolveFallbackBlendOp(opt, npcOpacity)
     End Function
 
     ''' <summary>Delegate to FO4_Base_Library.FaceTintPaletteResolver — single source of truth.
     ''' Mantenido como wrapper local para compat con call sites de NPC_Manager.</summary>
-    Public Function ResolvePaletteLayerEffective(tl As NPC_FaceTintLayerData, opt As RACE_TintTemplateOption, pm As PluginManager) As (Color As Color, BlendOp As UInteger, Matched As Boolean, OpacityScale As Single)
+    Public Function ResolvePaletteLayerEffective(tl As MergedTintLayer, opt As OpcionDeTinteEfectiva, pm As PluginManager) As (Color As Color, BlendOp As UInteger, Matched As Boolean, OpacityScale As Single)
         Return FaceTintPaletteResolver.ResolvePaletteLayerEffective(tl, opt, pm)
     End Function
 
@@ -938,7 +967,7 @@ Public Module FaceTintInputBuilder
     ''' render/bake resolver (ResolvePaletteLayerEffective) pick the SAME preset. Called by the
     ''' editor (EditFace_Form custom-RGB and palette-pick) and Save
     ''' (MainForm.ResolveTemplateColorIdToAbsolute).</summary>
-    Public Function ResolveTemplateColorIndex(layerColor As Color, npcOpacity As Single, opt As RACE_TintTemplateOption, pm As PluginManager) As Integer
+    Public Function ResolveTemplateColorIndex(layerColor As Color, npcOpacity As Single, opt As OpcionDeTinteEfectiva, pm As PluginManager) As Integer
         Dim m = FaceTintPaletteResolver.FindTemplateColorByColor(layerColor, npcOpacity, opt, pm)
         Return If(m Is Nothing, -1, CInt(m.TemplateIndex))
     End Function

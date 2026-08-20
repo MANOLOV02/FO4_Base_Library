@@ -2,7 +2,7 @@
 ''' here so MainForm and every render/resolver site share ONE definition instead of each
 ''' re-declaring or inlining the same hex literal.
 '''
-''' Source spec (format, NOT game data): wbDefinitionsFO4.pas:3745-3778, wbBipedObjectFlags.
+''' Source: the file format spec (format data, NOT game data).
 ''' Convention used throughout: bit (N - 30) = biped slot N. So bit 0 = slot 30 (Hair Top),
 ''' bit 2 = slot 32 (FaceGen Head), bit 16 = slot 46 (Headband), bit 30 = slot 60 (Pipboy).
 ''' This is the SAME (N-30) bit convention that FO4_Base_Library uses when it derives slot
@@ -10,7 +10,7 @@
 ''' aligned by this comment. Base_Library's internal convention is NOT modified here — this
 ''' module only holds the NPC_Manager-side named constants.
 '''
-''' ⛔ VIVE EN LA LIBRERIA (movido desde NPC_Manager/NPC/BipedSlots.vb): la tabla de slots por juego es
+''' VIVE EN LA LIBRERIA (movido desde NPC_Manager/NPC/BipedSlots.vb): la tabla de slots por juego es
 ''' formato del motor, no politica de una app, y la ley de equip (EquipResolver) la necesita. Los call
 ''' sites no cambiaron: el .vbproj de NPC_Manager importa FO4_Base_Library a nivel proyecto y todos los
 ''' usos estaban calificados como BipedSlots.X. Only the bits actually used for head-part occlusion, the
@@ -48,9 +48,8 @@ Public Module BipedSlots
     Public Const SLOT_PIPBOY As UInteger = SlotBitPipboy
 
     ' ════════════════════════════════════════════════════════════════════════════════════════════
-    ' ⭐ TABLA AUTORITATIVA de slots por juego — NO heurística. Fuente: los NOMBRES de los biped-object
-    ' flags de xEdit (wbBipedObjectFlags), leídos de TES5Edit\Core\ verbatim:
-    '   FO4 → wbDefinitionsFO4.pas:3745-3778   ·   Skyrim → wbDefinitionsTES5.pas:2590-2622
+    ' TABLA AUTORITATIVA de slots por juego — NO heurística. Fuente: los NOMBRES declarados de los
+    ' biped-object flags de cada juego (FO4 y Skyrim tienen sus propias tablas de nombres).
     ' Las tablas NO salen de las RACE (la RACE sólo REFERENCIA slots vía sus occlusion biped objects
     ' Head/Hair/Body — 23-armor-oclusion-sse-re); los slots los define el formato del juego.
     ' Cada slot cae en una REGIÓN según su nombre declarado: Hair/Head/Circlet/Ears→Headwear,
@@ -70,12 +69,12 @@ Public Module BipedSlots
         Accessory   ' amulet/ring/shield/tail — sin oclusión de piel
     End Enum
 
-    ' Índice = slot − 30 (bit 0..31). Sourced de xEdit (ver cita arriba).
+    ' Índice = slot − 30 (bit 0..31).
     Private ReadOnly _fo4Regions As BipedRegion() = BuildFo4Regions()
     Private ReadOnly _sseRegions As BipedRegion() = BuildSseRegions()
 
     Private Function BuildFo4Regions() As BipedRegion()
-        Dim r(31) As BipedRegion   ' wbDefinitionsFO4.pas:3745-3778
+        Dim r(31) As BipedRegion
         r(0) = BipedRegion.Headwear  ' 30 Hair Top
         r(1) = BipedRegion.Headwear  ' 31 Hair Long
         r(2) = BipedRegion.Headwear  ' 32 FaceGen Head
@@ -104,7 +103,7 @@ Public Module BipedSlots
     End Function
 
     Private Function BuildSseRegions() As BipedRegion()
-        Dim r(31) As BipedRegion   ' wbDefinitionsTES5.pas:2590-2622
+        Dim r(31) As BipedRegion
         r(0) = BipedRegion.Headwear   ' 30 Head
         r(1) = BipedRegion.Headwear   ' 31 Hair
         r(2) = BipedRegion.Body       ' 32 Body
@@ -149,12 +148,12 @@ Public Module BipedSlots
     ''' cuya región es Body — así que no hay `If juego` ni una constante duplicada que se pueda desincronizar.
     ''' (En las dos tablas el slot canónico de cuerpo es el miembro más bajo de la región: SSE 32 &lt; 37/38/40,
     ''' FO4 33 &lt; 52.)
-    ''' <para>⛔ NO confundir con <see cref="RegionMask"/>(Body), que es una UNIÓN pensada para resolver la
+    ''' <para>NO confundir con <see cref="RegionMask"/>(Body), que es una UNIÓN pensada para resolver la
     ''' piel por región y agrupa Feet/Calves/Tail en SSE y Scalp en FO4. Para la pregunta "¿esto es una
     ''' prenda/cuerpo de TORSO?" esa unión miente: MEDIDO sobre el load order real, con ella entran
     ''' <c>DremoraBoots</c> (por Feet) y <c>cc_Armor_Power_X01_Helm</c> (por Scalp).</para>
     ''' <para>0 si la tabla del juego no declara ninguna región Body (no debería pasar).</para>
-    ''' <para>⛔ DEPENDE DE LAS TABLAS DE ABAJO Y NO HAY GATE QUE LO PROTEJA. Hoy es correcto porque el
+    ''' <para>DEPENDE DE LAS TABLAS DE ABAJO Y NO HAY GATE QUE LO PROTEJA. Hoy es correcto porque el
     ''' slot canónico de cuerpo es el miembro MÁS BAJO de la región en los dos juegos (SSE `r(2)`=32 contra
     ''' 37/38/40; FO4 `r(3)`=33 contra 52). Si alguien clasifica como <c>Body</c> un slot más bajo —FO4 32
     ''' FaceGenHead, SSE 30/31—, esta función devuelve otro bit, el picker lista otro universo y **nada
@@ -174,7 +173,7 @@ Public Module BipedSlots
     ''' sitios de <c>NpcMeshCollector</c> (la máscara de particiones del candidate y el de-dup de piel SSE)
     ''' y ahora es el tercer consumidor (<c>ShapeBipedSlotMask</c>) el que la habría triplicado.
     '''
-    ''' ⛔ DEVUELVE EL VALOR PLEGADO **SIN FILTRAR** a <c>[30,61]</c>, a propósito. Los dos call sites
+    ''' DEVUELVE EL VALOR PLEGADO **SIN FILTRAR** a <c>[30,61]</c>, a propósito. Los dos call sites
     ''' históricos NO son equivalentes y colapsarlos rompería uno: el de la máscara descarta lo que cae
     ''' fuera del rango ANTES de setear el bit, mientras que el de-dup de piel SSE mete el valor crudo en su
     ''' lista y después usa <c>parts.Count = 0</c> como "no clasificable ⇒ conservar la shape". Si esta

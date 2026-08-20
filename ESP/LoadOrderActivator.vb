@@ -8,11 +8,10 @@ Imports System.Text
 ''' rewrite of anybody else's line.
 '''
 ''' <para><b>Why the position rules look the way they do.</b> The engine does NOT load in literal Plugins.txt
-''' order: xEdit's engine-faithful comparator (wbLoadOrder.pas:188-224) puts every module flagged
-''' <c>mfIsESM</c> before every module that isn't, and only WITHIN a group does the Plugins.txt index decide
-''' (wbLoadOrder.pas:203). And for FO4/SSE <c>mfIsESM</c> comes from the .esm/.esl EXTENSION or from the ESM
-''' header flag 0x01 (wbLoadOrder.pas:331-348) — the LIGHT flag 0x200 alone does NOT put a plugin in the
-''' master group (wbLoadOrder.pas:368-369). Three consequences this class is built on:</para>
+''' order: it puts every module in the master group before every module that isn't, and only WITHIN a
+''' group does the Plugins.txt index decide. And for FO4/SSE, master-group membership comes from the
+''' .esm/.esl EXTENSION or from the ESM header flag 0x01 — the LIGHT flag 0x200 alone does NOT put a plugin
+''' in the master group. Three consequences this class is built on:</para>
 ''' <list type="number">
 ''' <item>The app's own default output (<c>Name.esp</c> + Light flag, no ESM flag) is NOT in the master group,
 ''' so appending it at the end of the file is exactly where the engine will load it — and it shifts nobody
@@ -43,7 +42,7 @@ Public NotInheritable Class LoadOrderActivator
 
     ''' <summary>El Plugins.txt sobre el que se va a escribir, o "" + motivo si no hay uno confiable.
     '''
-    ''' <para>⛔ ESTE ES EL PUNTO MÁS PELIGROSO DE TODA LA RESOLUCIÓN DE RUTAS, y hasta ahora fallaba para el
+    ''' <para>ESTE ES EL PUNTO MÁS PELIGROSO DE TODA LA RESOLUCIÓN DE RUTAS, y hasta ahora fallaba para el
     ''' lado malo. La versión vieja componía la ruta contra la carpeta "preferida" aunque no existiera, y
     ''' <see cref="WriteEntries"/> la CREA: un usuario de la edición de GOG terminaba con un
     ''' <c>%LOCALAPPDATA%\Skyrim Special Edition\Plugins.txt</c> recién nacido, con un solo plugin adentro,
@@ -154,13 +153,13 @@ Public NotInheritable Class LoadOrderActivator
                 Dim rdr As New PluginReader()
                 rdr.LoadHeaderOnly(pluginFullPath)
                 ourMasters.AddRange(rdr.Masters)
-                ' ⛔ NO se re-escribe la disyunción acá. La ley del grupo master vive en UN solo lugar
-                ' (PluginManager.IsMasterGroup, wbLoadOrder.pas:326-347) y tiene una precondición que es fácil
+                ' NO se re-escribe la disyunción acá. La ley del grupo master vive en UN solo lugar
+                ' (PluginManager.IsMasterGroup) y tiene una precondición que es fácil
                 ' perder: el disyunto por extensión .esl no vale en VR sin el plugin VRESL. Con la copia local
                 ' (`rdr.IsESM OrElse HasEsmExtension(...)`) este archivo clasificaba NUESTRO plugin con una ley
                 ' y al resto de las líneas con otra. El File.Exists ya está garantizado más arriba.
                 ourIsEsmGroup = PluginManager.IsMasterGroup(dataPath, pluginName, groupCache).GetValueOrDefault()
-                ' IsESL already folds in the .esl extension (PluginReader.ReadTES4, per wbLoadOrder.pas:362-363).
+                ' IsESL already folds in the .esl extension (PluginReader.ReadTES4).
                 ourIsLight = rdr.IsESL
             Catch ex As Exception
                 res.Kind = OutcomeKind.Skipped
@@ -414,11 +413,11 @@ Public NotInheritable Class LoadOrderActivator
             desired = Math.Min(previousIndex, entries.Count)
         End If
 
-        ' ⛔⛔ ACÁ VIVÍA UN "TOPE DEL GRUPO DE MASTERS" (bajar nuestra línea hasta el primer no-master) Y SE
+        ' ACÁ VIVÍA UN "TOPE DEL GRUPO DE MASTERS" (bajar nuestra línea hasta el primer no-master) Y SE
         ' BORRÓ ENTERO. No era un tope mal calibrado: NO TENÍA QUE EXISTIR, y lo pagué con tres rondas de
         ' revisión persiguiendo sus efectos.
         '
-        ' La ley canónica es que el motor PARTICIONA (wbLoadOrder.pas:202-216): con dos módulos del MISMO
+        ' La ley canónica es que el motor PARTICIONA: con dos módulos del MISMO
         ' grupo desempata por índice literal de Plugins.txt, y con dos de grupos DISTINTOS el master gana
         ' siempre, esté donde esté la línea. O sea que la posición de un plugin del grupo master RESPECTO DE
         ' LOS NO-MASTERS no puede cambiar quién gana un override. Un tope que sólo mueve esa relación no
@@ -432,7 +431,7 @@ Public NotInheritable Class LoadOrderActivator
         '
         ' El síntoma que este tope intentaba tapar (la app y el motor discrepando sobre quién gana) era real,
         ' pero vivía en el LECTOR: `PluginManager.ReadActiveLoadOrder` no aplicaba la partición del motor.
-        ' Se arregló ahí, en `StablePartitionMasterGroup`. ⛔ NO REPONER ESTE TOPE.
+        ' Se arregló ahí, en `StablePartitionMasterGroup`. NO REPONER ESTE TOPE.
         '
         ' `minIndex` (los masters que nos bloquean) sí se queda: es la otra ley, "después de tus masters".
         Dim minIndex = LastIndexOfAny(entries, blocking) + 1
@@ -488,7 +487,7 @@ Public NotInheritable Class LoadOrderActivator
     End Function
 
 
-    ''' <summary>Whether a plugin is in the engine's master group (wbLoadOrder.pas:331-348: .esm/.esl extension
+    ''' <summary>Whether a plugin is in the engine's master group (.esm/.esl extension
     ''' OR the ESM header flag; the light flag alone is NOT enough). Nothing when the file is not in Data — an
     ''' entry pointing at an uninstalled plugin orders nothing. Header reads are cached per call site.</summary>
     Private Shared Function IsEsmGroup(dataPath As String, name As String,

@@ -17,7 +17,7 @@ Imports System.Linq
 ''' </summary>
 Public Module SseOverlayCompositor
     ''' <summary>Lanes de un Vector(Of Single) en ESTA maquina: 8 con AVX2, 4 con SSE2. Es el tamano de
-    ''' bloque de TODOS los loops vectoriales de este modulo. ⛔ Es constante durante todo el proceso
+    ''' bloque de TODOS los loops vectoriales de este modulo. Es constante durante todo el proceso
     ''' (Vector(Of T).Count lo es), asi que vive aca y no se recalcula por pixel. Hardcodear 8 en su lugar
     ''' corrompe silenciosamente una maquina de 4 lanes: leeria y escribiria fuera del bloque.</summary>
     Private ReadOnly lanes As Integer = FastPow.LaneCount
@@ -79,10 +79,10 @@ Public Module SseOverlayCompositor
     End Function
 
     ''' <summary>Mapea un blend-mode de skee al par (blendOp, softLightModel) del dispatch COMPARTIDO CPU/GL.
-    ''' ⭐ FUENTE ÚNICA: la usan <see cref="ApplyOverlays"/> (CPU) y el path GPU (uniform uBlendOp del compositor),
+    ''' FUENTE ÚNICA: la usan <see cref="ApplyOverlays"/> (CPU) y el path GPU (uniform uBlendOp del compositor),
     ''' así los dos no pueden desincronizarse (antes el mapeo vivía inline en el CPU y el GPU no tenía ninguno).
     ''' softLightModel = 3 (Pegtop) SIEMPRE: es el que usa RaceMenu.
-    ''' ⛔ Grayscale(20) y ColorMode(21) son NO SEPARABLES (necesitan los 3 canales del DESTINO juntos: luminancia y
+    ''' Grayscale(20) y ColorMode(21) son NO SEPARABLES (necesitan los 3 canales del DESTINO juntos: luminancia y
     ''' HSV). El shader los implementa en <c>blendDispatch</c> (blendGrayscale/blendColorMode); el CPU los resuelve en
     ''' ramas propias dentro de ApplyOverlays con la MISMA fórmula. Por eso NO pueden pasar por BlendChannel, que es
     ''' escalar (per-canal).</summary>
@@ -121,12 +121,12 @@ Public Module SseOverlayCompositor
             Dim c0 = CSng(ov.Color(0)), c1 = CSng(ov.Color(1)), c2 = CSng(ov.Color(2)), c3 = CSng(ov.Color(3))
             Dim isNormal = (ov.BlendMode = SseBlendMode.Normal OrElse ov.BlendMode = SseBlendMode.Rnm OrElse ov.BlendMode = SseBlendMode.TextureMode)
             Dim isGray = (ov.BlendMode = SseBlendMode.Grayscale)
-            ' ⭐ ColorMode (HSV) YA NO se queda escalar. Estuvo excluido por "ramoso", que era comodidad y no
+            ' ColorMode (HSV) YA NO se queda escalar. Estuvo excluido por "ramoso", que era comodidad y no
             ' una barrera: las reducciones ENTRE canales son la misma horizontal que ya usaban Grayscale y el
             ' blend de normales, los tres If de la tinta son selects, y el Mod 6 resulta EXACTO por el rango
             ' de sus argumentos. Ver ColorModeBlockV.
             Dim isColor = (ov.BlendMode = SseBlendMode.ColorMode)
-            ' ⭐ LA CONVENCION DE LA ETAPA `Overlay`, resuelta POR CAPA (el blendOp es de la capa) y FUERA del
+            ' LA CONVENCION DE LA ETAPA `Overlay`, resuelta POR CAPA (el blendOp es de la capa) y FUERA del
             ' loop de pixeles. Es lo que hace que el bucket Overlay de CharGen Options IMPACTE: hasta acá este
             ' composite no leía la convención y el bucket era un control muerto. `isTextureSet` sigue el mismo
             ' criterio que el builder GPU (BuildSkeeGpuLayers): las capas Mask (type 1) son PaletteMask, el
@@ -182,12 +182,12 @@ Public Module SseOverlayCompositor
             If la <= 0.0F Then Return
 
             Dim ar = acc(px * 4), ag = acc(px * 4 + 1), ab = acc(px * 4 + 2)
-            ' ⭐ CONVERSIONES DE ESPACIO DE LA ETAPA OVERLAY (bucket `Overlay` de CharGen Options).
-            ' ⛔ Antes este composite corría SIN NINGUNA conversión, así que el bucket Overlay era un control
+            ' CONVERSIONES DE ESPACIO DE LA ETAPA OVERLAY (bucket `Overlay` de CharGen Options).
+            ' Antes este composite corría SIN NINGUNA conversión, así que el bucket Overlay era un control
             ' que no movía un byte — y coincidía con el GPU sólo porque la ley SSE es all-Linear y las
             ' conversiones del compositor compartido quedaban en no-op. Era una COINCIDENCIA de los defaults,
             ' no una propiedad del diseño.
-            ' ⛔ Las expresiones NO se reescribieron como un ComposeOne genérico: `mix(a,l,la)` y
+            ' Las expresiones NO se reescribieron como un ComposeOne genérico: `mix(a,l,la)` y
             ' `l*la + a*(1−la)` son iguales en álgebra y DISTINTAS en redondeo. Se ENVUELVEN las de siempre,
             ' así que con ss=ws=cs=asp cada Cvt devuelve su entrada y la cuenta colapsa LITERALMENTE a la
             ' previa ⇒ byte-inerte hasta que el usuario mueva el bucket.
@@ -231,7 +231,7 @@ Public Module SseOverlayCompositor
 
     ''' <summary>Conversión de espacio de UN canal — la MISMA función que usa el compositor compartido
     ''' (<c>FaceTintCpuCompositor.ConvertSpaceShared</c> = su <c>Cvt1</c>), con el mismo cortocircuito cuando
-    ''' origen y destino coinciden. ⛔ No re-implementarla acá: si el overlay convirtiera con otra curva, CPU
+    ''' origen y destino coinciden. No re-implementarla acá: si el overlay convirtiera con otra curva, CPU
     ''' y GL divergirían en el VALOR sin que nadie se equivoque en la matemática del blend.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function Cvt(v As Single, fromS As Integer, toS As Integer) As Single
@@ -251,7 +251,7 @@ Public Module SseOverlayCompositor
         ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
         Dim lanes = Vector(Of Single).Count
         ' scratch DEL HILO para las permutaciones dentro del pixel (reemplazan a Vector256.Shuffle,
-        ' que no existe en la API de ancho variable). ⛔ Local: compartirlo entre hilos lo corrompe.
+        ' que no existe en la API de ancho variable). Local: compartirlo entre hilos lo corrompe.
         Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
         Dim tex = ov.Texture
         Dim lt = ov.LayerType
@@ -276,7 +276,7 @@ Public Module SseOverlayCompositor
                 Continue While
             End If
             Dim a = VBroadcastS(acc, e)
-            ' ⭐ Espejo EXACTO de las conversiones del escalar (ver ApplyOverlayPixel), en el mismo orden y con
+            ' Espejo EXACTO de las conversiones del escalar (ver ApplyOverlayPixel), en el mismo orden y con
             ' la MISMA función (CvtV es el espejo de ConvertSpaceShared, cortocircuito incluido). El lane del
             ' ALPHA también se convierte y da igual: lo descarta el `rgbMask` del select final.
             Dim ac = FaceTintCpuCompositor.CvtV(a, asp, cs)
@@ -311,7 +311,7 @@ Public Module SseOverlayCompositor
         Return e
     End Function
 
-    ''' <summary>⭐ ColorMode (HSV) VECTORIZADO: <c>HsvToRgb(H,S del blend, V del source)</c>. Espejo exacto de
+    ''' <summary>ColorMode (HSV) VECTORIZADO: <c>HsvToRgb(H,S del blend, V del source)</c>. Espejo exacto de
     ''' la rama <c>ElseIf ov.BlendMode = ColorMode</c> del escalar (<see cref="ApplyOverlayPixel"/>), que usa
     ''' <see cref="RgbToHsv"/> + <see cref="HsvToRgb"/>.
     '''
@@ -320,7 +320,7 @@ Public Module SseOverlayCompositor
     ''' reducción horizontal dentro del píxel que ya usa Grayscale y el blend de normales; (2) los tres `If`
     ''' de la tinta se vuelven selects. Lo único que parecía irreducible era el <c>Mod 6</c>.</para>
     '''
-    ''' <para>⛔⭐ <b>EL <c>Mod 6</c> ES EXACTO SIN fmod GENERAL, POR EL RANGO DE SUS ARGUMENTOS</b>, y esto es
+    ''' <para><b>EL <c>Mod 6</c> ES EXACTO SIN fmod GENERAL, POR EL RANGO DE SUS ARGUMENTOS</b>, y esto es
     ''' lo que hace que el espejo sea bit-idéntico y no una aproximación:
     ''' <list type="bullet">
     ''' <item>En RgbToHsv el argumento es <c>(g−b)/d</c> con <c>mx = r</c>, o sea <c>g,b ≤ r</c> y
@@ -360,7 +360,7 @@ Public Module SseOverlayCompositor
         ' select las descarta, igual que el escalar nunca las evalua)
         h = Vector.ConditionalSelect(Vector.GreaterThan(d, VBroadcastS(0.0000001F)), h, zero)
         ' s = If(mx <= 0, 0, d/mx)
-        ' ⛔ La condicion es `mx <= 0`, NO `mx > 0`: con mx = NaN el escalar (If(mx <= 0, 0, d/mx)) evalua
+        ' La condicion es `mx <= 0`, NO `mx > 0`: con mx = NaN el escalar (If(mx <= 0, 0, d/mx)) evalua
         ' la rama FALSA y devuelve d/mx = NaN, mientras que `mx > 0` tambien es falsa y daba 0.
         Dim s = Vector.ConditionalSelect(Vector.LessThanOrEqual(mx, zero), zero, Vector.Divide(d, mx))
 
@@ -378,7 +378,7 @@ Public Module SseOverlayCompositor
 
     ''' <summary><c>x Mod 6</c> para <c>|x| &lt; 12</c>, que es TODO el dominio real de HSV (ver la nota de
     ''' <see cref="ColorModeBlockV"/>). Exacto: en ese rango fmod sólo puede restar o sumar 6 una vez, y esa
-    ''' operación no redondea. ⛔ NO usar <c>x − 6·trunc(x/6)</c>: eso sí redondearía.</summary>
+    ''' operación no redondea. NO usar <c>x − 6·trunc(x/6)</c>: eso sí redondearía.</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Private Function ModSixV(x As Vector(Of Single), six As Vector(Of Single)) As Vector(Of Single)
         Dim r = Vector.ConditionalSelect(Vector.GreaterThanOrEqual(x, six), Vector.Subtract(x, six), x)
@@ -479,7 +479,7 @@ Public Module SseOverlayCompositor
                         Dim tintV = FastPow.VPerChannel(tr, tg, tb, 1.0F)
                         Dim rgbMask = FastPow.VPerChannelMask(-1, -1, -1, 0)
                         Dim opaV = VBroadcastS(opa)
-                        ' scratch DEL HILO para las permutaciones dentro del pixel. ⛔ Local por llamada.
+                        ' scratch DEL HILO para las permutaciones dentro del pixel. Local por llamada.
                         Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
                         Dim one = VBroadcastS(1.0F)
                         Dim zero = Vector(Of Single).Zero
@@ -531,7 +531,7 @@ Public Module SseOverlayCompositor
                         Dim one = VBroadcastS(1.0F), two = VBroadcastS(2.0F), half = VBroadcastS(0.5F)
                         Dim zero = Vector(Of Single).Zero
                         Dim epsV = VBroadcastS(0.0000001F)
-                        ' scratch DEL HILO para las permutaciones dentro del pixel. ⛔ Local por llamada.
+                        ' scratch DEL HILO para las permutaciones dentro del pixel. Local por llamada.
                         Dim shTmp(2 * lanes - 1) As Single   ' mitad baja = copia, mitad alta = destino (ver FastPow)
                         While e + lanes <= hi
                             Dim accV = VBroadcastS(msnAcc, e)
@@ -546,7 +546,7 @@ Public Module SseOverlayCompositor
                             Dim ovv = Vector.Subtract(Vector.Multiply(two, VBroadcastS(ovNorm, e)), one)
                             Dim nv = Vector.Add(hv, Vector.Multiply(covV, Vector.Subtract(ovv, hv)))
                             ' len = sqrt(nx*nx + ny*ny + nz*nz) — suma HORIZONTAL dentro de cada pixel.
-                            ' ⭐ El orden del arbol coincide EXACTAMENTE con el del escalar: con el lane 3 puesto
+                            ' El orden del arbol coincide EXACTAMENTE con el del escalar: con el lane 3 puesto
                             ' en 0, el primer paso da (nx²+ny²) y (nz²+0), y el segundo los suma ⇒ ((nx²+ny²)+nz²),
                             ' que es como asocia VB. La suma float NO es asociativa, asi que esto no es un detalle.
                             Dim sq = Vector.ConditionalSelect(rgbMask, Vector.Multiply(nv, nv), zero)
@@ -570,7 +570,7 @@ Public Module SseOverlayCompositor
 
     ''' <summary>Self-test de paridad de los DOS loops vectorizados de este modulo (alpha-over de skee y blend
     ''' de normales MSN) contra su ley escalar. Devuelve "" si todo coincide bit a bit.
-    ''' <para>⛔ HACE FALTA que exista: el corpus VANILLA de SSE no tiene overlays de RaceMenu, asi que un
+    ''' <para>HACE FALTA que exista: el corpus VANILLA de SSE no tiene overlays de RaceMenu, asi que un
     ''' barrido A/B de corpus NO ejercita nada de esto. Sin este test, estos dos caminos irian sin cobertura.</para>
     ''' <para>Los tamaños son deliberadamente impares para que el prologo y la cola entren en juego.</para></summary>
     Public Function OverlayVectorSelfTest() As String
@@ -629,7 +629,7 @@ Public Module SseOverlayCompositor
                         tex(i) = Rnd01(seed)
                     Next
                     If np >= 3 Then tex(3) = 0.0F : tex(0) = 0.0F     ' alpha/mask 0 -> Continue For
-                    ' ⭐ NaN EN LA COBERTURA. Es EL caso que distingue el guard escalar `<= 0` (falso con
+                    ' NaN EN LA COBERTURA. Es EL caso que distingue el guard escalar `<= 0` (falso con
                     ' NaN => COMPONE) del vectorial `> 0` (tambien falso => SALTEABA). Como el prologo/cola
                     ' son escalares y el cuerpo vectorial, sin esto el resultado del pixel dependia de donde
                     ' corto el Partitioner. Va en un pixel ALTO para que caiga en el cuerpo vectorial.
@@ -674,7 +674,7 @@ Public Module SseOverlayCompositor
     End Function
 
     ''' <summary>Un PIXEL COMPLETO del blend de normales MSN — la ley escalar, verbatim.
-    ''' <para>⛔ ES POR PIXEL Y NO POR ELEMENTO, A PROPOSITO. A diferencia del fold o del alpha-over, este
+    ''' <para>ES POR PIXEL Y NO POR ELEMENTO, A PROPOSITO. A diferencia del fold o del alpha-over, este
     ''' cuerpo LEE los tres canales (<c>hx,hy,hz</c>) y ESCRIBE los tres: hacerlo elemento por elemento
     ''' introduce un read-after-write —al calcular G ya se leyó una R pisada— y cambia el resultado. Como
     ''' <c>lo</c> y <c>hi</c> son multiplos de 4 y el vector avanza de a 8, el prologo y la cola cubren 0 ó 1
@@ -717,13 +717,13 @@ Public Module SseOverlayCompositor
     ''' <see cref="JslotOverlayNode.NormalPath"/>; los que no traen normal no tocan el _msn. Returns True si alguno
     ''' contribuyó. <paramref name="msnAcc"/> = head _msn decodificado RGBA [0,1] (length w*h*4).
     '''
-    ''' <para>⭐ EL ALPHA NO SE MEZCLA, y eso MATCHEA a skee exactamente (no es una aproximación). skee reemplaza
+    ''' <para>EL ALPHA NO SE MEZCLA, y eso MATCHEA a skee exactamente (no es una aproximación). skee reemplaza
     ''' el slot 1 del decal ENTERO —RGB y alpha— con el normal del overlay (OverlayInterface::InstallOverlay), pero
     ''' el decal hereda el flag MSN de la cabeza (:198-202), y en una malla MODEL-SPACE el mask especular sale del
     ''' SLOT 7 (t2, canal .r), que el decal COPIA de la cabeza (:214-233). O sea que el alpha del normal del overlay
     ''' no lo lee nadie tampoco in-game. Vale con o sin BC5: con BC5 ni siquiera existe.</para>
     '''
-    ''' <para>⚠️ Lo que SÍ es aproximación es el RGB, y sólo en el medio: el motor dibuja DOS shapes y mezcla dos
+    ''' <para>Lo que SÍ es aproximación es el RGB, y sólo en el medio: el motor dibuja DOS shapes y mezcla dos
     ''' resultados YA SOMBREADOS (alpha-over del decal sobre la cabeza), mientras que un bake tiene una sola
     ''' geometría y sombrea UNA entrada mezclada. Coinciden EXACTO en los extremos —cobertura 0 (queda el normal de
     ''' la cabeza) y cobertura 1 (queda el del overlay tal cual, que es lo que el decal muestra)— y divergen en el
@@ -757,10 +757,10 @@ Public Module SseOverlayCompositor
                 Logger.LogLazy(Function() $"[SSE-OVL] normal de overlay SALTEADO: no se pudo leer/decodificar '{npFail}'")
                 Continue For
             End If
-            ' ⭐⭐ COBERTURA = ALPHA DEL DIFFUSE DEL OVERLAY × opacidad, y NADA MÁS. Es la ley del MOTOR: el overlay
+            ' COBERTURA = ALPHA DEL DIFFUSE DEL OVERLAY × opacidad, y NADA MÁS. Es la ley del MOTOR: el overlay
             ' es una geometría clonada que se dibuja encima, y lo que la recorta es el alpha de su SLOT 0
             ' (OverlayInterface::InstallOverlay) — el normal vive en el slot 1 y no recorta nada.
-            ' ⛔ ACÁ HABÍA UN FALLBACK AL ALPHA DEL PROPIO NORMAL, roto por partida doble: (1) no es lo que hace el
+            ' ACÁ HABÍA UN FALLBACK AL ALPHA DEL PROPIO NORMAL, roto por partida doble: (1) no es lo que hace el
             ' motor, y (2) toda fuente sin alpha real —BC5 y BC1, o sea la mayoría de los normales— decodifica con
             ' A=1 CONSTANTE ⇒ cobertura plena en TODA la cara: el "tatuaje" se comía la cabeza entera.
             ' Un overlay SIN diffuse no tiene de dónde sacar cobertura y por eso se saltea — que es también lo que
@@ -785,10 +785,10 @@ Public Module SseOverlayCompositor
     ''' <summary>True iff any FACE overlay carries a normal map the fold can actually consume (cheap check, no
     ''' decode): nodo Face + <see cref="JslotOverlayNode.NormalPath"/> + <see cref="JslotOverlayNode.DiffusePath"/>
     ''' + visible.
-    ''' ⭐ La opacidad entra en el gate porque entra en el compose (<see cref="ComposeFaceOverlayNormalsIntoMsn"/>
+    ''' La opacidad entra en el gate porque entra en el compose (<see cref="ComposeFaceOverlayNormalsIntoMsn"/>
     ''' saltea <c>opacity &lt;= 0</c>) — ver la nota de <see cref="HasBakeableFaceOverlays"/>.
     '''
-    ''' <para>⭐ Y EL DIFFUSE TAMBIÉN, por la MISMA razón: es de su alpha que sale la COBERTURA del normal, así que
+    ''' <para>Y EL DIFFUSE TAMBIÉN, por la MISMA razón: es de su alpha que sale la COBERTURA del normal, así que
     ''' un overlay solo-normal no aporta nada y hacer que el gate dijera "sí" dejaba al compose sin hacer NADA — el
     ''' patrón que este archivo ya documenta dos veces como caro (en el bake hace entrar al camino plegado para
     ''' salir sin componer). Es además lo que hace el motor: sin diffuse propio el slot 0 del decal queda con la
@@ -809,7 +809,7 @@ Public Module SseOverlayCompositor
         Return If(ov.HasAlpha, ov.Alpha, 1.0) > 0.0
     End Function
 
-    ''' <summary>⭐ THE canonical "is this overlay on the head?" test. EVERY path — CPU bake, GPU bake, the folded
+    ''' <summary>THE canonical "is this overlay on the head?" test. EVERY path — CPU bake, GPU bake, the folded
     ''' and non-folded variants, the live render, and the Papyrus apply-script emitter — must agree on this one
     ''' predicate, or an overlay ends up composited twice or not at all.
     '''
@@ -830,12 +830,12 @@ Public Module SseOverlayCompositor
                nodeName.TrimStart().StartsWith("Face", StringComparison.OrdinalIgnoreCase)
     End Function
 
-    ''' <summary>⭐ THE canonical "is this the MAGIC (spell) pool?" test — el nodo <c>… [SOvl{n}]</c> en vez de
+    ''' <summary>THE canonical "is this the MAGIC (spell) pool?" test — el nodo <c>… [SOvl{n}]</c> en vez de
     ''' <c>… [Ovl{n}]</c>. skee64 mantiene DOS pools por zona, cada uno con su propio contador
     ''' (<c>g_numSpell*Overlays</c> / key <c>iSpellOverlays</c>, main.cpp:775-781, default 1) y su propia malla
     ''' plantilla (<c>*_magicoverlay.nif</c> vs <c>*_overlay.nif</c>, OverlayInterface.h:23-46).
     '''
-    ''' <para>⭐⭐ QUÉ CAMBIA DE VERDAD ENTRE LOS DOS POOLS — MEDIDO sobre los 8 NIF de <c>RaceMenu.bsa</c>
+    ''' <para>QUÉ CAMBIA DE VERDAD ENTRE LOS DOS POOLS — MEDIDO sobre los 8 NIF de <c>RaceMenu.bsa</c>
     ''' (parseo de bloques, 2026-08-10), no razonado: los dos son <c>NiNode → NiTriShape +
     ''' BSLightingShaderProperty + BSShaderTextureSet + NiAlphaProperty</c> con el MISMO <c>default.dds</c>; el magic
     ''' agrega <c>BSEffectShaderPropertyFloatController + NiFloatInterpolator + NiFloatData</c>, y los campos del
@@ -881,7 +881,7 @@ Public Module SseOverlayCompositor
         Return nodeName.IndexOf("[SOvl", StringComparison.OrdinalIgnoreCase)
     End Function
 
-    ''' <summary>⭐⭐ LA MEMBRESÍA DEL FOLD: overlay de cara que el pliegue (render Y bake) se queda.
+    ''' <summary>LA MEMBRESÍA DEL FOLD: overlay de cara que el pliegue (render Y bake) se queda.
     ''' <para>Es <see cref="IsFaceOverlay"/> MENOS el pool magic, y la razón es de MECANISMO, no de gusto: plegar
     ''' es escribir el overlay DENTRO del diffuse de la cabeza, o sea volverlo permanente e incondicional. Un
     ''' <c>Face [SOvl{n}]</c> es la capa que un magic effect prende y apaga en runtime (su plantilla trae un
@@ -895,15 +895,15 @@ Public Module SseOverlayCompositor
         Return IsFaceOverlay(ov) AndAlso Not IsSpellOverlay(ov)
     End Function
 
-    ''' <summary>⭐ EL ORDEN DE COMPOSICIÓN DE skee, como clave única y ordenable.
+    ''' <summary>EL ORDEN DE COMPOSICIÓN DE skee, como clave única y ordenable.
     ''' <para><c>SetupOverlay</c> corre el loop del pool PRIMARIO completo y DESPUÉS el del secundario
     ''' (OverlayInterface.cpp:659-668), y cada <c>InstallOverlay</c> termina en <c>AttachChild</c> (:257) ⇒ el
     ''' orden de dibujo es: <b>TODOS los <c>[Ovl]</c> ascendentes, y encima TODOS los <c>[SOvl]</c>
     ''' ascendentes</b>. NO es un único índice compartido.</para>
-    ''' <para>⛔ Ordenar por <see cref="ParseOvlIndex"/> a secas —que saltea la <c>S</c>— empataba
+    ''' <para>Ordenar por <see cref="ParseOvlIndex"/> a secas —que saltea la <c>S</c>— empataba
     ''' <c>[SOvl0]</c> con <c>[Ovl0]</c> y podía dejar el spell DEBAJO de <c>[Ovl1]</c>. Con el offset, el pool
     ''' magic siempre queda arriba, que es lo que hace el motor.</para>
-    ''' <para>⛔ EL OFFSET NO PUEDE SER "UN NÚMERO QUE ALCANCE". Era 1000, justificado con "skee clampea todo
+    ''' <para>EL OFFSET NO PUEDE SER "UN NÚMERO QUE ALCANCE". Era 1000, justificado con "skee clampea todo
     ''' contador a 0x7F", y eso confunde lo que el MOTOR instancia con lo que el DATO puede traer: el decoder del
     ''' <c>.jslot</c> acepta <c>\[S?Ovl\d+\]</c> sin techo (y el barrido del apply-script existe justamente porque un
     ''' preset importado puede traer un <c>[SOvl40]</c>), así que un <c>Body [Ovl2000]</c> ordenaba ARRIBA de un
@@ -915,7 +915,7 @@ Public Module SseOverlayCompositor
     ''' representable, y no hay suma que pueda desbordar.</para></para></summary>
     Public Function CompositeOrderKey(nodeName As String) As Integer
         Dim idx = ParseOvlIndex(nodeName)
-        ' ⚠️ El índice literal 2147483647 ES el centinela, o sea indistinguible de "sin índice" ya desde
+        ' El índice literal 2147483647 ES el centinela, o sea indistinguible de "sin índice" ya desde
         ' ParseOvlIndex. Inalcanzable con dato real (skee clampea a 127) y sin consecuencia (los dos ordenan
         ' último y el OrderBy es estable), pero queda dicho: el dominio no está perfectamente separado.
         If idx = Integer.MaxValue Then Return Integer.MaxValue   ' sin índice = al final, como antes
@@ -924,7 +924,7 @@ Public Module SseOverlayCompositor
     End Function
 
     ''' <summary>Offset del pool magic en <see cref="CompositeOrderKey"/>: <c>Integer.MaxValue \ 2</c>.
-    ''' <para>⛔ ERA <c>1 &lt;&lt; 30</c>, (este comentario decia que eso es <c>MaxValue + 1</c> y es FALSO: es <c>MaxValue \ 2 + 1</c> — la
+    ''' <para>ERA <c>1 &lt;&lt; 30</c>, (este comentario decia que eso es <c>MaxValue + 1</c> y es FALSO: es <c>MaxValue \ 2 + 1</c> — la
     ''' conclusion de abajo era correcta, la cuenta escrita no), y ese +1 hacía que el extremo del pool magic
     ''' (<c>offset + offset-1</c>) diera EXACTAMENTE <c>Integer.MaxValue</c> — el centinela de "sin índice, al
     ''' final". Efecto observable nulo (los dos ordenan último y OrderBy es estable), pero es una colisión de
@@ -936,7 +936,7 @@ Public Module SseOverlayCompositor
     ''' Callers pass THIS to the composers; each composer then keeps what it can actually consume (the diffuse
     ''' composer wants <c>DiffusePath</c>, the normal composer wants <c>NormalPath</c>). Filtering on a texture
     ''' at the CALLER is what dropped normal-only face overlays.
-    ''' <para>⛔ EXCLUYE el pool magic (<see cref="IsFoldableFaceOverlay"/>): un <c>Face [SOvl{n}]</c> NO se
+    ''' <para>EXCLUYE el pool magic (<see cref="IsFoldableFaceOverlay"/>): un <c>Face [SOvl{n}]</c> NO se
     ''' hornea nunca — se dibuja como decal vivo y viaja por el apply-script. Ver la ley completa en
     ''' <see cref="IsFoldableFaceOverlay"/>.</para></summary>
     Public Function FaceOverlaysOnly(overlays As IList(Of RaceMenuJslot.JslotOverlayNode)) As List(Of RaceMenuJslot.JslotOverlayNode)
@@ -947,7 +947,7 @@ Public Module SseOverlayCompositor
     ''' <summary>True iff <paramref name="overlays"/> has at least one FACE overlay with a diffuse texture AND
     ''' non-zero opacity — i.e. whether <see cref="ComposeFaceOverlaysIntoDiffuse"/> would emit anything.
     '''
-    ''' <para>⭐ LA OPACIDAD ENTRA EN EL GATE. Antes el gate sólo exigía <c>DiffusePath</c> mientras el compose
+    ''' <para>LA OPACIDAD ENTRA EN EL GATE. Antes el gate sólo exigía <c>DiffusePath</c> mientras el compose
     ''' además saltea <c>opacity &lt;= 0</c>: un overlay con opacidad 0 hacía que el gate dijera SÍ y el compose
     ''' no hiciera NADA. Eso no era inerte — el bake entraba al camino plegado, salía por el return de
     ''' <c>WriteSseFaceDiffuseWithOverlays</c> sin componer, y de paso se saltaba el borrado de los artefactos
@@ -961,9 +961,9 @@ Public Module SseOverlayCompositor
         Return False
     End Function
 
-    ''' <summary>⭐ The gate EVERY bake path must use: is there ANY face overlay the bake can fold — diffuse o
+    ''' <summary>The gate EVERY bake path must use: is there ANY face overlay the bake can fold — diffuse o
     ''' normal?
-    ''' <para>⛔ ESTA NOTA DECÍA que un overlay solo-normal era legal porque el compose usaba "el alpha del propio
+    ''' <para>ESTA NOTA DECÍA que un overlay solo-normal era legal porque el compose usaba "el alpha del propio
     ''' normal como cobertura". Ese fallback SE ELIMINÓ: no es la ley del motor (la cobertura sale del slot 0 del
     ''' decal, nunca del normal) y encima estaba roto — una fuente de 2 canales decodifica con A=1 constante, así
     ''' que cubría la cara ENTERA. Hoy los dos términos exigen diffuse, con lo cual esta función es equivalente a
@@ -989,7 +989,7 @@ Public Module SseOverlayCompositor
     ''' MASKA (skee folds it into the colour's A byte). <paramref name="layerType"/> 0=Normal/1=Mask/2=Color;
     ''' <paramref name="blend"/> the technique (default normal). <paramref name="texRgba"/> = decoded mask texture
     ''' (RGBA de almacenamiento [0,1], w*h*4) or Nothing for a type-2 solid layer.</summary>
-    ''' <param name="hasColor">False = la capa NO declara color (p.ej. un MASKC ausente en el NIF). ⭐ NO es lo
+    ''' <param name="hasColor">False = la capa NO declara color (p.ej. un MASKC ausente en el NIF). NO es lo
     ''' mismo que "el color vale 0xFFFFFFFF": ese valor ES <see cref="SkeePresetHair"/>, el sentinel de skee para
     ''' "usar el color de pelo del NPC". Usarlo como default de "sin dato" hacía que una capa sin MASKC entrara por
     ''' la resolución de presets; y como los dos callers pasan <c>hairRgb = Nothing</c>, caía al decode literal del
@@ -1024,7 +1024,7 @@ Public Module SseOverlayCompositor
     ''' <summary>Índice del nodo <c>[Ovl{n}]</c> / <c>[SOvl{n}]</c> (n entero) o Integer.MaxValue si no matchea
     ''' (los sin índice van al final). Es el ÍNDICE DENTRO DE SU POOL; el orden total entre pools lo da
     ''' <see cref="CompositeOrderKey"/>.
-    ''' <para>⛔⛔ ESTO ESTABA ROTO PARA EL POOL MAGIC, y el comentario afirmaba lo contrario ("salta '[Ovl' o
+    ''' <para>ESTO ESTABA ROTO PARA EL POOL MAGIC, y el comentario afirmaba lo contrario ("salta '[Ovl' o
     ''' '[SOvl'"). El buscado era el literal <c>"[Ovl"</c>, que NO es substring de <c>"[SOvl0]"</c> —entre el
     ''' corchete y la <c>O</c> hay una <c>S</c>— así que TODO nodo <c>[SOvl{n}]</c> caía en el
     ''' <c>open &lt; 0</c> y devolvía MaxValue. Consecuencias medidas por el gate: el índice del pool magic era

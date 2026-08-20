@@ -1,3 +1,4 @@
+﻿Imports FO4_Base_Library.Canon.CanonInterpretacion
 Imports System.Linq
 
 ''' <summary>Realización de un outfit: por cada ARMO terminal equipada, las keywords contextuales
@@ -48,7 +49,7 @@ Public Module OutfitResolver
     ''' (GetRecord → ParseLVLI). When no resolver is supplied the sampler is purely record-based — its original
     ''' behavior — so every existing caller is unaffected. This is what lets the SAME sampling/enumeration
     ''' algorithm serve both real records and drafts (no duplicated leveled-list logic in the app).</summary>
-    Public Delegate Function LeveledListResolver(formID As UInteger) As LVLI_Data
+    Public Delegate Function LeveledListResolver(formID As UInteger) As Canon.ILvli
 
     ''' <summary>Sampla una realización de outfit con propagación de keywords. Devuelve la lista
     ''' de ARMO terminal con sus keywords contextuales heredadas del camino LLKC.</summary>
@@ -65,8 +66,8 @@ Public Module OutfitResolver
             Return picks
         End If
 
-        Dim otft = RecordParsers.ParseOTFT(rec, pluginManager)
-        For Each itemFormID In otft.ItemFormIDs
+        Dim otft = Canon.CanonRecords.Otft(rec, pluginManager)
+        For Each itemFormID In otft.Prendas()
             SampleOutfitItem(itemFormID, pluginManager, New HashSet(Of UInteger)(), picks, warnings, New List(Of UInteger), leveledResolver)
         Next
 
@@ -135,10 +136,10 @@ Public Module OutfitResolver
         Dim rec = pluginManager.GetRecord(otftFormID)
         If rec Is Nothing OrElse rec.Header.Signature <> "OTFT" Then Return result
 
-        Dim otft = RecordParsers.ParseOTFT(rec, pluginManager)
+        Dim otft = Canon.CanonRecords.Otft(rec, pluginManager)
         Dim seen As New HashSet(Of UInteger)        ' ARMO terminales ya emitidos (dedup)
         Dim expandedLvli As New HashSet(Of UInteger) ' LVLI ya expandidas (anti-ciclo + anti-blowup)
-        For Each itemFormID In otft.ItemFormIDs
+        For Each itemFormID In otft.Prendas()
             EnumerateItemAllTerminal(itemFormID, pluginManager, expandedLvli, result, seen, leveledResolver)
         Next
         Return result
@@ -176,8 +177,8 @@ Public Module OutfitResolver
 
         ' Expand-once: si ya la recorrimos por otra rama, sus descendientes ya están en result.
         If Not expandedLvli.Add(formID) Then Return
-        For Each entry In lvli.Entries
-            EnumerateItemAllTerminal(entry.FormID, pluginManager, expandedLvli, result, seen, leveledResolver)
+        For Each entry In lvli.LeveledListEntries
+            EnumerateItemAllTerminal(entry.LeveledListEntryItem, pluginManager, expandedLvli, result, seen, leveledResolver)
         Next
     End Sub
 
@@ -193,9 +194,9 @@ Public Module OutfitResolver
         If rec Is Nothing OrElse rec.Header.Signature <> "ARMO" Then Return 0UI
 
         visited.Add(armoFormID)
-        Dim armo = RecordParsers.ParseARMO(rec, pluginManager)
-        If armo.TemplateArmorFormID <> 0UI Then
-            Dim resolved = ResolveTerminalArmorFormID(armo.TemplateArmorFormID, pluginManager, visited)
+        Dim armo = Canon.CanonRecords.Armo(rec, pluginManager)
+        If armo IsNot Nothing AndAlso armo.TemplateArmor <> 0UI Then
+            Dim resolved = ResolveTerminalArmorFormID(armo.TemplateArmor, pluginManager, visited)
             If resolved <> 0UI Then Return resolved
         End If
 
@@ -205,14 +206,14 @@ Public Module OutfitResolver
     ''' <summary>Resolve a FormID to its leveled-list view: the injected resolver first (so caller-known
     ''' lists outside the PluginManager — e.g. drafts — are seen), then the real record. Nothing when the
     ''' FormID is not a leveled list (the caller then treats it as an ARMO terminal).</summary>
-    Private Function ResolveLeveled(formID As UInteger, pluginManager As PluginManager, leveledResolver As LeveledListResolver) As LVLI_Data
+    Private Function ResolveLeveled(formID As UInteger, pluginManager As PluginManager, leveledResolver As LeveledListResolver) As Canon.ILvli
         If formID = 0UI Then Return Nothing
         If leveledResolver IsNot Nothing Then
             Dim v = leveledResolver(formID)
             If v IsNot Nothing Then Return v
         End If
         Dim rec = pluginManager.GetRecord(formID)
-        If rec IsNot Nothing AndAlso rec.Header.Signature = "LVLI" Then Return RecordParsers.ParseLVLI(rec, pluginManager)
+        If rec IsNot Nothing AndAlso rec.Header.Signature = "LVLI" Then Return Canon.CanonRecords.Lvli(rec, pluginManager)
         Return Nothing
     End Function
 
@@ -255,7 +256,7 @@ Public Module OutfitResolver
         End Select
     End Sub
 
-    Private Sub SampleLeveledItem(lvli As LVLI_Data,
+    Private Sub SampleLeveledItem(lvli As Canon.ILvli,
                                   pluginManager As PluginManager,
                                   visited As HashSet(Of UInteger),
                                   result As List(Of OutfitArmorPick),
@@ -267,40 +268,42 @@ Public Module OutfitResolver
         ' Whole-list chance-none: la LVLI completa puede no contribuir (fiel al engine).
         If lvli.ChanceNone > 0 AndAlso NextPercent() < lvli.ChanceNone Then Return
 
-        Dim usable = lvli.Entries.Where(Function(e) e.FormID <> 0UI).ToList()
+        Dim usable = lvli.LeveledListEntries.Where(Function(e) e.LeveledListEntryItem <> 0UI).ToList()
         If usable.Count = 0 Then Return
 
         ' Build the keyword set for descendants: inherited + LLKC of THIS LVLI.
         ' For each LLKC entry, roll Chance% to decide whether it propagates.
         Dim mergedKeywords As New List(Of UInteger)
         mergedKeywords.AddRange(inheritedKeywords)
-        For Each fk In lvli.FilterKeywords
-            If fk.KeywordFormID = 0UI Then Continue For
+        ' Las palabras clave de filtro son un sistema de Fallout 4: en el otro juego no existen.
+        Dim fo4 = TryCast(lvli, Canon.LvliFO4)
+        For Each fk In If(fo4 Is Nothing, CType(New List(Of Canon.LvliFO4_FilterKeywordChances), IEnumerable(Of Canon.LvliFO4_FilterKeywordChances)), fo4.FilterKeywordChances)
+            If fk.FilterKeyword = 0UI Then Continue For
             ' Chance >= 100 = always; 0 = never; in between = roll.
             Dim include As Boolean
-            If fk.Chance >= 100UI Then
+            If fk.FilterChance >= 100UI Then
                 include = True
-            ElseIf fk.Chance = 0UI Then
+            ElseIf fk.FilterChance = 0UI Then
                 include = False
             Else
-                include = (NextPercent() < CInt(fk.Chance))
+                include = (NextPercent() < CInt(fk.FilterChance))
             End If
-            If include AndAlso Not mergedKeywords.Contains(fk.KeywordFormID) Then
-                mergedKeywords.Add(fk.KeywordFormID)
+            If include AndAlso Not mergedKeywords.Contains(fk.FilterKeyword) Then
+                mergedKeywords.Add(fk.FilterKeyword)
             End If
         Next
 
-        If lvli.UseAll Then
+        If lvli.FlagsUseAll Then
             For Each entry In usable
-                SampleLeveledEntry(entry, pluginManager, visited, result, warnings, lvli.CalculateEachItemInCount, mergedKeywords, leveledResolver)
+                SampleLeveledEntry(entry, pluginManager, visited, result, warnings, lvli.FlagsCalculateForEachItemInCount, mergedKeywords, leveledResolver)
             Next
         Else
             Dim entry = usable(NextIndex(usable.Count))
-            SampleLeveledEntry(entry, pluginManager, visited, result, warnings, lvli.CalculateEachItemInCount, mergedKeywords, leveledResolver)
+            SampleLeveledEntry(entry, pluginManager, visited, result, warnings, lvli.FlagsCalculateForEachItemInCount, mergedKeywords, leveledResolver)
         End If
     End Sub
 
-    Private Sub SampleLeveledEntry(entry As LVLI_Entry,
+    Private Sub SampleLeveledEntry(entry As Canon.ILvli_LeveledListEntries,
                                    pluginManager As PluginManager,
                                    visited As HashSet(Of UInteger),
                                    result As List(Of OutfitArmorPick),
@@ -308,14 +311,17 @@ Public Module OutfitResolver
                                    calculateEachItemInCount As Boolean,
                                    inheritedKeywords As List(Of UInteger),
                                    leveledResolver As LeveledListResolver)
-        If entry.ChanceNone > 0 AndAlso NextPercent() < entry.ChanceNone Then Return
+        ' El chance-none POR ENTRADA solo existe en Fallout 4.
+        Dim entFo4 = TryCast(entry, Canon.LvliFO4_LeveledListEntries)
+        If entFo4 IsNot Nothing AndAlso entFo4.LeveledListEntryChanceNone > 0 AndAlso
+           NextPercent() < entFo4.LeveledListEntryChanceNone Then Return
 
-        Dim count As Integer = If(entry.Count = 0US, 1, CInt(entry.Count))
+        Dim count As Integer = If(entry.LeveledListEntryCount = 0US, 1, CInt(entry.LeveledListEntryCount))
         If count <= 1 OrElse Not calculateEachItemInCount Then
-            SampleOutfitItem(entry.FormID, pluginManager, visited, result, warnings, inheritedKeywords, leveledResolver)
+            SampleOutfitItem(entry.LeveledListEntryItem, pluginManager, visited, result, warnings, inheritedKeywords, leveledResolver)
         Else
             For i = 1 To count
-                SampleOutfitItem(entry.FormID, pluginManager, visited, result, warnings, inheritedKeywords, leveledResolver)
+                SampleOutfitItem(entry.LeveledListEntryItem, pluginManager, visited, result, warnings, inheritedKeywords, leveledResolver)
             Next
         End If
     End Sub

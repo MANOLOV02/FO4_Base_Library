@@ -13,12 +13,11 @@ Public Class PluginReader
     Public Property IsESL As Boolean
     Public Property IsLocalized As Boolean
     ''' <summary>HEDR Next Object ID — the FormID object counter the engine/CK dispenses from
-    ''' when adding new self records to this plugin. Captured from TES4.HEDR (wbDefinitionsCommon
-    ''' .pas:6965-6970, 3rd field). Preserve-on-resave semantics: <see cref="SaveNpcEspWriter"/>
+    ''' when adding new self records to this plugin. Captured from TES4.HEDR, 3rd field.
+    ''' Preserve-on-resave semantics: <see cref="SaveNpcEspWriter"/>
     ''' must seed its own dispense pointer with <c>max(disk, computed)</c> to avoid re-issuing
-    ''' an ID that CK already consumed between saves (mirror of TwbFile.NewFormID's
-    ''' GetNextObjectID/SetNextObjectID at wbImplementation.pas:5083/5122).</summary>
-    ''' <summary>Campo Version del HEDR, crudo (wbDefinitionsCommon.pas:6965-6970: float Version + u32
+    ''' an ID that CK already consumed between saves.</summary>
+    ''' <summary>Campo Version del HEDR, crudo (float Version + u32
     ''' NumRecords + u32 NextObjectID). Decide, junto con el juego y la cantidad de masters, si el archivo
     ''' puede direccionar object ids por debajo de 0x800. 0 si el HEDR no se pudo leer, que es lo mismo que
     ''' "version vieja" y por lo tanto NO permite el rango — el default seguro.</summary>
@@ -27,8 +26,7 @@ Public Class PluginReader
     Public Property NextObjectId As UInteger
     ''' <summary>
     ''' Per-file translatable encoding captured from TES4.SNAM &lt;cp:XXXX&gt; at load time.
-    ''' Mirror of xEdit flEncodingTrans (wbImplementation.pas:766 + 5724-5737). Nothing when
-    ''' the plugin's TES4 description has no recognizable tag (default → use global).
+    ''' Nothing when the plugin's TES4 description has no recognizable tag (default → use global).
     ''' </summary>
     Public Property TranslatableEncoding As Encoding
     ''' <summary>TES4.CNAM author string, captured at load. Lets callers identify plugins authored by a
@@ -103,8 +101,8 @@ Public Class PluginReader
         If header.Signature <> "TES4" Then Throw New InvalidDataException("Not a valid plugin file: missing TES4 header")
 
         IsESM = (header.Flags And FLAG_ESM) <> 0
-        ' Slot LIGHT o full. La ley COMPLETA (0x200 OR (.esl AND NOT IsUpdate), wbLoadOrder.pas:358-369)
-        ' vive en UN solo lugar, `PluginManager.IsLightSlot`, con sus dos precondiciones de VR. Acá no se
+        ' Slot LIGHT o full. La ley COMPLETA (0x200 OR (.esl AND NOT IsUpdate)) vive en UN solo
+        ' lugar, `PluginManager.IsLightSlot`, con sus dos precondiciones de VR. Acá no se
         ' re-escribe: una copia local fue exactamente lo que dejo a `LoadOrderActivator` clasificando con
         ' una ley distinta del resto del arbol.
         ' Si esto se equivoca, un .esl se lleva un slot FULL y corre el high byte de ese plugin Y de todos
@@ -117,11 +115,11 @@ Public Class PluginReader
 
         ' Two passes over TES4 subrecords:
         '  1) SNAM <cp:XXXX> — capture per-file translatable encoding BEFORE decoding MAST,
-        '     so master filenames (technically translatable per xEdit) are read with the right cp.
+        '     so master filenames (technically translatable) are read with the right cp.
         '  2) MAST — accumulate master plugin filenames using the resolved encoding.
-        ' xEdit does the SNAM parse inside TwbFile.Create (wbImplementation.pas:5724-5737) right
-        ' after master loading; we do it before for the same effect since MAST is ASCII-safe in
-        ' practice (filesystem-friendly names).
+        ' Parsing SNAM before MAST guarantees the correct codepage is already known when master
+        ' filenames get decoded, though in practice MAST content is ASCII-safe regardless of
+        ' encoding (filesystem-friendly names).
         Dim tes4Subrecords = ParseSubrecords(data)
 
         For Each subrecord In tes4Subrecords
@@ -136,20 +134,20 @@ Public Class PluginReader
 
         For Each subrecord In tes4Subrecords
             If subrecord.Signature <> "MAST" Then Continue For
-            ' MAST is wbStringForward cpNormal (wbDefinitionsFO4.pas:12475) → non-translatable → General.
+            ' MAST is a non-translatable string field → decoded with the General codepage.
             Dim master = subrecord.AsStringGeneral
             If master <> "" Then Masters.Add(master)
         Next
 
-        ' HEDR struct layout (wbDefinitionsCommon.pas:6965-6970): float Version + u32 NumRecords +
-        ' u32 NextObjectID. We only need NextObjectID for preserve-on-resave semantics.
+        ' HEDR struct layout: float Version + u32 NumRecords + u32 NextObjectID.
+        ' We only need NextObjectID for preserve-on-resave semantics.
         For Each subrecord In tes4Subrecords
             If subrecord.Signature <> "HEDR" Then Continue For
             If subrecord.Data IsNot Nothing AndAlso subrecord.Data.Length >= 12 Then
-                ' ⛔ La VERSION no es decorativa: `TwbFile.GetAllowHardcodedRangeUse`
-                ' (wbImplementation.pas:3946-3957) la compara contra 1.709 (SSE) / 1.0 (FO4) para decidir si
-                ' este archivo puede usar object ids POR DEBAJO de 0x800. Antes se descartaba y el lector no
-                ' podia aplicar esa rama. Se guarda cruda; la ley vive en PluginManager.AllowsHardcodedRange.
+                ' La VERSION no es decorativa: el motor la compara contra 1.709 (SSE) / 1.0 (FO4)
+                ' para decidir si este archivo puede usar object ids POR DEBAJO de 0x800. Antes se
+                ' descartaba y el lector no podia aplicar esa rama. Se guarda cruda; la ley vive en
+                ' PluginManager.AllowsHardcodedRange.
                 HeaderVersion = BitConverter.ToSingle(subrecord.Data, 0)
                 NextObjectId = BitConverter.ToUInt32(subrecord.Data, 8)
             End If

@@ -29,9 +29,9 @@ Public NotInheritable Class BehaviorClipEnumerator
 
         Dim actorRoot = DirName(rb.Project)
         ' Skeleton .hkx de la RAZA/GÉNERO del NPC = rigName del character del gender resuelto (project gender-aware →
-        ' character → hkbCharacterStringData.RigName). SSE tiene skeleton por género (♂ skeleton.hkx / ♀ skeleton_female.hkx);
+        ' character → hkbCharacterStringData.RigName). SSE tiene skeleton por género (skeleton.hkx / skeleton_female.hkx);
         ' FO4 comparte uno (mismo archivo ambos géneros). Es el skeleton con el que se interpretan los clips del PROPIO
-        ' actor del NPC (bind pose correcto por género) — sin esto, ♀ de SSE usaba el skeleton ♂ (bind distinto) y ESTIRABA
+        ' actor del NPC (bind pose correcto por género) — sin esto, de SSE usaba el skeleton (bind distinto) y ESTIRABA
         ' los huesos. Los clips REUSADOS de otro actor (cross-actor) conservan el skeleton de su actor de ORIGEN.
         Dim raceSkel = ResolveHavokSkeleton(rb, loadBehaviorHkx)
         ' Índice de EXISTENCIA (.hkx/.hkt del load order, canon OrdinalIgnoreCase). La resolución clip→archivo es
@@ -55,13 +55,15 @@ Public NotInheritable Class BehaviorClipEnumerator
 
         ' (2) Subgraphs aplicables.
         For Each sg In rb.Subgraphs
-            Dim foreignId = sg.ActorKeywordFormIDs.FirstOrDefault(Function(k) RaceBehaviorResolver.IsRaceIdentityKeyword(k) AndAlso Not kwSet.Contains(k))
+            Dim actorKw = sg.ActorKeywords.Select(Function(k) k.Keyword).ToList()
+            Dim foreignId = actorKw.FirstOrDefault(Function(k) RaceBehaviorResolver.IsRaceIdentityKeyword(k) AndAlso Not kwSet.Contains(k))
             If foreignId <> 0UI Then Continue For
-            Dim axis = StateAxisLabel(sg.ActorKeywordFormIDs)
-            Dim reqFemale = sg.ActorKeywordFormIDs.Any(Function(k) RaceBehaviorResolver.KeywordType(k) = RaceBehaviorResolver.KwTypeAnimGender)
+            Dim axis = StateAxisLabel(actorKw)
+            Dim reqFemale = actorKw.Any(Function(k) RaceBehaviorResolver.KeywordType(k) = RaceBehaviorResolver.KwTypeAnimGender)
             ' Sigue el behavior del subgraph Y sus referencias (hkbBehaviorReferenceGenerator) recursivamente, con
             ' el MISMO SAPT/Role/eje. visited per-subgraph (un Core re-usado por varios actores con SAPT distinto).
-            EnumBehaviorClips(NormHkx(sg.BehaviourGraph), sg.AnimationPaths, RoleName(sg.Role), axis, reqFemale, sg.Perspective, loadBehaviorHkx,
+            EnumBehaviorClips(NormHkx(sg.DataBehaviourGraph), sg.AnimationPaths.Select(Function(p) p.Path).ToList(),
+                              RoleName(CInt(sg.FlagsRole)), axis, reqFemale, CInt(sg.FlagsPerspective), loadBehaviorHkx,
                               animSet, actorRoot, raceSkel, byClip, result, graphCache, New HashSet(Of String)(StringComparer.OrdinalIgnoreCase), 0)
         Next
 
@@ -72,12 +74,12 @@ Public NotInheritable Class BehaviorClipEnumerator
         Dim coverageDirs As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
         Dim foreignDirs As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)   ' SAPT de subgraphs de OTRA raza
         For Each sg In rb.Subgraphs
-            If sg.AnimationPaths Is Nothing Then Continue For
-            Dim foreignId = sg.ActorKeywordFormIDs.FirstOrDefault(Function(k) RaceBehaviorResolver.IsRaceIdentityKeyword(k) AndAlso Not kwSet.Contains(k))
+            Dim foreignId = sg.ActorKeywords.Select(Function(k) k.Keyword).
+                            FirstOrDefault(Function(k) RaceBehaviorResolver.IsRaceIdentityKeyword(k) AndAlso Not kwSet.Contains(k))
             Dim target = If(foreignId <> 0UI, foreignDirs, coverageDirs)
             For Each sp In sg.AnimationPaths
-                If String.IsNullOrWhiteSpace(sp) Then Continue For
-                target.Add(CanonHkx(sp.Replace("/"c, "\"c).TrimEnd("\"c)))
+                If String.IsNullOrWhiteSpace(sp.Path) Then Continue For
+                target.Add(CanonHkx(sp.Path.Replace("/"c, "\"c).TrimEnd("\"c)))
             Next
         Next
         ' Las carpetas que pertenecen a OTRA raza (un subgraph EXCLUIDO por identidad las lista, ej. Assaultron\ para
@@ -363,7 +365,7 @@ Public NotInheritable Class BehaviorClipEnumerator
 
     ''' <summary>Skeleton .hkx con el que se interpreta un clip. Si el clip es del PROPIO actor del NPC (su actor-root
     ''' == <paramref name="actorRoot"/>) devuelve el skeleton de la RAZA/GÉNERO (<paramref name="raceSkel"/>, resuelto
-    ''' del rigName del character del gender — SSE ♀ = skeleton_female.hkx). Los clips REUSADOS de otro actor
+    ''' del rigName del character del gender — SSE = skeleton_female.hkx). Los clips REUSADOS de otro actor
     ''' (cross-actor, ej. SuperMutant→death humano) usan el skeleton genérico de SU actor de origen. En FO4 esto es
     ''' no-op (raceSkel resuelve al MISMO archivo que el genérico, un único skeleton por actor sin split de género).</summary>
     Private Shared Function SourceSkelForAnim(animFile As String, actorRoot As String, raceSkel As String) As String

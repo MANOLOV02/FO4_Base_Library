@@ -6,7 +6,7 @@ Imports OpenTK.Mathematics
 ''' geometria: mismo criterio de ancho variable (<c>Vector(Of T)</c> elige 256 / 128 / escalar segun
 ''' la maquina) y mismo contrato de bit-exactitud.
 '''
-''' <para>⭐ POR QUE ACA SI Y EN EL RECALCULO DE TBN NO. El kernel del skinning es
+''' <para>POR QUE ACA SI Y EN EL RECALCULO DE TBN NO. El kernel del skinning es
 ''' <c>acc += palette(idx) * w</c> sobre una matriz 4x4, o sea <b>16 doubles CONTIGUOS</b>: un unico
 ''' indice indirecto lleva a un bloque contiguo ⇒ cargas vectoriales seguidas, sin gather, sin
 ''' transposicion AoS↔SoA y <b>sin cola</b> (16 es divisible por 8, 4, 2 y 1, o sea por CUALQUIER
@@ -14,18 +14,18 @@ Imports OpenTK.Mathematics
 ''' que vive en L1. El TBN, en cambio, trabaja sobre <c>Vector3d</c> en AoS con indices de triangulo
 ''' dispersos: ahi el ancho se va en transponer y no queda ganancia.</para>
 '''
-''' <para>⭐⭐ Y POR ESO EL FALLBACK ANGOSTO ACA SI GANA. Con 2 lanes (SSE2) el cuerpo sigue siendo
+''' <para>Y POR ESO EL FALLBACK ANGOSTO ACA SI GANA. Con 2 lanes (SSE2) el cuerpo sigue siendo
 ''' la mitad de las operaciones del escalar, porque no hay transposicion que amortizar. En el TBN,
 ''' 2 lanes de double con transposicion queda POR DEBAJO del escalar — que es exactamente el modo de
 ''' falla que ya se pago una vez con FastPow antes de pasarlo a ancho variable.</para>
 '''
-''' <para>⛔ <b>ESTE MODULO NO ES UNA LEY NUEVA.</b> A diferencia de <see cref="FastPow"/>, que PASO
+''' <para><b>ESTE MODULO NO ES UNA LEY NUEVA.</b> A diferencia de <see cref="FastPow"/>, que PASO
 ''' A SER la ley y movio 2.881 bytes, aca el camino vectorial es un espejo EXACTO del escalar y no
 ''' puede mover un bit. Lo que lo garantiza:</para>
 ''' <list type="bullet">
 ''' <item>La lane <c>k</c> siempre acumula el elemento <c>k</c> ⇒ mismo orden de sumas por elemento,
 ''' cero reasociacion, cero reduccion entre lanes.</item>
-''' <item>⛔ <b>NUNCA <c>Vector.FusedMultiplyAdd</c>.</b> El JIT de .NET no contrae <c>a + b*c</c>
+''' <item><b>NUNCA <c>Vector.FusedMultiplyAdd</c>.</b> El JIT de .NET no contrae <c>a + b*c</c>
 ''' por su cuenta, asi que <c>acc + vm * vw</c> es multiply-then-add igual que el escalar. Un FMA
 ''' "de optimizacion" redondea UNA sola vez y cambia los bits en silencio.</item>
 ''' <item>Las guardas (peso &gt; 0, indice en rango) se quedan ESCALARES en el llamador, afuera del
@@ -33,7 +33,7 @@ Imports OpenTK.Mathematics
 ''' <c>ConditionalSelect</c> y de NaN (61-perf-simd-trampas #4 y #5) NO APLICAN acá.</item>
 ''' </list>
 '''
-''' <para>⛔ <b>POR QUE TODO PASA POR ARRAYS PLANOS DE <c>Double</c> Y NO POR <c>Matrix4d</c>.</b>
+''' <para><b>POR QUE TODO PASA POR ARRAYS PLANOS DE <c>Double</c> Y NO POR <c>Matrix4d</c>.</b>
 ''' VB.NET no soporta ref structs en NINGUNA posicion — ni parametro, ni retorno, ni variable local
 ''' (BC30668 / BC30643) — asi que <c>Span(Of T)</c> y todo <c>MemoryMarshal</c> estan fuera de
 ''' alcance y no hay forma de ver un <c>Matrix4d</c> como 16 doubles sin copiarlo. Lo que si tiene
@@ -108,13 +108,13 @@ Public Module FastGeom
         End Get
     End Property
 
-    ''' <summary>⭐⭐ La paleta de huesos en SINGLE y plana. Es la version que usa el blend.
-    ''' <para>⛔ POR QUE SINGLE. Con <c>Matrix4d</c> la paleta ocupa 128 B por hueso; el Serena Battle
+    ''' <summary>La paleta de huesos en SINGLE y plana. Es la version que usa el blend.
+    ''' <para>POR QUE SINGLE. Con <c>Matrix4d</c> la paleta ocupa 128 B por hueso; el Serena Battle
     ''' Suit tiene 293 huesos = <b>37,5 KB</b>, o sea que NO ENTRA EN L1 (32 KB). Cada vertice hace 4
     ''' accesos dispersos y cada uno cruza dos lineas de cache: el blend termina limitado por memoria
     ''' y no por aritmetica. En Single son 64 B por hueso = <b>18,7 KB</b>, entra holgado, y ademas el
     ''' vector procesa 8 lanes en vez de 4.</para>
-    ''' <para>⚠️ CAMBIA BYTES HORNEADOS. La paleta se redondea a Single ANTES del blend y la
+    ''' <para>CAMBIA BYTES HORNEADOS. La paleta se redondea a Single ANTES del blend y la
     ''' acumulacion pasa a Single, asi que el resultado difiere en el ultimo bit de la mantisa. El
     ''' destino final siempre fue un Single —<c>SkinMatricesSoA</c> guarda floats y el VBO tambien—
     ''' pero el redondeo ahora ocurre antes. Hecho con autorizacion expresa del usuario.</para>
@@ -136,11 +136,11 @@ Public Module FastGeom
     ''' <summary>El kernel en SINGLE. Misma ley que <see cref="BlendInto"/> — chunk afuera, slot
     ''' adentro— con el doble de lanes.</summary>
     ''' <param name="escala">Se aplica al acumulador ANTES de guardarlo. 1 = sin escalar.
-    ''' <para>⭐ ESTA FUSIONADO A PROPOSITO. Antes el caller llamaba <c>ScaleAccS</c> despues, y eso era una
+    ''' <para>ESTA FUSIONADO A PROPOSITO. Antes el caller llamaba <c>ScaleAccS</c> despues, y eso era una
     ''' SEGUNDA PASADA completa sobre el acumulador: releer 16 floats, multiplicar, reescribir 16. MEDIDO
     ''' sobre el Serena Battle Suit: ese paso solo costaba <b>0,68 ms</b> de un blend de 5,2, o sea el 13 %,
     ''' por multiplicar 16 numeros. Fusionado, el escalado ocurre con el acumulador todavia en registro.</para>
-    ''' <para>⛔ MISMOS BITS: la suma se completa igual y recien despues se multiplica, exactamente como
+    ''' <para>MISMOS BITS: la suma se completa igual y recien despues se multiplica, exactamente como
     ''' hacia el par BlendInto+ScaleAcc. No es un FMA ni un reordenamiento.</para></param>
     <Runtime.CompilerServices.MethodImpl(Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)>
     Public Sub BlendIntoS(flatPal As Single(), idxBuf As Integer(), wBuf As Single(), nUsed As Integer, accBuf As Single(),
@@ -158,7 +158,7 @@ Public Module FastGeom
             For j As Integer = 0 To nUsed - 1
                 Dim vm As New Vector(Of Single)(flatPal, idxBuf(j) * MatSingles + e)
                 Dim vw As New Vector(Of Single)(wBuf(j))
-                ' ⛔ multiply-then-add EXPLICITO. No cambiar por Vector.FusedMultiplyAdd: el JIT no
+                ' multiply-then-add EXPLICITO. No cambiar por Vector.FusedMultiplyAdd: el JIT no
                 ' contrae `a + b*c` solo, asi que esto es bit a bit lo mismo que el escalar de abajo.
                 acc = acc + vm * vw
             Next
@@ -202,15 +202,15 @@ Public Module FastGeom
         Loop
     End Sub
 
-    ''' <summary>⛔ SOLO PARA EL GATE: apaga el camino vectorial del blend. Antes el self-test forzaba el
+    ''' <summary>SOLO PARA EL GATE: apaga el camino vectorial del blend. Antes el self-test forzaba el
     ''' escalar pasando <c>flatPal:=Nothing</c>, lo que hacia caer en un camino que acumulaba en Matrix4d
     ''' (Double) — o sea que comparaba dos LEYES distintas, no dos implementaciones de una. Con la paleta en
     ''' Single ese contraste dejo de ser valido y el toggle es la forma correcta: los dos caminos leen los
     ''' MISMOS datos y tienen que dar bit a bit lo mismo.</summary>
-    ''' <summary>Fuerza el camino escalar del kernel de Single. ⛔ SOLO PARA COMPARAR el vectorial contra
+    ''' <summary>Fuerza el camino escalar del kernel de Single. SOLO PARA COMPARAR el vectorial contra
     ''' el escalar; no es un modo de la app.
     '''
-    ''' <para>⛔⛔ ES POR HILO (<c>ThreadStatic</c>), Y ESO NO ES UN DETALLE. Quien la enciende es
+    ''' <para>ES POR HILO (<c>ThreadStatic</c>), Y ESO NO ES UN DETALLE. Quien la enciende es
     ''' <c>SkinningHelper.SkinningSimdSelfTest</c>, que corre EN EL PROCESO DEL USUARIO: el gate
     ''' <c>skin-blend</c> antes de un bake de FaceGen y <c>EnsureSkinSimdGate</c> antes del primer NIF de
     ''' Wardrobe Manager. Son ~1500 encendidos y apagados. Siendo una global de proceso, cualquier OTRO
@@ -220,7 +220,7 @@ Public Module FastGeom
     ''' afecta a si mismo.</para>
     '''
     ''' <para>Funciona porque el self-test llama a <c>BlendBoneMatrices</c> DIRECTO, un vertice por vez, en
-    ''' su propio hilo: no hay pool que tenga que ver el flag. ⛔ Si algun dia alguien la enciende
+    ''' su propio hilo: no hay pool que tenga que ver el flag. Si algun dia alguien la enciende
     ''' alrededor de un bucle paralelo, los workers NO la van a ver — y eso es lo correcto, pero hay que
     ''' saberlo.</para></summary>
     <ThreadStatic>
@@ -268,12 +268,12 @@ Public Module FastGeom
     ''' <summary>
     ''' <c>accBuf(0..15) = Σ_j flatPal(idxBuf(j)*16 + e) * wBuf(j)</c>, partiendo de cero.
     '''
-    ''' <para>⭐ El recorrido es CHUNK AFUERA / SLOT ADENTRO: para cada bloque de <c>LaneCount</c>
+    ''' <para>El recorrido es CHUNK AFUERA / SLOT ADENTRO: para cada bloque de <c>LaneCount</c>
     ''' elementos de la matriz se recorren los 4 slots de hueso. Asi el acumulador se queda en un
     ''' REGISTRO vectorial durante los 4 slots y toca memoria una sola vez, al final del chunk. Al
     ''' reves (slot afuera) habria que releer y reescribir el acumulador entero 4 veces.</para>
     '''
-    ''' <para>⛔ El orden de suma por elemento es el mismo que el del escalar —
+    ''' <para>El orden de suma por elemento es el mismo que el del escalar —
     ''' <c>0 + p0·w0 + p1·w1 + …</c>, de izquierda a derecha— asi que el resultado es bit-identico.
     ''' Los pares (indice, peso) llegan YA FILTRADOS por el llamador, en el mismo orden en que el
     ''' escalar los recorreria: las guardas no viven aca.</para>
@@ -295,7 +295,7 @@ Public Module FastGeom
             For j As Integer = 0 To nUsed - 1
                 Dim vm As New Vector(Of Double)(flatPal, idxBuf(j) * MatDoubles + e)
                 Dim vw As New Vector(Of Double)(wBuf(j))
-                ' ⛔ multiply-then-add EXPLICITO. No cambiar por Vector.FusedMultiplyAdd.
+                ' multiply-then-add EXPLICITO. No cambiar por Vector.FusedMultiplyAdd.
                 acc = acc + vm * vw
             Next
             acc.CopyTo(accBuf, e)
@@ -306,7 +306,7 @@ Public Module FastGeom
     ''' <summary>Referencia escalar de <see cref="BlendInto"/> — la ley, elemento por elemento.
     ''' Produccion solo la usa cuando no hay SIMD; su razon de existir es que
     ''' <see cref="VectorParitySelfTest"/> pueda comparar los dos caminos EN EL MISMO PROCESO.
-    ''' ⛔ No borrar por "codigo duplicado": es el gate.</summary>
+    ''' No borrar por "codigo duplicado": es el gate.</summary>
     Public Sub BlendIntoScalar(flatPal As Double(), idxBuf As Integer(), wBuf As Double(), nUsed As Integer, accBuf As Double())
         For e As Integer = 0 To MatDoubles - 1
             Dim acc As Double = 0.0
@@ -367,7 +367,7 @@ Public Module FastGeom
     End Function
 
     ''' <summary>Indice del primer elemento que difiere EN BITS, o -1 si son identicos.
-    ''' ⛔ Compara bits, no valores: <c>=</c> daria por iguales a +0.0 y -0.0, y el signo del cero
+    ''' Compara bits, no valores: <c>=</c> daria por iguales a +0.0 y -0.0, y el signo del cero
     ''' es un bit que despues sale escrito al NIF.</summary>
     Private Function FirstBitDiff(a As Double(), b As Double()) As Integer
         For e As Integer = 0 To MatDoubles - 1
@@ -381,7 +381,7 @@ Public Module FastGeom
     ''' de 4 slots + normalizacion (que es la forma REAL del kernel, no una operacion suelta).
     ''' Devuelve "" si pasa.
     '''
-    ''' <para>⛔ Compara los dos caminos EN EL MISMO PROCESO, asi que da veredicto al ancho que tenga
+    ''' <para>Compara los dos caminos EN EL MISMO PROCESO, asi que da veredicto al ancho que tenga
     ''' la maquina. Para cubrir la portabilidad hay que correrlo TAMBIEN con
     ''' <c>DOTNET_MaxVectorTBitWidth=128</c> (o <c>DOTNET_EnableAVX2=0 DOTNET_EnableAVX=0</c>): un
     ''' test que solo corre al ancho nativo no prueba nada del otro (61-perf-simd-trampas #3).</para>
@@ -473,7 +473,7 @@ Public Module FastGeom
         ' ===========================================================================================
         ' EL MISMO BARRIDO, SOBRE EL KERNEL DE SINGLE — QUE ES EL QUE SE HORNEA.
         '
-        ' ⛔⛔ TODO LO DE ARRIBA PRUEBA CODIGO QUE YA NO TIENE CONSUMIDOR. `BuildFlatPalette`,
+        ' TODO LO DE ARRIBA PRUEBA CODIGO QUE YA NO TIENE CONSUMIDOR. `BuildFlatPalette`,
         ' `BlendInto`, `BlendIntoScalar` y `ScaleAcc` son el kernel de DOUBLE, y desde que la paleta paso
         ' a Single produccion va por `BuildFlatPaletteS` -> `BlendEnScratch` -> `BlendIntoS`. O sea que el
         ' corpus de valores especiales de arriba —el cero NEGATIVO, los denormales, el overflow— no tocaba
@@ -498,7 +498,7 @@ Public Module FastGeom
         Dim accVS(MatSingles - 1) As Single
         Dim accSS(MatSingles - 1) As Single
         Dim wBufS(7) As Single
-        ' ⛔ Buffer de indices PROPIO: el `idxBuf` de mas arriba es de 4 elementos y estos dos bucles
+        ' Buffer de indices PROPIO: el `idxBuf` de mas arriba es de 4 elementos y estos dos bucles
         ' piden hasta 5 huesos. Reusarlo daba IndexOutOfRange en la primera corrida.
         Dim idxBufS(7) As Integer
         For iter As Integer = 0 To 199

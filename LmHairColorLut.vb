@@ -27,14 +27,14 @@ Imports System.Text.Json
 '''   (main.cpp:597, 678, 708; default 1). Con eso en 0 no se carga ningún JSON ni se instala ningún hook.</item>
 ''' </list>
 '''
-''' <para>⚠️ ESL — DIVERGENCIA DELIBERADA (decidida por el usuario: "no repliques el bug, hazlo bien").
+''' <para>ESL — DIVERGENCIA DELIBERADA (decidida por el usuario: "no repliques el bug, hazlo bien").
 ''' f4ee compone el FormID con
 ''' <c>GetPartialIndex() &lt;&lt; 16</c> para un plugin light, y <c>GetPartialIndex()</c> devuelve
 ''' <c>0xFE000 | lightIndex</c> (f4se GameData.h:87): el corrimiento desborda los 32 bits y el resultado
 ''' apunta al slot 224 del load order en vez de al ESL (p. ej. lightIndex 0x07B, local 0x800 →
 ''' <c>0xE07B0800</c> en vez de <c>0xFE07B800</c>). <c>LookupFormByID</c> falla y f4ee no registra nada.
 ''' Nosotros lo resolvemos BIEN, con <see cref="PluginManager.GlobalFormIDFromObjectID"/>.</para>
-''' <para>⛔ OJO con cuál API: el "Form" del JSON es el object ID CRUDO (12 bits útiles en un ESL), la
+''' <para>OJO con cuál API: el "Form" del JSON es el object ID CRUDO (12 bits útiles en un ESL), la
 ''' convención del CK. <c>GlobalFormIDFromIdentifierLocal</c> —la que usa el loader de presets— espera el
 ''' local de 24 bits de LooksMenu, que en un ESL YA lleva el light slot adentro; alimentarla con un object
 ''' ID pelado da <c>0xFE000xxx</c>, o sea el record del ESL en el slot 0: OTRO plugin. Si ese plugin tiene
@@ -50,7 +50,7 @@ Public Module LmHairColorLutLoader
     ''' otra cosa sea, a su vez, una LUT registrada). Normalizada: minúsculas, backslashes, sin <c>textures\</c>.</summary>
     Public Const HairGradientPalette As String = "actors\character\hair\haircolor_lgrad_d.dds"
 
-    ''' <summary>⭐ TODO el estado del registro vive en UNA instancia inmutable, publicada con una sola
+    ''' <summary>TODO el estado del registro vive en UNA instancia inmutable, publicada con una sola
     ''' escritura volátil. NO son campos sueltos, y el motivo es concreto: el bake corre
     ''' <c>Parallel.ForEach</c> por NPC (BakeAllRunner), así que N hilos tocan esto a la vez. Con campos
     ''' sueltos, <c>Invalidate</c> los ponía en Nothing de a uno y un lector podía agarrar la mitad viejos y
@@ -103,7 +103,7 @@ Public Module LmHairColorLutLoader
             s = s.Replace("\\", "\")
         End While
         s = s.TrimStart("\"c)
-        ' ⛔ LastIndexOf, no IndexOf: std::regex_replace reemplaza TODAS las ocurrencias no solapadas, así
+        ' LastIndexOf, no IndexOf: std::regex_replace reemplaza TODAS las ocurrencias no solapadas, así
         ' que en la práctica recorta hasta el ÚLTIMO "textures\". Con IndexOf, un path con el prefijo
         ' repetido (textures\mimod\textures\pelo\lut.dds — typo común de autor) quedaba como
         ' mimod\textures\pelo\lut.dds y no matcheaba la gradient vanilla ⇒ eligible=False y la LUT custom
@@ -145,7 +145,7 @@ Public Module LmHairColorLutLoader
     ''' (CharGenInterface.cpp:1126-1151). Dado el path de paleta que la app resolvió del material y el color
     ''' de pelo del NPC, devuelve el path que el motor terminaría bindeando en la ranura 3 del TXST.
     '''
-    ''' <para>⛔ NO usar para las cejas: ése es <see cref="ApplyCustomLutEyebrow"/>, y f4ee lo implementa con
+    ''' <para>NO usar para las cejas: ése es <see cref="ApplyCustomLutEyebrow"/>, y f4ee lo implementa con
     ''' OTRA función, con menos ramas. Tenerlas separadas es a propósito.</para>
     '''
     ''' <para>La condición de elegibilidad es lo que hace que esto NO pueda romper nada instalado: f4ee sólo
@@ -157,7 +157,7 @@ Public Module LmHairColorLutLoader
     ''' <c>RemappingIndex</c> del CLFM lo sigue escribiendo el caller (el hook hace lo mismo, main.cpp:412).</para></summary>
     Public Function ApplyCustomLutMesh(baseLutPath As String, hairColorFormID As UInteger) As String
         If String.IsNullOrEmpty(baseLutPath) Then Return baseLutPath
-        ' ⛔ UNA sola lectura del snapshot para TODA la decisión. Con un Volatile.Read por consulta, un
+        ' UNA sola lectura del snapshot para TODA la decisión. Con un Volatile.Read por consulta, un
         ' Invalidate()+EnsureLoaded() concurrente podía dejar `needsCustom` calculado sobre el registro viejo
         ' y `usingCustom` sobre el nuevo ⇒ la rama de revert de abajo se disparaba y DESTRUÍA una paleta
         ' custom legítima. La clase promete "o Nothing o el registro completo": eso vale por lectura, no por
@@ -198,7 +198,7 @@ Public Module LmHairColorLutLoader
     ''' (basta con que el HNAM de la raza sea, él mismo, una LUT que algún <c>haircolors.json</c> registre):
     ''' con el color NO marcado le devolvíamos la gradient vanilla en vez del HNAM, y con el color marcado le
     ''' devolvíamos la LUT custom donde el motor deja el HNAM intacto.</para></summary>
-    ''' <para>⚠️ Divergencia menor, deliberada: si el color quedó registrado con una LUT VACÍA (JSON con
+    ''' <para>Divergencia menor, deliberada: si el color quedó registrado con una LUT VACÍA (JSON con
     ''' <c>Races</c>/<c>Gender</c> válidos y sin <c>"LUT"</c>), <c>GetLUTFromColor</c> devuelve true con
     ''' <c>str=""</c> y el motor termina devolviendo "" ⇒ la ceja NO samplea nada. Nosotros exigimos LUT no
     ''' vacía y dejamos el HNAM ⇒ la ceja se tinta. Preferimos el comportamiento útil ante un JSON roto.</para>
@@ -212,7 +212,7 @@ Public Module LmHairColorLutLoader
     ''' lectura del snapshot, para que un caller que necesita las dos cosas (el reporte de compatibilidad) no
     ''' las pida por separado y pueda ver dos registros distintos si entre medio corre un
     ''' <see cref="Invalidate"/>.
-    ''' <para>⛔ SEMÁNTICA: "la que se APLICÓ", no "la que el registro TIENE". La diferencia importa justo en
+    ''' <para>SEMÁNTICA: "la que se APLICÓ", no "la que el registro TIENE". La diferencia importa justo en
     ''' el caso que documenta esta función — raza custom cuyo HNAM no es la gradient vanilla + pack de colores
     ''' que registra ese HCLF: ahí el registro TIENE una LUT pero <c>ProcessEyebrowPath</c> NO la aplica, y un
     ''' caller que leyera "la que tiene" reportaría que la ceja usa una paleta que no usa.</para></summary>
@@ -238,7 +238,7 @@ Public Module LmHairColorLutLoader
     ''' <summary>La paleta con la que se tintan las CEJAS (y el resto del tint de facegen que la use).
     ''' Sale del RACE, NO de la malla de pelo.
     '''
-    ''' <para>⭐ VERIFICADO EN EL BINARIO (Fallout4.exe, no sólo en la fuente de f4ee). Dentro de
+    ''' <para>VERIFICADO EN EL BINARIO (Fallout4.exe, no sólo en la fuente de f4ee). Dentro de
     ''' <c>BSFaceGenUtils::StartFaceCustomizationGenerationForNPC</c> el motor hace, justo antes del epílogo:</para>
     ''' <code>
     '''   mov  rcx, [rbp+0x1DE0]     ; el NPC
@@ -260,27 +260,30 @@ Public Module LmHairColorLutLoader
     ''' <para>Una raza sin HNAM (vanilla <c>HumanChildRace</c>) devuelve "" y la rama de paleta de la ceja
     ''' no hace nada — que es exactamente lo que hace el motor (<c>test eax,eax; je</c> sobre el string).</para>
     '''
-    ''' <para>⛔ Sólo FO4 en la práctica: el consumidor exige <c>CLFM.HasRemappingIndex</c>, que
+    ''' <para>Sólo FO4 en la práctica: el consumidor exige <c>CLFM.HasRemappingIndex</c>, que
     ''' El índice de paleta sólo existe en Fallout 4. En Skyrim el color de pelo es siempre RGB.</para></summary>
-    ''' <para>⚠️ A propósito NO copia la preferencia-por-existencia de
+    ''' <para>A propósito NO copia la preferencia-por-existencia de
     ''' <c>NpcMaterialResolver.ResolveRaceHairLookupTexture</c> (que entre HNAM y HLTX elige el que esté
     ''' instalado). Acá manda el motor: lee <c>race+0x6C0</c> = HNAM y nada más. Si el HNAM de una raza
     ''' apunta a una textura que no está, la ceja no samplea — igual que en el juego. Que la MALLA sí use esa
     ''' preferencia es una heurística nuestra, y sólo actúa cuando el BGSM del peinado no trae paleta propia;
     ''' son dos leyes distintas, no una duplicación que haya que unificar.</para>
-    Public Function ResolveBrowPaletteTexture(race As RACE_Data, hairColorFormID As UInteger) As String
+    Public Function ResolveBrowPaletteTexture(race As Canon.IRace, hairColorFormID As UInteger) As String
         Dim dummy As String = Nothing
         Return ResolveBrowPaletteTexture(race, hairColorFormID, dummy)
     End Function
 
     ''' <summary>Igual, y además informa si el resultado es una LUT custom APLICADA, desde la MISMA lectura
     ''' del snapshot (ver la sobrecarga de <see cref="ApplyCustomLutEyebrow"/> y su nota de semántica).</summary>
-    Public Function ResolveBrowPaletteTexture(race As RACE_Data, hairColorFormID As UInteger,
+    Public Function ResolveBrowPaletteTexture(race As Canon.IRace, hairColorFormID As UInteger,
                                               ByRef appliedCustomLut As String) As String
         appliedCustomLut = ""
-        If race Is Nothing Then Return ""
-        Dim chosen = race.HairColorLookupTexture
-        If String.IsNullOrWhiteSpace(chosen) Then chosen = race.HairColorExtendedLookupTexture
+        ' HairColorLookupTexture/HairColorExtendedLookupTexture (HNAM/HLTX con este significado) son
+        ' exclusivos de Fallout 4 — Skyrim no los declara en RACE.
+        Dim raceFo4 = TryCast(race, Canon.RaceFO4)
+        If raceFo4 Is Nothing Then Return ""
+        Dim chosen = raceFo4.HairColorLookupTexture
+        If String.IsNullOrWhiteSpace(chosen) Then chosen = raceFo4.HairColorExtendedLookupTexture
         If String.IsNullOrWhiteSpace(chosen) Then Return ""
         Return ApplyCustomLutEyebrow(chosen, hairColorFormID, appliedCustomLut)
     End Function
@@ -314,7 +317,7 @@ Public Module LmHairColorLutLoader
         End Get
     End Property
 
-    ''' <summary>Forma canónica de un Data\ para poder compararlo. ⛔ Comparar el TEXTO CRUDO no sirve, y el
+    ''' <summary>Forma canónica de un Data\ para poder compararlo. Comparar el TEXTO CRUDO no sirve, y el
     ''' CLI ya lo aprendió por las malas (su <c>SamePath</c>): <c>--data F:/x/Data</c> —como lo tipea un
     ''' script— y el <c>DataPath</c> del config (<c>F:\x\Data</c>) son LA MISMA carpeta y difieren como
     ''' string. Sin canonicalizar, cada cruce entre el camino de la malla (que resuelve por Config_App) y el
@@ -349,12 +352,12 @@ Public Module LmHairColorLutLoader
     Public Sub EnsureLoaded(pluginManager As PluginManager, dataPath As String)
         If IsLoadedFor(dataPath) Then Return
         If pluginManager Is Nothing Then Return
-        ' ⛔ SIN dataPath NO se publica nada — se sale como "todavía sin cargar". Publicar un registro vacío
+        ' SIN dataPath NO se publica nada — se sale como "todavía sin cargar". Publicar un registro vacío
         ' acá lo latchearía para toda la sesión: el primer caller que llegue con un Data\ vacío (p. ej. la
         ' sobrecarga de la app cuando Config_App todavía no resolvió el exe del juego) dejaría a TODOS los
         ' consumidores posteriores sin LUTs, en silencio. Un Data\ válido sin carpeta LUTs\ sí publica
         ' (registro vacío legítimo, y se cachea).
-        ' ⛔ IsNullOrWhiteSpace, igual que CanonicalDataPath. Con IsNullOrEmpty, un path de sólo espacios
+        ' IsNullOrWhiteSpace, igual que CanonicalDataPath. Con IsNullOrEmpty, un path de sólo espacios
         ' pasaba esta guarda y publicaba un registro VACÍO cuya SourceDataPath canonicaliza a "" — y a partir
         ' de ahí IsLoadedFor(Nothing) lo daba por cargado, dejando a todos los consumidores sin LUTs para el
         ' resto de la sesión. Las dos guardas tienen que usar el mismo criterio de "vacío".
@@ -369,7 +372,7 @@ Public Module LmHairColorLutLoader
             Dim enabled As Boolean = True
 
             Try
-                ' ⛔ SOLO FO4. LooksMenu/f4ee no existe en Skyrim: SSE usa RaceMenu (skee64), que no tiene
+                ' SOLO FO4. LooksMenu/f4ee no existe en Skyrim: SSE usa RaceMenu (skee64), que no tiene
                 ' registro de LUTs — el color de pelo ahí es un RGB absoluto. Y un CLFM de Skyrim NO lleva
                 ' El índice de paleta ya viene gateado por juego, así que en Skyrim
                 ' todo este camino queda inerte igual. El gate explícito evita depender de esa inercia.
@@ -591,7 +594,7 @@ Public Module LmHairColorLutLoader
                             '     if(!charGenData) continue;                                 <- saltea AMBOS
                             '     if(charGenData->colors) charGenData->colors->Push(color);   <- SOLO el catálogo
                             '     m_LUTMap.emplace(...); m_LUTs.insert(...);                  <- va igual
-                            ' ⛔ Ninguna de las dos es observable desde los records, así que en LAS DOS caemos
+                            ' Ninguna de las dos es observable desde los records, así que en LAS DOS caemos
                             ' del lado PERMISIVO. Tentación descartada: usar AHCM/AHCF como proxy de `colors`.
                             ' No lo es — `colors` es un BGSListForm de RUNTIME que existe (aunque vacío) para
                             ' cualquier raza con chargen data, mientras que AHCM/AHCF es lo que el AUTOR
@@ -620,7 +623,7 @@ Public Module LmHairColorLutLoader
 
                             ' emplace: gana el PRIMERO que lo registre (:1311).
                             If Not lutMap.ContainsKey(fid) Then lutMap(fid) = lutPath
-                            ' ⚠️ Guardamos la forma NORMALIZADA; f4ee mete el string crudo del JSON (:1312) y
+                            ' Guardamos la forma NORMALIZADA; f4ee mete el string crudo del JSON (:1312) y
                             ' después lo compara contra un path ya normalizado (IsLUTUsed sobre el resultado
                             ' de ProcessHairColor). Con un "LUT" que traiga el prefijo `textures\`, el suyo no
                             ' matchea NUNCA y el nuestro sí. Es una divergencia a favor, y consistente: los

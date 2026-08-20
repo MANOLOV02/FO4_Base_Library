@@ -8,18 +8,17 @@ Public Enum LocalizedStringTableKind
 End Enum
 
 ''' <summary>
-''' Thin compatibility shim. Authoritative encoding settings live in PluginEncodingSettings
-''' (mirrors xEdit wbEncoding/wbEncodingTrans/wbLEncoding). This module exposes only the
-''' helpers required by LocalizedStringTable / LocalizedStringResolver.
+''' Thin compatibility shim. Authoritative encoding settings live in PluginEncodingSettings.
+''' This module exposes only the helpers required by LocalizedStringTable / LocalizedStringResolver.
 ''' </summary>
 Friend Module PluginTextDecoding
 
-    ''' <summary>Inline plugin string (FULL/SHRT/etc) — Translatable encoding with fallback. Mirror of TwbStringDef.ToStringNative.</summary>
+    ''' <summary>Inline plugin string (FULL/SHRT/etc) — Translatable encoding with fallback.</summary>
     Public Function DecodePluginString(data As Byte(), offset As Integer, count As Integer) As String
         Return PluginEncodingSettings.DecodeTranslatable(data, offset, count)
     End Function
 
-    ''' <summary>Strings/DLStrings/ILStrings sidecar — explicit primary+fallback (per-file). Mirror of TwbLocalizationFile.ReadZString (wbLocalization.pas:243-270).</summary>
+    ''' <summary>Strings/DLStrings/ILStrings sidecar — explicit primary+fallback (per-file).</summary>
     Public Function DecodeLocalizedString(data As Byte(), offset As Integer, count As Integer, primary As Encoding, fallback As Encoding) As String
         Return DecodeWithEncoding(data, offset, count, primary, fallback)
     End Function
@@ -88,7 +87,7 @@ Friend NotInheritable Class LocalizedStringTable
         ' Global INI override (OverridePluginEncoding.ini Translatable=): apply the same primary+fallback
         ' chain the inline DecodeTranslatable path uses, so EXTERNAL STRINGS honor the user's encoding
         ' escape hatch (canonical: Korean FO4 fan translations shipped under an _en suffix whose bytes
-        ' are actually UTF-8/CP949). Opt-in only — Nothing here leaves the xEdit-faithful filename-suffix
+        ' are actually UTF-8/CP949). Opt-in only — Nothing here leaves the standard filename-suffix
         ' encodings untouched (so e.g. an _ru.STRINGS still decodes cp1251). The override REPLACES the
         ' primary on purpose: the _en filename-suffix primary is cp1252, which never throws and would
         ' shadow any UTF-8/CP949 fallback, so layering it in as a mere fallback would never trigger.
@@ -478,11 +477,11 @@ Friend NotInheritable Class LocalizedStringResolver
     End Function
 
     Private Shared Function BuildPreferredLanguageList() As List(Of String)
-        ' xEdit uses only wbLanguage (from sLanguage INI) as the resolution language; if the
-        ' STRINGS sidecar for that language is missing, xEdit emits "<Error: Unknown lstring ID>".
+        ' El comportamiento estándar resuelve el idioma sólo con sLanguage (INI); si falta el sidecar
+        ' STRINGS de ese idioma, el resultado es un marcador de error tipo "<Error: Unknown lstring ID>".
         ' We diverge here by also probing CurrentUICulture and "english" as fallbacks — the
         ' english fallback is justified because every vanilla FO4 plugin ships English STRINGS.
-        ' No language aliases (xEdit does direct StringList.Find against the literal token).
+        ' No language aliases (la búsqueda es directa por token literal, no hay tabla de alias).
         Dim result As New List(Of String)
 
         AddLanguage(result, ReadLanguageFromIni())
@@ -493,7 +492,7 @@ Friend NotInheritable Class LocalizedStringResolver
     End Function
 
     Private Shared Sub AddLanguage(target As List(Of String), language As String)
-        ' Direct token add (no alias canonicalization — xEdit does direct lookups).
+        ' Direct token add (no alias canonicalization — la búsqueda es directa por token).
         Dim normalized = PluginTextDecoding.NormalizeLanguage(language)
         If normalized = "" Then Return
         If target.Exists(Function(entry) String.Equals(entry, normalized, StringComparison.OrdinalIgnoreCase)) Then Return

@@ -6,14 +6,14 @@ Imports System.Windows.Forms
 ''' <summary>Reporte de caída del binario que se DISTRIBUYE: escribe <c>&lt;exe&gt;_crash.log</c> al lado del
 ''' exe (o en <c>%TEMP%</c> si esa carpeta no admite escritura) y avisa dónde quedó.
 '''
-''' <para>⛔ FUENTE COMPARTIDA, ENSAMBLADO PROPIO. Este archivo vive acá pero NO se compila dentro de
+''' <para>FUENTE COMPARTIDA, ENSAMBLADO PROPIO. Este archivo vive acá pero NO se compila dentro de
 ''' FO4_Base_Library (<c>&lt;Compile Remove="Shared\**"&gt;</c>): cada app lo LINKEA a su propio proyecto.
 ''' El motivo es concreto: el modo de falla que esto vino a cubrir es que NO CARGUE <c>FO4_Base_Library.dll</c>
 ''' (cuarentena del antivirus, extracción parcial). Un reporter que viviera dentro de la librería se caería
 ''' junto con ella y el usuario volvería al silencio. Al linkearlo, el reporter de cada exe es independiente
 ''' de la librería, y la ley sigue siendo UNA SOLA. Ver <c>Program.Main</c> de NPC_Manager.</para>
 '''
-''' <para>⛔ VA EN RELEASE Y NO PASA POR <c>Logger</c>. En Release <c>Logger.Enabled</c> queda en False y su
+''' <para>VA EN RELEASE Y NO PASA POR <c>Logger</c>. En Release <c>Logger.Enabled</c> queda en False y su
 ''' propio setter descarta cualquier True, así que la caída de un usuario no dejaría UN SOLO rastro. Este
 ''' camino no tiene gate: ni <c>#If DEBUG</c> ni opción de config.</para>
 '''
@@ -72,12 +72,12 @@ Friend Module CrashReport
 
     Private Function Compose(ex As Exception, origin As String, app As String) As String
         Dim sb As New StringBuilder()
-        ' ⛔ TEXTO PROPIO EN ASCII. Este archivo lo abre el usuario en cualquier editor y lo pega en un foro:
+        ' TEXTO PROPIO EN ASCII. Este archivo lo abre el usuario en cualquier editor y lo pega en un foro:
         ' un guion largo o un punto medio salen como mojibake apenas alguien lo lea en la codepage local, y un
         ' reporte ilegible no se pega. Lo que puede traer no-ASCII es el mensaje de la excepción, que viene del
         ' sistema — para eso el archivo se escribe con BOM (ver TryWrite).
         sb.AppendLine("================================================================================")
-        ' ⛔ FECHA EN CULTURA INVARIANTE. La interpolación de VB usa CurrentCulture, y con un calendario no
+        ' FECHA EN CULTURA INVARIANTE. La interpolación de VB usa CurrentCulture, y con un calendario no
         ' gregoriano (ar-SA usa UmAlQura por default en .NET 5+, th-TH el budista) un crash de 2026-08-12 se
         ' escribe "1448-01-28" o "2569-08-12". La fecha es el primer dato que se cruza contra otra evidencia
         ' —el visor de eventos, el log de la app, lo que el usuario dice que estaba haciendo— y ahí no cruza

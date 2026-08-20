@@ -1,5 +1,12 @@
 ﻿' ============================================================================================
 ' ARCHIVO GENERADO — NO EDITAR A MANO.  Regenerar: python Tools/CanonLayoutGen/emit.py
+'
+' Este archivo se genera a partir de las declaraciones de formato de xEdit, que estan
+' bajo Mozilla Public License 2.0, y por lo tanto es una obra derivada de ellas.
+'
+' This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+' If a copy of the MPL was not distributed with this file, You can obtain one at
+' https://mozilla.org/MPL/2.0/
 ' wbConditionFunctions: 479 funciones · TConditionParameterType: 50 tipos.
 '
 ' Los deciders de condicion devuelven Succ(Integer(ParamType)) — el ORDINAL del enum

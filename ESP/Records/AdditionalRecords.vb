@@ -9,12 +9,10 @@ Imports System.Text
 ' FO4 stubs:  LSPR, MICN, SCPT, SKIL, TLOD, TOFT
 ' SSE full:   SCRL, SHOU, WOOP, RGDL, APPA, SLGM, VOLI
 ' SSE stubs:  CLDC, HAIR, PWAT
-'
-' Based on TES5Edit wbDefinitionsFO4.pas / wbDefinitionsTES5.pas
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
+' # SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO. #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
@@ -24,11 +22,11 @@ Imports System.Text
 ' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
 ' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
-' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra la especificacion real de cada record. Lo que se cerro es "no
 ' inventan referencias", que es otra cosa.
 '
-' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
 ' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
 ' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
 ' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
@@ -37,7 +35,7 @@ Imports System.Text
 '
 ' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
 ' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
-' contra el .pas y volver a correr el sweep.
+' contra la especificacion real y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -460,7 +458,7 @@ Friend Module AdditionalRecordParsers
                 Case "FULL" : s.FullName = ResolveStr(rec, sr, pluginManager)
                 Case "DESC" : s.Description = ResolveStr(rec, sr, pluginManager, LocalizedStringTableKind.DLStrings)
                 Case "MODL" : If s.ModelPath = "" Then s.ModelPath = sr.AsStringGeneral
-                ' SCRL has no ICON in the schema (commented out in FO4 wbDefinitionsFO4.pas:12412;
+                ' SCRL has no ICON in the schema (FO4's definition leaves it unused;
                 ' TES5 SCRL declares none) — dead case removed.
                 Case "YNAM" : s.PickUpSoundFormID = ResolveFID(rec, sr, pluginManager)
                 Case "ZNAM" : s.PutDownSoundFormID = ResolveFID(rec, sr, pluginManager)

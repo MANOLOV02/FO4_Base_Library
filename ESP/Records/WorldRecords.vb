@@ -4,11 +4,10 @@ Imports System.Text
 ' ============================================================================
 ' World / Environment Record Data Classes and Parsers
 ' CELL, WRLD, LCTN, NAVM, ECZN, REGN, WATR, WTHR, CLMT, LGTM, LTEX
-' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
+' # SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO. #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
@@ -18,11 +17,11 @@ Imports System.Text
 ' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
 ' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
-' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra el formato real de cada record. Lo que se cerro es "no
 ' inventan referencias", que es otra cosa.
 '
-' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
 ' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
 ' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
 ' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
@@ -31,7 +30,7 @@ Imports System.Text
 '
 ' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
 ' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
-' contra el .pas y volver a correr el sweep.
+' contra el formato real de cada record y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -76,8 +75,8 @@ Friend Class CELL_Data
         End Get
     End Property
 
-    ''' <summary>"Player Followers Can't Travel Here" flag (CELL.DATA pos 13 = 0x2000) per
-    ''' wbDefinitionsFO4.pas:6336. NOTA: el bit 0x80 que usaba antes era "Show Sky", no fast-travel
+    ''' <summary>Flag "Player Followers Can't Travel Here" (CELL.DATA pos 13 = 0x2000).
+    ''' NOTA: el bit 0x80 que usaba antes era "Show Sky", no fast-travel
     ''' (probablemente port heredado de Skyrim). En FO4 vanilla no existe un flag explícito
     ''' "Player CantFastTravel"; este flag SÓLO afecta a followers (companions), no al player.
     ''' Si el consumer necesitaba "player fast-travel disabled" debe revisar su lógica de negocio.</summary>
@@ -466,8 +465,8 @@ Friend Module WorldRecordParsers
             If sr.Signature = "DATA" AndAlso sr.Data IsNot Nothing AndAlso sr.Data.Length >= 8 Then
                 e.OwnerFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 0), pluginManager)
                 e.LocationFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(sr.Data, 4), pluginManager)
-                ' Rank/MinLevel are s8 per xEdit. Use ReadInt8 to bit-reinterpret bytes ≥ 128
-                ' (direct CSByte overflows for negative s8 values like rank = -1).
+                ' Rank/MinLevel son s8. Uso ReadInt8 para reinterpretar en binario bytes ≥ 128
+                ' (un CSByte directo desborda para valores s8 negativos como rank = -1).
                 If sr.Data.Length >= 9 Then e.Rank = RecordParsers.ReadInt8(sr.Data(8))
                 If sr.Data.Length >= 10 Then e.MinLevel = RecordParsers.ReadInt8(sr.Data(9))
                 If sr.Data.Length >= 11 Then e.Flags = sr.Data(10)
@@ -597,8 +596,8 @@ Friend Module WorldRecordParsers
                 Case "GNAM"
                     c.SunGlareTexture = sr.AsStringGeneral
                 Case "MODL"
-                    ' FO4 CLMT sky model uses wbGenericModel → MODL (wbDefinitionsFO4.pas:6481→1044),
-                    ' NOT MOD2. The old "MOD2" case never matched, so SkyModelPath stayed empty.
+                    ' FO4 CLMT usa el subrecord MODL para el modelo del cielo, NO MOD2. El Case
+                    ' "MOD2" viejo nunca matcheaba, asi que SkyModelPath quedaba vacio.
                     c.SkyModelPath = sr.AsStringGeneral
                 Case "WLST"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then

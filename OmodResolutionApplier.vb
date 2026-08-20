@@ -1,5 +1,6 @@
-Imports System.Linq
+﻿Imports System.Linq
 Imports FO4_Base_Library
+Imports FO4_Base_Library.Canon.CanonInterpretacion
 
 ''' <summary>
 ''' Applies a CombinationResolution (from ObjectTemplateResolver) to a set of shapes by
@@ -64,34 +65,40 @@ Public Module OmodResolutionApplier
             ' Skip OMODs whose target FormType doesn't match — vanilla example: OMODs targeting
             ' NONE (workshop wrappers) reached via inventory-side chains. They contribute no
             ' visual change to the actor.
-            If omod.FormTypeSignature <> formTypeContext Then
+            Dim omodFormType = ObjectTemplateResolver.OmodFormTypeSignature(omod.DataFormType)
+            If omodFormType <> formTypeContext Then
                 If logEnabled Then
                     Dim oL = omod
-                    Logger.LogLazy(Function() $"[OMOD-APPLY-OMOD-SKIP] omod={oL.EditorID}(0x{oL.FormID:X8}) omodFormType='{oL.FormTypeSignature}' ctx='{formTypeContext}' propsDropped={oL.Properties.Count}")
+                    Logger.LogLazy(Function() $"[OMOD-APPLY-OMOD-SKIP] omod={oL.EditorID}(0x{oL.FormID:X8}) omodFormType='{omodFormType}' ctx='{formTypeContext}' propsDropped={oL.Properties.Count}")
                 End If
                 Continue For
             End If
 
             If logEnabled Then
                 Dim oL2 = omod
-                Dim propsLen = If(omod.Properties Is Nothing, 0, omod.Properties.Count)
-                Dim hasMesh = Not String.IsNullOrEmpty(omod.ModelPath)
+                Dim propsLen = omod.Properties.Count
+                Dim hasMesh = Not String.IsNullOrEmpty(omod.ModelFileName)
                 Logger.LogLazy(Function() $"[OMOD-APPLY-OMOD] omod={oL2.EditorID}(0x{oL2.FormID:X8}) hasMesh={hasMesh} props={propsLen}")
             End If
 
             For Each prop In omod.Properties
-                ApplyOneProperty(prop, formTypeContext, shapeList, pm, $"OMOD:{omod.FormID:X8}")
+                ' La misma Property se ve por dos interfaces: la del OMOD y la de FORMA, que es la que
+                ' comparte con las Properties inline de una combinación. La clase generada declara las
+                ' dos, así que el cast no puede fallar; si fallara sería un defecto del generador y
+                ' conviene que se oiga.
+                ApplyOneProperty(DirectCast(prop, Canon.IBloque_Properties4), formTypeContext, shapeList, pm, $"OMOD:{omod.FormID:X8}")
             Next
         Next
     End Sub
 
     ' ───────────────────────────── internals ─────────────────────────────
 
-    Private Sub ApplyOneProperty(prop As OMOD_Property,
+    Private Sub ApplyOneProperty(vista As Canon.IBloque_Properties4,
                                  formTypeContext As String,
                                  shapes As IEnumerable(Of IRenderableShape),
                                  pm As PluginManager,
                                  sourceTag As String)
+        Dim prop = vista.LeerPropiedad()
         Dim logEnabled = Logger.Enabled
         ' Dispatch by (FormType context, PropertyIdx) — only visual properties produce side-effects.
         Dim dispatched As String = "SKIP"

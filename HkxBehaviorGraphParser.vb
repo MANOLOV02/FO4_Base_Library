@@ -223,7 +223,7 @@ Public Partial Class HkxObjectGraph_Class
     ''' cropStart SSE +0x58 (81) ↔ FO4 +0xA4 (184) · cropEnd +0x5C (17) ↔ +0xA8 (54) · startTime +0x60 (143)
     ''' ↔ +0xAC (7) · playbackSpeed +0x64 ↔ +0xB0 · enforcedDuration +0x68 (21) ↔ +0xB4 (40) ·
     ''' userControlledTimeFraction +0x6C ↔ +0xB8 (ambos acotados a ≤1, que es lo que sella la alineación).
-    ''' ⚠ FO4 +0xA0 vale 0 en LOS 3740 clips = m_userPartitionMask (int, sólo en hk_2014). El código viejo lo
+    ''' FO4 +0xA0 vale 0 en LOS 3740 clips = m_userPartitionMask (int, sólo en hk_2014). El código viejo lo
     ''' leía como cropStart y por eso TODO el trío quedaba corrido un campo en Fallout 4 (y el startTime real
     ''' no se leía nunca). CORREGIDO.</summary>
     Friend ReadOnly Property HkbLayout As HkbLayout_Class
@@ -516,7 +516,7 @@ Public Partial Class HkxObjectGraph_Class
         ' stride del hkbStateMachineTransitionInfo = 0x48 en LOS DOS formatos (medido por el espaciado de
         ' los global-fixups al hkbBlendingTransitionEffect de cada transición: FO4 0x50→0x98, SSE
         ' 0x40→0x88→0xD0→…). eventId/toStateId en +0x30/+0x34 del elemento en ambos.
-        ' ⚠ El valor anterior era una CONSTANTE 0x40 aplicada a los dos juegos: correcta sólo para el
+        ' El valor anterior era una CONSTANTE 0x40 aplicada a los dos juegos: correcta sólo para el
         ' elemento 0, así que los arrays con ≥2 transiciones devolvían basura TAMBIÉN en Fallout 4.
         Dim stride As Integer = HkbLayout.TransitionStride
         If stride <= 0 Then Return result
@@ -662,7 +662,7 @@ Public Partial Class HkxObjectGraph_Class
     End Function
 
     ''' <summary>hkbBoneWeightArray → pesos por hueso (float[]) @+0x30 (máscaras de cuerpo parcial).
-    ''' ⚠ Estaba en +0x10 y devolvía SIEMPRE lista vacía en los dos juegos: en +0x10 no hay fixup en
+    ''' Estaba en +0x10 y devolvía SIEMPRE lista vacía en los dos juegos: en +0x10 no hay fixup en
     ''' NINGUNA instancia (0/1304 SSE, 0/621 FO4) y el array vive en +0x30 (1014/1304 y 348/621 = las
     ''' instancias con array no vacío). Mismo offset que hkbBoneIndexArray, que ya usaba +0x30.
     ''' Detectado por la auditoría estructural de fixups (AuditProbe), 2026-07-25.</summary>
@@ -1110,7 +1110,7 @@ Public Partial Class HkxObjectGraph_Class
     ''' desde +0x58 con stride 8. La orientacion del par esta probada por VALOR: los flotantes reales
     ''' (60, 60, 5, 75) caen SIEMPRE en el segundo miembro y el primero vale 0 — si fuese al reves, un
     ''' "indice" de 60.0f seria basura. Hay un segundo bloque de pares en +0xF8 (enteros).</para>
-    ''' ⚠ La correspondencia exacta par-a-nombre (cual es floatVariable1 vs floatValue1) NO esta medida:
+    ''' La correspondencia exacta par-a-nombre (cual es floatVariable1 vs floatValue1) NO esta medida:
     ''' por eso se exponen como lista indexada y no con los nombres Havok.</summary>
     Public Function ParseAssignVariablesModifier(source As HkxVirtualObjectGraph_Class) As HkbAssignVariablesGraph_Class
         If IsNothing(source) OrElse Not source.ClassName.Equals("BSAssignVariablesModifier", StringComparison.OrdinalIgnoreCase) Then Return Nothing

@@ -1,6 +1,13 @@
 ﻿' ============================================================================================
 ' ARCHIVO GENERADO — NO EDITAR A MANO.  Regenerar: Tools/CanonViewGen
 '
+' Se genera desde el esquema, que a su vez deriva de las declaraciones de formato
+' de xEdit, bajo Mozilla Public License 2.0. Es, por lo tanto, obra derivada.
+'
+' This Source Code Form is subject to the terms of the Mozilla Public License,
+' v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain
+' one at https://mozilla.org/MPL/2.0/
+'
 ' Como se abre o se crea cada tipo de record.
 ' El nombre de cada propiedad ES el nombre del campo en el formato: no hay ninguna
 ' tabla de equivalencias que mantener, y si el formato cambia un campo el codigo que
@@ -162,6 +169,27 @@ Namespace Canon
             Return New HdptSSE(raiz, ctx, res)
         End Function
 
+        ''' <summary>Abre un record IDLE ya existente.</summary>
+        Public Function Idle(rec As PluginRecord, plugins As PluginManager) As IIdle
+            Dim ctx As WbContext = Nothing
+            Dim raiz = CanonBridge.Tree(rec, plugins, ctx)
+            If raiz Is Nothing Then Return Nothing
+            Dim res As New CanonResolver(rec, plugins)
+            If ctx.Game = WbGame.Fallout4 Then Return New IdleFO4(raiz, ctx, res)
+            Return New IdleSSE(raiz, ctx, res)
+        End Function
+
+        ''' <summary>Crea un record IDLE nuevo, vacio.</summary>
+        Public Function IdleNuevo(game As WbGame) As IIdle
+            Dim def = WbSchema.Get(game, "IDLE")
+            If def Is Nothing Then Return Nothing
+            Dim ctx As New WbContext(game) With {.RecordSignature = "IDLE"}
+            Dim raiz = WbReader.CreateNew(def, ctx)
+            Dim res As CanonResolver = Nothing
+            If ctx.Game = WbGame.Fallout4 Then Return New IdleFO4(raiz, ctx, res)
+            Return New IdleSSE(raiz, ctx, res)
+        End Function
+
         ''' <summary>Abre un record LVLI ya existente.</summary>
         Public Function Lvli(rec As PluginRecord, plugins As PluginManager) As ILvli
             Dim ctx As WbContext = Nothing
@@ -284,6 +312,27 @@ Namespace Canon
             Return New OtftSSE(raiz, ctx, res)
         End Function
 
+        ''' <summary>Abre un record QUST ya existente.</summary>
+        Public Function Qust(rec As PluginRecord, plugins As PluginManager) As IQust
+            Dim ctx As WbContext = Nothing
+            Dim raiz = CanonBridge.Tree(rec, plugins, ctx)
+            If raiz Is Nothing Then Return Nothing
+            Dim res As New CanonResolver(rec, plugins)
+            If ctx.Game = WbGame.Fallout4 Then Return New QustFO4(raiz, ctx, res)
+            Return New QustSSE(raiz, ctx, res)
+        End Function
+
+        ''' <summary>Crea un record QUST nuevo, vacio.</summary>
+        Public Function QustNuevo(game As WbGame) As IQust
+            Dim def = WbSchema.Get(game, "QUST")
+            If def Is Nothing Then Return Nothing
+            Dim ctx As New WbContext(game) With {.RecordSignature = "QUST"}
+            Dim raiz = WbReader.CreateNew(def, ctx)
+            Dim res As CanonResolver = Nothing
+            If ctx.Game = WbGame.Fallout4 Then Return New QustFO4(raiz, ctx, res)
+            Return New QustSSE(raiz, ctx, res)
+        End Function
+
         ''' <summary>Abre un record RACE ya existente.</summary>
         Public Function Race(rec As PluginRecord, plugins As PluginManager) As IRace
             Dim ctx As WbContext = Nothing
@@ -324,6 +373,68 @@ Namespace Canon
             Dim res As CanonResolver = Nothing
             If ctx.Game = WbGame.Fallout4 Then Return New TxstFO4(raiz, ctx, res)
             Return New TxstSSE(raiz, ctx, res)
+        End Function
+
+
+        ''' <summary>Envuelve un árbol en la vista del record y juego que dice el contexto.
+        ''' <para>Lo usan copiar y comparar, que son la misma operación para todos los
+        ''' records: sin esto haría falta una versión escrita a mano por cada tipo.</para></summary>
+        Friend Function Reenvolver(vista As CanonView, raiz As WbNode) As CanonView
+            If vista Is Nothing OrElse raiz Is Nothing Then Return Nothing
+            Dim ctx = vista.Context
+            If ctx Is Nothing Then Return Nothing
+            Dim res = vista.Resolver
+            Select Case ctx.RecordSignature
+                Case "ARMA"
+                    If ctx.Game = WbGame.Fallout4 Then Return New ArmaFO4(raiz, ctx, res)
+                    Return New ArmaSSE(raiz, ctx, res)
+                Case "ARMO"
+                    If ctx.Game = WbGame.Fallout4 Then Return New ArmoFO4(raiz, ctx, res)
+                    Return New ArmoSSE(raiz, ctx, res)
+                Case "BPTD"
+                    If ctx.Game = WbGame.Fallout4 Then Return New BptdFO4(raiz, ctx, res)
+                    Return New BptdSSE(raiz, ctx, res)
+                Case "CLFM"
+                    If ctx.Game = WbGame.Fallout4 Then Return New ClfmFO4(raiz, ctx, res)
+                    Return New ClfmSSE(raiz, ctx, res)
+                Case "DFOB"
+                    Return New DfobFO4(raiz, ctx, res)
+                Case "FLST"
+                    If ctx.Game = WbGame.Fallout4 Then Return New FlstFO4(raiz, ctx, res)
+                    Return New FlstSSE(raiz, ctx, res)
+                Case "HDPT"
+                    If ctx.Game = WbGame.Fallout4 Then Return New HdptFO4(raiz, ctx, res)
+                    Return New HdptSSE(raiz, ctx, res)
+                Case "IDLE"
+                    If ctx.Game = WbGame.Fallout4 Then Return New IdleFO4(raiz, ctx, res)
+                    Return New IdleSSE(raiz, ctx, res)
+                Case "LVLI"
+                    If ctx.Game = WbGame.Fallout4 Then Return New LvliFO4(raiz, ctx, res)
+                    Return New LvliSSE(raiz, ctx, res)
+                Case "LVLN"
+                    If ctx.Game = WbGame.Fallout4 Then Return New LvlnFO4(raiz, ctx, res)
+                    Return New LvlnSSE(raiz, ctx, res)
+                Case "MSWP"
+                    Return New MswpFO4(raiz, ctx, res)
+                Case "NPC_"
+                    If ctx.Game = WbGame.Fallout4 Then Return New NpcFO4(raiz, ctx, res)
+                    Return New NpcSSE(raiz, ctx, res)
+                Case "OMOD"
+                    Return New OmodFO4(raiz, ctx, res)
+                Case "OTFT"
+                    If ctx.Game = WbGame.Fallout4 Then Return New OtftFO4(raiz, ctx, res)
+                    Return New OtftSSE(raiz, ctx, res)
+                Case "QUST"
+                    If ctx.Game = WbGame.Fallout4 Then Return New QustFO4(raiz, ctx, res)
+                    Return New QustSSE(raiz, ctx, res)
+                Case "RACE"
+                    If ctx.Game = WbGame.Fallout4 Then Return New RaceFO4(raiz, ctx, res)
+            Return New RaceSSE(raiz, ctx, res)
+                Case "TXST"
+            If ctx.Game = WbGame.Fallout4 Then Return New TxstFO4(raiz, ctx, res)
+            Return New TxstSSE(raiz, ctx, res)
+            End Select
+            Return Nothing
         End Function
 
     End Module

@@ -2,10 +2,11 @@
 
 Imports System.Collections.Concurrent
 Imports System.Linq
+Imports FO4_Base_Library.Canon.CanonInterpretacion
 
 ''' <summary>BUILDER del face-tint de SSE: resuelve QUÉ hornea el CreationKit en
 ''' <c>FaceGenData\FaceTint\&lt;plugin&gt;\&lt;fid&gt;.dds</c> — las capas, su orden, su color y su cobertura, más
-''' el seed. ⛔ Ya NO compone: el compose lo hace <see cref="FaceTintCpuCompositor.ComposeChannelAccum"/>, el
+''' el seed. Ya NO compone: el compose lo hace <see cref="FaceTintCpuCompositor.ComposeChannelAccum"/>, el
 ''' mismo que usa Fallout. Este módulo aporta DATOS y su set de defaults; cómo se compone es único.
 ''' <para>MODELO DEL MOTOR (verificado en CreationKit.exe, no curve-fit): BSFaceGenUtils arma un float4[16] de
 ''' {color x 1/255, interp} por mascara de tint y se lo pasa a un pixel shader de image-space. NUNCA lee un
@@ -28,7 +29,7 @@ Public Module SseFaceTintComposer
     ''' espejo. El espejo es <see cref="FaceTintCpuCompositor"/>, que implementa la ley de los cuatro espacios
     ''' completa: siembra EN AccumSpace, compone entero ahí y hace UN solo pase AccumSpace→OutputSpace al
     ''' cerrar el canal.
-    ''' <para>⛔ La constante sigue viviendo acá y no se reemplaza por la de <c>FaceTintCpuCompositor</c> en
+    ''' <para>La constante sigue viviendo acá y no se reemplaza por la de <c>FaceTintCpuCompositor</c> en
     ''' los call sites: lo que declara no es "qué compositor corre" sino "qué CAMINO se está espejando", y el
     ''' del facetint de SSE es distinto del de la cara de FO4 aunque hoy los dos terminen en la misma función.
     ''' Ver <see cref="FaceTintConvention.FaceTintCpuMirrorCapability"/>.</para>
@@ -62,7 +63,7 @@ Public Module SseFaceTintComposer
         Public Presets As List(Of SseTintPreset) ' the CK dropdown's swatches for this layer (TIRS→CLFM/value); may be empty
     End Structure
 
-    ' ⭐⭐ CONCURRENTDICTIONARY, NO Dictionary. Estos cuatro caches los tocan DOS HILOS a la vez:
+    ' CONCURRENTDICTIONARY, NO Dictionary. Estos cuatro caches los tocan DOS HILOS a la vez:
     '   • el BAKE corre en el ThreadPool (MainForm.RunChargenBake / BuildCharGenSingle / el batch loose hacen
     '     `Await Task.Run(...)` cuando WriteGPUSandboxOutput=False, que es el caso de RELEASE), y
     '   • el RENDER corre en el hilo UI — que sigue bombeando mensajes DURANTE ese await, así que un WM_PAINT
@@ -113,14 +114,15 @@ Public Module SseFaceTintComposer
     ''' file writes. The caller encodes to DXT5 (bake) or uploads to GL (render).</summary>
     ''' <param name="npcRec">The NPC_ record (source of QNAM + the TINI/TINC/TINV/TIAS tint layer list).</param>
     ''' <param name="race">Parsed RACE (source of the default face TXST + the per-gender tint masks).</param>
-    ''' <param name="npcTintOverride">Optional edited tint layers (TINI/TINC/TINV/TIAS raw subrecords) from the
-    ''' editor overlay. When provided, the NPC-authored tint map is read from THIS instead of the raw
-    ''' npcRec.Subrecords — so live edits (Edit Face → Face Tints) reflect in render + bake. Nothing = raw.</param>
-    Public Function ComposeLinearRgba(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
+    ''' <param name="npcTintLayers">Las capas de tinte del record canónico (TINI/TINC/TINV/TIAS). Cuando
+    ''' vienen, el mapa de tints autorados sale de ACÁ y no de npcRec.Subrecords — así las ediciones vivas
+    ''' (Edit Face → Face Tints), que aterrizan en el record de la sombra, entran al render y al horneado.
+    ''' Nothing = se lee el PluginRecord crudo.</param>
+    Public Function ComposeLinearRgba(pm As PluginManager, npcRec As PluginRecord, race As Canon.IRace,
                                       raceFormID As UInteger, isFemale As Boolean,
                                       Optional w As Integer = 512, Optional h As Integer = 512,
                                       Optional baseImg As Single() = Nothing,
-                                      Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
+                                      Optional npcTintLayers As IReadOnlyList(Of Canon.NpcSSE_TintLayers) = Nothing,
                                       Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Single()
         If pm Is Nothing OrElse npcRec Is Nothing OrElse race Is Nothing Then Return Nothing
         If w <= 0 OrElse h <= 0 Then Return Nothing
@@ -135,13 +137,13 @@ Public Module SseFaceTintComposer
         ' Esa ley YA NO se ejecuta acá: vive en la convención (bucket SSE) y la aplica el compositor
         ' compartido. Este módulo aporta los DATOS — qué capas, en qué orden, con qué color y cobertura.
 
-        ' CAPAS: la MISMA fuente que el camino GPU. ⛔ Antes esta función tenía su propia resolución de capas
+        ' CAPAS: la MISMA fuente que el camino GPU. Antes esta función tenía su propia resolución de capas
         ' (idéntica línea por línea a la de BuildLayerInputs) y su propio loop de compose. Las dos cosas se
         ' borraron: dos implementaciones del mismo camino divergen sin que nadie se equivoque en la matemática.
         ' Las capas viajan con sus BYTES y el compositor las decodifica y muestrea — el MISMO camino que
         ' Fallout, sin excepción para este juego. La capa que no decodifica la descarta el compositor
         ' (mismo criterio que tenía el loop propio, donde DecodeMask devolvía Nothing).
-        Dim layers = BuildLayerInputs(pm, npcRec, race, raceFormID, isFemale, npcTintOverride, tintTexOverride)
+        Dim layers = BuildLayerInputs(pm, npcRec, race, raceFormID, isFemale, npcTintLayers, tintTexOverride)
         If layers Is Nothing Then Return Nothing
 
         ' SEED: la baseImg del caller (modo diagnóstico del probe) gana; si no, la ley del bucket.
@@ -161,14 +163,23 @@ Public Module SseFaceTintComposer
         Return FaceTintCpuCompositor.AccumToRgbaAos(acc)
     End Function
 
-    ''' <summary>⭐ El SEED del acumulador del facetint SSE, resuelto desde la LEY (el bucket de CharGen
+    ''' <summary>Las capas de tinte que trae el record del NPC. Vacio -y no Nothing- cuando el
+    ''' record no es de Skyrim: Nothing significa que no hay record canonico y hay que leer el crudo,
+    ''' que es otra cosa.</summary>
+    Public Function CapasDeTinteSse(npc As Canon.INpc) As IReadOnlyList(Of Canon.NpcSSE_TintLayers)
+        Dim ns = TryCast(npc, Canon.NpcSSE)
+        If ns Is Nothing Then Return Array.Empty(Of Canon.NpcSSE_TintLayers)()
+        Return ns.TintLayers
+    End Function
+
+    ''' <summary>El SEED del acumulador del facetint SSE, resuelto desde la LEY (el bucket de CharGen
     ''' Options) y no desde un literal. Hermano de <see cref="BuildLayerInputs"/>: el builder de este juego
     ''' aporta las capas Y el seed, que son los dos DATOS que el compositor compartido necesita.
-    ''' <para>⛔ Va como función aparte y no como segundo valor de retorno de <see cref="BuildLayerInputs"/> por
+    ''' <para>Va como función aparte y no como segundo valor de retorno de <see cref="BuildLayerInputs"/> por
     ''' la misma razón que el plan hizo opcional el parámetro <c>stage</c> del pipeline GL: <c>BuildLayerInputs</c>
     ''' tiene cuatro call sites en el OTRO repositorio y los dos repos no tienen commit atómico. La fuente
     ''' sigue siendo única — es este módulo.</para>
-    ''' <para>⚠️ Con <c>SeedMode = BaseTexture</c> devuelve el modo de textura SIN textura, y el compose sale
+    ''' <para>Con <c>SeedMode = BaseTexture</c> devuelve el modo de textura SIN textura, y el compose sale
     ''' Nothing: el facetint del CK es TINT-ONLY, no hay base de donde sembrar. No se tapa con el constante
     ''' —era justo el literal que escondía el bug— y el caller ya REPORTA el fallo (el slot 6 depende de que
     ''' esto no sea Nothing). Un config viejo no puede llegar acá: lo corrige el upgrade de versión
@@ -181,16 +192,16 @@ Public Module SseFaceTintComposer
         Return FaceTintCpuCompositor.FaceTintSeedSpec.FromConstant(k(0), k(1), k(2))
     End Function
 
-    ''' <summary>⭐ El seed del facetint SSE como TERNA RGB [0,1], para los caminos que lo siembran como
+    ''' <summary>El seed del facetint SSE como TERNA RGB [0,1], para los caminos que lo siembran como
     ''' TEXTURA PLANA (los cuatro de GPU: el facetint del render plegado y del NO plegado, y los sandboxes
     ''' <c>_2b</c>/<c>_2d</c> del bake). Sale de <see cref="BuildSeedSpec"/> — la MISMA ley que consumen el
     ''' compose CPU y el QNAM del cuerpo —, no de un literal.
-    ''' <para>⛔ POR QUE EXISTE: los cuatro sitios tenían el 0,5 CABLEADO (tres como <c>0.5F</c> y el del
+    ''' <para>POR QUE EXISTE: los cuatro sitios tenían el 0,5 CABLEADO (tres como <c>0.5F</c> y el del
     ''' <c>_2b</c> como el byte <c>128</c> = 0,50196), así que el seed de CharGen Options entraba por el
     ''' camino CPU y NO por el GPU — que es el que corre por default (<c>Setting_GPUSkinning</c>). Síntomas:
     ''' mover el seed no cambiaba el render, y CPU y GPU componían desde números distintos sin que ningún
     ''' instrumento lo viera.</para>
-    ''' <para>⛔ DEVUELVE Nothing —y NO 0,5— cuando la ley no pide seed constante. El facetint del CK es
+    ''' <para>DEVUELVE Nothing —y NO 0,5— cuando la ley no pide seed constante. El facetint del CK es
     ''' TINT-ONLY: no hay textura base de donde sembrar, así que el caller tiene que ABORTAR con log, que es
     ''' exactamente lo que hace el camino CPU (<see cref="ComposeLinearRgba"/> devuelve Nothing). Taparlo con
     ''' un constante reintroduciría el literal que escondía el bug.</para></summary>
@@ -206,47 +217,79 @@ Public Module SseFaceTintComposer
     ''' (<see cref="BuildLayerInputs"/>) llaman ACA. â›” Estaba DUPLICADO literalmente en las dos: editar una
     ''' sola habria hecho divergir CPU y GPU en el VALOR, en silencio y sin que nadie se equivocara en la
     ''' matematica. No volver a inlinearlo.</para>
-    ''' <para><paramref name="npcTintOverride"/> = capas editadas en el editor; Nothing = el record crudo. Se
-    ''' normaliza a (sig, data) para que el PluginRecord y la lista de subrecords crudos se parseen igual.</para>
+    ''' <para><paramref name="npcTintLayers"/> = las capas del record CANONICO, que es donde aterrizan las
+    ''' ediciones del editor y del preset; Nothing = se leen del PluginRecord crudo, que es el camino de los
+    ''' arneses, que no arman un record canonico.</para>
     ''' <para>âš ï¸ TINV NO se acota A PROPOSITO. En spec vale 0-100 y las dos replicas coinciden; fuera de spec
     ''' divergen (el GPU acota la cobertura y el CPU no). No se unifica porque no esta RE-ado que hace el motor
     ''' con TINV &gt; 100 y este valor alimenta el BAKE, validado byte-exacto contra el CK: un clamp inventado
     ''' seria regresion, no fix. El RESULTADO si queda acotado aguas abajo en los dos caminos.</para></summary>
     Private Function BuildNpcAuthoredTintMap(npcRec As PluginRecord,
-                                             npcTintOverride As IList(Of NPC_RawSubrecord)) As Dictionary(Of Integer, Double())
+                                             npcTintLayers As IReadOnlyList(Of Canon.NpcSSE_TintLayers)) As Dictionary(Of Integer, Double())
         Dim npcMap As New Dictionary(Of Integer, Double())
         Dim tIdx As Integer = -1, tr As Double = 0, tg As Double = 0, tb As Double = 0, tvv As Double = 0
-        ' Sin override Y sin record ⇒ no hay tints autorados: mapa vacío (lo usa ResolveSkinToneQnam, que sólo
+        ' Sin capas Y sin record ⇒ no hay tints autorados: mapa vacío (lo usa ResolveSkinToneQnam, que sólo
         ' tiene la lista cruda `npc.SseTintRaw` y puede venir Nothing). Antes ese caller guardaba por su cuenta.
-        If npcTintOverride Is Nothing AndAlso npcRec Is Nothing Then Return npcMap
-        Dim tintPairs As IEnumerable(Of (Sig As String, Data As Byte()))
-        If npcTintOverride IsNot Nothing Then
-            tintPairs = npcTintOverride.Select(Function(s) (s.Sig, s.Data))
-        Else
-            tintPairs = npcRec.Subrecords.Select(Function(s) (s.Signature, s.Data))
+        If npcTintLayers Is Nothing AndAlso npcRec Is Nothing Then Return npcMap
+
+        ' El record CANONICO: cada elemento ya es UNA capa, con sus campos. El TIAS sigue siendo el que
+        ' commitea -una capa sin TIAS deja su color y su cobertura corriendo hacia la siguiente, igual que
+        ' pasa en el archivo-, y el color entra sólo cuando vienen los TRES componentes: con el color
+        ' truncado no hay color que armar y el valor anterior queda como estaba.
+        If npcTintLayers IsNot Nothing Then
+            For Each capa In npcTintLayers
+                If capa Is Nothing Then Continue For
+                If capa.LayerTintIndexPresente Then tIdx = CInt(capa.LayerTintIndex)
+                If capa.TintColorRedPresente AndAlso capa.TintColorGreenPresente AndAlso capa.TintColorBluePresente Then
+                    tr = capa.TintColorRed / 255.0
+                    tg = capa.TintColorGreen / 255.0
+                    tb = capa.TintColorBlue / 255.0
+                End If
+                If capa.LayerInterpolationValuePresente Then
+                    tvv = capa.LayerInterpolationValue / 100.0
+                    AvisarTinvFueraDeSpec(tvv, tIdx)
+                End If
+                If capa.LayerPresetPresente Then ComitearCapaDeTinte(npcMap, tIdx, tr, tg, tb, tvv)
+            Next
+            Return npcMap
         End If
+
         ' Guardas de nulidad/longitud = las MÁS ESTRICTAS de las tres copias que esto reemplaza (venían de
         ' ResolveSkinToneQnam). Sólo evitan excepciones con datos malformados; con datos bien formados el
         ' resultado es idéntico ⇒ no tocan el bake.
-        For Each sr In tintPairs
-            Select Case sr.Sig
+        For Each sr In npcRec.Subrecords
+            Select Case sr.Signature
                 Case "TINI" : If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 2 Then tIdx = BitConverter.ToUInt16(sr.Data, 0)
                 Case "TINC" : If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 3 Then tr = sr.Data(0) / 255.0 : tg = sr.Data(1) / 255.0 : tb = sr.Data(2) / 255.0
                 Case "TINV"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 4 Then
                         tvv = BitConverter.ToUInt32(sr.Data, 0) / 100.0
-                        If tvv > 1.0 Then
-                            Dim tvvLog = tvv, idxLog = tIdx
-                            Logger.LogLazy(Function() $"[SSE-TINT] TINV FUERA DE SPEC: idx={idxLog} valor={tvvLog:F4} (>1.0). " &
-                                                      "CPU y GPU divergen acá (el GPU acota la cobertura, el CPU no). " &
-                                                      "Hace falta RE del motor antes de unificar.")
-                        End If
+                        AvisarTinvFueraDeSpec(tvv, tIdx)
                     End If
-                Case "TIAS" : If tIdx >= 0 Then npcMap(tIdx) = New Double() {tr, tg, tb, tvv} : tIdx = -1 : tr = 0 : tg = 0 : tb = 0 : tvv = 0
+                Case "TIAS" : ComitearCapaDeTinte(npcMap, tIdx, tr, tg, tb, tvv)
             End Select
         Next
         Return npcMap
     End Function
+
+    ''' <summary>Cierra la capa en curso y la deja en el mapa. Sin índice no hay capa que cerrar y no se toca
+    ''' nada: el color y la cobertura que se venían acumulando siguen corriendo.</summary>
+    Private Sub ComitearCapaDeTinte(mapa As Dictionary(Of Integer, Double()), ByRef idx As Integer,
+                                    ByRef r As Double, ByRef g As Double, ByRef b As Double, ByRef v As Double)
+        If idx < 0 Then Return
+        mapa(idx) = New Double() {r, g, b, v}
+        idx = -1 : r = 0 : g = 0 : b = 0 : v = 0
+    End Sub
+
+    ''' <summary>Aviso de cobertura fuera de spec. Ver la nota de <see cref="BuildNpcAuthoredTintMap"/>: no se
+    ''' acota, sólo se avisa.</summary>
+    Private Sub AvisarTinvFueraDeSpec(valor As Double, idx As Integer)
+        If valor <= 1.0 Then Return
+        Dim vLog = valor, idxLog = idx
+        Logger.LogLazy(Function() $"[SSE-TINT] TINV FUERA DE SPEC: idx={idxLog} valor={vLog:F4} (>1.0). " &
+                                  "CPU y GPU divergen acá (el GPU acota la cobertura, el CPU no). " &
+                                  "Hace falta RE del motor antes de unificar.")
+    End Sub
 
     ''' <summary>Contraparte GPU de <see cref="ComposeLinearRgba"/>: resuelve las capas de tint del NPC como
     ''' <see cref="FaceTintLayerInput"/> (PaletteMask) para el compositor GL (<c>ApplyFaceTintPipeline</c>). La
@@ -254,15 +297,15 @@ Public Module SseFaceTintComposer
     ''' de modo que componer estas capas sobre un base PLANO = seed (0.5) por GL reproduce el compose CPU del <c>_2</c>
     ''' → el par <c>_2</c> vs <c>_2b</c> mide la paridad CPU==GPU del facetint base. Los bytes de máscara salen del
     ''' FilesDictionary (el pipeline GL los decodea/sube). Nothing si no resuelve race/npc. SSE-only (debug sandbox).</summary>
-    Public Function BuildLayerInputs(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
+    Public Function BuildLayerInputs(pm As PluginManager, npcRec As PluginRecord, race As Canon.IRace,
                                      raceFormID As UInteger, isFemale As Boolean,
-                                     Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
+                                     Optional npcTintLayers As IReadOnlyList(Of Canon.NpcSSE_TintLayers) = Nothing,
                                      Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As List(Of FaceTintLayerInput)
         If pm Is Nothing OrElse npcRec Is Nothing OrElse race Is Nothing Then Return Nothing
 
-        ' Tints AUTORADOS del NPC — MISMA FUENTE que la réplica CPU (ComposeLinearRgba). ⛔ No re-inlinear:
+        ' Tints AUTORADOS del NPC — MISMA FUENTE que la réplica CPU (ComposeLinearRgba). No re-inlinear:
         ' estaban duplicados y una edición en un solo sitio hacía divergir CPU y GPU en silencio.
-        Dim npcMap = BuildNpcAuthoredTintMap(npcRec, npcTintOverride)
+        Dim npcMap = BuildNpcAuthoredTintMap(npcRec, npcTintLayers)
 
         Dim layers = SortSseTintLayers(GetRaceLayersOrdered(pm, raceFormID, isFemale), npcMap)   ' orden configurable, default RaceMenu
         ' Canal de la máscara según la ley SSE (default R). El shader GL PaletteMask lo lee por uniform (FO4=verde).
@@ -283,7 +326,7 @@ Public Module SseFaceTintComposer
                 maskPath = custPath
             End If
             If iv <= 0.0 OrElse String.IsNullOrEmpty(maskPath) Then Continue For
-            Dim key = NormalizeTextureKey(maskPath)   ' ⭐ MISMA normalización que el CPU (ver NormalizeTextureKey)
+            Dim key = NormalizeTextureKey(maskPath)   ' MISMA normalización que el CPU (ver NormalizeTextureKey)
             If String.IsNullOrEmpty(key) Then Continue For
             Dim mb = FilesDictionary_class.GetBytes(key)
             If mb Is Nothing Then Continue For
@@ -330,9 +373,9 @@ Public Module SseFaceTintComposer
     ''' (TINC, TINV) ANTES del pliegue, que es el ÚNICO punto donde la intensidad tiene su significado SSE: acá
     ''' la lleva el interp de la capa (el QNAM de SSE no tiene alpha donde guardarla), y el pliegue corre con el
     ''' seed y la convención que resuelve la config — no con literales. Nothing (el default) ⇒ byte-idéntico al
-    ''' comportamiento previo. ⛔ SÓLO lo pasan los call sites del CUERPO/save; los de la CARA (compositor,
+    ''' comportamiento previo. SÓLO lo pasan los call sites del CUERPO/save; los de la CARA (compositor,
     ''' sentinels skee, preset −2 del bake) NO, o el origen del match se movería junto con el destino.</para></summary>
-    Public Function ResolveSkinToneQnam(pm As PluginManager, npc As NPC_Data, race As RACE_Data,
+    Public Function ResolveSkinToneQnam(pm As PluginManager, npc As NPC_Data, race As Canon.IRace,
                                         raceFid As UInteger, isFemale As Boolean,
                                         Optional offset As SkinToneQnamOffset = Nothing) As Nullable(Of System.Drawing.Color)
         If pm Is Nothing OrElse npc Is Nothing Then Return Nothing
@@ -355,10 +398,10 @@ Public Module SseFaceTintComposer
         ' Tints AUTORADOS del NPC — MISMA FUENTE que las réplicas CPU/GPU de la cara (BuildNpcAuthoredTintMap).
         ' Era la TERCERA copia literal del mismo parseo; su comentario ya declaraba "EXACTLY as ComposeLinearRgba
         ' does", que es justo lo que una copia no puede garantizar. Sus guardas de nulidad (las más estrictas de
-        ' las tres) se adoptaron en la función compartida. ⛔ No re-inlinear: el tono del CUERPO y el de la CARA
+        ' las tres) se adoptaron en la función compartida. No re-inlinear: el tono del CUERPO y el de la CARA
         ' tienen que salir del MISMO parseo o divergen en silencio.
         ' Sólo hay lista cruda (npc.SseTintRaw), sin PluginRecord ⇒ se pasa como override; Nothing ⇒ mapa vacío.
-        Dim npcMap = BuildNpcAuthoredTintMap(Nothing, npc.SseTintRaw)
+        Dim npcMap = BuildNpcAuthoredTintMap(Nothing, CapasDeTinteSse(npc.Record))
 
         ' Resolve the skin layer's colour + interp: authored (npcMap) wins, else RACE default CLFM + DefaultValue.
         ' This is the SAME branch ComposeLinearRgba runs per layer (see the For Each layer loop there).
@@ -419,7 +462,7 @@ Public Module SseFaceTintComposer
 
     ''' <summary>Pliega la intensidad del skin-tone en UN canal de color y devuelve el byte 0..255.
     ''' <c>cNorm</c> = TINC/255, <c>tinv</c> = la cobertura de la capa.
-    ''' <para>⭐ FASE 8 — EL <c>0,5</c> SALE DEL BUCKET, NO DE UN LITERAL. Esto era
+    ''' <para>FASE 8 — EL <c>0,5</c> SALE DEL BUCKET, NO DE UN LITERAL. Esto era
     ''' <c>q = 0,5 + tinv·(cNorm − 0,5)</c>, o sea EXACTAMENTE el composite de una capa sobre el seed del
     ''' acumulador: <c>lerp(seed, color, cobertura)</c>. Tenerlo cableado significaba que el QNAM del CUERPO
     ''' y el facetint de la CARA se calculaban desde dos números distintos apenas el usuario moviera el seed
@@ -438,12 +481,12 @@ Public Module SseFaceTintComposer
         Return CInt(MathF.Round(q * 255.0F, MidpointRounding.ToEven))
     End Function
 
-    ''' <summary>Color de una CLFM (CNAM). ⛔ EL FALLO NO PUEDE SER SILENCIOSO.
+    ''' <summary>Color de una CLFM (CNAM). EL FALLO NO PUEDE SER SILENCIOSO.
     ''' Un CLFM que no resuelve devolvia BLANCO sin decir nada, y BLANCO es un color perfectamente valido:
     ''' un fallo de RESOLUCION se disfrazaba de resultado. Asi es como el bug de remapeo de TIND
     ''' (ver GetRaceLayersOrdered) sobrevivio hasta hoy — con la capa SkinTone a cobertura 1,0, la cara
     ''' entera salia blanca y no habia ni una linea de log que lo dijera.
-    ''' ⚠️ El VALOR del fallback NO se cambia: no esta RE-ado que hace el motor con una CLFM irresoluble, y
+    ''' El VALOR del fallback NO se cambia: no esta RE-ado que hace el motor con una CLFM irresoluble, y
     ''' inventar otro color seria cambiar el bake sin fuente. Lo que cambia es que ahora se LOGUEA con el
     ''' FormID y la causa, una sola vez por FormID (la cache evita el spam), para que el caso aparezca en vez
     ''' de esconderse. `clfmFid = 0` NO se loguea: es "esta capa no declara color por defecto", condicion
@@ -480,7 +523,7 @@ Public Module SseFaceTintComposer
         Return col
     End Function
 
-    ' ⛔⛔ BORRADOS `ComposeLayer`, `ComposeLayerOne` y `ComposeLayerRangeV` (fase 5 de la unificación).
+    ' BORRADOS `ComposeLayer`, `ComposeLayerOne` y `ComposeLayerRangeV` (fase 5 de la unificación).
     ' Eran el LOOP de capas propio de SSE — la segunda implementación del mismo camino que ya corría en
     ' `FaceTintCpuCompositor.ComposeChannelAccum`. El álgebra por píxel ya era compartida (llamaban a
     ' ComposePixel/ComposeOneV): lo duplicado era el recorrido, el acumulador AoS, el early-out de bloque, el
@@ -492,7 +535,7 @@ Public Module SseFaceTintComposer
     '   · los cuatro canales de máscara                          → PhaseAVectorSelfTest (palMaskCh 0..3)
     '   · cobertura CERO                                         → ComposeVectorSelfTest, índice 7
     '   · fuente de capa YA decodificada (lo NUEVO de esta fase)  → PhaseAVectorSelfTest, bloque `layerUnit`
-    ' ⚠️ CAMBIO DE COMPORTAMIENTO DECLARADO, cobertura NaN: el guard de acá era `a <= 0`, que con NaN es FALSO
+    ' CAMBIO DE COMPORTAMIENTO DECLARADO, cobertura NaN: el guard de acá era `a <= 0`, que con NaN es FALSO
     ' y por lo tanto COMPONÍA; el compositor compartido usa `cov > 0`, que con NaN es FALSO y SALTEA — igual
     ' que el GLSL. Es la decisión 9 del plan (alinear al GPU). NO mueve bytes: la cobertura sale de máscaras de
     ' 8 bits × TINV, y por ahí el NaN no es alcanzable.
@@ -522,11 +565,11 @@ Public Module SseFaceTintComposer
                            Return a.Pos.CompareTo(b.Pos)   ' tiebreak estable = orden RACE (RaceMenu)
                        End Function)
         End If
-        ' ⭐ SkinTonePlacement — la MISMA ley que FO4 (FaceTintInputBuilder.OrderMergedLayers): GANA sobre las
+        ' SkinTonePlacement — la MISMA ley que FO4 (FaceTintInputBuilder.OrderMergedLayers): GANA sobre las
         ' reglas y saca la capa de SKIN-TONE del orden para forzarla al frente (queda al fondo) o al final
         ' (queda encima). En SSE la capa de piel es la de TINP MaskType == 6 — no hay slot 12 —, la MISMA que
         ' identifica ResolveSkinToneQnam, así que la cara y el QNAM del cuerpo hablan de la misma capa.
-        ' ⛔ ESTA OPCION NO SE LEIA ACA: existía en la UI del tab "Tint Order", se persistía en
+        ' ESTA OPCION NO SE LEIA ACA: existía en la UI del tab "Tint Order", se persistía en
         ' Setting_FaceTintSort_SSE, y su ÚNICO consumidor era el builder de FO4 ⇒ en Skyrim era un control
         ' editable que no movía un byte. Default = Positional ⇒ byte-inerte mientras no se toque.
         If placement = CInt(FaceTintSkinTonePlacement.FirstOfAll) Then
@@ -651,7 +694,7 @@ Public Module SseFaceTintComposer
     ''' un solo byte de ningún caller existente.</param>
     Private Function DecodeMask(texPath As String, w As Integer, h As Integer,
                                 Optional asNormalMap As Boolean = False) As Single()
-        ' ⭐ COLAPSADO. Todo el cuerpo —clave, negativos, decode, atajo de identidad, resample bilineal y
+        ' COLAPSADO. Todo el cuerpo —clave, negativos, decode, atajo de identidad, resample bilineal y
         ' reconstruccion de Z— vivia aca duplicado sobre un `_texCache` de MODULO propio. Ahora es
         ' FaceTintCpuCompositor.CachedUnitDecode: mismo algoritmo, una sola implementacion, y la clave gana el
         ' eje de POLITICA DE MIP que a esta le faltaba.

@@ -212,6 +212,33 @@ Namespace Canon
         ''' <para>-1 = el nodo no vino de un parseo (array creado desde cero).</para></summary>
         Public Property ParsedCount As Integer = -1
 
+        ''' <summary>Sólo en las hojas de REFERENCIA, y sólo cuando la lectura tradujo el valor al
+        ''' espacio del orden de carga: qué decía el archivo y a qué se tradujo.
+        '''
+        ''' <para>La traducción local → orden de carga NO es inyectiva. Un índice de master
+        ''' mayor que la cantidad de masters del archivo no existe, y el motor lo pliega al propio
+        ''' archivo; dos índices distintos entran así al mismo valor, y la vuelta sólo puede
+        ''' devolver la forma canónica. Lo que decía el archivo no está en ninguna otra parte, así
+        ''' que lo guarda el nodo.</para>
+        '''
+        ''' <para>Es la misma política que <see cref="ParsedCount"/>, <see
+        ''' cref="TerminatorCount"/> y <see cref="ShortRead"/>: la fuente puede traer una forma que
+        ''' no es la canónica y el round-trip no la "corrige"; se vuelve a la canónica sólo si
+        ''' alguien EDITÓ el campo.</para>
+        '''
+        ''' <para>False = el nodo no se leyó de un archivo (record creado desde cero) o se leyó
+        ''' sin traducir (inspección de un archivo suelto). En los dos casos el valor ya ES el del
+        ''' archivo y no hay nada que restituir.</para></summary>
+        Public Property ReferenciaDeArchivo As Boolean
+        ''' <summary>El valor TAL CUAL lo trae el archivo, con el índice de master de ESE archivo.
+        ''' Sólo vale si <see cref="ReferenciaDeArchivo"/>.</summary>
+        Public Property ReferenciaLocalDeArchivo As UInteger
+        ''' <summary>El valor del orden de carga al que se tradujo ese local. Sirve para saber si
+        ''' alguien cambió a dónde apunta la referencia después de leerla: si el valor actual
+        ''' del nodo ya no es éste, el local de origen dejó de describirlo y no se
+        ''' restituye.</summary>
+        Public Property ReferenciaGlobalDeArchivo As UInteger
+
         Public Sub New(d As WbDef)
             _Def = d
         End Sub
@@ -289,7 +316,10 @@ Namespace Canon
                 .OverrideName = OverrideName,
                 .ParsedFormVersion = ParsedFormVersion,
                 .ShortRead = ShortRead,
-                .ParsedCount = ParsedCount
+                .ParsedCount = ParsedCount,
+                .ReferenciaDeArchivo = ReferenciaDeArchivo,
+                .ReferenciaLocalDeArchivo = ReferenciaLocalDeArchivo,
+                .ReferenciaGlobalDeArchivo = ReferenciaGlobalDeArchivo
             }
             ' El valor es un tipo simple o un arreglo de bytes; el arreglo se copia para que las dos
             ' ramas no compartan el mismo buffer.
@@ -344,45 +374,79 @@ Namespace Canon
         ''' un campo se nombra bajando por la estructura completa.</para></summary>
         Public Function ByFieldPath(path As String) As WbNode
             If String.IsNullOrEmpty(path) Then Return Nothing
-            Dim cur = Me
-            Dim pasos = path.Split("\"c)
-            For idx = 0 To pasos.Length - 1
-                If cur Is Nothing Then Return Nothing
-                Dim s = pasos(idx).Trim()
-                If s.Length = 0 Then Continue For
-                If s = ".." Then
-                    cur = cur.Parent
-                    Continue For
-                End If
-                If s.StartsWith("[", StringComparison.Ordinal) AndAlso s.EndsWith("]", StringComparison.Ordinal) Then
-                    Dim i As Integer
-                    If Not Integer.TryParse(s.Substring(1, s.Length - 2), i) Then Return Nothing
-                    If i < 0 OrElse i >= cur.Children.Count Then Return Nothing
-                    cur = cur.Children(i)
-                    Continue For
-                End If
-                Dim nxt = cur.ByName(s)
-                If nxt Is Nothing Then nxt = cur.BySignature(s)
-                ' El segmento puede nombrar al nodo en el que YA estamos. Pasa cuando el elemento
-                ' de un arreglo es el subrecord mismo: la ruta del campo arranca con su firma, y
-                ' desde el elemento esa firma no es un hijo sino uno mismo.
-                If nxt Is Nothing AndAlso
-                   (String.Equals(cur.Signature, s, StringComparison.Ordinal) OrElse
-                    (cur.Def IsNot Nothing AndAlso String.Equals(cur.Def.Name, s, StringComparison.Ordinal))) Then
-                    nxt = cur
-                End If
-                If nxt Is Nothing AndAlso cur.Children.Count = 1 Then
-                    ' Un envoltorio anonimo en el camino: se lo atraviesa y se reintenta el mismo
-                    ' segmento contra su contenido.
-                    Dim solo = cur.Children(0)
-                    nxt = If(solo.ByName(s), solo.BySignature(s))
-                End If
-                cur = nxt
+            Return ResolverCampo(Me, path.Split("\"c), 0)
+        End Function
+
+        ''' <summary>Busca el nodo que satisface la ruta ENTERA, no el primero que coincide con un
+        ''' tramo.
+        '''
+        ''' <para>La diferencia importa cuando dos hermanos comparten la firma y sólo se distinguen
+        ''' por el nombre de su valor. Pasa de verdad: una raza declara el esqueleto masculino y el
+        ''' femenino con la MISMA firma, uno detrás del otro. Quedarse con el primero que coincide
+        ''' hacía que la ruta del femenino no resolviera nunca, y leerlo devolvía vacío sin ningún
+        ''' aviso — que es exactamente la peor forma de fallar.</para>
+        '''
+        ''' <para>El orden en que se prueban los candidatos es el mismo de siempre: primero los que
+        ''' coinciden por nombre, después los envoltorios sin nombre, y al final los que coinciden
+        ''' por firma. Así una ruta que ya resolvía sigue resolviendo al mismo nodo; lo único que
+        ''' cambia es que ahora, si ese camino no llega a destino, se prueba el siguiente.</para></summary>
+        Private Shared Function ResolverCampo(cur As WbNode, pasos As String(), idx As Integer) As WbNode
+            If cur Is Nothing Then Return Nothing
+            If idx >= pasos.Length Then Return Desenvolver(cur)
+
+            Dim s = pasos(idx).Trim()
+            If s.Length = 0 Then Return ResolverCampo(cur, pasos, idx + 1)
+            If s = ".." Then Return ResolverCampo(cur.Parent, pasos, idx + 1)
+
+            If s.StartsWith("[", StringComparison.Ordinal) AndAlso s.EndsWith("]", StringComparison.Ordinal) Then
+                Dim i As Integer
+                If Not Integer.TryParse(s.Substring(1, s.Length - 2), i) Then Return Nothing
+                If i < 0 OrElse i >= cur.Children.Count Then Return Nothing
+                Return ResolverCampo(cur.Children(i), pasos, idx + 1)
+            End If
+
+            For Each cand In Candidatos(cur, s)
+                Dim r = ResolverCampo(cand, pasos, idx + 1)
+                If r IsNot Nothing Then Return r
             Next
-            ' Si la ruta termino en el envoltorio de un subrecord, lo que se busca es su valor.
-            ' Se exige que sea un subrecord y no cualquier nodo con un hijo: un ARREGLO DE UN SOLO
-            ' ELEMENTO tambien tiene un hijo, y devolver ese elemento en su lugar deja la lista
-            ' vacia para quien pidio el arreglo.
+
+            ' El segmento puede nombrar al nodo en el que YA estamos. Pasa cuando el elemento de un
+            ' arreglo es el subrecord mismo: la ruta del campo arranca con su firma, y desde el
+            ' elemento esa firma no es un hijo sino uno mismo.
+            If String.Equals(cur.Signature, s, StringComparison.Ordinal) OrElse
+               (cur.Def IsNot Nothing AndAlso String.Equals(cur.Def.Name, s, StringComparison.Ordinal)) Then
+                Return ResolverCampo(cur, pasos, idx + 1)
+            End If
+
+            Return Nothing
+        End Function
+
+        ''' <summary>Hijos que pueden ser el tramo <paramref name="s"/>, en orden de preferencia.
+        ''' <para>Un envoltorio sin nombre no es un candidato en sí: se lo atraviesa y se prueba el
+        ''' mismo tramo contra lo que tiene adentro.</para></summary>
+        Private Shared Iterator Function Candidatos(cur As WbNode, s As String) As IEnumerable(Of WbNode)
+            For Each c In cur.Children
+                If String.Equals(c.Name, s, StringComparison.Ordinal) Then Yield c
+            Next
+            For Each c In cur.Children
+                If String.IsNullOrEmpty(c.Name) Then
+                    For Each d In Candidatos(c, s)
+                        Yield d
+                    Next
+                End If
+            Next
+            For Each c In cur.Children
+                If String.Equals(c.Signature, s, StringComparison.Ordinal) AndAlso
+                   Not String.Equals(c.Name, s, StringComparison.Ordinal) Then Yield c
+            Next
+        End Function
+
+        ''' <summary>Si la ruta terminó en el envoltorio de un subrecord, lo que se busca es su
+        ''' valor.
+        ''' <para>Se exige que sea un subrecord y no cualquier nodo con un hijo: un ARREGLO DE UN
+        ''' SOLO ELEMENTO también tiene un hijo, y devolver ese elemento en su lugar deja la lista
+        ''' vacía para quien pidió el arreglo.</para></summary>
+        Private Shared Function Desenvolver(cur As WbNode) As WbNode
             If cur IsNot Nothing AndAlso TypeOf cur.Def Is WbSubrecordDef AndAlso
                cur.Children.Count = 1 AndAlso cur.Children(0).Children.Count = 0 Then
                 Return cur.Children(0)

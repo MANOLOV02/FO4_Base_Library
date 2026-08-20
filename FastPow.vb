@@ -9,16 +9,16 @@ Imports System.Runtime.Intrinsics
 ''' Vector128, Vector256 y Vector(Of T) de ancho variable, que es el que usa PRODUCCION— todos BIT-IDENTICOS
 ''' entre si (lo verifica WidthParitySelfTest en cada bake).
 '''
-''' <para><b>⭐ CONTRATO DE PORTABILIDAD — UNA sola ley, los mismos bytes en TODA PC.</b> El peligro no era
+''' <para><b>CONTRATO DE PORTABILIDAD — UNA sola ley, los mismos bytes en TODA PC.</b> El peligro no era
 ''' "que no corra" sino que el bake diera bytes distintos segun la maquina. Por eso el fallback NO es
 ''' <c>MathF.Pow</c>: es ESTA MISMA ley evaluada de a un elemento. Cuatro reglas lo garantizan y NINGUNA es
 ''' opcional:</para>
 ''' <list type="number">
 ''' <item>Solo la API CROSS-PLATFORM <c>Vector256</c>/<c>Vector128</c>, JAMAS <c>Avx.*</c>/<c>Sse.*</c>. Con
 '''   AVX2 el JIT emite AVX2; sin el, expande el MISMO vector elemento a elemento con las MISMAS ops IEEE.</item>
-''' <item>⛔ CERO FMA. <c>a*b+c</c> fusionado NO da lo mismo que sin fusionar. .NET no contrae por su cuenta,
+''' <item>CERO FMA. <c>a*b+c</c> fusionado NO da lo mismo que sin fusionar. .NET no contrae por su cuenta,
 '''   asi que alcanza con no llamar a <c>Fma.*</c> — y hay que seguir sin llamarlo.</item>
-''' <item>⛔ CERO intrinseco de redondeo. <c>n = round(s)</c> sale de la constante magica
+''' <item>CERO intrinseco de redondeo. <c>n = round(s)</c> sale de la constante magica
 '''   <c>(s + 1.5·2²³) − 1.5·2²³</c>, que es round-half-to-EVEN exacto con solo suma y resta.</item>
 ''' <item>Solo add/sub/mul/div/min/max y shift/and/or/convert enteros: todo exactamente especificado por
 '''   IEEE-754 / ECMA-335 ⇒ escalar == Vector128 == Vector256.</item>
@@ -34,7 +34,7 @@ Imports System.Runtime.Intrinsics
 ''' grilla 2^-12, con lo que <c>kHi·e</c> (e entero chico) es EXACTO en f32 y la cancelacion <c>A − n</c>
 ''' tambien. Eso solo baja el error de 2,6e-6 a 1,2e-7.</para>
 '''
-''' <para>⛔ NO "simplificar" esto a <c>MathF.Pow</c> en el camino escalar: volveria a haber DOS leyes y la
+''' <para>NO "simplificar" esto a <c>MathF.Pow</c> en el camino escalar: volveria a haber DOS leyes y la
 ''' salida dependeria de la CPU.</para></summary>
 Public Module FastPow
 
@@ -88,7 +88,7 @@ Public Module FastPow
         End Get
     End Property
 
-    ''' <summary>⭐ ANCHO VARIABLE — el que usan los compositores. <c>Vector(Of Single)</c> elige SOLO el ancho
+    ''' <summary>ANCHO VARIABLE — el que usan los compositores. <c>Vector(Of Single)</c> elige SOLO el ancho
     ''' que la máquina tiene: 256 bits (8 lanes) con AVX2, 128 (4 lanes) con SSE2, y en una CPU sin SIMD el
     ''' JIT lo expande elemento a elemento con las MISMAS ops IEEE.
     ''' <para><b>Por qué esto y no duplicar el código.</b> El compositor de FO4 estaba escrito contra
@@ -97,7 +97,7 @@ Public Module FastPow
     ''' alternativa era duplicar las 22 funciones espejo a Vector128 (lo que hizo <c>SseFaceGenBaker</c>: dos
     ''' juegos que hay que mantener en sincronía a mano). Con el ancho variable hay UNA sola escritura de cada
     ''' ley y el despacho lo hace el runtime.</para>
-    ''' <para>⛔ Esto SÓLO es legítimo porque los anchos ya están probados BIT-IDÉNTICOS entre sí (0
+    ''' <para>Esto SÓLO es legítimo porque los anchos ya están probados BIT-IDÉNTICOS entre sí (0
     ''' violaciones en 4.261.412.868 comparaciones). Si no lo estuvieran, un binario daría bytes distintos
     ''' según la CPU — exactamente lo que este contrato existe para impedir.</para></summary>
     Public ReadOnly Property AcceleratedV As Boolean
@@ -114,7 +114,7 @@ Public Module FastPow
         End Get
     End Property
 
-    ''' <summary>⭐ SELF-TEST DE PARIDAD ENTRE ANCHOS: escalar vs Vector128 vs Vector256 vs Vector(Of T), para
+    ''' <summary>SELF-TEST DE PARIDAD ENTRE ANCHOS: escalar vs Vector128 vs Vector256 vs Vector(Of T), para
     ''' TODAS las funciones de este módulo (<c>Pow</c> en los 4 exponentes, <c>PowVar</c> y <c>Exp2</c>).
     ''' Devuelve "" si todo coincide BIT A BIT; si no, la primera divergencia con sus bits.
     '''
@@ -126,7 +126,7 @@ Public Module FastPow
     ''' <para>Barre el dominio real con paso fino MÁS los bordes que rompen: 0, 1, el menor normal, denormales,
     ''' fuera de [0,1], NaN e infinitos, y —para <c>PowVar</c>— el exponente NaN, que es el que hacía
     ''' <c>OverflowException</c> en el escalar mientras el vector devolvía basura.</para>
-    ''' <para>⚠️ No es la enumeración EXHAUSTIVA de los 1.065.353.217 float32 (esa vive en el arnés
+    ''' <para>No es la enumeración EXHAUSTIVA de los 1.065.353.217 float32 (esa vive en el arnés
     ''' <c>powgate/vbgate</c> y tarda minutos): acá el paso es fino pero acotado para poder correr en cada bake.</para></summary>
     Public Function WidthParitySelfTest() As String
         ' Bordes primero: es donde los cuatro caminos tienen ramas distintas (clamps, NaN, denormales).
@@ -227,7 +227,7 @@ Public Module FastPow
     End Function
 
     ' ============================ LAYOUT DE ANCHO VARIABLE ============================
-    ' Helpers para los buffers AoS RGBA. ⛔ Reemplazan a los literales de 8 lanes
+    ' Helpers para los buffers AoS RGBA. Reemplazan a los literales de 8 lanes
     ' (`Vector256.Create(-1,-1,-1,0,-1,-1,-1,0)`, `Create(3,3,3,3,7,7,7,7)`, …) y a `Vector256.Shuffle`,
     ' que NO existe en la API de ancho variable. Todos los patrones que usaban esos literales son de
     ' PERIODO 4 —el tamaño de un pixel RGBA— asi que se generan para el ancho de la maquina y siguen siendo
@@ -262,7 +262,7 @@ Public Module FastPow
 
     ''' <summary>Idem pero como MÁSCARA de bits (se arma en Integer y se reinterpreta): el uso típico es
     ''' (−1,−1,−1,0) = "toca RGB, no toques el alpha".</summary>
-    ''' <summary>⛔ Devuelve la máscara en <c>Vector(Of Integer)</c>, NO en Single. Las comparaciones
+    ''' <summary>Devuelve la máscara en <c>Vector(Of Integer)</c>, NO en Single. Las comparaciones
     ''' vectoriales NO genéricas devuelven <c>Vector(Of Integer)</c>, y
     ''' <c>ConditionalSelect(Vector(Of Integer), Vector(Of Single), Vector(Of Single))</c> las consume
     ''' directamente. Tener la máscara en Single obligaba a usar la sobrecarga GENÉRICA de las
@@ -285,21 +285,21 @@ Public Module FastPow
     ''' <summary>Difunde el canal <paramref name="ch"/> de CADA píxel a los 4 lanes de ese píxel. Era
     ''' <c>Shuffle(v, Create(ch,ch,ch,ch, 4+ch,…))</c>.
     ''' <para><paramref name="scratch"/> es un scratch DEL HILO de largo <b>2×<see cref="LaneCount"/></b>:
-    ''' la mitad baja es la copia de la entrada y la alta es el destino. ⛔ Hacen falta las DOS mitades: leer y
+    ''' la mitad baja es la copia de la entrada y la alta es el destino. Hacen falta las DOS mitades: leer y
     ''' escribir sobre el mismo rango corrompe el resultado (el lane j lee una posición que otro lane ya pisó).
-    ''' ⛔ No puede compartirse entre hilos.</para>
-    ''' <para>⛔⭐ NO asignar acá adentro. La primera versión hacía <c>Dim outv(n-1)</c> por llamada: son 7
+    ''' No puede compartirse entre hilos.</para>
+    ''' <para>NO asignar acá adentro. La primera versión hacía <c>Dim outv(n-1)</c> por llamada: son 7
     ''' asignaciones Gen0 POR BLOQUE sólo en ColorMode, y otra por bloque en el compose de tint de SSE, dentro
     ''' de los loops calientes y encima ANTES del early-out. En net8.0 no hay stack-allocation de arrays, así
     ''' que era basura garantizada. Reemplazar UNA instrucción <c>Shuffle</c> por eso hacía más lenta justo a
     ''' la máquina con AVX2 — la trampa nº 1 del proyecto (optimizar un ancho rompiendo el otro).</para></summary>
     ' ============================ INDICES DE SHUFFLE, PRECALCULADOS ============================
-    ' ⭐ `Vector.Shuffle` NO existe en la API de ancho variable, pero `Vector256.Shuffle` y
+    ' `Vector.Shuffle` NO existe en la API de ancho variable, pero `Vector256.Shuffle` y
     ' `Vector128.Shuffle` SI. Y usarlos NO rompe el contrato de "una sola ley": un shuffle es MOVIMIENTO DE
     ' DATOS, no aritmetica — mueve los mismos bits que el fallback escalar, igual que un gather. Lo que la
     ' regla prohibe es lo que cambia el REDONDEO (FMA), no lo que reordena.
     '
-    ' ⛔ POR QUE IMPORTA, MEDIDO: la primera version reemplazaba el shuffle por un viaje a memoria (CopyTo a
+    ' POR QUE IMPORTA, MEDIDO: la primera version reemplazaba el shuffle por un viaje a memoria (CopyTo a
     ' un scratch + loop escalar + carga). Eso costo **SSE Textures 46,4 -> 52,4 s (+12,9 %)** entre dos
     ' corridas del corpus completo. Los 10 self-tests daban VERDE igual: la paridad NO ve regresiones de
     ' velocidad (es la trampa nº 1 de 61-perf-simd-trampas, y ya habia pasado antes en este repo).
@@ -491,7 +491,7 @@ Public Module FastPow
     ' unica raiz real sale por Cardano, que pide cbrt. `MathF.Cbrt` no tiene contraparte en `Vector(Of T)` ⇒
     ' el espejo vectorial no podria ser BIT-IDENTICO al escalar, que es el contrato de este modulo.
     '
-    ' ⛔ NO se puede resolver con PowVar(x, 1/3): PowVar ACOTA la base a [0,1] (devuelve 0 por debajo y 1 por
+    ' NO se puede resolver con PowVar(x, 1/3): PowVar ACOTA la base a [0,1] (devuelve 0 por debajo y 1 por
     ' encima) y el argumento de Cardano es de signo cualquiera y modulo arbitrario.
     '
     ' LA LEY: estimacion inicial por el truco de bits + CUATRO pasos de Newton sobre y³ = a. La estimacion NO
@@ -606,7 +606,7 @@ Public Module FastPow
         Dim res = Vector.Multiply(ex, scale)
 
         res = Vector.ConditionalSelect(Vector.LessThan(n, New Vector(Of Single)(-126.0F)), zero, res)
-        ' ⛔ Exponente NaN -> NaN, y VA ANTES de los cortes por `x`: en una cadena de selects el ULTIMO gana, y
+        ' Exponente NaN -> NaN, y VA ANTES de los cortes por `x`: en una cadena de selects el ULTIMO gana, y
         ' el escalar corta por `x` primero (PowVar(0,NaN)=0, PowVar(1,NaN)=1). Ver la nota gemela en PowVarV256.
         res = Vector.ConditionalSelect(Vector.Equals(y, y), res, y)
         ' Infinitos del exponente: mismo problema y mismo limite que en el escalar (ver alli).
@@ -746,7 +746,7 @@ Public Module FastPow
 
     ''' <summary><c>pow(x, y)</c> con el exponente VARIABLE POR LANE. Misma ley que <see cref="PowV256"/>; lo
     ''' único que cambia es que el split de Dekker se hace en RUNTIME en vez de precomputado.
-    ''' <para>⛔ Existía la idea de que el exponente variable "no se podía" porque el truco de precisión pedía
+    ''' <para>Existía la idea de que el exponente variable "no se podía" porque el truco de precisión pedía
     ''' una constante. Es FALSO: lo que el truco necesita es que <c>yh·e</c> sea EXACTO, y eso se consigue
     ''' redondeando <c>y</c> a la grilla 2⁻¹² con la constante mágica — <c>yh</c> queda con ≤14 bits
     ''' significativos y <c>e</c> con ≤8, o sea ≤22 &lt; 24 bits de mantisa. Cuesta 5 ops de más, nada más.</para>
@@ -784,7 +784,7 @@ Public Module FastPow
         p = Vector256.Multiply(t2, Vector256.Add(p, Vector256.Create(L3)))
         Dim log2m = Vector256.Multiply(Vector256.Create(L2E_2), Vector256.Add(t, Vector256.Multiply(t, p)))
 
-        ' ⭐ SPLIT DE DEKKER EN RUNTIME: yh = y redondeado a multiplo de 2^-12 (magic constant sobre y*4096),
+        ' SPLIT DE DEKKER EN RUNTIME: yh = y redondeado a multiplo de 2^-12 (magic constant sobre y*4096),
         ' yl = y - yh (exacto). Con eso yh*e vuelve a ser EXACTO, que es lo unico que el truco necesitaba.
         Dim g = Vector256.Create(4096.0F)
         Dim mg = Vector256.Create(MAGIC)
@@ -812,8 +812,8 @@ Public Module FastPow
         Dim res = Vector256.Multiply(ex, scale)
 
         res = Vector256.ConditionalSelect(Vector256.LessThan(n, Vector256.Create(-126.0F)), zero, res)
-        ' ⛔ EXPONENTE NaN -> NaN. Espejo del `If Single.IsNaN(y) Then Return y` del escalar.
-        ' ⛔⛔ VA ANTES de los cortes por `x`, NO despues. En una CADENA de selects el ULTIMO gana, y el
+        ' EXPONENTE NaN -> NaN. Espejo del `If Single.IsNaN(y) Then Return y` del escalar.
+        ' VA ANTES de los cortes por `x`, NO despues. En una CADENA de selects el ULTIMO gana, y el
         ' escalar corta por `x` PRIMERO: `PowVar(0, NaN)` es 0 y `PowVar(1, NaN)` es 1, no NaN. Tenerlo al
         ' final invertia esa precedencia — y no es teorico: lo pesco WidthParitySelfTest con x=0, y=NaN.
         res = Vector256.ConditionalSelect(Vector256.Equals(y, y), res, y)
@@ -880,15 +880,15 @@ Public Module FastPow
         If Single.IsNaN(x) Then Return x
         If x <= 0.0F Then Return 0.0F
         If x >= 1.0F Then Return 1.0F
-        ' ⛔ EXPONENTE NaN. Sin este guard `n` sale NaN y el `CInt(n)` del final TIRA OverflowException — o sea
+        ' EXPONENTE NaN. Sin este guard `n` sale NaN y el `CInt(n)` del final TIRA OverflowException — o sea
         ' que el escalar CRASHEA donde el vectorial devolvia un numero cualquiera (su ConvertToInt32 de un NaN
         ' no falla, solo da basura). Es ALCANZABLE: el soft-light Illusions pasa y = Exp2_1(2*(0.5-s)) y `s`
         ' sale de una textura, donde un NaN es posible; Clamp01 NO lo filtra (sus dos comparaciones son falsas).
         ' Se devuelve NaN = lo que da MathF.Pow(x, NaN) y la MISMA convencion que Exp2_1 ya tenia.
-        ' ⭐ VA DESPUES de los cortes por `x`: asi PowVar1(0, NaN)=0 y PowVar1(1, NaN)=1 no cambian, y el
+        ' VA DESPUES de los cortes por `x`: asi PowVar1(0, NaN)=0 y PowVar1(1, NaN)=1 no cambian, y el
         ' espejo vectorial ubica su select en EXACTAMENTE ese lugar del orden.
         If Single.IsNaN(y) Then Return y
-        ' ⛔ Y LOS INFINITOS TAMBIEN. Con y = ±Inf el split de Dekker da yl = Inf − Inf = NaN, `n` sale NaN y
+        ' Y LOS INFINITOS TAMBIEN. Con y = ±Inf el split de Dekker da yl = Inf − Inf = NaN, `n` sale NaN y
         ' el `CInt(n)` de abajo vuelve a tirar OverflowException — el MISMO fallo que el guard de NaN, por otra
         ' puerta. Se devuelve el limite matematico, que para x en (0,1) es 0 con y=+Inf e Inf con y=−Inf (los
         ' bordes x=0 y x=1 ya salieron arriba). No es alcanzable desde el soft-light Illusions (su exponente

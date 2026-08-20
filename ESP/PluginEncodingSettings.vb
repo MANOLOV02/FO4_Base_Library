@@ -1,9 +1,9 @@
 ﻿Imports System.IO
 Imports System.Text
 
-''' <summary>Configuracion central de encoding para la E/S de plugins ESP/ESM/ESL. Es un espejo LITERAL del
-''' subsistema de encoding de xEdit: cualquier divergencia contra xEdit es un bug, y el detalle con las
-''' citas file:line vive en la memoria 20-app-encoding-xedit.
+''' <summary>Configuracion central de encoding para la E/S de plugins ESP/ESM/ESL. El contrato es
+''' reproducir bit a bit las reglas de encoding que un plugin necesita para ser válido: cualquier
+''' divergencia es un bug.
 ''' <para>Globales: general no traducible = cp1252; traducible = cp1252 hasta que sLanguage lo cambie; VMAD
 ''' siempre UTF-8; para STRINGS el default primario es UTF-8 y el de fallback cp1252, cada uno con su mapa por
 ''' idioma (FO4 y SSE solo siembran su idioma en el primario, el fallback siempre lleva el mapa completo).</para>
@@ -14,35 +14,35 @@ Imports System.Text
 Public Module PluginEncodingSettings
 
     Private ReadOnly _syncRoot As New Object()
-    ' UTF-8 with STRICT decoder (throwOnInvalidBytes). Mirror of Delphi TEncoding.UTF8 whose
-    ' GetString raises EEncodingError on malformed bytes — REQUIRED for the STRINGS-sidecar
-    ' fallback chain (LocalizedStrings.DecodeWithEncoding: try UTF-8 primary → catch → cp1252
-    ' fallback, mirror of TwbLocalizationFile.ReadZString wbLocalization.pas:259-264). With .NET's
-    ' default Encoding.UTF8 (replacement fallback) the decoder NEVER throws, the catch is dead
-    ' code, and a cp1252 .STRINGS file read as UTF-8 yields U+FFFD mojibake instead of falling
-    ' back to cp1252. (Earlier comment claimed the opposite — that was the bug causing the Korean/
-    ' Spanish STRINGS mojibake report.)
+    ' UTF-8 con decoder ESTRICTO (throwOnInvalidBytes): tira excepcion ante bytes invalidos en vez
+    ' de reemplazarlos silenciosamente. Hace falta para la cadena de fallback del sidecar STRINGS
+    ' (LocalizedStrings.DecodeWithEncoding: intenta UTF-8 primero, si tira cae a cp1252). Con el
+    ' Encoding.UTF8 default de .NET (fallback de reemplazo) el decoder NUNCA tira, el catch queda
+    ' codigo muerto, y un .STRINGS en cp1252 leido como UTF-8 da mojibake U+FFFD en vez de caer a
+    ' cp1252. (Un comentario anterior decia lo contrario — ese fue el bug que causo el reporte de
+    ' mojibake en STRINGS de coreano/espanol.)
     '
-    ' throwOnInvalidBytes affects the DECODER (read). The ENCODER never throws for valid .NET
-    ' strings (UTF-8 encodes every Unicode scalar), so this does NOT reintroduce the mid-save
-    ' EncoderFallback problem — that was MBCSEncoding(cp) with ExceptionFallback, fixed separately
-    ' (MBCSEncoding now uses Delphi-default replacement).
+    ' throwOnInvalidBytes afecta al DECODER (lectura). El ENCODER nunca tira para strings validos
+    ' de .NET (UTF-8 codifica cualquier scalar Unicode), asi que esto NO reintroduce el problema de
+    ' EncoderFallback a mitad de guardado — ese estaba en MBCSEncoding(cp) con ExceptionFallback,
+    ' arreglado aparte (MBCSEncoding ahora reemplaza en silencio los caracteres no codificables,
+    ' en vez de tirar).
     Private ReadOnly _utf8 As Encoding = New UTF8Encoding(encoderShouldEmitUTF8Identifier:=False, throwOnInvalidBytes:=True)
     Private ReadOnly _encodingCache As New Dictionary(Of Integer, Encoding)()
 
     ''' <summary>
-    ''' Full language→codepage map, used as the FALLBACK map (wbLEncoding[True]) and, for games
-    ''' &lt;= gmEnderal, also the PRIMARY map.
+    ''' Mapa completo idioma→codepage, usado como mapa de FALLBACK y, para juegos mas viejos que
+    ''' soportan solo idiomas completos, tambien como mapa PRIMARIO.
     '''
-    ''' First block = LITERAL mirror of wbAddDefaultLEncodingsIfMissing (wbInterface.pas:23665-23686):
-    ''' the 19 full language NAMES, same codepages. Do NOT canonicalize/alias these (no "es"→"spanish").
+    ''' Primer bloque = los 19 nombres de idioma completos con su codepage. NO canonicalizar/aliasear
+    ''' estas entradas (nada de "es"→"spanish").
     '''
-    ''' Second block = FO4 short language CODES (en/fr/ru/ko…) + Korean. These are the actual
-    ''' STRINGS-file suffixes and Fallout4.ini sLanguage values FO4 uses (Fallout4_en.STRINGS,
-    ''' _ru, _ko…). xEdit does NOT have these in its full map — this is a deliberate addition so the
-    ''' INLINE fallback (DecodeTranslatable) can resolve the right codepage from a short sLanguage
-    ''' code. They are direct entries (token→cp), NOT aliases that redirect to another token.
-    ''' Korean (ko/kor/korean→949) has no official FO4 localization; fan translations use CP949.
+    ''' Segundo bloque = codigos cortos de idioma que usa FO4 (en/fr/ru/ko…) + coreano. Son los
+    ''' sufijos reales de archivo STRINGS y los valores de sLanguage que usa Fallout4.ini
+    ''' (Fallout4_en.STRINGS, _ru, _ko…). Es un agregado deliberado para que el fallback INLINE
+    ''' (DecodeTranslatable) pueda resolver el codepage correcto a partir de un codigo corto de
+    ''' sLanguage. Son entradas directas (token→cp), NO alias que redirigen a otro token.
+    ''' El coreano (ko/kor/korean→949) no tiene localizacion oficial de FO4; las traducciones fan usan CP949.
     ''' </summary>
     Private ReadOnly _languageMapFull As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase) From {
         {"english", 1252},
@@ -79,22 +79,22 @@ Public Module PluginEncodingSettings
         {"korean", 949}
     }
 
-    ''' <summary>Primary map (mirror of xEdit wbLEncoding[False]). Populated per-game by InitializeForGame.</summary>
+    ''' <summary>Mapa primario. Lo puebla InitializeForGame segun el juego.</summary>
     Private _languageMapPrimary As Dictionary(Of String, Integer) = Nothing
-    ''' <summary>Fallback map (mirror of xEdit wbLEncoding[True]). Always = _languageMapFull (xeInit.pas:1131).</summary>
+    ''' <summary>Mapa de fallback. Siempre igual a _languageMapFull.</summary>
     Private ReadOnly _languageMapFallback As Dictionary(Of String, Integer) = _languageMapFull
 
     Private _general As Encoding = Nothing
     Private _translatable As Encoding = Nothing
-    Private _translatableDefaultPrimary As Encoding = Nothing   ' wbLEncodingDefault[False]
-    Private _translatableDefaultFallback As Encoding = Nothing  ' wbLEncodingDefault[True]
+    Private _translatableDefaultPrimary As Encoding = Nothing   ' default cuando falla el lookup primario
+    Private _translatableDefaultFallback As Encoding = Nothing  ' default cuando falla el lookup de fallback
     ''' <summary>
-    ''' Codepage of the current sLanguage (from the full map), used as the INLINE fallback in
-    ''' DecodeTranslatable: when the primary (Translatable, usually UTF-8 for FO4) throws on a
-    ''' non-UTF-8 inline string, we retry with this. xEdit has NO inline fallback (ToStringNative
-    ''' is single-shot, wbInterface.pas:16514); this is a deliberate improvement so inline plugins
-    ''' in a legacy codepage (cp1251/CP949/…) read correctly without breaking UTF-8 plugins.
-    ''' Set from SetLanguage = GetEncodingForLanguage(sLanguage, True). Default cp1252 pre-SetLanguage.
+    ''' Codepage del sLanguage actual (del mapa completo), usado como fallback INLINE en
+    ''' DecodeTranslatable: cuando el primario (Translatable, normalmente UTF-8 para FO4) tira con
+    ''' un string inline que no es UTF-8, reintentamos con este. Es una mejora deliberada nuestra
+    ''' (sin fallback inline no hay reintento posible) para que los plugins inline en un codepage
+    ''' legado (cp1251/CP949/…) se lean bien sin romper los plugins UTF-8.
+    ''' Se fija desde SetLanguage = GetEncodingForLanguage(sLanguage, True). Default cp1252 antes de SetLanguage.
     ''' </summary>
     Private _translatableInlineFallback As Encoding = Nothing
 
@@ -120,7 +120,7 @@ Public Module PluginEncodingSettings
         End Get
     End Property
 
-    ''' <summary>Non-translatable plugin strings. Mirror of xEdit wbEncoding (wbInterface.pas:24295, default cp1252).</summary>
+    ''' <summary>Strings de plugin no traducibles. Default cp1252.</summary>
     Public ReadOnly Property General As Encoding
         Get
             EnsureInitialized()
@@ -128,7 +128,7 @@ Public Module PluginEncodingSettings
         End Get
     End Property
 
-    ''' <summary>Translatable plugin strings (FULL/SHRT/DESC/etc). Mirror of xEdit wbEncodingTrans.</summary>
+    ''' <summary>Strings de plugin traducibles (FULL/SHRT/DESC/etc).</summary>
     Public ReadOnly Property Translatable As Encoding
         Get
             EnsureInitialized()
@@ -136,7 +136,7 @@ Public Module PluginEncodingSettings
         End Get
     End Property
 
-    ''' <summary>Default for primary lookup miss. Mirror of xEdit wbLEncodingDefault[False] (wbInterface.pas:24299, always UTF-8).</summary>
+    ''' <summary>Default cuando falla el lookup primario. Siempre UTF-8.</summary>
     Public ReadOnly Property TranslatableDefaultPrimary As Encoding
         Get
             EnsureInitialized()
@@ -144,7 +144,7 @@ Public Module PluginEncodingSettings
         End Get
     End Property
 
-    ''' <summary>Default for fallback lookup miss. Mirror of xEdit wbLEncodingDefault[True] (wbInterface.pas:24300, always cp1252).</summary>
+    ''' <summary>Default cuando falla el lookup de fallback. Siempre cp1252.</summary>
     Public ReadOnly Property TranslatableDefaultFallback As Encoding
         Get
             EnsureInitialized()
@@ -160,9 +160,9 @@ Public Module PluginEncodingSettings
     End Property
 
     ''' <summary>
-    ''' Primary encoding override for EXTERNAL localized string files, or Nothing when no explicit
-    ''' override is active (the loader then uses its xEdit-faithful filename-suffix encodings). Set by
-    ''' OverridePluginEncoding.ini Translatable=. See _localizationPrimaryOverride.
+    ''' Override de encoding primaria para archivos de strings localizados EXTERNOS, o Nothing cuando
+    ''' no hay override explicito (el loader entonces usa el encoding que corresponde al sufijo del
+    ''' nombre de archivo). Lo fija OverridePluginEncoding.ini Translatable=. Ver _localizationPrimaryOverride.
     ''' </summary>
     Public Function TryGetLocalizationPrimaryOverride() As Encoding
         EnsureInitialized()
@@ -187,51 +187,49 @@ Public Module PluginEncodingSettings
     End Property
 
     ''' <summary>
-    ''' Apply per-game defaults. LITERAL mirror of:
-    '''   wbInterface.pas:24295-24310 — global initialization
-    '''   xeInit.pas:1118-1131       — game-specific primary/fallback map population
+    ''' Aplica los defaults por juego:
+    '''   inicializacion global de encodings (General y los defaults de Translatable)
+    '''   poblado del mapa primario segun el juego
     ''' </summary>
     Public Sub InitializeForGame(game As Config_App.Game_Enum)
         SyncLock _syncRoot
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)
 
-            ' wbInterface.pas:24295-24300 — global init (all games)
-            _general = MBCSEncoding(1252)                              ' wbEncoding
-            _translatableDefaultPrimary = _utf8                    ' wbLEncodingDefault[False]
-            _translatableDefaultFallback = MBCSEncoding(1252)          ' wbLEncodingDefault[True]
+            ' Init global (todos los juegos)
+            _general = MBCSEncoding(1252)                           ' General
+            _translatableDefaultPrimary = _utf8                     ' default primario
+            _translatableDefaultFallback = MBCSEncoding(1252)       ' default de fallback
 
-            ' xeInit.pas:1118-1129 — populate _languageMapPrimary based on game.
-            ' Game_Enum.Fallout4 = FO4 (gmFO4); Game_Enum.Skyrim is treated as SSE elsewhere in
-            ' the lib (PluginWriter.vb:50), so it gets the SSE branch here.
+            ' Puebla _languageMapPrimary segun el juego.
+            ' Game_Enum.Fallout4 = FO4; Game_Enum.Skyrim se trata como SSE en el resto de la lib
+            ' (PluginWriter.vb:50), asi que cae en la rama de SSE aca.
             Dim primary As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
             Select Case game
                 Case Config_App.Game_Enum.Fallout4
-                    ' xeInit.pas:1127 — wbAddLEncodingIfMissing('en', '1252', False)
                     primary("en") = 1252
                 Case Config_App.Game_Enum.Skyrim
-                    ' xeInit.pas:1125 — wbAddLEncodingIfMissing('english', '1252', False)
-                    ' (treating Game_Enum.Skyrim as SSE per the rest of the lib's contract)
+                    ' (Game_Enum.Skyrim se trata como SSE, siguiendo el resto de la lib)
                     primary("english") = 1252
                 Case Else
-                    ' xeInit.pas:1120 — wbAddDefaultLEncodingsIfMissing(False): FULL map
+                    ' Mapa completo para el resto de los juegos.
                     For Each kvp In _languageMapFull
                         primary(kvp.Key) = kvp.Value
                     Next
             End Select
 
-            ' NOTE: Korean is NOT added to the primary map (that was a fragile patch — CP949 in the
-            ' primary never throws, so a Korean plugin that happens to be UTF-8 would be silently
-            ' mojibake'd). Instead korean/ko/kor→949 lives in the FULL/fallback map, and the inline
-            ' fallback (DecodeTranslatable: try UTF-8 → catch → sLanguage codepage) reads both
-            ' CP949 and UTF-8 Korean plugins correctly. Same UTF-8-first + codepage-fallback model
-            ' as the .STRINGS sidecar.
+            ' NOTA: el coreano NO se agrega al mapa primario (eso era un parche fragil — CP949 en el
+            ' primario nunca tira, asi que un plugin coreano que resultara ser UTF-8 quedaria
+            ' mojibake en silencio). En cambio korean/ko/kor→949 vive en el mapa completo/fallback, y
+            ' el fallback inline (DecodeTranslatable: intenta UTF-8 → si tira, cae al codepage de
+            ' sLanguage) lee bien tanto plugins CP949 como UTF-8 en coreano. Mismo modelo de
+            ' UTF-8-primero + fallback-por-codepage que el sidecar .STRINGS.
             _languageMapPrimary = primary
 
-            ' xEdit's wbInterface init sets wbEncodingTrans := wbEncoding (cp1252), but xeInit.pas:1323
-            ' ALWAYS overwrites it with wbEncodingForLanguage(wbLanguage, False) — so the cp1252 value
-            ' is never observable in practice. We seed _translatable with the primary default (UTF-8
-            ' for FO4) so that any access BEFORE SetLanguage runs gets the correct default rather than
-            ' cp1252. SetLanguage (called from app startup) refines it from the INI's sLanguage.
+            ' El valor inicial de Translatable en cp1252 nunca es observable en la practica: siempre
+            ' se sobreescribe con el resultado de resolver el idioma actual. Por eso sembramos
+            ' _translatable con el default primario (UTF-8 para FO4), asi cualquier acceso ANTES de
+            ' que corra SetLanguage obtiene el default correcto en vez de cp1252. SetLanguage (llamado
+            ' desde el arranque de la app) lo refina con el sLanguage del INI.
             _translatable = _translatableDefaultPrimary
             ' Inline fallback default = cp1252 until SetLanguage sets it from the sLanguage codepage.
             _translatableInlineFallback = _translatableDefaultFallback
@@ -241,19 +239,17 @@ Public Module PluginEncodingSettings
     End Sub
 
     ''' <summary>
-    ''' Apply language-specific override to Translatable. LITERAL mirror of xeInit.pas:1323:
-    '''   wbEncodingTrans := wbEncodingForLanguage(wbLanguage, False)
-    ''' With wbLanguage normalized at xeInit.pas:1289 (Trim + ToLower).
+    ''' Aplica el override de Translatable especifico del idioma, resolviendo el sLanguage
+    ''' normalizado (Trim + minusculas) contra el mapa PRIMARIO.
     '''
-    ''' Uses the PRIMARY map (wbLEncoding[False]) which for FO4 contains only {'en' → 1252}.
-    ''' Any other language token (incl. "spanish", "russian", "english") falls through to
-    ''' _translatableDefaultPrimary = UTF-8.
+    ''' Usa el mapa PRIMARIO, que para FO4 solo contiene {'en' → 1252}. Cualquier otro token de
+    ''' idioma (incluidos "spanish", "russian", "english") cae al default primario = UTF-8.
     '''
-    ''' Mirrors xeInit.pas:1323 which runs UNCONDITIONALLY: an empty/missing sLanguage still goes
-    ''' through wbEncodingForLanguage("", False), which fails the Find and returns the primary
-    ''' default (UTF-8 for FO4). So an empty language MUST set _translatable = UTF-8, NOT leave it
-    ''' on a stale cp1252. (Earlier this early-returned, leaving cp1252 → broke Korean/Chinese
-    ''' plugins when the user's INI had no sLanguage entry.)
+    ''' Esta resolucion corre INCONDICIONALMENTE: un sLanguage vacio o ausente tambien pasa por el
+    ''' lookup, que falla y devuelve el default primario (UTF-8 para FO4). Por eso un idioma vacio
+    ''' TIENE que fijar _translatable = UTF-8, no dejarlo en un cp1252 viejo. (Antes esto retornaba
+    ''' temprano, dejando cp1252 → rompia plugins en coreano/chino cuando el INI del usuario no
+    ''' tenia entrada de sLanguage.)
     ''' </summary>
     Public Sub SetLanguage(language As String)
         EnsureInitialized()
@@ -261,7 +257,7 @@ Public Module PluginEncodingSettings
         Dim normalized = NormalizeLanguage(language)
 
         SyncLock _syncRoot
-            ' Mirror of wbEncodingForLanguage(normalized, False) inline. Empty token → Find miss → default.
+            ' Lookup inline del codepage primario. Token vacio → no encuentra → default.
             Dim cp As Integer = 0
             If normalized <> "" AndAlso _languageMapPrimary IsNot Nothing AndAlso _languageMapPrimary.TryGetValue(normalized, cp) Then
                 _translatable = If(cp = 65001, _utf8, MBCSEncoding(cp))
@@ -269,9 +265,9 @@ Public Module PluginEncodingSettings
                 _translatable = _translatableDefaultPrimary
             End If
 
-            ' Inline fallback = codepage of this sLanguage from the FULL/fallback map (= wbEncodingForLanguage(normalized, True)).
-            ' Used by DecodeTranslatable when the primary throws. For ko → CP949, ru → cp1251, etc.;
-            ' unknown token → cp1252 default. Computed inline to avoid re-entrant lock.
+            ' Fallback inline = codepage de este sLanguage segun el mapa completo/fallback.
+            ' Lo usa DecodeTranslatable cuando el primario tira. Para ko → CP949, ru → cp1251, etc.;
+            ' token desconocido → default cp1252. Calculado inline para evitar un lock reentrante.
             Dim fbCp As Integer = 0
             If normalized <> "" AndAlso _languageMapFallback.TryGetValue(normalized, fbCp) Then
                 _translatableInlineFallback = If(fbCp = 65001, _utf8, MBCSEncoding(fbCp))
@@ -281,9 +277,9 @@ Public Module PluginEncodingSettings
         End SyncLock
     End Sub
 
-    ''' <summary>⭐ Override ACOTADO de la encoding Translatable: la fija y la DEVUELVE al salir del
+    ''' <summary>Override ACOTADO de la encoding Translatable: la fija y la DEVUELVE al salir del
     ''' <c>Using</c>. Es el que tiene que usar cualquier camino interactivo.
-    ''' <para>⛔ EXISTE PORQUE <see cref="SetTranslatableOverride"/> NO SE RESTAURA NUNCA y no hay un solo
+    ''' <para>EXISTE PORQUE <see cref="SetTranslatableOverride"/> NO SE RESTAURA NUNCA y no hay un solo
     ''' sitio en el árbol que lo devuelva. El diálogo de Save ESP lo llamaba con la elección del combo, que
     ''' es una decisión TRANSITORIA de escritura, y esa elección quedaba de global para el resto de la
     ''' sesión. El daño concreto: guardás el NPC A en cp1251 y después abrís Save para el NPC B en un
@@ -310,8 +306,8 @@ Public Module PluginEncodingSettings
         End SyncLock
     End Sub
 
-    ''' <summary>Manual override for Translatable encoding. Mirror of xeInit.pas -cp-trans / -cp command-line param.
-    ''' <para>⛔ NO SE RESTAURA: es el equivalente del parámetro de línea de comandos, o sea una decisión
+    ''' <summary>Override manual de la encoding Translatable, equivalente a un parametro de linea de comandos.
+    ''' <para>NO SE RESTAURA: es el equivalente del parámetro de línea de comandos, o sea una decisión
     ''' de arranque para toda la corrida. Cualquier uso TRANSITORIO (un diálogo, un guardado puntual) tiene
     ''' que ir por <see cref="PushTranslatableOverride"/>, o la elección se filtra a todo lo que venga
     ''' después.</para></summary>
@@ -324,7 +320,7 @@ Public Module PluginEncodingSettings
         End SyncLock
     End Sub
 
-    ''' <summary>Manual override for General encoding. Mirror of xeInit.pas -cp-general command-line param.</summary>
+    ''' <summary>Override manual de la encoding General, equivalente a un parametro de linea de comandos.</summary>
     Public Sub SetGeneralOverride(codePageOrName As String)
         EnsureInitialized()
         Dim enc = ParseEncoding(codePageOrName)
@@ -362,11 +358,11 @@ Public Module PluginEncodingSettings
         End SyncLock
     End Sub
 
-    ''' <summary>Read OverridePluginEncoding.ini from the given directory (typically appdir) and apply
-    ''' Translatable / General / TranslatableInlineFallback overrides. File-based mirror of xEdit's
-    ''' -cp-trans / -cp-general CLI params, matching the SkipEyebrowsTone.ini convention
-    ''' (flat key=value lines, ; or # comments, [sections] ignored, case-insensitive keys).
-    ''' Missing file = no-op.</summary>
+    ''' <summary>Lee OverridePluginEncoding.ini del directorio dado (tipicamente appdir) y aplica los
+    ''' overrides de Translatable / General / TranslatableInlineFallback. Version basada en archivo
+    ''' de esos mismos overrides manuales, con la misma convencion que SkipEyebrowsTone.ini
+    ''' (lineas planas clave=valor, comentarios con ; o #, [secciones] ignoradas, claves sin distinguir mayusculas).
+    ''' Archivo ausente = no-op.</summary>
     Public Sub ApplyOverrideIni(iniDirectory As String)
         If String.IsNullOrEmpty(iniDirectory) Then Return
         Dim iniPath = IO.Path.Combine(iniDirectory, "OverridePluginEncoding.ini")
@@ -399,12 +395,11 @@ Public Module PluginEncodingSettings
     End Sub
 
     ''' <summary>
-    ''' Decode bytes for an inline string subrecord using an explicit per-file encoding override
-    ''' (typically from TES4 SNAM `&lt;cp:XXXX&gt;`). Mirror of TwbStringDef.ToStringNative
-    ''' (wbInterface.pas:16480-16567) — single-shot decode via bsdGetEncoding precedence
-    ''' (wbInterface.pas:23519-23535: per-file beats global). xEdit does NOT chain to a fallback
-    ''' encoding for inline strings; on decoder failure it produces a hex+error string. We
-    ''' return "" instead (the rest of the parser/UI handles empty strings gracefully).
+    ''' Decodifica bytes de un subrecord de string inline usando un override de encoding explicito
+    ''' por archivo (tipicamente del `&lt;cp:XXXX&gt;` del SNAM de TES4). Decodificacion de un solo
+    ''' intento: el override por archivo le gana al global, sin encadenar a una encoding de
+    ''' fallback. Si el decoder falla devolvemos "" (el resto del parser/UI maneja strings vacios
+    ''' sin problema).
     ''' </summary>
     Public Function DecodeWithEncoding(data As Byte(), offset As Integer, count As Integer, primary As Encoding) As String
         If data Is Nothing OrElse count <= 0 Then Return ""
@@ -422,16 +417,15 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Decode bytes for an inline TRANSLATABLE string (FULL/SHRT/ATTX in a non-localized plugin)
-    ''' using the global Translatable encoding, WITH an inline fallback to the sLanguage codepage.
+    ''' Decodifica bytes de un string TRADUCIBLE inline (FULL/SHRT/ATTX en un plugin no localizado)
+    ''' usando la encoding Translatable global, CON un fallback inline al codepage del sLanguage.
     '''
-    ''' DIVERGENCE FROM xEdit (deliberate improvement): xEdit's ToStringNative is single-shot
-    ''' (wbInterface.pas:16514) — on a non-UTF-8 inline string it dumps hex+error. We instead retry
-    ''' with the sLanguage codepage (_translatableInlineFallback), mirroring the .STRINGS sidecar
-    ''' fallback. This is SAFE: the fallback only runs inside the Catch, i.e. only when the primary
-    ''' ALREADY failed (where xEdit/we would otherwise yield garbage). It never changes a value the
-    ''' primary decoded successfully. Covers FO4 plugins whose FULL/etc are in a legacy codepage
-    ''' (Korean CP949, Russian cp1251, …) while keeping UTF-8 plugins correct.
+    ''' Mejora deliberada sobre un decode de un solo intento: en vez de rendirnos ante un string
+    ''' inline que no es UTF-8, reintentamos con el codepage del sLanguage (_translatableInlineFallback),
+    ''' igual que el fallback del sidecar .STRINGS. Esto es SEGURO: el fallback solo corre dentro del
+    ''' Catch, o sea solo cuando el primario YA fallo (donde de otro modo el resultado seria basura).
+    ''' Nunca cambia un valor que el primario ya decodifico bien. Cubre plugins de FO4 cuyo FULL/etc
+    ''' esta en un codepage legado (coreano CP949, ruso cp1251, …) sin afectar los plugins UTF-8.
     ''' </summary>
     Public Function DecodeTranslatable(data As Byte(), offset As Integer, count As Integer) As String
         If data Is Nothing OrElse count <= 0 Then Return ""
@@ -459,22 +453,21 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Decode bytes for a NON-translatable inline string subrecord using the General encoding.
-    ''' Mirror of TwbStringDef.ToStringNative for fields where dfTranslatable is NOT set:
-    ''' bsdGetEncoding (wbInterface.pas:23530-23533) returns wbEncoding (General, cp1252 for FO4),
-    ''' not wbEncodingTrans. Used for EDID (wbStringKC cpOverride) and other cpNormal/cpOverride
-    ''' string fields. Single-shot, no fallback chain (same as the translatable path).
+    ''' Decodifica bytes de un subrecord de string inline NO traducible usando la encoding General.
+    ''' Para campos marcados como no traducibles el encoding a usar es siempre el General
+    ''' (cp1252 para FO4), nunca el Translatable. Se usa para EDID y otros campos de string normales
+    ''' u overrideables. Un solo intento, sin cadena de fallback (igual que el camino traducible).
     ''' </summary>
     Public Function DecodeGeneral(data As Byte(), offset As Integer, count As Integer) As String
         Return DecodeWithEncoding(data, offset, count, General)
     End Function
 
     ''' <summary>
-    ''' Encode string to bytes using Translatable encoding. Mirror of TwbStringDef.FromStringNative
-    ''' (wbInterface.pas:16322) — single call to encoding.GetBytes with Delphi-default replacement
-    ''' fallback (silent '?' for unencodable chars). UX layer (conflict check in NpcOverrideSaver)
-    ''' detects conflicts BEFORE the writer runs, so silent '?' only happens if validation is bypassed.
-    ''' Use for cpTranslate fields (FULL/SHRT/DESC/ATTX/combo-FULL).
+    ''' Codifica un string a bytes usando la encoding Translatable. Una sola llamada a
+    ''' encoding.GetBytes con fallback de reemplazo silencioso ('?' para caracteres no codificables).
+    ''' La capa de UX (chequeo de conflictos en NpcOverrideSaver) detecta conflictos ANTES de que
+    ''' corra el writer, asi que el '?' silencioso solo pasa si se salteo la validacion.
+    ''' Usar para campos traducibles (FULL/SHRT/DESC/ATTX/combo-FULL).
     ''' </summary>
     Public Function EncodeTranslatable(value As String) As Byte()
         If String.IsNullOrEmpty(value) Then Return Array.Empty(Of Byte)()
@@ -482,11 +475,11 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Encode string to bytes using the General (non-translatable) encoding (cp1252 for FO4).
-    ''' Mirror of TwbStringDef.FromStringNative for fields where dfTranslatable is NOT set:
-    ''' bsdGetEncoding returns wbEncoding (General), not wbEncodingTrans. Use for cpOverride/cpNormal
-    ''' string fields: EDID, ATKE (Attack Event), ATKT (Description), DSTA (Sequence Name),
-    ''' DMDL (Model FileName). Delphi-default replacement fallback (silent '?').
+    ''' Codifica un string a bytes usando la encoding General (no traducible, cp1252 para FO4).
+    ''' Para campos marcados como no traducibles el encoding a usar es siempre el General, nunca el
+    ''' Translatable. Usar para campos de string normales/overrideables: EDID, ATKE (Attack Event),
+    ''' ATKT (Description), DSTA (Sequence Name), DMDL (Model FileName). Fallback de reemplazo
+    ''' silencioso ('?').
     ''' </summary>
     Public Function EncodeGeneral(value As String) As Byte()
         If String.IsNullOrEmpty(value) Then Return Array.Empty(Of Byte)()
@@ -494,16 +487,15 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>Codifica el NOMBRE DE ARCHIVO de un master (TES4.MAST) y REHÚSA si no sobrevive el viaje.
-    ''' <para>⛔ Acá vivía el peor caso de "lector ≠ escritor" del dominio: los dos writers usaban
+    ''' <para>Acá vivía el peor caso de "lector ≠ escritor" del dominio: los dos writers usaban
     ''' <c>Encoding.ASCII.GetBytes</c>, que SUSTITUYE por <c>?</c> sin lanzar, mientras el lector decodifica el
-    ''' MAST con la General (<see cref="DecodeGeneral"/>, PluginReader.ReadTES4) porque xEdit lo declara
-    ''' <c>wbStringForward(MAST,'FileName',0,cpNormal,True)</c> (wbDefinitionsFO4.pas:12475 y el TES4 de
-    ''' wbDefinitionsTES5.pas) ⇒ cpNormal ⇒ <c>wbEncoding</c>. Un master <c>Café Mod.esp</c> salía como
-    ''' <c>Caf? Mod.esp</c>: un archivo que no existe, así que el motor y el CK rechazan el plugin ENTERO y toda
-    ''' referencia a ese mod queda rota.</para>
+    ''' MAST con la General (<see cref="DecodeGeneral"/>, PluginReader.ReadTES4) porque ese campo del formato
+    ''' es un string normal/overrideable ⇒ encoding General, no Translatable. Un master <c>Café Mod.esp</c>
+    ''' salía como <c>Caf? Mod.esp</c>: un archivo que no existe, así que el motor y el CK rechazan el plugin
+    ''' ENTERO y toda referencia a ese mod queda rota.</para>
     ''' <para>El nombre de un master no es texto de presentación: es una CLAVE de búsqueda en disco, así que
     ''' una sustitución silenciosa no degrada, invalida. Por eso, a diferencia de
-    ''' <see cref="EncodeTranslatable"/> (que se queda con el fallback de reemplazo de Delphi porque el chequeo
+    ''' <see cref="EncodeTranslatable"/> (que se queda con el fallback de reemplazo silencioso porque el chequeo
     ''' de conflictos corre antes, aguas arriba), acá el único final aceptable es rehusar con el nombre en el
     ''' mensaje.</para></summary>
     ''' <exception cref="InvalidDataException">El nombre no se puede representar en la codificación General
@@ -523,13 +515,12 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Encode a string that lives INSIDE a VMAD payload (script names, property names, String/
-    ''' Array-of-String values). VMAD is the one place xEdit pins the encoding regardless of game or
-    ''' language: <c>wbEncodingVMAD := TEncoding.UTF8</c> (wbInterface.pas:24295-24310) — NOT the
-    ''' General/cp1252 encoding the rest of the inline strings use. Same for FO4 and Skyrim, so this
-    ''' deliberately does not branch on game.
-    ''' <para>Emits no BOM and no NUL terminator: VMAD strings are u16-length-prefixed, never
-    ''' zero-terminated (wbLenString(..., 2)).</para>
+    ''' Codifica un string que vive DENTRO de un payload VMAD (nombres de script, nombres de
+    ''' propiedad, valores String/Array-of-String). VMAD es el unico lugar donde el encoding esta
+    ''' fijado a UTF-8 sin importar juego o idioma — NO la encoding General/cp1252 que usa el resto
+    ''' de los strings inline. Igual para FO4 y Skyrim, asi que deliberadamente esto no ramifica por juego.
+    ''' <para>No emite BOM ni terminador NUL: los strings de VMAD llevan longitud de 2 bytes como
+    ''' prefijo, nunca terminan en cero.</para>
     ''' </summary>
     Public Function EncodeVmad(value As String) As Byte()
         If String.IsNullOrEmpty(value) Then Return Array.Empty(Of Byte)()
@@ -561,14 +552,10 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' LITERAL mirror of wbEncodingForLanguage (wbInterface.pas:23688-23695):
-    ''' <code>
-    '''   Result := wbLEncodingDefault[aFallback];
-    '''   if wbLEncoding[aFallback].Find(aLanguage, i) then
-    '''     Result := wbLEncoding[aFallback].Objects[i] as TEncoding;
-    ''' </code>
-    ''' fallback=False → primary map + UTF-8 default.
-    ''' fallback=True  → full map + cp1252 default.
+    ''' Resuelve el encoding para un idioma: busca el token en el mapa correspondiente y, si no lo
+    ''' encuentra, devuelve el default de ese mapa.
+    ''' fallback=False → mapa primario + default UTF-8.
+    ''' fallback=True  → mapa completo + default cp1252.
     ''' </summary>
     Public Function GetEncodingForLanguage(language As String, fallback As Boolean) As Encoding
         EnsureInitialized()
@@ -588,10 +575,9 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Lowercase + trim. Mirror of xEdit xeInit.pas:1297
-    '''   s := Trim(ReadString('General', 'sLanguage', '')).ToLower
-    ''' Note: xEdit does NOT remove inner whitespace, but BGS language tokens never contain it
-    ''' so the .Replace(" ", "") here is a no-op for valid inputs.
+    ''' Pasa a minusculas y recorta espacios. Los tokens de idioma de Bethesda nunca traen espacios
+    ''' internos, asi que el .Replace(" ", "") de aca es un no-op para entradas validas; se deja
+    ''' como red de seguridad.
     ''' </summary>
     Public Function NormalizeLanguage(language As String) As String
         Dim normalized = If(language, "").Trim().ToLowerInvariant()
@@ -600,23 +586,15 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Parse a TES4 SNAM Description string and extract the per-file translatable encoding tag
-    ''' if present. Mirror of wbImplementation.pas:5724-5737 reader:
-    ''' <code>
-    '''   s := Header.ElementEditValues['SNAM'].ToLower;
-    '''   i := Pos('&lt;cp:', s);
-    '''   if i &gt; 0 then begin
-    '''     s := Copy(s, i, 9);              // exactly 9 chars: &lt;cp:XXXX&gt;
-    '''     if (Length(s) = 9) and (s[9] = '&gt;') then begin
-    '''       s := Copy(s, 5, 4);            // exactly 4 chars: XXXX
-    '''       flEncodingTrans := wbMBCSEncoding(s);
-    ''' </code>
-    ''' Returns Nothing if the SNAM does not contain a recognizable tag.
+    ''' Parsea un string de Description SNAM de TES4 y extrae, si esta presente, el tag de encoding
+    ''' traducible por archivo. El tag tiene el formato exacto <c>&lt;cp:XXXX&gt;</c>: 9 caracteres,
+    ''' con un slot de 4 caracteres para el codigo de pagina. La busqueda es insensible a mayusculas.
+    ''' Devuelve Nothing si el SNAM no trae un tag reconocible.
     ''' </summary>
     Public Function ParseSnamCpTag(snamValue As String) As Encoding
         If String.IsNullOrEmpty(snamValue) Then Return Nothing
 
-        ' Case-insensitive match — xEdit does ToLower before Pos.
+        ' Busqueda insensible a mayusculas.
         Dim lower = snamValue.ToLowerInvariant()
         Dim idx = lower.IndexOf("<cp:", StringComparison.Ordinal)
         If idx < 0 Then Return Nothing
@@ -628,24 +606,24 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Build the xEdit SNAM-tag literal that records the current Translatable encoding.
-    ''' Mirror of wbImplementation.pas:5724-5737 parser: tag must match `&lt;cp:XXXX&gt;` —
-    ''' 9 chars exact, 4-char code page slot. xEdit accepts:
-    '''   &lt;cp:utf8&gt;   UTF-8 (no dash, "utf8" exactly 4 chars)
-    '''   &lt;cp:1252&gt;   Windows-1252         &lt;cp:1251&gt;   Cyrillic/Russian
-    '''   &lt;cp:1250&gt;   Central European     &lt;cp:1253&gt;   Greek
-    '''   &lt;cp:1254&gt;   Turkish              &lt;cp:1256&gt;   Arabic
-    '''   &lt;cp:0932&gt;   Japanese Shift-JIS   &lt;cp:0936&gt;   Simplified Chinese GBK
-    '''   &lt;cp:0950&gt;   Traditional Chinese Big5
-    ''' Padding works because xEdit calls StrToInt('0936') (accepts leading zeros).
+    ''' Arma el literal del tag SNAM que registra la encoding Translatable actual.
+    ''' El tag tiene que matchear `&lt;cp:XXXX&gt;` — 9 caracteres exactos, con un slot de 4
+    ''' caracteres para el codigo de pagina. Valores reconocidos:
+    '''   &lt;cp:utf8&gt;   UTF-8 (sin guion, "utf8" exactamente 4 caracteres)
+    '''   &lt;cp:1252&gt;   Windows-1252         &lt;cp:1251&gt;   Cirilico/Ruso
+    '''   &lt;cp:1250&gt;   Europa Central       &lt;cp:1253&gt;   Griego
+    '''   &lt;cp:1254&gt;   Turco                &lt;cp:1256&gt;   Arabe
+    '''   &lt;cp:0932&gt;   Japones Shift-JIS    &lt;cp:0936&gt;   Chino Simplificado GBK
+    '''   &lt;cp:0950&gt;   Chino Tradicional Big5
+    ''' El relleno con ceros a la izquierda es valido al parsear el numero.
     '''
-    ''' Returns "" when the current Translatable is UTF-8 (FO4 default per xeInit.pas:1122)
-    ''' — in that case any FO4-aware reader already defaults to UTF-8.
+    ''' Devuelve "" cuando la Translatable actual es UTF-8 (default de FO4) — en ese caso
+    ''' cualquier lector consciente de FO4 ya asume UTF-8 por defecto.
     '''
-    ''' NOTE: xEdit reads this tag but does NOT auto-emit it (user-managed in Description).
-    ''' We emit it as a deliberate divergence (mejora documentada): plugins become readable
-    ''' in xEdit regardless of the destination user's sLanguage. Does NOT help in-game
-    ''' (engine ignores the tag) but improves the xEdit cross-sLanguage round-trip.
+    ''' NOTA: este tag no se auto-genera en otras herramientas del ecosistema (se maneja a mano en
+    ''' la Description); lo emitimos nosotros como una mejora deliberada, para que el plugin se lea
+    ''' correctamente en herramientas de terceros sin importar el idioma configurado en la maquina
+    ''' de destino. No ayuda in-game (el motor ignora el tag).
     ''' </summary>
     Public Function GetTranslatableSnamCpTag() As String
         Dim enc = Translatable
@@ -657,15 +635,15 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' LITERAL mirror of xEdit's sLanguage resolution (xeInit.pas:1274-1320):
-    '''   1. Read sLanguage from wbTheGameIniFileName (Fallout4.ini)
-    '''   2. If wbCustomIniFileName (Fallout4Custom.ini) exists and has sLanguage, override.
-    ''' xEdit does NOT read Fallout4Prefs.ini for sLanguage. Returns "" if neither has it.
-    ''' xEdit applies .ToLower (xeInit.pas:1289); we let SetLanguage's NormalizeLanguage do it.
+    ''' Resuelve sLanguage con la precedencia de INI del juego:
+    '''   1. Lee sLanguage del INI principal del juego (Fallout4.ini)
+    '''   2. Si el INI custom (Fallout4Custom.ini) existe y tiene sLanguage, lo pisa.
+    ''' No se lee Fallout4Prefs.ini para sLanguage. Devuelve "" si ninguno lo tiene.
+    ''' El pasaje a minusculas lo hace despues SetLanguage vía NormalizeLanguage.
     ''' </summary>
     Public Function ReadLanguageFromIni() As String
         Try
-            ' GAME-AWARE INI location (xEdit wbTheGameIniFileName / wbCustomIniFileName): FO4 reads
+            ' Ubicacion del INI segun el juego: FO4 lee
             ' My Games\Fallout4\Fallout4[.Custom].ini; SSE reads My Games\Skyrim Special Edition\
             ' Skyrim[.Custom].ini. Reading the FO4 path for a Skyrim session picked the wrong (or a
             ' missing) sLanguage, so a non-English SSE user got the wrong plugin-string codepage.
@@ -677,7 +655,7 @@ Public Module PluginEncodingSettings
 
             Dim result As String = ReadSLanguageFrom(gameIni)
             Dim customValue As String = ReadSLanguageFrom(customIni)
-            If customValue <> "" Then result = customValue  ' xeInit.pas:1319 — custom overrides game
+            If customValue <> "" Then result = customValue  ' el INI custom pisa al del juego
             Return result
         Catch
             Return ""
@@ -700,7 +678,7 @@ Public Module PluginEncodingSettings
 
     Private Sub EnsureInitialized()
         If _initialized Then Return
-        ' ⛔ EL JUEGO SALE DE LA CONFIG, NO HARDCODEADO. Estaba fijo en Fallout4: el PRIMERO que tocara
+        ' EL JUEGO SALE DE LA CONFIG, NO HARDCODEADO. Estaba fijo en Fallout4: el PRIMERO que tocara
         ' cualquier getter fijaba el mapa de idiomas de FO4 y marcaba `_initialized`, así que en una sesión
         ' de Skyrim el `SetLanguage("english")` posterior fallaba el lookup y caía a UTF-8 — un default
         ' silencioso que decide cómo se DECODIFICA todo el plugin.
@@ -708,10 +686,9 @@ Public Module PluginEncodingSettings
     End Sub
 
     ''' <summary>
-    ''' Get a cached .NET Encoding for the given code page. Mirror of wbMBCSEncoding
-    ''' (wbInterface.pas:23700-23712): TMBCSEncoding.Create(cp) uses Delphi default fallback
-    ''' (replacement '?' for unencodable chars, no exceptions). We do the same — no override
-    ''' of EncoderFallback/DecoderFallback.
+    ''' Devuelve una Encoding de .NET cacheada para el codigo de pagina dado, con el fallback por
+    ''' defecto (reemplazo '?' para caracteres no codificables, sin excepciones) — sin overridear
+    ''' EncoderFallback/DecoderFallback.
     ''' </summary>
     Private Function MBCSEncoding(codePage As Integer) As Encoding
         SyncLock _encodingCache
@@ -729,11 +706,11 @@ Public Module PluginEncodingSettings
     End Function
 
     ''' <summary>
-    ''' Mirror of wbMBCSEncoding(string) overload (wbInterface.pas:23714-23729):
-    '''   utf-8 / utf8 → TEncoding.UTF8
-    '''   windows-XXXX → strip prefix → integer code page
-    '''   65001 → TEncoding.UTF8
-    '''   else → wbMBCSEncoding(int)
+    ''' Parsea el string de encoding pedido:
+    '''   utf-8 / utf8 → UTF-8
+    '''   windows-XXXX → saca el prefijo → codigo de pagina entero
+    '''   65001 → UTF-8
+    '''   si no, se interpreta como codigo de pagina numerico
     ''' </summary>
     Private Function ParseEncoding(value As String) As Encoding
         Dim normalized = If(value, "").Trim().ToLowerInvariant()

@@ -14,11 +14,11 @@ Public Class PluginManager
     ''' <summary>Plugin name -> index in Plugins list (raw load position, counts ALL plugins).</summary>
     Private ReadOnly _pluginIndex As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
 
-    ' Engine-faithful FileID slots (xEdit TwbFileID.CreateFull / CreateLight): full plugins (ESM + full
+    ' Engine-faithful FileID slots: full plugins (ESM + full
     ' ESP) occupy the 0x00-0xFD high-byte space; light (ESL) plugins occupy the 0xFE light space, with a
     ' 12-bit light index in bits 12..23. WITHOUT this split, a full plugin loaded after N ESLs would get
-    ' the wrong high byte (e.g. 0x3D instead of 0x0F), so its records' FormIDs wouldn't match the game /
-    ' xEdit and the saved plugin's references would be mis-encoded. Built once during LoadAllPlugins.
+    ' the wrong high byte (e.g. 0x3D instead of 0x0F), so its records' FormIDs wouldn't match the game
+    ' and the saved plugin's references would be mis-encoded. Built once during LoadAllPlugins.
     Private ReadOnly _fullSlotByName As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly _lightSlotByName As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly _nameByFullSlot As New Dictionary(Of Integer, String)
@@ -206,12 +206,12 @@ Public Class PluginManager
     ''' own. The load set alone does not prevent this: the Preflight validates MEMBERSHIP (all masters
     ''' ticked) but not ORDER, and it lists inactive plugins alphabetically after the active ones, so
     ''' its own "Check Masters" button can tick a master into a position AFTER its dependent.</para>
-    ''' <para>Canonical: xEdit's <c>TwbModuleInfosHelper.SimulateLoad</c> (wbLoadOrder.pas:946-1000)
-    ''' recurses into <c>Load(miMasters[i])</c> BEFORE assigning the module's own load order and FileID,
-    ''' and raises on a master it cannot find (:965) or a circular reference (:958-959). We do the same,
-    ''' including the raising: a set we cannot order is a set we cannot resolve, and continuing on a
-    ''' guess is the failure mode being removed. Callers that deliberately load a partial set (probes,
-    ''' CLI) must list the masters they depend on.</para>
+    ''' <para>El algoritmo recorre cada master ANTES de asignarle a un módulo su propio load order y su
+    ''' FileID, y lanza sobre un master que no encuentra o sobre una referencia circular: un conjunto que
+    ''' no se puede ordenar es un conjunto que no se puede resolver, y seguir adelante sobre una
+    ''' suposición es justamente el modo de falla que esto viene a sacar. Los llamadores que
+    ''' deliberadamente cargan un subconjunto parcial (probes, CLI) tienen que listar los masters de los
+    ''' que dependen.</para>
     ''' <para>STABLE by construction: visiting in the caller's order and appending post-order yields the
     ''' IDENTITY permutation whenever the input is already correctly ordered, so a valid load order is
     ''' never reshuffled and cannot change which override wins.</para></summary>
@@ -224,26 +224,27 @@ Public Class PluginManager
         Next
 
         ' ---- Fase 1: marcar los módulos con masters faltantes y PROPAGAR a sus dependientes ----
-        ' La MECÁNICA es la de xEdit: marcar (wbLoadOrder.pas:400-405), propagar con un punto fijo
-        ' (:414-425) y excluir los marcados (:462-465), de modo que sólo se recorre lo que quedó
-        ' (:1012-1014). El throw queda SÓLO para el ciclo, como :958-959.
+        ' La MECÁNICA: marcar los módulos con un master faltante, propagar esa marca con un punto fijo
+        ' sobre sus dependientes, y excluir del recorrido todo lo marcado, de modo que sólo se recorre lo
+        ' que quedó. El throw queda SÓLO para el ciclo.
         '
-        ' ⚠️ EL PREDICADO NO ES EL MISMO, y hay que decirlo: en xEdit "falta el master" significa NO EXISTE
-        ' EN Data\ — `_ModulesByName` se arma sobre `TDirectory.GetFiles(wbDataPath)` (:290), la carpeta
-        ' entera. Acá significa "no está entre los plugins que se están cargando". La diferencia aparece con
-        ' un master INSTALADO pero DESTILDADO: xEdit no lo marca y encima lo CARGA, porque `SimulateLoad.Load`
-        ' recursa `Load(miMasters[i])` sin mirar mfActive (:962-964) — el filtro por mfActive existe sólo en
-        ' el bucle raíz.
-        ' ⛔ Ese comportamiento NO se replica, y no por preferencia: xEdit ahí es una herramienta de
-        ' MODELADO y el MOTOR hace lo contrario — un plugin cuyo master no está activo no se carga in-game.
+        ' EL PREDICADO NO ES EL MISMO que el de otras herramientas de edición de plugins, y hay que
+        ' decirlo: para ellas "falta el master" significa NO EXISTE EN Data\, mirando la carpeta entera.
+        ' Acá significa "no está entre los plugins que se están cargando". La diferencia aparece con un
+        ' master INSTALADO pero DESTILDADO: esas herramientas no lo marcan como faltante y encima lo
+        ' CARGAN igual, porque su recorrido de dependencias sigue los masters de un módulo sin mirar si
+        ' están activados — ese filtro existe sólo en el bucle raíz de esas herramientas.
+        ' Ese comportamiento NO se replica acá, y no por preferencia: esas herramientas están pensadas
+        ' para MODELADO y el MOTOR hace lo contrario — un plugin cuyo master no está activo no se carga
+        ' in-game.
         ' Nuestro espacio de slots tiene que espejar el del juego (es lo que hace que cada FormID que
         ' resolvemos signifique lo mismo que en runtime), así que arrastrar un plugin no seleccionado
         ' correría el FileID de todo lo que viene después y desalinearía la sesión entera respecto de la
-        ' selección del Preflight y del load order real. Manda el motor, no la herramienta.
-        ' ⛔ El `raise` de SimulateLoad (:966) es una ASERCIÓN sobre ese conjunto ya filtrado, no la política
-        ' ante un master colgado. Abortar la carga entera por un plugin roto se apartaba del canónico Y del
-        ' MOTOR —que tampoco carga el dependiente, pero sí todo lo demás— y encima contradecía lo que esta
-        ' misma función ya hace con los otros dos modos de falla: un archivo ausente se saltea mudo
+        ' selección del Preflight y del load order real. Manda el motor, no la herramienta de edición.
+        ' El `raise` sobre un ciclo es una ASERCIÓN sobre ese conjunto ya filtrado, no la política ante un
+        ' master colgado. Abortar la carga entera por un plugin roto se apartaba del MOTOR —que tampoco
+        ' carga el dependiente, pero sí todo lo demás— y encima contradecía lo que esta misma función ya
+        ' hace con los otros dos modos de falla: un archivo ausente se saltea mudo
         ' (LoadAllPlugins, el File.Exists del fan-out) y un parseo fallido también (readers(i) = Nothing).
         ' Un patch activo cuyo master quedó desinstalado es un estado corriente de modding; convertirlo en
         ' "no carga NADA" rompía el bake-all y el CLI, que no pasan por el gate del Preflight.
@@ -302,8 +303,8 @@ Public Class PluginManager
                 End Sub
 
         For Each r In readers
-            ' Los marcados en fase 1 no entran: es el `Exclude(miFlags, mfActive)` de wbLoadOrder.pas:462-465,
-            ' que es lo que hace que SimulateLoad no los recorra.
+            ' Los marcados en fase 1 no entran: quedan excluidos del recorrido antes de resolver el orden,
+            ' así que nunca se visitan.
             If r IsNot Nothing AndAlso Not broken.Contains(r.FileName) Then visit(r)
         Next
         Return ordered
@@ -335,19 +336,19 @@ Public Class PluginManager
     End Sub
 
     ''' <summary>Highest usable FULL slot. 0xFE is the LIGHT marker and 0xFF is reserved, so the full
-    ''' space stops at 0xFD on both games — exactly xEdit's <c>TwbFileID.MaxFullSlot</c>, which starts at
-    ''' 0xFE and decrements once because light modules are supported (wbInterface.pas:22930-22938).</summary>
+    ''' space stops at 0xFD on both games: the top of the full range decrements once because light
+    ''' modules are supported.</summary>
     Private Const MAX_FULL_SLOT As Integer = &HFD
 
     ''' <summary>Highest usable LIGHT slot: the light index is the 12 bits at 12..23 of a 0xFE FormID,
-    ''' so 0xFFF. Matches xEdit's <c>TwbFileID.MaxLightSlot</c> (wbInterface.pas:22948-22954).</summary>
+    ''' so 0xFFF, the largest value that fits in that 12-bit field.</summary>
     Private Const MAX_LIGHT_SLOT As Integer = &HFFF
 
     ''' <summary>The exception for running out of FileID slots. Without this check the overflow is SILENT
     ''' and total: a full slot of 0xFE would make every FormID of that plugin read back as a LIGHT FormID
     ''' (0xFE is the light marker), and a light slot above 0xFFF would shift straight through the 12-bit
-    ''' field into the high byte and destroy the marker itself. xEdit raises here too — 'Too many light
-    ''' modules' / 'Too many full modules', wbLoadOrder.pas:975-986.</summary>
+    ''' field into the high byte and destroy the marker itself. This mirrors the engine's own hard cap on
+    ''' plugin count — 'too many light modules' / 'too many full modules'.</summary>
     Private Shared Function SlotSpaceExhausted(reader As PluginReader, slot As Integer, isLight As Boolean) As InvalidOperationException
         Return New InvalidOperationException(
             $"Too many {If(isLight, "light", "full")} plugins: '{reader.FileName}' would need " &
@@ -426,7 +427,7 @@ Public Class PluginManager
         Try
             Dim existingIdx As Integer = -1
             If _pluginIndex.TryGetValue(reader.FileName, existingIdx) Then
-                ' Re-save to a plugin already loaded this session. ⛔ Do NOT unconditionally re-slot.
+                ' Re-save to a plugin already loaded this session. Do NOT unconditionally re-slot.
                 ' DropSlotAssignment + AssignFileIdSlot hands out NextSlotIndex = max+1, so a plugin
                 ' that was not the LAST of its slot space gets a brand new slot and every one of its
                 ' self records changes global FormID. Measured consequences: the post-save readback
@@ -470,7 +471,7 @@ Public Class PluginManager
 
     ''' <summary>Resolve a file-local FormID to a global FormID using the plugin's master list. The
     ''' global high byte follows the engine FileID scheme — full plugins use (fullSlot &lt;&lt; 24);
-    ''' light (ESL) plugins use the 0xFE light space — so it matches the game / xEdit even when ESLs
+    ''' light (ESL) plugins use the 0xFE light space — so it matches the game even when ESLs
     ''' precede the owner in load order.</summary>
     Public Function ResolveFormID(localFormID As UInteger, plugin As PluginReader) As UInteger
         _rwLock.EnterReadLock()
@@ -478,16 +479,15 @@ Public Class PluginManager
             Dim masterIndex = CInt(localFormID >> 24)
             Dim objectID = localFormID And &HFFFFFFUI
 
-            ' ⛔ RANGO HARDCODED. Primera rama del canónico `TwbFile.FileFormIDtoLoadOrderFormID`
-            ' (wbImplementation.pas:3460-3473), que faltaba entera acá:
-            '     if Result.ObjectID < $800 then
-            '       if GetAllowHardcodedRangeUse then begin
-            '         if Result.IsHardcoded then Exit;            // pasa SIN TOCAR
-            '       end else begin
-            '         Result.FileID := TwbFileID.Null; Exit;      // ⇒ GAME MASTER
-            '       end;
+            ' RANGO HARDCODED. Esta rama faltaba entera acá. La regla completa:
+            '     si el object id es < 0x800:
+            '       si el archivo permite el rango hardcoded:
+            '         si el FormID entero también es < 0x800, pasa SIN TOCAR
+            '         (si no, cae al mapeo normal)
+            '       si no lo permite:
+            '         el resultado ES el master del juego (FileID nulo)
             ' Son TRES casos, no dos, y el del medio CAE al mapeo normal:
-            '   (a) permitido + FormID entero < 0x800 (IsHardcoded, wbInterface.pas:22718-22721) ⇒ tal cual;
+            '   (a) permitido + FormID entero < 0x800 (hardcoded) ⇒ tal cual;
             '   (b) permitido + FileID != 0 ⇒ sigue de largo, el archivo posee records ahí legítimamente;
             '   (c) NO permitido ⇒ FileID := 0. En espacio de load order el slot 0 es el master del juego,
             '       y como el objectID ya es < 0x800 el resultado ES el objectID.
@@ -504,8 +504,8 @@ Public Class PluginManager
 
             Dim owner As PluginReader = Nothing
             If masterIndex < plugin.Masters.Count Then
-                ' Reference into one of this plugin's masters. The master index is full-style (xEdit
-                ' LoadOrderFileIDtoFileFileID emits CreateFull(i) even when the master is an ESL).
+                ' Reference into one of this plugin's masters. The master index is always full-style,
+                ' even when the master itself is an ESL.
                 Dim masterName = plugin.Masters(masterIndex)
                 Dim mi As Integer = -1
                 If _pluginIndex.TryGetValue(masterName, mi) Then owner = Plugins(mi)
@@ -522,12 +522,11 @@ Public Class PluginManager
 
     ''' <summary>Build the global FormID for a record owned by <paramref name="owner"/>: full plugins →
     ''' (fullSlot &lt;&lt; 24) | object24; ESL plugins → 0xFE | (lightSlot &lt;&lt; 12) | object12.</summary>
-    ''' <para>⛔ A plugin with NO slot assigned is a broken invariant, not a value to guess at. The
+    ''' <para>A plugin with NO slot assigned is a broken invariant, not a value to guess at. The
     ''' old code used <c>TryGetValue</c> and ignored the result, so a missing slot silently became
     ''' slot <b>0</b> — i.e. the GAME MASTER — and every record of that plugin was handed out as a
-    ''' Fallout4.esm/Skyrim.esm FormID. That is the worst possible default for a failure. xEdit
-    ''' raises instead: <c>EFileNoSlotExecption.Create('File has no slot assigned')</c>
-    ''' (wbImplementation.pas:3457-3459). Both call sites reach here with an owner taken from
+    ''' Fallout4.esm/Skyrim.esm FormID. That is the worst possible default for a failure, so this raises
+    ''' instead. Both call sites reach here with an owner taken from
     ''' <c>_pluginIndex</c>, and <see cref="IndexAndMergePlugin"/>/<see cref="MergeOverridePlugin"/>
     ''' assign the slot BEFORE <see cref="MergeRecords"/> runs, so this throw is an assertion on an
     ''' invariant that holds today — if it ever fires, the bug is ours and upstream.</para>
@@ -555,11 +554,11 @@ Public Class PluginManager
     ''' <summary>FormID global a partir del nombre del plugin y el object id del record. Devuelve 0 si el
     ''' plugin no está cargado.
     ''' <para>Tolera las DOS formas que circulan por el proyecto: el object id PELADO (12 bits útiles en un ESL,
-    ''' 24 en uno completo — la convención del CK, de xEdit y de los JSON de f4ee) y el "local de 24 bits" de
+    ''' 24 en uno completo — la convención del CK y de los JSON de f4ee) y el "local de 24 bits" de
     ''' LooksMenu, que en un ESL trae además el light slot en los bits 12..23. <see cref="MakeGlobalFormID"/>
     ''' enmascara al ancho del dueño, así que las dos entran al mismo resultado y un identificador viejo con el
     ''' slot embebido sigue resolviendo sin migración.</para>
-    ''' <para>⛔ Acá había DOS funciones públicas con el cuerpo IDÉNTICO —ésta y
+    ''' <para>Acá había DOS funciones públicas con el cuerpo IDÉNTICO —ésta y
     ''' <c>GlobalFormIDFromIdentifierLocal</c>— y un doc que afirmaba que se comportaban distinto. La diferencia
     ''' existió mientras la segunda hacía un OR crudo de 0xFE, y dejó de existir cuando pasó a delegar en
     ''' <see cref="MakeGlobalFormID"/>; el doc quedó describiendo un comportamiento muerto, que es peor que no
@@ -620,7 +619,7 @@ Public Class PluginManager
     ''' orden en que este manager lo mergeó — partición por grupo master, orden topológico por masters y
     ''' exclusión de los que tienen masters faltantes YA aplicados. Es el eje de OVERRIDE: a mayor índice,
     ''' más tarde carga y más pisa (last-override-wins de <c>MergeRecords</c>).
-    ''' <para>⛔ NO es el FileID slot. El slot está PARTICIONADO en full (0x00..0xFD) y light (0xFE + 12 bits)
+    ''' <para>NO es el FileID slot. El slot está PARTICIONADO en full (0x00..0xFD) y light (0xFE + 12 bits)
     ''' y es lo que viaja en el FormID; para eso están <see cref="GetPluginNameByLoadOrderIndex"/> y
     ''' <see cref="GetOriginatingPluginName"/>. Dos plugins distintos pueden tener el mismo número de slot
     ''' (uno full, uno light) pero nunca la misma posición efectiva.</para>
@@ -660,8 +659,8 @@ Public Class PluginManager
     '''    the master.
     ''' 2) Light slot (high byte 0xFE): the FormID encodes a light-slot index in bits
     '''    12..23 (0xFExxxYYY where xxx = ESL slot, YYY = ObjectID). The master is the
-    '''    N-th plugin with the ESL flag set, in load order — same algorithm xEdit uses
-    '''    [TwbFile.LoadOrderFileIDtoFileFileID, wbImplementation.pas:3441-3444].
+    '''    N-th plugin with the ESL flag set, in load order — the same algorithm the engine's own
+    '''    FileID scheme uses.
     '''
     ''' Returns "" when the FormID's slot can't be resolved (load order doesn't have a
     ''' plugin in that position, or fewer ESLs than the slot index demands).</summary>
@@ -686,7 +685,7 @@ Public Class PluginManager
     ''' lanza (su pasada de descubrimiento garantiza que todo dueño ya está en la MAST, así que es una
     ''' aserción) y el saver simplemente no anota nada (el master del NPC recién se suma en ESE guardado,
     ''' o sea que es un caso legítimo y frecuente).
-    ''' <para>⛔ Por eso el resultado NO es un <c>UInteger?</c>: en VB el ternario <c>If(x, 0UI)</c> sobre
+    ''' <para>Por eso el resultado NO es un <c>UInteger?</c>: en VB el ternario <c>If(x, 0UI)</c> sobre
     ''' un Nullable colapsa Nothing con 0 y devuelve HasValue=True, y 0 es un FormID local VÁLIDO (slot 0
     ''' = game master, object 0). Un enum + ByRef no tiene esa trampa. Ver 00-reglas-vb-trampas-que-me-comi.</para></summary>
     Public Enum FileLocalMapResult
@@ -700,14 +699,14 @@ Public Class PluginManager
 
     ''' <summary>Índice nombre→POSICIÓN de una lista de masters, para <see cref="TryMapGlobalToFileLocal"/>.
     ''' <para>La posición sale del recorrido, no del <c>Count</c> del diccionario: un MAST con una entrada
-    ''' repetida (no lo producen ni el CK ni xEdit, pero un archivo editado a mano sí) haría que el
+    ''' repetida (no lo producen ni el CK ni las herramientas de edición habituales, pero un archivo
+    ''' editado a mano sí) haría que el
     ''' diccionario se quedara corto y corriera el índice de todos los masters siguientes. Por la misma
     ''' razón el "self index" que espera <see cref="TryMapGlobalToFileLocal"/> es el <c>Count</c> de la
     ''' LISTA, que se pasa aparte.</para>
-    ''' <para>⛔ Ante un nombre REPETIDO gana la ÚLTIMA posición, porque es lo que hace el canónico:
-    ''' <c>LoadOrderFileIDtoFileFileID</c> recorre <c>for var i := Pred(GetMasterCount) <b>downto 0</b> …
-    ''' Exit(CreateFull(i))</c> (wbImplementation.pas:4982-4984), o sea de atrás para adelante, y el
-    ''' primero que corta es el de índice más alto.</para></summary>
+    ''' <para>Ante un nombre REPETIDO gana la ÚLTIMA posición, porque es lo que hace el motor: recorre
+    ''' la lista de masters de atrás para adelante y se queda con el primer índice que encuentra, o sea
+    ''' el más alto.</para></summary>
     Public Shared Function BuildMasterIndex(masters As IEnumerable(Of String)) As Dictionary(Of String, Integer)
         Dim idx As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
         If masters Is Nothing Then Return idx
@@ -725,20 +724,20 @@ Public Class PluginManager
     ''' (numeración local: el byte alto es un índice en ESA MAST). Es LA conversión entre las dos
     ''' numeraciones, y vive acá una sola vez.
     '''
-    ''' <para>⛔ Existía DOS veces, con la misma aritmética y distinta lista de masters: el remapper de
+    ''' <para>Existía DOS veces, con la misma aritmética y distinta lista de masters: el remapper de
     ''' <c>SaveNpcEspWriter</c> (contra la MAST NUEVA que se está escribiendo) y
     ''' <c>NpcOverrideSaver.MapGlobalToLocalInPlugin</c> (contra la MAST VIEJA del disco). La copia del
     ''' saver además resolvía mal el caso "el dueño no está en la MAST": lo trataba como SELF, que es la
     ''' respuesta correcta sólo cuando el dueño ES el archivo destino. Con un master todavía ausente daba
     ''' un FormID local que colisiona con los records propios del archivo (los drafts arrancan en 0x800 y
-    ''' los records nuevos de cualquier mod también, por la convención del CK — xEdit
-    ''' <c>TwbFile.NewFormID</c>, wbImplementation.pas:5092), y ese FormID se usaba para DESCARTAR
+    ''' los records nuevos de cualquier mod también, por la convención del CK), y ese FormID se usaba
+    ''' para DESCARTAR
     ''' records al preservar.</para>
     '''
     ''' <para>El ancho del object id lo decide el ENCODING DE ORIGEN, no el destino: un global light es
     ''' <c>0xFE | lightSlot&lt;&lt;12 | object12</c>, así que enmascarar con 0xFFFFFF conservaría los bits del
-    ''' slot. La salida es siempre full-form (<c>idx &lt;&lt; 24 | object</c>), igual que xEdit, que referencia
-    ''' masters ESL con <c>CreateFull(i)</c>.</para></summary>
+    ''' slot. La salida es siempre full-form (<c>idx &lt;&lt; 24 | object</c>), igual que el motor, que
+    ''' referencia a los masters ESL como si fueran full.</para></summary>
     ''' <param name="masterCount">Cantidad de entradas de la MAST — el "self index", o sea el byte alto de
     ''' los records propios del archivo. Va aparte del diccionario a propósito: con un MAST que repita un
     ''' nombre, <c>masterIndex.Count</c> sería menor que la cantidad real de entradas.</param>
@@ -750,9 +749,8 @@ Public Class PluginManager
         localFormID = 0UI
 
         ' Un FormID HARDCODED (object id < 0x800) pasa SIN TOCAR: no pertenece a ningún archivo, lo define
-        ' el motor. Es la primera línea del canónico — `TwbFile.LoadOrderFormIDtoFileFormID`
-        ' (wbImplementation.pas:4990-4995) hace `if aFormID.IsHardcoded then Exit`, con
-        ' `IsHardcoded = _FormID < $800` (wbInterface.pas:22718-22721).
+        ' el motor. Es la primera comprobación de la conversión: un FormID se considera hardcoded cuando
+        ' su valor entero es menor que 0x800, y en ese caso se devuelve sin tocar.
         If globalFormID < &H800UI Then
             localFormID = globalFormID
             Return FileLocalMapResult.Ok
@@ -796,8 +794,8 @@ Public Class PluginManager
 
         If rec IsNot Nothing AndAlso rec.SourcePluginIsLocalized AndAlso rec.SourcePluginName <> "" AndAlso sr.Data.Length >= 4 Then
             Dim stringId = BitConverter.ToUInt32(sr.Data, 0)
-            ' lstring ID 0 is the canonical "no string" sentinel (an ABSENT/empty translatable field) — xEdit shows
-            ' it BLANK, it is NOT an error. Returning the "<Error: Unknown lstring ID 00000000>" placeholder here was
+            ' lstring ID 0 is the canonical "no string" sentinel (an ABSENT/empty translatable field) — it
+            ' should render BLANK, it is NOT an error. Returning the "<Error: Unknown lstring ID 00000000>" placeholder here was
             ' the bug: that human-readable placeholder got stored as the field's TEXT (e.g. ARMO DESC / FULL) and then
             ' re-emitted verbatim on save, so an override of a record whose DESC is a 0-id sprouted a bogus description.
             ' Only a NON-ZERO id that fails to resolve is a real error (missing STRINGS sidecar).
@@ -810,8 +808,8 @@ Public Class PluginManager
         End If
 
         ' Per-file translatable encoding (from TES4 SNAM <cp:XXXX>) takes precedence over the
-        ' global PluginEncodingSettings.Translatable. Mirror of bsdGetEncoding precedence
-        ' (wbInterface.pas:23519-23535): aElement._File.Encoding[translatable] beats wbEncodingTrans.
+        ' global PluginEncodingSettings.Translatable: the file's own declared encoding for translatable
+        ' fields beats the global default.
         If rec IsNot Nothing AndAlso rec.SourcePluginTranslatableEncoding IsNot Nothing Then
             Dim len = sr.Data.Length
             If len > 0 AndAlso sr.Data(len - 1) = 0 Then len -= 1
@@ -888,7 +886,7 @@ Public Class PluginManager
     ''' loaded solely so <see cref="RaceCompatibilityCatalog"/> can read the VMAD of the quests that carry
     ''' RaceCompatibility's GenericRaceController (8 quests in a COtR load order, out of thousands). Quests are
     ''' heavy records (aliases, conditions, dialogue) and nothing else in the app touches them, so keeping them
-    ''' resident is pure waste. ⚠ If a future feature needs QUST at runtime (scripts, aliases, stages), remove the
+    ''' resident is pure waste. If a future feature needs QUST at runtime (scripts, aliases, stages), remove the
     ''' DropRecordsOfType("QUST") call in MainForm instead of re-adding a second load pass.</summary>
     Public Sub DropRecordsOfType(sig As String)
         If String.IsNullOrEmpty(sig) Then Return
@@ -954,8 +952,8 @@ Public Class PluginManager
 
     ''' <summary>The masters <paramref name="pluginName"/> transitively depends on that are NOT loaded,
     ''' in discovery order and without duplicates. Empty when the closure is satisfied.
-    ''' <para>Transitive on purpose: xEdit propagates <c>mfMastersMissing</c> up the dependency graph
-    ''' (wbLoadOrder.pas:418-421), so a master whose own master is absent poisons its dependents too.
+    ''' <para>Transitive on purpose: the missing-master mark propagates up the dependency graph, so a
+    ''' master whose own master is absent poisons its dependents too.
     ''' Returns empty for a plugin that is not loaded at all — that is a different, blunter problem and
     ''' <see cref="IsLoaded"/> is the question to ask first.</para></summary>
     Public Function MissingMastersOf(pluginName As String) As List(Of String)
@@ -997,7 +995,7 @@ Public Class PluginManager
         ' Si el override no incluye un subrecord que el master sí tenía, el subrecord
         ' queda EFECTIVAMENTE BORRADO en el record final — NO se hereda. Eso es lo que
         ' permite a un mod tipo CBBEHeadRearFix.esp "limpiar" un TNAM que CBBE.esp puso.
-        ' Lo que xEdit muestra como "valor heredado" en columnas de override es display-only;
+        ' Lo que otras herramientas de edición muestran como "valor heredado" en columnas de override es display-only;
         ' el binario del override no contiene ese subrecord.
         ' Intento previo de subrecord-level merge: REVERTIDO. Era un invento mío que rompía
         ' el caso CBBEHeadRearFix (heredaba TNAM=SkinHeadRearCBBE de CBBE.esp pisando la
@@ -1105,8 +1103,8 @@ Public Class PluginManager
     Public Shared OfficialPluginsOnly As Boolean = False
 
     ''' <summary>Plugin oficial de Bethesda (vanilla + DLC FO4/SSE + master VR + Creation Club cc*). Lo demás
-    ''' = mod del usuario. Los .esm de VR son oficiales por definición: xEdit los mete en wbOfficialDLC
-    ''' (wbDefinitionsTES5.pas:11239 / wbDefinitionsFO4.pas:13722), la misma lista que los DLC. Sin ellos acá,
+    ''' = mod del usuario. Los .esm de VR son oficiales por definición: van en la misma lista de
+    ''' oficiales que los DLC. Sin ellos acá,
     ''' <see cref="FilterOfficialIfRequested"/> (CLI --vanillaonly) borraría el implícito de VR del load order.</summary>
     Public Shared Function IsOfficialPlugin(name As String) As Boolean
         If String.IsNullOrEmpty(name) Then Return False
@@ -1130,7 +1128,7 @@ Public Class PluginManager
     ''' <para>skee la reconstruye al leer como <c>modIndex &lt;&gt; 0xFE ? modIndex : (formId &gt;&gt; 12)</c>
     ''' (PresetInterface.cpp:993), que es la misma expresión: para un light,
     ''' <c>0xFE000000 | lightIndex&lt;&lt;12 | obj12</c> desplazado 12 da <c>0xFE000 | lightIndex</c>.</para>
-    ''' <para>⛔ Sirve para leer una tabla de OTRO load order. NO es un slot de esta sesión: el número que
+    ''' <para>Sirve para leer una tabla de OTRO load order. NO es un slot de esta sesión: el número que
     ''' devuelve sólo tiene sentido contra la tabla del archivo del que salió el FormID.</para></summary>
     Public Shared Function PartialIndexOfFormID(formID As UInteger) As UInteger
         If (formID >> 24) <> &HFEUI Then Return formID >> 24
@@ -1139,11 +1137,11 @@ Public Class PluginManager
 
     ''' <summary>Local FormID used in the FaceGen file name, per CK convention. Full plugins: strip the
     ''' high (load-order) byte (&amp; 0xFFFFFF). ESL/light plugins (high byte 0xFE): ALSO strip the 12-bit
-    ''' light slot, leaving only the 12-bit record (&amp; 0xFFF). Matches the engine/xEdit ESL FileID scheme
+    ''' light slot, leaving only the 12-bit record (&amp; 0xFFF). Matches the engine's ESL FileID scheme
     ''' used by ResolveFormID / ToLocalFormID above (0xFE | lightSlot&lt;&lt;12 | object12). Verified: ESL runtime
     ''' 0xFE032800 → CK writes "00000800" (record 0x800), NOT "00032800"; without the ESL mask the light
     ''' slot leaks into the FaceGen mesh/texture name and the game can't find it. Stateless.
-    ''' <para>⛔ NO confundir con <see cref="PartialIndexOfFormID"/>, justo arriba: aquélla devuelve el
+    ''' <para>NO confundir con <see cref="PartialIndexOfFormID"/>, justo arriba: aquélla devuelve el
     ''' ÍNDICE del plugin y ésta el OBJECT ID del record — las dos mitades complementarias del mismo
     ''' FormID (<c>ModInfo::GetPartialIndex</c> y el inverso de <c>ModInfo::GetFormID</c>).</para></summary>
     Public Shared Function ToFaceGenLocalFormID(globalFormID As UInteger) As UInteger
@@ -1157,16 +1155,16 @@ Public Class PluginManager
     End Function
 
     ''' <summary>True when the configured game executable is the VR build (Fallout4VR.exe / SkyrimVR.exe).
-    ''' This is the SAME discriminator xEdit uses: the VR game modes (gmFO4VR / gmTES5VR) are picked from
-    ''' wbGameExeName ('Fallout4VR' / 'SkyrimVR', xeInit.pas:886,918) and everything else (AppData folder,
-    ''' ini folder) follows from the mode — NOT from which folder happens to exist on disk. So the exe the
-    ''' user pointed at decides which game's files we read; folder existence is only a last-resort fallback.
-    ''' SSE's exe is SkyrimSE.exe and FO4's is Fallout4.exe, so neither matches the VR suffix.</summary>
-    ''' <para>⭐ El discriminador se mudó a <see cref="GamePathsResolver.IdentifyExe"/>, que compara contra los
+    ''' The VR game mode is picked from the exe name ('Fallout4VR' / 'SkyrimVR') and everything else
+    ''' (AppData folder, ini folder) follows from the mode — NOT from which folder happens to exist on
+    ''' disk. So the exe the user pointed at decides which game's files we read; folder existence is only
+    ''' a last-resort fallback. SSE's exe is SkyrimSE.exe and FO4's is Fallout4.exe, so neither matches
+    ''' the VR suffix.</summary>
+    ''' <para>El discriminador se mudó a <see cref="GamePathsResolver.IdentifyExe"/>, que compara contra los
     ''' cuatro nombres canónicos en vez de mirar si la ruta TERMINA en "VR". El criterio viejo daba False
     ''' para un usuario que apuntaba a <c>skse64_loader.exe</c> al lado de <c>SkyrimVR.exe</c> — y de esa
     ''' respuesta cuelga el master implícito de VR del load order.</para>
-    ''' <para>⛔ MEMOIZADO. <c>ResolveFormID</c> lo llama por CADA FormID con object id &lt; 0x800, y por debajo
+    ''' <para>MEMOIZADO. <c>ResolveFormID</c> lo llama por CADA FormID con object id &lt; 0x800, y por debajo
     ''' hace <c>GamePathsResolver.IdentifyExe</c>, que cuando el exe configurado no es uno de los cuatro
     ''' canónicos (caso REAL y documentado: <c>f4se_loader.exe</c>) prueba hasta cuatro <c>File.Exists</c>.
     ''' MEDIDO por el revisor, 200k llamadas: 0,095 µs con <c>Fallout4.exe</c> contra <b>5,6 µs</b> con
@@ -1189,8 +1187,8 @@ Public Class PluginManager
     End Function
 
     ''' <summary>Resolves the LocalAppData game directory that holds Plugins.txt / loadorder.txt.
-    ''' The folder is xEdit's wbGameName2 (xeInit.pas:579 builds Plugins.txt as LocalAppData + wbGameName2 +
-    ''' '\Plugins.txt'): flat "Fallout4" / "Skyrim Special Edition", VR "Fallout4VR" / "Skyrim VR".
+    ''' The folder is named after the game itself, directly under LocalAppData: flat "Fallout4" /
+    ''' "Skyrim Special Edition", VR "Fallout4VR" / "Skyrim VR", with Plugins.txt right inside it.
     ''' PREFERENCE FOLLOWS THE EXE (<see cref="IsVrBuild"/>): a VR exe reads the VR folder first and only
     ''' falls back to the flat one if the VR folder is absent; a flat exe does the reverse. Previously the
     ''' flat folder always won when it existed, so a VR user with both games installed got the FLAT game's
@@ -1211,7 +1209,7 @@ Public Class PluginManager
     ''' <summary>"" cuando la ubicación del load order está resuelta; si no, la explicación en inglés para
     ''' mostrarle al usuario.
     '''
-    ''' <para>⛔ Existe porque el modo de falla de todo esto es MUDO: sin Plugins.txt,
+    ''' <para>Existe porque el modo de falla de todo esto es MUDO: sin Plugins.txt,
     ''' <see cref="ReadActiveLoadOrder"/> devuelve los masters implícitos y nada más, o sea una lista
     ''' perfectamente válida que representa un juego sin un solo mod. Ningún caller podía distinguir eso de
     ''' "el usuario efectivamente no tiene mods". Ahora sí.</para></summary>
@@ -1222,20 +1220,20 @@ Public Class PluginManager
     End Function
 
     ''' <summary>Resolves the Documents\My Games directory that holds the game .ini files
-    ''' (xEdit wbMyGamesTheGamePath = 'My Games\' + wbGameName2, xeInit.pas:500). Same VR-first-by-exe rule
+    ''' ('My Games\' + the game's own folder name). Same VR-first-by-exe rule
     ''' as <see cref="ResolveGameAppDataDir"/>. NOTE: only the FOLDER carries the VR suffix — the ini FILE
-    ''' names come from wbGameName (xeInit.pas:513,526), i.e. FO4VR still reads Fallout4[Custom].ini and
+    ''' names follow the base (non-VR) game name instead, i.e. FO4VR still reads Fallout4[Custom].ini and
     ''' SkyrimVR still reads Skyrim[Custom].ini. Use <see cref="ResolveGameIniPath"/> to build a full path.</summary>
     Public Shared Function ResolveGameIniDir() As String
         Return GamePathsResolver.Resolve().IniDir
     End Function
 
     ''' <summary>Full path of an ini file (<paramref name="iniFileName"/> = "Fallout4.ini",
-    ''' "SkyrimCustom.ini", …) inside <see cref="ResolveGameIniDir"/>. Extra VR rule, verbatim from xEdit
-    ''' (xeInit.pas:515-517, comment "VR games don't create ini file in My Games by default, use the one in
-    ''' the game folder"): for a VR build, if the ini is NOT in My Games, fall back to the game root — the
+    ''' "SkyrimCustom.ini", …) inside <see cref="ResolveGameIniDir"/>. Extra VR rule: VR builds don't
+    ''' create the ini file in My Games by default, they use the one in the game folder instead — so for
+    ''' a VR build, if the ini is NOT in My Games, fall back to the game root — the
     ''' folder that contains Data, i.e. the exe's own folder. Returns the My Games path when nothing exists.</summary>
-    ''' <para>⚠️ Ahora puede devolver "" (carpeta de inis sin resolver). Los dos consumidores
+    ''' <para>Ahora puede devolver "" (carpeta de inis sin resolver). Los dos consumidores
     ''' (<c>PluginEncodingSettings.ReadSLanguageFrom</c> y <c>LocalizedStrings</c>) ya arrancan con un
     ''' <c>File.Exists</c> que trata "" como ausente, que es la semántica correcta: sin ini no hay
     ''' <c>sLanguage</c> y se cae al default del juego, igual que antes cuando el archivo no existía.</para>
@@ -1244,15 +1242,12 @@ Public Class PluginManager
     End Function
 
     ''' <summary>Si está instalado el plugin VRESL, que es lo que le agrega soporte de light/update a los builds
-    ''' de VR. Canónico xeInit.pas:1057-1059 (SkyrimVR) y 1069-1071 (FO4VR):
-    ''' <code>
-    ''' wbVRESL                 := (wbGameMode in [gmTES5VR]) and FileExists(wbDataPath + 'SKSE\Plugins\skyrimvresl.dll');
-    ''' wbHasAddedLightSupport  := wbVRESL;
-    ''' wbHasAddedUpdateSupport := wbVRESL;
-    ''' </code>
-    ''' <para>⛔ Es UN SOLO booleano del que cuelgan las DOS capacidades. Por eso vive en una función sola y
+    ''' de VR. La ley: en un build VR, si existe el dll de VRESL en la carpeta de scripts del juego, eso
+    ''' habilita a la vez el soporte de plugins light y el de plugins "update" (0x100); sin VRESL ninguno
+    ''' de los dos existe en VR.
+    ''' <para>Es UN SOLO booleano del que cuelgan las DOS capacidades. Por eso vive en una función sola y
     ''' <see cref="LightIsSupported"/> y <see cref="UpdateIsSupported"/> la llaman: si algún día cambia la
-    ''' detección, cambia para las dos, como en el canónico.</para></summary>
+    ''' detección, cambia para las dos.</para></summary>
     Private Shared Function VreslInstalled(dataPath As String) As Boolean
         If Not IsVrBuild() Then Return False
         If String.IsNullOrEmpty(dataPath) Then Return False
@@ -1262,55 +1257,50 @@ Public Class PluginManager
         Return File.Exists(dll)
     End Function
 
-    ''' <summary>Réplica de <c>wbIsLightSupported</c> (wbInterface.pas:5602):
-    ''' <c>(gmSSE, gmEnderalSE, gmFO4, gmSF1) or wbHasAddedLightSupport</c>. Nuestros dos juegos planos están en
-    ''' la lista; los dos de VR NO, y ahí depende de <see cref="VreslInstalled"/>.</summary>
+    ''' <summary>Ley de soporte de plugins light: los juegos planos (FO4, SSE) lo soportan siempre;
+    ''' los dos de VR NO por defecto, y ahí depende de <see cref="VreslInstalled"/>.</summary>
     Private Shared Function LightIsSupported(dataPath As String) As Boolean
-        If Not IsVrBuild() Then Return True          ' gmFO4 / gmSSE: soportado siempre
+        If Not IsVrBuild() Then Return True          ' FO4 / SSE planos: soportado siempre
         Return VreslInstalled(dataPath)
     End Function
 
-    ''' <summary>Réplica de <c>wbIsUpdateSupported</c> (wbInterface.pas:5615-5618):
-    ''' <c>(gmSF1) or wbHasAddedUpdateSupport</c>.
-    ''' <para>⛔ Ojo con la asimetría respecto de <see cref="LightIsSupported"/>: acá los juegos planos
-    ''' <b>NO</b> están en la lista (sólo Starfield, que no soportamos), así que el flag 0x100 sólo significa
-    ''' algo en VR con VRESL. En FO4/SSE normales <c>wbMastersForFile</c> devuelve <c>IsUpdate = False</c>
-    ''' SIEMPRE, esté o no puesto el bit — el corte está en <c>TwbFile.GetIsUpdate</c>
-    ''' (wbImplementation.pas:4364, <c>if not wbIsUpdateSupported ... then Exit(False)</c>), no en el header.
-    ''' MEDIDO 2026-08-18: 0 de 71 plugins de FO4 y 0 de 103 de SSE tienen 0x100, así que hoy es inerte en los
-    ''' dos rigs — pero la ley se implementa igual, porque VR con VRESL sí lo activa.</para>
-    ''' <para><c>wbPseudoUpdate</c> del canónico NO se replica: es un switch de línea de comandos de xEdit
-    ''' (<c>-PseudoUpdate</c>, xeInit.pas:1405-1406), no una propiedad del juego.</para></summary>
+    ''' <summary>Ley de soporte del flag "update" (0x100): sólo Starfield (que no soportamos) lo trae
+    ''' de fábrica; en el resto de los juegos depende de VRESL.
+    ''' <para>Ojo con la asimetría respecto de <see cref="LightIsSupported"/>: acá los juegos planos
+    ''' <b>NO</b> están soportados por defecto, así que el flag 0x100 sólo significa
+    ''' algo en VR con VRESL. En FO4/SSE normales el resultado de IsUpdate es False
+    ''' SIEMPRE, esté o no puesto el bit — el corte está en si el juego soporta el flag en absoluto, no
+    ''' en el header. MEDIDO 2026-08-18: 0 de 71 plugins de FO4 y 0 de 103 de SSE tienen 0x100, así que hoy
+    ''' es inerte en los dos rigs — pero la ley se implementa igual, porque VR con VRESL sí lo activa.</para>
+    ''' <para>El "pseudo update" que existe en otras herramientas de edición de plugins NO se replica acá:
+    ''' es un modo de línea de comandos propio de esas herramientas, no una propiedad del juego.</para></summary>
     Private Shared Function UpdateIsSupported(dataPath As String) As Boolean
         Return VreslInstalled(dataPath)              ' gmSF1 no lo soportamos
     End Function
 
     ''' <summary>Si el plugin ocupa un slot LIGHT (0xFE + índice de 12 bits) en vez de un slot full. Ley
-    ''' canónica COMPLETA, wbLoadOrder.pas:358-369:
-    ''' <code>
-    ''' if IsUpdate then begin
-    '''   if IsLight or IsMedium then IsUpdate := False;
-    ''' end else
-    '''   if miExtension in [meESL] then Include(miFlags, mfHasLightFlag);   ' &lt;- SOLO en el ELSE
-    ''' if IsLight then Include(miFlags, mfHasLightFlag);
-    ''' </code>
+    ''' canónica COMPLETA: al entrar, si el plugin es "update" (0x100, y el juego soporta ese flag), un
+    ''' flag de light o de medium en el header hace que deje de contar como update — pero esa comprobación
+    ''' es lo ÚNICO que pasa en esa rama: la marca por EXTENSIÓN (.esl) sólo se evalúa en la rama
+    ''' contraria (plugin que NO era update al entrar). Aparte y sin condición, el flag 0x200 (IsLight)
+    ''' siempre marca el plugin como light.
     ''' o sea <c>light = 0x200 OR (extensión .esl AND NOT IsUpdate)</c>.
-    ''' <para>⛔ El <c>if/else</c> despacha sobre el valor de <c>IsUpdate</c> AL ENTRAR: aunque adentro se lo
-    ''' ponga en False, la rama <c>else</c> ya no corre. Por eso un <c>.esl</c> con 0x100 NO se vuelve light por
-    ''' su extensión. Leer sólo <c>if IsLight then ...</c> y escribir un OR simple pierde esa condición.</para>
-    ''' <para>⛔ Y <c>IsUpdate</c> no es el bit pelado: <c>TwbFile.GetIsUpdate</c> (wbImplementation.pas:4364)
-    ''' arranca con <c>if not wbIsUpdateSupported ... then Exit(False)</c>. En FO4/SSE no-VR eso es siempre
+    ''' <para>La marca por extensión se decide sobre el valor de <c>IsUpdate</c> AL ENTRAR: aunque el propio
+    ''' chequeo de arriba lo vuelva False adentro de la rama "update", esa rama ya no vuelve a evaluar la
+    ''' condición de extensión. Por eso un <c>.esl</c> con 0x100 NO se vuelve light por su extensión. Leer
+    ''' sólo el flag 0x200 y escribir un OR simple pierde esa condición.</para>
+    ''' <para>Y <c>IsUpdate</c> no es el bit pelado: primero se comprueba si el juego soporta el flag 0x100
+    ''' en absoluto. En FO4/SSE no-VR eso es siempre
     ''' False ⇒ ahí la ley COLAPSA al OR simple y las dos formas coinciden. La diferencia aparece sólo en VR con
     ''' VRESL. Ver <see cref="UpdateIsSupported"/>.</para>
-    ''' <para><c>IsMedium</c> no se replica: <c>wbIsMediumSupported</c> es sólo Starfield
-    ''' (wbInterface.pas:5596-5598), y sólo influye para volver <c>IsUpdate</c> False — o sea que ignorarlo no
+    ''' <para>El flag "medium" (Starfield) no se replica: sólo aplica a un juego que no soportamos, y
+    ''' sólo influye para volver <c>IsUpdate</c> False — o sea que ignorarlo no
     ''' puede darnos un light de más, sólo evitarnos uno de menos en un juego que no soportamos.</para></summary>
     ''' <param name="headerFlags">El campo de flags del registro TES4, crudo.</param>
     Public Shared Function IsLightSlot(dataPath As String, name As String, headerFlags As UInteger) As Boolean
-        ' ⛔⛔ GUARDA QUE ENVUELVE A LOS DOS DISYUNTOS, no sólo al de la extensión. `TwbFile.GetIsLight`
-        ' (wbImplementation.pas:4332) arranca con `if not wbIsLightSupported or GetIsNotPlugin then Exit(False)`,
-        ' o sea que SIN soporte light NINGÚN plugin es light — ni siquiera con el flag 0x200 puesto. Y en
-        ' wbLoadOrder.pas:325-330 un `.esl` sin soporte ni siquiera entra al load order.
+        ' GUARDA QUE ENVUELVE A LOS DOS DISYUNTOS, no sólo al de la extensión: SIN soporte light NINGÚN
+        ' plugin es light — ni siquiera con el flag 0x200 puesto — y un .esl sin soporte ni siquiera
+        ' entra al load order.
         ' Es la MISMA guarda que ya estaba en IsMasterGroup y que acá se me había pasado: en un rig VR sin el
         ' plugin VRESL, darle un slot light a un .esl lo mete en el espacio 0xFE y corre a TODOS los full que
         ' vengan después — cada FormID que poseen resuelve al archivo equivocado.
@@ -1330,7 +1320,7 @@ Public Class PluginManager
     ''' barrido por activación. Lineal en la cantidad de <c>.esp</c>: ~23 ms con 250.</para></summary>
     ''' <summary>Discriminante de la memo de grupo: "flat" / "vr" / "vr+esl". Va en la CLAVE porque el valor
     ''' depende de VR y de VRESL, no sólo del archivo.
-    ''' <para>⛔ NO se memoiza. Lo intenté y rompió <c>Case17c</c> del LoadOrderActivatorProbe: el memo cachea
+    ''' <para>NO se memoiza. Lo intenté y rompió <c>Case17c</c> del LoadOrderActivatorProbe: el memo cachea
     ''' un estado del FILESYSTEM (si está el dll de VRESL) que puede cambiar mientras el proceso vive — en el
     ''' caso del gate, el dll se planta DESPUÉS de la primera consulta y el memo se quedaba con "vr". Un memo
     ''' que oculta un cambio de disco es el mismo defecto que la clave sin variante que vino a arreglar.</para>
@@ -1344,65 +1334,57 @@ Public Class PluginManager
     Private Shared ReadOnly _masterGroupMemo As New Dictionary(Of String, Boolean?)(StringComparer.OrdinalIgnoreCase)
 
     ''' <summary>Si un archivo puede usar el RANGO HARDCODED, o sea object ids por debajo de <c>0x800</c>.
-    ''' Réplica de <c>TwbFile.GetAllowHardcodedRangeUse</c> (wbImplementation.pas:3941-3961):
-    ''' <code>
-    ''' Result :=
-    '''   ( (wbGameMode = gmTES3)
-    '''     or (((wbGameMode in [gmSSE, gmEnderalSE]) or ((wbGameMode = gmTES5VR) and wbHasAddedLightSupport))
-    '''          and (GetVersion &gt;= 1.709))
-    '''     or ((wbGameMode = gmFO4) and (GetVersion &gt;= 1.0))
-    '''     or (wbGameMode = gmSF1) )
-    '''   and (GetMasterCount(True) &gt; 0);
-    ''' </code>
-    ''' <para>⛔ Es POR ARCHIVO, no una constante del juego: depende de la VERSION DEL HEDR de ESE plugin y de
+    ''' La ley: el archivo necesita al menos un master; SSE (o SSE en VR con VRESL) lo permite desde la
+    ''' versión 1.709 del HEDR, FO4 (no VR) desde la versión 1.0, y FO4VR nunca lo permite.
+    ''' <para>Es POR ARCHIVO, no una constante del juego: depende de la VERSION DEL HEDR de ESE plugin y de
     ''' que tenga al menos un master. Dos plugins del mismo juego pueden dar respuestas distintas.</para>
-    ''' <para>⛔⛔ Y es asimétrico en VR, que es donde se pierde al leer rápido:
+    ''' <para>Y es asimétrico en VR, que es donde se pierde al leer rápido:
     ''' <list type="bullet">
-    ''' <item><b>gmFO4VR NO ESTÁ EN LA LISTA.</b> Sólo <c>gmFO4</c>. Un FO4VR jamás permite el rango, tenga la
+    ''' <item><b>FO4VR nunca permite el rango.</b> Sólo el FO4 plano lo permite, tenga la
     ''' versión que tenga.</item>
-    ''' <item><c>gmTES5VR</c> sí está, pero exige <c>wbHasAddedLightSupport</c>, o sea el plugin VRESL
+    ''' <item>SSE en VR sí puede permitirlo, pero exige que esté instalado el plugin VRESL
     ''' (<see cref="VreslInstalled"/>).</item>
     ''' </list></para>
-    ''' <para><c>gmTES3</c> y <c>gmSF1</c> no se replican: no son juegos que esta app soporte.</para>
+    ''' <para>Los demás juegos a los que se aplica esta ley en general (Morrowind, Starfield) no se
+    ''' replican acá: no son juegos que esta app soporte.</para>
     ''' <para>Esta es la ÚNICA implementación de la ley. La usan el LECTOR
     ''' (<see cref="ResolveFormID"/>, con la versión leída del archivo) y el ESCRITOR
     ''' (<c>PluginWriter.AllowsHardcodedRange</c>, con la versión que emitimos). Un lector y un escritor con
     ''' dos copias de esta regla se desincronizan sin que nada avise.</para></summary>
     ''' <param name="hedrVersion">Campo Version del HEDR del archivo en cuestión.</param>
-    ''' <param name="masterCount">Cuántos masters lista. <c>GetMasterCount(True) &gt; 0</c> del canónico.</param>
+    ''' <param name="masterCount">Cuántos masters lista. La ley exige que sea mayor que cero.</param>
     ''' <param name="dataPath">Carpeta Data, sólo para detectar VRESL en un rig de VR.</param>
     Public Shared Function AllowsHardcodedRange(hedrVersion As Single, masterCount As Integer,
                                                 dataPath As String) As Boolean
         If masterCount <= 0 Then Return False
         Dim isVr As Boolean = IsVrBuild()
         If Config_App.Current.Game = Config_App.Game_Enum.Skyrim Then
-            ' gmSSE / gmEnderalSE siempre; gmTES5VR sólo con VRESL.
+            ' SSE plano siempre; SSE en VR sólo con VRESL.
             If isVr AndAlso Not VreslInstalled(dataPath) Then Return False
             Return hedrVersion >= 1.709F
         End If
-        ' gmFO4 sí, gmFO4VR NO — el canónico no lo lista.
+        ' FO4 plano sí, FO4VR NO — la ley no lo contempla.
         If isVr Then Return False
         Return hedrVersion >= 1.0F
     End Function
 
-    ''' <summary>Si el plugin pertenece al GRUPO MASTER del motor. Ley canónica, wbLoadOrder.pas:326-347,
-    ''' que son DOS disyuntos independientes y hay que evaluar los dos:
+    ''' <summary>Si el plugin pertenece al GRUPO MASTER del motor. Ley canónica: son DOS disyuntos
+    ''' independientes y hay que evaluar los dos:
     ''' <code>
-    ''' if wbGameMode >= gmFO4 then
-    '''   if miExtension in [meESM, meESL] then Include(miFlags, mfIsESM);  ' (A) por EXTENSIÓN
-    ''' if IsESM then Include(miFlags, mfIsESM);                            ' (B) por FLAG 0x01 del header
+    ''' si el juego es FO4 o SSE (no una versión más vieja de la familia) y la extensión es .esm o
+    ''' .esl: (A) grupo master
+    ''' si el flag 0x01 (ESM) del header está puesto: (B) grupo master
     ''' </code>
-    ''' <para>(A) aplica a nuestros dos juegos: el enum es
-    ''' <c>gmTES3, gmTES4, gmTES4R, gmFO3, gmFNV, gmTES5, gmEnderal, gmFO4, gmSSE, ...</c>
-    ''' (wbInterface.pas:4877), o sea gmFO4=7 y gmSSE=8, los dos &gt;= gmFO4. Pero para <c>.esl</c> hay además
+    ''' <para>(A) aplica a nuestros dos juegos, que son los dos más nuevos de la familia que soportamos.
+    ''' Pero para <c>.esl</c> hay además
     ''' la precondición de <see cref="LightIsSupported"/> — ver ahí, es la parte que se me pasó por leer sólo
     ''' el cuerpo del <c>if</c> y no su guarda.</para>
-    ''' <para>⛔ El flag LIGHT (0x200) por sí solo NO alcanza: mfHasLightFlag y mfIsESM son banderas distintas
-    ''' y el comparador (:202-216) sólo mira mfIsESM. Un <c>.esp</c> con 0x200 y sin 0x01 es light y NO es grupo
+    ''' <para>El flag LIGHT (0x200) por sí solo NO alcanza: es una bandera distinta de la de grupo master,
+    ''' y el comparador de orden sólo mira la de grupo master. Un <c>.esp</c> con 0x200 y sin 0x01 es light y NO es grupo
     ''' master; un <c>.esp</c> con 0x201 SÍ lo es por (B). MEDIDO en el rig del usuario: los 30
     ''' <c>WM_ClonePack*.esp</c> son 0x201 (grupo master con extensión .esp) y <c>ShowCollectibles.esl</c> es
     ''' 0x200 (light SIN flag ESM, grupo master por (A)). Mirar un solo disyunto se equivoca en los dos.</para>
-    ''' <para>⛔ Un archivo que no está en Data devuelve <c>Nothing</c>: no se puede saber su grupo, y el motor
+    ''' <para>Un archivo que no está en Data devuelve <c>Nothing</c>: no se puede saber su grupo, y el motor
     ''' tampoco lo carga. NO es lo mismo que False — ver <see cref="StablePartitionMasterGroup"/>, que por eso
     ''' no lo mueve.</para>
     ''' <para>Esta es la ÚNICA implementación de la ley; <c>LoadOrderActivator</c> la llama, no la copia
@@ -1417,7 +1399,7 @@ Public Class PluginManager
         Dim fi As New FileInfo(full)
         If fi.Exists Then
             ' Clave por IDENTIDAD del archivo: si lo reescribimos, la memo caduca sola.
-            ' ⛔ La variante VR entra en la CLAVE: el valor depende de LightIsSupported (VR + VRESL), no sólo
+            ' La variante VR entra en la CLAVE: el valor depende de LightIsSupported (VR + VRESL), no sólo
             ' del archivo. Sin esto, cambiar el exe de Fallout4.exe a Fallout4VR.exe deja las mismas rutas,
             ' mtime y tamaño, y la memo seguiría devolviendo la respuesta del juego anterior.
             Dim variante = GroupMemoVariant(dataPath)
@@ -1454,25 +1436,25 @@ Public Class PluginManager
         Return value
     End Function
 
-    ''' <summary>Aplica el 3er desempate del comparador canónico (wbLoadOrder.pas:202-216): dentro del
+    ''' <summary>Aplica el 3er desempate del comparador de orden de carga: dentro del
     ''' tramo NO forzado, todo el GRUPO MASTER va antes que todo el resto, y adentro de cada grupo se
     ''' conserva el orden previo (partición ESTABLE).
     ''' <code>
-    ''' if ((mfIsESM in a.miFlags) = (mfIsESM in b.miFlags)) then
-    '''     Result := CmpI32(a.miPluginsTxtIndex, b.miPluginsTxtIndex)   ' mismo grupo: orden literal
-    ''' else if mfIsESM in a.miFlags then Result := -1 else Result := 1  ' distinto grupo: master primero
+    ''' si a y b están en el mismo grupo (los dos master o los dos no-master): gana el orden literal
+    ''' de Plugins.txt
+    ''' si no: gana el que sea del grupo master
     ''' </code>
-    ''' <para>⛔ Es <c>Public</c> y toma <paramref name="dataPath"/> explícito, las dos cosas a propósito.
+    ''' <para>Es <c>Public</c> y toma <paramref name="dataPath"/> explícito, las dos cosas a propósito.
     ''' Explícito, porque leyendo <c>Config_App.Current.DataPath</c> por su cuenta era INGATEABLE: el revisor
     ''' invirtió la partición entera y el probe siguió dando 33/33. Pública, porque no la usa sólo el lector:
     ''' el Preflight de NPC Manager ordena con ELLA la selección del usuario, que es otro Plugins.txt virtual.
     ''' Una ley, una implementación (00-reglas-paridad-canonica §15).</para>
-    ''' <para>⛔ Arranca en <paramref name="forcedCount"/> y no antes: los masters implícitos y el
-    ''' Creation Club se ordenan por <c>miOfficialIndex</c> / <c>miCCIndex</c>, que en el comparador
-    ''' están ANTES del grupo (wbLoadOrder.pas:198-201). Particionarlos los reordenaría contra el motor.</para>
-    ''' <para>⛔ Un plugin cuyo grupo NO se puede determinar (no está en Data) se queda CLAVADO en su índice:
-    ''' no entra en ningún bucket. Para el motor ese módulo no existe (wbLoadOrder.pas:338-339 hace
-    ''' <c>Continue</c> si no puede leer el header), pero la app sí lo conserva en la lista, y esta lista es la
+    ''' <para>Arranca en <paramref name="forcedCount"/> y no antes: los masters implícitos y el
+    ''' Creation Club se ordenan por su propio índice forzado, que en el comparador
+    ''' está ANTES del grupo. Particionarlos los reordenaría contra el motor.</para>
+    ''' <para>Un plugin cuyo grupo NO se puede determinar (no está en Data) se queda CLAVADO en su índice:
+    ''' no entra en ningún bucket. Para el motor ese módulo no existe (el propio comparador lo salta si no
+    ''' puede leer el header), pero la app sí lo conserva en la lista, y esta lista es la
     ''' que <c>FilesDictionary.BuildArchivePriority</c> usa para dar prioridad a los BA2/BSA POR POSICIÓN. Si lo
     ''' mandáramos al fondo con los no-masters, el <c>.ba2</c> de un plugin desinstalado pasaría a ganarle el
     ''' conflicto de texturas a todos los mods que estaban después. <c>Nothing</c> no es False ni True: es
@@ -1527,14 +1509,14 @@ Public Class PluginManager
     Public Shared Function ReadActiveLoadOrder() As List(Of String)
         Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
         Dim gameDir = ResolveGameAppDataDir()
-        ' ⛔ "" cuando no se resolvió, y Path.Combine("", "x") devuelve "x" — o sea una ruta RELATIVA que se
+        ' "" cuando no se resolvió, y Path.Combine("", "x") devuelve "x" — o sea una ruta RELATIVA que se
         ' resolvería contra el directorio de trabajo y podría llegar a encontrar un archivo que no es. Con
         ' rutas vacías no se arma nada: el load order queda en los implícitos y LoadOrderSourceProblem() lo
         ' explica.
         Dim pluginsTxt = ResolvePluginsTxtPath()
 
         ' Implicit masters: el engine carga estos siempre primero, no aparecen en Plugins.txt.
-        ' Spec verificada contra ejecución vanilla y herramientas LOOT/xEdit.
+        ' Spec verificada contra ejecución vanilla y contra LOOT.
         Dim implicits As List(Of String)
         If isFO4 Then
             implicits = New List(Of String) From {
@@ -1557,16 +1539,15 @@ Public Class PluginManager
             }
         End If
 
-        ' VR builds ship one extra force-loaded master, AFTER the DLCs (xEdit appends it to the tail of
-        ' wbOfficialDLC: 'SkyrimVR.esm' wbDefinitionsTES5.pas:11236-11239, 'Fallout4_VR.esm'
-        ' wbDefinitionsFO4.pas:13720-13722; wbLoadOrder.pas:487-493 then force-marks every wbOfficialDLC
-        ' entry mfActive with an official index, i.e. loaded regardless of Plugins.txt = implicit).
+        ' VR builds ship one extra force-loaded master, AFTER the DLCs: 'SkyrimVR.esm' for Skyrim,
+        ' 'Fallout4_VR.esm' for FO4, appended to the tail of the official/DLC list and force-loaded
+        ' regardless of Plugins.txt, exactly like the other implicit masters.
         ' Without it, every user mod in a VR session sits one index off the engine's, and VR mods that
         ' master this .esm can't resolve their FormIDs.
         If IsVrBuild() Then implicits.Add(If(isFO4, "Fallout4_VR.esm", "SkyrimVR.esm"))
 
-        ' Creation Club content: Fallout4.ccc lives next to Fallout4.exe (xEdit
-        ' xeMainForm.pas:5067-5080 derives it as ExtractFilePath(ExcludeTrailingPathDelimiter(wbDataPath))).
+        ' Creation Club content: Fallout4.ccc lives next to Fallout4.exe (the same folder that contains
+        ' Data, one level up from wherever the game data path points).
         ' Each non-empty non-comment line is a plugin name the engine force-loads after the DLCs.
         ' Skyrim has its own Skyrim.ccc; same shape. Only attempted if FO4ExePath resolved.
         Dim ccEntries As New List(Of String)
@@ -1630,7 +1611,7 @@ Public Class PluginManager
                 ordered.Add(p)
             Next
 
-            ' ⛔ Fin del tramo FORZADO (miOfficialIndex + miCCIndex). Todo lo que sigue se particiona
+            ' Fin del tramo FORZADO (implícitos + Creation Club). Todo lo que sigue se particiona
             ' por grupo master al final; ver StablePartitionMasterGroup.
             Dim forcedCount = ordered.Count
 

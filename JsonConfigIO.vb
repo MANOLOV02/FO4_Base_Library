@@ -18,23 +18,23 @@ Public Module JsonConfigIO
 
     ''' <summary>Reporta un error de IO de config SIN colgar una corrida sin nadie mirando.
     '''
-    ''' <para>⛔⛔ EL <c>MessageBox</c> ERA INCONDICIONAL, Y ESTO LO LLAMAN LOS CLI. <c>LoadConfig</c> corre
+    ''' <para>EL <c>MessageBox</c> ERA INCONDICIONAL, Y ESTO LO LLAMAN LOS CLI. <c>LoadConfig</c> corre
     ''' desde <c>WM_Cli</c>, <c>FO4_FaceTint_CLI</c>, <c>BakeAllRunner</c> y los arneses, y desde que la
     ''' reparacion de opciones GRABA, un config no escribible (instalacion en Program Files, disco lleno,
     ''' archivo de solo lectura) abre un modal en un proceso headless: el batch queda colgado para siempre,
     ''' sin salida y sin log. Un horneado nocturno se pierde entero por un cartel que nadie ve.</para>
-    ''' <para>⛔⛔ Y <c>Application.MessageLoop</c> SOLO NO ALCANZA — era el arreglo a medias. <c>LoadConfig</c>
+    ''' <para>Y <c>Application.MessageLoop</c> SOLO NO ALCANZA — era el arreglo a medias. <c>LoadConfig</c>
     ''' corre en el <c>Main</c> del host, ANTES de <c>Application.Run</c>: en el arranque real de
     ''' NPC_Manager <c>MessageLoop</c> da <b>False</b>, el aviso se iba a <c>stderr</c>, y un ejecutable de
     ''' GUI no tiene consola adjunta ⇒ <b>el mensaje se descartaba entero</b>. Y ese es EXACTAMENTE el
     ''' momento que importa: desde que la migracion de config graba, el escenario que motivo todo esto
     ''' —instalacion en Program Files, archivo de solo lectura— quedaba mudo justo en la GUI.</para>
-    ''' <para>⭐ EL PREDICADO ES "¿ADONDE PUEDO ESCRIBIR?", no "¿en que estado esta el bucle?". Si el proceso
+    ''' <para>EL PREDICADO ES "¿ADONDE PUEDO ESCRIBIR?", no "¿en que estado esta el bucle?". Si el proceso
     ''' NO tiene consola adjunta, la unica salida que existe es un modal — sea antes o despues de
     ''' <c>Application.Run</c>. Si la tiene, es un CLI o un arnes y va a <c>stderr</c>. Los dos casos que el
     ''' arreglo tiene que cubrir salen bien: NPC_Manager arrancando (sin consola ⇒ modal) y un
     ''' <c>--build</c> headless (con consola ⇒ stderr, sin colgar nada).</para></summary>
-    ''' <remarks>⚠️ Se mira TAMBIEN <c>Console.IsErrorRedirected</c>: un orquestador que lanza un CLI con
+    ''' <remarks>Se mira TAMBIEN <c>Console.IsErrorRedirected</c>: un orquestador que lanza un CLI con
     ''' <c>CreateNoWindow = True</c> + <c>RedirectStandardError</c> no tiene ventana de consola, pero SI esta
     ''' capturando stderr — y ahi el modal colgaria el batch igual. Si alguien esta escuchando stderr, se le
     ''' escribe a stderr.</remarks>
@@ -79,7 +79,7 @@ Public Module JsonConfigIO
 
     ''' <summary>Abre el archivo como JSON CRUDO para las migraciones que necesitan claves que el tipo
     ''' actual ya no tiene. Devuelve Nothing si no existe o no parsea — el caller decide.
-    ''' <para>⛔ El <c>JsonDocument</c> es IDisposable: usarlo con <c>Using</c>.</para></summary>
+    ''' <para>El <c>JsonDocument</c> es IDisposable: usarlo con <c>Using</c>.</para></summary>
     Public Function TryOpenRaw(filePath As String) As System.Text.Json.JsonDocument
         Try
             If Not System.IO.File.Exists(filePath) Then Return Nothing

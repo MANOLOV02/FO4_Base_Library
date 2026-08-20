@@ -159,23 +159,23 @@ Public Class Nifcontent_Class_Manolo
 
     ''' <summary>Hermano simétrico de <see cref="SetShapeHidden"/>: APAGA el bit 0 (hidden).
     ''' Único par escritor del bit, para que no haya un <c>Or 1</c> suelto en ningún lado.
-    ''' <para>⛔ <c>And Not</c>, NUNCA asignar un literal: el valor normal lleva otros bits REALES —
+    ''' <para><c>And Not</c>, NUNCA asignar un literal: el valor normal lleva otros bits REALES —
     ''' <c>0x8000E</c> (NoAnimSyncS), <c>SaveExtGeom</c>, <c>MeshLOD_FO4</c>, <c>NoDecals</c>…
     ''' Pisar el campo entero borraría flags que nadie pidió tocar.</para></summary>
     ''' <summary>Quita el shader de la shape y borra su CLAUSURA huérfana. Es la operación "Make helper"
     ''' del editor de WM, pero vive ACÁ porque es cirugía sobre el grafo de bloques del NIF, no UI —
     ''' y porque así un probe puede ejercitar el CÓDIGO REAL en vez de una copia.
-    ''' <para>⛔ NO se usa <c>RemoveUnreferencedBlocks</c>: es un barrido de ARCHIVO ENTERO que se lleva
+    ''' <para>NO se usa <c>RemoveUnreferencedBlocks</c>: es un barrido de ARCHIVO ENTERO que se lleva
     ''' puestos los huérfanos PREEXISTENTES del NIF del usuario (un <c>NiStringExtraData</c> suelto, un
     ''' alpha property desenganchado, controladores muertos — habituales en meshes editadas a mano).
     ''' Esto es el mismo barrido, acotado al subárbol del shader.</para>
-    ''' <para>⛔ TODO POR OBJETO, nunca por índice: <c>RemoveBlock</c> hace <c>Blocks.RemoveAt</c> ANTES
+    ''' <para>TODO POR OBJETO, nunca por índice: <c>RemoveBlock</c> hace <c>Blocks.RemoveAt</c> ANTES
     ''' del fixup y ahí decrementa todo <c>Index &gt; index</c>, así que un índice capturado a través de
     ''' un RemoveBlock apunta a OTRO bloque.</para>
-    ''' <para>⛔ Se usa <c>shader.References</c> como fuente en vez de enumerar campos a mano: ya trae
+    ''' <para>Se usa <c>shader.References</c> como fuente en vez de enumerar campos a mano: ya trae
     ''' texture set + controller + extraData + extraDataList, y el controlador además ENCADENA
     ''' (NextController → interpolador → NiFloatData). Una lista escrita a mano envejece mal.</para>
-    ''' <para>⚠️ Un CICLO no se borra (cada miembro se ve referenciado). Mismo comportamiento que
+    ''' <para>Un CICLO no se borra (cada miembro se ve referenciado). Mismo comportamiento que
     ''' <c>RemoveUnreferencedBlocks</c>, o sea sin regresión.</para>
     ''' <para>Devuelve la cantidad de bloques borrados (shader incluido). 0 = no había shader.</para></summary>
     Public Function RemoveShaderAndOrphanClosure(shape As INiShape) As Integer
@@ -208,7 +208,7 @@ Public Class Nifcontent_Class_Manolo
         Return borrados
     End Function
 
-    ''' <summary>Worklist del borrado de clausura. ⛔ DEDUPE POR REFERENCIA: un bloque puede estar
+    ''' <summary>Worklist del borrado de clausura. DEDUPE POR REFERENCIA: un bloque puede estar
     ''' encolado dos veces (un <c>ExtraDataList</c> que liste el mismo <c>NiExtraData</c> dos veces es
     ''' legal). En la segunda visita ya no está en el archivo, <c>IsBlockReferenced</c> devuelve False, y
     ''' leer sus <c>References</c> resolvería ÍNDICES PODRIDOS al bloque que hoy ocupa esa ranura — la
@@ -352,7 +352,7 @@ Public Class Nifcontent_Class_Manolo
 
         Dim shad = GetShader(shap)
 
-        ' ⛔ CONTRATO, y TIRA — no `Exit Sub`. GetRelatedMaterial (el LECTOR, arriba) sí tolera el shader
+        ' CONTRATO, y TIRA — no `Exit Sub`. GetRelatedMaterial (el LECTOR, arriba) sí tolera el shader
         ' nulo y sintetiza un material vacío; este es el ESCRITOR y su único caller es el camino de
         ' GUARDAR de WM (Editor_Form.Revisa_Material), que devuelve Boolean. Tragarlo en silencio haría
         ' que el usuario apriete Save, la UI cierre como si hubiera guardado, y el material no se escriba
@@ -384,13 +384,13 @@ Public Class Nifcontent_Class_Manolo
                 ' NiAlphaProperty, so we must sync the shape-local alpha state here too.
                 mat.WriteAlphaPropertyToShape(shap, Me)
 
-                ' ⛔⛔ Y EL BIT Cast_Shadows, POR EL MISMO MOTIVO QUE EL ALPHA: es shape-local y el archivo
+                ' Y EL BIT Cast_Shadows, POR EL MISMO MOTIVO QUE EL ALPHA: es shape-local y el archivo
                 ' de material NO puede llevarlo. Sin esto el flag se LEIA del NIF (Deserialize lo siembra en
                 ' `_castShadowsDelNif`) y no se ESCRIBIA NUNCA en Fallout 4 — el usuario lo cambiaba en la
                 ' UI, guardaba, y al recargar volvia el valor viejo. Lector sin escritor: ver
                 ' 00-reglas-paridad-canonica-como-no-cagarla.
                 '
-                ' ⛔ SOLO PARA EL EFFECT SHADER (.bgem), a proposito. Un .bgsm SI tiene el campo
+                ' SOLO PARA EL EFFECT SHADER (.bgem), a proposito. Un .bgsm SI tiene el campo
                 ' CastShadows y es su duenio —el material es reemplazo total del NIF—, asi que escribir
                 ' ademas el bit del shader duplicaria la sede del dato y moveria bytes de todo NIF con
                 ' BGSM sin que nadie lo haya pedido. El .bgem no tiene ese campo: para el, el bit del NIF
@@ -1085,7 +1085,7 @@ Public Class Nifcontent_Class_Manolo
     ''' Reindexa <c>NiSkinData.BoneList[].VertexWeights</c> al espacio de vértices posterior a una
     ''' compactación, descartando los pesos de los vértices que se cayeron.
     '''
-    ''' <para>⛔ HACE FALTA AUNQUE YA SE HAYA LLAMADO A <c>SetSkinning</c>. En la familia BSTriShape
+    ''' <para>HACE FALTA AUNQUE YA SE HAYA LLAMADO A <c>SetSkinning</c>. En la familia BSTriShape
     ''' (FO4/SSE) el skin vive DOS VECES: por vértice dentro del vertex data (que es lo que
     ''' <c>BSTriShapeGeometry.SetSkinning</c> escribe) y otra vez en <c>NiSkinData.BoneList</c>, como
     ''' lista de pares (índice de vértice, peso). El adapter NO toca la segunda — sólo la familia

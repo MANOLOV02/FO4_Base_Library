@@ -123,7 +123,7 @@ Public Module DirectXTextureConversionHelper
     End Sub
 
     ''' <summary>Encodea un buffer BGRA8 a un DDS completo (header + payload).
-    ''' <para>⛔ CONTRATO: el llamador NO puede mutar <paramref name="bgraPixels"/> mientras esta función
+    ''' <para>CONTRATO: el llamador NO puede mutar <paramref name="bgraPixels"/> mientras esta función
     ''' no haya vuelto. El buffer no se clona — el wrapper lo fija y lo copia dentro de la misma llamada
     ''' síncrona— y clonarlo costaba 64 MB por encode de 4096². Pasar un buffer que otro hilo está
     ''' escribiendo produce una textura con un estado intermedio, sin error.</para></summary>
@@ -165,7 +165,7 @@ Public Module DirectXTextureConversionHelper
             .AlphaThreshold = alphaThreshold
         }
 
-        ' ⛔ SIN Clone. El wrapper sólo LEE este buffer: lo fija con pin_ptr y lo copia al ScratchImage
+        ' SIN Clone. El wrapper sólo LEE este buffer: lo fija con pin_ptr y lo copia al ScratchImage
         ' dentro de la misma llamada SÍNCRONA, antes de devolver. El clon no protegía de nada — para que
         ' hiciera falta, otro hilo tendría que estar mutando el mismo array mientras esta llamada corre, y
         ' en ese escenario el clon tampoco salva (copiaría un estado intermedio). Lo que sí costaba: 64 MB
@@ -355,7 +355,7 @@ Public Module DirectXTextureConversionHelper
     End Function
     ''' <summary>TEX_COMPRESS_PARALLEL (0x10000000) va SIEMPRE. Los bytes son idénticos al serial —el
     ''' compress BCn es por bloque independiente— así que el único eje es el tiempo.
-    ''' <para>⛔ La justificación que estaba escrita acá ("BC3 90 ms→4 ms") era FALSA, y el modo de falla
+    ''' <para>La justificación que estaba escrita acá ("BC3 90 ms→4 ms") era FALSA, y el modo de falla
     ''' vale más que el número: salía de <c>RunFmtTest</c>, que cronometra el brazo SERIE en la PRIMERA
     ''' llamada del proceso. Medía el arranque en frío (carga del wrapper C++/CLI, factoría WIC, JIT),
     ''' no el códec. Con calentamiento no reproduce ni de lejos.</para>
@@ -375,7 +375,7 @@ Public Module DirectXTextureConversionHelper
     ''' <para>⇒ Se probó derivarlo por formato (prenderlo sólo en BC7) y la medición lo REFUTÓ: no mejora
     ''' el lote y hace perder 1,14–1,21× en una textura grande sola, que es el caso interactivo. Queda
     ''' incondicional, que es lo que la medición sostiene.</para>
-    ''' <para>⛔ NO hay perilla de entorno para apagarlo. La hubo por dos horas y la sacó la revisión de
+    ''' <para>NO hay perilla de entorno para apagarlo. La hubo por dos horas y la sacó la revisión de
     ''' arquitectura, con razón: el valor no se DERIVA de nada, así que una env var no "fija" un valor
     ''' derivado —que es la única variante que <c>00-reglas-app-distribuida</c> habilita— sino que agrega
     ''' un SEGUNDO comportamiento, y su único valor útil era exactamente el de antes. Eso es
@@ -630,7 +630,7 @@ Public Module DirectXTextureConversionHelper
 
     ''' <summary>Concatena los subrecursos en el ORDEN DEL FORMATO DDS: array-major y después mip
     ''' (para cada cara, toda su cadena de mips; después la cara siguiente).
-    ''' <para>⛔ Antes concatenaba en el orden en que venían, que es el orden en que el wrapper los
+    ''' <para>Antes concatenaba en el orden en que venían, que es el orden en que el wrapper los
     ''' EMITE — mip-major. Los dos coinciden con <c>ArraySize = 1</c>, que es todo lo que la app produce,
     ''' y por eso nadie lo vio; con un cubemap el archivo salía con las caras entrelazadas. Medido con la
     ''' fixture <c>huecos</c> del probe (cubemap 32² × 6 caras × 2 mips, cara i marcada con R = 10 + i·40):
@@ -695,7 +695,7 @@ Public Module DirectXTextureConversionHelper
     End Function
 
     ''' <summary>Mapea el resultado del wrapper a los tipos de este módulo.
-    ''' <para>⛔ Antes esto se hacía por REFLEXIÓN: se buscaba el tipo por nombre, se creaba con
+    ''' <para>Antes esto se hacía por REFLEXIÓN: se buscaba el tipo por nombre, se creaba con
     ''' <c>Activator</c>, se seteaba miembro por miembro con <c>SetValue</c> y se invocaba el método con
     ''' <c>MethodInfo.Invoke</c> — todo en CADA llamada, incluido el barrido de <c>GetMethods</c>. El
     ''' módulo ya hacía <c>Imports DirectXTexWrapperCLI</c> y usaba <c>Loader</c> tipado dos líneas más

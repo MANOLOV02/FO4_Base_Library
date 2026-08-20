@@ -97,7 +97,7 @@ Public Class FilesDictionary_class
         Public Property FileDate As Date = Date.MinValue
 
         ''' <summary>SELLO de la generacion de CONTENIDO del archive del que salio este `Index`.
-        ''' <para>⛔ El `Index` es un numero de entrada dentro de UN archive concreto. Cuando el packager
+        ''' <para>El `Index` es un numero de entrada dentro de UN archive concreto. Cuando el packager
         ''' reescribe ese .ba2, los indices cambian — pero un `File_Location` que otro hilo capturo ANTES
         ''' sigue vivo con el indice viejo, y `ExtractToMemory(IndexViejo)` sobre el archive NUEVO devuelve
         ''' LOS BYTES DE OTRO ARCHIVO. Sin excepcion, sin log, y encima se quedan pegados en el cache por
@@ -115,7 +115,7 @@ Public Class FilesDictionary_class
         Friend GenToken As FilesDictionary_class.ArchiveGenToken
 
         ''' <summary>Extrae esta entrada de un archive YA ABIERTO, bajo el sello de generación.
-        ''' <para>⛔ <paramref name="gen0"/> lo trae el LLAMADOR: es la generación que leyó ANTES de abrir o
+        ''' <para><paramref name="gen0"/> lo trae el LLAMADOR: es la generación que leyó ANTES de abrir o
         ''' alquilar el archive. No se calcula acá a propósito — un <c>File_Location</c> guarda el NOMBRE de
         ''' su .ba2, no de qué ARCHIVO salió el <paramref name="pack"/>, así que recomponer la ruta acá
         ''' inventaría un invariante que el tipo no puede sostener.</para>
@@ -133,7 +133,7 @@ Public Class FilesDictionary_class
             End Try
         End Function
 
-        ' ⛔ ACA VIVIA `GetBytesFromOpenArchive`, `Public`, y se BORRO. Recibia un `BethesdaReader` ya abierto
+        ' ACA VIVIA `GetBytesFromOpenArchive`, `Public`, y se BORRO. Recibia un `BethesdaReader` ya abierto
         ' y no podia demostrar nada de lo que hacia falta: ni que ese reader correspondiera al `BA2File` de
         ' esta entrada, ni que se hubiera abierto en la generacion que despues comprobaba, ni que el `Index`
         ' fuera de ese mismo archive. Su sello era DEBIL por construccion y no se podia reforzar desde
@@ -153,18 +153,18 @@ Public Class FilesDictionary_class
             If FilesDictionary_class._bytesCache.TryGetValue(FullPath, weakRef) AndAlso
                weakRef.Datos IsNot Nothing AndAlso weakRef.Datos.TryGetTarget(cached) Then
                 If IsLosseFile Then
-                    ' ⛔ EL CENTINELA SE VERIFICA. Aceptar cualquier valor cacheado bajo este `FullPath` deja
+                    ' EL CENTINELA SE VERIFICA. Aceptar cualquier valor cacheado bajo este `FullPath` deja
                     ' que un suelto consuma bytes publicados por un ARCHIVE: hay una ventana en la que el
                     ' caché tiene los bytes del BA2 y el diccionario ya pasó a un ganador suelto.
                     If weakRef.Token Is Nothing AndAlso weakRef.Gen = FilesDictionary_class.GenSuelto Then Return cached
                 Else
-                    ' ⛔⛔ LA CONDICION ES TRIPLE: cache.Gen == ArchiveGen == GENERACION VIGENTE. Las dos
+                    ' LA CONDICION ES TRIPLE: cache.Gen == ArchiveGen == GENERACION VIGENTE. Las dos
                     ' primeras solas NO alcanzan — son dos copias VIEJAS que siguen coincidiendo entre sí
                     ' después del bump (entrada vieja 4, caché viejo 4, vigente 5) y el acierto pasaba
                     ' devolviendo bytes de la generación anterior. La tercera sale de `GenToken`, que es una
                     ' REFERENCIA al contador vivo: un deref y dos comparaciones de Integer, sin
                     ' `Path.Combine` ni lookup, o sea el acierto de caché sigue sin pagar nada.
-                    ' ⛔⛔ LA IDENTIDAD DEL ARCHIVE VA PRIMERO. Sin ella, dos archives que traen el MISMO
+                    ' LA IDENTIDAD DEL ARCHIVE VA PRIMERO. Sin ella, dos archives que traen el MISMO
                     ' path y están en la MISMA generación (lo normal en un load order modeado: A publica,
                     ' AddEntryResolvingConflict pasa el ganador a B, y la purga del caché ocurre DESPUÉS del
                     ' TryUpdate) pasan las tres comparaciones numéricas y B devuelve los bytes de A.
@@ -185,7 +185,7 @@ Public Class FilesDictionary_class
                 ' O1.2: Use archive reader pool instead of opening/closing each time
                 Dim archivePath = IO.Path.Combine(FO4Path, Me.BA2File)
 
-                ' ⛔⛔ EL SELLO ES UN BRACKET, NO UN CHEQUEO. Mirarlo sólo ANTES deja la ventana entre el
+                ' EL SELLO ES UN BRACKET, NO UN CHEQUEO. Mirarlo sólo ANTES deja la ventana entre el
                 ' chequeo y el extract: otro hilo puede desmontar y reescribir el .ba2 en el medio, y el
                 ' `Index` viejo sobre el archive nuevo devuelve LOS BYTES DE OTRA ENTRADA — y encima se
                 ' cachean. Se lee antes y se RE-LEE después: el contador es MONOTÓNICO (`AddOrUpdate` con
@@ -198,7 +198,7 @@ Public Class FilesDictionary_class
                 Try
                     leased = FilesDictionary_class.LeaseReader(archivePath)
                     result = leased.Reader.ExtractToMemory(Index)
-                    ' ⛔ NADA PUEDE RETORNAR ENTRE EL EXTRACT Y ESTE ReturnReader. Un `Return` temprano acá
+                    ' NADA PUEDE RETORNAR ENTRE EL EXTRACT Y ESTE ReturnReader. Un `Return` temprano acá
                     ' —que es como salió escrito el post-chequeo en la primera versión— no poolea NI dispone:
                     ' el FileStream queda inalcanzable (ni `ArchivePoolReaderCount` lo ve) reteniendo el .ba2
                     ' hasta el finalizer. El cierre del bracket va DESPUÉS del Try.
@@ -274,12 +274,12 @@ Public Class FilesDictionary_class
     Private Shared ReadOnly _appData As New ConcurrentDictionary(Of Type, Object)
 
     ' O1.1: Lazy byte cache with WeakReference — allows GC to reclaim when memory is needed
-    ''' <summary>⛔⛔ CADA VALOR LLEVA LA GENERACION CON LA QUE SE PUBLICO. Sin eso, el acierto de caché
+    ''' <summary>CADA VALOR LLEVA LA GENERACION CON LA QUE SE PUBLICO. Sin eso, el acierto de caché
     ''' esquivaba el sello ENTERO: `GetBytes` devolvía el valor cacheado en su primera línea, antes de mirar
     ''' `ArchiveGen`, así que entre el bump de `UnregisterArchive` y la purga por clave de
     ''' `RemoveDictionaryEntry` —un barrido O(diccionario), cientos de miles de entradas— una lectura seguía
     ''' devolviendo bytes de la generación anterior sin comprobar nada.
-    ''' <para>⛔ ETIQUETAR EL VALOR NO ALCANZA POR SI SOLO. `cache.Gen = File_Location.ArchiveGen` son dos
+    ''' <para>ETIQUETAR EL VALOR NO ALCANZA POR SI SOLO. `cache.Gen = File_Location.ArchiveGen` son dos
     ''' copias que siguen coincidiendo despues de un bump, asi que prueban que son de la MISMA generacion, no
     ''' que esa generacion siga VIGENTE. La comparacion es triple y la tercera pata sale de
     ''' <see cref="File_Location.GenToken"/> —una referencia al contador vivo—, no de `ContentGenOf`: asi el
@@ -292,7 +292,7 @@ Public Class FilesDictionary_class
     Private Const GenSuelto As Integer = Integer.MinValue
 
     ' O1.2: Archive reader pool — reuses BethesdaReader instances to avoid repeated open/close
-    ' ⛔ El pool guarda ADEMAS el instante en que cada reader volvio. Sin eso `DisposeIdleReaders` no
+    ' El pool guarda ADEMAS el instante en que cada reader volvio. Sin eso `DisposeIdleReaders` no
     ' podia distinguir un reader ocioso de uno que se acababa de usar, y vaciaba el pool ENTERO cada 30 s.
     ' Reconstruir un `BethesdaReader` no es gratis: su constructor hace `ListEntries()`, o sea PARSEA LA
     ' TABLA DE ARCHIVOS COMPLETA del BA2 (un BSA de Skyrim son ~100k nombres leidos byte a byte). En un
@@ -306,14 +306,14 @@ Public Class FilesDictionary_class
     ''' cachea lo que extrae en <see cref="_bytesCache"/>, esos bytes equivocados se quedan pegados.
     ''' <para>El epoch se captura EN EL LEASE y se compara al devolver, al re-alquilar y en la limpieza: un
     ''' reader de otra generacion se DESTRUYE, nunca se poolea ni se sirve.</para>
-    ''' <para>⛔⛔ LO QUE ESTO **NO** ARREGLA, y el comentario de los dos packagers afirma que si: que la
+    ''' <para>LO QUE ESTO **NO** ARREGLA, y el comentario de los dos packagers afirma que si: que la
     ''' reescritura del .ba2 quede libre de carreras. Un reader ALQUILADO tiene su `FileStream` abierto
     ''' (`File.OpenRead` ⇒ FileShare.Read) mientras dura el `ExtractToMemory`, y `UnregisterArchive` vuelve
     ''' con ese handle vivo ⇒ el `File.Move`/`Delete` del packager puede seguir fallando. Y un lector que
     ''' entro a `LeaseReader` justo antes del bump abre el archivo que el packager esta por reescribir.
     ''' Cerrar ESO pide exclusion lease↔unregister (un lock por archive), no una generacion. Queda ABIERTO
     ''' y a proposito: es un lock en el camino mas caliente de la app y no se mete sin medirlo.</para>
-    ''' <para>⛔ NUNCA se borra una entrada de acá, tampoco en Unregister. Si se borrara, un reader viejo que
+    ''' <para>NUNCA se borra una entrada de acá, tampoco en Unregister. Si se borrara, un reader viejo que
     ''' vuelve despues compararia contra un contador RECIEN CREADO en 0 y volveria a parecer valido — que es
     ''' exactamente el agujero que esto cierra. Es un Integer por archive.</para></summary>
     Private Shared ReadOnly _archiveEpoch As New ConcurrentDictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
@@ -326,7 +326,7 @@ Public Class FilesDictionary_class
     ''' (`Path.Combine(FO4Path, BA2File)` en el lease; el path que le pasen a Unregister/Register), asi que
     ''' sin normalizar, dos deletreos de la MISMA ruta (`Data\x.ba2` vs `Data\.\x.ba2`) son dos claves y la
     ''' invalidacion no alcanza a los readers que hay que matar.
-    ''' <para>⛔ SOLO se normaliza lo que ya esta COMPLETAMENTE CALIFICADO. `Path.GetFullPath` de una ruta
+    ''' <para>SOLO se normaliza lo que ya esta COMPLETAMENTE CALIFICADO. `Path.GetFullPath` de una ruta
     ''' relativa la resuelve contra `Environment.CurrentDirectory`, que es GLOBAL y lo cambia cualquier
     ''' OpenFileDialog de WinForms (RestoreDirectory viene en False): la clave del lease y la del return
     ''' saldrian distintas si el usuario abre un dialogo en el medio de un bake, y el reader rancio se
@@ -347,7 +347,7 @@ Public Class FilesDictionary_class
         Return key
     End Function
 
-    ''' <summary>⛔⛔ ABRE CON `FileShare.Delete`, NO CON `File.OpenRead`. Es LA razon por la que
+    ''' <summary>ABRE CON `FileShare.Delete`, NO CON `File.OpenRead`. Es LA razon por la que
     ''' <see cref="UnregisterArchive"/> no entregaba lo que sus dos llamadores afirman por escrito
     ''' ("makes the rewrite path race-free"): `File.OpenRead` mapea a `CreateFile` con
     ''' `dwShareMode = FILE_SHARE_READ`, y `File.Move` abre el origen pidiendo acceso DELETE. El kernel
@@ -355,9 +355,10 @@ Public Class FilesDictionary_class
     ''' `STATUS_SHARING_VIOLATION`. Un solo reader alquilado en otro hilo —su `FileStream` vive todo el
     ''' `ExtractToMemory`— hacia fallar el `File.Move` del packager. No es una carrera de tiempos: es un
     ''' invariante del kernel.
-    ''' <para>⛔ EL ARBITRO LECTOR/ESCRITOR DE UN ARCHIVO ES EL SO, NO UN LOCK NUESTRO. Se evaluo un
+    ''' <para>EL ARBITRO LECTOR/ESCRITOR DE UN ARCHIVO ES EL SO, NO UN LOCK NUESTRO. Se evaluo un
     ''' `ReaderWriterLockSlim` por archive y es la capa equivocada: no cubre al OTRO proceso (MO2/USVFS,
-    ''' xEdit, el antivirus), no cubre ningun `FileStream` futuro que alguien se olvide de envolver, y para
+    ''' otras herramientas de edicion de plugins, el antivirus), no cubre ningun `FileStream` futuro que
+    ''' alguien se olvide de envolver, y para
     ''' servir de algo el write lock tendria que abarcar el `Pack` ENTERO — con lo cual RWLS bloquea a los
     ''' lectores nuevos (para no matar de hambre al writer) y el hilo de UI queda clavado los minutos que
     ''' dura el pack.</para>
@@ -378,7 +379,7 @@ Public Class FilesDictionary_class
     ''' eso es un contador aparte. El epoch gobierna los READERS pooleados y por eso lo bumpea tambien
     ''' `RegisterArchive` (montar puede cambiar lo que hay en esa ruta). Este gobierna la validez de los
     ''' INDICES ya repartidos en `File_Location`, y `RegisterArchive` es justamente quien los RE-ESTAMPA.
-    ''' <para>⛔⛔ SI FUERAN EL MISMO CONTADOR, ESTO SE ROMPE EN SILENCIO: `RegisterArchive` bumpea ANTES de
+    ''' <para>SI FUERAN EL MISMO CONTADOR, ESTO SE ROMPE EN SILENCIO: `RegisterArchive` bumpea ANTES de
     ''' su guard de idempotencia (a proposito, porque `_registeredArchives` va por NOMBRE de archivo), asi
     ''' que un segundo `RegisterArchive` del mismo archive bumpearia y saldria por `Exit Sub` SIN volver a
     ''' estampar — y a partir de ahi TODA lectura de ese archive devolveria vacio por el resto de la sesion.
@@ -390,7 +391,7 @@ Public Class FilesDictionary_class
     ''' generacion VIGENTE sin consultar ningun diccionario. Con un Integer copiado en cada lado, dos copias
     ''' viejas coinciden entre si despues de un bump y el chequeo pasa igual — que es exactamente como se
     ''' colo el acierto de cache rancio.
-    ''' <para>⛔ LA REFERENCIA AL TOKEN VIAJA TAMBIEN DENTRO DEL VALOR CACHEADO, no solo en el
+    ''' <para>LA REFERENCIA AL TOKEN VIAJA TAMBIEN DENTRO DEL VALOR CACHEADO, no solo en el
     ''' `File_Location`: es lo unico que identifica DE QUE ARCHIVE salieron esos bytes. Dos archives con el
     ''' mismo path y la misma generacion —lo normal en un load order modeado— pasan cualquier comparacion
     ''' numerica.</para></summary>
@@ -415,7 +416,7 @@ Public Class FilesDictionary_class
     ''' <summary>Qué hacer cuando el sello rechaza una lectura: buscar en el diccionario la entrada VIGENTE
     ''' de ese mismo path y delegarle. Si el archive se re-montó, esa entrada ya está re-estampada y la
     ''' lectura sale bien; si no cambió nada, se devuelve vacío como antes.
-    ''' <para>⛔ NO ES UN LUJO. Devolver vacío a secas se convertía en un fallo PERMANENTE río abajo:
+    ''' <para>NO ES UN LUJO. Devolver vacío a secas se convertía en un fallo PERMANENTE río abajo:
     ''' <c>FaceTintCpuCompositor</c> cachea un "unit negativo" para esa textura y no vuelve a pedírsela al
     ''' diccionario en toda la corrida, así que un pack que caiga entre dos lecturas dejaba texturas sin
     ''' hornear en silencio. El comentario del sello afirmaba que "el diccionario ya tiene la entrada
@@ -475,15 +476,15 @@ Public Class FilesDictionary_class
     ''' </summary>
     Public Const ArchiveSourceOrder_RuntimeRegistered As Integer = Integer.MaxValue - 1
 
-    ''' <summary>⛔ EL CHEQUEO SOLO NO ALCANZA: dos primeros lectores concurrentes lo pasaban los DOS y
+    ''' <summary>EL CHEQUEO SOLO NO ALCANZA: dos primeros lectores concurrentes lo pasaban los DOS y
     ''' creaban dos timers, uno de los cuales quedaba corriendo sin referencia (limpiezas dobles + un timer
     ''' que nadie puede parar). El CAS publica uno solo y el perdedor se destruye SIN haber arrancado — por
     ''' eso el `Start` va despues de ganar y no en la construccion.
-    ''' <para>⛔ La sobrecarga generica va EXPLICITA. Con `Option Strict Off` (que es como compila esto),
+    ''' <para>La sobrecarga generica va EXPLICITA. Con `Option Strict Off` (que es como compila esto),
     ''' `Interlocked.CompareExchange` tambien ofrece la version de `Object`, y esa toma el destino `ByRef
     ''' Object`: VB tendria que materializar un temporal y copiar de vuelta, o sea que el "CAS" correria
     ''' sobre el temporal y volveria a ser una asignacion con carrera.</para>
-    ''' <para>⛔ El handler va envuelto en Try. En .NET moderno una excepcion no atrapada en `Elapsed` puede
+    ''' <para>El handler va envuelto en Try. En .NET moderno una excepcion no atrapada en `Elapsed` puede
     ''' matar el proceso, y esto vive en un binario que se distribuye: una limpieza de cache no puede ser un
     ''' modo de caida. Ver 00-reglas-app-distribuida.</para></summary>
     Private Shared Sub InitPoolCleanupTimer()
@@ -504,10 +505,10 @@ Public Class FilesDictionary_class
     End Sub
 
     ''' <summary>Lease a BethesdaReader from the pool, or create a new one if pool is empty.
-    ''' <para>⛔ El epoch de una entrada del bag se compara contra el ACTUAL leido en ese instante, no contra
+    ''' <para>El epoch de una entrada del bag se compara contra el ACTUAL leido en ese instante, no contra
     ''' uno capturado al entrar: capturarlo antes del `TryTake` hace que un lease preemptado tire entradas de
     ''' una generacion MAS NUEVA que la suya (cada una cuesta un `ListEntries()` completo).</para>
-    ''' <para>⛔ `Friend`, no `Private`: es la costura que necesita el gate de `Tools/PreflightScanProbe` para
+    ''' <para>`Friend`, no `Private`: es la costura que necesita el gate de `Tools/PreflightScanProbe` para
     ''' poner un lease en vuelo de forma DETERMINISTA (lease → Unregister → Return en un solo hilo) en vez de
     ''' correr una carrera con sleeps que pasa en verde por casualidad. No cambia la superficie distribuida.
     ''' Ver 00-reglas-self-tests-no-van-en-el-binario.</para></summary>
@@ -529,7 +530,7 @@ Public Class FilesDictionary_class
         End If
 
         ' Create new reader
-        ' ⛔⛔ EL EPOCH SE CAPTURA ANTES DE ABRIR Y SE RE-VERIFICA DESPUÉS DE PARSEAR. Leerlo recién en el
+        ' EL EPOCH SE CAPTURA ANTES DE ABRIR Y SE RE-VERIFICA DESPUÉS DE PARSEAR. Leerlo recién en el
         ' `Return` —como estaba— estampa el epoch FINAL sobre un reader que abrió el archivo VIEJO: si un
         ' packager desmonta, reescribe y re-monta mientras este hilo está adentro del constructor (que parsea
         ' ~100k nombres), el reader vuelve con la tabla vieja y el epoch nuevo, entra al pool como vigente, y
@@ -542,7 +543,7 @@ Public Class FilesDictionary_class
             Try
                 reader = New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
             Catch
-                ' ⛔ El constructor parsea la tabla entera y TIRA con un .ba2 truncado o a medio escribir —
+                ' El constructor parsea la tabla entera y TIRA con un .ba2 truncado o a medio escribir —
                 ' o sea, justo durante un pack. Sin esto el FileStream quedaba inalcanzable (el Catch del
                 ' llamador no lo ve: la excepción sale de acá adentro y su `leased` sigue en default),
                 ' reteniendo el archive hasta el finalizer.
@@ -567,7 +568,7 @@ Public Class FilesDictionary_class
     End Function
 
     ''' <summary>Return a reader to the pool if below cap, otherwise dispose it.
-    ''' <para>⛔ EL CHEQUEO DE EPOCH VA ANTES DEL `GetOrAdd`. Al reves, el propio `GetOrAdd` re-crea el bag que
+    ''' <para>EL CHEQUEO DE EPOCH VA ANTES DEL `GetOrAdd`. Al reves, el propio `GetOrAdd` re-crea el bag que
     ''' la invalidacion acababa de sacar del pool: el pool muerto resucita aunque despues tiremos el reader.
     ''' Un epoch AUSENTE cuenta como distinto (se destruye): que falte solo puede significar que la clave se
     ''' desalineo, y ahi tratar el hueco como "0" seria pool-ear a ciegas.</para>
@@ -601,7 +602,7 @@ Public Class FilesDictionary_class
 
     ''' <summary>Suelta los readers OCIOSOS del pool (los devueltos hace mas de un periodo del timer) y
     ''' purga el cache de bytes muerto. La llama el timer de limpieza.
-    ''' <para>⛔ Antes vaciaba el pool ENTERO cada vez, sin mirar si algo estaba en uso — el nombre decia
+    ''' <para>Antes vaciaba el pool ENTERO cada vez, sin mirar si algo estaba en uso — el nombre decia
     ''' "Idle" y el codigo no lo miraba. Como el constructor de `BethesdaReader` parsea la tabla de
     ''' archivos completa, durante un bake eso forzaba a re-indexar cada BA2 tocado cada 30 s.</para></summary>
     Private Shared Sub DisposeIdleReaders()
@@ -612,7 +613,7 @@ Public Class FilesDictionary_class
             Dim epochActual As Integer = 0
             Dim hayEpoch = _archiveEpoch.TryGetValue(kvp.Key, epochActual)
             Dim entry As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
-            ' ⛔⛔ SE DRENA LA BAG ENTERA Y RECIEN DESPUES SE DEVUELVEN LOS VIVOS.
+            ' SE DRENA LA BAG ENTERA Y RECIEN DESPUES SE DEVUELVEN LOS VIVOS.
             ' Probe a devolverlos EN EL ACTO para achicar la ventana en que la bag queda vacia, y esta MAL:
             ' `ConcurrentBag` mantiene una lista POR HILO y `TryTake` saca de la del hilo actual antes de
             ' robarle a otro. El timer corre en un hilo del pool con lista local vacia, asi que al re-agregar
@@ -636,7 +637,7 @@ Public Class FilesDictionary_class
             End While
             ' El cap se respeta tambien acá: `ReturnReader` lo chequea antes de agregar, asi que sin esto
             ' los dos juntos podian dejar el pool POR ENCIMA del maximo.
-            ' ⛔⛔ SE RE-OBTIENE EL BAG DEL POOL, NO SE USA `kvp.Value`. Entre el drenaje de arriba y este
+            ' SE RE-OBTIENE EL BAG DEL POOL, NO SE USA `kvp.Value`. Entre el drenaje de arriba y este
             ' re-agregado, otro hilo puede haber hecho `TryRemove` de esta clave (`UnregisterArchive`): se
             ' llevaba un bag YA VACIO —no disponia nada, "quedo limpio"— y despues nosotros re-agregabamos los
             ' vivos a un bag DESACOPLADO del pool. Esos FileStream quedaban inalcanzables: nadie los alquila,
@@ -690,9 +691,9 @@ Public Class FilesDictionary_class
         _bytesCache.Clear()
     End Sub
 
-    ' ⛔ NO volver a agregar un índice por extensión sola: existió, se escribía en cada alta, y NINGUNA query
+    ' NO volver a agregar un índice por extensión sola: existió, se escribía en cada alta, y NINGUNA query
     ' lo leía — una copia completa de todas las claves (millones en un install modeado) sostenida al pedo.
-    ''' <summary>⛔ LAZY — se construye en el PRIMER USO, no durante el scan. Su único lector es la rama
+    ''' <summary>LAZY — se construye en el PRIMER USO, no durante el scan. Su único lector es la rama
     ''' "sin extensiones" de <see cref="GetFilesInDirectory"/>, que hoy ningún caller usa; poblarlo durante el
     ''' scan era una segunda copia completa de todas las claves para una query que nadie hace. Sobrevive
     ''' porque esa query es parte del contrato público y tiene que FUNCIONAR — sólo que no cuesta nada hasta
@@ -742,7 +743,7 @@ Public Class FilesDictionary_class
     ''' ganador y para la entrada del archive, así que devolvería el suelto por colisión.
     ''' <para>Es la función que hay que usar para comparar contra la referencia vanilla: ver
     ''' 10-stack-arnes-de-medicion.md, donde usar el resolver normal es la trampa #1.</para>
-    ''' <para>⛔ Entre todos los candidatos archivados elige el de SourceOrder MÁS BAJO, que es el archive
+    ''' <para>Entre todos los candidatos archivados elige el de SourceOrder MÁS BAJO, que es el archive
     ''' vanilla. "El primero no-suelto" está MAL: la pila de overrides se llena en paralelo, así que cuando un
     ''' mod shippea su override dentro de un .ba2 el primero puede ser el del MOD.</para>
     ''' <para>Devuelve Nothing si no hay ningún candidato archivado; ahí el caller cae al resolver normal,
@@ -781,7 +782,7 @@ Public Class FilesDictionary_class
         Dim archivePath = IO.Path.Combine(FO4Path, entry.BA2File)
         Dim leased As (Reader As BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader, Stream As FileStream, DevueltoEn As Long, Epoch As Integer) = Nothing
         Dim returned As Boolean = False
-        ' ⛔ EL SELLO ACÁ NO PUEDE DEVOLVER VACÍO Y LISTO. Los dos llamadores de producción
+        ' EL SELLO ACÁ NO PUEDE DEVOLVER VACÍO Y LISTO. Los dos llamadores de producción
         ' (NpcMaterialResolver) tratan Nothing y Length=0 IGUAL: caen al resolver VIVO, o sea toman al
         ' ganador SUELTO como si fuera vanilla — y uno de los dos ESCRIBE una textura clonada a disco con
         ' esos bytes. Un vacío por invalidación acá es un "modded-como-vanilla" persistido, no una respuesta
@@ -807,7 +808,7 @@ Public Class FilesDictionary_class
             Return Nothing
         End Try
     End Function
-    ''' <summary>⛔ TOP-LEVEL only (RecurseSubdirectories = False) — the recursion is done by
+    ''' <summary>TOP-LEVEL only (RecurseSubdirectories = False) — the recursion is done by
     ''' <see cref="WalkLooseFilesParallel"/>, one directory per work item, so it can be spread across
     ''' threads. The other two settings are load-bearing and must match what the old single recursive
     ''' <c>EnumerateFiles</c> call used, or the walk would return a DIFFERENT set of files:
@@ -860,7 +861,7 @@ Public Class FilesDictionary_class
                            Sub()
                                Dim dir As String = Nothing
 
-                               ' ⛔ Declared OUTSIDE the loop on purpose. SpinWait escalates: the first few
+                               ' Declared OUTSIDE the loop on purpose. SpinWait escalates: the first few
                                ' SpinOnce calls busy-spin, then it starts yielding the thread and finally
                                ' sleeping — but only because it COUNTS its own calls. Constructing a fresh
                                ' one inside the loop resets that counter every iteration, so it would never
@@ -955,7 +956,7 @@ Public Class FilesDictionary_class
         Parallel.ForEach(packedGroups, Sub(group)
                                            Dim archivePath = IO.Path.Combine(FO4Path, group.Key)
 
-                                           ' ⛔ EL SELLO SE IZA POR GRUPO. El `pack` es UNO para todas las entradas del
+                                           ' EL SELLO SE IZA POR GRUPO. El `pack` es UNO para todas las entradas del
                                            ' grupo, así que la unidad de invalidación también es el grupo: si el
                                            ' archive se reemplazó en el medio, TODO lo que salió de ese reader es de
                                            ' la generación vieja, no sólo lo posterior al bump. Un `Path.Combine` y
@@ -971,7 +972,7 @@ Public Class FilesDictionary_class
                                                        For Each item In group.Value
                                                            Dim bytes = item.Location.ExtractUnderSeal(pack, gen0)
                                                            output(item.OutputIndex) = bytes
-                                                           ' ⛔ EL CACHÉ SE PUBLICA AL FINAL, NO SOBRE LA MARCHA. Publicar por
+                                                           ' EL CACHÉ SE PUBLICA AL FINAL, NO SOBRE LA MARCHA. Publicar por
                                                            ' entrada tenía además un defecto independiente del sello: una
                                                            ' excepción a mitad del grupo cero-ea `output` pero DEJA en
                                                            ' `_bytesCache` lo ya publicado, con lo cual `GetBytes` devuelve
@@ -1023,7 +1024,7 @@ Public Class FilesDictionary_class
 
     ''' <summary>True once the loose walk has stopped producing (<c>CompleteAdding</c> called).
     '''
-    ''' <para>⛔ Load-bearing for the progress throttle. <see cref="ProcessLooseFile"/> force-reports the
+    ''' <para>Load-bearing for the progress throttle. <see cref="ProcessLooseFile"/> force-reports the
     ''' item where <c>completed &gt;= totalCount</c> so consumers that never clamp their bar to Max still
     ''' finish full. That was safe when totalCount was known up front. Now the walk STREAMS and totalCount
     ''' GROWS behind it, so during the scan the workers are routinely caught up with the producer and
@@ -1146,7 +1147,7 @@ Public Class FilesDictionary_class
     End Function
 
     ''' <summary>Etiqueta estable (8 hex) del SET DE EXTENSIONES con el que se indexó. FNV-1a sobre la lista
-    ''' canónica (minúsculas, ordenada) — ⛔ NO <c>String.GetHashCode</c>: está randomizado por proceso, así
+    ''' canónica (minúsculas, ordenada) — NO <c>String.GetHashCode</c>: está randomizado por proceso, así
     ''' que daría una carpeta distinta en cada arranque y el cache no serviría nunca.</summary>
     Private Shared Function ExtensionSetTag() As String
         Dim exts = _canonicalExtensionsSnapshot
@@ -1162,9 +1163,9 @@ Public Class FilesDictionary_class
         Return h.ToString("x8")
     End Function
 
-    ''' <summary>⛔ Dónde viven REALMENTE los <c>.cac</c>: <c>{CacheDirectory}\{Juego}\{ExtSetTag}\</c>.
+    ''' <summary>Dónde viven REALMENTE los <c>.cac</c>: <c>{CacheDirectory}\{Juego}\{ExtSetTag}\</c>.
     '''
-    ''' <para>⛔ Las DOS subcarpetas son necesarias y arreglan el mismo bug en dos capas. La de JUEGO: la
+    ''' <para>Las DOS subcarpetas son necesarias y arreglan el mismo bug en dos capas. La de JUEGO: la
     ''' limpieza de huérfanos borra todo <c>.cac</c> que no esté en los archives del juego ACTIVO, así que
     ''' con carpeta compartida cambiar de juego DESTRUÍA el cache del otro. La de SET DE EXTENSIONES: un
     ''' <c>.cac</c> sólo vale para el set con el que se generó, y las apps no comparten set — con una sola
@@ -1344,7 +1345,7 @@ Public Class FilesDictionary_class
 
     ''' <summary>Borra los <c>.cac</c> del juego ACTIVO que ya no corresponden a ningún archive escaneado.
     '''
-    ''' <para>⛔ Opera SÓLO dentro de <see cref="EffectiveCacheDirectory"/> (la subcarpeta del juego) y
+    ''' <para>Opera SÓLO dentro de <see cref="EffectiveCacheDirectory"/> (la subcarpeta del juego) y
     ''' <c>EnumerateFiles</c> NO recursa ⇒ el cache del otro juego es literalmente invisible para este
     ''' barrido. Antes los dos juegos compartían carpeta y este mismo código, al no encontrar los archives
     ''' del otro juego en <c>scannedArchives</c>, los declaraba huérfanos y los BORRABA: cambiar de juego
@@ -1425,7 +1426,7 @@ Public Class FilesDictionary_class
             Return _dictionary
         End Get
         Set(value As ConcurrentDictionary(Of String, File_Location))
-            ' ⛔ LA SUSTITUCION ENTRA AL CANDADO. Reemplazar `_dictionary` y DESPUES vaciar las pilas deja el
+            ' LA SUSTITUCION ENTRA AL CANDADO. Reemplazar `_dictionary` y DESPUES vaciar las pilas deja el
             ' problema simetrico al del re-scan: entre las dos, una insercion crea su par ganador/perdedor
             ' contra el diccionario NUEVO y despues pierde su pila. Es una sola transicion.
             ' Orden mantenido: _overriddenEntriesLock -> _keysByDirectoryLock (lo toma el rebuild).
@@ -1462,7 +1463,7 @@ Public Class FilesDictionary_class
     ''' collision with any entry already there via <see cref="Resolve_Conflict"/> and pushing the LOSER
     ''' onto the override stack.
     '''
-    ''' <para>⛔ Why this exists instead of ConcurrentDictionary.AddOrUpdate: AddOrUpdate's
+    ''' <para>Why this exists instead of ConcurrentDictionary.AddOrUpdate: AddOrUpdate's
     ''' updateValueFactory is documented to run MORE THAN ONCE when its CAS loses a race, and an even older
     ''' version called the push from INSIDE that factory — so a losing attempt pushed a loser onto the
     ''' override stack and then pushed it again on the retry, leaving duplicate/phantom entries. Eso se
@@ -1611,7 +1612,7 @@ Public Class FilesDictionary_class
     End Sub
 
     Private Shared Sub ClearSearchIndexes()
-        ' ⛔ LOS DOS clears van DENTRO del candado ahora. Antes el de _KeysByDirectoryExtension estaba afuera
+        ' LOS DOS clears van DENTRO del candado ahora. Antes el de _KeysByDirectoryExtension estaba afuera
         ' porque ese índice no tenía flag y limpiarlo era idempotente. Con el flag hay estado que mantener
         ' coherente con el contenido: si el Clear corriera fuera del lock podría intercalarse con una
         ' construcción en curso y dejar el flag en True sobre un índice ya vaciado — o sea, "construido" y
@@ -1702,7 +1703,7 @@ Public Class FilesDictionary_class
                 Dim removed As File_Location = Nothing
                 If _dictionary.TryRemove(normalized, removed) Then
                     ' Remove from search indexes only if truly gone.
-                    ' ⛔ BAJO EL CANDADO, por la ventana SIMÉTRICA a la de IndexNormalizedKey: si un build está
+                    ' BAJO EL CANDADO, por la ventana SIMÉTRICA a la de IndexNormalizedKey: si un build está
                     ' enumerando el diccionario y alcanzó a ver esta clave ANTES del TryRemove de arriba, la va a
                     ' insertar en el índice; si la poda corriera sin candado podría ejecutarse ANTES de esa
                     ' inserción y no borrar nada, dejando en el índice una clave que ya no está en el diccionario
@@ -1745,20 +1746,20 @@ Public Class FilesDictionary_class
 
         Dim archiveFileName = Path.GetFileName(absolutePath)
 
-        ' ⛔ EL BUMP VA DESPUES DEL GUARD. Antes iba antes, "por los homonimos", y para eso era un NO-OP: el
+        ' EL BUMP VA DESPUES DEL GUARD. Antes iba antes, "por los homonimos", y para eso era un NO-OP: el
         ' guard es por NOMBRE y el bump por RUTA, asi que en el caso homonimo bumpeaba una clave que no tiene
         ' ni readers ni entradas y salia igual por Exit Sub. Y el epoch no puede evitar bytes equivocados en
         ' ningun caso: quien invalida los `Index` ya repartidos es `_archiveContentGen`, y eso solo lo mueve
         ' `UnregisterArchive`. Re-registrar contenido CAMBIADO sin desmontar antes esta roto con bump y sin
         ' bump — el contrato (Unregister primero) no es opcional. Asi, una llamada duplicada legitima deja de
         ' costar un re-parseo completo de la tabla por cada reader vivo.
-        ' ⛔⛔ EL MONTAJE ENTERO VA BAJO EL CANDADO, no solo el guard. Con el candado tomado unicamente para
+        ' EL MONTAJE ENTERO VA BAJO EL CANDADO, no solo el guard. Con el candado tomado unicamente para
         ' el `TryAdd`, quedaba esta ventana: alta del flag -> se suelta -> `UnregisterArchive` entra, no
         ' encuentra entradas todavia, borra el flag y termina -> `ProcessBa2File` publica TODAS las entradas.
         ' Resultado: el archive montado en `_dictionary` y AUSENTE de `_registeredArchives`, y un
         ' `RegisterArchive` posterior lo monta de nuevo generando overrides contra sus PROPIAS entradas.
         ' El orden "si gana el alta, el desmontaje espera" solo era cierto para el guard, no para el montaje.
-        ' ⛔ SI, ESTO DEJA I/O BAJO EL CANDADO (abrir el archive y parsear su tabla). Se acepta acotado: es la
+        ' SI, ESTO DEJA I/O BAJO EL CANDADO (abrir el archive y parsear su tabla). Se acepta acotado: es la
         ' ruta de montaje en runtime, no el scan — `Fill_DictionaryAsync` llama a `ProcessBa2File` desde sus
         ' workers SIN pasar por aca, asi que el scan paralelo no se serializa. `Monitor` es reentrante, de modo
         ' que los `AddEntryResolvingConflict` de adentro re-adquieren sin problema.
@@ -1782,7 +1783,7 @@ Public Class FilesDictionary_class
                     IndexDictionaryKey(key)
                 Next
             Catch
-                ' ⛔ ROLLBACK COMPLETO, NO SOLO EL FLAG. `ProcessBa2File` publica INCREMENTALMENTE: si revienta
+                ' ROLLBACK COMPLETO, NO SOLO EL FLAG. `ProcessBa2File` publica INCREMENTALMENTE: si revienta
                 ' en la entrada 40.000 deja un montaje a medias, y quitar unicamente el flag lo dejaria vivo e
                 ' invisible para el proximo desmontaje. Se reusa el mismo camino de `UnregisterArchive`, que
                 ' ademas restaura desde la pila lo que este montaje habia sombreado.
@@ -1824,14 +1825,14 @@ Public Class FilesDictionary_class
 
     ''' <summary>Desmonta un archive: bumps, purga de las pilas, retiro de sus ganadores y baja del flag.
     ''' Devuelve cuantas entradas sombreadas se purgaron.
-    ''' <para>⛔ PRECONDICION: el llamador YA tiene <see cref="_overriddenEntriesLock"/>, y la operacion
+    ''' <para>PRECONDICION: el llamador YA tiene <see cref="_overriddenEntriesLock"/>, y la operacion
     ''' ENTERA tiene que correr bajo UNA sola adquisicion. Soltarlo entre la purga y el retiro reabre el
     ''' agujero por otra puerta: un `AddEntryResolvingConflict` o un `AddOrUpdateDictionaryEntry` concurrente
     ''' puede BAJAR a la pila una entrada de este archive DESPUES de que la purga paso, y despues
     ''' `RemoveDictionaryEntry` la restaura como GANADOR — vuelve el asset permanentemente vacio.</para>
     ''' <para>Lo llaman <see cref="UnregisterArchive"/> y el rollback de <see cref="RegisterArchive"/>.</para></summary>
     Private Shared Function DesmontarBajoCandado(absolutePath As String, archiveFileName As String) As Integer
-        ' ⛔⛔ LOS DOS BUMPS VAN PRIMERO, ANTES DE TOCAR EL DICCIONARIO. `RemoveDictionaryEntry` purga
+        ' LOS DOS BUMPS VAN PRIMERO, ANTES DE TOCAR EL DICCIONARIO. `RemoveDictionaryEntry` purga
         ' `_bytesCache` clave por clave y el barrido es O(diccionario) —cientos de miles de entradas—, así
         ' que con el bump al final quedaba una ventana larga en la que un lector todavía pasaba el sello y
         ' publicaba bytes rancios en un caché que la purga ya había recorrido: se quedaban pegados TODA la
@@ -1845,7 +1846,7 @@ Public Class FilesDictionary_class
         BumpArchiveContentGen(poolKey)
         DrainAndDisposeBag(poolKey)
 
-        ' ⛔⛔ LA PILA DE OVERRIDES SE PURGA ANTES QUE EL DICCIONARIO, Y ESTO NO ES OPCIONAL.
+        ' LA PILA DE OVERRIDES SE PURGA ANTES QUE EL DICCIONARIO, Y ESTO NO ES OPCIONAL.
         ' `RemoveDictionaryEntry` no borra la clave a secas: hace `TryPop` de la pila y RESTAURA al perdedor
         ' como GANADOR del diccionario. Si ese perdedor pertenece a un archive que este mismo barrido ya
         ' desmontó —que es exactamente lo que hace WM Pack, que desregistra el SET COMPLETO y en un orden
@@ -1889,7 +1890,7 @@ Public Class FilesDictionary_class
             RemoveDictionaryEntry(key)
         Next
 
-        ' ⛔ LA BAJA DEL FLAG VA ADENTRO, AL FINAL. Afuera queda una carrera de ciclo de vida: entre el ultimo
+        ' LA BAJA DEL FLAG VA ADENTRO, AL FINAL. Afuera queda una carrera de ciclo de vida: entre el ultimo
         ' RemoveDictionaryEntry y este TryRemove, un `RegisterArchive` del mismo archive encuentra el nombre
         ' todavia presente, sale por su guard de idempotencia, y despues nosotros borramos el flag ⇒ el archive
         ' queda DESMONTADO y marcado como no registrado, con el intento de montaje perdido en silencio.
@@ -2031,7 +2032,7 @@ Public Class FilesDictionary_class
             _archivesFromCache = 0
             _archivesReindexed = 0
 
-            ' ⛔⛔ LOS BUMPS VAN ANTES DE `Dictionary.Clear()` Y DE `ClearBytesCache()`. Estaban ~25 lineas
+            ' LOS BUMPS VAN ANTES DE `Dictionary.Clear()` Y DE `ClearBytesCache()`. Estaban ~25 lineas
             ' mas abajo, con lo cual entre la limpieza del cache y el bump quedaba una ventana en la que un
             ' lector concurrente todavia pasaba el sello y volvia a publicar bytes del load order ANTERIOR en
             ' un cache recien vaciado. Se recorren las claves del sello ademas de las del pool: un archive
@@ -2062,7 +2063,7 @@ Public Class FilesDictionary_class
             ClearBytesCache()
 
             ' O1.2: Dispose idle readers and initialize pool cleanup timer
-            ' ⛔ EL RE-SCAN INVALIDA TODA GENERACION. `DisposeIdleReaders` CONSERVA a proposito lo devuelto en
+            ' EL RE-SCAN INVALIDA TODA GENERACION. `DisposeIdleReaders` CONSERVA a proposito lo devuelto en
             ' los ultimos 30 s, y despues de esto `_dictionary` va a tener `Index` NUEVOS, derivados de los
             ' archivos como estan AHORA. Si algun .ba2 cambio entre scans —que es exactamente lo que hacen WM
             ' Pack y el packer de FaceGen— un reader conservado extraeria en el indice equivocado y esos bytes
@@ -2134,7 +2135,7 @@ Public Class FilesDictionary_class
             _archiveBytesTotal = archiveBytesTotal
             archiveByteProgress?.Report((0L, _archiveBytesTotal))
 
-            ' ⛔ totalCount is now a MOVING target: it starts at the archives (the only thing we can count
+            ' totalCount is now a MOVING target: it starts at the archives (the only thing we can count
             ' up front) and GROWS as the walk discovers loose files. Every consumer re-reads Max from each
             ' report and re-sets its bar's Maximum, so a growing Max is fine — the bar rubber-bands a little
             ' while the walk runs, which is a fair picture of "still discovering how much there is". What is
@@ -2218,7 +2219,7 @@ Public Class FilesDictionary_class
             Logger.LogLazy(Function() $"[FilesDictionary] walk+scan: {workerCount} workers, {looseCount} loose, {hits} cache-hit / {missed} re-indexed archives, {entryCount} entries in {msScan} ms (walk done at {msWalkAndScan} ms)")
             swPhase.Restart()
 
-            ' ⛔ Acá vivía la fase "Building search index…" — una pasada COMPLETA sobre todas las claves del
+            ' Acá vivía la fase "Building search index…" — una pasada COMPLETA sobre todas las claves del
             ' diccionario, corriendo con la barra ya en 100% y por eso reportada aparte para que no se leyera
             ' como un cuelgue. Esa fase YA NO EXISTE: los dos índices de búsqueda son lazy y sólo los
             ' consultan pickers y catálogos on-demand, ninguno en el arranque (ver _KeysByDirectoryExtension).
@@ -2238,7 +2239,7 @@ Public Class FilesDictionary_class
             Logger.LogLazy(Function() $"[FilesDictionary] Fill_DictionaryAsync total: {msTotal} ms")
 
             ' In-memory only (three stopwatches and a string — no I/O, no log). A caller that wants to profile
-            ' a rig can read it; NPC_Manager only persists it under --diagnoseLoad. ⛔ Deliberately NOT wired
+            ' a rig can read it; NPC_Manager only persists it under --diagnoseLoad. Deliberately NOT wired
             ' to Logger.Enabled: that flag also drives FaceGenBuilder.DebugMode, so using it as a profiling
             ' switch would silently change how FaceGen bakes.
             LastScanDiagnostics =
@@ -2492,7 +2493,7 @@ Public Class FilesDictionary_class
             Dim cachePath = GetCacheFilePath(ba2FileName)
             ' Sello de generacion para TODAS las entradas que este archive produzca en esta pasada. Se lee
             ' UNA vez, izado fuera de los dos loops. Ver File_Location.ArchiveGen.
-            ' ⛔ `GetOrAdd`, no `ContentGenOf`: hace falta que la CLAVE exista aunque el valor sea 0, porque
+            ' `GetOrAdd`, no `ContentGenOf`: hace falta que la CLAVE exista aunque el valor sea 0, porque
             ' el bump masivo del re-scan recorre las claves de este diccionario. Con `TryGetValue` un archive
             ' que nunca se desmonto no tendria clave, el re-scan no lo bumpearia, y un `File_Location` viejo
             ' seguiria matcheando en 0 contra entradas re-derivadas — que es justo el caso "el .ba2 cambio

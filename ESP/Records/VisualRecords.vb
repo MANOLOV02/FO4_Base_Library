@@ -4,11 +4,10 @@ Imports System.Text
 ' ============================================================================
 ' Visual Effects / Projectile Record Data Classes and Parsers
 ' IMGS, IMAD, EFSH, PROJ, EXPL, HAZD, CAMS, CPTH, RFCT, SPGD, GDRY, LENS, ARTO, IPCT, IPDS
-' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
+' # SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO. #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
@@ -18,11 +17,11 @@ Imports System.Text
 ' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
 ' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
-' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra el formato real de cada record. Lo que se cerro es "no
 ' inventan referencias", que es otra cosa.
 '
-' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
 ' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
 ' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
 ' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
@@ -31,7 +30,7 @@ Imports System.Text
 '
 ' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
 ' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
-' contra el .pas y volver a correr el sweep.
+' contra el formato real de cada record y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -534,8 +533,8 @@ Friend Module VisualRecordParsers
         For Each sr In rec.Subrecords
             Select Case sr.Signature
                 Case "MODL"
-                    ' FO4 CAMS model uses wbGenericModel → MODL (wbDefinitionsFO4.pas:8232→1044),
-                    ' NOT MOD2. The old "MOD2" case never matched, so ModelPath stayed empty.
+                    ' FO4 CAMS usa el subrecord MODL para el modelo, NO MOD2. El Case "MOD2" viejo
+                    ' nunca matcheaba, asi que ModelPath quedaba vacio.
                     If c.ModelPath = "" Then c.ModelPath = sr.AsStringGeneral
                 Case "MNAM"
                     c.ImageSpaceModFormID = ResolveFID(rec, sr, pluginManager)

@@ -1538,7 +1538,7 @@ Public Class HclSimulateOperatorConfigGraph_Class
     Public Property Value As UInteger
     Public Property ConstraintIndex As Integer = -1
     Public Property IsTerminator As Boolean
-    ''' <summary>⛔ Friend A PROPOSITO. Es un handle `Object` sobre un grafo que ahora es `Friend`, y con
+    ''' <summary>Friend A PROPOSITO. Es un handle `Object` sobre un grafo que ahora es `Friend`, y con
     ''' `Option Strict Off` un `cfg.ResolvedConstraint.Name` desde otro ensamblado COMPILA LIMPIO y tira
     ''' `MissingMemberException` recien en produccion. Los consumidores externos leen
     ''' `ResolvedConstraintName`/`ResolvedConstraintType`, que son String y siguen publicos.</summary>

@@ -16,6 +16,23 @@ Namespace Canon
         ''' traía.</summary>
         Public Property Required As Boolean
 
+        ''' <summary>El miembro CIERRA la estructura que lo contiene apenas se lee.
+        ''' <para>Hace falta en las estructuras sin orden, donde el cursor de miembros no manda: sin
+        ''' esta marca, los subrecords que vienen detrás llenan los huecos vacíos del grupo que acaba
+        ''' de terminar en vez de abrir el siguiente, y quedan atribuidos al elemento equivocado.</para>
+        ''' <para>La marca no se pone a mano: el esquema la deriva de la forma del grupo, y la lleva
+        ''' el último miembro declarado cuando además es obligatorio. Es lo que pasa de verdad en los
+        ''' datos de subgrafo de una raza — las palabras clave que preceden al siguiente grafo se le
+        ''' acreditaban al anterior — y en las combinaciones de objeto de una armadura, un mueble, un
+        ''' actor o un arma, donde se corrían el nombre visible y la marca de sólo-editor.</para></summary>
+        Public Property IsTerminator As Boolean
+
+        ''' <summary>Marca este miembro como el que cierra su estructura.</summary>
+        Public Function AsTerminator() As WbMemberDef
+            IsTerminator = True
+            Return Me
+        End Function
+
         ''' <summary>Es el ÚNICO discriminador del recorrido: decide si el miembro en el que está
         ''' parado el cursor se queda con este subrecord o si el cursor avanza al siguiente
         ''' miembro.</summary>
@@ -276,6 +293,10 @@ Namespace Canon
                 n.AddChild(child)
                 found(defPos) = child
 
+                ' Un miembro terminador cierra el struct acá mismo: lo que siga pertenece al
+                ' elemento siguiente, no a este.
+                If Members(defPos).IsTerminator Then Exit While
+
                 If AllowUnordered Then defPos = 0 Else defPos += 1
             End While
             Return n
@@ -444,6 +465,11 @@ Namespace Canon
         Public ReadOnly Property Game As WbGame
         ''' <summary>El record se indexa por firma en vez de recorrerse con cursor monótono.</summary>
         Public Property AllowUnordered As Boolean
+
+        ''' <summary>Nombre de cada bit de la CABECERA del record, por posición; vacío el que no
+        ''' tiene nombre. Son bits del encabezado, no del cuerpo: no ocupan bytes del árbol y por eso
+        ''' no aparecen como campo de ninguna estructura.</summary>
+        Public Property RecordFlagNames As String()
         ''' <summary>Al menos un campo del record no se pudo declarar. No cuenta como verificado y el
         ''' arnés lo reporta aparte.</summary>
         Public Property IsIncomplete As Boolean

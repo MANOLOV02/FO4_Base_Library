@@ -20,8 +20,8 @@ Public Module FaceTintPaletteResolver
     ''' SOLO op==0 usa Alpha=0 ("apagado/default"). Si la clase queda vacia, devuelve el pool completo
     ''' (no romper). Es el discriminante robusto del 2026-06-03 (dirt rojo custom op&gt;0 -&gt; Alpha&gt;0 -&gt;
     ''' Replace, NO la off-entry SoftLight transparente).</summary>
-    Private Function FilterByOpacityClass(candidates As IEnumerable(Of RACE_TintTemplateColor), npcOpacity As Single) As List(Of RACE_TintTemplateColor)
-        Dim pool As New List(Of RACE_TintTemplateColor)
+    Private Function FilterByOpacityClass(candidates As IEnumerable(Of ColorDeTinteEfectivo), npcOpacity As Single) As List(Of ColorDeTinteEfectivo)
+        Dim pool As New List(Of ColorDeTinteEfectivo)
         If candidates Is Nothing Then Return pool
         Dim wantPositive As Boolean = (npcOpacity > 0.0F)
         For Each tc In candidates
@@ -39,7 +39,7 @@ Public Module FaceTintPaletteResolver
     ''' bits del float = el int). Nothing si no hay TTED o el indice cae fuera de rango. MISMO index que
     ''' MergeTintLayersWithRaceDefaults usa para los defaults heredados. Ver
     ''' [[50-facetint-leyes-y-compositor]].</summary>
-    Public Function TtedDefaultColor(opt As RACE_TintTemplateOption) As RACE_TintTemplateColor
+    Public Function TtedDefaultColor(opt As OpcionDeTinteEfectiva) As ColorDeTinteEfectivo
         If opt Is Nothing OrElse Not opt.HasDefaultValue Then Return Nothing
         If opt.TemplateColors Is Nothing OrElse opt.TemplateColors.Count = 0 Then Return Nothing
         Dim pos As UInteger = BitConverter.ToUInt32(BitConverter.GetBytes(opt.DefaultValue), 0)
@@ -57,12 +57,12 @@ Public Module FaceTintPaletteResolver
     '''   3. Si no -&gt; Alpha mas cercano a op, luego TemplateIndex menor.
     ''' Usado por FindTemplateColorByColor (Step 2: varios presets MISMO color) y ResolveFallbackBlendOp
     ''' (Step 3: sin match -&gt; sobre TODOS los presets de la opcion). Nothing si no hay candidatos.</summary>
-    Public Function PickTemplateColor(candidates As IEnumerable(Of RACE_TintTemplateColor), opt As RACE_TintTemplateOption, npcOpacity As Single) As RACE_TintTemplateColor
+    Public Function PickTemplateColor(candidates As IEnumerable(Of ColorDeTinteEfectivo), opt As OpcionDeTinteEfectiva, npcOpacity As Single) As ColorDeTinteEfectivo
         Dim pool = FilterByOpacityClass(candidates, npcOpacity)
         If pool.Count = 0 Then Return Nothing
         Dim tdef = TtedDefaultColor(opt)
         If tdef IsNot Nothing AndAlso pool.Contains(tdef) Then Return tdef
-        Dim best As RACE_TintTemplateColor = Nothing
+        Dim best As ColorDeTinteEfectivo = Nothing
         Dim bestDist As Single = Single.MaxValue
         For Each tc In pool
             Dim dist As Single = Math.Abs(tc.Alpha - npcOpacity)
@@ -76,7 +76,7 @@ Public Module FaceTintPaletteResolver
 
     ''' <summary>Compat: desempate por opacidad SIN preferencia de TTED-default (= PickTemplateColor con
     ''' opt=Nothing). La logica vive en PickTemplateColor; conservada por si hay refs externas.</summary>
-    Public Function BreakTieByOpacity(candidates As IEnumerable(Of RACE_TintTemplateColor), npcOpacity As Single) As RACE_TintTemplateColor
+    Public Function BreakTieByOpacity(candidates As IEnumerable(Of ColorDeTinteEfectivo), npcOpacity As Single) As ColorDeTinteEfectivo
         Return PickTemplateColor(candidates, Nothing, npcOpacity)
     End Function
 
@@ -88,7 +88,7 @@ Public Module FaceTintPaletteResolver
     ''' off-entry SoftLight) cae en la activa = Replace, no en SoftLight transparente (regresion 2026-06-03
     ''' evitada). Safety net: SkinTone + 0 -> 3. Convenio: 0=Replace 1=Multiply 2=Overlay 3=SoftLight
     ''' 4=HardLight.</summary>
-    Public Function ResolveFallbackBlendOp(opt As RACE_TintTemplateOption, npcOpacity As Single) As UInteger
+    Public Function ResolveFallbackBlendOp(opt As OpcionDeTinteEfectiva, npcOpacity As Single) As UInteger
         If opt Is Nothing Then Return 0UI
         Dim pick = PickTemplateColor(opt.TemplateColors, opt, npcOpacity)
         Dim bop As UInteger
@@ -110,7 +110,7 @@ Public Module FaceTintPaletteResolver
     ''' preset's colour matches. Single source of truth for the colour match, shared by the index
     ''' resolver (FaceTintLayerBuilder.ResolveTemplateColorIndex) and Step 2 below, so both pick the
     ''' same preset.</summary>
-    Public Function FindTemplateColorByColor(layerColor As Color, npcOpacity As Single, opt As RACE_TintTemplateOption, pm As PluginManager) As RACE_TintTemplateColor
+    Public Function FindTemplateColorByColor(layerColor As Color, npcOpacity As Single, opt As OpcionDeTinteEfectiva, pm As PluginManager) As ColorDeTinteEfectivo
         If opt Is Nothing OrElse opt.TemplateColors Is Nothing OrElse opt.TemplateColors.Count = 0 Then Return Nothing
         If pm Is Nothing Then Return Nothing
         Dim targetR As Integer = layerColor.R
@@ -118,7 +118,7 @@ Public Module FaceTintPaletteResolver
         Dim targetB As Integer = layerColor.B
         ' Recolectar TODOS los presets que comparten el color exacto, y romper el empate con el tie-break
         ' COMPARTIDO (Alpha vs opacity) — el mismo que usa la moda-empate del fallback.
-        Dim matches As New List(Of RACE_TintTemplateColor)
+        Dim matches As New List(Of ColorDeTinteEfectivo)
         For Each tplCol In opt.TemplateColors
             If tplCol.ColorFormID = 0UI Then Continue For
             Dim clfmRec = pm.GetRecord(tplCol.ColorFormID)
@@ -137,7 +137,7 @@ Public Module FaceTintPaletteResolver
     ''' <summary>BlendOp por capa = regla del Creation-Kit (<see cref="ResolveBlendOpCk"/>: last-color-match)
     ''' sobre el color efectivo, con la red SkinTone (slot-12 + 0 -&gt; 3/SoftLight). UNICA fuente del blend-op
     ''' por capa usada por <see cref="ResolvePaletteLayerEffective"/> en cada return.</summary>
-    Private Function CkBlendOpWithSkinToneNet(opt As RACE_TintTemplateOption, color As Color, value As Integer, pm As PluginManager) As UInteger
+    Private Function CkBlendOpWithSkinToneNet(opt As OpcionDeTinteEfectiva, color As Color, value As Integer, pm As PluginManager) As UInteger
         Dim bop As UInteger = ResolveBlendOpCk(opt, color, value, pm)
         If opt IsNot Nothing AndAlso opt.Slot = CUShort(TintSlot.SkinTone) AndAlso bop = 0UI Then bop = 3UI
         Return bop
@@ -153,7 +153,7 @@ Public Module FaceTintPaletteResolver
     ''' red SkinTone slot-12->3, via CkBlendOpWithSkinToneNet, en TODO return. Color/OpacityScale/Matched
     ''' sin cambios respecto de la cadena Step1/Step2.
     ''' </summary>
-    Public Function ResolvePaletteLayerEffective(tl As NPC_FaceTintLayerData, opt As RACE_TintTemplateOption, pm As PluginManager) As (Color As Color, BlendOp As UInteger, Matched As Boolean, OpacityScale As Single)
+    Public Function ResolvePaletteLayerEffective(tl As FaceTintInputBuilder.MergedTintLayer, opt As OpcionDeTinteEfectiva, pm As PluginManager) As (Color As Color, BlendOp As UInteger, Matched As Boolean, OpacityScale As Single)
         Dim resolvedColor As Color = tl.Color
         Dim matched As Boolean = False
         Dim opacityScale As Single = 1.0F
@@ -165,7 +165,7 @@ Public Module FaceTintPaletteResolver
         ' Step 1: TemplateColorIndex
         If tl.TemplateColorIndex >= 0 Then
             Dim needle As UShort = CUShort(tl.TemplateColorIndex)
-            Dim tplByIdx As RACE_TintTemplateColor = opt.TemplateColors.FirstOrDefault(
+            Dim tplByIdx As ColorDeTinteEfectivo = opt.TemplateColors.FirstOrDefault(
                 Function(t) t.TemplateIndex = needle)
             ' Honour the index regardless of the preset's Alpha: the TemplateColorIndex is resolved
             ' by colour, so Alpha=0 is a legitimate target.
@@ -207,7 +207,7 @@ Public Module FaceTintPaletteResolver
     ''' CLFM color == layerColor (RGB exacto) recuerda su BlendOp (LAST gana); si ademas Alpha == value*0.0099999998
     ''' EXACTO corta. Sin color-match -> 0. THE rule: unica fuente del blend-op por capa (via
     ''' ResolvePaletteLayerEffective).</summary>
-    Public Function ResolveBlendOpCk(opt As RACE_TintTemplateOption, layerColor As Color, value As Integer, pm As PluginManager) As UInteger
+    Public Function ResolveBlendOpCk(opt As OpcionDeTinteEfectiva, layerColor As Color, value As Integer, pm As PluginManager) As UInteger
         If opt Is Nothing OrElse opt.TemplateColors Is Nothing OrElse pm Is Nothing Then Return 0UI
         Dim vScaled As Single = CSng(value) * 0.0099999998F
         Dim result As UInteger = 0UI

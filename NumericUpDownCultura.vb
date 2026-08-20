@@ -5,7 +5,7 @@ Imports System.Windows.Forms
 ''' <see cref="TinySliderTextBox"/>: acepta coma O punto como separador decimal, sea cual sea el locale de
 ''' la maquina, y NO interpreta ningun separador como de miles.
 '''
-''' <para>⛔⛔ POR QUE EXISTE. <c>NumericUpDown.ParseEditText</c> hace
+''' <para>POR QUE EXISTE. <c>NumericUpDown.ParseEditText</c> hace
 ''' <c>Decimal.Parse(Text, CultureInfo.CurrentCulture)</c>, y esa sobrecarga usa <c>NumberStyles.Number</c>,
 ''' que incluye <b>AllowThousands</b>. En un Windows es-AR (decimal ",", grupo ".") tipear <c>41.4</c> NO
 ''' falla: .NET se come el punto como separador de miles —no valida el tamanio de los grupos— y devuelve
@@ -20,13 +20,13 @@ Imports System.Windows.Forms
 ''' dialogo commitea al cerrar (<c>LightRigForm.FormClosing</c> lee los <c>.Value</c>), el numero
 ''' equivocado se GRABA en el config.json y sobrevive a la sesion.</para>
 '''
-''' <para>⭐ Es EXACTAMENTE el defecto que <c>TinySliderTextBox.TryParseFlexibleDouble</c> ya cierra para la
+''' <para>Es EXACTAMENTE el defecto que <c>TinySliderTextBox.TryParseFlexibleDouble</c> ya cierra para la
 ''' otra familia de controles del mismo dialogo, con su propio gate (<c>slider-cultura</c> en ParityGate).
 ''' Los <c>NumericUpDown</c> quedaron fuera de ese alcance porque no pasan por ese parser: tienen el suyo,
 ''' adentro de WinForms. Esta clase los mete bajo la misma ley en vez de dejar dos criterios distintos en
 ''' la misma pestania.</para>
 '''
-''' <para>⚠️ COSTO ACEPTADO, MEDIDO Y CON UN CASO QUE EMPEORA. La regla es "el ULTIMO separador que aparece
+''' <para>COSTO ACEPTADO, MEDIDO Y CON UN CASO QUE EMPEORA. La regla es "el ULTIMO separador que aparece
 ''' es el decimal", asi que <c>1.000</c> se lee como <b>1</b> y no como mil — en LAS DOS CULTURAS:</para>
 ''' <code>es-AR  '1.000' -&gt; 1   (el control de stock daba 1000)
 ''' en-US  '1,000' -&gt; 1   (el control de stock daba 1000)</code>
@@ -43,7 +43,7 @@ Imports System.Windows.Forms
 ''' <c>Overridable</c>. <c>ValidateEditText</c> es el embudo: lo llaman <c>OnLostFocus</c>, los botones de
 ''' incremento, y —esto es lo que hace que el commit al cerrar funcione— el GETTER de <c>Value</c> cuando
 ''' hay una edicion pendiente.</para>
-''' <para>⛔ NO lo llama <c>OnValidating</c>, o sea que <c>ValidateChildren()</c> NO commitea un
+''' <para>NO lo llama <c>OnValidating</c>, o sea que <c>ValidateChildren()</c> NO commitea un
 ''' <c>NumericUpDown</c>. MEDIDO contando llamadas al override: tras tipear, <c>ValidateChildren()</c>
 ''' devuelve True con <c>UserEdit=True</c> y CERO llamadas; leer <c>.Value</c> da una. Este renglon decia lo
 ''' contrario, y esa afirmacion exacta es la que ya causo una regresion (ver la nota de
@@ -53,7 +53,7 @@ Friend Class NumericUpDownCultura
     Inherits NumericUpDown
 
     ''' <summary>Toma el texto tipeado con la ley flexible, lo acota al rango del control y lo commitea.
-    ''' <para>⛔ Si el texto no parsea (vacio, basura), NO se inventa un valor: cae al comportamiento de la
+    ''' <para>Si el texto no parsea (vacio, basura), NO se inventa un valor: cae al comportamiento de la
     ''' clase base, que repone el <c>Value</c> vigente. Tragarse el error y dejar un 0 seria peor que el
     ''' defecto que esta clase arregla.</para></summary>
     Protected Overrides Sub ValidateEditText()
@@ -65,7 +65,7 @@ Friend Class NumericUpDownCultura
         End If
 
         ' Decimal tiene menos rango que Double: un 1e40 pegado a mano tira OverflowException.
-        ' ⛔ SE CONSERVA EL VALOR VIGENTE, NO SE SALTA AL EXTREMO. Antes esto hacia
+        ' SE CONSERVA EL VALOR VIGENTE, NO SE SALTA AL EXTREMO. Antes esto hacia
         ' `v = If(d < 0, Minimum, Maximum)`, y medido con `1e40` en el epsilon de weld el control saltaba a
         ' 0,001 — o sea el MISMO modo de falla que esta clase existe para cerrar ("el usuario ve saltar el
         ' valor y no entiende por que"), entrando por el otro extremo. El NumericUpDown de stock, ante un

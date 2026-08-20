@@ -8,15 +8,15 @@ Imports System.Text
 ''' iff a plugin "Foo.esp" exists in Data).
 '''
 ''' Also used by NPC_Manager Save ESP to emit auto-generated plugins containing NPC_
-''' overrides with proper master cleanup (xEdit CleanMasters algorithm).
+''' overrides with proper master cleanup.
 ''' </summary>
 Public Module PluginWriter
 
-    ' TES4 record header version field (per xEdit / wbInterface.pas).
+    ' TES4 record header version field.
     ' These are spec constants of the binary format, not game data.
-    Friend Const TES4_RECORD_VERSION_FO4 As UShort = &H83US   ' 131 (gmFO4, wbImplementation.pas:9937)
-    ' 44 = Skyrim SPECIAL EDITION (gmSSE), NOT 43 (that is Skyrim LE / gmTES5). xEdit stamps 44 on every
-    ' newly-created SSE record (wbImplementation.pas:9938: gmSSE/gmTES5VR/gmEnderalSE → 44). Was 0x2B (43),
+    Friend Const TES4_RECORD_VERSION_FO4 As UShort = &H83US   ' 131 (FO4)
+    ' 44 = Skyrim SPECIAL EDITION, NOT 43 (that is Skyrim LE). Skyrim SE, Skyrim VR, and Enderal SE
+    ' all stamp 44 on every newly-created SSE record. Was 0x2B (43),
     ' which mislabeled app-authored SSE records + the TES4 header as Skyrim LE.
     Friend Const TES4_RECORD_VERSION_SSE As UShort = &H2CUS   ' 44
 
@@ -28,20 +28,19 @@ Public Module PluginWriter
     Friend Const NEXT_OBJECT_ID_DEFAULT As UInteger = &H800UI
 
     ''' <summary>¿El archivo que estamos escribiendo puede usar el rango HARDCODED, o sea object ids por
-    ''' DEBAJO de 0x800? Réplica de <c>TwbFile.GetAllowHardcodedRangeUse</c>
-    ''' (wbImplementation.pas:3946-3957): depende del JUEGO y de la VERSIÓN DEL HEDR que emitimos, y exige
+    ''' DEBAJO de 0x800? Depende del JUEGO y de la VERSIÓN DEL HEDR que emitimos, y exige
     ''' al menos un master.
     ''' <para>SSE pide <c>HEDR &gt;= 1.709</c> y nosotros escribimos <see cref="HEDR_VERSION_SSE"/> = 1.71
     ''' ⇒ True en cuanto el archivo tiene un master. FO4 pide <c>&gt;= 1.0</c> y escribimos
     ''' <see cref="HEDR_VERSION_FO4"/> = 0.95 ⇒ siempre False. O sea que es GAME-AWARE de verdad, no una
     ''' constante: el espacio direccionable de un ESL nuestro es 0x001..0xFFF en SSE y 0x800..0xFFF en FO4.</para>
-    ''' <para>⛔ Decide el PISO del espacio (1 vs 0x800), que es lo que el canónico usa para el wrap, la
-    ''' recuperación y el agotamiento (<c>NewFormID</c> :5085-5097, <c>GetHighObjectID</c> :4216-4219).
+    ''' <para>Decide el PISO del espacio (1 vs 0x800), que es lo que el canónico usa para el wrap, la
+    ''' recuperación y el agotamiento de object ids.
     ''' NO cambia de dónde arranca un guardado normal: eso sale del contador del HEDR, que esta app siembra
     ''' en 0x800 igual que el CK, así que los FormID de un guardado corriente no se mueven.</para></summary>
-    ''' <para>⛔ Ya NO reimplementa la regla: reenvía a <c>PluginManager.AllowsHardcodedRange</c>, la única
+    ''' <para>Ya NO reimplementa la regla: reenvía a <c>PluginManager.AllowsHardcodedRange</c>, la única
     ''' implementación, pasándole la versión de HEDR que ESTE escritor emite. La copia local ignoraba las dos
-    ''' precondiciones de VR del canónico (gmFO4VR no está en la lista; gmTES5VR exige VRESL), o sea que en un
+    ''' precondiciones de VR del canónico (FO4 VR no está en la lista; Skyrim VR exige VRESL), o sea que en un
     ''' rig de VR el escritor y el lector habrían usado pisos distintos para el mismo archivo.</para>
     Friend Function AllowsHardcodedRange(game As Config_App.Game_Enum, masterCount As Integer) As Boolean
         Dim version As Single = If(game = Config_App.Game_Enum.Skyrim, HEDR_VERSION_SSE, HEDR_VERSION_FO4)
@@ -74,7 +73,7 @@ Public Module PluginWriter
         Dim hedrVersion As Single = If(game = Config_App.Game_Enum.Fallout4, HEDR_VERSION_FO4, HEDR_VERSION_SSE)
 
         ' Master file size: read from disk if the .esm sits next to our output. The DATA subrecord
-        ' is informational; engines tolerate 0, but a real value matches what xEdit/CK produce.
+        ' is informational; engines tolerate 0, but a real value matches what CK produces.
         Dim masterFileSize As ULong = TryReadMasterFileSize(outputPath, masterName)
 
         ' === Build subrecord data block (TES4 record body) ===
@@ -87,7 +86,7 @@ Public Module PluginWriter
                 bw.Write(NEXT_OBJECT_ID_DEFAULT)           ' nextObjectID
 
                 ' --- CNAM (author, ZSTRING) ---
-                ' xEdit defines TES4.CNAM as wbString (translatable). Route through the central
+                ' TES4.CNAM is a translatable string field. Route through the central
                 ' encoder so future callers passing non-ASCII authors (e.g. 中文 author tools)
                 ' don't get silent '?' replacement.
                 Dim authorBytes = PluginEncodingSettings.EncodeTranslatable(If(author, ""))
@@ -106,7 +105,7 @@ Public Module PluginWriter
                 bw.Write(CByte(0))
 
                 ' --- DATA (master file size, u64) ---
-                ' Per TES5Edit (wbInterface.pas), MAST is followed by DATA carrying the master's
+                ' MAST is followed by DATA carrying the master's
                 ' on-disk size. Pairing: MAST_n always comes with DATA_n.
                 WriteSubrecordHeader(bw, "DATA", 8)
                 bw.Write(masterFileSize)

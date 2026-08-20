@@ -14,7 +14,7 @@ Public Enum FaceTintSortKey
     Flag_ChargenDetail = 10 ' TTEF 0x2
     Flag_TakesSkinTone = 11 ' TTEF 0x4
     Template_ColorIndex = 12 ' TEND ColorID
-    Category_Index = 13     ' TTGE Category Index del grupo de la option (xEdit: TTGE 'Category Index')
+    Category_Index = 13     ' TTGE Category Index del grupo de la option
 End Enum
 
 ''' <summary>Claves de orden para SWAPS (region swaps MPPT).</summary>

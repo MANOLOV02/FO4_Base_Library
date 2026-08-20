@@ -10,7 +10,7 @@ Public Class MorphChannel
     Public Property Deltas As List(Of MorphData)
     Public Property IsZap As Boolean = False
 
-    ''' <summary>⭐ True cuando este canal lo aplica LA RUTINA DE MORPH DEL MOTOR (el applier nativo de
+    ''' <summary>True cuando este canal lo aplica LA RUTINA DE MORPH DEL MOTOR (el applier nativo de
     ''' BSFaceGenMorphData), que VALIDA el peso contra [-1,1] y, fuera de rango, <b>ABORTA EL CANAL ENTERO
     ''' — no clampea</b>. Fijado al CONSTRUIR el canal, por ORIGEN: no es por juego ni global.
     ''' <para>VERIFICADO POR DESENSAMBLADO en los tres binarios:</para>
@@ -26,7 +26,7 @@ Public Class MorphChannel
     ''' </list>
     ''' <para><b>Inclusive en ±1</b>: <c>jb</c>/<c>ja</c> saltan sólo ESTRICTAMENTE fuera. NaN aborta también
     ''' (comiss deja CF=1 en unordered ⇒ el <c>jb</c> se toma).</para>
-    ''' <para>⛔ False SÓLO para los canales de RaceMenu (skee64), que NO usan el applier del motor sino su
+    ''' <para>False SÓLO para los canales de RaceMenu (skee64), que NO usan el applier del motor sino su
     ''' propio <c>TRIFile::Apply</c> (SKSE64Plugins-master\skee64\FaceMorphInterface.cpp:216-246, :1115-1119;
     ''' SKEEHooks.cpp:736-741), SIN validación de rango — y que además tienen una descomposición DELIBERADA
     ''' para |v|&gt;1 (FaceMorphInterface.cpp:1156-1163 parte 2.5 en 1.0+1.0+0.5 preservando la magnitud).
@@ -38,7 +38,7 @@ Public Class MorphChannel
     ''' (ver <see cref="MorphEngine.ApplyChannelsToVertexArray"/>). Esa es la ley de selección con la
     ''' que el CK aplica los morphs de CABEZA de un <c>.tri</c> de FaceGen — NO es una ley universal.
     '''
-    ''' ⛔ False para los canales cuyo origen es un <c>.osd</c> de BodySlide: ahí no interviene ningún
+    ''' False para los canales cuyo origen es un <c>.osd</c> de BodySlide: ahí no interviene ningún
     ''' applier del motor, la geometría la hornea BodySlide y <c>ApplySliders</c> aplica TODO diff sin
     ''' gate (BodySlideApp.cpp:1338-1347). Con el gate prendido, un slider de detalle cuyos deltas
     ''' viven entre 1e-4 y 1e-2 no se veía en el viewport pero sí quedaba en el NIF construido.
@@ -51,7 +51,7 @@ Public Class MorphChannel
     ''' Canal de CLAMP de BodySlide: NO es un morph. Se aplica en un SEGUNDO PASE, despues de todos los
     ''' canales normales, y con ASIGNACION ABSOLUTA — <c>verts[i] = delta</c>, sin sumar y sin escalar
     ''' por el peso (DiffDataSets::ApplyClamp, DiffData.cpp:534-537).
-    ''' ⚠️ El gate NO vive aca: el emisor decide si emite el canal, y lo hace contra el DEFAULT crudo
+    ''' El gate NO vive aca: el emisor decide si emite el canal, y lo hace contra el DEFAULT crudo
     ''' del slider para el peso que se construye (<c>defBigValue &gt; 0</c>, BodySlideApp.cpp:4406/:4410),
     ''' no contra el valor vivo. El <c>Weight &lt;= 0</c> de abajo es solo defensa: los emisores mandan 1.0.
     ''' </summary>
@@ -243,19 +243,19 @@ Public Class MorphEngine
         If count = 0 Then Return verts
         If plan Is Nothing OrElse Not plan.HasMorphs Then Return verts
 
-        ' ⭐⭐ LEY DE SELECCIÓN DEL CK — el gate NO es por vértice, es por BLOQUE DE 4 ÍNDICES CONSECUTIVOS.
+        ' LEY DE SELECCIÓN DEL CK — el gate NO es por vértice, es por BLOQUE DE 4 ÍNDICES CONSECUTIVOS.
         ' Para cada bloque b que cubre los vértices 4b..4b+3:
         '     · bloque de COLA (4b+4 > nV): se aplica SIEMPRE, sin mirar magnitud.
         '     · resto: blockmax = max(|PosDiff.X|,|PosDiff.Y|,|PosDiff.Z|) sobre los 4 vértices del bloque.
         '              blockmax >= 0,01 ⇒ se aplica el bloque ENTERO; si no, se saltea ENTERO.
-        ' ⛔ El gate usa el delta CRUDO del .tri (int16 × multiplier), NO escalado por el peso del canal.
+        ' El gate usa el delta CRUDO del .tri (int16 × multiplier), NO escalado por el peso del canal.
         '    Probado: diff(w50,w100) y diff(w0,w100) dan conjuntos IDÉNTICOS en las 4 shapes medidas.
         ' Umbral 0,01 acotado empíricamente a (0,00998540 – 0,01009503] — 0,01 es el único valor redondo dentro.
         ' VALIDACIÓN: 6.027 decisiones / 0 errores (experimento BAKETEST de inputs controlados) · 1.455 / 0
         ' (superposición multicanal) · 4.617 instancias sobre ~3.159 NPCs vanilla del CK y 213 mallas distintas
         ' / 0 errores (corpus independiente: los .tri de hair/hairline tienen UN solo morph, así que
         ' CK − malla fuente es el canal gateado puro).
-        ' ⛔ El bloque de cola es LOAD-BEARING, no cosmético: 821 bloques parciales se aplican pese a estar bajo
+        ' El bloque de cola es LOAD-BEARING, no cosmético: 821 bloques parciales se aplican pese a estar bajo
         '    umbral, y 3.407 de 4.617 shapes tienen nV mod 4 <> 0.
         ' Esto REEMPLAZA el viejo skip por-vértice `|delta·peso|² < 0.000001F` (= |delta| < 0,001), que era un
         ' proxy tosco de esta regla: por eso quitarlo EMPEORABA el corpus (694→716 NPCs) — sin él aplicábamos
@@ -264,7 +264,7 @@ Public Class MorphEngine
         ' bloque 88-91 con v88 (2,1e-02); v111, 350× más grande, se saltea porque su bloque entero queda bajo
         ' umbral; los gemelos especulares caen en bloques distintos. Y BrowsMaleHumanoid04 aplica 0 de 88 porque
         ' su SkinnyMorph tiene multiplier degenerado 2,04e-09 ⇒ ningún bloque alcanza el umbral.
-        ' ⚠️ Sin probar: el gate resultó no-escalado por el peso, demostrado sobre el canal de PESO (w50). Para
+        ' Sin probar: el gate resultó no-escalado por el peso, demostrado sobre el canal de PESO (w50). Para
         '    sliders de chargen sólo se midió |v|=1,0. Si aparece residual en NPCs con sliders fraccionarios,
         '    ése es el primer lugar donde mirar.
         Const BlockGateThreshold As Single = 0.01F
@@ -360,9 +360,9 @@ Public Class MorphEngine
 
         ' UVs: mismo contrato que las posiciones — se parte SIEMPRE de la base, asi bajar un slider uv
         ' a 0 (o pasar un plan nulo) las devuelve a su lugar en vez de dejarlas corridas.
-        ' ⛔ Va ANTES del early-out de `count = 0`: ese Return mira NifLocalVertices, y una shape sin
+        ' Va ANTES del early-out de `count = 0`: ese Return mira NifLocalVertices, y una shape sin
         ' vertices pero con UVs pobladas se quedaba con las UVs corridas del pase anterior.
-        ' ⛔ El gate `HasUvMorphs OrElse UvsMorphed` NO es cosmetico: esto corre por shape en CADA
+        ' El gate `HasUvMorphs OrElse UvsMorphed` NO es cosmetico: esto corre por shape en CADA
         ' update de morphs (arrastrar un slider dispara una cadena), y sin el se pagaba un Array.Copy
         ' del array de uvs completo en todo modelo, incluidos los que no tienen un solo slider uv.
         ' El segundo termino es el que hace correcta la optimizacion: cubre el update en el que el
@@ -382,10 +382,10 @@ Public Class MorphEngine
             ' El cache de TBN guarda las DERIVADAS UV por triangulo (BuildTBNCache), asi que mover las
             ' UVs lo invalida. Sin esto, RecalculateNormalsTangentsBitangents reusaba las derivadas de
             ' la primera aplicacion y el normal-map del viewport quedaba rotado respecto del NIF.
-            ' ⛔ La condicion es `cambioAlgo`, NO el flag `UvsDirty`: ese es PEGAJOSO — lo limpia
+            ' La condicion es `cambioAlgo`, NO el flag `UvsDirty`: ese es PEGAJOSO — lo limpia
             ' UpdateUvBuffer_GL y solo si el VBO ya existe. Mirarlo tiraba el cache y forzaba un
             ' BuildTBNCache completo en cada update mientras el VBO no estuviera creado.
-            ' ⭐ Se refrescan SOLO las derivadas UV de los triangulos tocados, en vez de tirar el
+            ' Se refrescan SOLO las derivadas UV de los triangulos tocados, en vez de tirar el
             ' cache entero: la adjacencia depende de los indices, que un slider uv no mueve.
             If cambioAlgo Then RecalcTBN.RefreshUvDerivatives(geom, uvTocados)
             uvsCambiaron = cambioAlgo
@@ -413,7 +413,7 @@ Public Class MorphEngine
                 End If
             Next
         Else
-            ' ⛔ NO alcanza con poner la mascara en 0 del lado CPU: el vertice que DEJA de estar zapeado
+            ' NO alcanza con poner la mascara en 0 del lado CPU: el vertice que DEJA de estar zapeado
             ' tiene que SUBIRSE al vboMask, y UpdateUpdateSkinBuffersMask_GL sale temprano cuando
             ' dirtyMaskIndices esta vacio (Render.vb). El `Array.Clear` + `dirtyMaskIndices.Clear()`
             ' hacia justo lo contrario: limpiaba la mascara Y borraba la lista de "hay que subir", asi
@@ -427,7 +427,7 @@ Public Class MorphEngine
             ' reaparece. Solo volvia cambiando de proyecto y regresando, porque esa recarga pasa por
             ' Setup_GL, que recrea el vboMask con BufferData desde el array ya en cero.
             '
-            ' ⛔ Tampoco se limpia el set: una entrada pendiente de una pasada anterior todavia
+            ' Tampoco se limpia el set: una entrada pendiente de una pasada anterior todavia
             ' necesita subirse. El uploader lo vacia el mismo despues de escribir.
             For i = 0 To count - 1
                 If geom.VertexMask(i) <> 0 Then
@@ -461,7 +461,7 @@ Public Class MorphEngine
                 ' Escribir -0.0F igual PISA el negativo que dejo otro canal de zap solapado y resucita
                 ' el vertice. La mascara ya viene reseteada arriba, asi que saltear es lo correcto.
                 '
-                ' ⛔ NO filtrar aca los deltas todo-cero: eso es una ley del OSD de BodySlide y vive en
+                ' NO filtrar aca los deltas todo-cero: eso es una ley del OSD de BodySlide y vive en
                 ' el RESOLVER (SliderMorphResolver de WM). HairTopZapResolver emite a proposito
                 ' PosDiff=Vector3.Zero y usa la lista solo como indice de vertices a ocultar — filtrar
                 ' en el motor anulaba el hair-zap entero.
@@ -501,7 +501,7 @@ Public Class MorphEngine
         geom.CachedWorldVertices = Nothing
         geom.CachedWorldNormals = Nothing
 
-        ' ⭐ La base tangente depende de las UVs, asi que un slider uv la invalida — pero NO mueve un
+        ' La base tangente depende de las UVs, asi que un slider uv la invalida — pero NO mueve un
         ' solo vertice, con lo que dirtyVertexIndices queda vacio y el recalculo de abajo no corria
         ' NUNCA: se tiraba el cache y no habia quien lo reconstruyera.
         ' Canonico: CalcTangentsForShape corre INCONDICIONAL en la fase 3 del build
@@ -517,17 +517,17 @@ Public Class MorphEngine
             uvsCambiaron = False
         End If
 
-        ' ⭐ `soloTangentes` NO se decide por el ajuste de recalcular normales, sino por si SE MOVIERON
+        ' `soloTangentes` NO se decide por el ajuste de recalcular normales, sino por si SE MOVIERON
         ' VERTICES. Las normales se derivan de POSICIONES; las UVs no entran en su calculo. El
         ' canonico lo separa igual: `CalcNormalsForShape` (posiciones, gateada por lockNormals) y
         ' `CalcTangentsForShape` (UVs) son dos pases distintos (BodySlideApp.cpp:4494-4501).
-        ' ⛔ MEDIDO en un build real (UBE brows, slider uv `Thin` a 100): con el ajuste en True esto
+        ' MEDIDO en un build real (UBE brows, slider uv `Thin` a 100): con el ajuste en True esto
         ' daba False, corria el recalculo COMPLETO y las 501 normales pasaban de AUTORADAS (las del
         ' NIF fuente, que es lo que queda cuando nada esta sucio) a CALCULADAS — un salto de hasta
         ' 0,279 con las posiciones IDENTICAS. Mover un slider uv un 1 % te cambiaba todas las
         ' normales de la malla.
         Dim huboCambioDePosicion As Boolean = geom.dirtyVertexIndices.Count > 0
-        ' ⛔ La condicion es `Not (pidioNormales AndAlso huboCambioDePosicion)`, NO
+        ' La condicion es `Not (pidioNormales AndAlso huboCambioDePosicion)`, NO
         ' `uv AndAlso Not posicion`. Esa version anterior cubria solo el caso UV-PURO: con un slider
         ' uv Y uno de posicion a la vez, `huboCambioDePosicion` daba True, KeepExistingNormals caia a
         ' False y las normales se recalculaban AUNQUE el ajuste estuviera apagado — o sea que el uv
@@ -538,11 +538,11 @@ Public Class MorphEngine
         ' (BodySlideApp.cpp:4494-4501).
         Dim soloTangentes As Boolean = Not (recalculateNormals AndAlso huboCambioDePosicion)
         If uvsCambiaron Then
-            ' ⭐ SOLO los vertices cuyas UV se movieron. RecalculateNormalsTangentsBitangents hace
+            ' SOLO los vertices cuyas UV se movieron. RecalculateNormalsTangentsBitangents hace
             ' la clausura sola (dirty -> triangulos incidentes -> los 3 vertices de cada uno) y
             ' dimensiona los acumuladores A ESA CLAUSURA, no a la malla. Marcar la malla entera
             ' forzaba el maximo trabajo posible en CADA tick del arrastre.
-            ' ⛔ Este comentario decia "elige acumuladores SPARSE por debajo del 40 % de los
+            ' Este comentario decia "elige acumuladores SPARSE por debajo del 40 % de los
             ' triangulos": esa rama YA NO EXISTE. Se fue al unificar el camino sparse y el full en uno
             ' solo indexado por ranura. Un comentario que describe una rama muerta manda a buscar un
             ' umbral que no esta en ningun lado.
@@ -555,10 +555,10 @@ Public Class MorphEngine
         End If
 
         ' Recalculate normals/TBN if needed
-        ' ⚠️ ABIERTO: el canonico llama `CalcTangentsForShape` INCONDICIONAL (BodySlideApp.cpp:4501);
+        ' ABIERTO: el canonico llama `CalcTangentsForShape` INCONDICIONAL (BodySlideApp.cpp:4501);
         ' aca se gatea por `recalculateNormals` (decision de WM, el switch del usuario manda) Y ademas
         ' por si se movio algo. Un shape que el preset no toca conserva las tangentes AUTORADAS.
-        ' ⛔ PROBADO Y DESCARTADO: forzar el recalculo completo cuando no hay nada sucio NO cambio el
+        ' PROBADO Y DESCARTADO: forzar el recalculo completo cuando no hay nada sucio NO cambio el
         ' resultado de `BaseUndies` (35,20 grados, identico en 4 versiones distintas del codigo), asi
         ' que la divergencia de ese shape NO esta aca — sus tangentes llegan al NIF por otro camino.
         ' Se revirtio para no pagar un recalculo de malla entera por frame sin beneficio medido.

@@ -33,18 +33,18 @@ Friend Module ParserHelpers
 
     ''' <summary>Resolve a raw FormID value using the plugin's master list. ÚNICO lugar donde vive la
     ''' política de nulos de los parsers — <c>RecordParsers.ResolveFormIDReference</c> reenvía acá.
-    ''' <para>⛔ SIN PluginManager EL FormID VUELVE CRUDO: sin el mapeo de master-index queda un número
+    ''' <para>SIN PluginManager EL FormID VUELVE CRUDO: sin el mapeo de master-index queda un número
     ''' PLAUSIBLE Y EQUIVOCADO, sin error. Es el motivo por el que los <c>Optional pluginManager As
     ''' PluginManager = Nothing</c> de estos parsers dejaron de ser opcionales: la firma ANUNCIABA como
     ''' soportado un modo que corrompe, mientras los llamadores reales habían concluido por separado que
     ''' no lo era (se sacó el Optional y compiló limpio: nadie lo omitía). Esta guarda queda como red para
     ''' quien pase Nothing a propósito — que ahora es un acto explícito, no un default.</para></summary>
     ''' <summary>Centinela <c>0xFFFFFFFF</c>: NO es una referencia y pasa SIN TOCAR.
-    ''' <para>El canónico lo declara campo por campo agregando la pseudo-firma <c>FFFF</c> a la lista de
-    ''' destinos permitidos — p. ej. <c>wbFormIDCk('Emotion', [KYWD, FFFF])</c> (wbDefinitionsFO4.pas:10074) y
-    ''' <c>wbFormIDCk(ANAM, 'Condition Actor Value', [AVIF, NULL, FFFF])</c> en EQUP. Significa "ninguno / todos",
-    ''' no "el record 0xFFFFFFFF".</para>
-    ''' <para>⛔ Sin este corte el valor se remapeaba: el byte alto <c>0xFF</c> nunca es un índice de master
+    ''' <para>El formato lo declara campo por campo agregando la pseudo-firma <c>FFFF</c> a la
+    ''' lista de destinos permitidos — p. ej. el campo Emotion admite <c>[KYWD, FFFF]</c> y el
+    ''' ANAM 'Condition Actor Value' de EQUP admite <c>[AVIF, NULL, FFFF]</c>. Significa "ninguno
+    ''' / todos", no "el record 0xFFFFFFFF".</para>
+    ''' <para>Sin este corte el valor se remapeaba: el byte alto <c>0xFF</c> nunca es un índice de master
     ''' válido (el tope es 0xFD full / 0xFE light), así que caía en la rama "self", se le tomaba el object id
     ''' 0xFFFFFF y salía como un FormID del propio archivo. MEDIDO: el peor ejemplo de
     ''' <c>INFO.Responses[].EmotionFormID</c> era exactamente <c>0x00FFFFFF</c> — el centinela reconstruido —

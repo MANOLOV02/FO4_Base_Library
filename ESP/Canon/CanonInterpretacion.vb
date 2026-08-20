@@ -1,4 +1,6 @@
 ﻿Imports System.Drawing
+Imports System.IO
+Imports System.Linq
 Imports System.Runtime.CompilerServices
 
 Namespace Canon
@@ -137,6 +139,632 @@ Namespace Canon
         End Function
 
         '======================================================================================
+        ' Plantilla de cuerpo (armadura)
+        '======================================================================================
+
+        ''' <summary>El slot mask (First Person Flags) de la plantilla de cuerpo. En Fallout 4
+        ''' siempre sale de BOD2; en Skyrim el record trae BOD2 O BODT —nunca las dos—, y las dos
+        ''' firmas guardan el mismo campo en el mismo offset, así que hay que mirar cuál de las dos
+        ''' trajo el record en vez de asumir siempre BOD2.</summary>
+        <Extension>
+        Public Function SlotMaskDe(armo As IArmo) As UInteger
+            Dim sse = TryCast(armo, ArmoSSE)
+            If sse IsNot Nothing AndAlso Not armo.BipedBodyTemplateFirstPersonFlagsPresente _
+                    AndAlso sse.BodyTemplateFirstPersonFlagsPresente Then
+                Return sse.BodyTemplateFirstPersonFlags
+            End If
+            Return armo.BipedBodyTemplateFirstPersonFlags
+        End Function
+
+        ''' <summary>Mismo caso que <see cref="SlotMaskDe(IArmo)"/> pero para ARMA.</summary>
+        <Extension>
+        Public Function SlotMaskDe(arma As IArma) As UInteger
+            Dim sse = TryCast(arma, ArmaSSE)
+            If sse IsNot Nothing AndAlso Not arma.BipedBodyTemplateFirstPersonFlagsPresente _
+                    AndAlso sse.BodyTemplateFirstPersonFlagsPresente Then
+                Return sse.BodyTemplateFirstPersonFlags
+            End If
+            Return arma.BipedBodyTemplateFirstPersonFlags
+        End Function
+
+
+        ''' <summary>Los complementos de armadura que declara este ARMO, en orden.
+        ''' <para>Los dos juegos lo declaran distinto: uno guarda pares (indice, referencia) y el otro una
+        ''' lista donde la POSICION es el indice. Quien pregunta "que complementos tiene" no tiene por
+        ''' que saber eso, y escribirlo en cada consumidor es garantizar que alguno se olvide de un
+        ''' juego.</para></summary>
+        <Extension>
+        Public Function ComplementosDe(armo As IArmo) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If armo Is Nothing Then Return salida
+            Dim fo4 = TryCast(armo, ArmoFO4)
+            If fo4 IsNot Nothing Then
+                For Each m In fo4.Models
+                    If m.ModelArmorAddon <> 0UI Then salida.Add(m.ModelArmorAddon)
+                Next
+                Return salida
+            End If
+            Dim sse = TryCast(armo, ArmoSSE)
+            If sse IsNot Nothing Then
+                For Each a In sse.Armature
+                    If a.ModelFilename <> 0UI Then salida.Add(a.ModelFilename)
+                Next
+            End If
+            Return salida
+        End Function
+
+        ''' <summary>Las razas adicionales que acepta este complemento.</summary>
+        <Extension>
+        Public Function RazasAdicionalesDe(arma As IArma) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If arma Is Nothing Then Return salida
+            For Each r In arma.AdditionalRaces
+                If r.Race <> 0UI Then salida.Add(r.Race)
+            Next
+            Return salida
+        End Function
+
+        '======================================================================================
+        ' Object Template (OBTS) y attach-parent-slots del ARMO de Fallout 4
+        '======================================================================================
+        ' Las combinaciones se LEEN de la vista del record: acá no hay conversor ni lista
+        ' paralela. Lo único que vive acá son las operaciones que la vista sola no da: llegar a la
+        ' lista del NPC_ por su interfaz -la clase del record no está en INpc-, dejar el bloque
+        ' igual a una lista que puede venir de otro record, y las altas y bajas que un editor
+        ' necesita sobre las listas de adentro.
+
+        <Extension>
+        Public Function ReadAttachParentSlots(fo4 As ArmoFO4) As List(Of UInteger)
+            If fo4 Is Nothing Then Return New List(Of UInteger)
+            Return fo4.AttachParentSlots.Select(Function(x) x.Keyword).ToList()
+        End Function
+
+        <Extension>
+        Public Sub WriteAttachParentSlots(fo4 As ArmoFO4, ids As IEnumerable(Of UInteger))
+            While fo4.AttachParentSlots.Count > 0
+                If Not fo4.QuitarAttachParentSlots(0) Then Exit While
+            End While
+            If ids Is Nothing Then Return
+            For Each slotFid In ids
+                Dim e = fo4.AgregarAttachParentSlots()
+                If e IsNot Nothing Then e.Keyword = slotFid
+            Next
+        End Sub
+
+        ''' <summary>Las combinaciones de un NPC_. La lista generada vive en la clase del record,
+        ''' así que hay que bajar a ella; los elementos se devuelven por la interfaz de forma, que
+        ''' es la que ARMO y NPC_ comparten -es el mismo bloque OBTE/OBTS en los dos.</summary>
+        <Extension>
+        Public Function CombinacionesDelNpc(npc As INpc) As IReadOnlyList(Of IBloque_Combinations)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return Array.Empty(Of IBloque_Combinations)()
+            Return nf.Combinations
+        End Function
+
+        ''' <summary>Deja el Object Template del ARMO con exactamente estas combinaciones y en ese
+        ''' orden. <para>Cada una se clona ENTERA: se copia el NODO, no campo por campo, así viaja
+        ''' también lo que ninguna propiedad muestra -los tramos de relleno, por ejemplo- y el
+        ''' record vuelve a emitir los mismos bytes. Se clona TODO antes de vaciar, porque la lista
+        ''' de origen puede ser la del propio record.</para> <para>El primer elemento se agrega con
+        ''' la API generada y recién después se cuelgan los clones: agregarlo es lo que asegura de
+        ''' una vez la ruta del bloque y el contador que el formato declara aparte. Los contadores
+        ''' de cada arreglo (Include Count, Property Count) no se tocan: se recalculan solos al
+        ''' escribir.</para></summary>
+        <Extension>
+        Public Sub ReemplazarCombinations(fo4 As ArmoFO4,
+                                          combos As IEnumerable(Of IBloque_Combinations))
+            If fo4 Is Nothing Then Return
+            Dim clones = ClonarCombinaciones(combos)
+            While fo4.Combinations.Count > 0
+                If Not fo4.QuitarCombinations(0) Then Exit While
+            End While
+            If clones.Count = 0 Then Return
+            Dim semilla = fo4.AgregarCombinations()
+            If semilla Is Nothing Then Return
+            ColgarEnElContenedor(semilla.Node, clones)
+        End Sub
+
+        ''' <summary>Lo mismo para el NPC_, que declara el mismo bloque.</summary>
+        <Extension>
+        Public Sub ReemplazarCombinations(npc As INpc,
+                                          combos As IEnumerable(Of IBloque_Combinations))
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return
+            Dim clones = ClonarCombinaciones(combos)
+            While nf.Combinations.Count > 0
+                If Not nf.QuitarCombinations(0) Then Exit While
+            End While
+            If clones.Count = 0 Then Return
+            Dim semilla = nf.AgregarCombinations()
+            If semilla Is Nothing Then Return
+            ColgarEnElContenedor(semilla.Node, clones)
+        End Sub
+
+        Private Function ClonarCombinaciones(
+                combos As IEnumerable(Of IBloque_Combinations)) As List(Of WbNode)
+            Dim salida As New List(Of WbNode)
+            If combos Is Nothing Then Return salida
+            For Each c In combos
+                If c Is Nothing OrElse c.Node Is Nothing Then Continue For
+                salida.Add(c.Node.Clonar())
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>Deja el contenedor del elemento recién agregado con exactamente estos nodos.
+        ''' El elemento semilla se va con el resto: sólo estaba para que el bloque quedara armado y
+        ''' para que el contador que el formato declara aparte tuviera dónde ir.</summary>
+        Private Sub ColgarEnElContenedor(semilla As WbNode, clones As List(Of WbNode))
+            If semilla Is Nothing Then Return
+            Dim cont = semilla.Parent
+            If cont Is Nothing Then Return
+            cont.Children.Clear()
+            For Each n In clones
+                cont.AddChild(n)
+            Next
+        End Sub
+
+        ''' <summary>Agrega al ARMO una combinación igual a <paramref name="modelo"/> -o una vacía
+        ''' si no se le pasa ninguno- y la devuelve. <para>Es lo que necesita un editor: una vista
+        ''' no existe sin un nodo, y un nodo no existe fuera del árbol de un record, así que la
+        ''' combinación "suelta" que el usuario arma antes de aceptar se sostiene sobre una COPIA
+        ''' del record que se está editando. La copia hereda el contexto del original -entre otras
+        ''' cosas, si el archivo guarda los textos en tablas de idioma-, que es lo que hace que el
+        ''' nombre se lea igual que en el record.</para></summary>
+        <Extension>
+        Public Function AgregarCombinacion(fo4 As ArmoFO4,
+                                           modelo As IBloque_Combinations) As IBloque_Combinations
+            If fo4 Is Nothing Then Return Nothing
+            Dim nueva = fo4.AgregarCombinations()
+            VolcarCombinacion(nueva, modelo)
+            Return nueva
+        End Function
+
+        ''' <summary>Lo mismo sobre un NPC_.</summary>
+        <Extension>
+        Public Function AgregarCombinacion(npc As INpc,
+                                           modelo As IBloque_Combinations) As IBloque_Combinations
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return Nothing
+            Dim nueva = nf.AgregarCombinations()
+            VolcarCombinacion(nueva, modelo)
+            Return nueva
+        End Function
+
+        ''' <summary>Deja la combinación destino con el contenido de la de origen. Se clonan los
+        ''' NODOS que cuelgan de ella, no campo por campo: así viaja también lo que ninguna
+        ''' propiedad muestra.</summary>
+        Private Sub VolcarCombinacion(destino As IBloque_Combinations,
+                                      origen As IBloque_Combinations)
+            If destino Is Nothing OrElse destino.Node Is Nothing Then Return
+            If origen Is Nothing OrElse origen.Node Is Nothing Then Return
+            destino.Node.Children.Clear()
+            For Each h In origen.Node.Children
+                destino.Node.AddChild(h.Clonar(destino.Node))
+            Next
+        End Sub
+
+        ''' <summary>Las combinaciones las declaran DOS records con la misma forma, y las listas de
+        ''' adentro -keywords, includes, properties- sólo se pueden agregar y quitar desde la clase
+        ''' generada de cada uno: la interfaz de forma las expone para leer. Estas dos funciones son
+        ''' el único lugar donde se baja a la clase concreta, y hay exactamente dos porque son
+        ''' exactamente dos los records que declaran el bloque.</summary>
+        Private Function ComoArmo(combo As IBloque_Combinations) As ArmoFO4_Combinations
+            Return TryCast(combo, ArmoFO4_Combinations)
+        End Function
+
+        Private Function ComoNpc(combo As IBloque_Combinations) As NpcFO4_Combinations
+            Return TryCast(combo, NpcFO4_Combinations)
+        End Function
+
+        ''' <summary>Deja la combinación con exactamente estos keywords, en ese orden.</summary>
+        <Extension>
+        Public Sub ReemplazarKeywordsDeCombinacion(combo As IBloque_Combinations,
+                                                   ids As IEnumerable(Of UInteger))
+            Dim a = ComoArmo(combo)
+            Dim n = ComoNpc(combo)
+            If a IsNot Nothing Then
+                While a.Keywords2.Count > 0
+                    If Not a.QuitarKeywords2(0) Then Exit While
+                End While
+            ElseIf n IsNot Nothing Then
+                While n.Keywords2.Count > 0
+                    If Not n.QuitarKeywords2(0) Then Exit While
+                End While
+            Else
+                Return
+            End If
+            If ids Is Nothing Then Return
+            ' La variable NO se llama "fid": el DSL del esquema, que vive en este mismo namespace,
+            ' declara una funcion Fid y VB no distingue mayusculas.
+            For Each idKeyword In ids
+                If a IsNot Nothing Then
+                    Dim e = a.AgregarKeywords2()
+                    If e IsNot Nothing Then e.Keyword = idKeyword
+                Else
+                    Dim e = n.AgregarKeywords2()
+                    If e IsNot Nothing Then e.Keyword = idKeyword
+                End If
+            Next
+        End Sub
+
+        ''' <summary>Agrega un Include vacío al final de la combinación y lo devuelve.</summary>
+        <Extension>
+        Public Function AgregarIncludeDeCombinacion(
+                combo As IBloque_Combinations) As IBloque_Includes
+            Dim a = ComoArmo(combo)
+            If a IsNot Nothing Then Return a.AgregarIncludes()
+            Dim n = ComoNpc(combo)
+            If n IsNot Nothing Then Return n.AgregarIncludes()
+            Return Nothing
+        End Function
+
+        ''' <summary>Deja la combinación con exactamente estos Includes, en ese orden. Se clonan
+        ''' los nodos antes de vaciar: la lista de origen puede ser la de la propia
+        ''' combinación.</summary>
+        <Extension>
+        Public Sub ReemplazarIncludesDeCombinacion(combo As IBloque_Combinations,
+                                                   includes As IEnumerable(Of IBloque_Includes))
+            Dim a = ComoArmo(combo)
+            Dim n = ComoNpc(combo)
+            If a Is Nothing AndAlso n Is Nothing Then Return
+            Dim clones As New List(Of WbNode)
+            If includes IsNot Nothing Then
+                For Each inc In includes
+                    If inc Is Nothing OrElse inc.Node Is Nothing Then Continue For
+                    clones.Add(inc.Node.Clonar())
+                Next
+            End If
+            Dim semilla As WbNode = Nothing
+            If a IsNot Nothing Then
+                While a.Includes.Count > 0
+                    If Not a.QuitarIncludes(0) Then Exit While
+                End While
+                If clones.Count = 0 Then Return
+                Dim nuevo = a.AgregarIncludes()
+                If nuevo Is Nothing Then Return
+                semilla = nuevo.Node
+            Else
+                While n.Includes.Count > 0
+                    If Not n.QuitarIncludes(0) Then Exit While
+                End While
+                If clones.Count = 0 Then Return
+                Dim nuevo = n.AgregarIncludes()
+                If nuevo Is Nothing Then Return
+                semilla = nuevo.Node
+            End If
+            ColgarEnElContenedor(semilla, clones)
+        End Sub
+
+        ''' <summary>Agrega una Property vacía al final de la combinación y la devuelve.</summary>
+        <Extension>
+        Public Function AgregarPropiedadDeCombinacion(
+                combo As IBloque_Combinations) As IBloque_Properties4
+            Dim a = ComoArmo(combo)
+            If a IsNot Nothing Then Return a.AgregarProperties2()
+            Dim n = ComoNpc(combo)
+            If n IsNot Nothing Then Return n.AgregarProperties3()
+            Return Nothing
+        End Function
+
+        ''' <summary>Deja la combinación con exactamente estas Properties, en ese orden.</summary>
+        <Extension>
+        Public Sub ReemplazarPropiedadesDeCombinacion(combo As IBloque_Combinations,
+                                                      props As IEnumerable(Of IBloque_Properties4))
+            Dim a = ComoArmo(combo)
+            Dim n = ComoNpc(combo)
+            If a Is Nothing AndAlso n Is Nothing Then Return
+            Dim clones As New List(Of WbNode)
+            If props IsNot Nothing Then
+                For Each p In props
+                    If p Is Nothing OrElse p.Node Is Nothing Then Continue For
+                    clones.Add(p.Node.Clonar())
+                Next
+            End If
+            Dim semilla As WbNode = Nothing
+            If a IsNot Nothing Then
+                While a.Properties2.Count > 0
+                    If Not a.QuitarProperties2(0) Then Exit While
+                End While
+                If clones.Count = 0 Then Return
+                Dim nuevo = a.AgregarProperties2()
+                If nuevo Is Nothing Then Return
+                semilla = nuevo.Node
+            Else
+                While n.Properties3.Count > 0
+                    If Not n.QuitarProperties3(0) Then Exit While
+                End While
+                If clones.Count = 0 Then Return
+                Dim nuevo = n.AgregarProperties3()
+                If nuevo Is Nothing Then Return
+                semilla = nuevo.Node
+            End If
+            ColgarEnElContenedor(semilla, clones)
+        End Sub
+
+        ''' <summary>El valor de una Property es una UNION: qué rama trae dato lo dice el 'Value
+        ''' Type' declarado, y leer la que no corresponde daría un número inventado. Devuelve el
+        ''' valor plano que usan el aplicador de OMOD y el editor. <para>Value 2 no tiene rama para
+        ''' texto ni para enumerado: en esos dos tipos el segundo valor no se usa y queda en
+        ''' cero.</para></summary>
+        <Extension>
+        Public Function LeerPropiedad(p As IBloque_Properties4) As OMOD_Property
+            Dim prop As New OMOD_Property
+            If p Is Nothing Then Return prop
+            prop.ValueType = CType(p.PropertyValueType, OMOD_ValueType)
+            prop.FunctionType = p.PropertyFunctionType
+            prop.PropertyIndex = p.[Property]
+            prop.StepValue = p.PropertyStep
+
+            Select Case prop.ValueType
+                Case OMOD_ValueType.FormIDInt, OMOD_ValueType.FormIDFloat
+                    prop.Value1FormID = p.PropertyValue1FormID
+                    prop.Value1 = RawBitsToSingle(prop.Value1FormID)
+                Case OMOD_ValueType.FloatType
+                    prop.Value1 = p.PropertyValue1Float
+                Case OMOD_ValueType.IntType
+                    prop.Value1 = RawBitsToSingle(p.PropertyValue1Int)
+                Case OMOD_ValueType.BoolType
+                    prop.Value1 = RawBitsToSingle(If(p.PropertyValue1Bool, 1UI, 0UI))
+                Case OMOD_ValueType.EnumType
+                    prop.Value1 = RawBitsToSingle(p.PropertyValue1Enum)
+                Case Else   ' StringType: la rama de la union son 4 bytes crudos.
+                    Dim crudos = p.PropertyValue1Unknown
+                    If crudos IsNot Nothing AndAlso crudos.Length >= 4 Then
+                        prop.Value1 = BitConverter.ToSingle(crudos, 0)
+                    End If
+            End Select
+
+            Select Case prop.ValueType
+                Case OMOD_ValueType.IntType, OMOD_ValueType.FormIDInt
+                    prop.Value2 = RawBitsToSingle(p.PropertyValue2Int)
+                Case OMOD_ValueType.FloatType, OMOD_ValueType.FormIDFloat
+                    prop.Value2 = p.PropertyValue2Float
+                Case OMOD_ValueType.BoolType
+                    prop.Value2 = RawBitsToSingle(If(p.PropertyValue2Bool, 1UI, 0UI))
+            End Select
+            Return prop
+        End Function
+
+        ''' <summary>Escribe el valor plano en la Property, por la rama de la union que le
+        ''' corresponde a su 'Value Type'. Es la operación inversa de <see cref="LeerPropiedad"/>:
+        ''' la usa el editor cuando el usuario acepta el cuadro de diálogo de una
+        ''' propiedad.</summary>
+        <Extension>
+        Public Sub EscribirPropiedad(p As IBloque_Properties4, valor As OMOD_Property)
+            If p Is Nothing OrElse valor Is Nothing Then Return
+            p.PropertyValueType = CByte(valor.ValueType)
+            p.PropertyFunctionType = valor.FunctionType
+            p.[Property] = valor.PropertyIndex
+            p.PropertyStep = valor.StepValue
+
+            Dim bits1 = SingleToRawBits(valor.Value1)
+            Select Case valor.ValueType
+                Case OMOD_ValueType.FloatType
+                    p.PropertyValue1Float = valor.Value1
+                Case OMOD_ValueType.FormIDInt, OMOD_ValueType.FormIDFloat
+                    p.PropertyValue1FormID = valor.Value1FormID
+                Case OMOD_ValueType.BoolType
+                    p.PropertyValue1Bool = (bits1 <> 0UI)
+                Case OMOD_ValueType.EnumType
+                    p.PropertyValue1Enum = bits1
+                Case Else   ' IntType / StringType
+                    p.PropertyValue1Int = bits1
+            End Select
+
+            Dim bits2 = SingleToRawBits(valor.Value2)
+            Select Case valor.ValueType
+                Case OMOD_ValueType.FloatType, OMOD_ValueType.FormIDFloat
+                    p.PropertyValue2Float = valor.Value2
+                Case OMOD_ValueType.BoolType
+                    p.PropertyValue2Bool = (bits2 <> 0UI)
+                Case OMOD_ValueType.IntType, OMOD_ValueType.FormIDInt
+                    p.PropertyValue2Int = bits2
+            End Select
+        End Sub
+
+        Private Function SingleToRawBits(v As Single) As UInteger
+            Return BitConverter.ToUInt32(BitConverter.GetBytes(v), 0)
+        End Function
+
+        Private Function RawBitsToSingle(v As UInteger) As Single
+            Return BitConverter.ToSingle(BitConverter.GetBytes(v), 0)
+        End Function
+
+        '======================================================================================
+        ' Morphs de chargen y disponibilidad de morfos (RACE)
+        '======================================================================================
+
+        ''' <summary>Morph Groups (MPGN/MPPK con sus Morph Presets y sliders MPGS anidados) del
+        ''' genero pedido. Exclusivo de Fallout 4.</summary>
+        <Extension>
+        Public Function ReadMorphGroups(fo4 As RaceFO4, isFemale As Boolean) _
+                As List(Of RACE_MorphGroup)
+            Dim result As New List(Of RACE_MorphGroup)
+            If fo4 Is Nothing Then Return result
+            If isFemale Then
+                For Each g In fo4.FemaleMorphGroups
+                    Dim grupo As New RACE_MorphGroup With {
+                        .Name = g.MorphGroupName, .MaskEnum = g.MorphGroupMask}
+                    For Each p In g.MorphPresets2
+                        grupo.Presets.Add(New RACE_MorphPresetDef With {
+                            .Index = p.MorphPresetIndex, .PresetName = p.MorphPresetName,
+                            .MorphName = p.MorphPresetMorph, .TextureFormID = p.MorphPresetTexture,
+                            .Playable = p.MorphPresetPlayable})
+                    Next
+                    grupo.SliderIndices.AddRange(g.MorphGroupSliders2.Select(Function(s) s.Index))
+                    result.Add(grupo)
+                Next
+            Else
+                For Each g In fo4.MaleMorphGroups
+                    Dim grupo As New RACE_MorphGroup With {
+                        .Name = g.MorphGroupName, .MaskEnum = g.MorphGroupMask}
+                    For Each p In g.MorphPresets
+                        grupo.Presets.Add(New RACE_MorphPresetDef With {
+                            .Index = p.MorphPresetIndex, .PresetName = p.MorphPresetName,
+                            .MorphName = p.MorphPresetMorph, .TextureFormID = p.MorphPresetTexture,
+                            .Playable = p.MorphPresetPlayable})
+                    Next
+                    grupo.SliderIndices.AddRange(g.MorphGroupSliders.Select(Function(s) s.Index))
+                    result.Add(grupo)
+                Next
+            End If
+            Return result
+        End Function
+
+        ''' <summary>Lista plana de todos los Morph Presets de todos los grupos del genero
+        ''' pedido — copia de compatibilidad para quien busca por Index sin pasar por el grupo
+        ''' dueño (el parser viejo tambien la mantenia aparte, ya que a su vez era una copia de
+        ''' los grupos: la vista nueva sigue sin declarar una coleccion plana propia).</summary>
+        <Extension>
+        Public Function ReadMorphPresetsFlat(fo4 As RaceFO4, isFemale As Boolean) _
+                As List(Of RACE_MorphPresetDef)
+            Dim result As New List(Of RACE_MorphPresetDef)
+            For Each g In fo4.ReadMorphGroups(isFemale)
+                result.AddRange(g.Presets)
+            Next
+            Return result
+        End Function
+
+        ''' <summary>MPAI/MPAV "Available Morphs" del genero pedido — SKYRIM-only (Fallout 4 no
+        ''' declara esos subrecords en RACE). Nothing cuando el juego no es Skyrim.</summary>
+        <Extension>
+        Public Function ReadAvailableMorphs(sse As RaceSSE, isFemale As Boolean) _
+                As RACE_AvailableMorphs
+            If sse Is Nothing Then Return Nothing
+            Dim m As New RACE_AvailableMorphs
+            If isFemale Then
+                CargarFamiliaDeMorphs(m, 0, sse.NoseVariantsNoseMorphFlags2Presente,
+                    sse.NoseVariantsNoseMorphFlags2, Nothing)
+                CargarFamiliaDeMorphs(m, 1, sse.BrowVariantsBrowMorphFlags2Presente,
+                    sse.BrowVariantsBrowMorphFlags2, Nothing)
+                CargarFamiliaDeMorphs(m, 2, sse.EyeVariantsEyeMorphFlags12Presente,
+                    sse.EyeVariantsEyeMorphFlags12, CUInt(sse.EyeVariantsEyeMorphFlags22))
+                CargarFamiliaDeMorphs(m, 3, sse.LipVariantsLipMorphFlags2Presente,
+                    sse.LipVariantsLipMorphFlags2, Nothing)
+            Else
+                CargarFamiliaDeMorphs(m, 0, sse.NoseVariantsNoseMorphFlagsPresente,
+                    sse.NoseVariantsNoseMorphFlags, Nothing)
+                CargarFamiliaDeMorphs(m, 1, sse.BrowVariantsBrowMorphFlagsPresente,
+                    sse.BrowVariantsBrowMorphFlags, Nothing)
+                CargarFamiliaDeMorphs(m, 2, sse.EyeVariantsEyeMorphFlags1Presente,
+                    sse.EyeVariantsEyeMorphFlags1, CUInt(sse.EyeVariantsEyeMorphFlags2))
+                CargarFamiliaDeMorphs(m, 3, sse.LipVariantsLipMorphFlagsPresente,
+                    sse.LipVariantsLipMorphFlags, Nothing)
+            End If
+            Return m
+        End Function
+
+        Private Sub CargarFamiliaDeMorphs(m As RACE_AvailableMorphs, familia As Integer,
+                                           presente As Boolean, bitsLo As UInteger,
+                                           bitsHi As UInteger?)
+            m.Present(familia) = presente
+            If Not presente Then Return
+            m.BitsLo(familia) = bitsLo
+            If bitsHi.HasValue Then m.BitsHi(familia) = bitsHi.Value
+        End Sub
+
+        ''' <summary>'Face-cull biped object' (A) del RACE.DATA de Fallout 4. El formato deja
+        ''' estos 4 bytes (Unknown Bytes1) sin documentar; la RE contra Fallout4.exe si los
+        ''' identifico: reinterpretados como entero CON SIGNO son el biped object que oculta
+        ''' toda la cabeza. -1 (ausente o valor -1) = None.</summary>
+        <Extension>
+        Public Function OcclusionFaceCullBipedDe(fo4 As RaceFO4) As Integer
+            If fo4 Is Nothing OrElse Not fo4.DataUnknownBytes1Presente Then Return -1
+            Dim b = fo4.DataUnknownBytes1
+            If b Is Nothing OrElse b.Length < 4 Then Return -1
+            Return BitConverter.ToInt32(b, 0)
+        End Function
+
+        ''' <summary>Mismo caso que <see cref="OcclusionFaceCullBipedDe"/> pero para el biped
+        ''' object del pelo (B, Unknown Bytes2).</summary>
+        <Extension>
+        Public Function OcclusionHairBipedDe(fo4 As RaceFO4) As Integer
+            If fo4 Is Nothing OrElse Not fo4.DataUnknownBytes2Presente Then Return -1
+            Dim b = fo4.DataUnknownBytes2
+            If b Is Nothing OrElse b.Length < 4 Then Return -1
+            Return BitConverter.ToInt32(b, 0)
+        End Function
+
+        '======================================================================================
+        ' Head parts y colores de pelo por defecto de un RACE, por género
+        '======================================================================================
+        ' Los dos juegos declaran cada lista con su propia coleccion por genero (MaleHeadParts/
+        ' FemaleHeadParts en Fallout 4, HeadParts/HeadParts2 en Skyrim; MaleHairColors/
+        ' FemaleHairColors vs AvailableHairColorsMale/AvailableHairColorsFemale), asi que se
+        ' centraliza aca el TryCast por juego en vez de repetirlo en cada consumidor.
+
+        ''' <summary>Los head parts por defecto que declara este RACE para el género pedido (Head
+        ''' Part\HEAD, con su propio INDX — el orden de aparición, sin el índice).</summary>
+        <Extension>
+        Public Function HeadPartsDe(race As IRace, isFemale As Boolean) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If race Is Nothing Then Return salida
+            Dim fo4 = TryCast(race, RaceFO4)
+            If fo4 IsNot Nothing Then
+                If isFemale Then
+                    salida.AddRange(fo4.FemaleHeadParts.Select(Function(h) h.HeadPartHead))
+                Else
+                    salida.AddRange(fo4.MaleHeadParts.Select(Function(h) h.HeadPartHead))
+                End If
+                Return salida
+            End If
+            Dim sse = TryCast(race, RaceSSE)
+            If sse IsNot Nothing Then
+                If isFemale Then
+                    salida.AddRange(sse.HeadParts2.Select(Function(h) h.HeadPartHead))
+                Else
+                    salida.AddRange(sse.HeadParts.Select(Function(h) h.HeadPartHead))
+                End If
+            End If
+            Return salida
+        End Function
+
+        ''' <summary>Los colores de pelo habilitados que declara este RACE para el género pedido
+        ''' (AHCM/AHCF en Fallout 4).</summary>
+        <Extension>
+        Public Function HairColorsDe(race As IRace, isFemale As Boolean) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If race Is Nothing Then Return salida
+            Dim fo4 = TryCast(race, RaceFO4)
+            If fo4 IsNot Nothing Then
+                If isFemale Then
+                    salida.AddRange(fo4.FemaleHairColors.Select(Function(h) h.HairColor))
+                Else
+                    salida.AddRange(fo4.MaleHairColors.Select(Function(h) h.HairColor))
+                End If
+                Return salida
+            End If
+            Dim sse = TryCast(race, RaceSSE)
+            If sse IsNot Nothing Then
+                If isFemale Then
+                    salida.AddRange(sse.AvailableHairColorsFemale.Select(Function(h) h.HairColor))
+                Else
+                    salida.AddRange(sse.AvailableHairColorsMale.Select(Function(h) h.HairColor))
+                End If
+            End If
+            Return salida
+        End Function
+
+        ''' <summary>Textura de cara por defecto que declara este RACE para el género pedido
+        ''' (DFTM/DFTF). Los dos juegos lo declaran, cada uno con su propio nombre de campo
+        ''' generado.</summary>
+        <Extension>
+        Public Function DefaultFaceTextureDe(race As IRace, isFemale As Boolean) As UInteger
+            If race Is Nothing Then Return 0UI
+            Dim fo4 = TryCast(race, RaceFO4)
+            If fo4 IsNot Nothing Then
+                Return If(isFemale, fo4.FemaleDefaultFaceTexture, fo4.MaleDefaultFaceTexture)
+            End If
+            Dim sse = TryCast(race, RaceSSE)
+            If sse IsNot Nothing Then
+                Return If(isFemale, sse.FemaleHeadDataDefaultFaceTextureFemale,
+                          sse.MaleHeadDataDefaultFaceTextureMale)
+            End If
+            Return 0UI
+        End Function
+
+        '======================================================================================
         ' Parte de cabeza
         '======================================================================================
 
@@ -168,7 +796,7 @@ Namespace Canon
         Public Function ArchivoDeDeformacion(hdpt As IHdpt, tipo As UInteger) As String
             If hdpt Is Nothing Then Return ""
             For Each p In hdpt.Parts
-                If p.PartPartType = tipo AndAlso Not String.IsNullOrEmpty(p.PartFileName) Then Return p.PartFileName
+                If p.PartType = tipo AndAlso Not String.IsNullOrEmpty(p.PartFileName) Then Return p.PartFileName
             Next
             Return ""
         End Function
@@ -255,20 +883,102 @@ Namespace Canon
         ' Copiar y comparar records
         '======================================================================================
 
-        ''' <summary>Una copia independiente del record, para editar sin tocar el original.</summary>
+        ''' <summary>Una copia independiente del record, para editar sin tocar el original.
+        ''' <para>Vale para CUALQUIER record: copiar es clonar el árbol y volver a envolverlo, y eso no
+        ''' depende del tipo. Escribir una versión por record obligaba a acordarse de agregar la suya
+        ''' cada vez que se migra uno nuevo, y la que falta no se nota hasta que alguien edita.</para></summary>
         <Extension>
-        Public Function Copia(mswp As IMswp) As IMswp
-            Dim v = TryCast(mswp, CanonView)
+        Public Function Copia(Of T As Class)(rec As T) As T
+            Dim v = TryCast(rec, CanonView)
             If v Is Nothing OrElse v.Node Is Nothing Then Return Nothing
-            Return New MswpFO4(v.Node.Clonar(), v.Context, v.Resolver)
+            Return TryCast(CanonRecords.Reenvolver(v, v.Node.Clonar()), T)
         End Function
 
-        ''' <summary>Dos records tienen el mismo contenido si producen los mismos bytes.
-        ''' <para>Comparar campo por campo obliga a acordarse de cada campo, y el que se olvida es
-        ''' justo el que despues aparece como "editado sin haberlo tocado". Los bytes no se olvidan
-        ''' de ninguno.</para></summary>
+        ''' <summary>Cuantos bytes de CUERPO ocupa ese subrecord al emitirse, sumando las repeticiones.
+        ''' Cero si el record no lo trae.
+        ''' <para>Se emite de verdad en vez de estimar: el tamaño depende de como se codifica cada campo
+        ''' y una cuenta aparte se desactualiza sin avisar. Los 6 bytes de la cabecera de cada
+        ''' repeticion no cuentan: lo que interesa es el payload.</para></summary>
         <Extension>
-        Public Function MismoContenido(a As IMswp, b As IMswp) As Boolean
+        Public Function TamanoDeSubrecord(Of T As Class)(rec As T, firma As String) As Integer
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing Then Return 0
+            Dim total = 0
+            For Each c In v.Node.Children
+                If Not String.Equals(c.Signature, firma, StringComparison.Ordinal) Then Continue For
+                Dim md = TryCast(c.Def, WbMemberDef)
+                If md Is Nothing Then Continue For
+                Using ms As New MemoryStream()
+                    Using bw As New BinaryWriter(ms)
+                        md.Emit(c, bw, v.Context)
+                    End Using
+                    total += Math.Max(0, CInt(ms.Length) - 6)
+                End Using
+            Next
+            Return total
+        End Function
+
+        ''' <summary>Saca del arbol el subrecord de esa firma. Es la operacion de "no lo declares":
+        ''' distinta de escribirle cero, que si declara el campo y lo deja valiendo cero.
+        ''' <para>Vale para CUALQUIER record, igual que copiar: es una operacion del arbol.</para></summary>
+        <Extension>
+        Public Sub QuitarSubrecord(Of T As Class)(rec As T, firma As String)
+            Dim v = TryCast(rec, CanonView)
+            If v Is Nothing OrElse v.Node Is Nothing Then Return
+            WbEdit.RemoveSubrecord(v.Node, firma)
+        End Sub
+
+        ''' <summary>Copia un subrecord entero -y todo lo que cuelga de el- de un record a otro del mismo
+        ''' tipo. Si el origen no lo trae, el destino se queda sin el.
+        '''
+        ''' <para>Existe para mover un bloque que nadie desarma campo por campo: copiar el NODO se lleva
+        ''' tambien lo que ninguna propiedad muestra -los tramos de relleno sin usar, por ejemplo- y el
+        ''' record re-emite byte a byte. Enumerar los campos a mano pierde justo los que no se modelan.</para>
+        '''
+        ''' <para>El lugar donde entra lo decide la DECLARACION del record, no el orden en que se llame:
+        ''' un subrecord fuera de orden hace que la relectura descarte todo lo que venga despues.</para>
+        '''
+        ''' <para>Vale para CUALQUIER record, igual que copiar: es una operacion del arbol.</para></summary>
+        <Extension>
+        Public Sub CopiarSubrecord(Of T As Class)(destino As T, origen As T, firma As String)
+            Dim vd = TryCast(destino, CanonView), vo = TryCast(origen, CanonView)
+            If vd Is Nothing OrElse vo Is Nothing Then Return
+            If vd.Node Is Nothing OrElse vo.Node Is Nothing Then Return
+
+            Dim fuentes As New List(Of WbNode)
+            For Each c In vo.Node.Children
+                If String.Equals(c.Signature, firma, StringComparison.Ordinal) Then fuentes.Add(c)
+            Next
+            If fuentes.Count = 0 Then
+                WbEdit.RemoveSubrecord(vd.Node, firma)
+                Return
+            End If
+
+            Dim def = WbSchema.Get(vd.Context.Game, vd.Context.RecordSignature)
+            If def Is Nothing Then Return
+            Dim hueco = WbEdit.EnsureSubrecord(vd.Node, def, firma, vd.Context)
+            If hueco Is Nothing Then Return
+            Dim donde = vd.Node.Children.IndexOf(hueco)
+            If donde < 0 Then Return
+
+            ' Sacar los que ya estaban DESPUES de ubicar el hueco: asi la posicion sale de la declaracion
+            ' tanto cuando el destino ya lo traia como cuando no.
+            For i = vd.Node.Children.Count - 1 To donde Step -1
+                If String.Equals(vd.Node.Children(i).Signature, firma, StringComparison.Ordinal) Then
+                    vd.Node.Children.RemoveAt(i)
+                End If
+            Next
+            For i = 0 To fuentes.Count - 1
+                vd.Node.Children.Insert(donde + i, fuentes(i).Clonar(vd.Node))
+            Next
+        End Sub
+
+        ''' <summary>Dos records tienen el mismo contenido si producen los mismos bytes.
+        ''' <para>Comparar campo por campo obliga a acordarse de cada campo, y el que se olvida es justo
+        ''' el que después aparece como "editado sin haberlo tocado". Los bytes no se olvidan de
+        ''' ninguno.</para></summary>
+        <Extension>
+        Public Function MismoContenido(Of T As Class)(a As T, b As T) As Boolean
             Dim va = TryCast(a, CanonView), vb = TryCast(b, CanonView)
             If va Is Nothing OrElse vb Is Nothing Then Return va Is vb
             If va.Node Is Nothing OrElse vb.Node Is Nothing Then Return va.Node Is vb.Node
@@ -298,6 +1008,714 @@ Namespace Canon
                 x.Aplicar(nuevo)
             Next
         End Sub
+
+        '======================================================================================
+        ' NPC_
+        '======================================================================================
+        ' Solo lo que no se puede contestar mirando un campo: lo que los dos juegos guardan con
+        ' nombres distintos, y el color que hay que armar a partir de cuatro floats.
+
+        ''' <summary>ACBS\Level. Es una UNION: con la bandera PC Level Mult el campo es el multiplicador
+        ''' del nivel del jugador, y sin ella el nivel fijo. Los dos ocupan el mismo lugar y se guardan
+        ''' igual, asi que se devuelve el numero crudo y quien lo muestre mira la bandera.</summary>
+        <Extension>
+        Public Function NivelDeConfiguracion(npc As INpc) As UShort
+            If npc Is Nothing Then Return 0US
+            If npc.ConfigurationLevelMultPresente Then Return npc.ConfigurationLevelMult
+            Return npc.ConfigurationLevel
+        End Function
+
+        ''' <summary>Escribe ACBS\Level en la rama que corresponde a la bandera PC Level Mult.</summary>
+        <Extension>
+        Public Sub PonerNivelDeConfiguracion(npc As INpc, valor As UShort)
+            If npc Is Nothing Then Return
+            If npc.ConfigurationFlagsPCLevelMult Then
+                npc.ConfigurationLevelMult = valor
+            Else
+                npc.ConfigurationLevel = valor
+            End If
+        End Sub
+
+        ''' <summary>ACBS\Disposition Base. En Skyrim el formato lo declara sin uso, pero el campo esta y
+        ''' hay que conservarlo.</summary>
+        <Extension>
+        Public Function BaseDeDisposicion(npc As INpc) As Short
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then Return nf.ConfigurationDispositionBase
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then Return ns.ConfigurationDispositionBaseUnused
+            Return 0S
+        End Function
+
+        ''' <summary>Escribe ACBS\Disposition Base.</summary>
+        <Extension>
+        Public Sub PonerBaseDeDisposicion(npc As INpc, valor As Short)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then
+                nf.ConfigurationDispositionBase = valor
+                Return
+            End If
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then ns.ConfigurationDispositionBaseUnused = valor
+        End Sub
+
+        ''' <summary>TPLT. El mismo subrecord con dos nombres generados: en Fallout 4 la plantilla
+        ''' por defecto, en Skyrim la unica.</summary>
+        <Extension>
+        Public Function Plantilla(npc As INpc) As UInteger
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then Return nf.DefaultTemplate
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then Return ns.Template
+            Return 0UI
+        End Function
+
+        ''' <summary>El record trae TPLT. Distinto de que la plantilla valga cero.</summary>
+        <Extension>
+        Public Function TienePlantilla(npc As INpc) As Boolean
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then Return nf.DefaultTemplatePresente
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then Return ns.TemplatePresente
+            Return False
+        End Function
+
+        ''' <summary>Escribe TPLT por el nombre que le toca a cada juego.</summary>
+        <Extension>
+        Public Sub PonerPlantilla(npc As INpc, fid As UInteger)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then
+                nf.DefaultTemplate = fid
+                Return
+            End If
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then ns.Template = fid
+        End Sub
+
+        ''' <summary>NAM6. TRAMPA: en Fallout 4 es la altura MINIMA de un rango cuyo maximo esta en
+        ''' NAM4; en Skyrim es la altura, a secas, y NAM4 no existe.</summary>
+        <Extension>
+        Public Function Altura(npc As INpc) As Single
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then Return nf.HeightMin
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then Return ns.Height
+            Return 0.0F
+        End Function
+
+        ''' <summary>El record trae NAM6.</summary>
+        <Extension>
+        Public Function TieneAltura(npc As INpc) As Boolean
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then Return nf.HeightMinPresente
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then Return ns.HeightPresente
+            Return False
+        End Function
+
+        ''' <summary>Escribe NAM6 por el nombre que le toca a cada juego.</summary>
+        <Extension>
+        Public Sub PonerAltura(npc As INpc, valor As Single)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then
+                nf.HeightMin = valor
+                Return
+            End If
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then ns.Height = valor
+        End Sub
+
+        ''' <summary>QNAM armado como color. El campo son cuatro floats normalizados: el color hay
+        ''' que construirlo, no esta guardado. Color.Empty cuando el record no trae QNAM.
+        ''' <para>En Skyrim no hay alpha; queda opaco.</para></summary>
+        <Extension>
+        Public Function ColorDeIluminacionDeTextura(npc As INpc) As Color
+            If npc Is Nothing OrElse Not npc.TextureLightingRedPresente Then Return Color.Empty
+            Dim a As Single = 0.0F
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing AndAlso nf.TextureLightingAlphaPresente Then a = nf.TextureLightingAlpha
+            Return Color.FromArgb(CanalDeColorNormalizado(a),
+                                  CanalDeColorNormalizado(npc.TextureLightingRed),
+                                  CanalDeColorNormalizado(npc.TextureLightingGreen),
+                                  CanalDeColorNormalizado(npc.TextureLightingBlue))
+        End Function
+
+        ''' <summary>Escribe QNAM desde un color. El alpha solo existe en Fallout 4.</summary>
+        <Extension>
+        Public Sub PonerIluminacionDeTextura(npc As INpc, c As Color)
+            If npc Is Nothing Then Return
+            npc.TextureLightingRed = c.R / 255.0F
+            npc.TextureLightingGreen = c.G / 255.0F
+            npc.TextureLightingBlue = c.B / 255.0F
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then nf.TextureLightingAlpha = c.A / 255.0F
+        End Sub
+
+        ''' <summary>Los tres pesos de MWGT, con el centinela del motor traducido a "sin valor":
+        ''' el campo guarda el float mas grande que existe para decir "usa el de la raza", y eso no
+        ''' es un peso. Nothing tambien cuando el record no trae MWGT o no es de Fallout 4.</summary>
+        <Extension>
+        Public Function PesoDelCuerpo(npc As INpc, indice As Integer) As Single?
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing OrElse Not nf.WeightThinPresente Then Return Nothing
+            Dim v As Single
+            Select Case indice
+                Case 0 : v = nf.WeightThin
+                Case 1 : v = nf.WeightMuscular
+                Case Else : v = nf.WeightFat
+            End Select
+            If Single.IsNaN(v) OrElse v = Single.MaxValue Then Return Nothing
+            Return v
+        End Function
+
+        ''' <summary>Escribe uno de los tres pesos de MWGT. Sin valor = el centinela que le dice al
+        ''' motor que use el de la raza.</summary>
+        <Extension>
+        Public Sub PonerPesoDelCuerpo(npc As INpc, indice As Integer, valor As Single?)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return
+            Dim v As Single = If(valor.HasValue, valor.Value, Single.MaxValue)
+            Select Case indice
+                Case 0 : nf.WeightThin = v
+                Case 1 : nf.WeightMuscular = v
+                Case Else : nf.WeightFat = v
+            End Select
+        End Sub
+
+        ''' <summary>Los OMOD de la PRIMERA combinacion de mods. Es la lista que usa el render de robots:
+        ''' los robots de vanilla no declaran malla en su ARMO/ARMA y sus partes salen de estos OMOD.
+        ''' Vacia cuando el record no trae combinaciones.</summary>
+        <Extension>
+        Public Function OmodsDeLaPrimeraCombinacion(npc As INpc) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            Dim combos = CombinacionesDelNpc(npc)
+            If combos.Count = 0 Then Return salida
+            For Each inc In combos(0).Includes
+                salida.Add(inc.IncludeMod)
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>PNAM: las partes de cabeza que declara el record, sin las que valen cero.</summary>
+        <Extension>
+        Public Function PartesDeCabeza(npc As INpc) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If npc Is Nothing Then Return salida
+            For Each hp In npc.HeadParts
+                If hp.HeadPart <> 0UI Then salida.Add(hp.HeadPart)
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>Reemplaza las partes de cabeza por las de la lista, en ese orden.</summary>
+        <Extension>
+        Public Sub PonerPartesDeCabeza(npc As INpc, lista As IEnumerable(Of UInteger))
+            If npc Is Nothing Then Return
+            While npc.HeadParts.Count > 0
+                If Not npc.QuitarHeadParts(0) Then Exit While
+            End While
+            If lista Is Nothing Then Return
+            For Each parte In lista
+                Dim e = npc.AgregarHeadParts()
+                If e IsNot Nothing Then e.HeadPart = parte
+            Next
+        End Sub
+
+        ''' <summary>Reemplaza las facciones por las de la lista, en ese orden.</summary>
+        <Extension>
+        Public Sub PonerFacciones(npc As INpc, lista As IEnumerable(Of INpc_Factions))
+            If npc Is Nothing Then Return
+            Dim origen = If(lista Is Nothing, Array.Empty(Of INpc_Factions)(), lista.ToArray())
+            While npc.Factions.Count > 0
+                If Not npc.QuitarFactions(0) Then Exit While
+            End While
+            For Each f In origen
+                If f Is Nothing Then Continue For
+                Dim e = npc.AgregarFactions()
+                If e Is Nothing Then Continue For
+                e.Faction = f.Faction
+                e.FactionRank = f.FactionRank
+            Next
+        End Sub
+
+        ''' <summary>Reemplaza el inventario por el de la lista. El COED se copia entero cuando la entrada
+        ''' de origen lo trae: el dato extra lleva una UNION -o una referencia a una variable global, o un
+        ''' rango de faccion- y cual de las dos vino lo dice la propia entrada. El contador COCT queda con
+        ''' la cuenta nueva, o se saca cuando no queda ningun item y el record tampoco lo traia.</summary>
+        <Extension>
+        Public Sub PonerInventario(npc As INpc, lista As IEnumerable(Of INpc_Items))
+            If npc Is Nothing Then Return
+            Dim origen = If(lista Is Nothing, Array.Empty(Of INpc_Items)(), lista.ToArray())
+            Dim traiaContador = npc.Count2Presente
+            While npc.Items.Count > 0
+                If Not npc.QuitarItems(0) Then Exit While
+            End While
+            Dim cuantos = 0
+            For Each it In origen
+                If it Is Nothing Then Continue For
+                Dim e = npc.AgregarItems()
+                If e Is Nothing Then Continue For
+                e.Item = it.Item
+                e.ItemCount = it.ItemCount
+                If it.ExtraDataOwnerPresente Then
+                    e.ExtraDataOwner = it.ExtraDataOwner
+                    e.ExtraDataItemCondition = it.ExtraDataItemCondition
+                    If it.GlobalVariableRequiredRankGlobalVariablePresente Then
+                        e.GlobalVariableRequiredRankGlobalVariable = it.GlobalVariableRequiredRankGlobalVariable
+                    Else
+                        e.GlobalVariableRequiredRankRequiredRank = it.GlobalVariableRequiredRankRequiredRank
+                    End If
+                End If
+                cuantos += 1
+            Next
+            If cuantos > 0 OrElse traiaContador Then
+                npc.Count2 = CUInt(cuantos)
+            Else
+                npc.QuitarSubrecord("COCT")
+            End If
+        End Sub
+
+        ''' <summary>Reemplaza las ventajas por las de la lista. El contador PRKZ queda con la cuenta nueva,
+        ''' o se saca cuando no queda ninguna y el record tampoco lo traia.</summary>
+        <Extension>
+        Public Sub PonerVentajas(npc As INpc, lista As IEnumerable(Of INpc_Perks))
+            If npc Is Nothing Then Return
+            Dim origen = If(lista Is Nothing, Array.Empty(Of INpc_Perks)(), lista.ToArray())
+            Dim traiaContador = npc.PerkCountPresente
+            While npc.Perks.Count > 0
+                If Not npc.QuitarPerks(0) Then Exit While
+            End While
+            Dim cuantas = 0
+            For Each p In origen
+                If p Is Nothing Then Continue For
+                Dim e = npc.AgregarPerks()
+                If e Is Nothing Then Continue For
+                e.Perk = p.Perk
+                e.PerkRank = p.PerkRank
+                cuantas += 1
+            Next
+            If cuantas > 0 OrElse traiaContador Then
+                npc.PerkCount = CUInt(cuantas)
+            Else
+                npc.QuitarSubrecord("PRKZ")
+            End If
+        End Sub
+
+        ''' <summary>Reemplaza los valores de actor por los de la lista. Solo Fallout 4.</summary>
+        <Extension>
+        Public Sub PonerPropiedades(npc As INpc, lista As IEnumerable(Of NpcFO4_Properties2))
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return
+            Dim origen = If(lista Is Nothing, Array.Empty(Of NpcFO4_Properties2)(), lista.ToArray())
+            While nf.Properties2.Count > 0
+                If Not nf.QuitarProperties2(0) Then Exit While
+            End While
+            For Each p In origen
+                If p Is Nothing Then Continue For
+                Dim e = nf.AgregarProperties2()
+                If e Is Nothing Then Continue For
+                e.PropertyActorValue = p.PropertyActorValue
+                e.PropertyValue = p.PropertyValue
+            Next
+        End Sub
+
+        ''' <summary>Reemplaza las palabras clave por las de la lista. El contador KSIZ queda con la cuenta
+        ''' nueva: sin el, la lectura interpreta la lista como vacia.</summary>
+        <Extension>
+        Public Sub PonerPalabrasClave(npc As INpc, lista As IEnumerable(Of UInteger))
+            If npc Is Nothing Then Return
+            Dim traiaContador = npc.KeywordsKeywordCountPresente
+            While npc.Keywords.Count > 0
+                If Not npc.QuitarKeywords(0) Then Exit While
+            End While
+            Dim cuantas = 0
+            If lista IsNot Nothing Then
+                For Each k In lista
+                    Dim e = npc.AgregarKeywords()
+                    If e Is Nothing Then Continue For
+                    e.Keyword = k
+                    cuantas += 1
+                Next
+            End If
+            If cuantas > 0 OrElse traiaContador Then
+                npc.KeywordsKeywordCount = CUInt(cuantas)
+            Else
+                npc.QuitarSubrecord("KSIZ")
+                npc.QuitarSubrecord("KWDA")
+            End If
+        End Sub
+
+        ''' <summary>Reemplaza los efectos de actor por los de la lista. El contador SPCT queda con la cuenta
+        ''' nueva, o se saca cuando no queda ninguno y el record tampoco lo traia.</summary>
+        <Extension>
+        Public Sub PonerEfectosDeActor(npc As INpc, lista As IEnumerable(Of UInteger))
+            If npc Is Nothing Then Return
+            Dim traiaContador = npc.CountPresente
+            While npc.ActorEffects.Count > 0
+                If Not npc.QuitarActorEffects(0) Then Exit While
+            End While
+            Dim cuantos = 0
+            If lista IsNot Nothing Then
+                For Each efecto In lista
+                    Dim e = npc.AgregarActorEffects()
+                    If e Is Nothing Then Continue For
+                    e.ActorEffect = efecto
+                    cuantos += 1
+                Next
+            End If
+            If cuantos > 0 OrElse traiaContador Then
+                npc.Count = CUInt(cuantos)
+            Else
+                npc.QuitarSubrecord("SPCT")
+            End If
+        End Sub
+
+        ''' <summary>Reemplaza los enganches (APPR) por los de la lista. Solo Fallout 4.</summary>
+        <Extension>
+        Public Sub PonerRanurasDeEnganche(npc As INpc, lista As IEnumerable(Of UInteger))
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return
+            While nf.AttachParentSlots.Count > 0
+                If Not nf.QuitarAttachParentSlots(0) Then Exit While
+            End While
+            If lista Is Nothing Then Return
+            For Each k In lista
+                Dim e = nf.AgregarAttachParentSlots()
+                If e IsNot Nothing Then e.Keyword = k
+            Next
+        End Sub
+
+        ''' <summary>KWDA: las palabras clave que declara el record, sin las que valen cero.</summary>
+        <Extension>
+        Public Function PalabrasClave(npc As INpc) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If npc Is Nothing Then Return salida
+            For Each k In npc.Keywords
+                If k.Keyword <> 0UI Then salida.Add(k.Keyword)
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>APPR: los enganches que declara el record. Solo Fallout 4.</summary>
+        <Extension>
+        Public Function RanurasDeEnganche(npc As INpc) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return salida
+            For Each s In nf.AttachParentSlots
+                If s.Keyword <> 0UI Then salida.Add(s.Keyword)
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>TPTA: el actor del que hereda una categoria, o cero si esa ranura esta vacia.
+        ''' Solo Fallout 4 -en Skyrim toda la herencia sale de TPLT-.</summary>
+        <Extension>
+        Public Function ActorDePlantilla(npc As INpc, categoria As NPC_TemplateCategory) As UInteger
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return 0UI
+            Select Case categoria
+                Case NPC_TemplateCategory.Traits : Return nf.TemplateActorsTraits
+                Case NPC_TemplateCategory.Stats : Return nf.TemplateActorsStats
+                Case NPC_TemplateCategory.Factions : Return nf.TemplateActorsFactions
+                Case NPC_TemplateCategory.SpellList : Return nf.TemplateActorsSpellList
+                Case NPC_TemplateCategory.AIData : Return nf.TemplateActorsAIData
+                Case NPC_TemplateCategory.AIPackages : Return nf.TemplateActorsAIPackages
+                Case NPC_TemplateCategory.ModelAnimation : Return nf.TemplateActorsModelAnimation
+                Case NPC_TemplateCategory.BaseData : Return nf.TemplateActorsBaseData
+                Case NPC_TemplateCategory.Inventory : Return nf.TemplateActorsInventory
+                Case NPC_TemplateCategory.Script : Return nf.TemplateActorsScript
+                Case NPC_TemplateCategory.DefaultPackageList : Return nf.TemplateActorsDefPackageList
+                Case NPC_TemplateCategory.AttackData : Return nf.TemplateActorsAttackData
+                Case NPC_TemplateCategory.Keywords : Return nf.TemplateActorsKeywords
+            End Select
+            Return 0UI
+        End Function
+
+        ''' <summary>TPTA: los actores de los que hereda por categoria, sin las ranuras vacias. Solo
+        ''' Fallout 4 -en Skyrim toda la herencia sale de TPLT-.</summary>
+        <Extension>
+        Public Function ActoresDePlantilla(npc As INpc) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            For Each cat As NPC_TemplateCategory In [Enum].GetValues(GetType(NPC_TemplateCategory))
+                Dim actor = ActorDePlantilla(npc, cat)
+                If actor <> 0UI AndAlso Not salida.Contains(actor) Then salida.Add(actor)
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>MSDK + MSDV: los morfos del editor de personaje, emparejados por posicion. Solo
+        ''' Fallout 4. Las dos listas son paralelas en el record; aca se juntan porque todo lo que los
+        ''' consume busca por clave.</summary>
+        <Extension>
+        Public Function MorfosDeCara(npc As INpc) As Dictionary(Of UInteger, Single)
+            Dim salida As New Dictionary(Of UInteger, Single)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return salida
+            Dim claves = nf.MorphKeys
+            Dim valores = nf.MorphValues
+            For i = 0 To Math.Min(claves.Count, valores.Count) - 1
+                salida(claves(i).Key) = valores(i).Value
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>Reemplaza los morfos del editor de personaje. El orden de las claves es el que
+        ''' se emite, y los valores van en el mismo orden: son dos listas paralelas.</summary>
+        <Extension>
+        Public Sub PonerMorfosDeCara(npc As INpc, morfos As IEnumerable(Of KeyValuePair(Of UInteger, Single)))
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return
+            While nf.MorphKeys.Count > 0
+                If Not nf.QuitarMorphKeys(0) Then Exit While
+            End While
+            While nf.MorphValues.Count > 0
+                If Not nf.QuitarMorphValues(0) Then Exit While
+            End While
+            If morfos Is Nothing Then Return
+            For Each kv In morfos
+                Dim k = nf.AgregarMorphKeys()
+                If k IsNot Nothing Then k.Key = kv.Key
+                Dim v = nf.AgregarMorphValues()
+                If v IsNot Nothing Then v.Value = kv.Value
+            Next
+        End Sub
+
+        ''' <summary>MRSV: los cinco valores de region del cuerpo, en orden. Solo Fallout 4; lista
+        ''' vacia si el record no trae el subrecord.</summary>
+        <Extension>
+        Public Function ValoresDeRegionCorporal(npc As INpc) As List(Of Single)
+            Dim salida As New List(Of Single)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing OrElse Not nf.BodyMorphRegionValuesHeadPresente Then Return salida
+            salida.Add(nf.BodyMorphRegionValuesHead)
+            salida.Add(nf.BodyMorphRegionValuesUpperTorso)
+            salida.Add(nf.BodyMorphRegionValuesArms)
+            salida.Add(nf.BodyMorphRegionValuesLowerTorso)
+            salida.Add(nf.BodyMorphRegionValuesLegs)
+            Return salida
+        End Function
+
+        ''' <summary>Escribe los cinco valores de region del cuerpo. Los que falten quedan en cero.</summary>
+        <Extension>
+        Public Sub PonerValoresDeRegionCorporal(npc As INpc, valores As IList(Of Single))
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing OrElse valores Is Nothing Then Return
+            nf.BodyMorphRegionValuesHead = ValorEnLista(valores, 0)
+            nf.BodyMorphRegionValuesUpperTorso = ValorEnLista(valores, 1)
+            nf.BodyMorphRegionValuesArms = ValorEnLista(valores, 2)
+            nf.BodyMorphRegionValuesLowerTorso = ValorEnLista(valores, 3)
+            nf.BodyMorphRegionValuesLegs = ValorEnLista(valores, 4)
+        End Sub
+
+        Private Function ValorEnLista(lista As IList(Of Single), i As Integer) As Single
+            If lista Is Nothing OrElse i >= lista.Count Then Return 0.0F
+            Return lista(i)
+        End Function
+
+        ''' <summary>NAM9: los 19 deslizadores de cara de Skyrim, en el orden del formato. Nothing
+        ''' cuando el record no los trae o no es de Skyrim.</summary>
+        <Extension>
+        Public Function DeslizadoresDeCara(npc As INpc) As Single()
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns Is Nothing OrElse Not ns.FaceMorphNoseLongShortPresente Then Return Nothing
+            Return New Single() {
+                ns.FaceMorphNoseLongShort, ns.FaceMorphNoseUpDown, ns.FaceMorphJawUpDown,
+                ns.FaceMorphJawNarrowWide, ns.FaceMorphJawFarwardBack, ns.FaceMorphCheeksUpDown,
+                ns.FaceMorphCheeksFarwardBack, ns.FaceMorphEyesUpDown, ns.FaceMorphEyesInOut,
+                ns.FaceMorphBrowsUpDown, ns.FaceMorphBrowsInOut, ns.FaceMorphBrowsFarwardBack,
+                ns.FaceMorphLipsUpDown, ns.FaceMorphLipsInOut, ns.FaceMorphChinNarrowWide,
+                ns.FaceMorphChinUpDown, ns.FaceMorphChinUnderbiteOverbite, ns.FaceMorphEyesFarwardBack,
+                ns.FaceMorphVampireMorph}
+        End Function
+
+        ''' <summary>Escribe los 19 deslizadores de cara de Skyrim. Los que falten quedan como estaban.</summary>
+        <Extension>
+        Public Sub PonerDeslizadoresDeCara(npc As INpc, v As Single())
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns Is Nothing OrElse v Is Nothing Then Return
+            If v.Length > 0 Then ns.FaceMorphNoseLongShort = v(0)
+            If v.Length > 1 Then ns.FaceMorphNoseUpDown = v(1)
+            If v.Length > 2 Then ns.FaceMorphJawUpDown = v(2)
+            If v.Length > 3 Then ns.FaceMorphJawNarrowWide = v(3)
+            If v.Length > 4 Then ns.FaceMorphJawFarwardBack = v(4)
+            If v.Length > 5 Then ns.FaceMorphCheeksUpDown = v(5)
+            If v.Length > 6 Then ns.FaceMorphCheeksFarwardBack = v(6)
+            If v.Length > 7 Then ns.FaceMorphEyesUpDown = v(7)
+            If v.Length > 8 Then ns.FaceMorphEyesInOut = v(8)
+            If v.Length > 9 Then ns.FaceMorphBrowsUpDown = v(9)
+            If v.Length > 10 Then ns.FaceMorphBrowsInOut = v(10)
+            If v.Length > 11 Then ns.FaceMorphBrowsFarwardBack = v(11)
+            If v.Length > 12 Then ns.FaceMorphLipsUpDown = v(12)
+            If v.Length > 13 Then ns.FaceMorphLipsInOut = v(13)
+            If v.Length > 14 Then ns.FaceMorphChinNarrowWide = v(14)
+            If v.Length > 15 Then ns.FaceMorphChinUpDown = v(15)
+            If v.Length > 16 Then ns.FaceMorphChinUnderbiteOverbite = v(16)
+            If v.Length > 17 Then ns.FaceMorphEyesFarwardBack = v(17)
+            If v.Length > 18 Then ns.FaceMorphVampireMorph = v(18)
+        End Sub
+
+        ''' <summary>NAMA: las cuatro partes de cara de Skyrim (nariz, desconocida, ojos, boca).
+        ''' Nothing cuando el record no las trae o no es de Skyrim.</summary>
+        <Extension>
+        Public Function PartesDeCara(npc As INpc) As UInteger()
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns Is Nothing OrElse Not ns.FacePartsNosePresente Then Return Nothing
+            ' El segundo campo lo declara el formato con signo y los otros tres sin signo. Convertirlo
+            ' con CUInt tira cuando trae un valor negativo, asi que se reinterpretan los bits: aca las
+            ' cuatro partes viajan como un numero opaco, no como una cantidad.
+            Return New UInteger() {ns.FacePartsNose,
+                                   CUInt(CLng(ns.FacePartsUnknown) And &HFFFFFFFFL),
+                                   ns.FacePartsEyes,
+                                   ns.FacePartsMouth}
+        End Function
+
+        ''' <summary>Escribe las cuatro partes de cara de Skyrim.</summary>
+        <Extension>
+        Public Sub PonerPartesDeCara(npc As INpc, v As UInteger())
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns Is Nothing OrElse v Is Nothing Then Return
+            If v.Length > 0 Then ns.FacePartsNose = v(0)
+            If v.Length > 1 Then ns.FacePartsUnknown = v(1)
+            If v.Length > 2 Then ns.FacePartsEyes = v(2)
+            If v.Length > 3 Then ns.FacePartsMouth = v(3)
+        End Sub
+
+        ''' <summary>NAM4. Solo Fallout 4: es el maximo del rango de altura cuyo minimo esta en NAM6.
+        ''' Skyrim no declara el subrecord -su NAM6 es la altura a secas- y ahi vale cero.</summary>
+        <Extension>
+        Public Function AlturaMaxima(npc As INpc) As Single
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return 0.0F
+            Return nf.HeightMax
+        End Function
+
+        ''' <summary>El record trae NAM4.</summary>
+        <Extension>
+        Public Function TieneAlturaMaxima(npc As INpc) As Boolean
+            Dim nf = TryCast(npc, NpcFO4)
+            Return nf IsNot Nothing AndAlso nf.HeightMaxPresente
+        End Function
+
+        ''' <summary>Escribe NAM4. En Skyrim no hay donde: no hace nada.</summary>
+        <Extension>
+        Public Sub PonerAlturaMaxima(npc As INpc, valor As Single)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then nf.HeightMax = valor
+        End Sub
+
+        ''' <summary>FMIN. Solo Fallout 4. Sin el subrecord vale 1, que es el neutro.</summary>
+        <Extension>
+        Public Function IntensidadDeMorfoFacial(npc As INpc) As Single
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing OrElse Not nf.FacialMorphIntensityPresente Then Return 1.0F
+            Return nf.FacialMorphIntensity
+        End Function
+
+        ''' <summary>El record trae FMIN.</summary>
+        <Extension>
+        Public Function TieneIntensidadDeMorfoFacial(npc As INpc) As Boolean
+            Dim nf = TryCast(npc, NpcFO4)
+            Return nf IsNot Nothing AndAlso nf.FacialMorphIntensityPresente
+        End Function
+
+        ''' <summary>Escribe FMIN. En Skyrim no hay donde: no hace nada.</summary>
+        <Extension>
+        Public Sub PonerIntensidadDeMorfoFacial(npc As INpc, valor As Single)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then nf.FacialMorphIntensity = valor
+        End Sub
+
+        ''' <summary>El record trae el bloque de combinaciones de mods (OBTE). Solo Fallout 4.</summary>
+        <Extension>
+        Public Function TieneCombinaciones(npc As INpc) As Boolean
+            Dim nf = TryCast(npc, NpcFO4)
+            Return nf IsNot Nothing AndAlso nf.ObjectTemplateCountPresente
+        End Function
+
+        ''' <summary>NAM7. En Skyrim es el peso del cuerpo -0 a 100-; en Fallout 4 el subrecord existe
+        ''' pero no lleva dato, asi que ahi vale cero.</summary>
+        <Extension>
+        Public Function PesoDeSkyrim(npc As INpc) As Single
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns Is Nothing OrElse Not ns.WeightPresente Then Return 0.0F
+            Return ns.Weight
+        End Function
+
+        ''' <summary>El record trae el peso de Skyrim.</summary>
+        <Extension>
+        Public Function TienePesoDeSkyrim(npc As INpc) As Boolean
+            Dim ns = TryCast(npc, NpcSSE)
+            Return ns IsNot Nothing AndAlso ns.WeightPresente
+        End Function
+
+        ''' <summary>Escribe el peso del cuerpo de Skyrim. En Fallout 4 no hay donde: no hace nada.</summary>
+        <Extension>
+        Public Sub PonerPesoDeSkyrim(npc As INpc, valor As Single)
+            Dim ns = TryCast(npc, NpcSSE)
+            If ns IsNot Nothing Then ns.Weight = valor
+        End Sub
+
+        ''' <summary>SPLO: los efectos de actor que declara el record, sin los que valen cero.</summary>
+        <Extension>
+        Public Function EfectosDeActor(npc As INpc) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If npc Is Nothing Then Return salida
+            For Each e In npc.ActorEffects
+                If e.ActorEffect <> 0UI Then salida.Add(e.ActorEffect)
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>PKID: los paquetes de IA que declara el record, sin los que valen cero.</summary>
+        <Extension>
+        Public Function PaquetesDeIA(npc As INpc) As List(Of UInteger)
+            Dim salida As New List(Of UInteger)
+            If npc Is Nothing Then Return salida
+            For Each p In npc.Packages
+                If p.Package <> 0UI Then salida.Add(p.Package)
+            Next
+            Return salida
+        End Function
+
+        ''' <summary>El alpha de QNAM, que en Fallout 4 es la OPACIDAD con la que el tono de piel se
+        ''' compone sobre el cuerpo. Skyrim no tiene alpha en QNAM: ahi, y cuando el record no trae el
+        ''' subrecord, vale 1 -opaco-, que es el neutro.</summary>
+        <Extension>
+        Public Function AlphaDeIluminacionDeTextura(npc As INpc) As Single
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing OrElse Not nf.TextureLightingAlphaPresente Then Return 1.0F
+            Return nf.TextureLightingAlpha
+        End Function
+
+        ''' <summary>BCLF. Solo Fallout 4: Skyrim no declara un color de barba aparte.</summary>
+        <Extension>
+        Public Function ColorDeBarba(npc As INpc) As UInteger
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf Is Nothing Then Return 0UI
+            Return nf.FacialHairColor
+        End Function
+
+        ''' <summary>El record trae BCLF.</summary>
+        <Extension>
+        Public Function TieneColorDeBarba(npc As INpc) As Boolean
+            Dim nf = TryCast(npc, NpcFO4)
+            Return nf IsNot Nothing AndAlso nf.FacialHairColorPresente
+        End Function
+
+        ''' <summary>Escribe BCLF. En Skyrim no hay donde: no hace nada.</summary>
+        <Extension>
+        Public Sub PonerColorDeBarba(npc As INpc, fid As UInteger)
+            Dim nf = TryCast(npc, NpcFO4)
+            If nf IsNot Nothing Then nf.FacialHairColor = fid
+        End Sub
+
+        Private Function CanalDeColorNormalizado(value As Single) As Integer
+            If Single.IsNaN(value) OrElse Single.IsInfinity(value) Then Return 255
+            Dim normalizado = value
+            If normalizado <= 1.0F Then normalizado *= 255.0F
+            Return Math.Max(0, Math.Min(255, CInt(Math.Round(normalizado))))
+        End Function
     End Module
 
     ''' <summary>Una sustitucion mientras se la edita en la interfaz.
@@ -331,7 +1749,13 @@ Namespace Canon
             If e Is Nothing Then Return
             e.SubstitutionOriginalMaterial = MaterialOriginal
             e.SubstitutionReplacementMaterial = MaterialReemplazo
-            e.SubstitutionTreeFolderObsolete = CarpetaObsoleta
+            ' Sólo se reescribe si la sustitución YA la traía. Escribir vacío CREA el campo, y una
+            ' ida y vuelta por el editor le agregaría a cada sustitución un subrecord que la fuente
+            ' no tenía. El campo está declarado como obsoleto: se conserva el que viene, no se
+            ' inventa uno.
+            If Not String.IsNullOrEmpty(CarpetaObsoleta) Then
+                e.SubstitutionTreeFolderObsolete = CarpetaObsoleta
+            End If
             If TieneIndiceDeColor Then e.SubstitutionColorRemappingIndex = IndiceDeColor
         End Sub
 

@@ -20,12 +20,12 @@
 ''' se suben en <c>GPUBoneWeights</c>; el shader ya suma sin dividir) y bake (<c>SkinBakeMath</c> + el
 ''' loop inverso de <c>FaceGenBuildPipeline</c>).</para>
 '''
-''' <para>⚠️ <b>En el render CPU la ley es matematicamente INERTE</b> (medido): <c>SkinningHelper</c> arma
+''' <para><b>En el render CPU la ley es matematicamente INERTE</b> (medido): <c>SkinningHelper</c> arma
 ''' <c>MposeBlend · inv(MbindBlend)</c>, un cociente de dos mezclas con los MISMOS pesos, asi que el
 ''' <c>Sw</c> se cancela solo. Donde SI tiene efecto es en el bake, porque forward e inverso usan pesos
 ''' distintos (<c>_faceBones</c> vs destino) y <c>e = s_src/s_dst - 1</c> no se cancela.</para>
 '''
-''' <para>⛔ <b>ABIERTO, no medido:</b> si el motor en GPU skinnea <c>S wk·Mk·v</c> directo (sin cociente
+''' <para><b>ABIERTO, no medido:</b> si el motor en GPU skinnea <c>S wk·Mk·v</c> directo (sin cociente
 ''' pose/bind) el <c>Sw</c> no se cancelaria y nuestro render CPU divergiria. No afirmarlo en ninguna
 ''' direccion hasta medirlo.</para>
 ''' </summary>
@@ -103,7 +103,7 @@ Public Module EngineSkinWeightNormalization
     ''' <c>Mtot x (1/sumW)</c> deja un residuo de coma flotante (<c>M44 = 0,999999999421803</c>), el mismo
     ''' defecto seis ordenes mas chico. Eso rompe a proposito la bit-identidad historica de la rama OFF.</para>
     '''
-    ''' <para>⛔ <b>No lo "arregles" en <c>SkinningHelper.BlendBoneMatrices</c></b>: ahi el cociente
+    ''' <para><b>No lo "arregles" en <c>SkinningHelper.BlendBoneMatrices</c></b>: ahi el cociente
     ''' <c>MposeBlend · inv(MbindBlend)</c> cancela el <c>Sw</c> solo (M44 = 1,000000000000; diferencia
     ''' con/sin re-anclaje = 1,4e-14). No hay nada que arreglar y tocarlo es riesgo sin beneficio.</para>
     ''' </summary>

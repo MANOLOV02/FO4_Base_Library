@@ -1,4 +1,4 @@
-Namespace Canon
+﻿Namespace Canon
 
     ''' <summary>Las dos traducciones que necesita cualquier campo leído de un record, aplicadas en
     ''' un solo lugar.
@@ -41,9 +41,12 @@ Namespace Canon
         ''' <summary>Texto de un campo traducible.
         ''' <para>El árbol guarda lo que había en el record: el texto mismo cuando el archivo no usa
         ''' tablas externas, o el identificador numérico cuando sí las usa. El identificador cero
-        ''' significa "sin texto", no un error.</para></summary>
+        ''' significa "sin texto", no un error.</para>
+        ''' <para>De qué tabla sale el texto NO está en el identificador: lo decide el par (record,
+        ''' subrecord), y se saca del propio nodo. Pasarle siempre la tabla general hacía que toda
+        ''' descripción volviera vacía, porque las descripciones viven en otra.</para></summary>
         Public Function Text(node As WbNode,
-                             Optional kind As LocalizedStringTableKind = LocalizedStringTableKind.Strings) As String
+                             Optional kind As LocalizedStringTableKind? = Nothing) As String
             If node Is Nothing OrElse node.Value Is Nothing Then Return ""
             If TypeOf node.Value Is String Then Return CStr(node.Value)
 
@@ -55,7 +58,32 @@ Namespace Canon
             End Try
             If id = 0UI Then Return ""
             If _plugins Is Nothing OrElse _rec Is Nothing Then Return ""
-            Return _plugins.ResolveLocalizedString(_rec.SourcePluginName, id, kind)
+
+            Dim tabla = If(kind.HasValue, kind.Value, TablaDe(node))
+            Return _plugins.ResolveLocalizedString(_rec.SourcePluginName, id, tabla)
+        End Function
+
+        ''' <summary>En qué tabla vive el texto de este campo.
+        ''' <para>Depende del par (tipo de record, subrecord), no del valor. Son cuatro casos y el
+        ''' resto va a la tabla general.</para></summary>
+        Private Function TablaDe(node As WbNode) As LocalizedStringTableKind
+            Dim sub_ = FirmaDelSubrecord(node)
+            Dim recSig = If(_rec Is Nothing, "", _rec.Header.Signature)
+
+            If sub_ = "DESC" AndAlso recSig <> "LSCR" Then Return LocalizedStringTableKind.DLStrings
+            If sub_ = "CNAM" AndAlso (recSig = "QUST" OrElse recSig = "BOOK") Then Return LocalizedStringTableKind.DLStrings
+            If recSig = "INFO" AndAlso sub_ <> "RNAM" Then Return LocalizedStringTableKind.ILStrings
+            Return LocalizedStringTableKind.Strings
+        End Function
+
+        ''' <summary>Firma del subrecord del que cuelga el nodo, subiendo hasta encontrarla.</summary>
+        Private Shared Function FirmaDelSubrecord(node As WbNode) As String
+            Dim n = node
+            While n IsNot Nothing
+                If Not String.IsNullOrEmpty(n.Signature) Then Return n.Signature
+                n = n.Parent
+            End While
+            Return ""
         End Function
 
     End Class

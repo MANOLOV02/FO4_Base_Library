@@ -1,27 +1,23 @@
-﻿Imports System.IO
+﻿Imports FO4_Base_Library.Canon.CanonInterpretacion
 
 ' ============================================================================
-' VMAD builder - el inverso de NpcVmadScanner. Produce un NPC_VmadData (bytes crudos + lista de posiciones
-' de FormID) que NpcSubrecordWriter.EmitVmad emite tal cual, remapeando cada posicion por la MAST: por eso
-' aca se escriben FormID GLOBALES y la cuenta de indices de master la hace el writer.
+' VMAD: alta y baja de NUESTRO script de Papyrus sobre el arbol del record. Los campos se escriben por
+' su nombre y el emisor arma los bytes y remapea las referencias contra la MAST del archivo destino,
+' asi que aca las referencias van GLOBALES.
 '
-' â›” UPSERT, NUNCA APPEND CIEGO, Y NUNCA TOCAR UN SCRIPT AJENO. Dos restricciones, las dos de datos reales:
+' UPSERT, NUNCA APPEND CIEGO, Y NUNCA TOCAR UN SCRIPT AJENO. Dos restricciones, las dos de datos reales:
 '   1. 805 de 5118 NPC_ de Skyrim.esm y 382 de 3015 de Fallout4.esm YA traen VMAD con scripts vanilla
 '      (workshopnpcscript, WIDeadBodyCleanupScript, masterambushscript). Pisar uno rompe la logica de
-'      asentamientos, la limpieza de cadaveres o el scripting de quests de ese actor. Se copian verbatim.
+'      asentamientos, la limpieza de cadaveres o el scripting de quests de ese actor. No se tocan.
 '   2. Guardar el mismo NPC dos veces tiene que converger a UNA sola copia de nuestro script con los valores
 '      actuales; un append creceria una entrada por guardado y la VM las correria todas.
-' Por eso UpsertScript reconstruye el array como [todo script que NO lleva nuestro prefijo, verbatim] +
-' [el nuestro, actual]. Se borra por PREFIJO y no por nombre exacto, asi tambien limpia lo que dejo una
-' version anterior de la app con otro nombre de script.
+' Por eso UpsertScript saca los que llevan nuestro prefijo y agrega el nuestro al final. Se borra por
+' PREFIJO y no por nombre exacto, asi tambien limpia lo que dejo una version anterior de la app con otro
+' nombre de script.
 '
-' El splice es seguro porque el array de Scripts es el ULTIMO elemento de un wbVMAD plano, y el NPC_ usa el
-' plano y no las variantes fragmentadas (PERK/PACK/QUST/INFO/SCEN, que llevan cola despues de los scripts).
-' Verificado: los 1333 VMAD de NPC_ vanilla terminan exactamente donde termina el array, con cero bytes de cola.
-'
-' GAME-AWARE: lo unico que cambia por juego es la Version del header (Skyrim 5, FO4 6; medido 951/951 y
-' 382/382). ObjectFormat es 2 en los dos (1333/1333). Al APPENDear se preservan la Version y el ObjectFormat
-' del propio record en vez de forzar el default: el record manda sobre el default.
+' GAME-AWARE: lo unico que cambia por juego es la Version de la cabecera (Skyrim 5, FO4 6; medido 951/951 y
+' 382/382). ObjectFormat es 2 en los dos (1333/1333). Cuando el record ya trae VMAD manda el record y no el
+' valor por defecto.
 '
 ' Los valores constantes de mas abajo estan MEDIDOS sobre los 1333 VMAD vanilla, no asumidos: Flags de script
 ' = 0 (Local) en 1628/1628; Flags de property = 1 (Edited) en 5341/5341; 'Unused' del Object = 0 en 5846/5846;
@@ -36,7 +32,7 @@ Public Module NpcVmadBuilder
     Private Const ObjectAliasNone As Short = -1S
     Private Const ObjectUnused As UShort = 0US
 
-    ' --- property type ids (wbPropTypeEnum, wbDefinitionsFO4.pas:4087+) ---
+    ' --- ids de tipo de propiedad que usa el motor ---
     Public Enum VmadPropType As Byte
         ObjectRef = 1
         Str = 2
@@ -53,8 +49,8 @@ Public Module NpcVmadBuilder
     ''' <summary>One Papyrus script property to author. Build these with the From* factories rather
     ''' than by hand — they set the type tag and the matching value field together.
     ''' <para>FormIDs in <see cref="ObjectValue"/> / <see cref="ObjectArray"/> are GLOBAL (resolved)
-    ''' FormIDs. The builder records their byte offsets so NpcSubrecordWriter.EmitVmad re-masters
-    ''' them for the target plugin; do NOT pre-encode a master index here.</para></summary>
+    ''' El emisor los remapea contra la MAST del archivo destino, igual que cualquier otra referencia
+    ''' del record; no hay que pre-codificar un indice de master aca.</para></summary>
     Public Class VmadPropertySpec
         Public Name As String = ""
         Public PropType As VmadPropType
@@ -133,39 +129,32 @@ Public Module NpcVmadBuilder
     ''' <summary>Name prefix RESERVED for scripts this app authors. Every script under this prefix is
     ''' considered ours and is replaced wholesale on each write; every script NOT under it belongs to
     ''' vanilla or another mod and is copied through untouched.
-    '''
-    ''' <para>⚠ This prefix is a DELETE POWER: anything matching it gets removed on every save. It is
+    ''' <para>This prefix is a DELETE POWER: anything matching it gets removed on every save. It is
     ''' deliberately long and author-namespaced so it cannot collide with a real mod's script name —
     ''' a collision would mean silently deleting that mod's script from the NPC. VMAD script names are
     ''' u16-length-prefixed strings (65535 bytes max), so length costs nothing; the only real constraint
     ''' is that the name must match the compiled .pex file name on disk.</para></summary>
     Public Const ReservedScriptPrefix As String = "NPCM_Manolov_"
 
-    ''' <summary>Write our script into <paramref name="existing"/>, IDEMPOTENTLY.
+    ''' <summary>Escribe nuestro script en el VMAD del record, IDEMPOTENTEMENTE.
     '''
-    ''' <para>Rebuilds the scripts array as <c>[every script NOT under <paramref name="reservedPrefix"/>,
-    ''' byte-for-byte] + [<paramref name="script"/>]</c>. So: saving twice does not duplicate it,
-    ''' re-editing replaces the stale values, an entry left by an older app version (different name,
-    ''' same prefix) is cleaned up, and vanilla / other-mod scripts are never disturbed. See the
-    ''' UPSERT note in the file header.</para>
+    ''' <para>Deja el arreglo de scripts como <c>[todo script que NO empieza con
+    ''' <paramref name="reservedPrefix"/>, tal cual estaba] + [<paramref name="script"/>]</c>. Asi:
+    ''' guardar dos veces no lo duplica, volver a editar reemplaza los valores viejos, lo que dejo una
+    ''' version anterior de la app (otro nombre, mismo prefijo) se limpia, y los scripts de vanilla o de
+    ''' otro mod no se tocan nunca. Ver la nota de UPSERT en la cabecera.</para>
     '''
-    ''' <para>Pass <paramref name="script"/> = Nothing to REMOVE our script and keep the rest — the
-    ''' "user cleared all the RaceMenu extras" path. If nothing is left afterwards the function returns
-    ''' Nothing, which makes the writer drop the VMAD subrecord entirely (correct: the record had no
-    ''' scripts of its own).</para>
+    ''' <para><paramref name="script"/> = Nothing SACA el nuestro y deja el resto — el camino de "el
+    ''' usuario apago todos los extras de RaceMenu". Si no queda ninguno, se saca el subrecord VMAD
+    ''' entero, que es lo correcto: el record no tenia scripts propios.</para>
     '''
-    ''' <para><paramref name="existing"/> may be Nothing / empty to author a VMAD from scratch, in which
-    ''' case the header uses the game's Version (Skyrim 5 / FO4 6) and ObjectFormat 2.</para>
-    '''
-    ''' <para>Returns a NEW NPC_VmadData; <paramref name="existing"/> is never mutated.</para></summary>
-    ''' <exception cref="InvalidDataException">If <paramref name="existing"/> could not be fully parsed
-    ''' (<see cref="NPC_VmadData.ScanComplete"/> = False). We refuse to rewrite a payload whose structure
-    ''' we could not walk: we would not know where the other scripts start and end, nor where their
-    ''' FormIDs are, so we could neither preserve them nor re-master them.</exception>
-    Public Function UpsertScript(existing As NPC_VmadData,
-                                 script As VmadScriptSpec,
-                                 game As Config_App.Game_Enum,
-                                 Optional reservedPrefix As String = ReservedScriptPrefix) As NPC_VmadData
+    ''' <para>El record puede no traer VMAD: se le crea con la Version del juego (Skyrim 5 / FO4 6) y
+    ''' ObjectFormat 2. Si ya lo traia, manda el record y no el valor por defecto.</para></summary>
+    Public Sub UpsertScript(npc As Canon.INpc,
+                            script As VmadScriptSpec,
+                            game As Config_App.Game_Enum,
+                            Optional reservedPrefix As String = ReservedScriptPrefix)
+        If npc Is Nothing Then Return
         If script IsNot Nothing Then
             If String.IsNullOrWhiteSpace(script.Name) Then
                 Throw New ArgumentException("VMAD script spec requires a script name.", NameOf(script))
@@ -179,103 +168,188 @@ Public Module NpcVmadBuilder
             End If
         End If
 
-        Dim hasExisting = existing IsNot Nothing AndAlso
-                          existing.RawBytes IsNot Nothing AndAlso
-                          existing.RawBytes.Length >= 6
+        Dim nf = TryCast(npc, Canon.NpcFO4)
+        Dim ns = TryCast(npc, Canon.NpcSSE)
+        If nf Is Nothing AndAlso ns Is Nothing Then Return
+        Dim tenia = npc.VirtualMachineAdapterVersionPresente
+        If script Is Nothing AndAlso Not tenia Then Return
 
-        If hasExisting AndAlso Not existing.ScanComplete Then
-            Throw New InvalidDataException(
-                "Cannot author a script into a VMAD that could not be fully parsed — the other scripts' " &
-                "spans and FormID layout are unknown, so they could be neither preserved nor re-mastered. " &
-                $"Reason: {If(existing.ScanFailureReason, "unknown")}.")
+        ' Sacar los nuestros, de atras para adelante para que los indices no se corran.
+        Dim nombres = NombresDeScripts(npc)
+        For i = nombres.Count - 1 To 0 Step -1
+            If Not nombres(i).StartsWith(reservedPrefix, StringComparison.OrdinalIgnoreCase) Then Continue For
+            If nf IsNot Nothing Then
+                nf.QuitarScripts(i)
+            Else
+                ns.QuitarScripts(i)
+            End If
+        Next
+
+        If script Is Nothing Then
+            ' Sin scripts no hay VMAD: un subrecord con la cabecera y cero scripts no es lo que traia
+            ' un record que nunca tuvo uno.
+            If NombresDeScripts(npc).Count = 0 Then npc.QuitarSubrecord("VMAD")
+            Return
         End If
 
-        ' Version/ObjectFormat: the record wins over the game default when one already exists.
-        Dim version As Short = If(hasExisting, existing.Version, DefaultVmadVersion(game))
-        Dim objectFormat As Short = If(hasExisting, existing.ObjectFormat, CShort(2))
+        ' Version y ObjectFormat: manda el record cuando ya los traia.
+        If Not tenia Then
+            npc.VirtualMachineAdapterVersion = DefaultVmadVersion(game)
+            npc.VirtualMachineAdapterObjectFormat = 2S
+        End If
+        Dim objectFormat = npc.VirtualMachineAdapterObjectFormat
+        Dim props = If(script.Properties, New List(Of VmadPropertySpec))
 
-        ' Keep everything that is NOT ours, in its original order.
-        Dim kept As New List(Of NPC_VmadScriptRef)
-        If hasExisting Then
-            For Each s In existing.Scripts
-                If s IsNot Nothing AndAlso
-                   Not If(s.Name, "").StartsWith(reservedPrefix, StringComparison.OrdinalIgnoreCase) Then
-                    kept.Add(s)
-                End If
+        If nf IsNot Nothing Then
+            Dim e = TryCast(nf.AgregarScripts(), Canon.NpcFO4_Scripts)
+            If e Is Nothing Then Return
+            e.ScriptName = script.Name
+            e.ScriptFlags = ScriptFlagLocal
+            For Each p In props
+                If p Is Nothing Then Continue For
+                Dim d = e.AgregarProperties()
+                If d Is Nothing Then Continue For
+                EscribirEscalarDePropiedad(d, p, objectFormat)
+                ' El generador le pone al mismo campo un nombre distinto en cada juego, porque lo
+                ' desambigua contra los otros niveles del VMAD, que no son iguales en los dos. Por eso
+                ' los arreglos se escriben por juego y los escalares una sola vez.
+                Select Case p.PropType
+                    Case VmadPropType.ArrayOfObject
+                        For Each v In If(p.ObjectArray, New List(Of UInteger))
+                            Dim x = d.AgregarArrayOfObject2()
+                            If x Is Nothing Then Continue For
+                            If objectFormat = 1S Then
+                                x.ObjectV1FormID = v : x.ObjectV1Alias = ObjectAliasNone
+                            Else
+                                x.ObjectV2FormID = v : x.ObjectV2Alias = ObjectAliasNone
+                            End If
+                        Next
+                    Case VmadPropType.ArrayOfString
+                        For Each v In If(p.StringArray, New List(Of String))
+                            Dim x = d.AgregarArrayOfString2()
+                            If x IsNot Nothing Then x.Element = If(v, "")
+                        Next
+                    Case VmadPropType.ArrayOfInt32
+                        For Each v In If(p.IntArray, New List(Of Integer))
+                            Dim x = d.AgregarArrayOfInt322()
+                            If x IsNot Nothing Then x.Element = v
+                        Next
+                    Case VmadPropType.ArrayOfFloat
+                        For Each v In If(p.FloatArray, New List(Of Single))
+                            Dim x = d.AgregarArrayOfFloat2()
+                            If x IsNot Nothing Then x.Element = v
+                        Next
+                    Case VmadPropType.ArrayOfBool
+                        For Each v In If(p.BoolArray, New List(Of Boolean))
+                            Dim x = d.AgregarArrayOfBool2()
+                            If x IsNot Nothing Then x.Element = v
+                        Next
+                End Select
+            Next
+        Else
+            Dim e = TryCast(ns.AgregarScripts(), Canon.NpcSSE_Scripts)
+            If e Is Nothing Then Return
+            e.ScriptName = script.Name
+            e.ScriptFlags = ScriptFlagLocal
+            For Each p In props
+                If p Is Nothing Then Continue For
+                Dim d = e.AgregarProperties()
+                If d Is Nothing Then Continue For
+                EscribirEscalarDePropiedad(d, p, objectFormat)
+                Select Case p.PropType
+                    Case VmadPropType.ArrayOfObject
+                        For Each v In If(p.ObjectArray, New List(Of UInteger))
+                            Dim x = d.AgregarArrayOfObject()
+                            If x Is Nothing Then Continue For
+                            If objectFormat = 1S Then
+                                x.ObjectV1FormID = v : x.ObjectV1Alias = ObjectAliasNone
+                            Else
+                                x.ObjectV2FormID = v : x.ObjectV2Alias = ObjectAliasNone
+                            End If
+                        Next
+                    Case VmadPropType.ArrayOfString
+                        For Each v In If(p.StringArray, New List(Of String))
+                            Dim x = d.AgregarArrayOfString()
+                            If x IsNot Nothing Then x.Element = If(v, "")
+                        Next
+                    Case VmadPropType.ArrayOfInt32
+                        For Each v In If(p.IntArray, New List(Of Integer))
+                            Dim x = d.AgregarArrayOfInt32()
+                            If x IsNot Nothing Then x.Element = v
+                        Next
+                    Case VmadPropType.ArrayOfFloat
+                        For Each v In If(p.FloatArray, New List(Of Single))
+                            Dim x = d.AgregarArrayOfFloat()
+                            If x IsNot Nothing Then x.Element = v
+                        Next
+                    Case VmadPropType.ArrayOfBool
+                        For Each v In If(p.BoolArray, New List(Of Boolean))
+                            Dim x = d.AgregarArrayOfBool()
+                            If x IsNot Nothing Then x.Element = v
+                        Next
+                End Select
             Next
         End If
+    End Sub
 
-        Dim totalScripts = kept.Count + If(script Is Nothing, 0, 1)
-        If totalScripts = 0 Then Return Nothing   ' nothing left → writer drops the VMAD subrecord
-        If totalScripts > UShort.MaxValue Then
-            Throw New InvalidDataException($"VMAD would hold {totalScripts} scripts (u16 ScriptCount max).")
+    ''' <summary>Los nombres de los scripts del record, en orden. Lista vacia si no trae VMAD.</summary>
+    Private Function NombresDeScripts(npc As Canon.INpc) As List(Of String)
+        Dim salida As New List(Of String)
+        If npc Is Nothing Then Return salida
+        Dim nf = TryCast(npc, Canon.NpcFO4)
+        If nf IsNot Nothing Then
+            For Each s In nf.Scripts
+                salida.Add(If(s.ScriptName, ""))
+            Next
+            Return salida
         End If
+        Dim ns = TryCast(npc, Canon.NpcSSE)
+        If ns IsNot Nothing Then
+            For Each s In ns.Scripts
+                salida.Add(If(s.ScriptName, ""))
+            Next
+        End If
+        Return salida
+    End Function
 
-        Dim result As New NPC_VmadData With {
-            .Version = version,
-            .ObjectFormat = objectFormat,
-            .ScriptCount = CUShort(totalScripts),
-            .ScanComplete = True   ' we built it, so we know every span and every FormID position
-        }
-
-        Using ms As New MemoryStream()
-            Using bw As New BinaryWriter(ms)
-                bw.Write(version)
-                bw.Write(objectFormat)
-                bw.Write(CUShort(totalScripts))
-
-                ' --- the scripts we keep: copied byte-for-byte, FormID offsets rebased
-                For Each s In kept
-                    Dim newOffset = CInt(ms.Position)
-                    bw.Write(existing.RawBytes, s.Offset, s.Length)
-
-                    For Each ref In existing.FormIdPositions
-                        If ref.Offset >= s.Offset AndAlso ref.Offset < s.Offset + s.Length Then
-                            result.FormIdPositions.Add(New NPC_VmadFormIdRef With {
-                                .Offset = newOffset + (ref.Offset - s.Offset),
-                                .RawFormID = ref.RawFormID,
-                                .ResolvedFormID = ref.ResolvedFormID})
-                        End If
-                    Next
-
-                    result.Scripts.Add(New NPC_VmadScriptRef With {
-                        .Name = s.Name, .Offset = newOffset, .Length = s.Length})
-                Next
-
-                ' --- ours, last, with the current values
-                If script IsNot Nothing Then
-                    Dim relativeFormIds As New List(Of NPC_VmadFormIdRef)
-                    Dim entry = BuildScriptEntry(script, objectFormat, relativeFormIds)
-                    Dim entryBase = CInt(ms.Position)
-                    bw.Write(entry)
-
-                    For Each ref In relativeFormIds
-                        result.FormIdPositions.Add(New NPC_VmadFormIdRef With {
-                            .Offset = entryBase + ref.Offset,
-                            .RawFormID = ref.RawFormID,
-                            .ResolvedFormID = ref.ResolvedFormID})
-                    Next
-
-                    result.Scripts.Add(New NPC_VmadScriptRef With {
-                        .Name = script.Name, .Offset = entryBase, .Length = entry.Length})
+    ''' <summary>Nombre, tipo, banderas y el valor cuando NO es un arreglo. El valor es una UNION: cual
+    ''' rama lleva dato lo dice el tipo, asi que el tipo se escribe PRIMERO y despues la rama que le
+    ''' toca. Escribir otra rama crearia un campo que el motor leeria como basura.
+    ''' <para>Las referencias van GLOBALES: el remapeo contra la MAST del archivo que se escribe lo hace
+    ''' el emisor, igual que con cualquier otra referencia del record.</para>
+    ''' <para>El destino entra sin tipo porque el generador da una clase por juego con los mismos
+    ''' nombres para estos campos; los arreglos, que si cambian de nombre, los escribe el llamador.</para></summary>
+    Private Sub EscribirEscalarDePropiedad(destino As Object, p As VmadPropertySpec, objectFormat As Short)
+        destino.PropertyName = If(p.Name, "")
+        destino.PropertyType = CByte(p.PropType)
+        destino.PropertyFlags = PropertyFlagEdited
+        Select Case p.PropType
+            Case VmadPropType.ObjectRef
+                If objectFormat = 1S Then
+                    destino.ObjectV1FormID = p.ObjectValue
+                    destino.ObjectV1Alias = ObjectAliasNone
+                Else
+                    destino.ObjectV2FormID = p.ObjectValue
+                    destino.ObjectV2Alias = ObjectAliasNone
                 End If
-            End Using
-            result.RawBytes = ms.ToArray()
-        End Using
+            Case VmadPropType.Str
+                destino.ValueString = If(p.StringValue, "")
+            Case VmadPropType.Int32
+                destino.ValueInt32 = p.IntValue
+            Case VmadPropType.Float
+                destino.ValueFloat = p.FloatValue
+            Case VmadPropType.Bool
+                destino.ValueBool = p.BoolValue
+        End Select
+    End Sub
 
-        result.FormIdPositions.Sort(Function(a, b) a.Offset.CompareTo(b.Offset))
-        Return result
-    End Function
-
-    ''' <summary>Remove our script (everything under <paramref name="reservedPrefix"/>) and keep every
-    ''' other one. Returns Nothing when no script survives, which drops the VMAD subrecord.</summary>
-    Public Function RemoveAppScripts(existing As NPC_VmadData,
-                                     game As Config_App.Game_Enum,
-                                     Optional reservedPrefix As String = ReservedScriptPrefix) As NPC_VmadData
-        Return UpsertScript(existing, Nothing, game, reservedPrefix)
-    End Function
-
-    ''' <summary>A stable, order-sensitive hash of every property in <paramref name="script"/> EXCEPT the one
+    ''' <summary>Saca nuestro script (todo lo que empieza con <paramref name="reservedPrefix"/>) y deja
+    ''' los demas. Si no queda ninguno, saca el subrecord VMAD.</summary>
+    Public Sub RemoveAppScripts(npc As Canon.INpc,
+                                game As Config_App.Game_Enum,
+                                Optional reservedPrefix As String = ReservedScriptPrefix)
+        UpsertScript(npc, Nothing, game, reservedPrefix)
+    End Sub
     ''' named <paramref name="excludeProperty"/>. Deterministic across runs and machines (plain FNV-1a over the
     ''' canonical text of each name/type/value — no GetHashCode, whose string seed is randomized per process).
     '''
@@ -345,152 +419,20 @@ Public Module NpcVmadBuilder
         ' sentinel is -1, which must never collide with a real hash.
         Return CInt(h And &H7FFFFFFFUL)
     End Function
-
-    ''' <summary>True when the payload already carries a script of ours. Cheap check for the save path
-    ''' (e.g. "does this NPC need its VMAD rewritten at all?").</summary>
-    Public Function HasAppScript(existing As NPC_VmadData,
+    ''' <summary>True cuando el record ya lleva un script nuestro. Chequeo barato para el guardado
+    ''' ("¿hay que reescribirle el VMAD a este NPC?").</summary>
+    Public Function HasAppScript(npc As Canon.INpc,
                                  Optional reservedPrefix As String = ReservedScriptPrefix) As Boolean
-        If existing Is Nothing OrElse existing.Scripts Is Nothing Then Return False
-        Return existing.Scripts.Any(Function(s) s IsNot Nothing AndAlso
-                                                If(s.Name, "").StartsWith(reservedPrefix, StringComparison.OrdinalIgnoreCase))
+        For Each n In NombresDeScripts(npc)
+            If n.StartsWith(reservedPrefix, StringComparison.OrdinalIgnoreCase) Then Return True
+        Next
+        Return False
     End Function
-
     ''' <summary>VMAD header Version by game. THE one game-aware field in a VMAD payload.</summary>
     Public Function DefaultVmadVersion(game As Config_App.Game_Enum) As Short
-        ' xEdit: wbVMADVersion default 5 (TES5 :3174) / 6 (FO4 :4373). Matches vanilla 1333/1333.
+        ' Version por defecto de la cabecera VMAD: 5 en Skyrim, 6 en FO4. Coincide con los 1333/1333
+        ' VMAD vanilla medidos.
         Return If(game = Config_App.Game_Enum.Skyrim, CShort(5), CShort(6))
     End Function
-
-    ' ========================================================================
-    ' Entry / property encoders. Offsets recorded into formIds are RELATIVE to
-    ' the start of the returned buffer; AppendScript rebases them.
-    ' ========================================================================
-
-    ''' <summary>ScriptEntry = u16 nameLen + name + u8 Flags + u16 PropertyCount + properties.
-    ''' (wbScriptEntry, wbDefinitionsFO4.pas:4207-4216.)</summary>
-    Private Function BuildScriptEntry(script As VmadScriptSpec,
-                                      objectFormat As Short,
-                                      formIds As List(Of NPC_VmadFormIdRef)) As Byte()
-        Using ms As New MemoryStream()
-            Using bw As New BinaryWriter(ms)
-                WriteLenString(bw, script.Name)
-                bw.Write(ScriptFlagLocal)
-
-                Dim props = If(script.Properties, New List(Of VmadPropertySpec)())
-                If props.Count > UShort.MaxValue Then
-                    Throw New InvalidDataException($"Script '{script.Name}' has {props.Count} properties (u16 max).")
-                End If
-                bw.Write(CUShort(props.Count))
-
-                For Each p In props
-                    WriteProperty(bw, ms, p, objectFormat, formIds)
-                Next
-            End Using
-            Return ms.ToArray()
-        End Using
-    End Function
-
-    ''' <summary>ScriptProperty = u16 nameLen + name + u8 Type + u8 Flags + Value.
-    ''' (wbScriptProperty, wbDefinitionsFO4.pas:4168-4194.)</summary>
-    Private Sub WriteProperty(bw As BinaryWriter,
-                              ms As MemoryStream,
-                              p As VmadPropertySpec,
-                              objectFormat As Short,
-                              formIds As List(Of NPC_VmadFormIdRef))
-        If p Is Nothing OrElse String.IsNullOrWhiteSpace(p.Name) Then
-            Throw New ArgumentException("VMAD property requires a name.")
-        End If
-
-        WriteLenString(bw, p.Name)
-        bw.Write(CByte(p.PropType))
-        bw.Write(PropertyFlagEdited)
-
-        Select Case p.PropType
-            Case VmadPropType.ObjectRef
-                WriteObject(bw, ms, p.ObjectValue, objectFormat, formIds)
-            Case VmadPropType.Str
-                WriteLenString(bw, p.StringValue)
-            Case VmadPropType.Int32
-                bw.Write(p.IntValue)
-            Case VmadPropType.Float
-                bw.Write(p.FloatValue)
-            Case VmadPropType.Bool
-                bw.Write(If(p.BoolValue, CByte(1), CByte(0)))
-
-            Case VmadPropType.ArrayOfObject
-                Dim items = If(p.ObjectArray, New List(Of UInteger)())
-                bw.Write(CUInt(items.Count))
-                For Each fid In items
-                    WriteObject(bw, ms, fid, objectFormat, formIds)
-                Next
-            Case VmadPropType.ArrayOfString
-                Dim items = If(p.StringArray, New List(Of String)())
-                bw.Write(CUInt(items.Count))
-                For Each s In items
-                    WriteLenString(bw, s)
-                Next
-            Case VmadPropType.ArrayOfInt32
-                Dim items = If(p.IntArray, New List(Of Integer)())
-                bw.Write(CUInt(items.Count))
-                For Each v In items
-                    bw.Write(v)
-                Next
-            Case VmadPropType.ArrayOfFloat
-                Dim items = If(p.FloatArray, New List(Of Single)())
-                bw.Write(CUInt(items.Count))
-                For Each v In items
-                    bw.Write(v)
-                Next
-            Case VmadPropType.ArrayOfBool
-                Dim items = If(p.BoolArray, New List(Of Boolean)())
-                bw.Write(CUInt(items.Count))
-                For Each v In items
-                    bw.Write(If(v, CByte(1), CByte(0)))
-                Next
-
-            Case Else
-                Throw New InvalidDataException($"VMAD property type {CByte(p.PropType)} not supported by the builder.")
-        End Select
-    End Sub
-
-    ''' <summary>The 8-byte Object union. Layout depends on the payload's ObjectFormat — the SAME rule
-    ''' NpcVmadScanner.ScanObject reads back (wbScriptPropertyObject, wbDefinitionsFO4.pas:4115-4137):
-    ''' ObjectFormat == 1 → v1 (FormID, s16 Alias, u16 Unused); anything else → v2 (u16 Unused,
-    ''' s16 Alias, FormID). We record the FormID's byte offset so EmitVmad can re-master it.</summary>
-    Private Sub WriteObject(bw As BinaryWriter,
-                            ms As MemoryStream,
-                            globalFormID As UInteger,
-                            objectFormat As Short,
-                            formIds As List(Of NPC_VmadFormIdRef))
-        Dim start = CInt(ms.Position)
-        Dim formIdOffset As Integer
-
-        If objectFormat = 1 Then
-            formIdOffset = start           ' v1: FormID @ +0
-            bw.Write(globalFormID)
-            bw.Write(ObjectAliasNone)
-            bw.Write(ObjectUnused)
-        Else
-            formIdOffset = start + 4       ' v2: FormID @ +4
-            bw.Write(ObjectUnused)
-            bw.Write(ObjectAliasNone)
-            bw.Write(globalFormID)
-        End If
-
-        ' RawFormID == ResolvedFormID: we author with the global FormID and let EmitVmad map it into
-        ' the target plugin's MAST index. Nothing here is source-plugin-encoded.
-        formIds.Add(New NPC_VmadFormIdRef With {
-            .Offset = formIdOffset, .RawFormID = globalFormID, .ResolvedFormID = globalFormID})
-    End Sub
-
-    ''' <summary>u16 length + UTF-8 bytes, no NUL (wbLenString(..., 2); wbEncodingVMAD = UTF-8).</summary>
-    Private Sub WriteLenString(bw As BinaryWriter, value As String)
-        Dim bytes = PluginEncodingSettings.EncodeVmad(If(value, ""))
-        If bytes.Length > UShort.MaxValue Then
-            Throw New InvalidDataException($"VMAD string exceeds u16 length: {bytes.Length} bytes.")
-        End If
-        bw.Write(CUShort(bytes.Length))
-        If bytes.Length > 0 Then bw.Write(bytes)
-    End Sub
 
 End Module

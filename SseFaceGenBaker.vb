@@ -34,14 +34,14 @@ Public Module SseFaceGenBaker
     ''' encode to 512² BC3 (DXT5) with mips — the exact format CK writes to
     ''' <c>FaceGenData\FaceTint\&lt;plugin&gt;\&lt;fid&gt;.dds</c>. Returns Nothing when the tint can't be
     ''' composed (race/QNAM unresolved). Pure — no file writes; the caller writes/uploads the bytes.</summary>
-    ''' <param name="dxgiFormat">Formato de salida. -1 = BC3 (el del facetint vanilla). ⛔ NO hardcodear en el caller:
+    ''' <param name="dxgiFormat">Formato de salida. -1 = BC3 (el del facetint vanilla). NO hardcodear en el caller:
     ''' pasar el elegido por el usuario (CharGen Options → Diffuse) para que el facetint REAL siga la misma opción que
     ''' el resto de los artefactos del bake (el neutral del fold ya la seguía; antes esto forzaba BC3 y quedaban con
     ''' formatos distintos según el NPC estuviera plegado o no).</param>
-    Public Function BakeFaceTintDds(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
+    Public Function BakeFaceTintDds(pm As PluginManager, npcRec As PluginRecord, race As Canon.IRace,
                                     raceFormID As UInteger, isFemale As Boolean,
                                     Optional w As Integer = 512, Optional h As Integer = 512,
-                                    Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
+                                    Optional npcTintLayers As IReadOnlyList(Of Canon.NpcSSE_TintLayers) = Nothing,
                                     Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing,
                                     Optional dxgiFormat As Integer = -1,
                                     Optional ByRef accOut As Single() = Nothing) As Byte()
@@ -50,24 +50,24 @@ Public Module SseFaceGenBaker
         ' can dump a lossless TGA without a second compose", pero el call site del bake SI recomponia:
         ' con "Generate TGA" tildado (que NO es un flag de debug — es la opcion de CharGen Options) el
         ' facetint de CADA NPC de SSE se componia DOS VECES. Devolverlo aca lo deja en una.
-        Dim acc = ComposeFacetintAcc(pm, npcRec, race, raceFormID, isFemale, w, h, npcTintOverride, tintTexOverride)
+        Dim acc = ComposeFacetintAcc(pm, npcRec, race, raceFormID, isFemale, w, h, npcTintLayers, tintTexOverride)
         accOut = acc
         If acc Is Nothing Then Return Nothing
         Return EncodeLinearRgbaToBc3(acc, w, h, dxgiFormat)
     End Function
 
-    ''' <summary>⛔ El facetint es TINT-ONLY por construcción: NO lleva overlays ni skee-masks. Los overlays de
+    ''' <summary>El facetint es TINT-ONLY por construcción: NO lleva overlays ni skee-masks. Los overlays de
     ''' RaceMenu y las máscaras skee (MASKT) se componen sobre el DIFFUSE (en el fold, ver
     ''' <c>FaceGenBuilder.WriteSseFaceDiffuseWithOverlays</c>), no acá — porque el engine las aplica sobre el ALBEDO
     ''' ya tintado, y el albedo sólo existe después de plegar. El parámetro <c>overlays</c> que esta función tenía
     ''' (y que <see cref="BakeFaceTintDds"/> le pasaba) llegaba SIEMPRE Nothing: era código muerto que sugería lo
     ''' contrario del modelo. Eliminado.</summary>
-    Public Function ComposeFacetintAcc(pm As PluginManager, npcRec As PluginRecord, race As RACE_Data,
+    Public Function ComposeFacetintAcc(pm As PluginManager, npcRec As PluginRecord, race As Canon.IRace,
                                        raceFormID As UInteger, isFemale As Boolean,
                                        Optional w As Integer = 512, Optional h As Integer = 512,
-                                       Optional npcTintOverride As IList(Of NPC_RawSubrecord) = Nothing,
+                                       Optional npcTintLayers As IReadOnlyList(Of Canon.NpcSSE_TintLayers) = Nothing,
                                        Optional tintTexOverride As Dictionary(Of Integer, String) = Nothing) As Single()
-        Return SseFaceTintComposer.ComposeLinearRgba(pm, npcRec, race, raceFormID, isFemale, w, h, Nothing, npcTintOverride, tintTexOverride)
+        Return SseFaceTintComposer.ComposeLinearRgba(pm, npcRec, race, raceFormID, isFemale, w, h, Nothing, npcTintLayers, tintTexOverride)
     End Function
 
     ''' <summary>Convert a linear RGBA accumulator ([0,1], length w*h*4) to BGRA bytes (opaque alpha) — the same
@@ -77,11 +77,11 @@ Public Module SseFaceGenBaker
         Return RgbaFloatToBgraBytes(acc, w * h)
     End Function
 
-    ''' <summary>RGBA float [0,1] → BGRA byte (alpha opaco). ⭐ Era el MISMO cuerpo copiado en
+    ''' <summary>RGBA float [0,1] → BGRA byte (alpha opaco). Era el MISMO cuerpo copiado en
     ''' <see cref="LinearRgbaToBgra"/> y en <see cref="EncodeLinearRgbaToBc3"/>, y en los dos estaba SERIAL —
     ''' una omisión: el cuerpo es puramente por píxel con escrituras disjuntas, así que paralelizarlo es
     ''' bit-idéntico (sólo cambia qué thread lo ejecuta) igual que en el resto del módulo.
-    ''' <para>⛔ FIDELIDAD DEL NaN: el escalar hace <c>CByte(Max(0, Min(255, Round(v*255))))</c>, y con NaN eso
+    ''' <para>FIDELIDAD DEL NaN: el escalar hace <c>CByte(Max(0, Min(255, Round(v*255))))</c>, y con NaN eso
     ''' TIRA <c>OverflowException</c>. El camino vectorial NO puede "arreglarlo" devolviendo 0 en silencio —
     ''' sería degradar una condición anómala a un default, justo lo que la regla del proyecto prohíbe. Por eso
     ''' el bloque que contenga un NaN cae al escalar y tira la MISMA excepción que antes.</para></summary>
@@ -92,7 +92,7 @@ Public Module SseFaceGenBaker
             System.Collections.Concurrent.Partitioner.Create(0, npix),
             Sub(range)
                 Dim i = range.Item1
-                ' ⛔ ANTES esto estaba gateado SOLO por Accelerated256, sin rama V128, mientras el fold y la
+                ' ANTES esto estaba gateado SOLO por Accelerated256, sin rama V128, mientras el fold y la
                 ' pre-compensacion de este MISMO archivo si la tenian. En una maquina SSE2 el byte-pack de la
                 ' cara ENTERA (hasta 4096²) quedaba 100 % escalar sin ninguna razon. Con el ancho variable el
                 ' runtime elige 8 o 4 lanes y no hay dos caminos que mantener.
@@ -151,7 +151,7 @@ Public Module SseFaceGenBaker
     '     albedo = softlight(diffuse, TINT) * ((DETAIL + (1/255,0,1/255)) * 255/64)
     ' TINT   = texture-set slot 6 (facetint) -> material+0xA0 -> PS t3   (entra por SOFT-LIGHT)
     ' DETAIL = texture-set slot 3            -> material+0xA8 -> PS t4   (entra por el AMPLIFY de abajo)
-    ' ⛔ CORRIGE la premisa previa "el engine AMPLIFICA el facetint y lo multiplica": el x255/64 normaliza el
+    ' CORRIGE la premisa previa "el engine AMPLIFICA el facetint y lo multiplica": el x255/64 normaliza el
     ' DETAIL (neutro 64 -> 1.0 exacto), NO el facetint. Con el tint pasando por el amplify, un skin tone
     ' saturado aplastaba R/B y el cuello salía mucho más saturado que el pecho (in-game matchean).
     ' Ver SetupMaterial 0x1414DC310 / rama facegen 0x1414DC542 / OnLoadTextureSet 0x1414BA6E0.
@@ -165,7 +165,7 @@ Public Module SseFaceGenBaker
     ''' textura UNIFORME <c>0x40</c> = 64/255 = 0.251. RE byte-level SkyrimSE.exe: la init de defaults
     ''' @0x140E57E30 la crea con fill <c>0x40404040</c> y la guarda en manager+0x88 (singleton 0x328CC20 ⇒
     ''' 0x328CCA8 = el default que el material facegen mete en +0xA8 @0x1414BA8B0). = vanilla blankdetailmap.dds.
-    ''' ⚠️ NO es la Bayer 8×8 media 0.1235: esa es <c>BSShader_DitheringNoise</c>, creada en la MISMA función
+    ''' NO es la Bayer 8×8 media 0.1235: esa es <c>BSShader_DitheringNoise</c>, creada en la MISMA función
     ''' unas instrucciones antes (por eso la nota vieja citaba 0x140E57E30 para el 0x40 y era ambigua).</summary>
     Public Const EngineDefaultDetail As Single = 64.0F / 255.0F
 
@@ -174,7 +174,7 @@ Public Module SseFaceGenBaker
     ''' 0x328CC90 = el default que el material facegen mete en +0xA0. Es (casi) la IDENTIDAD del soft-light:
     ''' con b = 0.5 EXACTO <c>a² + 2·a·0.5·(1−a) = a</c>, pero a 8 bits el valor representable es 128/255, y el
     ''' residuo queda acotado por <c>|softlight(a,128/255) − a| = 2·a·(1−a)·(1/510) ≤ 0.00098</c> (&lt; 1/4 de byte).
-    ''' ⭐ Se usa el valor BYTE-EXACTO, no 0.5: es lo que hace el motor, y es también lo único que sobrevive a un
+    ''' Se usa el valor BYTE-EXACTO, no 0.5: es lo que hace el motor, y es también lo único que sobrevive a un
     ''' DDS de 8 bits — así el neutro que escribe el bake, el que instala el preview y el default del engine son
     ''' EL MISMO número en los cuatro caminos.</summary>
     Public Const EngineDefaultTint As Single = 128.0F / 255.0F
@@ -185,17 +185,17 @@ Public Module SseFaceGenBaker
     End Function
 
     ''' <summary>El multiplicador amplificado de UN canal (0=R,1=G,2=B) a partir del DETAIL crudo [0,1]:
-    ''' <c>(v+off)·(255/64)</c>. ⚠️ Se aplica al DETAIL (slot 3 → t4), NO al facetint. El detail NEUTRAL
+    ''' <c>(v+off)·(255/64)</c>. Se aplica al DETAIL (slot 3 → t4), NO al facetint. El detail NEUTRAL
     ''' (multiplicador = 1) es (63,64,63)/255; el default del engine 0.251 da (1.015625, 1.0, 1.015625).</summary>
     <MethodImpl(MethodImplOptions.AggressiveInlining)>
     Public Function FgTintChannel(dChannel As Single, ch As Integer) As Single
         Return (dChannel + FgOff(ch)) * FgTintAmp
     End Function
 
-    ''' <summary>⭐⭐ DOMINIO LEGAL DEL AMPLIFY — la política para <c>amp ≤ 0</c>, escrita UNA vez acá y
+    ''' <summary>DOMINIO LEGAL DEL AMPLIFY — la política para <c>amp ≤ 0</c>, escrita UNA vez acá y
     ''' replicada LITERAL en el GLSL (decisión 1 del plan).
     '''
-    ''' <para>⛔ EL PISO SE SACÓ. Había un <c>max(amp, 0.25)</c> en los seis sitios (fold escalar, fold
+    ''' <para>EL PISO SE SACÓ. Había un <c>max(amp, 0.25)</c> en los seis sitios (fold escalar, fold
     ''' vectorial, inversa escalar, inversa vectorial, y las dos ramas del shader). <b>El motor NO acota</b>:
     ''' el desensamblado no tiene <c>_sat</c> en ningún paso de la cadena, y el shader del preview tampoco.
     ''' Un piso inventado hace que la cadena deje de reproducir al motor justo donde el detail es oscuro.</para>
@@ -222,7 +222,7 @@ Public Module SseFaceGenBaker
 
     ''' <summary>Un facetint _d NEUTRAL para el slot 6 cuando la cadena se pliega en el diffuse: gris <b>128</b>
     ''' uniforme = IDENTIDAD del SOFT-LIGHT a 8 bits (ver <see cref="EngineDefaultTint"/>: residuo ≤ 0.00098, el
-    ''' mismo que tiene el motor con su DefaultGreyMap). ⚠️ NO es (63,64,63): ese es el neutro
+    ''' mismo que tiene el motor con su DefaultGreyMap). NO es (63,64,63): ese es el neutro
     ''' del AMPLIFY y le corresponde al slot 3 (<see cref="DetailNeutralChannel"/>). Coincide además con el default de
     ''' engine del propio slot (<c>DefaultGreyMap</c>), así que sirve igual si el slot queda vacío. El tint se
     ''' samplea CRUDO (raw), así que 0.5 = byte 128 literal. Formato: el que pase el caller (CharGen Options →
@@ -233,9 +233,9 @@ Public Module SseFaceGenBaker
 
     ''' <summary>Un detail map (slot 3 / DisplacementTexture) NEUTRAL para el AMPLIFY del engine:
     ''' <c>(v+off)·255/64 = 1</c> ⇒ v = (63,64,63)/255. Se usa cuando la cadena se pliega en el diffuse (el amplify
-    ''' con el detail REAL ya está horneado en slot 0), para que el engine NO lo re-aplique. ⚠️ NO es 0.5: 0.5 es la
+    ''' con el detail REAL ya está horneado en slot 0), para que el engine NO lo re-aplique. NO es 0.5: 0.5 es la
     ''' identidad del SOFT-LIGHT y le corresponde al slot 6 (que el fold ya no neutraliza).
-    ''' ⛔ NO se puede VACIAR el slot 3: el engine lo rellena con <see cref="EngineDefaultDetail"/> (0.251), que
+    ''' NO se puede VACIAR el slot 3: el engine lo rellena con <see cref="EngineDefaultDetail"/> (0.251), que
     ''' amplificado da (1.015625, 1.0, 1.015625) ≠ 1 ⇒ la cara saldría 1.5% más clara en R/B. El detail se samplea
     ''' CRUDO (raw). Constante ⇒ compartible por plugin; el engine SÍ respeta el slot 3 del NIF (a diferencia del
     ''' tint, que arma por path canónico). Formato = el que pase el caller; -1 = BC3 (constante ⇒ sin error).</summary>
@@ -245,19 +245,19 @@ Public Module SseFaceGenBaker
 
     ''' <summary>Pliega la cadena de albedo facegen DENTRO del complexion (in place): reproduce la op del engine
     ''' <c>albedo_lin = softlight(complexion_lin, TINT) × ((DETAIL + off)·255/64)</c>.
-    ''' <para>⚠️ El resultado de ESTA función es la BASE sobre la que van los overlays (sin teñir): ése es el
+    ''' <para>El resultado de ESTA función es la BASE sobre la que van los overlays (sin teñir): ése es el
     ''' orden de RaceMenu y es lo que el preview muestra. Para que el juego muestre lo MISMO, el caller debe
     ''' después llamar a <see cref="PreCompensateDetailAmplify"/> — ver la nota ahí.</para></summary>
-    ''' ⚠️ El engine opera en LINEAR: el complexion (slot 0) es un diffuse sRGB que el shader decodifica sRGB→linear
+    ''' El engine opera en LINEAR: el complexion (slot 0) es un diffuse sRGB que el shader decodifica sRGB→linear
     ''' ANTES de la cadena. Como el <paramref name="complexionRgba"/> llega CRUDO (sRGB, de DecodeDds), acá se hace
     ''' sRGB→linear, la cadena, y linear→sRGB para volver a almacenarlo como diffuse (el engine lo re-samplea
     ''' sRGB→linear). MEDIDO: plegar en sRGB crudo salía ~0.33 MÁS CLARO (bug).
     ''' <paramref name="facetintRgba"/> (slot 6) y <paramref name="detailRgba"/> (slot 3) se samplean CRUDOS (raw).
     ''' RGB; alpha intacto. Buffers [0,1] w*h*4, mismo tamaño.
-    ''' ⭐ RÉPLICA EXACTA de la rama <c>uFgTintFold</c> del shader del compositor (fold GPU) — si tocás una, tocá la
+    ''' RÉPLICA EXACTA de la rama <c>uFgTintFold</c> del shader del compositor (fold GPU) — si tocás una, tocá la
     ''' otra: el sandbox _2c-vs-_2d mide esa paridad.</summary>
     ''' <param name="softLightModelOverride">-1 (default) = el modelo sale de la CONVENCIÓN
-    ''' (<see cref="FoldSoftLightModel"/>). Un valor explícito la pisa. ⛔ Existe para los GOLDEN ABSOLUTOS,
+    ''' (<see cref="FoldSoftLightModel"/>). Un valor explícito la pisa. Existe para los GOLDEN ABSOLUTOS,
     ''' que miden la LEY DEL MOTOR y por lo tanto NO pueden depender de lo que el usuario elija en el bucket
     ''' Fold: con el modelo leído del config, mover ese bucket hacía fallar <c>fold-golden</c> y ABORTABA el
     ''' bake — MEDIDO 2026-08-01. Un golden que se mueve con una opción no es un golden.</param>
@@ -266,13 +266,13 @@ Public Module SseFaceGenBaker
                                        Optional softLightModelOverride As Integer = -1)
         If complexionRgba Is Nothing OrElse facetintRgba Is Nothing Then Return
         ' Engine EXACTO: albedo = softlight(sRGBtoLin(complexion), facetint) × amplify(detail).
-        ' ⛔ CORREGIDO: antes esto estaba INVERTIDO (softlight con el detail y amplify sobre el facetint). El
+        ' CORREGIDO: antes esto estaba INVERTIDO (softlight con el detail y amplify sobre el facetint). El
         ' x255/64 normaliza el DETAIL, no el tint. Ver el bloque de la ley arriba.
         ' Slot vacío ⇒ default del engine, NO identidad arbitraria:
         '   detail  vacío -> EngineDefaultDetail 0.251 -> amplify (1.015625, 1.0, 1.015625)
         '   facetint vacío -> EngineDefaultTint  0.5    -> softlight identidad
         ' (mods que borran el TX04 del TXST, ej. Enhanced Khajiit, caen en el primero).
-        ' ⛔ ESTA NOTA DECÍA: "El caller DEBE neutralizar los slots del NIF: slot 3 -> (63,64,63), slot 6 -> 0.5
+        ' ESTA NOTA DECÍA: "El caller DEBE neutralizar los slots del NIF: slot 3 -> (63,64,63), slot 6 -> 0.5
         ' (si no, el engine re-aplica encima del plegado)". YA NO — y hacerlo hoy ROMPERÍA el resultado: los dos
         ' slots quedan con su contenido REAL y el caller cancela la cadena del motor con PreCompensateEngineChain.
         ' Ningún caller neutraliza nada.
@@ -280,7 +280,7 @@ Public Module SseFaceGenBaker
         ' sin acumulación cruzada) ⇒ resultado BIT-IDÉNTICO al loop serial (el mismo double-math por píxel; sólo
         ' cambia qué thread lo ejecuta). Por qué: la op lleva 2 Math.Pow por canal (Srgb2Lin+Lin2Srgb) y el fold
         ' corre a la resolución NATIVA del complexion — a 4096² (caras COtR) el serial costaba segundos por fold.
-        ' ⭐ EL MODELO DE SOFT-LIGHT, RESUELTO UNA VEZ Y ACA (no por píxel): sale del bucket Fold de la
+        ' EL MODELO DE SOFT-LIGHT, RESUELTO UNA VEZ Y ACA (no por píxel): sale del bucket Fold de la
         ' convención. Estaba CABLEADO en 3 (pegtop) dentro de FoldOne. Default = pegtop = la ley del motor,
         ' así que esto es byte-inerte; lo verifica el self-test `fold-golden`, cuyos golden NO se movieron.
         Dim slModel As Integer = If(softLightModelOverride >= 0, softLightModelOverride, FoldSoftLightModel())
@@ -293,15 +293,15 @@ Public Module SseFaceGenBaker
         ' del loop; leerlo del campo de modulo lo vuelve una carga de memoria y mata la optimizacion.
         Dim lanes = Vector(Of Single).Count
 
-                ' ⛔ LOS RANGOS DEL PARTITIONER NO VIENEN ALINEADOS. `lo` es multiplo de 4 (4 elementos por
+                ' LOS RANGOS DEL PARTITIONER NO VIENEN ALINEADOS. `lo` es multiplo de 4 (4 elementos por
                 ' pixel) pero es multiplo de 8 solo si el pixel inicial es PAR, o sea la MITAD de las veces.
                 ' Por eso hay PROLOGO escalar hasta alinear, cuerpo vectorial, y COLA escalar — las tres
                 ' partes corriendo la MISMA ley, que es lo que hace que el resultado no dependa de donde
                 ' cayo el corte de la particion.
-                ' ⭐ UN SOLO camino: el ancho lo elige el runtime (8 lanes con AVX2, 4 con SSE2). Antes habia
+                ' UN SOLO camino: el ancho lo elige el runtime (8 lanes con AVX2, 4 con SSE2). Antes habia
                 ' dos cuerpos DUPLICADOS a mano (V256 y V128) que habia que mantener en sincronia — y este era
                 ' el unico modulo con esa duplicacion Y sin self-test que la verificara.
-                ' ⭐ LOS CUATRO MODELOS VAN ACELERADOS. El cuerpo vectorial no tiene gate por modelo: el
+                ' LOS CUATRO MODELOS VAN ACELERADOS. El cuerpo vectorial no tiene gate por modelo: el
                 ' dispatch compartido (BlendDispatchV → SoftLightV) los cubre a todos, Illusions incluido
                 ' (exponente variable por lane vía FastPow.PowVarV).
                 If FastPow.AcceleratedV Then
@@ -324,7 +324,7 @@ Public Module SseFaceGenBaker
     ''' el cuerpo vectorial de abajo es su espejo exacto. Una sola definicion ⇒ no puede haber deriva.</summary>
     ''' <summary>Modelo de soft-light del PLIEGUE (índice de <see cref="FaceTintConvention.FaceTintSoftLight"/>),
     ''' leído del bucket <c>Fold</c> de la convención. Default = pegtop = la ley del motor (DXBC).
-    ''' <para>⛔ Se resuelve UNA vez por llamada, fuera del loop de píxeles: <c>ResolveConvention</c> lee el
+    ''' <para>Se resuelve UNA vez por llamada, fuera del loop de píxeles: <c>ResolveConvention</c> lee el
     ''' config y no es gratis. Y va acá, no en <see cref="FoldOne"/>, para que el fold y su INVERSA
     ''' (<see cref="PreCompensateEngineChain"/>) no puedan resolver modelos distintos — si divergen, la cadena
     ''' del motor deja de cancelar y el render muestra algo que el juego no dibuja.</para></summary>
@@ -344,20 +344,20 @@ Public Module SseFaceGenBaker
         Dim clin = Srgb2Lin(comp(i))
         Dim tv = tint(i)                                             ' slot 6 -> t3
         Dim det = If(detail IsNot Nothing, detail(i), EngineDefaultDetail)   ' slot 3 -> t4
-        ' ⭐ EL DISPATCH COMPARTIDO, no una expresion propia (decision 4). Es la MISMA cuenta —la forma del
+        ' EL DISPATCH COMPARTIDO, no una expresion propia (decision 4). Es la MISMA cuenta —la forma del
         ' motor es la del modelo 3— pero escrita en UN solo lugar. Hereda ademas los Clamp01 de entrada
         ' del dispatch: inerte en la practica (complexion y tint vienen de bytes, o sea [0,1]), se DECLARA.
-        ' ⭐ El MODELO ya no es el literal 3: viene del bucket Fold (ver FoldSoftLightModel). Su inversa
+        ' El MODELO ya no es el literal 3: viene del bucket Fold (ver FoldSoftLightModel). Su inversa
         ' analitica esta en FaceTintCpuCompositor.BlendSoftLightModelInverse y la verifica `softlight-inv`.
         Dim sl = FaceTintCpuCompositor.BlendChannel(3, slModel, clin, tv)  ' softlight(complexion_lin, tint)
-        ' ⛔ SIN PISO: la DIRECTA multiplica por el amp REAL (decision 1 — el motor no acota). Ver FgAmpInverse.
+        ' SIN PISO: la DIRECTA multiplica por el amp REAL (decision 1 — el motor no acota). Ver FgAmpInverse.
         comp(i) = Lin2Srgb(sl * FgTintChannel(det, ch))
     End Sub
 
     ' ---------------------------------------------------------------------------------------------
     ' Cuerpo VECTORIAL del fold. Entra en un indice YA alineado y devuelve el primero que no proceso.
     '
-    ' ⭐ POR QUE EL AoS NO ESTORBA. El acumulador es intercalado (i*4+ch) y la intuicion dice "gather".
+    ' POR QUE EL AoS NO ESTORBA. El acumulador es intercalado (i*4+ch) y la intuicion dice "gather".
     ' No hace falta: la op es ELEMENTO A ELEMENTO POR CANAL, asi que 8 floats = 2 pixeles EXACTOS y el
     ' patron de canal se repite R,G,B,A,R,G,B,A. Tanto el offset por canal (FgOff difiere R/G/B) como la
     ' mascara "no tocar el alpha" son VECTORES CONSTANTES en ese layout. Cero gather, cero shuffle, y NO
@@ -415,7 +415,7 @@ Public Module SseFaceGenBaker
 
 
 
-    ''' <summary>⭐⭐⭐ PRE-COMPENSACIÓN del amplify del detail. Divide el buffer (in place, sRGB) por
+    ''' <summary>PRE-COMPENSACIÓN del amplify del detail. Divide el buffer (in place, sRGB) por
     ''' <c>amplify(detail)</c> EN LINEAL, para que cuando el motor lo multiplique por ESE MISMO amplify desde el
     ''' slot 3 el resultado sea EXACTAMENTE el buffer que entró — o sea, lo que muestra el preview.
     '''
@@ -438,7 +438,7 @@ Public Module SseFaceGenBaker
     ''' el amplify que acá dividimos ⇒ ya no depende de que un neutro sobreviva. Y desaparece
     ''' <c>facedetailneutral.dds</c>, el único artefacto COMPARTIDO por plugin entre NPCs/ESPs.</para>
     '''
-    ''' <para>⚠️ <paramref name="detailRgba"/> DEBE ser el MISMO buffer que recibió
+    ''' <para><paramref name="detailRgba"/> DEBE ser el MISMO buffer que recibió
     ''' <see cref="FoldFacetintIntoDiffuse"/>, al mismo tamaño. Nothing ⇒ no-op: sin detail el fold usó el default
     ''' del engine (0,251) y el motor usará ese mismo default, así que ya está balanceado.
     ''' El divisor se acota por abajo (un detail patológicamente oscuro dispararía el brillo) y el resultado se
@@ -446,7 +446,7 @@ Public Module SseFaceGenBaker
     Public Sub PreCompensateEngineChain(bufferSrgb As Single(), facetintRgba As Single(), detailRgba As Single(),
                                         npix As Integer)
         If bufferSrgb Is Nothing Then Return
-        ' ⭐ MISMO modelo que la DIRECTA, resuelto por la MISMA función y una sola vez: si el fold y su inversa
+        ' MISMO modelo que la DIRECTA, resuelto por la MISMA función y una sola vez: si el fold y su inversa
         ' resolvieran modelos distintos, la cadena del motor no cancelaría y el render mostraría algo que el
         ' juego no dibuja. Ver FoldSoftLightModel.
         Dim slModel As Integer = FoldSoftLightModel()
@@ -460,7 +460,7 @@ Public Module SseFaceGenBaker
         Dim lanes = Vector(Of Single).Count
                 ' Prologo / cuerpo vectorial / cola — misma estructura y mismo motivo que el fold: los
                 ' rangos del Partitioner no vienen alineados y las tres partes corren la MISMA ley.
-                ' ⭐ LOS CUATRO MODELOS ACELERADOS, igual que la directa: BlendSoftLightModelInverseV cubre
+                ' LOS CUATRO MODELOS ACELERADOS, igual que la directa: BlendSoftLightModelInverseV cubre
                 ' pegtop, GIMP, Illusions y la cúbica de W3C (Cardano con FastPow.CbrtV).
                 If FastPow.AcceleratedV Then
                     While (i And (lanes - 1)) <> 0 AndAlso i < hi
@@ -485,7 +485,7 @@ Public Module SseFaceGenBaker
         Dim y = Srgb2Lin(buf(i))
 
         ' 1) invertir el AMPLIFY del detail (slot 3): y /= amp
-        ' ⭐ DECISION 2 — DETAIL AUSENTE. Antes esto era `If detail IsNot Nothing`, o sea que sin slot 3 la
+        ' DECISION 2 — DETAIL AUSENTE. Antes esto era `If detail IsNot Nothing`, o sea que sin slot 3 la
         ' inversa NO dividia. El comentario decia "ya esta balanceado" y era FALSO: la que tiene que cancelar
         ' es la del MOTOR, y el motor con el slot 3 vacio usa su propio default (EngineDefaultDetail, 0.251 ⇒
         ' amp = 1,015625/1,0/1,015625, que NO es 1). O sea que el amplify se aplicaba DOS veces en esos NPCs.
@@ -494,9 +494,9 @@ Public Module SseFaceGenBaker
         y = FgAmpInverse(y, det, ch)
 
         ' 2) invertir el SOFT-LIGHT del facetint (slot 6) — POR MODELO, con la inversa ANALITICA compartida.
-        '    ⭐ FUENTE UNICA: FaceTintCpuCompositor.BlendSoftLightModelInverse, con la derivacion cerrada de
+        ' FUENTE UNICA: FaceTintCpuCompositor.BlendSoftLightModelInverse, con la derivacion cerrada de
         '    los cuatro modelos y su gate (`softlight-inv`, que exige Inv(Fwd(d,s),s) = d a menos de 1 byte).
-        '    ⛔ Aca estaba escrita A MANO y SOLO la de pegtop: era correcta mientras el modelo estaba cableado,
+        ' Aca estaba escrita A MANO y SOLO la de pegtop: era correcta mientras el modelo estaba cableado,
         '    y dejaba de cancelar apenas el bucket Fold eligiera otro. Ahora la directa (FoldOne) y la inversa
         '    resuelven el MISMO `slModel` por la MISMA funcion.
         If tint IsNot Nothing Then
@@ -540,7 +540,7 @@ Public Module SseFaceGenBaker
             Dim amp = Vector.Multiply(Vector.Add(dv, offV), ampV)
             y = Vector.ConditionalSelect(Vector.GreaterThan(amp, zero), Vector.Divide(y, amp), y)
 
-            ' ⭐ La inversa POR MODELO, espejo exacto de PreCompOne. Acá estaba escrita a mano y sólo la de
+            ' La inversa POR MODELO, espejo exacto de PreCompOne. Acá estaba escrita a mano y sólo la de
             ' pegtop — la MISMA duplicación que tenía el escalar. Ahora las dos leen la única definición.
             If tint IsNot Nothing Then
                 Dim b = FastPow.VBroadcastS(tint, i)
@@ -571,7 +571,7 @@ Public Module SseFaceGenBaker
         Return FaceTintCpuCompositor.LinToSrgbShared(c)
     End Function
 
-    ''' <summary>⭐ SELF-TEST de los tres caminos vectorizados de ESTE módulo: el fold, la pre-compensación de
+    ''' <summary>SELF-TEST de los tres caminos vectorizados de ESTE módulo: el fold, la pre-compensación de
     ''' la cadena del engine, y el byte-pack. Devuelve "" si todo coincide BIT A BIT con la ley escalar.
     '''
     ''' <para><b>Por qué existe.</b> Este era el ÚNICO módulo vectorizado SIN self-test — y encima el único que
@@ -581,26 +581,26 @@ Public Module SseFaceGenBaker
     ''' se desincronice de <see cref="FoldOne"/> / <see cref="PreCompOne"/> / <see cref="ClampByte"/> en
     ''' silencio.</para>
     '''
-    ''' <para>⛔ Los largos se eligen para que los rangos NO caigan alineados: el fold y la pre-compensación
+    ''' <para>Los largos se eligen para que los rangos NO caigan alineados: el fold y la pre-compensación
     ''' tienen prólogo escalar + cuerpo vectorial + cola escalar, y el bug clásico vive justo ahí (omitir la
     ''' cola dio <c>|byte delta| = 124</c>). Se barren también <c>detail = Nothing</c> (que usa el default del
     ''' engine) y los bordes: 0, 1, fuera de rango, y el <c>k → 0</c> de la inversa, que es su singularidad.</para>
-    ''' <para>⚠️ NaN NO se barre en el byte-pack a propósito: ahí el contrato es que TIRE
+    ''' <para>NaN NO se barre en el byte-pack a propósito: ahí el contrato es que TIRE
     ''' <c>OverflowException</c>, y eso se verifica aparte al final.</para></summary>
     ' =================================================================================================
     ' GOLDEN VECTORS del fold — la salida ABSOLUTA, congelada.
     '
-    ' ⛔ POR QUE HACIA FALTA: todos los tests del fold que ya existian son RELATIVOS (escalar-vs-vector,
+    ' POR QUE HACIA FALTA: todos los tests del fold que ya existian son RELATIVOS (escalar-vs-vector,
     ' fold-vs-inversa). Un cambio de ley que entre en las DOS ramas los deja verdes a los dos. Estos
     ' vectores fijan el numero, no la coincidencia entre dos copias del mismo numero.
     '
-    ' ⛔ NO hace early-return sin SIMD: ejercita la ley ESCALAR, que corre en toda maquina. Los siete tests
+    ' NO hace early-return sin SIMD: ejercita la ley ESCALAR, que corre en toda maquina. Los siete tests
     ' de espejo vectorial si salen vacios sin SIMD, y por eso el gate reporta cobertura POR EJE.
     '
     ' El buffer es de 37 pixeles (impar y no multiplo del ancho) para que el MISMO caso pase por prologo
     ' escalar, cuerpo vectorial y cola escalar, y las tres partes tengan que dar lo mismo.
     '
-    ' ✅ YA PASO lo que este comentario anunciaba: la decision 1 saco el piso del amplify, el test FALLO en
+    ' YA PASO lo que este comentario anunciaba: la decision 1 saco el piso del amplify, el test FALLO en
     ' golden[5] (el caso det=0) y los literales se re-congelaron con `--dump-golden`. Funciono exactamente
     ' como se esperaba: de los 11 casos se movieron los TRES que el piso levantaba y ni uno mas.
     ' =================================================================================================
@@ -625,7 +625,7 @@ Public Module SseFaceGenBaker
     ''' <summary>Salida congelada, como PATRONES DE BITS de Single (no decimales: un literal decimal no
     ''' round-trippea garantizado y el test se volveria aproximado justo donde tiene que ser exacto).
     ''' Una fila por caso, tres columnas = canales R, G, B.</summary>
-    ' ⚠️ RE-CONGELADOS 2026-08-01 con `--paritygate --dump-golden`, A PROPOSITO: la fase 6 SACO el piso del
+    ' RE-CONGELADOS 2026-08-01 con `--paritygate --dump-golden`, A PROPOSITO: la fase 6 SACO el piso del
     ' amplify (decision 1). Los que se movieron son los tres casos que el piso levantaba; el resto no cambio,
     ' que es justo lo que confirma que el cambio fue el buscado y no una deriva de arriba.
     ''' <remarks>`Friend` y no `Private` para que el gate de BUILD `fold-golden` (Tools/ParityGate) pueda
@@ -637,7 +637,7 @@ Public Module SseFaceGenBaker
         {&H3F800000I, &H3F800000I, &H3F800000I},   ' 1 1 1
         {&H3E749778I, &H3E72A76EI, &H3E749778I},   ' 0,23885906 0,23696682 0,23885906
         {&H3F280270I, &H3F26D646I, &H3F280270I},   ' 0,6562872 0,65170705 0,6562872
-        {&H3D309538I, &H00000000I, &H3D309538I},   ' ⭐ det=0: amp=0 EXACTO en verde ⇒ 0. R/B con amp=1/64. SIN piso
+        {&H3D309538I, &H00000000I, &H3D309538I},   ' det=0: amp=0 EXACTO en verde ⇒ 0. R/B con amp=1/64. SIN piso
         {&H3E848F00I, &H3E805FCFI, &H3E848F00I},   ' det=0,06: amp real (0,2547 / 0,2391) — el piso ya no interviene
         {&H3E8E97BEI, &H3E8AC21EI, &H3E8E97BEI},   ' det=0,07: no cambio (ya estaba por encima del viejo piso)
         {&H3D283786I, &H3D25AEDCI, &H3D283786I},   ' 0,041068576 0,040449962 0,041068576
@@ -648,7 +648,7 @@ Public Module SseFaceGenBaker
     ''' <summary>Corre el fold REAL (la entrada pública, con su prólogo/cuerpo/cola) sobre un caso y devuelve
     ''' los tres canales. La usan el self-test y el volcado de <c>--paritygate --dump-golden</c>, que es como
     ''' se re-congelan los literales cuando un cambio de ley los mueve a propósito.</summary>
-    ''' <summary>⭐ GATE del espejo escalar-vs-vectorial del fold Y del unfold PARA LOS CUATRO MODELOS de
+    ''' <summary>GATE del espejo escalar-vs-vectorial del fold Y del unfold PARA LOS CUATRO MODELOS de
     ''' soft-light. El self-test `baker` sólo cubre el modelo que diga el config (en la práctica, el default
     ''' pegtop), así que los otros tres espejos vectoriales quedarían SIN GATE — y una divergencia ahí no se
     ''' ve: sale una cara levemente distinta, no un fallo.
@@ -707,7 +707,7 @@ Public Module SseFaceGenBaker
         For i = 0 To n - 1
             comp(i) = k.Comp : tint(i) = k.Tint : det(i) = k.Detail
         Next
-        ' ⛔ MODELO PINEADO EN PEGTOP, no el de la convención: este golden mide la LEY DEL MOTOR, y una ley no
+        ' MODELO PINEADO EN PEGTOP, no el de la convención: este golden mide la LEY DEL MOTOR, y una ley no
         ' puede moverse porque el usuario elija otra cosa en el bucket Fold. Con el modelo leído del config,
         ' poner `Fold.SoftLight` en W3C/GIMP/Illusions hacía fallar este test y el gate ABORTABA el bake
         ' entero — culpando además al SIMD, que no tenía nada que ver (MEDIDO 2026-08-01).
@@ -723,7 +723,7 @@ Public Module SseFaceGenBaker
         Return New Single() {comp(0), comp(1), comp(2)}
     End Function
 
-    ' ⛔ EL GATE `fold-golden` YA NO VIVE ACA (Tools/ParityGate, LawGates.FoldGoldenGate, 2026-08-08).
+    ' EL GATE `fold-golden` YA NO VIVE ACA (Tools/ParityGate, LawGates.FoldGoldenGate, 2026-08-08).
     ' Es un GOLDEN ABSOLUTO: el único eje que atrapa un cambio de ley que entra por igual en el escalar y en
     ' el vectorial. Se re-congela con `FoldGoldenDump()`, que sigue acá.
 
@@ -826,7 +826,7 @@ Public Module SseFaceGenBaker
         Next
 
         ' ---------- el contrato del NaN en el byte-pack: TIENE que explotar ----------
-        ' ⛔ El vector NO puede "arreglar" un NaN devolviendo 0: sería degradar una anomalía a un default.
+        ' El vector NO puede "arreglar" un NaN devolviendo 0: sería degradar una anomalía a un default.
         Dim nanAcc(15) As Single
         nanAcc(6) = Single.NaN
         Try

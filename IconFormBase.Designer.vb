@@ -98,7 +98,7 @@ Partial Class IconFormBase
         ResumeLayout(False)
     End Sub
 
-    ' ⛔ Protected, NO Friend. El disenador escribe `Friend WithEvents` por defecto y Friend NO cruza
+    ' Protected, NO Friend. El disenador escribe `Friend WithEvents` por defecto y Friend NO cruza
     ' el limite de ensamblado: desde Wardrobe_Manager o NPC_Manager el campo directamente no existiria.
     ' Si abris este formulario en el disenador, verifica que la propiedad Modifiers de los dos
     ' ImageList siga en Protected.

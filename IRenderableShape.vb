@@ -37,28 +37,28 @@ Public Interface IRenderableShape
     ''' <c>NiAVObject.Flags</c> = Hidden (NifSkope <c>spells/flags.cpp:539</c>; BodySlide
     ''' <c>BodySlideApp.cpp:3864</c> <c>shape-&gt;flags |= 1</c>) — la sangre de las armas, el
     ''' <c>PageText</c> de los libros, el glow del Pip-Boy.</para>
-    ''' <para>⛔ <b>NO ES UN GUARD DE NULO.</b> Quien pregunta "¿puedo LEER el shader?" usa
+    ''' <para><b>NO ES UN GUARD DE NULO.</b> Quien pregunta "¿puedo LEER el shader?" usa
     ''' <c>NifShader Is Nothing</c> — ver <c>OSP_Clases</c> (plan de clonado) y los gates del editor de
     ''' materiales de WM. Una shape con bit0 <b>y material válido</b> es editable y clonable, y WM mismo
     ''' las fabrica (<c>BuildingForm.SetShapeHidden</c> sobre las 100 % zapeadas). Confundirlos deja el
     ''' mod construido apuntando al material de la BA2 vanilla.</para>
-    ''' <para>⛔ <b>NO CACHEAR</b>: los botones "Convert to renderable" / "Make helper" del editor de WM
+    ''' <para><b>NO CACHEAR</b>: los botones "Convert to renderable" / "Make helper" del editor de WM
     ''' cambian el valor en runtime.</para>
-    ''' <para>⚠️ El bit 0 tiene OTRO significado en un FaceGeom de FO4: ahí el CK (y nuestro bake, ver
+    ''' <para>El bit 0 tiene OTRO significado en un FaceGeom de FO4: ahí el CK (y nuestro bake, ver
     ''' <c>FaceGenBuilder</c>) lo usa como marca de oclusión de headwear horneada. No colisiona porque
     ''' NPC Manager nunca LEE un FaceGeom — sólo los escribe.</para>
-    ''' <para>⭐ MEDIDO sobre los BSA/BA2 de los dos juegos (<c>Tools/HelperShapeScan</c>, 253.770 NIF /
+    ''' <para>MEDIDO sobre los BSA/BA2 de los dos juegos (<c>Tools/HelperShapeScan</c>, 253.770 NIF /
     ''' 1.308.751 shapes): 5.197 = 0,40 %, sin un solo caso de geometría visible legítima. Y sobre el
     ''' ShapeData de Wardrobe Manager: 246 de 4.821 shapes (5,1 %), TODAS proxies de colisión
     ''' (Virtual*, BCA_*, *collision).</para>
-    ''' <para>⛔ EL CÓDIGO DICE "helper", LA UI DICE "hidden". No es un descuido: <c>helper shape</c> es
+    ''' <para>EL CÓDIGO DICE "helper", LA UI DICE "hidden". No es un descuido: <c>helper shape</c> es
     ''' el término del CANÓNICO (<c>bHelperShape</c> en OutfitStudio), y conservarlo deja el código
     ''' trazable contra la fuente. Pero la etiqueta era imprecisa para el usuario — el bit0 no marca sólo
     ''' mallas auxiliares: también marca sangre de armas, el <c>PageText</c> de los libros, los glows de
     ''' pantalla, las etapas de destrucción y la oclusión de headwear que el bake de FO4 hornea. Lo único
     ''' que TODAS comparten es que el motor no las dibuja, así que la UI las llama
     ''' <b>"Render hidden shapes"</b> / <b>"Make shape hidden"</b>.</para>
-    ''' <para>⚠️ Y por eso NO se puede partir este predicado por intención: el bit no guarda POR QUÉ está
+    ''' <para>Y por eso NO se puede partir este predicado por intención: el bit no guarda POR QUÉ está
     ''' oculta. Distinguir "pelo bajo casco" de "sangre de arma" exigiría contexto que el archivo no
     ''' tiene (y que Wardrobe Manager, abriendo un NIF suelto, nunca va a tener).</para></summary>
     ReadOnly Property IsHelperShape As Boolean

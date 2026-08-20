@@ -72,16 +72,15 @@ Public NotInheritable Class SseNam9MorphMap
         For i = 0 To v.Length - 1 : v(i) = NamaUnset : Next
         Return v
     End Function
-
-    ''' <summary>El slot 18 del NAM9 (VampireMorph) de un payload crudo, o Nothing si no llega a ese slot.
+    ''' <summary>El slot 18 del NAM9 (VampireMorph), o Nothing si el vector no llega a ese slot.
     ''' <para>Vive ACA y no en cada consumidor porque son TRES los que lo necesitan (BuildPresetFromState en sus
     ''' dos ramas, y el revert de la categoria FaceVertexMorphs) y la primera version quedo escrita en una sola,
     ''' con lo cual el arreglo era inerte en el camino normal.</para>
-    ''' <para>NAM9 son 19 floats (76 bytes); el modelo editable dimensiona 18 sliders, asi que este slot no entra
-    ''' en <c>SseNam9</c> y hay que llevarlo aparte.</para></summary>
-    Public Shared Function VampireMorphFromNam9Raw(nam9Raw As Byte()) As Single?
-        If nam9Raw Is Nothing OrElse nam9Raw.Length < (Nam9SliderCount + 1) * 4 Then Return Nothing
-        Return BitConverter.ToSingle(nam9Raw, Nam9SliderCount * 4)
+    ''' <para>NAM9 son 19 floats; el modelo editable dimensiona 18 sliders, asi que este slot no entra en
+    ''' <c>SseNam9</c> y hay que llevarlo aparte.</para></summary>
+    Public Shared Function VampireMorphDe(nam9 As Single()) As Single?
+        If nam9 Is Nothing OrElse nam9.Length < Nam9SliderCount + 1 Then Return Nothing
+        Return nam9(Nam9SliderCount)
     End Function
 
     Public Const NamaFamilyCount As Integer = 4
@@ -111,7 +110,7 @@ Public NotInheritable Class SseNam9MorphMap
     End Function
 
     ''' <summary>INVERSA de <see cref="MorphForType"/>: ¿este nombre de morph es el miembro N de esta familia?
-    ''' <para>⭐ La validación es un ROUND-TRIP contra el propio constructor, no un parseo de la cola. El motor
+    ''' <para>La validación es un ROUND-TRIP contra el propio constructor, no un parseo de la cola. El motor
     ''' arma el nombre con <c>sprintf("%s%d", family, N)</c>, así que un nombre sólo es miembro si el
     ''' constructor lo reproduce EXACTAMENTE. Eso descarta gratis y sin reglas extra:</para>
     ''' <list type="bullet">
@@ -205,7 +204,7 @@ Public NotInheritable Class SseNam9MorphMap
                 If TryParseFamilyMember(f, nm, n) AndAlso seen(f).Add(n) Then available(f).Add(n)
             Next
         Next
-        ' ⛔ Esta función NO opina sobre known-ness: siempre devuelve un catálogo CONOCIDO (aunque quede
+        ' Esta función NO opina sobre known-ness: siempre devuelve un catálogo CONOCIDO (aunque quede
         ' vacío). Quién sabe si los datos se pudieron leer es el LLAMADOR — antes acá había un segundo
         ' "si no vi ningún nombre ⇒ Unknown" que PISABA esa decisión, y un .tri que parsea con 0 morphs
         ' terminaba deshabilitando el combo por el motivo equivocado. Una sola ley, en un solo lugar.

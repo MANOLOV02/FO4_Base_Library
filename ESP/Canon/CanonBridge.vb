@@ -2,8 +2,8 @@
 
     ''' <summary>Puerta única entre un record leído del archivo y su árbol de campos.
     '''
-    ''' <para>Los parsers de la aplicación entregan vistas planas y tipadas (<c>RACE_Data</c>,
-    ''' <c>NPC_Data</c>, …) que consume el resto del código. Lo que cambia con este puente es de
+    ''' <para>Los parsers de la aplicación entregan vistas planas y tipadas (<c>NPC_Data</c>, …) que
+    ''' consume el resto del código. Lo que cambia con este puente es de
     ''' dónde salen esos valores: en vez de recorrer los subrecords a mano y decidir por firma, se
     ''' arma el árbol una vez y cada campo se lee por su nombre.</para>
     '''
@@ -70,12 +70,18 @@
         '''
         ''' <para>Sin gestor de plugins no hay orden de carga contra el cual traducir y el arbol
         ''' queda con los valores del archivo. Es lo correcto para inspeccionar un archivo suelto.</para>
+        '''
+        ''' <para>La traduccion NO es reversible por si sola: un indice de master que el archivo no
+        ''' tiene se pliega al propio archivo, igual que el indice canonico de "propio", y el camino
+        ''' inverso solo puede devolver el canonico. Por eso la pasada deja anotado en cada nodo que
+        ''' decia el archivo; ver <see cref="WbFormIdWalker.NormalizarDesdeArchivo"/>.</para>
         ''' </summary>
         Public Sub NormalizarReferencias(raiz As WbNode, rec As PluginRecord, plugins As PluginManager)
             If raiz Is Nothing OrElse plugins Is Nothing OrElse rec Is Nothing Then Return
             Dim origen = rec.SourcePluginName
             If String.IsNullOrEmpty(origen) Then Return
-            WbFormIdWalker.Remap(raiz, Function(local) plugins.ResolveReferencedFormID(origen, local))
+            WbFormIdWalker.NormalizarDesdeArchivo(
+                raiz, Function(local) plugins.ResolveReferencedFormID(origen, local))
         End Sub
 
         '==========================================================================================

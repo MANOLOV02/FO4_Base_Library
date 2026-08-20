@@ -3,11 +3,10 @@
 ' ============================================================================
 ' Audio Record Data Classes and Parsers
 ' SNDR, SNCT, SOPM, MUSC, MUST, REVB, KSSM, AECH, SCSN, STAG, SOUN
-' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
+' # SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO. #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
@@ -17,11 +16,11 @@
 ' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
 ' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
-' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra el formato real de cada record. Lo que se cerro es "no
 ' inventan referencias", que es otra cosa.
 '
-' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
 ' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
 ' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
 ' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
@@ -30,7 +29,7 @@
 '
 ' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
 ' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
-' contra el .pas y volver a correr el sweep.
+' contra el formato real de cada record y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -395,7 +394,7 @@ Friend Module AudioRecordParsers
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 12 Then
                         r.DecayTimeMs = BitConverter.ToUInt16(sr.Data, 0)
                         r.HFReferenceHz = BitConverter.ToUInt16(sr.Data, 2)
-                        ' s8 fields per xEdit. Direct CSByte overflows when high bit is set
+                        ' These are signed s8 fields. Direct CSByte overflows when high bit is set
                         ' (e.g. RoomFilter raw=0x9C means -100 dB). Use ReadInt8 helper.
                         r.RoomFilter = RecordParsers.ReadInt8(sr.Data(4))
                         r.RoomHFFilter = RecordParsers.ReadInt8(sr.Data(5))
@@ -513,7 +512,7 @@ Friend Module AudioRecordParsers
                 If sr.Data.Length > 4 Then
                     Dim strLen = sr.Data.Length - 4
                     If strLen > 0 AndAlso sr.Data(sr.Data.Length - 1) = 0 Then strLen -= 1
-                    ' xEdit defines STAG.TNAM Action as wbString (translatable). In practice the
+                    ' STAG.TNAM Action is a translatable string field. In practice the
                     ' values are technical ASCII tags, but route through the central decoder for
                     ' convention consistency and fallback safety.
                     currentEntry.Action = PluginEncodingSettings.DecodeTranslatable(sr.Data, 4, strLen)

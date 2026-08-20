@@ -113,7 +113,7 @@ Public Class TriFile
     ''' StringTable.h:28-36). El fallback devuelve la PRIMERA coincidencia, que es lo que hace
     ''' <c>emplace</c> ante claves equivalentes.
     '''
-    ''' ⚠️ Esto NO habilita el match case-insensitive del NIF contra el .tri: ese paso lo hace
+    ''' Esto NO habilita el match case-insensitive del NIF contra el .tri: ese paso lo hace
     ''' <c>object-&gt;GetObjectByName</c> (BodyMorphInterface.cpp:1372) y su sensibilidad a caja NO es
     ''' verificable desde este workspace (BSFixedString es StringCache::Ref con ctor nativo).
     ''' BodySlideMorphResolver mantiene su comparacion exacta a proposito.
@@ -231,7 +231,7 @@ Public Module TriFileParser
                     Dim vid = br.ReadUInt16()
                     If CInt(vid) > maxVid Then maxVid = CInt(vid)
 
-                    ' ⛔ Sin epsilon y ACUMULANDO, a proposito. La autoridad del LECTOR es el MOTOR, no el
+                    ' Sin epsilon y ACUMULANDO, a proposito. La autoridad del LECTOR es el MOTOR, no el
                     ' editor de BodySlide:
                     '   • f4ee y skee64 cargan TODO delta sin filtrar por magnitud
                     '     (BodyMorphInterface.cpp:265-274 y :927-942) y lo aplican con
@@ -322,14 +322,14 @@ Public Class TriHeadFile
     Public Property BaseVertices As Vector3()
 
     ''' <summary>Get a morph by name (case-insensitive).</summary>
-    ''' <remarks>⛔ <c>List.Find</c> ENUMERA. Si otro hilo hace <c>Morphs.Add</c> mientras esto corre,
+    ''' <remarks><c>List.Find</c> ENUMERA. Si otro hilo hace <c>Morphs.Add</c> mientras esto corre,
     ''' tira <c>InvalidOperationException</c> — ver <see cref="ClonarParaMerge"/>.</remarks>
     Public Function GetMorph(name As String) As TriHeadMorph
         Return Morphs.Find(Function(m) m.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
     End Function
 
     ''' <summary>Copia SUPERFICIAL pensada para mergear morphs encima sin tocar el original.
-    ''' <para>⛔⛔ EXISTE PORQUE LAS INSTANCIAS DE ESTA CLASE SE CACHEAN Y SE COMPARTEN.
+    ''' <para>EXISTE PORQUE LAS INSTANCIAS DE ESTA CLASE SE CACHEAN Y SE COMPARTEN.
     ''' <c>NpcMorphResolver._triHeadCache</c> es <c>Shared</c> y <c>PathLoadCache.GetOrLoad</c> devuelve
     ''' SIEMPRE LA MISMA INSTANCIA. Mergear el chargen "in place" sobre lo que devuelve el caché rompía
     ''' de dos formas:</para>

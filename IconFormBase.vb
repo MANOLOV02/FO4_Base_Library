@@ -21,12 +21,12 @@
 ''' reimporta en el <c>ImageList</c> de ESTE formulario. Con eso cambia en las tres apps. Ver
 ''' <c>Resources\Icons\_LEEME.txt</c>.</para>
 '''
-''' <para>⛔ <b>Este formulario tiene que quedar PELADO.</b> Sin controles, y sin tocar
+''' <para><b>Este formulario tiene que quedar PELADO.</b> Sin controles, y sin tocar
 ''' <c>Size</c>, <c>Text</c>, <c>Icon</c>, <c>AutoScaleMode</c> ni <c>StartPosition</c>: todo eso lo
 ''' heredan los formularios derivados. Con cero controles no hay nada bloqueado ni movido en ellos,
 ''' que es la razón por la que este patrón no cambia el aspecto de nada.</para>
 '''
-''' <para>⛔ <b>Los dos ImageList son <c>Protected</c>, no <c>Friend</c>.</b> El diseñador de VB
+''' <para><b>Los dos ImageList son <c>Protected</c>, no <c>Friend</c>.</b> El diseñador de VB
 ''' escribe <c>Friend WithEvents</c> por defecto, y <c>Friend</c> no cruza el límite de ensamblado:
 ''' desde Wardrobe Manager el campo no existiría. Está anotado también en el
 ''' <c>.Designer.vb</c>, que es donde el diseñador podría pisarlo.</para>

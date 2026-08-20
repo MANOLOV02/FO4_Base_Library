@@ -718,7 +718,7 @@ Public Class NiTriShapeGeometry
         For Each kvp In perVertex
             Dim vIdx = kvp.Key
             Dim list = kvp.Value
-            ' ⛔ CON DESEMPATE. `List.Sort` es INESTABLE: con dos influencias del mismo peso —un vértice
+            ' CON DESEMPATE. `List.Sort` es INESTABLE: con dos influencias del mismo peso —un vértice
             ' a mitad de camino entre dos huesos sale 0,5/0,5 del pintado, no es raro— el orden de slot
             ' quedaba sin especificar y la salida dejaba de ser función de la entrada. La copia de
             ' Wardrobe_Manager sí desempataba; ahora las dos usan la misma ley.

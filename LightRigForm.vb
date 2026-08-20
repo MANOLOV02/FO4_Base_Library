@@ -6,7 +6,7 @@
 ''' tienen sets separados, igual que las opciones de CharGen. Ver PreviewLightRig.vb.
 ''' </summary>
 Partial Public Class LightRigForm
-    ' ⛔ Tiene que decir lo MISMO que el .Designer.vb: VB exige que todas las partes de una clase
+    ' Tiene que decir lo MISMO que el .Designer.vb: VB exige que todas las partes de una clase
     ' parcial declaren la misma clase base (BC30928). Ver el remarks de IconFormBase.vb.
     Inherits IconFormBase
 
@@ -42,14 +42,14 @@ Partial Public Class LightRigForm
         End Get
         Set(value As Boolean)
             _allowHiddenSegments = value
-            ' ⛔⭐ LA VISIBILIDAD SE APLICA ACA, EN EL SETTER, y no donde se cargan los demas controles.
+            ' LA VISIBILIDAD SE APLICA ACA, EN EL SETTER, y no donde se cargan los demas controles.
             ' El consumidor escribe `New LightRigForm With {.AllowHiddenSegments = False}`, y en VB el
             ' inicializador de objeto corre DESPUES del constructor: cuando CargarPestanaRender() leia la
             ' propiedad todavia valia el default True. Resultado en NPC Manager: la casilla SE VEIA, no
             ' hacia nada (el guard de escritura si miraba el valor ya asignado) y recien desaparecia a
             ' mitad de sesion, si el usuario tocaba Apply preset o Reset. Un control mudo y mentiroso
             ' justo en el unico ajuste app-aware del dialogo.
-            ' ⭐ DESHABILITADA, NO OCULTA (decision del usuario): en NPC Manager el usuario VE que la
+            ' DESHABILITADA, NO OCULTA (decision del usuario): en NPC Manager el usuario VE que la
             ' opcion existe y que esta forzada, en vez de que el ajuste desaparezca sin explicacion.
             If chkHiddenSegments IsNot Nothing Then chkHiddenSegments.Enabled = value
         End Set
@@ -59,7 +59,7 @@ Partial Public Class LightRigForm
 
     ''' <summary>Demora para los cuatro NumericUpDown de TBN, cuyo cambio cuesta una recarga COMPLETA de
     ''' geometría del proyecto en pantalla. Ver dónde se enganchan, en <c>AddHandlers</c>.
-    ''' <para>⛔ <c>System.Windows.Forms.Timer</c> a propósito: su Tick corre en el hilo de UI, que es el único
+    ''' <para><c>System.Windows.Forms.Timer</c> a propósito: su Tick corre en el hilo de UI, que es el único
     ''' desde el que se puede tocar <c>Config_App</c> y disparar el re-render. Con un
     ''' <c>Threading.Timer</c> habría que hacer Invoke y se abre una carrera con el cierre del diálogo.</para>
     ''' <para>400 ms: más corto y una pulsación normal ya dispara; más largo y se siente colgado.</para></summary>
@@ -74,18 +74,18 @@ Partial Public Class LightRigForm
 
         InitializeComponent()
 
-        ' ⛔ Y si el diálogo se cierra con un cambio todavía en la demora, hay que APLICARLO: si no, el
+        ' Y si el diálogo se cierra con un cambio todavía en la demora, hay que APLICARLO: si no, el
         ' usuario escribe un epsilon, cierra, y su valor se pierde sin que nada lo diga.
         AddHandler _demoraTbn.Tick, Sub(s2, e2)
                                         _demoraTbn.Stop()
-                                        ' ⛔ Si el diálogo ya se cerró, este Tick leería DIEZ CONTROLES YA
+                                        ' Si el diálogo ya se cerró, este Tick leería DIEZ CONTROLES YA
                                         ' DISPUESTOS y escribiría Config_App desde un formulario muerto.
                                         If _cerrando OrElse IsDisposed Then Return
                                         VolcarRenderEnModelo()
                                     End Sub
         AddHandler Me.FormClosing, Sub(s2, e2)
-                                       ' ⛔⛔ HACEN FALTA LOS DOS MECANISMOS, uno por familia de control.
-                                       ' ⛔ `ValidateChildren()` SI SIRVE — para los 16 TinySliderTextBox
+                                       ' HACEN FALTA LOS DOS MECANISMOS, uno por familia de control.
+                                       ' `ValidateChildren()` SI SIRVE — para los 16 TinySliderTextBox
                                        ' del diálogo (los 8 azimut/elevación, las 4 intensidades, ambiente,
                                        ' ground level y los 2 de sombras): ésos commitean en
                                        ' `_textBox.Validating`, que es exactamente lo que ValidateChildren
@@ -93,7 +93,7 @@ Partial Public Class LightRigForm
                                        ' NumericUpDown, y con eso rompí el commit de TODA la pestaña Lights:
                                        ' tipear un azimut y cerrar con la X perdía el valor.
                                        Me.ValidateChildren()
-                                       ' ⛔ Y ADEMAS leer los `.Value`, porque para los NumericUpDown
+                                       ' Y ADEMAS leer los `.Value`, porque para los NumericUpDown
                                        ' ValidateChildren NO alcanza: `NumericUpDown` no sobrescribe
                                        ' `OnValidating`, que es lo único que ValidateChildren dispara.
                                        ' MEDIDO con un NUD real:
@@ -103,10 +103,10 @@ Partial Public Class LightRigForm
                                        ' El commit vive en OnLostFocus y en el GETTER de `.Value`. Leerlos
                                        ' es lo que convierte el texto, dispara ValueChanged y deja el valor
                                        ' donde `VolcarRenderEnModelo` lo va a encontrar.
-                                       ' ⚠️ Y sin esto el `_cerrando` de abajo EMPEORABA el caso: antes el
+                                       ' Y sin esto el `_cerrando` de abajo EMPEORABA el caso: antes el
                                        ' Tick corría 400 ms tarde y al menos escribía; con el flag, el
                                        ' ValueChanged tardío se descarta y el valor se perdía SIEMPRE.
-                                       ' ⛔ LOS SEIS, no los cuatro de TBN. `nudFloorSize` y `nudFloorStep`
+                                       ' LOS SEIS, no los cuatro de TBN. `nudFloorSize` y `nudFloorStep`
                                        ' quedaban afuera, y su único camino de commit es `ValueChanged` —
                                        ' que al cerrar con una edición pendiente NO se dispara nunca, ni
                                        ' antes de FormClosed ni después de Dispose. O sea que el tamaño y
@@ -119,7 +119,7 @@ Partial Public Class LightRigForm
                                            _demoraTbn.Stop()
                                            VolcarRenderEnModelo()
                                        End If
-                                       ' ⛔ SI EL CIERRE SE CANCELA, NO SE DESARMA NADA. Poner `_cerrando`
+                                       ' SI EL CIERRE SE CANCELA, NO SE DESARMA NADA. Poner `_cerrando`
                                        ' y disponer el Timer sin mirar `e2.Cancel` deja el diálogo vivo con
                                        ' los cuatro NumericUpDown de TBN MUDOS para el resto de la sesión:
                                        ' el handler de la demora arranca con `If _preventchanges OrElse
@@ -190,15 +190,15 @@ Partial Public Class LightRigForm
     End Function
 
     Private Shared Function LuzCoincide(a As PreviewLight, b As PreviewLight) As Boolean
-        ' ⛔ El azimut se compara MODULO 360: 0 y 360 son la misma dirección y el NUD deja escribir los dos.
+        ' El azimut se compara MODULO 360: 0 y 360 son la misma dirección y el NUD deja escribir los dos.
         ' Sin esto, aplicar un preset con azimut 0 y que el control redondee a 360 deseleccionaba el combo.
         ' `dAz` ES la diferencia angular en [0,180], y la resta cruda daria 360 para el mismo rayo.
-        ' ⛔ LA TOLERANCIA ES LA MISMA EN LOS DOS EJES. Estuvo un tiempo en 0,5° para el azimut y 0,005°
+        ' LA TOLERANCIA ES LA MISMA EN LOS DOS EJES. Estuvo un tiempo en 0,5° para el azimut y 0,005°
         ' para la elevación, para absorber el redondeo del NUD: asimétrica no absorbía nada —la elevación
         ' sola ya mandaba el combo a "Custom"— y encima tapaba el problema real, que era que el modelo se
         ' cuantizaba. Eso lo arregla AnguloDesdeNud; acá alcanza con el epsilon de siempre.
         Dim dAz As Single = Math.Abs(((a.AzimuthDeg - b.AzimuthDeg) Mod 360.0F + 540.0F) Mod 360.0F - 180.0F)
-        ' ⛔ EL FLAG DE CASTEO ENTRA EN LA COMPARACION. Sin esto, prender la sombra de un fill dejaba el
+        ' EL FLAG DE CASTEO ENTRA EN LA COMPARACION. Sin esto, prender la sombra de un fill dejaba el
         ' combo diciendo "Studio" cuando el rig ya NO es Studio — y Apply habilitado, o sea un click de
         ' distancia de perder el cambio sin aviso.
         Return CasiIgual(a.Strength, b.Strength) AndAlso ColorCoincide(a.Color, b.Color) AndAlso
@@ -270,7 +270,7 @@ Partial Public Class LightRigForm
         Dim sh = Config_App.Current.ActiveShadows().Sanitized()
         chkShadows.Checked = sh.Enabled
         chkDepth16.Checked = sh.Depth16
-        ' ⭐ ESTOS TRES SALEN DEL RIG, no de ActiveShadows(): blandura, oscuridad y receptor de suelo son
+        ' ESTOS TRES SALEN DEL RIG, no de ActiveShadows(): blandura, oscuridad y receptor de suelo son
         ' parte del LOOK del set de luces y viajan con el preset. Ver el bloque de PreviewLightRig.
         chkGroundShadow.Checked = rig.ShadowOnGround
         ' Anclaje del rig. Vive en Config_App como el resto de las preferencias del visor y NO en
@@ -325,7 +325,7 @@ Partial Public Class LightRigForm
         chkHiddenSegments.Checked = Config_App.Current.Setting_DrawHiddenSegments
         ' La casilla de HELPER SHAPES si va en las DOS apps (decision del usuario): es un toggle de
         ' inspeccion util en las dos, y NO comparte semantica con la oclusion por segmento.
-        ' ⛔ GetValueOrDefault, NUNCA el ternario If(): con un Nullable devuelve HasValue=True.
+        ' GetValueOrDefault, NUNCA el ternario If(): con un Nullable devuelve HasValue=True.
         chkShowHelperShapes.Checked = Config_App.ShowHelperShapesEfectivo()
 
         chkResetAngles.Checked = Config_App.Current.Settings_Camara.ResetAngles
@@ -353,11 +353,11 @@ Partial Public Class LightRigForm
     ''' <summary>Repone TODA la pestana Rendering a sus defaults. Es el reemplazo del boton que Wardrobe
     ''' Manager tenia en su pantalla de Settings y que se perdio al migrar la pestana; btnReset, el de la
     ''' otra pestana, no toca nada de esto.
-    ''' <para>⛔ `Setting_DrawHiddenSegments` se repone SOLO si esta app lo edita. El default declarado en
+    ''' <para>`Setting_DrawHiddenSegments` se repone SOLO si esta app lo edita. El default declarado en
     ''' <c>Config_Class.vb</c> es True —es la ayuda de inspeccion de Wardrobe Manager— asi que un reset
     ''' ciego se lo PRENDERIA a FO4_NPC_Manager, que depende de la oclusion por segmento y no expone la
     ''' casilla. Ver AllowHiddenSegments.
-    ''' <para>⚠️ Este doc decia "y el de la libreria False". Es al reves: el default de la libreria ES True
+    ''' <para>Este doc decia "y el de la libreria False". Es al reves: el default de la libreria ES True
     ''' (Config_Class.vb:52). Quien lo leyera para decidir si el guard de NPC Manager seguia haciendo falta
     ''' concluia justo lo contrario.</para></para>
     ''' </summary>
@@ -406,14 +406,14 @@ Partial Public Class LightRigForm
     ''' tiene la key a -22,29, o sea que la casilla estaba tildada y no pasaba nada, sin una palabra.
     ''' Se dice en el propio texto de la casilla, que es donde el usuario esta mirando.</summary>
     Private Sub ActualizarAvisoDeSuelo()
-        ' ⛔ EL CORTE SE LEE DEL RENDER, no se transcribe. Estaba como `Const ElevacionMinima = 11.54F`
+        ' EL CORTE SE LEE DEL RENDER, no se transcribe. Estaba como `Const ElevacionMinima = 11.54F`
         ' comentado "asin(0.2)", y asin(0,2) es 11,5370: redondeado PARA ARRIBA dejaba una banda muerta en
         ' [11,5370 , 11,54) donde el motor si dibuja la sombra y la casilla estaba gris. Y el texto, con
         ' formato "0.#", mostraba "11,5" — un valor con el que la casilla se deshabilita, o sea que el
         ' mensaje contradecia a su propio gate. Se muestra con dos decimales por lo mismo.
         Dim ElevacionMinima As Single = ShadowMapMath.ElevacionMinimaGrados
 
-        ' ⛔⛔ CON LAS LUCES SIGUIENDO A LA CAMARA, ESTE AVISO NO PUEDE PREDECIR NADA — Y NO DEBE GRISAR.
+        ' CON LAS LUCES SIGUIENDO A LA CAMARA, ESTE AVISO NO PUEDE PREDECIR NADA — Y NO DEBE GRISAR.
         ' El render no decide con la elevacion del RIG: decide con `_frameLights.KeyDir.Z`, que cuando
         ' `Setting_LightsFollowCamera` esta prendido (el default) es la direccion de la key YA ROTADA POR
         ' LA CAMARA. Son dos cantidades distintas y solo coinciden con la opcion apagada.
@@ -425,7 +425,7 @@ Partial Public Class LightRigForm
         ' Este dialogo no conoce la camara y no tiene por que conocerla: lo honesto es NO decidir por el
         ' usuario cuando el resultado depende de algo que va a cambiar en cuanto mueva la vista.
         Dim sigueALaCamara = Config_App.Current.Setting_LightsFollowCamera
-        ' ⛔ LA CONDICION ES SOBRE EL CONJUNTO DE CASTERS, no sobre la key. Desde que cualquier luz puede
+        ' LA CONDICION ES SOBRE EL CONJUNTO DE CASTERS, no sobre la key. Desde que cualquier luz puede
         ' castear, el receptor se dibuja si AL MENOS UNA de las que castean esta por encima del corte: con
         ' la key rasante y un fill alto hay sombra de piso perfectamente valida, y el cartel decia que no.
         Dim rigActual = Config_App.Current.ActiveLights()
@@ -439,7 +439,7 @@ Partial Public Class LightRigForm
                 End If
             Next
         End If
-        ' ⛔ NINGUNA DE LAS DOS CASILLAS ANUNCIA "(follows the camera)" EN SU TEXTO — decision del usuario.
+        ' NINGUNA DE LAS DOS CASILLAS ANUNCIA "(follows the camera)" EN SU TEXTO — decision del usuario.
         ' La del suelo lo decia cuando `Setting_LightsFollowCamera` estaba prendido, para explicar por que
         ' seguia habilitada aunque la elevacion AUTORADA del rig fuera baja: con el rig pegado a la camara la
         ' direccion efectiva la decide el arrastre, asi que el corte no se puede evaluar de antemano y la
@@ -453,7 +453,7 @@ Partial Public Class LightRigForm
                 "The rig follows the camera, so each light's effective elevation depends on where you drag: " &
                 "the ground catcher stays available and simply does not draw for a light that ends up too low.")
         Else
-            ' ⛔ CORTO: el gate `ui-layout` del ShadowGate mide el ancho real del control contra el interior
+            ' CORTO: el gate `ui-layout` del ShadowGate mide el ancho real del control contra el interior
             ' del grupo, y un texto de una linea mas largo que el original lo saca del recuadro. Ya me paso
             ' con "(follows the camera: shows when the light is high enough)" — 458 px contra 418.
             chkGroundShadow.Text = If(puede, "Shadow on the ground",
@@ -463,7 +463,7 @@ Partial Public Class LightRigForm
                 $"{ElevacionMinima:0.00} deg: below that the projected shadow has no finite framing.")
         End If
         chkGroundShadow.Enabled = puede AndAlso chkShadows.Checked
-        ' ⛔ Y EL CARTEL DE VRAM SE REFRESCA ACA, que es el unico lugar donde se decide `chkGroundShadow.Enabled`
+        ' Y EL CARTEL DE VRAM SE REFRESCA ACA, que es el unico lugar donde se decide `chkGroundShadow.Enabled`
         ' — el factor que DUPLICA la cuenta. Sin esto, mover el slider de elevacion de la ultima luz que
         ' calificaba dejaba el cartel mostrando el doble, sin que nada lo volviera a llamar.
         ActualizarCartelDeVram()
@@ -499,10 +499,10 @@ Partial Public Class LightRigForm
                                                   ActualizarHabilitadoSombras()
                                                   VolcarSombrasEnModelo()
                                               End Sub
-        ' ⛔ VAN A VolcarUIenModelo (el rig) Y NO A VolcarSombrasEnModelo: el flag vive en el rig. Cruzarlos
+        ' VAN A VolcarUIenModelo (el rig) Y NO A VolcarSombrasEnModelo: el flag vive en el rig. Cruzarlos
         ' escribiria el rig en Setting_PreviewShadows_* y viceversa, y el sintoma seria que la casilla se
         ' olvida al cerrar el dialogo.
-        ' ⛔ EL ORDEN IMPORTA Y ESTABA AL REVES. El cartel de VRAM lee el RIG (con el mismo predicado que el
+        ' EL ORDEN IMPORTA Y ESTABA AL REVES. El cartel de VRAM lee el RIG (con el mismo predicado que el
         ' render) y el habilitado del receptor de suelo, y las dos cosas las actualiza VolcarUIenModelo: si
         ' el cartel corre ANTES, muestra el estado anterior al click. Se veia al apagar la ultima luz que
         ' calificaba para el receptor: el cartel seguia contando dos juegos de mapas y nada lo volvia a
@@ -513,10 +513,10 @@ Partial Public Class LightRigForm
                                              ActualizarCartelDeVram()
                                          End Sub
         Next
-        ' ⛔ VAN A VolcarUIenModelo (el RIG), no a VolcarSombrasEnModelo: blandura, oscuridad y receptor de
+        ' VAN A VolcarUIenModelo (el RIG), no a VolcarSombrasEnModelo: blandura, oscuridad y receptor de
         ' suelo se mudaron al rig. Cruzarlos escribiria en la estructura equivocada y el sintoma seria que
         ' la perilla se olvida al cerrar el dialogo.
-        ' ⭐ Y por eso mismo tocarlas AHORA marca el combo como "Custom" y Apply/Reset las restauran: son
+        ' Y por eso mismo tocarlas AHORA marca el combo como "Custom" y Apply/Reset las restauran: son
         ' parte del preset. Antes Reset te devolvia las luces y te dejaba la sombra como estaba.
         AddHandler chkGroundShadow.CheckedChanged, Sub(sender, e)
                                                        VolcarUIenModelo()
@@ -530,7 +530,7 @@ Partial Public Class LightRigForm
         AddHandler chkLightsFollowCamera.CheckedChanged, Sub(sender, e)
                                                              If _preventchanges Then Return
                                                              Config_App.Current.Setting_LightsFollowCamera = chkLightsFollowCamera.Checked
-                                                             ' ⛔ Esta casilla cambia CON QUE cantidad decide
+                                                             ' Esta casilla cambia CON QUE cantidad decide
                                                              ' el render si dibuja el receptor de suelo, asi
                                                              ' que el aviso de al lado queda obsoleto en el
                                                              ' acto. Sin esto, apagarla dejaba el texto
@@ -578,7 +578,7 @@ Partial Public Class LightRigForm
                                              If DirectCast(sender, RadioButton).Checked Then VolcarRenderEnModelo()
                                          End Sub
         Next
-        ' ⛔⛔ LOS CUATRO DE TBN VAN CON DEMORA; LOS DOS DEL PISO, AL TOQUE. No es lo mismo:
+        ' LOS CUATRO DE TBN VAN CON DEMORA; LOS DOS DEL PISO, AL TOQUE. No es lo mismo:
         ' `AjustesDeGeometria` INCLUYE `.Tbn`, asi que cualquier cambio en seam angle o en los epsilons
         ' marca `RenderDirtyFlags.Force` = Clean + esqueleto + LoadShapesParallel + TBN + welding + morphs
         ' + subida a GPU. Y los tres epsilons tienen `DecimalPlaces = 12`: escribir "0,000000000005" a mano
@@ -587,7 +587,7 @@ Partial Public Class LightRigForm
         ' Este mismo archivo ya documenta el caso hermano: sacaron camara y grilla de `AjustesDeGeometria`
         ' porque "tipear '500' en el tamano del piso costaba TRES recargas completas de un NPC con outfit".
         ' El problema quedo abierto justo en los campos donde la recarga es mas cara.
-        ' ⛔ El anterior mecanismo de WM era un boton "Apply to rendered project" explicito; al mudar la
+        ' El anterior mecanismo de WM era un boton "Apply to rendered project" explicito; al mudar la
         ' pestana a este dialogo compartido se perdio y quedaron todos en vivo.
         For Each nud In New NumericUpDown() {nudSeamAngle, nudWeldPos, nudWeldUv, nudEpsPos}
             AddHandler nud.ValueChanged, Sub(sender, e)
@@ -674,7 +674,7 @@ Partial Public Class LightRigForm
             Next
         End If
         Dim idx = Array.FindIndex(ShadowQualities, Function(q) q.Size = mapSize)
-        ' ⛔⛔ UN TAMANO FUERA DE LA LISTA NO SE PISA EN SILENCIO — y hasta ahora SI SE PISABA, contra lo que
+        ' UN TAMANO FUERA DE LA LISTA NO SE PISA EN SILENCIO — y hasta ahora SI SE PISABA, contra lo que
         ' decia este mismo comentario. `VolcarSombrasEnModelo` es el handler de TODAS las perillas de sombra
         ' (la casilla, el suelo, suavidad, intensidad) y escribia `sh.MapSize` desde el combo cada vez. O sea
         ' que un usuario con MapSize = 8192 —legitimo: Sanitized() lo permite y hay un gate que lo prueba—
@@ -724,7 +724,7 @@ Partial Public Class LightRigForm
     ''' inventarlo", que era cierto cuando el mapa ancho se dimensionaba solo y ya no lo es: ahora el numero
     ''' se conoce y decir la mitad de un costo es peor que no decirlo.</para></summary>
     Private Sub ActualizarCartelDeVram()
-        ' ⛔ CUENTA CON EL MISMO PREDICADO QUE EL RENDER, no las casillas tildadas. `SlotsDeSombra` reparte
+        ' CUENTA CON EL MISMO PREDICADO QUE EL RENDER, no las casillas tildadas. `SlotsDeSombra` reparte
         ' capas con `CasteaDeVerdad()`, que descarta la luz que no APORTA luz (Strength 0 o color negro):
         ' una luz tildada y apagada no reserva un byte. Contando `Checked` el cartel cobraba VRAM que la GPU
         ' no reserva — un error "del lado seguro", pero el doc de aca abajo afirma ser LA cuenta, y una
@@ -734,7 +734,7 @@ Partial Public Class LightRigForm
         For i = 0 To PreviewShadowSettings.MaxShadowLights - 1
             If ShadowMapMath.LuzDelRig(rigActual, i).CasteaDeVerdad() Then n += 1
         Next
-        ' ⛔ EL NUMERO VA EN EL TITULO DEL GROUPBOX, no en una etiqueta adentro. Estuvo como `lblShadowVram`
+        ' EL NUMERO VA EN EL TITULO DEL GROUPBOX, no en una etiqueta adentro. Estuvo como `lblShadowVram`
         ' a la derecha de la fila de calidad y se PISABA con la casilla de 16 bits: la etiqueta es AutoSize
         ' y crece hacia la derecha ("128 MB" son ~50 px desde x=317) justo encima del control que arranca en
         ' x=350. El titulo no compite con nada, se lee sin buscarlo, y de paso el costo queda al lado del
@@ -747,7 +747,7 @@ Partial Public Class LightRigForm
         Dim lado As Integer = sh.MapSize
         ' Los DOS arrays van a DepthComponent16 = 2 B por texel (el receptor de suelo reserva el suyo del
         ' mismo lado y con las mismas capas: reserva fija, es lo que evita recrearlo al orbitar).
-        ' ⛔ La cuenta tiene que seguir a la del render. Fueron 4 B (DepthComponent24, que el driver guarda
+        ' La cuenta tiene que seguir a la del render. Fueron 4 B (DepthComponent24, que el driver guarda
         ' en 32) hasta que se midio que en un ortho de rango corto los 16 bits no mueven un pixel: el escalon
         ' de profundidad queda 30x mas fino que el TEXEL, que es lo unico que se ve en el borde. Si algun dia
         ' alguno vuelve a 24 y esto no se actualiza, el cartel miente — y un cartel que miente sobre bytes es
@@ -808,7 +808,7 @@ Partial Public Class LightRigForm
         ' SOLO si la app lo permite. En NPC Manager la casilla ni se muestra, y no tocar el valor es lo
         ' que evita que el dialogo compartido le rompa la oclusion por segmento.
         If AllowHiddenSegments Then Config_App.Current.Setting_DrawHiddenSegments = chkHiddenSegments.Checked
-        ' ⛔ Solo si CAMBIO: escribirla incondicionalmente convertiria "no eligio" en "eligio" con
+        ' Solo si CAMBIO: escribirla incondicionalmente convertiria "no eligio" en "eligio" con
         ' solo abrir el dialogo por otra opcion y dar OK, y a partir de ahi un cambio del default por
         ' app ya no le llegaria nunca.
         If chkShowHelperShapes.Checked <> Config_App.ShowHelperShapesEfectivo() Then
@@ -832,7 +832,7 @@ Partial Public Class LightRigForm
     ''' <summary>Carga un angulo en su NUD y DEJA ANOTADO lo que quedo mostrando, en el Tag. Ver
     ''' <see cref="AnguloDesdeNud"/>: esa anotacion es la que distingue "el control redondeo" de "el
     ''' usuario escribio".</summary>
-    ''' <para>⚠️ Migrado de <c>NumericUpDown</c> a <see cref="TinySliderTextBox"/>: el control nuevo expone
+    ''' <para>Migrado de <c>NumericUpDown</c> a <see cref="TinySliderTextBox"/>: el control nuevo expone
     ''' <c>Value</c> como Double, no como Decimal, asi que la anotacion del Tag pasa a ser Double. La
     ''' comparacion sigue siendo por IGUALDAD EXACTA y eso sigue siendo correcto — se compara contra el
     ''' valor que este mismo metodo escribio, no contra una cuenta.</para></summary>
@@ -843,7 +843,7 @@ Partial Public Class LightRigForm
 
     ''' <summary>Devuelve el angulo que muestra el control, PERO conserva el del modelo si el control
     ''' no puede distinguirlos.
-    ''' <para>⛔⭐ Los NUD muestran 1 decimal y los presets llevan 5, porque a 2 decimales el error de
+    ''' <para>Los NUD muestran 1 decimal y los presets llevan 5, porque a 2 decimales el error de
     ''' direccion ya voltea ~340 px de 648.000 (medido; ver PreviewLightRig). <c>ValidateEditText</c>
     ''' re-parsea el texto MOSTRADO al perder el foco, asi que con solo TABULAR por el campo el rig se
     ''' reescribia cuantizado a 0,1 grados y el preset dejaba de coincidir consigo mismo: el combo se
@@ -852,20 +852,20 @@ Partial Public Class LightRigForm
     ''' nadie va a tipear. Si lo que el control muestra sigue siendo el redondeo del valor vivo,
     ''' entonces el usuario NO lo cambio y el modelo manda.</para></summary>
     Private Shared Function AnguloDesdeNud(nud As TinySliderTextBox, actual As Single) As Single
-        ' ⛔ LA COMPARACION ES CONTRA LO QUE SE CARGO, NO CONTRA UNA TOLERANCIA. La primera version
+        ' LA COMPARACION ES CONTRA LO QUE SE CARGO, NO CONTRA UNA TOLERANCIA. La primera version
         ' conservaba el valor del modelo cuando distaba menos de medio paso de pantalla (0,05 grados) del
         ' mostrado — y eso descarta en silencio una edicion TIPEADA adentro de esa banda: el usuario
         ' escribe 41,45 sobre un modelo de 41,42367, el NUD queda mostrando 41,5 y el modelo no se entera.
         ' Con el valor cargado anotado en el Tag la pregunta se contesta exacta: si el control muestra
         ' todavia lo que se le puso, nadie lo toco.
         If TypeOf nud.Tag Is Double AndAlso DirectCast(nud.Tag, Double) = nud.Value Then Return actual
-        ' ⛔⭐ LA ANOTACION SE ANULA APENAS EL CONTROL SE MOVIO UNA VEZ. Sin esto la condicion de arriba deja
+        ' LA ANOTACION SE ANULA APENAS EL CONTROL SE MOVIO UNA VEZ. Sin esto la condicion de arriba deja
         ' de significar "nadie lo toco" y pasa a significar "justo ahora muestra lo que se cargo", que no es
         ' lo mismo: con Increment = 5, subir una flecha y bajarla vuelve EXACTAMENTE al valor cargado (es
         ' aritmetica Decimal, no hay error), el Tag matchea de nuevo y el modelo se queda con el angulo
         ' nudgeado mientras el NUD muestra el original. Tres estados en desacuerdo —control, modelo y combo
         ' de presets— y ninguna forma de volver.
-        ' ⚠️ El argumento de arriba hablaba de `Increment = 5` del NumericUpDown; con TinySliderTextBox el
+        ' El argumento de arriba hablaba de `Increment = 5` del NumericUpDown; con TinySliderTextBox el
         ' equivalente es `SmallChange`/`LargeChange`, y el razonamiento no cambia: cualquier gesto que
         ' devuelva el control a su valor de partida haria matchear el Tag otra vez.
         nud.Tag = Nothing
@@ -908,7 +908,7 @@ Partial Public Class LightRigForm
         Config_App.Current.SetActiveShadows(PreviewShadowSettings.Defaults())
         ' El anclaje del rig tambien: vive en este mismo grupo, al lado del boton, asi que dejarlo afuera
         ' seria la misma inconsistencia.
-        ' ⛔ Vuelve al DEFAULT DECLARADO en Config_App, no a un literal. Escribir False aca haria que Reset
+        ' Vuelve al DEFAULT DECLARADO en Config_App, no a un literal. Escribir False aca haria que Reset
         ' contradiga al default el dia que alguien lo cambie — y ya se cambio una vez.
         Dim anclajeDefault = New Config_App().Setting_LightsFollowCamera
         Config_App.Current.Setting_LightsFollowCamera = anclajeDefault

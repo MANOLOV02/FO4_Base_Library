@@ -4,11 +4,10 @@ Imports System.Text
 ' ============================================================================
 ' Magic / Keywords / Game Settings Record Data Classes and Parsers
 ' ENCH, SPEL, MGEF, PERK, LVSP, KYWD, EQUP, GLOB, GMST, AVIF, DMGT
-' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
+' # SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO. #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
@@ -18,11 +17,11 @@ Imports System.Text
 ' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
 ' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
-' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra la especificacion real de cada record. Lo que se cerro es "no
 ' inventan referencias", que es otra cosa.
 '
-' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
 ' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
 ' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
 ' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
@@ -31,7 +30,7 @@ Imports System.Text
 '
 ' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
 ' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
-' contra el .pas y volver a correr el sweep.
+' contra la especificacion real y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
@@ -93,12 +92,12 @@ Friend Class SPEL_Data
 End Class
 
 ''' <summary>Una entrada de <c>SNDD</c> de MGEF: el TIPO de sonido (un enum) y el SNDR al que apunta.
-''' <code>wbStructSK([0], 'Sound', [ wbInteger('Type', itU32, wbEnum(…)), wbFormIDCk('Sound', [SNDR]) ])</code>
-''' (wbDefinitionsCommon.pas:7131-7134). Los dos son u32 y por eso hace falta que el NOMBRE los distinga.</summary>
+''' Estructura: Type (u32, índice de enum) + Sound (u32, FormID que referencia SNDR).
+''' Los dos son u32 y por eso hace falta que el NOMBRE los distinga.</summary>
 Public Class MGEF_SoundEntry
     ''' <summary>Índice de enum (0 = Sheathe/Draw, 1 = Charge, 2 = Ready, …). NO es una referencia.</summary>
     Public SoundType As UInteger
-    ''' <summary><c>wbFormIDCk('Sound', [SNDR])</c> — esto sí es una referencia.</summary>
+    ''' <summary>FormID que referencia un SNDR — esto sí es una referencia.</summary>
     Public SoundFormID As UInteger
 End Class
 
@@ -115,13 +114,13 @@ Friend Class MGEF_Data
     Friend EffectFlags As UInteger
     Friend BaseCost As Single
     Friend AssociatedItemFormID As UInteger
-    ''' <summary>Sólo FO4: <c>wbFormIDCk('Resist Value', [AVIF, NULL])</c> (wbDefinitionsFO4.pas:10498).
+    ''' <summary>Sólo FO4: FormID que referencia un AVIF (o NULL).
     ''' En SSE queda en 0 — ahí el campo NO es una referencia, ver <see cref="ResistValueEnum"/>.</summary>
     Friend ResistValueFormID As UInteger
 
-    ''' <summary>Sólo SSE: <c>wbInteger('Resist Value', itS32, wbActorValueEnum)</c>
-    ''' (wbDefinitionsTES5.pas:8490) — un ÍNDICE de actor value, con -1 (0xFFFFFFFF) como "ninguno".
-    ''' <para>⛔ Está en un campo aparte y no reusa <c>ResistValueFormID</c> a propósito: meter un índice de
+    ''' <summary>Sólo SSE: entero de 32 bits con signo, ÍNDICE de actor value, con -1 (0xFFFFFFFF)
+    ''' como "ninguno".
+    ''' <para>Está en un campo aparte y no reusa <c>ResistValueFormID</c> a propósito: meter un índice de
     ''' enum en un campo llamado <c>...FormID</c> es exactamente cómo un número plausible termina pasando por
     ''' el remapper de masters y saliendo como una referencia a otro mod. El nombre es parte del contrato.</para></summary>
     Friend ResistValueEnum As Integer
@@ -163,9 +162,8 @@ Friend Class MGEF_Data
     Friend CounterEffectFormIDs As New List(Of UInteger)
 
     ' Sounds
-    ''' <summary>SNDD — <c>wbArrayS(SNDD, 'Sounds', wbStructSK([0], 'Sound', [Type, Sound]))</c>
-    ''' (wbDefinitionsCommon.pas:7131-7134).
-    ''' <para>⛔ Era un <c>List(Of KeyValuePair(Of UInteger, UInteger))</c> con un comentario que decía
+    ''' <summary>SNDD — array de structs "Sound" (Type, Sound).
+    ''' <para>Era un <c>List(Of KeyValuePair(Of UInteger, UInteger))</c> con un comentario que decía
     ''' "Type, SNDR FormID". Un comentario no es un contrato: el sweep, que camina el modelo por reflexión,
     ''' asume que en una lista de pares la Key es un FormID (cierto para <c>WEAP.DamageTypes</c>) y estaba
     ''' remapeando 3.433 ÍNDICES DE ENUM como si fueran referencias. Con campos nombrados el oráculo ve la
@@ -447,9 +445,9 @@ Friend Module MagicRecordParsers
         m.EffectFlags = BitConverter.ToUInt32(d, 0)
         m.BaseCost = BitConverter.ToSingle(d, 4)
         m.AssociatedItemFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 8), pm)
-        ' ⛔ Game-dependent, no es una constante:
-        '   FO4  → wbFormIDCk('Resist Value', [AVIF, NULL])            (wbDefinitionsFO4.pas:10498)
-        '   TES5 → wbInteger('Resist Value', itS32, wbActorValueEnum)  (wbDefinitionsTES5.pas:8490)
+        ' Game-dependent, no es una constante:
+        '   FO4  → FormID que referencia un AVIF (o NULL)
+        '   SSE  → entero de 32 bits con signo, ÍNDICE de actor value
         ' En SSE es un INDICE DE ENUM, no una referencia, y su "ninguno" es -1 (0xFFFFFFFF). Pasarlo por el
         ' remapper daba 2.192/2.192 FormID inexistentes. Se guarda el valor crudo, que es el indice.
         If IsFallout4() Then

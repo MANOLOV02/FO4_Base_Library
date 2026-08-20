@@ -4,11 +4,10 @@ Imports System.Text
 ' ============================================================================
 ' Item / Inventory Record Data Classes and Parsers
 ' WEAP, AMMO, ALCH, MISC, BOOK, KEYM, LIGH, INGR, CONT, FLOR, NOTE
-' Based on TES5Edit wbDefinitionsFO4.pas
 ' ============================================================================
 
 ' ############################################################################
-' # ⛔ SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO.     #
+' # SIN LLAMADOR Y SIN VALIDAR. NO CABLEAR SIN COMPARAR CAMPO A CAMPO. #
 ' ############################################################################
 ' Este archivo NO tiene ni un llamador en las tres apps: su unica entrada es
 ' RecordDispatcher.ParseRecord, que esta marcado <Obsolete> y tampoco se llama
@@ -18,11 +17,11 @@ Imports System.Text
 ' ARREGLARON. El sweep (Tools\RecordParserSweepProbe, los dos juegos reales) da
 ' 0 excepciones y el residuo son referencias colgadas REALES de Bethesda.
 '
-' ⛔ Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
-' ~130 parsers contra wbDefinitions{FO4,TES5}.pas. Lo que se cerro es "no
+' Eso NO significa "validado". Nadie comparo campo a campo la mayoria de los
+' ~130 parsers contra la especificacion real del formato binario. Lo que se cerro es "no
 ' inventan referencias", que es otra cosa.
 '
-' ⛔ Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
+' Y el problema ESTRUCTURAL sigue: estos parsers son un Select Case PLANO
 ' sobre una lista plana de subrecords, y el formato canonico es un ARBOL. Por eso
 ' la misma firma significa cosas distintas segun donde aparezca y el ultimo gana
 ' (paso con QUST/PACK/TERM/SCEN). Cada corte por contexto es un pedazo de arbol
@@ -31,24 +30,23 @@ Imports System.Text
 '
 ' UN FormID LEIDO MAL NO FALLA: da un numero plausible y equivocado, sin error.
 ' Antes de cablear cualquiera de estos parsers a produccion, comparar sus campos
-' contra el .pas y volver a correr el sweep.
+' contra la especificacion real del formato y volver a correr el sweep.
 ' ############################################################################
 #Region "Data Classes"
 
 ''' <summary>Fallout 4 WEAP record - Weapon.</summary>
 
-''' <summary>Una entrada de <c>DAMA</c>: tipo de daño, cantidad y (desde la versión de formato 152) la curva.
-''' <code>wbStructSK([0], 'Damage Type', [ wbFormIDCk('Type', [DMGT]), wbInteger('Amount', itU32),
-''' wbFromVersion(152, wbFormIDCk('Curve Table', [CURV, NULL])) ])</code>
-''' (wbDefinitionsCommon.pas:5677-5687). Los tres son u32: sin nombres, nada distingue la referencia del
-''' entero.</summary>
+''' <summary>Una entrada de <c>DAMA</c>: tipo de daño, cantidad y (desde la versión de formato
+''' 152) la curva. Layout: FormID Type (referencia a DMGT) + entero Amount (u32) + FormID Curve
+''' Table (referencia a CURV o NULL, sólo desde la versión de formato 152). Los tres campos son
+''' u32 en crudo: sin nombres, nada distingue la referencia del entero salvo la posición.</summary>
 Public Class WEAP_DamageType
-    ''' <summary><c>wbFormIDCk('Type', [DMGT])</c> — referencia.</summary>
+    ''' <summary>FormID que referencia un DMGT (Damage Type).</summary>
     Public TypeFormID As UInteger
-    ''' <summary><c>wbInteger('Amount', itU32)</c> — ENTERO, no float y no referencia.</summary>
+    ''' <summary>Entero u32 — cantidad de daño, no float y no referencia.</summary>
     Public Amount As UInteger
-    ''' <summary><c>wbFormIDCk('Curve Table', [CURV, NULL])</c>, sólo desde la versión de formato 152.
-    ''' 0 cuando la entrada mide 8 bytes.</summary>
+    ''' <summary>FormID que referencia un CURV (Curve Table) o NULL, sólo desde la versión de
+    ''' formato 152. 0 cuando la entrada mide 8 bytes.</summary>
     Public CurveTableFormID As UInteger
 End Class
 
@@ -119,14 +117,15 @@ Friend Class WEAP_Data
     Friend FiringPattern As UInteger
 
     ' CRDT critical data
-    ''' <summary>Sólo SSE: <c>wbInteger('Damage', itU16)</c> del CRDT. En FO4 no existe.</summary>
+    ''' <summary>Sólo SSE: campo 'Damage' del CRDT, entero de 16 bits sin signo.
+    ''' En FO4 no existe.</summary>
     Friend CritDamage As UShort
 
-    ''' <summary>Sólo SSE: <c>wbFloat('% Mult')</c> del CRDT. En FO4 el equivalente conceptual es
-    ''' <see cref="CritDamageMult"/>, que está en OTRO offset y es otra cosa.</summary>
+    ''' <summary>Sólo SSE: campo '% Mult' del CRDT, de tipo float. En FO4 el equivalente
+    ''' conceptual es <see cref="CritDamageMult"/>, que está en OTRO offset y es otra cosa.</summary>
     Friend CritPercentMult As Single
 
-    ''' <summary>Sólo SSE: <c>wbInteger('On Death', itU8, wbBoolEnum)</c> del CRDT.</summary>
+    ''' <summary>Sólo SSE: campo 'On Death' del CRDT, byte interpretado como booleano.</summary>
     Friend CritOnDeath As Boolean
 
     Friend CritDamageMult As Single = 2.0F
@@ -134,10 +133,9 @@ Friend Class WEAP_Data
     Friend CritEffectFormID As UInteger
 
     ' Damage types (DAMA)
-    ''' <summary>DAMA — <c>wbArrayS(DAMA, 'Damage Types', wbStructSK([0], 'Damage Type', [Type, Amount,
-    ''' Curve Table]))</c> (wbDefinitionsCommon.pas:5677-5687).
-    ''' <para>⛔ Era un <c>List(Of KeyValuePair(Of UInteger, Single))</c>, con DOS errores que el par escondía:
-    ''' el <c>Amount</c> es <c>wbInteger(itU32)</c> y se leía como <c>Single</c>, y el tercer miembro
+    ''' <summary>DAMA — array de entradas 'Damage Type' (Type, Amount, Curve Table).
+    ''' <para>Era un <c>List(Of KeyValuePair(Of UInteger, Single))</c>, con DOS errores que el par escondía:
+    ''' el <c>Amount</c> es un entero u32 y se leía como <c>Single</c>, y el tercer miembro
     ''' (<c>Curve Table</c>, desde la versión de formato 152) no se leía. Con campos nombrados el sweep además
     ''' puede ver cuál de los dos u32 es la referencia.</para></summary>
     Friend DamageTypes As New List(Of WEAP_DamageType)
@@ -145,8 +143,8 @@ Friend Class WEAP_Data
     ' Melee speed
     Friend MeleeSpeed As UInteger
 
-    ' Flags - bits per position en wbDefinitionsFO4.pas:13284-13316 (wbFlags array of strings).
-    ' Sin gaps hasta bit 23, después unknowns. Verificación cruzada con xEdit display.
+    ' Flags - bits por posición. Sin gaps hasta bit 23, después unknowns. Verificación cruzada
+    ' contra lo que muestra un editor de terceros.
     Friend ReadOnly Property IsAutomatic As Boolean
         Get
             ' Spec WEAP.DNAM bit 15 (0x00008000) — antes 0x80 era "Unknown 8".
@@ -223,7 +221,7 @@ Friend Class ALCH_Data
     ' Effects
     Friend Effects As New List(Of MagicEffect_Entry)
 
-    ' Flags - bits per position en wbDefinitionsFO4.pas:6080-6098 (wbFlags array of strings).
+    ' Flags - bits por posición.
     ' Hay GAP grande: tras "Food Item" (pos 1) hay 14 "Unknown" hasta "Medicine" (pos 16) y "Poison" (pos 17).
     Friend ReadOnly Property IsFood As Boolean
         Get
@@ -293,7 +291,7 @@ Friend Class BOOK_Data
     Friend TextOffsetX As UInteger
     Friend TextOffsetY As UInteger
 
-    ' Flags - bits per position en wbDefinitionsFO4.pas:6276-6282 (wbFlags array of strings).
+    ' Flags - bits por posición.
     ' GAP en pos 3 (Unknown 3) entre AddSpell (pos 2) y AddPerk (pos 4) — mismo patrón que HDPT.
     Friend ReadOnly Property CanBeTaken As Boolean
         Get
@@ -502,8 +500,8 @@ Friend Module ItemRecordParsers
                 Case "MICO"
                     w.MessageIconPath = sr.AsStringGeneral
                 Case "MODL"
-                    ' FO4 WEAP world model is wbGenericModel → MODL (wbDefinitionsFO4.pas:13249),
-                    ' not MOD2. MOD4 below is the 1st-person model. The old "MOD2" case never matched.
+                    ' FO4 WEAP world model is a generic model subrecord → MODL, not MOD2. MOD4 below is
+                    ' the 1st-person model. The old "MOD2" case never matched.
                     w.WorldModelPath = sr.AsStringGeneral
                 Case "MOD4"
                     w.FirstPersonModelPath = sr.AsStringGeneral
@@ -516,9 +514,10 @@ Friend Module ItemRecordParsers
                 Case "CNAM"
                     w.TemplateFormID = ResolveFID(rec, sr, pluginManager)
                 Case "NNAM"
-                    ' ⛔ Game-dependent: FO4 es wbFormIDCk(NNAM, 'Embedded Weapon Mod', [OMOD]); TES5 es
-                    ' wbByteArray(NNAM, 'Unused', 0, cpIgnore, False) — un sobrante, NO una referencia.
-                    ' Resolverlo en SSE daba 11/11 FormID inexistentes, con ejemplo 0x006C6F42 = ASCII "Blo".
+                    ' Game-dependent: en FO4 es un FormID que referencia un OMOD ('Embedded Weapon
+                    ' Mod'); en TES5 son bytes sin usar — un sobrante, NO una referencia.
+                    ' Resolverlo en SSE daba 11/11 FormID inexistentes, con ejemplo 0x006C6F42 = ASCII
+                    ' "Blo".
                     If IsFallout4() Then w.EmbeddedWeaponModFormID = ResolveFID(rec, sr, pluginManager)
                 Case "INAM"
                     w.ImpactDataSetFormID = ResolveFID(rec, sr, pluginManager)
@@ -548,9 +547,9 @@ Friend Module ItemRecordParsers
         Return w
     End Function
 
-    ''' <summary>WEAP DNAM. ⛔ Es GAME-DEPENDENT y sólo está implementado FO4.
+    ''' <summary>WEAP DNAM. Es GAME-DEPENDENT y sólo está implementado FO4.
     '''
-    ''' <para><b>FO4 — 132 bytes, packed, verificado contra wbDefinitionsFO4.pas:13271-13355:</b>
+    ''' <para><b>FO4 — 132 bytes, packed, verificado contra los datos reales del juego:</b>
     ''' <code>
     '''   0 Ammo(FormID AMMO/NULL) ·  4 Speed ·  8 Reload Speed · 12 Reach · 16 Min Range · 20 Max Range
     '''  24 Attack Delay · 28 Unused(float) · 32 Damage-OutOfRange Mult · 36 On Hit(itU32)
@@ -562,7 +561,7 @@ Friend Module ItemRecordParsers
     ''' 124 Stagger(itU32) · 128 Unknown(4)
     ''' </code></para>
     '''
-    ''' <para>⛔⛔ EL DEFECTO ERA UN SOLO BYTE, y yo lo diagnostiqué mal. Hasta el offset 54 los offsets viejos
+    ''' <para>EL DEFECTO ERA UN SOLO BYTE, y yo lo diagnostiqué mal. Hasta el offset 54 los offsets viejos
     ''' eran CORRECTOS; a partir de <c>Damage-Secondary</c> estaban corridos en +1 (leían 56 donde va 55), y ese
     ''' corrimiento arrastraba todo lo de atrás, incluidos los ocho FormID de sonido. Yo concluí que "no
     ''' correspondía a ninguno de los dos juegos" y DESACTIVÉ el parser entero, tirando 13 campos que estaban
@@ -573,12 +572,14 @@ Friend Module ItemRecordParsers
     ''' firma de un desfase de un byte. Los 107/107 y 289/290 del sweep eran ESO.</para>
     '''
     ''' <para><b>TES5/SSE — NO implementado, a propósito.</b> Es otra estructura: arranca con
-    ''' <c>Animation Type itU8 + wbUnused(3) + Speed + Reach + Flags itU16 + wbUnused(2) + Sight FOV …</c>
+    ''' <c>Animation Type itU8 + 3 bytes sin usar + Speed + Reach + Flags itU16 + 2 bytes sin
+    ''' usar + Sight FOV …</c>
     ''' Aplicarle los offsets de FO4 daba <c>Resist</c> 3865/3865, <c>Skill</c> 1697/1700, <c>Ammo</c> 573/3846
     ''' apuntando a records inexistentes — y además <c>Skill</c> y <c>Resist</c> en TES5 ni siquiera son
-    ''' referencias, son <c>wbInteger(itS32, wbSkillEnum)</c> (:4477) y <c>wbInteger(itS32, wbActorValueEnum)</c>
-    ''' (:10863). Se deja sin parsear en vez de fabricar: cero es visiblemente "no leído", un FormID inventado
-    ''' pasa por el remapper y sale como una referencia válida a otro mod.</para></summary>
+    ''' referencias, son enteros de 32 bits con signo que indexan un enum (Skill enum y
+    ''' ActorValue enum, respectivamente). Se deja sin parsear en vez de fabricar: cero es
+    ''' visiblemente "no leído", un FormID inventado pasa por el remapper y sale como una
+    ''' referencia válida a otro mod.</para></summary>
     Private Sub ParseWEAP_DNAM(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
         If Not IsFallout4() Then Return          ' TES5: estructura distinta, ver el summary
         Dim d = sr.Data
@@ -591,7 +592,7 @@ Friend Module ItemRecordParsers
         w.MinRange = BitConverter.ToSingle(d, 16)
         w.MaxRange = BitConverter.ToSingle(d, 20)
         w.AttackDelay = BitConverter.ToSingle(d, 24)
-        ' 28..31 wbFloat('Unused')
+        ' 28..31 float sin usar
         w.OutOfRangeDamageMult = BitConverter.ToSingle(d, 32)
         w.OnHit = BitConverter.ToUInt32(d, 36)
         w.SkillFormID = ResolveFIDRaw(rec, BitConverter.ToUInt32(d, 40), pm)
@@ -600,7 +601,7 @@ Friend Module ItemRecordParsers
         w.Capacity = BitConverter.ToUInt16(d, 52)
         w.AnimationType = d(54)
 
-        ' ⛔ Desde acá iba el +1. Todo lo de abajo se corre con el offset del canónico, no con el viejo.
+        ' Desde acá iba el +1. Todo lo de abajo se corre con el offset del canónico, no con el viejo.
         If d.Length >= 59 Then w.SecondaryDamage = BitConverter.ToSingle(d, 55)
         If d.Length >= 63 Then w.Weight = BitConverter.ToSingle(d, 59)
         If d.Length >= 67 Then w.Value = BitConverter.ToUInt32(d, 63)
@@ -620,12 +621,12 @@ Friend Module ItemRecordParsers
 
         If d.Length >= 106 Then w.AccuracyBonus = d(105)
         If d.Length >= 110 Then w.AnimAttackSeconds = BitConverter.ToSingle(d, 106)
-        ' 110..111 wbByteArray('Unknown', 2)
+        ' 110..111 2 bytes sin identificar
         If d.Length >= 116 Then w.ActionPointCost = BitConverter.ToSingle(d, 112)
         If d.Length >= 120 Then w.FullPowerSeconds = BitConverter.ToSingle(d, 116)
         If d.Length >= 124 Then w.MinPowerPerShot = BitConverter.ToSingle(d, 120)
         If d.Length >= 128 Then w.Stagger = BitConverter.ToUInt32(d, 124)
-        ' 128..131 wbByteArray('Unknown', 4) — cierra los 132 bytes del struct.
+        ' 128..131 4 bytes sin identificar — cierra los 132 bytes del struct.
     End Sub
 
     ''' <summary>Igual que <see cref="ParseWEAP_DNAM"/>: los offsets de esta estructura no se verificaron contra
@@ -660,23 +661,24 @@ Friend Module ItemRecordParsers
         End If
     End Sub
 
-    ''' <summary>CRDT — Critical Data. ⛔ Las dos leyes NO comparten ni un offset:
+    ''' <summary>CRDT — Critical Data. Las dos leyes NO comparten ni un offset:
     ''' <code>
-    ''' FO4  (wbDefinitionsFO4.pas:13373-13377)      TES5 (wbDefinitionsTES5.pas:10867-10880)
-    '''   0  Crit Damage Mult  (float)                 0  Damage            (itU16)
-    '''   4  Crit Charge Bonus (float)                 2  wbUnused(2)
+    ''' FO4                                            TES5
+    '''   0  Crit Damage Mult  (float)                 0  Damage            (u16)
+    '''   4  Crit Charge Bonus (float)                 2  2 bytes sin usar
     '''   8  Crit Effect       (FormID SPEL/NULL)      4  % Mult            (float)
-    '''                                                8  On Death          (itU8, bool)
-    '''                                                9  wbUnused(7) en SSE / wbUnused(3) en Oldrim
+    '''                                                8  On Death          (u8, bool)
+    '''                                                9  7 bytes sin usar en SSE / 3 en Oldrim
     '''                                               16  Effect            (FormID SPEL/NULL)   ← SSE
-    '''                                               20  wbUnused(4) en SSE
+    '''                                               20  4 bytes sin usar en SSE
     ''' </code>
     ''' <para>Leyendo el offset 8 en SSE se toma el <c>On Death</c> más basura de relleno. MEDIDO: 11/11
     ''' apuntando a records inexistentes, con ejemplo <c>0x1DFFFF01</c>.</para>
-    ''' <para>⛔ El <c>IsSSE(wbUnused(7), wbUnused(3))</c> del canónico es un discriminador SSE vs Oldrim, no
-    ''' FO4 vs Skyrim: en Oldrim el Effect cae en 12 y el struct mide 16. Acá sólo se soporta SSE (que es lo
-    ''' que la app carga), y por eso se exige el largo completo antes de leer — un CRDT de 16 bytes se deja sin
-    ''' Effect en vez de leerlo del lugar equivocado.</para></summary>
+    ''' <para>Distinguir SSE de Oldrim por el tamaño de ese relleno (7 bytes vs 3) es un
+    ''' discriminador, no FO4 vs Skyrim: en Oldrim el Effect cae en 12 y el struct mide 16. Acá
+    ''' sólo se soporta SSE (que es lo que la app carga), y por eso se exige el largo completo
+    ''' antes de leer — un CRDT de 16 bytes se deja sin Effect en vez de leerlo del lugar
+    ''' equivocado.</para></summary>
     Private Sub ParseWEAP_CRDT(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
         Dim d = sr.Data
         If d Is Nothing Then Return
@@ -698,7 +700,7 @@ Friend Module ItemRecordParsers
     Private Sub ParseWEAP_DAMA(sr As SubrecordData, rec As PluginRecord, pm As PluginManager, w As WEAP_Data)
         Dim d = sr.Data
         If d Is Nothing OrElse d.Length < 8 Then Return
-        ' ⛔ El paso lo decide el LARGO del array, no una constante: desde la versión de formato 152 cada
+        ' El paso lo decide el LARGO del array, no una constante: desde la versión de formato 152 cada
         ' entrada gana un tercer miembro (Curve Table) y pasa de 8 a 12 bytes. Con paso fijo de 8 sobre un
         ' DAMA de 12 se leería el Curve Table de la primera entrada como el Type de la segunda.
         Dim paso As Integer = If(d.Length > 0 AndAlso (d.Length Mod 12) = 0, 12, 8)
@@ -730,7 +732,7 @@ Friend Module ItemRecordParsers
                     If a.ModelPath = "" Then a.ModelPath = sr.AsStringGeneral
                 Case "NAM1"
                     a.CasingModelPath = sr.AsStringGeneral
-                ' FO4 AMMO has no ICON/MICO (only wbYNAM, wbDefinitionsFO4.pas) — dead cases removed.
+                ' FO4 AMMO has no ICON/MICO (only YNAM) — dead cases removed.
                 Case "KWDA"
                     ParseFormIDArray(sr, rec, pluginManager, a.KeywordFormIDs)
                 Case "DATA"
@@ -1137,7 +1139,7 @@ Friend Module ItemRecordParsers
                     If n.ModelPath = "" Then n.ModelPath = sr.AsStringGeneral
                 Case "ICON"
                     n.IconPath = sr.AsStringGeneral
-                ' FO4 NOTE has ICON but no MICO (wbDefinitionsFO4.pas:12839) — dead case removed.
+                ' FO4 NOTE has ICON but no MICO — dead case removed.
                 Case "DNAM"
                     If sr.Data IsNot Nothing AndAlso sr.Data.Length >= 1 Then
                         n.NoteType = sr.Data(0)

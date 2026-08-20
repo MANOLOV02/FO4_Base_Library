@@ -27,7 +27,7 @@ Public Class Transform_Class
     ' non-uniform, hay que re-introducir la convención Y alinear la descomposición de los ctors/
     ' ComposeTransforms/Inverse a la MISMA convención (no alcanza con cambiar solo ToMatrix4d).
     '
-    ' ⚠ CUIDADO — invariante de shear (NO forzado por código, respetarlo al programar):
+    ' CUIDADO — invariante de shear (NO forzado por código, respetarlo al programar):
     '   ComposeTransforms con scale non-uniform puede dejar una Rotation con columnas NO mutuamente
     '   ortogonales (shear). El RENDER es correcto (todo va por ToMatrix4d, roundtrip exacto). PERO
     '   los extractores Matrix33ToBSRotation/Matrix33ToEulerXYZ NO pueden representar shear: polar-
@@ -476,7 +476,7 @@ Public Class Transform_Class
                 uy = uy / len * angle
                 uz = uz / len * angle
             ElseIf cosA < 0.0 Then
-                ' ⛔⛔ ACÁ SE DEVOLVÍA (1,0,0) CON EL COMENTARIO "caso degenerado de 180° con eje indefinido".
+                ' ACÁ SE DEVOLVÍA (1,0,0) CON EL COMENTARIO "caso degenerado de 180° con eje indefinido".
                 ' EL EJE NO ES INDEFINIDO: para una rotación de 180° es el autovector de autovalor +1, y está
                 ' perfectamente determinado. Lo único ambiguo es el SIGNO (n y −n describen la misma rotación de
                 ' 180°), que es inocuo. Lo que se anula a θ=π es (M − Mᵀ), o sea la fórmula de arriba — no el eje.

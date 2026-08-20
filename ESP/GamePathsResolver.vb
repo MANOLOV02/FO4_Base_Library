@@ -4,7 +4,7 @@ Imports System.IO
 ''' Resuelve las DOS rutas que el motor deriva de una constante compilada dentro del exe y que ninguna
 ''' herramienta puede leer de un archivo de configuración: la carpeta de <c>Plugins.txt</c> /
 ''' <c>loadorder.txt</c> bajo <c>%LOCALAPPDATA%</c>, y la carpeta de los .ini bajo
-''' <c>Documents\My Games</c>. Ambas cuelgan del MISMO nombre (xEdit lo llama <c>wbGameName2</c>).
+''' <c>Documents\My Games</c>. Ambas cuelgan del MISMO nombre interno del juego.
 '''
 ''' <para><b>Por qué existe esta clase.</b> Antes el nombre salía de una tabla de dos entradas por juego
 ''' (plana + VR) y se elegía con <c>Directory.Exists</c>. Eso rompe en cuanto la tienda cambia el nombre:
@@ -13,7 +13,7 @@ Imports System.IO
 ''' <c>Directory.Exists</c> daba True, se leía un Plugins.txt ajeno o inexistente, y la app mostraba el
 ''' juego sin un solo mod sin emitir ningún error.</para>
 '''
-''' <para><b>⛔ NO BUSCA EN DISCO.</b> Decisión explícita del usuario (2026-08-13): esta clase va DIRECTO a
+''' <para><b>NO BUSCA EN DISCO.</b> Decisión explícita del usuario (2026-08-13): esta clase va DIRECTO a
 ''' rutas conocidas o le PREGUNTA al usuario. No hay barridos, ni patrones, ni <c>EnumerateDirectories</c>,
 ''' ni escaneo del exe, ni registro, ni parseo de librerías de Steam. El motivo no es el costo medido acá
 ''' —la app se distribuye y esta máquina no autoriza nada— sino la FORMA: un <see cref="File.Exists"/>
@@ -121,18 +121,18 @@ Public NotInheritable Class GamePathsResolver
 
     ''' <summary>Nombres de carpeta candidatos, en orden de preferencia, por (juego, variante).
     '''
-    ''' <para>⛔ Acá SÓLO entran nombres verificados. Un nombre inventado es peor que ninguno: como la
+    ''' <para>Acá SÓLO entran nombres verificados. Un nombre inventado es peor que ninguno: como la
     ''' elección se decide por existencia del archivo, una entrada falsa nunca acierta pero sí puede
     ''' convertir un caso limpio en un empate ambiguo, y encima le da al lector la impresión de que la
     ''' variante está soportada y probada.</para>
     '''
     ''' <list type="bullet">
     ''' <item><c>Skyrim Special Edition</c> / <c>Skyrim VR</c> / <c>Fallout4</c> / <c>Fallout4VR</c>:
-    ''' la tabla de modos de xEdit (xeInit.pas:885,897,919 y el <c>wbGameName2 := wbGameName</c> de :996),
-    ''' contrastada contra una instalación de Steam real.</item>
-    ''' <item><c>Skyrim Special Edition GOG</c>: la edición de GOG renombró las DOS carpetas. xEdit no lo
-    ''' soporta (issue #1058, cerrado como "not planned": su respuesta es que el usuario pase -M y -P a
-    ''' mano), y es exactamente el caso que motivó todo esto.</item>
+    ''' los nombres de carpeta observados para cada variante, contrastados contra una instalación de
+    ''' Steam real.</item>
+    ''' <item><c>Skyrim Special Edition GOG</c>: la edición de GOG renombró las DOS carpetas. Las
+    ''' herramientas de terceros no suelen manejar este caso (la salida típica es pedirle al usuario que
+    ''' indique las rutas a mano), y es exactamente el caso que motivó todo esto.</item>
     ''' </list>
     '''
     ''' <para>NO están Epic, Microsoft Store ni un eventual Fallout 4 de GOG porque no los pude verificar.
@@ -146,17 +146,16 @@ Public NotInheritable Class GamePathsResolver
         Return New String() {"Fallout4"}
     End Function
 
-    ''' <summary>Nombre base de los .ini. Es <c>wbGameName</c>, NO <c>wbGameName2</c>: la carpeta lleva el
-    ''' sufijo de la variante pero el archivo no. Un FO4VR sigue leyendo <c>Fallout4.ini</c> y un SkyrimVR
-    ''' sigue leyendo <c>Skyrim.ini</c> (xeInit.pas:513,526). Medido además sobre el propio exe, donde las
-    ''' dos constantes viven contiguas: <c>'Skyrim Special Edition'\0'Skyrim'\0'Skyrim.INI'</c>.</summary>
+    ''' <summary>Nombre base de los .ini. NO lleva el sufijo de variante que sí lleva la carpeta: un FO4VR
+    ''' sigue leyendo <c>Fallout4.ini</c> y un SkyrimVR sigue leyendo <c>Skyrim.ini</c>. Medido además sobre
+    ''' el propio exe, donde las dos constantes viven contiguas:
+    ''' <c>'Skyrim Special Edition'\0'Skyrim'\0'Skyrim.INI'</c>.</summary>
     Public Shared Function IniBaseName(game As Config_App.Game_Enum) As String
         Return If(game = Config_App.Game_Enum.Skyrim, "Skyrim", "Fallout4")
     End Function
 
     ''' <summary>Los cuatro exe canónicos y qué significan. Es el ÚNICO discriminador de variante: lo decide
-    ''' el nombre del ejecutable, no qué carpeta exista — el mismo criterio que usa xEdit para elegir modo
-    ''' (wbGameExeName, xeInit.pas:886,918).</summary>
+    ''' el nombre del ejecutable, no qué carpeta exista.</summary>
     Private Shared ReadOnly CanonicalExes As (Name As String, Game As Config_App.Game_Enum, ExeVariant As GameVariant)() = {
         ("Fallout4.exe", Config_App.Game_Enum.Fallout4, GameVariant.Flat),
         ("Fallout4VR.exe", Config_App.Game_Enum.Fallout4, GameVariant.VR),
@@ -288,7 +287,7 @@ Public NotInheritable Class GamePathsResolver
                 Return r
             End If
 
-            ' ⛔ El juego lo manda el selector, NO el exe: es el que decide el layout de records que se va a
+            ' El juego lo manda el selector, NO el exe: es el que decide el layout de records que se va a
             ' parsear. Si discrepan, resolver igual sería leer el Plugins.txt del juego equivocado — un dato
             ' mal, callado. Se corta acá y se pide que lo resuelva el usuario.
             If ident.Game <> game Then
@@ -393,10 +392,9 @@ Public NotInheritable Class GamePathsResolver
     ''' <summary>Ruta completa de un .ini (<c>"Skyrim.ini"</c>, <c>"Fallout4Custom.ini"</c>, …), o "" si no
     ''' hay carpeta de inis resuelta.
     '''
-    ''' <para>Conserva la regla extra de VR, verbatim de xEdit (xeInit.pas:515-517, comentario <i>"VR games
-    ''' don't create ini file in My Games by default, use the one in the game folder"</i>): en un build de VR,
-    ''' si el .ini no está en My Games, se cae a la raíz del juego — la carpeta que contiene Data, o sea la
-    ''' del propio exe.</para></summary>
+    ''' <para>Conserva la regla extra de VR: los juegos VR no crean el .ini en My Games por defecto, así que
+    ''' en un build de VR, si el .ini no está ahí, se cae a la raíz del juego — la carpeta que contiene
+    ''' Data, o sea la del propio exe.</para></summary>
     Public Shared Function ResolveIniPath(iniFileName As String) As String
         Dim r = Resolve()
         If Not r.HasIniDir Then Return ""

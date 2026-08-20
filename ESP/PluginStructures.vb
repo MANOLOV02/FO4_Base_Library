@@ -3,16 +3,14 @@ Imports System.Text
 
 ''' <summary>
 ''' Core binary structures for reading Bethesda ESP/ESM/ESL plugin files (Fallout 4).
-''' Based on TES5Edit (xEdit) definitions.
 ''' </summary>
 Public Module PluginConstants
     ' Record flags
     Public Const FLAG_ESM As UInteger = &H1UI
     Public Const FLAG_LOCALIZED As UInteger = &H80UI
-    ''' <summary>0x100. En FO4/SSE NO significa nada: `wbIsUpdateSupported` es sólo Starfield o VR con
-    ''' VRESL (wbInterface.pas:5615-5618), y `TwbFile.GetIsUpdate` corta antes de mirar el bit
-    ''' (wbImplementation.pas:4364). Donde SÍ vale, suprime la regla "extensión .esl ⇒ light"
-    ''' (wbLoadOrder.pas:358-363). Ver `PluginManager.IsLightSlot`.</summary>
+    ''' <summary>0x100. En FO4/SSE NO significa nada: el soporte de "update" sólo aplica a Starfield
+    ''' o a VR con VRESL. Donde SÍ vale, suprime la regla "extensión .esl ⇒ light".
+    ''' Ver `PluginManager.IsLightSlot`.</summary>
     Public Const FLAG_UPDATE As UInteger = &H100UI
     Public Const FLAG_ESL As UInteger = &H200UI
     Public Const FLAG_COMPRESSED As UInteger = &H40000UI
@@ -144,7 +142,7 @@ Public Structure SubrecordData
     Public Data As Byte()
 
     ''' <summary>Decode as a TRANSLATABLE inline string (cpTranslate fields like FULL/SHRT/DESC).
-    ''' Uses the Translatable encoding (xEdit wbEncodingTrans). For non-translatable fields
+    ''' Uses the Translatable encoding. For non-translatable fields
     ''' (EDID, model paths — cpOverride/cpNormal) use <see cref="AsStringGeneral"/> instead.</summary>
     Public ReadOnly Property AsString As String
         Get
@@ -157,9 +155,8 @@ Public Structure SubrecordData
     End Property
 
     ''' <summary>Decode as a NON-translatable inline string (General encoding = cp1252 for FO4).
-    ''' Mirror of xEdit's wbEncoding path for fields where dfTranslatable is NOT set — e.g. EDID
-    ''' (wbStringKC cpOverride, wbDefinitionsFO4.pas:4080) resolves via bsdGetEncoding's
-    ''' `else Result := wbEncoding` branch (wbInterface.pas:23533), NOT wbEncodingTrans.</summary>
+    ''' Fields where translatability is not set — e.g. EDID — resolve through this non-translatable
+    ''' path, not the translatable one.</summary>
     Public ReadOnly Property AsStringGeneral As String
         Get
             If Data Is Nothing OrElse Data.Length = 0 Then Return ""
@@ -198,7 +195,7 @@ Public Class PluginRecord
     Public SourcePluginIsLocalized As Boolean
     ''' <summary>
     ''' Per-file translatable encoding captured from the source plugin's TES4 SNAM &lt;cp:XXXX&gt;
-    ''' tag at load time. Mirror of xEdit flEncodingTrans (wbImplementation.pas:766 + 5724-5737).
+    ''' tag at load time.
     ''' Nothing = no tag in source → fall back to global PluginEncodingSettings.Translatable.
     ''' Honored by PluginManager.ResolveFieldString and ParserHelpers.ResolveStr.
     ''' </summary>
@@ -218,10 +215,9 @@ Public Class PluginRecord
         Return Subrecords.Where(Function(sr) sr.Signature = sig).ToList()
     End Function
 
-    ''' <summary>Editor ID (EDID subrecord). EDID is non-translatable (wbStringKC cpOverride,
-    ''' wbDefinitionsFO4.pas:4080) → decoded with the General encoding (cp1252), like xEdit, NOT
-    ''' Translatable. In practice EDIDs are pure ASCII so this matches AsString, but it keeps the
-    ''' encoding model faithful to xEdit.</summary>
+    ''' <summary>Editor ID (EDID subrecord). EDID is non-translatable → decoded with the General
+    ''' encoding (cp1252), NOT Translatable. In practice EDIDs are pure ASCII so this matches
+    ''' AsString, but it keeps the encoding model correct.</summary>
     Public ReadOnly Property EditorID As String
         Get
             Dim sr = GetSubrecord("EDID")

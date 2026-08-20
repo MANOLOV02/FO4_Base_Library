@@ -67,7 +67,7 @@ Public Module DirectXDDSLoader
         Dim bd = bmp.LockBits(New Rectangle(0, 0, lvl.Width, lvl.Height),
                               ImageLockMode.WriteOnly, Imaging.PixelFormat.Format32bppArgb)
         Try
-            ' ⛔ El destino es memoria NATIVA de GDI+: copiar sin comparar contra su tamaño real no da una
+            ' El destino es memoria NATIVA de GDI+: copiar sin comparar contra su tamaño real no da una
             ' excepción, da corrupción de heap. `Marshal.Copy` sólo mira el array de origen.
             Dim capacidad As Long = CLng(Math.Abs(bd.Stride)) * bd.Height
             If lvl.Data.Length > capacidad Then
@@ -76,7 +76,7 @@ Public Module DirectXDDSLoader
             End If
             Marshal.Copy(lvl.Data, 0, bd.Scan0, lvl.Data.Length)
         Finally
-            ' ⛔ Sin este Finally, una excepción en el copy dejaba el bitmap BLOQUEADO y sus bytes nativos
+            ' Sin este Finally, una excepción en el copy dejaba el bitmap BLOQUEADO y sus bytes nativos
             ' —67 MB en un 4096²— colgados hasta el finalizador, fuera del heap administrado.
             bmp.UnlockBits(bd)
         End Try
@@ -99,8 +99,8 @@ Public Module DirectXDDSLoader
         Return list
     End Function
 
-    ''' <summary>⭐ LA ÚNICA LEY DE SAMPLEO de las texturas del render: niveles, filtros, anisotropía y wrap.
-    ''' <para>⛔ SYNC — NO TRANSCRIBIRLA EN OTRO LADO. La consumen DOS caminos: el upload del DDS (acá abajo) y
+    ''' <summary>LA ÚNICA LEY DE SAMPLEO de las texturas del render: niveles, filtros, anisotropía y wrap.
+    ''' <para>SYNC — NO TRANSCRIBIRLA EN OTRO LADO. La consumen DOS caminos: el upload del DDS (acá abajo) y
     ''' la instalación de las texturas COMPUESTAS del pliegue de SSE (<c>NpcFaceTintResolver.InstallTexture</c>),
     ''' que reemplazan a un DDS en el bind y por lo tanto tienen que samplearse IGUAL que el DDS al que
     ''' reemplazan. Estaba escrita sólo acá y la textura del pliegue se subía con <c>MinFilter=Linear</c> y un
@@ -126,7 +126,7 @@ Public Module DirectXDDSLoader
             ' Si quieres volver al comportamiento anterior, re-agrega:
             ' GL.TexParameter(target, TextureParameterName.TextureLodBias, -0.5F)
 
-            ' ⚠️ Sin la extensión de anisotropía este GetFloat deja `maxAniso` en 0 y encola un
+            ' Sin la extensión de anisotropía este GetFloat deja `maxAniso` en 0 y encola un
             ' GL_INVALID_ENUM. El gate `>= 1` hace que no se aplique nada, y el drenaje evita que ese error
             ' quede en la cola y lo cobre un chequeo posterior ajeno.
             Dim maxAniso As Single = 0
@@ -205,11 +205,11 @@ Public Module DirectXDDSLoader
         ' Binding de textura que hubiera al entrar. Mismo criterio que el PBO: se lee adentro del Try, que es
         ' donde vive el unico consumidor (el Finally).
         Dim prevTextureBinding As Integer = 0
-        ' ⛔ El alineamiento previo se lee ACÁ, ANTES del Try. Estaba leído adentro, así que cualquier
+        ' El alineamiento previo se lee ACÁ, ANTES del Try. Estaba leído adentro, así que cualquier
         ' excepción anterior a esa línea hacía que el Finally "restaurara" el literal 4 de la
         ' inicialización — y 4 NO es lo que hay: `CreateColorTexture` deja el UNPACK_ALIGNMENT global en 1
         ' y no lo devuelve. O sea que el camino de error cambiaba estado global del contexto en silencio.
-        ' ⛔ Y va con su propio Try: al sacarla del Try grande tambien la saqué del `Catch` que convertía
+        ' Y va con su propio Try: al sacarla del Try grande tambien la saqué del `Catch` que convertía
         ' TODA esta función en `Return 0`. Sin esto, una excepción de GL acá escapa a `UploadTextureToGL` y
         ' a `Load_And_GenerateOpenGLTextures_Memory`, que NO la atrapan — o sea, ensanchar el radio para
         ' arreglar un alineamiento. Si no se puede leer, 4 (el default de GL) es la respuesta correcta.
@@ -234,7 +234,7 @@ Public Module DirectXDDSLoader
             Return 0
         End If
 
-        ' ⛔⛔ UN Texture2DArray SUBIA LA SLICE EQUIVOCADA, EN SILENCIO. `Faces` lo llena el wrapper con el
+        ' UN Texture2DArray SUBIA LA SLICE EQUIVOCADA, EN SILENCIO. `Faces` lo llena el wrapper con el
         ' `arraySize` CRUDO, no con "6 si es cubemap si no 1": para un DDS 2D-array vale N. Sin cubemap, el
         ' doble loop de abajo usa `TextureTarget.Texture2D` para las N slices del MISMO mip, asi que cada
         ' `TexSubImage2D` pisa a la anterior — sin error de GL, sin log — y la textura terminaba con la
@@ -242,7 +242,7 @@ Public Module DirectXDDSLoader
         ' Subirlo bien pide GL_TEXTURE_2D_ARRAY (TexStorage3D/TexSubImage3D) y un sampler distinto en los
         ' shaders; ningun material de FO4/SSE trae uno, asi que la respuesta correcta es NO CARGARLO y
         ' dejar rastro, no adivinar cual de las N slices queria el llamador.
-        ' ⚠️ ESTE LOG NO SE VE EN RELEASE: `Logger.Enabled` esta forzado a False y su setter descarta
+        ' ESTE LOG NO SE VE EN RELEASE: `Logger.Enabled` esta forzado a False y su setter descarta
         ' cualquier True (ver Logger.vb). O sea que este guard es una RED MUDA. El canal visible para el
         ' mismo defecto esta del lado CPU, que es ademas el que ESCRIBE los bytes en disco: ver el guard
         ' gemelo en FaceTintCpuCompositor.DecodeDds, que devuelve Nothing y sube como fallo de textura.
@@ -474,14 +474,14 @@ Public Module DirectXDDSLoader
             ' errors caused by THIS upload, not leftovers from another caller.
             DrainGlErrors()
 
-            ' ⛔ El binding previo se lee ACA, antes de generar y bindear el nuestro, y con el pname TIPADO.
+            ' El binding previo se lee ACA, antes de generar y bindear el nuestro, y con el pname TIPADO.
             ' MEDIDO por reflexion sobre OpenTK.Graphics 4.9.3 (el ensamblado que resuelve este proyecto):
             ' GetPName.TextureBinding2D = 0x8069, GetPName.TextureBindingCubeMap = 0x8514. Un
             ' `CType(numero, GetPName)` con el valor equivocado COMPILA —los enums del CLR no validan rango— y
             ' `glGetIntegerv` con pname invalido NO escribe el destino: es exactamente como se colo antes un
             ' `&H8CA8` que en realidad era GL_READ_FRAMEBUFFER. Mismo patron tipado que usa
             ' FaceTintCompositor.SaveGlState.
-            ' ⛔⛔ ESTA FUNCION NO TOCA `ActiveTexture` EN NINGUN LADO, Y DE AHI SALE LA CORRECCION:
+            ' ESTA FUNCION NO TOCA `ActiveTexture` EN NINGUN LADO, Y DE AHI SALE LA CORRECCION:
             ' glGetIntegerv(TEXTURE_BINDING_*) reporta el binding de la unidad ACTIVA, asi que la lectura y la
             ' restauracion caen sobre la MISMA unidad por construccion. Si alguien agrega un ActiveTexture aca
             ' adentro, este par se desaparea en silencio (lee en la unidad N, restaura en la 0).
@@ -527,7 +527,7 @@ Public Module DirectXDDSLoader
                 Next
             Next
 
-            ' ⛔⛔ ACA VIVIA UN PBO Y NO COMPRABA NADA.
+            ' ACA VIVIA UN PBO Y NO COMPRABA NADA.
             ' El sentido de un Pixel Buffer Object es la transferencia ASINCRONA: se llena, se sigue
             ' trabajando, y el driver la consume cuando puede. Este se creaba, se llenaba, se consumia y se
             ' borraba DENTRO DE LA MISMA LLAMADA, sin fence y sin reuso entre texturas. El driver tenia que
@@ -538,15 +538,15 @@ Public Module DirectXDDSLoader
             ' Subiendo directo desde `lvl.Data` queda UNA sola copia, la que hace el driver hacia la
             ' textura, y cero asignaciones intermedias. Si algun dia se quiere el beneficio asincrono de
             ' verdad, eso es un PBO PERSISTENTE por contexto con fence, no uno por textura.
-            ' ⛔ Desbindear explicitamente: con un PBO bindeado, el argumento de datos de TexSubImage2D se
+            ' Desbindear explicitamente: con un PBO bindeado, el argumento de datos de TexSubImage2D se
             ' interpreta como un OFFSET dentro del buffer y no como un puntero al array.
-            ' ⛔⛔ PERO ESO ES PRECONDICION DE ESTA FUNCION, NO ESTADO GLOBAL QUE LE TOQUE FIJAR. Antes el
+            ' PERO ESO ES PRECONDICION DE ESTA FUNCION, NO ESTADO GLOBAL QUE LE TOQUE FIJAR. Antes el
             ' Finally lo dejaba en 0, o sea que convertia "sin PBO durante la subida" en "sin PBO para
             ' siempre" y se llevaba puesto el binding de cualquier uploader ajeno. Se guarda el previo acá y
             ' el Finally lo devuelve. Hoy no hay ningun otro bindeo de PIXEL_UNPACK_BUFFER en la solucion ⇒
             ' esto lee 0 y el comportamiento no cambia en un solo byte; existe para el dia que aparezca un
             ' PBO PERSISTENTE con fence, que es la unica forma en que un PBO compra algo (ver arriba).
-            ' ⛔ El pname va TIPADO (`GetPName.PixelUnpackBufferBinding` = 0x88EF). Un `CType(&H..., GetPName)`
+            ' El pname va TIPADO (`GetPName.PixelUnpackBufferBinding` = 0x88EF). Un `CType(&H..., GetPName)`
             ' con el numero equivocado COMPILA igual —los enums del CLR no validan el rango— y `glGetIntegerv`
             ' con un pname invalido NO escribe el destino y encola GL_INVALID_ENUM: quedaria siempre 0 (o sea,
             ' el bug de antes, pero documentado como arreglado) y el error contaminaria al proximo GetError.
@@ -571,7 +571,7 @@ Public Module DirectXDDSLoader
                     Dim subTarget = If(tex.IsCubemap, faceTargets(f), TextureTarget.Texture2D)
 
                     If tex.IsCompressedGL Then
-                        ' ⛔ El overload que toma `PixelFormat` está marcado Obsolete en OpenTK 4
+                        ' El overload que toma `PixelFormat` está marcado Obsolete en OpenTK 4
                         ' ("Use InternalFormat overload instead") ⇒ BC40000 en un build que estaba limpio.
                         ' Es el mismo GLenum por el cable: `glInternal` SIEMPRE fue un formato interno
                         ' (GL_COMPRESSED_*), nunca un PixelFormat — el cast viejo mentía sobre el tipo.
