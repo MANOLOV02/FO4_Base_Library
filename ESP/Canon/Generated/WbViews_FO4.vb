@@ -374,13 +374,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Sculpt Data\Bone Scale Modifier Set\Bone Scale Modifiers</summary>
-        Public ReadOnly Property BoneScaleModifiers As IReadOnlyList(Of ArmaFO4_BoneScaleModifiers)
-            Get
-                Return Elementos(Of ArmaFO4_BoneScaleModifiers)("Sculpt Data\Bone Scale Modifier Set\Bone Scale Modifiers", Function(n) New ArmaFO4_BoneScaleModifiers(n, Context, Resolver))
-            End Get
-        End Property
-
     End Class
 
     ''' <summary>Un elemento de Additional Races.</summary>
@@ -426,6 +419,13 @@ Namespace Canon
             Set(value As UInteger)
                 Escribir("Bone Scale Modifier Set\BSMP\Target Gender", CLng(value))
             End Set
+        End Property
+
+        ''' <summary>Sculpt Data\Bone Scale Modifier Set\Bone Scale Modifiers</summary>
+        Public ReadOnly Property BoneScaleModifiers As IReadOnlyList(Of ArmaFO4_BoneScaleModifiers)
+            Get
+                Return Elementos(Of ArmaFO4_BoneScaleModifiers)("Bone Scale Modifier Set\Bone Scale Modifiers", Function(n) New ArmaFO4_BoneScaleModifiers(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -958,13 +958,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        Public ReadOnly Property Properties As IReadOnlyList(Of IArmo_Properties) Implements IArmo.Properties
-            Get
-                Return Elementos(Of ArmoFO4_Properties)("VMAD\Virtual Machine Adapter\Scripts\Script\Properties", Function(n) New ArmoFO4_Properties(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Destructible\DAMC\Resistances</summary>
         Public ReadOnly Property Resistances As IReadOnlyList(Of ArmoFO4_Resistances)
             Get
@@ -1014,27 +1007,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Keywords</summary>
-        Public ReadOnly Property Keywords2 As IReadOnlyList(Of ArmoFO4_Keywords2)
-            Get
-                Return Elementos(Of ArmoFO4_Keywords2)("Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Keywords", Function(n) New ArmoFO4_Keywords2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Includes</summary>
-        Public ReadOnly Property Includes As IReadOnlyList(Of ArmoFO4_Includes)
-            Get
-                Return Elementos(Of ArmoFO4_Includes)("Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Includes", Function(n) New ArmoFO4_Includes(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Properties</summary>
-        Public ReadOnly Property Properties2 As IReadOnlyList(Of ArmoFO4_Properties2)
-            Get
-                Return Elementos(Of ArmoFO4_Properties2)("Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Properties", Function(n) New ArmoFO4_Properties2(n, Context, Resolver))
-            End Get
-        End Property
-
     End Class
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
@@ -1079,25 +1051,25 @@ Namespace Canon
             End Get
         End Property
 
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
+        Public ReadOnly Property Properties As IReadOnlyList(Of ArmoFO4_Properties)
+            Get
+                Return Elementos(Of ArmoFO4_Properties)("Script\Properties", Function(n) New ArmoFO4_Properties(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class ArmoFO4_Properties
         Inherits CanonView
-        Implements IArmo_Properties
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Properties.Node
-            Get
-                Return Node
-            End Get
-        End Property
-
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyPropertyName As String Implements IArmo_Properties.PropertyPropertyName
+        Public Property PropertyPropertyName As String
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -1107,7 +1079,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IArmo_Properties.PropertyType
+        Public Property PropertyType As Byte
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -1117,7 +1089,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IArmo_Properties.PropertyFlags
+        Public Property PropertyFlags As Byte
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -1127,14 +1099,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IArmo_Properties.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>Property\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IArmo_Properties.ObjectV2Alias
+        Public Property ObjectV2Alias As Short
             Get
                 Return CShort(Entero("Property\Object v2\Alias"))
             End Get
@@ -1144,7 +1116,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IArmo_Properties.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger
             Get
                 Return Referencia("Property\Object v2\FormID")
             End Get
@@ -1585,6 +1557,27 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Combination\OBTS\Object Mod Template Item\Alt Levels Per Tier", CLng(value))
             End Set
+        End Property
+
+        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Keywords</summary>
+        Public ReadOnly Property Keywords2 As IReadOnlyList(Of ArmoFO4_Keywords2)
+            Get
+                Return Elementos(Of ArmoFO4_Keywords2)("Combination\OBTS\Object Mod Template Item\Keywords", Function(n) New ArmoFO4_Keywords2(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Includes</summary>
+        Public ReadOnly Property Includes As IReadOnlyList(Of ArmoFO4_Includes)
+            Get
+                Return Elementos(Of ArmoFO4_Includes)("Combination\OBTS\Object Mod Template Item\Includes", Function(n) New ArmoFO4_Includes(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Properties</summary>
+        Public ReadOnly Property Properties2 As IReadOnlyList(Of ArmoFO4_Properties2)
+            Get
+                Return Elementos(Of ArmoFO4_Properties2)("Combination\OBTS\Object Mod Template Item\Properties", Function(n) New ArmoFO4_Properties2(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -4962,13 +4955,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        Public ReadOnly Property Properties As IReadOnlyList(Of INpc_Properties) Implements INpc.Properties
-            Get
-                Return Elementos(Of NpcFO4_Properties)("VMAD\Virtual Machine Adapter\Scripts\Script\Properties", Function(n) New NpcFO4_Properties(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Factions</summary>
         Public ReadOnly Property Factions As IReadOnlyList(Of INpc_Factions) Implements INpc.Factions
             Get
@@ -5053,27 +5039,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Keywords</summary>
-        Public ReadOnly Property Keywords2 As IReadOnlyList(Of NpcFO4_Keywords2)
-            Get
-                Return Elementos(Of NpcFO4_Keywords2)("Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Keywords", Function(n) New NpcFO4_Keywords2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Includes</summary>
-        Public ReadOnly Property Includes As IReadOnlyList(Of NpcFO4_Includes)
-            Get
-                Return Elementos(Of NpcFO4_Includes)("Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Includes", Function(n) New NpcFO4_Includes(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Properties</summary>
-        Public ReadOnly Property Properties3 As IReadOnlyList(Of NpcFO4_Properties3)
-            Get
-                Return Elementos(Of NpcFO4_Properties3)("Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Properties", Function(n) New NpcFO4_Properties3(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Head Parts</summary>
         Public ReadOnly Property HeadParts As IReadOnlyList(Of INpc_HeadParts) Implements INpc.HeadParts
             Get
@@ -5082,7 +5047,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Actor Sounds\Sounds</summary>
-        Public ReadOnly Property Sounds As IReadOnlyList(Of INpc_Sounds) Implements INpc.Sounds
+        Public ReadOnly Property Sounds As IReadOnlyList(Of NpcFO4_Sounds)
             Get
                 Return Elementos(Of NpcFO4_Sounds)("Actor Sounds\Sounds", Function(n) New NpcFO4_Sounds(n, Context, Resolver))
             End Get
@@ -5160,25 +5125,25 @@ Namespace Canon
             End Get
         End Property
 
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
+        Public ReadOnly Property Properties As IReadOnlyList(Of NpcFO4_Properties)
+            Get
+                Return Elementos(Of NpcFO4_Properties)("Script\Properties", Function(n) New NpcFO4_Properties(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class NpcFO4_Properties
         Inherits CanonView
-        Implements INpc_Properties
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Properties.Node
-            Get
-                Return Node
-            End Get
-        End Property
-
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyPropertyName As String Implements INpc_Properties.PropertyPropertyName
+        Public Property PropertyPropertyName As String
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -5188,7 +5153,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements INpc_Properties.PropertyType
+        Public Property PropertyType As Byte
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -5198,7 +5163,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements INpc_Properties.PropertyFlags
+        Public Property PropertyFlags As Byte
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -5208,14 +5173,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements INpc_Properties.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>Property\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements INpc_Properties.ObjectV2Alias
+        Public Property ObjectV2Alias As Short
             Get
                 Return CShort(Entero("Property\Object v2\Alias"))
             End Get
@@ -5225,7 +5190,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements INpc_Properties.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger
             Get
                 Return Referencia("Property\Object v2\FormID")
             End Get
@@ -6050,6 +6015,27 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Keywords</summary>
+        Public ReadOnly Property Keywords2 As IReadOnlyList(Of NpcFO4_Keywords2)
+            Get
+                Return Elementos(Of NpcFO4_Keywords2)("Combination\OBTS\Object Mod Template Item\Keywords", Function(n) New NpcFO4_Keywords2(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Includes</summary>
+        Public ReadOnly Property Includes As IReadOnlyList(Of NpcFO4_Includes)
+            Get
+                Return Elementos(Of NpcFO4_Includes)("Combination\OBTS\Object Mod Template Item\Includes", Function(n) New NpcFO4_Includes(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Properties</summary>
+        Public ReadOnly Property Properties3 As IReadOnlyList(Of NpcFO4_Properties3)
+            Get
+                Return Elementos(Of NpcFO4_Properties3)("Combination\OBTS\Object Mod Template Item\Properties", Function(n) New NpcFO4_Properties3(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de Object Template\Combinations\Combination\OBTS\Object Mod Template Item\Keywords.</summary>
@@ -6226,17 +6212,10 @@ Namespace Canon
     ''' <summary>Un elemento de Actor Sounds\Sounds.</summary>
     Public NotInheritable Class NpcFO4_Sounds
         Inherits CanonView
-        Implements INpc_Sounds
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
-
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Sounds.Node
-            Get
-                Return Node
-            End Get
-        End Property
 
         ''' <summary>Sound\CS2K\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
         Public Property SoundKeyword As UInteger
@@ -6249,7 +6228,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Sound\CS2D\Sound  -&gt;  SNDR. Referencia en el espacio del orden de carga.</summary>
-        Public Property SoundSound As UInteger Implements INpc_Sounds.SoundSound
+        Public Property SoundSound As UInteger
             Get
                 Return Referencia("Sound\CS2D\Sound")
             End Get
@@ -15703,52 +15682,10 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Male Tint Layers\Group\Options</summary>
-        Public ReadOnly Property Options As IReadOnlyList(Of RaceFO4_Options)
-            Get
-                Return Elementos(Of RaceFO4_Options)("Male Tint Layers\Group\Options", Function(n) New RaceFO4_Options(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Male Tint Layers\Group\Options\Option\Conditions</summary>
-        Public ReadOnly Property Conditions As IReadOnlyList(Of RaceFO4_Conditions)
-            Get
-                Return Elementos(Of RaceFO4_Conditions)("Male Tint Layers\Group\Options\Option\Conditions", Function(n) New RaceFO4_Conditions(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Male Tint Layers\Group\Options\Option\Textures</summary>
-        Public ReadOnly Property Textures As IReadOnlyList(Of RaceFO4_Textures)
-            Get
-                Return Elementos(Of RaceFO4_Textures)("Male Tint Layers\Group\Options\Option\Textures", Function(n) New RaceFO4_Textures(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Male Tint Layers\Group\Options\Option\TTEC\Template Colors</summary>
-        Public ReadOnly Property TemplateColors As IReadOnlyList(Of RaceFO4_TemplateColors)
-            Get
-                Return Elementos(Of RaceFO4_TemplateColors)("Male Tint Layers\Group\Options\Option\TTEC\Template Colors", Function(n) New RaceFO4_TemplateColors(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Male Morph Groups</summary>
         Public ReadOnly Property MaleMorphGroups As IReadOnlyList(Of RaceFO4_MaleMorphGroups)
             Get
                 Return Elementos(Of RaceFO4_MaleMorphGroups)("Male Morph Groups", Function(n) New RaceFO4_MaleMorphGroups(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Male Morph Groups\Morph Group\Morph Presets</summary>
-        Public ReadOnly Property MorphPresets As IReadOnlyList(Of RaceFO4_MorphPresets)
-            Get
-                Return Elementos(Of RaceFO4_MorphPresets)("Male Morph Groups\Morph Group\Morph Presets", Function(n) New RaceFO4_MorphPresets(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Male Morph Groups\Morph Group\MPGS\Morph Group Sliders</summary>
-        Public ReadOnly Property MorphGroupSliders As IReadOnlyList(Of RaceFO4_MorphGroupSliders)
-            Get
-                Return Elementos(Of RaceFO4_MorphGroupSliders)("Male Morph Groups\Morph Group\MPGS\Morph Group Sliders", Function(n) New RaceFO4_MorphGroupSliders(n, Context, Resolver))
             End Get
         End Property
 
@@ -15794,52 +15731,10 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Female Tint Layers\Group\Options</summary>
-        Public ReadOnly Property Options2 As IReadOnlyList(Of RaceFO4_Options2)
-            Get
-                Return Elementos(Of RaceFO4_Options2)("Female Tint Layers\Group\Options", Function(n) New RaceFO4_Options2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Female Tint Layers\Group\Options\Option\Conditions</summary>
-        Public ReadOnly Property Conditions2 As IReadOnlyList(Of RaceFO4_Conditions2)
-            Get
-                Return Elementos(Of RaceFO4_Conditions2)("Female Tint Layers\Group\Options\Option\Conditions", Function(n) New RaceFO4_Conditions2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Female Tint Layers\Group\Options\Option\Textures</summary>
-        Public ReadOnly Property Textures2 As IReadOnlyList(Of RaceFO4_Textures2)
-            Get
-                Return Elementos(Of RaceFO4_Textures2)("Female Tint Layers\Group\Options\Option\Textures", Function(n) New RaceFO4_Textures2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Female Tint Layers\Group\Options\Option\TTEC\Template Colors</summary>
-        Public ReadOnly Property TemplateColors2 As IReadOnlyList(Of RaceFO4_TemplateColors2)
-            Get
-                Return Elementos(Of RaceFO4_TemplateColors2)("Female Tint Layers\Group\Options\Option\TTEC\Template Colors", Function(n) New RaceFO4_TemplateColors2(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Female Morph Groups</summary>
         Public ReadOnly Property FemaleMorphGroups As IReadOnlyList(Of RaceFO4_FemaleMorphGroups)
             Get
                 Return Elementos(Of RaceFO4_FemaleMorphGroups)("Female Morph Groups", Function(n) New RaceFO4_FemaleMorphGroups(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Female Morph Groups\Morph Group\Morph Presets</summary>
-        Public ReadOnly Property MorphPresets2 As IReadOnlyList(Of RaceFO4_MorphPresets2)
-            Get
-                Return Elementos(Of RaceFO4_MorphPresets2)("Female Morph Groups\Morph Group\Morph Presets", Function(n) New RaceFO4_MorphPresets2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Female Morph Groups\Morph Group\MPGS\Morph Group Sliders</summary>
-        Public ReadOnly Property MorphGroupSliders2 As IReadOnlyList(Of RaceFO4_MorphGroupSliders2)
-            Get
-                Return Elementos(Of RaceFO4_MorphGroupSliders2)("Female Morph Groups\Morph Group\MPGS\Morph Group Sliders", Function(n) New RaceFO4_MorphGroupSliders2(n, Context, Resolver))
             End Get
         End Property
 
@@ -15850,31 +15745,10 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Subgraph Data\Data\Actor Keywords</summary>
-        Public ReadOnly Property ActorKeywords As IReadOnlyList(Of RaceFO4_ActorKeywords)
-            Get
-                Return Elementos(Of RaceFO4_ActorKeywords)("Subgraph Data\Data\Actor Keywords", Function(n) New RaceFO4_ActorKeywords(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Subgraph Data</summary>
         Public ReadOnly Property SubgraphData As IReadOnlyList(Of RaceFO4_SubgraphData)
             Get
                 Return Elementos(Of RaceFO4_SubgraphData)("Subgraph Data", Function(n) New RaceFO4_SubgraphData(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Subgraph Data\Data\Animation Paths</summary>
-        Public ReadOnly Property AnimationPaths As IReadOnlyList(Of RaceFO4_AnimationPaths)
-            Get
-                Return Elementos(Of RaceFO4_AnimationPaths)("Subgraph Data\Data\Animation Paths", Function(n) New RaceFO4_AnimationPaths(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Subgraph Data\Data\Target Keywords</summary>
-        Public ReadOnly Property TargetKeywords As IReadOnlyList(Of RaceFO4_TargetKeywords)
-            Get
-                Return Elementos(Of RaceFO4_TargetKeywords)("Subgraph Data\Data\Target Keywords", Function(n) New RaceFO4_TargetKeywords(n, Context, Resolver))
             End Get
         End Property
 
@@ -15889,20 +15763,6 @@ Namespace Canon
         Public ReadOnly Property BoneScaleData As IReadOnlyList(Of RaceFO4_BoneScaleData)
             Get
                 Return Elementos(Of RaceFO4_BoneScaleData)("Bone Scale Data", Function(n) New RaceFO4_BoneScaleData(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Bone Scale Data\Bone Data Set\Bone Weight Scale Data\Bone Weight Scales</summary>
-        Public ReadOnly Property BoneWeightScales As IReadOnlyList(Of RaceFO4_BoneWeightScales)
-            Get
-                Return Elementos(Of RaceFO4_BoneWeightScales)("Bone Scale Data\Bone Data Set\Bone Weight Scale Data\Bone Weight Scales", Function(n) New RaceFO4_BoneWeightScales(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Bone Scale Data\Bone Data Set\Bone Range Modifier Data\Bone Range Modifiers</summary>
-        Public ReadOnly Property BoneRangeModifiers As IReadOnlyList(Of RaceFO4_BoneRangeModifiers)
-            Get
-                Return Elementos(Of RaceFO4_BoneRangeModifiers)("Bone Scale Data\Bone Data Set\Bone Range Modifier Data\Bone Range Modifiers", Function(n) New RaceFO4_BoneRangeModifiers(n, Context, Resolver))
             End Get
         End Property
 
@@ -16793,6 +16653,13 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Male Tint Layers\Group\Options</summary>
+        Public ReadOnly Property Options As IReadOnlyList(Of RaceFO4_Options)
+            Get
+                Return Elementos(Of RaceFO4_Options)("Group\Options", Function(n) New RaceFO4_Options(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de Male Tint Layers\Group\Options.</summary>
@@ -16861,6 +16728,27 @@ Namespace Canon
             Set(value As Single)
                 Escribir("Option\TTED\Default", value)
             End Set
+        End Property
+
+        ''' <summary>Male Tint Layers\Group\Options\Option\Conditions</summary>
+        Public ReadOnly Property Conditions As IReadOnlyList(Of RaceFO4_Conditions)
+            Get
+                Return Elementos(Of RaceFO4_Conditions)("Option\Conditions", Function(n) New RaceFO4_Conditions(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Male Tint Layers\Group\Options\Option\Textures</summary>
+        Public ReadOnly Property Textures As IReadOnlyList(Of RaceFO4_Textures)
+            Get
+                Return Elementos(Of RaceFO4_Textures)("Option\Textures", Function(n) New RaceFO4_Textures(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Male Tint Layers\Group\Options\Option\TTEC\Template Colors</summary>
+        Public ReadOnly Property TemplateColors As IReadOnlyList(Of RaceFO4_TemplateColors)
+            Get
+                Return Elementos(Of RaceFO4_TemplateColors)("Option\TTEC\Template Colors", Function(n) New RaceFO4_TemplateColors(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -17058,6 +16946,20 @@ Namespace Canon
             Set(value As UShort)
                 Escribir("Morph Group\MPPK\Mask", CLng(value))
             End Set
+        End Property
+
+        ''' <summary>Male Morph Groups\Morph Group\Morph Presets</summary>
+        Public ReadOnly Property MorphPresets As IReadOnlyList(Of RaceFO4_MorphPresets)
+            Get
+                Return Elementos(Of RaceFO4_MorphPresets)("Morph Group\Morph Presets", Function(n) New RaceFO4_MorphPresets(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Male Morph Groups\Morph Group\MPGS\Morph Group Sliders</summary>
+        Public ReadOnly Property MorphGroupSliders As IReadOnlyList(Of RaceFO4_MorphGroupSliders)
+            Get
+                Return Elementos(Of RaceFO4_MorphGroupSliders)("Morph Group\MPGS\Morph Group Sliders", Function(n) New RaceFO4_MorphGroupSliders(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -17290,6 +17192,13 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Female Tint Layers\Group\Options</summary>
+        Public ReadOnly Property Options2 As IReadOnlyList(Of RaceFO4_Options2)
+            Get
+                Return Elementos(Of RaceFO4_Options2)("Group\Options", Function(n) New RaceFO4_Options2(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de Female Tint Layers\Group\Options.</summary>
@@ -17358,6 +17267,27 @@ Namespace Canon
             Set(value As Single)
                 Escribir("Option\TTED\Default", value)
             End Set
+        End Property
+
+        ''' <summary>Female Tint Layers\Group\Options\Option\Conditions</summary>
+        Public ReadOnly Property Conditions2 As IReadOnlyList(Of RaceFO4_Conditions2)
+            Get
+                Return Elementos(Of RaceFO4_Conditions2)("Option\Conditions", Function(n) New RaceFO4_Conditions2(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Female Tint Layers\Group\Options\Option\Textures</summary>
+        Public ReadOnly Property Textures2 As IReadOnlyList(Of RaceFO4_Textures2)
+            Get
+                Return Elementos(Of RaceFO4_Textures2)("Option\Textures", Function(n) New RaceFO4_Textures2(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Female Tint Layers\Group\Options\Option\TTEC\Template Colors</summary>
+        Public ReadOnly Property TemplateColors2 As IReadOnlyList(Of RaceFO4_TemplateColors2)
+            Get
+                Return Elementos(Of RaceFO4_TemplateColors2)("Option\TTEC\Template Colors", Function(n) New RaceFO4_TemplateColors2(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -17557,6 +17487,20 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Female Morph Groups\Morph Group\Morph Presets</summary>
+        Public ReadOnly Property MorphPresets2 As IReadOnlyList(Of RaceFO4_MorphPresets2)
+            Get
+                Return Elementos(Of RaceFO4_MorphPresets2)("Morph Group\Morph Presets", Function(n) New RaceFO4_MorphPresets2(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Female Morph Groups\Morph Group\MPGS\Morph Group Sliders</summary>
+        Public ReadOnly Property MorphGroupSliders2 As IReadOnlyList(Of RaceFO4_MorphGroupSliders2)
+            Get
+                Return Elementos(Of RaceFO4_MorphGroupSliders2)("Morph Group\MPGS\Morph Group Sliders", Function(n) New RaceFO4_MorphGroupSliders2(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de Female Morph Groups\Morph Group\Morph Presets.</summary>
@@ -17669,26 +17613,6 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Subgraph Data\Data\Actor Keywords.</summary>
-    Public NotInheritable Class RaceFO4_ActorKeywords
-        Inherits CanonView
-
-        Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
-            MyBase.New(node, ctx, resolver)
-        End Sub
-
-        ''' <summary>SAKD\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
-        Public Property Keyword As UInteger
-            Get
-                Return Referencia("SAKD\Keyword")
-            End Get
-            Set(value As UInteger)
-                PonerReferencia("SAKD\Keyword", value)
-            End Set
-        End Property
-
-    End Class
-
     ''' <summary>Un elemento de Subgraph Data.</summary>
     Public NotInheritable Class RaceFO4_SubgraphData
         Inherits CanonView
@@ -17739,6 +17663,47 @@ Namespace Canon
             Get
                 Return NombreDeValor("Data\SRAF\Flags\Perspective")
             End Get
+        End Property
+
+        ''' <summary>Subgraph Data\Data\Actor Keywords</summary>
+        Public ReadOnly Property ActorKeywords As IReadOnlyList(Of RaceFO4_ActorKeywords)
+            Get
+                Return Elementos(Of RaceFO4_ActorKeywords)("Data\Actor Keywords", Function(n) New RaceFO4_ActorKeywords(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Subgraph Data\Data\Animation Paths</summary>
+        Public ReadOnly Property AnimationPaths As IReadOnlyList(Of RaceFO4_AnimationPaths)
+            Get
+                Return Elementos(Of RaceFO4_AnimationPaths)("Data\Animation Paths", Function(n) New RaceFO4_AnimationPaths(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Subgraph Data\Data\Target Keywords</summary>
+        Public ReadOnly Property TargetKeywords As IReadOnlyList(Of RaceFO4_TargetKeywords)
+            Get
+                Return Elementos(Of RaceFO4_TargetKeywords)("Data\Target Keywords", Function(n) New RaceFO4_TargetKeywords(n, Context, Resolver))
+            End Get
+        End Property
+
+    End Class
+
+    ''' <summary>Un elemento de Subgraph Data\Data\Actor Keywords.</summary>
+    Public NotInheritable Class RaceFO4_ActorKeywords
+        Inherits CanonView
+
+        Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
+            MyBase.New(node, ctx, resolver)
+        End Sub
+
+        ''' <summary>SAKD\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
+        Public Property Keyword As UInteger
+            Get
+                Return Referencia("SAKD\Keyword")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("SAKD\Keyword", value)
+            End Set
         End Property
 
     End Class
@@ -17849,6 +17814,20 @@ Namespace Canon
             Set(value As UInteger)
                 Escribir("Bone Data Set\Bone Range Modifier Data\BMMP\Range Modifier Target Gender", CLng(value))
             End Set
+        End Property
+
+        ''' <summary>Bone Scale Data\Bone Data Set\Bone Weight Scale Data\Bone Weight Scales</summary>
+        Public ReadOnly Property BoneWeightScales As IReadOnlyList(Of RaceFO4_BoneWeightScales)
+            Get
+                Return Elementos(Of RaceFO4_BoneWeightScales)("Bone Data Set\Bone Weight Scale Data\Bone Weight Scales", Function(n) New RaceFO4_BoneWeightScales(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Bone Scale Data\Bone Data Set\Bone Range Modifier Data\Bone Range Modifiers</summary>
+        Public ReadOnly Property BoneRangeModifiers As IReadOnlyList(Of RaceFO4_BoneRangeModifiers)
+            Get
+                Return Elementos(Of RaceFO4_BoneRangeModifiers)("Bone Data Set\Bone Range Modifier Data\Bone Range Modifiers", Function(n) New RaceFO4_BoneRangeModifiers(n, Context, Resolver))
+            End Get
         End Property
 
     End Class

@@ -912,13 +912,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        Public ReadOnly Property Properties As IReadOnlyList(Of IArmo_Properties) Implements IArmo.Properties
-            Get
-                Return Elementos(Of ArmoSSE_Properties)("VMAD\Virtual Machine Adapter\Scripts\Script\Properties", Function(n) New ArmoSSE_Properties(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Male\World Model\MO2S\Alternate Textures</summary>
         Public ReadOnly Property AlternateTextures As IReadOnlyList(Of ArmoSSE_AlternateTextures)
             Get
@@ -937,13 +930,6 @@ Namespace Canon
         Public ReadOnly Property Stages As IReadOnlyList(Of IArmo_Stages) Implements IArmo.Stages
             Get
                 Return Elementos(Of ArmoSSE_Stages)("Destructible\Stages", Function(n) New ArmoSSE_Stages(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Destructible\Stages\Stage\Model\DMDS\Alternate Textures</summary>
-        Public ReadOnly Property AlternateTextures3 As IReadOnlyList(Of ArmoSSE_AlternateTextures3)
-            Get
-                Return Elementos(Of ArmoSSE_AlternateTextures3)("Destructible\Stages\Stage\Model\DMDS\Alternate Textures", Function(n) New ArmoSSE_AlternateTextures3(n, Context, Resolver))
             End Get
         End Property
 
@@ -1005,25 +991,25 @@ Namespace Canon
             End Get
         End Property
 
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
+        Public ReadOnly Property Properties As IReadOnlyList(Of ArmoSSE_Properties)
+            Get
+                Return Elementos(Of ArmoSSE_Properties)("Script\Properties", Function(n) New ArmoSSE_Properties(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class ArmoSSE_Properties
         Inherits CanonView
-        Implements IArmo_Properties
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Properties.Node
-            Get
-                Return Node
-            End Get
-        End Property
-
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyPropertyName As String Implements IArmo_Properties.PropertyPropertyName
+        Public Property PropertyPropertyName As String
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -1033,7 +1019,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IArmo_Properties.PropertyType
+        Public Property PropertyType As Byte
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -1043,7 +1029,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IArmo_Properties.PropertyFlags
+        Public Property PropertyFlags As Byte
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -1053,14 +1039,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IArmo_Properties.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>Property\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IArmo_Properties.ObjectV2Alias
+        Public Property ObjectV2Alias As Short
             Get
                 Return CShort(Entero("Property\Object v2\Alias"))
             End Get
@@ -1070,7 +1056,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IArmo_Properties.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger
             Get
                 Return Referencia("Property\Object v2\FormID")
             End Get
@@ -1304,6 +1290,13 @@ Namespace Canon
             Set(value As String)
                 Escribir("Stage\Model\DMDL\Model FileName", value)
             End Set
+        End Property
+
+        ''' <summary>Destructible\Stages\Stage\Model\DMDS\Alternate Textures</summary>
+        Public ReadOnly Property AlternateTextures3 As IReadOnlyList(Of ArmoSSE_AlternateTextures3)
+            Get
+                Return Elementos(Of ArmoSSE_AlternateTextures3)("Stage\Model\DMDS\Alternate Textures", Function(n) New ArmoSSE_AlternateTextures3(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -3933,13 +3926,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        Public ReadOnly Property Properties As IReadOnlyList(Of INpc_Properties) Implements INpc.Properties
-            Get
-                Return Elementos(Of NpcSSE_Properties)("VMAD\Virtual Machine Adapter\Scripts\Script\Properties", Function(n) New NpcSSE_Properties(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Factions</summary>
         Public ReadOnly Property Factions As IReadOnlyList(Of INpc_Factions) Implements INpc.Factions
             Get
@@ -3958,13 +3944,6 @@ Namespace Canon
         Public ReadOnly Property Stages As IReadOnlyList(Of INpc_Stages) Implements INpc.Stages
             Get
                 Return Elementos(Of NpcSSE_Stages)("Destructible\Stages", Function(n) New NpcSSE_Stages(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Destructible\Stages\Stage\Model\DMDS\Alternate Textures</summary>
-        Public ReadOnly Property AlternateTextures As IReadOnlyList(Of NpcSSE_AlternateTextures)
-            Get
-                Return Elementos(Of NpcSSE_AlternateTextures)("Destructible\Stages\Stage\Model\DMDS\Alternate Textures", Function(n) New NpcSSE_AlternateTextures(n, Context, Resolver))
             End Get
         End Property
 
@@ -4031,13 +4010,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Sound Types\Sound Type\Sounds</summary>
-        Public ReadOnly Property Sounds As IReadOnlyList(Of INpc_Sounds) Implements INpc.Sounds
-            Get
-                Return Elementos(Of NpcSSE_Sounds)("Sound Types\Sound Type\Sounds", Function(n) New NpcSSE_Sounds(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Tint Layers</summary>
         Public ReadOnly Property TintLayers As IReadOnlyList(Of NpcSSE_TintLayers)
             Get
@@ -4089,25 +4061,25 @@ Namespace Canon
             End Get
         End Property
 
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
+        Public ReadOnly Property Properties As IReadOnlyList(Of NpcSSE_Properties)
+            Get
+                Return Elementos(Of NpcSSE_Properties)("Script\Properties", Function(n) New NpcSSE_Properties(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class NpcSSE_Properties
         Inherits CanonView
-        Implements INpc_Properties
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Properties.Node
-            Get
-                Return Node
-            End Get
-        End Property
-
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyPropertyName As String Implements INpc_Properties.PropertyPropertyName
+        Public Property PropertyPropertyName As String
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -4117,7 +4089,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements INpc_Properties.PropertyType
+        Public Property PropertyType As Byte
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -4127,7 +4099,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements INpc_Properties.PropertyFlags
+        Public Property PropertyFlags As Byte
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -4137,14 +4109,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements INpc_Properties.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>Property\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements INpc_Properties.ObjectV2Alias
+        Public Property ObjectV2Alias As Short
             Get
                 Return CShort(Entero("Property\Object v2\Alias"))
             End Get
@@ -4154,7 +4126,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements INpc_Properties.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger
             Get
                 Return Referencia("Property\Object v2\FormID")
             End Get
@@ -4372,6 +4344,13 @@ Namespace Canon
             Set(value As String)
                 Escribir("Stage\Model\DMDL\Model FileName", value)
             End Set
+        End Property
+
+        ''' <summary>Destructible\Stages\Stage\Model\DMDS\Alternate Textures</summary>
+        Public ReadOnly Property AlternateTextures As IReadOnlyList(Of NpcSSE_AlternateTextures)
+            Get
+                Return Elementos(Of NpcSSE_AlternateTextures)("Stage\Model\DMDS\Alternate Textures", Function(n) New NpcSSE_AlternateTextures(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -4846,25 +4825,25 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Sound Types\Sound Type\Sounds</summary>
+        Public ReadOnly Property Sounds As IReadOnlyList(Of NpcSSE_Sounds)
+            Get
+                Return Elementos(Of NpcSSE_Sounds)("Sound Type\Sounds", Function(n) New NpcSSE_Sounds(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de Sound Types\Sound Type\Sounds.</summary>
     Public NotInheritable Class NpcSSE_Sounds
         Inherits CanonView
-        Implements INpc_Sounds
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Sounds.Node
-            Get
-                Return Node
-            End Get
-        End Property
-
         ''' <summary>Sound\CSDI\Sound  -&gt;  SNDR / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property SoundSound As UInteger Implements INpc_Sounds.SoundSound
+        Public Property SoundSound As UInteger
             Get
                 Return Referencia("Sound\CSDI\Sound")
             End Get
@@ -15693,24 +15672,10 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Body Data\Male Body Data\Parts\Part\Model\MODS\Alternate Textures</summary>
-        Public ReadOnly Property AlternateTextures As IReadOnlyList(Of RaceSSE_AlternateTextures)
-            Get
-                Return Elementos(Of RaceSSE_AlternateTextures)("Body Data\Male Body Data\Parts\Part\Model\MODS\Alternate Textures", Function(n) New RaceSSE_AlternateTextures(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Body Data\Female Body Data\Parts</summary>
         Public ReadOnly Property Parts2 As IReadOnlyList(Of IRace_Parts2) Implements IRace.Parts2
             Get
                 Return Elementos(Of RaceSSE_Parts2)("Body Data\Female Body Data\Parts", Function(n) New RaceSSE_Parts2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Body Data\Female Body Data\Parts\Part\Model\MODS\Alternate Textures</summary>
-        Public ReadOnly Property AlternateTextures2 As IReadOnlyList(Of RaceSSE_AlternateTextures2)
-            Get
-                Return Elementos(Of RaceSSE_AlternateTextures2)("Body Data\Female Body Data\Parts\Part\Model\MODS\Alternate Textures", Function(n) New RaceSSE_AlternateTextures2(n, Context, Resolver))
             End Get
         End Property
 
@@ -15805,13 +15770,6 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>Head Data\Male Head Data\Tint Masks\Tint Assets\Presets</summary>
-        Public ReadOnly Property Presets As IReadOnlyList(Of RaceSSE_Presets)
-            Get
-                Return Elementos(Of RaceSSE_Presets)("Head Data\Male Head Data\Tint Masks\Tint Assets\Presets", Function(n) New RaceSSE_Presets(n, Context, Resolver))
-            End Get
-        End Property
-
         ''' <summary>Head Data\Male Head Data\Model\MODS\Alternate Textures</summary>
         Public ReadOnly Property AlternateTextures5 As IReadOnlyList(Of RaceSSE_AlternateTextures5)
             Get
@@ -15851,13 +15809,6 @@ Namespace Canon
         Public ReadOnly Property TintMasks2 As IReadOnlyList(Of RaceSSE_TintMasks2)
             Get
                 Return Elementos(Of RaceSSE_TintMasks2)("Head Data\Female Head Data\Tint Masks", Function(n) New RaceSSE_TintMasks2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Head Data\Female Head Data\Tint Masks\Tint Assets\Presets</summary>
-        Public ReadOnly Property Presets2 As IReadOnlyList(Of RaceSSE_Presets2)
-            Get
-                Return Elementos(Of RaceSSE_Presets2)("Head Data\Female Head Data\Tint Masks\Tint Assets\Presets", Function(n) New RaceSSE_Presets2(n, Context, Resolver))
             End Get
         End Property
 
@@ -16277,6 +16228,13 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Body Data\Male Body Data\Parts\Part\Model\MODS\Alternate Textures</summary>
+        Public ReadOnly Property AlternateTextures As IReadOnlyList(Of RaceSSE_AlternateTextures)
+            Get
+                Return Elementos(Of RaceSSE_AlternateTextures)("Part\Model\MODS\Alternate Textures", Function(n) New RaceSSE_AlternateTextures(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de Body Data\Male Body Data\Parts\Part\Model\MODS\Alternate Textures.</summary>
@@ -16342,6 +16300,13 @@ Namespace Canon
             Set(value As String)
                 Escribir("Part\Model\MODL\Model FileName", value)
             End Set
+        End Property
+
+        ''' <summary>Body Data\Female Body Data\Parts\Part\Model\MODS\Alternate Textures</summary>
+        Public ReadOnly Property AlternateTextures2 As IReadOnlyList(Of RaceSSE_AlternateTextures2)
+            Get
+                Return Elementos(Of RaceSSE_AlternateTextures2)("Part\Model\MODS\Alternate Textures", Function(n) New RaceSSE_AlternateTextures2(n, Context, Resolver))
+            End Get
         End Property
 
     End Class
@@ -16845,6 +16810,13 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Head Data\Male Head Data\Tint Masks\Tint Assets\Presets</summary>
+        Public ReadOnly Property Presets As IReadOnlyList(Of RaceSSE_Presets)
+            Get
+                Return Elementos(Of RaceSSE_Presets)("Tint Assets\Presets", Function(n) New RaceSSE_Presets(n, Context, Resolver))
+            End Get
+        End Property
+
     End Class
 
     ''' <summary>Un elemento de Head Data\Male Head Data\Tint Masks\Tint Assets\Presets.</summary>
@@ -17063,6 +17035,13 @@ Namespace Canon
             Set(value As UInteger)
                 PonerReferencia("Tint Assets\Tint Layer\TIND\Preset Default", value)
             End Set
+        End Property
+
+        ''' <summary>Head Data\Female Head Data\Tint Masks\Tint Assets\Presets</summary>
+        Public ReadOnly Property Presets2 As IReadOnlyList(Of RaceSSE_Presets2)
+            Get
+                Return Elementos(Of RaceSSE_Presets2)("Tint Assets\Presets", Function(n) New RaceSSE_Presets2(n, Context, Resolver))
+            End Get
         End Property
 
     End Class

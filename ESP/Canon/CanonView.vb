@@ -33,6 +33,25 @@
                 Return Context.FormID
             End Get
         End Property
+
+        ''' <summary>Banderas de la CABECERA del record.
+        '''
+        ''' <para>No salen del árbol: la cabecera son 24 bytes que van delante de los subrecords y
+        ''' llevan cosas que valen para el record entero — si está borrado, si es una plantilla, si
+        ''' trae datos de escultura. Varios campos que la aplicación usa salen de acá y no de un
+        ''' campo, y por eso hay que poder preguntarlo desde la vista.</para></summary>
+        Public ReadOnly Property RecordFlags As UInteger
+            Get
+                If Context Is Nothing Then Return 0UI
+                Return Context.RecordFlags
+            End Get
+        End Property
+
+        ''' <summary>Un bit con nombre de las banderas de la cabecera.</summary>
+        Public Function BanderaDeCabecera(bitIndex As Integer) As Boolean
+            Return (RecordFlags And (1UI << bitIndex)) <> 0UI
+        End Function
+
         Public ReadOnly Property IsEmpty As Boolean
             Get
                 Return Node Is Nothing

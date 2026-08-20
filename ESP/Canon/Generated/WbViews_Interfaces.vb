@@ -136,8 +136,6 @@ Namespace Canon
         Property TemplateArmor As UInteger
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts</summary>
         ReadOnly Property Scripts As IReadOnlyList(Of IArmo_Scripts)
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        ReadOnly Property Properties As IReadOnlyList(Of IArmo_Properties)
         ''' <summary>Destructible\Stages</summary>
         ReadOnly Property Stages As IReadOnlyList(Of IArmo_Stages)
         ''' <summary>Keywords\KWDA\Keywords</summary>
@@ -153,23 +151,6 @@ Namespace Canon
         Property ScriptFlags As Byte
         ''' <summary>Nombre del valor de Script\Flags.</summary>
         ReadOnly Property ScriptFlagsNombre As String
-    End Interface
-
-    ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties, en lo que los dos juegos comparten.</summary>
-    Public Interface IArmo_Properties
-        ReadOnly Property Node As WbNode
-        ''' <summary>Property\propertyName</summary>
-        Property PropertyPropertyName As String
-        ''' <summary>Property\Type</summary>
-        Property PropertyType As Byte
-        ''' <summary>Property\Flags</summary>
-        Property PropertyFlags As Byte
-        ''' <summary>Nombre del valor de Property\Flags.</summary>
-        ReadOnly Property PropertyFlagsNombre As String
-        ''' <summary>Property\Object v2\Alias</summary>
-        Property ObjectV2Alias As Short
-        ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Property ObjectV2FormID As UInteger
     End Interface
 
     ''' <summary>Un elemento de Destructible\Stages, en lo que los dos juegos comparten.</summary>
@@ -655,8 +636,6 @@ Namespace Canon
         Property TextureLightingBlue As Single
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts</summary>
         ReadOnly Property Scripts As IReadOnlyList(Of INpc_Scripts)
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties</summary>
-        ReadOnly Property Properties As IReadOnlyList(Of INpc_Properties)
         ''' <summary>Factions</summary>
         ReadOnly Property Factions As IReadOnlyList(Of INpc_Factions)
         ''' <summary>Actor Effects</summary>
@@ -675,8 +654,6 @@ Namespace Canon
         ReadOnly Property Keywords As IReadOnlyList(Of INpc_Keywords)
         ''' <summary>Head Parts</summary>
         ReadOnly Property HeadParts As IReadOnlyList(Of INpc_HeadParts)
-        ''' <summary>Actor Sounds\Sounds</summary>
-        ReadOnly Property Sounds As IReadOnlyList(Of INpc_Sounds)
     End Interface
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts, en lo que los dos juegos comparten.</summary>
@@ -688,23 +665,6 @@ Namespace Canon
         Property ScriptFlags As Byte
         ''' <summary>Nombre del valor de Script\Flags.</summary>
         ReadOnly Property ScriptFlagsNombre As String
-    End Interface
-
-    ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties, en lo que los dos juegos comparten.</summary>
-    Public Interface INpc_Properties
-        ReadOnly Property Node As WbNode
-        ''' <summary>Property\propertyName</summary>
-        Property PropertyPropertyName As String
-        ''' <summary>Property\Type</summary>
-        Property PropertyType As Byte
-        ''' <summary>Property\Flags</summary>
-        Property PropertyFlags As Byte
-        ''' <summary>Nombre del valor de Property\Flags.</summary>
-        ReadOnly Property PropertyFlagsNombre As String
-        ''' <summary>Property\Object v2\Alias</summary>
-        Property ObjectV2Alias As Short
-        ''' <summary>Property\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Property ObjectV2FormID As UInteger
     End Interface
 
     ''' <summary>Un elemento de Factions, en lo que los dos juegos comparten.</summary>
@@ -830,13 +790,6 @@ Namespace Canon
         ReadOnly Property Node As WbNode
         ''' <summary>PNAM\Head Part  -&gt;  HDPT. Referencia en el espacio del orden de carga.</summary>
         Property HeadPart As UInteger
-    End Interface
-
-    ''' <summary>Un elemento de Actor Sounds\Sounds, en lo que los dos juegos comparten.</summary>
-    Public Interface INpc_Sounds
-        ReadOnly Property Node As WbNode
-        ''' <summary>Sound\CS2D\Sound  -&gt;  SNDR. Referencia en el espacio del orden de carga.</summary>
-        Property SoundSound As UInteger
     End Interface
 
     ''' <summary>Campos de un record OMOD que los dos juegos declaran igual.
