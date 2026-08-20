@@ -272,6 +272,6 @@ Public Class RaceCompatibilityCatalog
         If flstFormID = 0UI Then Return New List(Of UInteger)
         Dim rec = pm.GetRecord(flstFormID)
         If rec Is Nothing OrElse rec.Header.Signature <> "FLST" Then Return New List(Of UInteger)
-        Return RecordParsers.ParseFLST(rec, pm).ItemFormIDs
+        Return Canon.CanonRecords.FormList(rec, pm).ItemFormIDs
     End Function
 End Class

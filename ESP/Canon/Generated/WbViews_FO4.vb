@@ -568,6 +568,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
         ''' <summary>EITM\Enchantment  -&gt;  ENCH. Referencia en el espacio del orden de carga.</summary>
         Public Property Enchantment As UInteger
             Get
@@ -807,6 +817,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Description As String
+            Get
+                Return TextoTraducible("DESC\Description")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("DESC\Description", value)
+            End Set
+        End Property
+
         ''' <summary>INRD\Instance Naming  -&gt;  INNR. Referencia en el espacio del orden de carga.</summary>
         Public Property InstanceNaming As UInteger
             Get
@@ -991,6 +1011,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Script\ScriptName</summary>
+        Public Property ScriptScriptName As String
+            Get
+                Return Txt("Script\ScriptName")
+            End Get
+            Set(value As String)
+                Escribir("Script\ScriptName", value)
+            End Set
+        End Property
+
         ''' <summary>Script\Flags</summary>
         Public Property ScriptFlags As Byte
             Get
@@ -1017,6 +1047,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Property\propertyName</summary>
+        Public Property PropertyPropertyName As String
+            Get
+                Return Txt("Property\propertyName")
+            End Get
+            Set(value As String)
+                Escribir("Property\propertyName", value)
+            End Set
+        End Property
 
         ''' <summary>Property\Type</summary>
         Public Property PropertyType As Byte
@@ -1391,6 +1431,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Combination\FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property CombinationName As String
+            Get
+                Return TextoTraducible("Combination\FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Combination\FULL\Name", value)
+            End Set
+        End Property
+
         ''' <summary>Combination\OBTS\Object Mod Template Item\Include Count</summary>
         Public Property ObjectModTemplateItemIncludeCount As UInteger
             Get
@@ -1691,6 +1741,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Body Part\BPTN\Part Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property BodyPartPartName As String
+            Get
+                Return TextoTraducible("Body Part\BPTN\Part Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Body Part\BPTN\Part Name", value)
+            End Set
+        End Property
 
         ''' <summary>Body Part\BPNN\Part Node</summary>
         Public Property BodyPartPartNode As String
@@ -2262,6 +2322,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
         ''' <summary>CNAM\Color/Index</summary>
         Public Property ColorIndex As UInteger
             Get
@@ -2426,6 +2496,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
         ''' <summary>FormIDs</summary>
         Public ReadOnly Property FormIDs As IReadOnlyList(Of FlstFO4_FormIDs)
             Get
@@ -2470,6 +2550,16 @@ Namespace Canon
             End Get
             Set(value As String)
                 Escribir("EDID\Editor ID", value)
+            End Set
+        End Property
+
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
             End Set
         End Property
 
@@ -2858,6 +2948,16 @@ Namespace Canon
             End Get
             Set(value As UInteger)
                 PonerReferencia("LVSG\Epic Loot Chance", value)
+            End Set
+        End Property
+
+        ''' <summary>ONAM\Override Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property OverrideName As String
+            Get
+                Return TextoTraducible("ONAM\Override Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("ONAM\Override Name", value)
             End Set
         End Property
 
@@ -4237,6 +4337,26 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
+        ''' <summary>SHRT\Short Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property ShortName As String
+            Get
+                Return TextoTraducible("SHRT\Short Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("SHRT\Short Name", value)
+            End Set
+        End Property
+
         ''' <summary>DNAM\Calculated Health</summary>
         Public Property CalculatedHealth As UShort
             Get
@@ -4567,6 +4687,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>ATTX\Activate Text Override. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property ActivateTextOverride As String
+            Get
+                Return TextoTraducible("ATTX\Activate Text Override")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("ATTX\Activate Text Override", value)
+            End Set
+        End Property
+
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts</summary>
         Public ReadOnly Property Scripts As IReadOnlyList(Of NpcFO4_Scripts)
             Get
@@ -4738,6 +4868,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Script\ScriptName</summary>
+        Public Property ScriptScriptName As String
+            Get
+                Return Txt("Script\ScriptName")
+            End Get
+            Set(value As String)
+                Escribir("Script\ScriptName", value)
+            End Set
+        End Property
+
         ''' <summary>Script\Flags</summary>
         Public Property ScriptFlags As Byte
             Get
@@ -4764,6 +4904,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Property\propertyName</summary>
+        Public Property PropertyPropertyName As String
+            Get
+                Return Txt("Property\propertyName")
+            End Get
+            Set(value As String)
+                Escribir("Property\propertyName", value)
+            End Set
+        End Property
 
         ''' <summary>Property\Type</summary>
         Public Property PropertyType As Byte
@@ -5472,6 +5622,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Combination\FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property CombinationName As String
+            Get
+                Return TextoTraducible("Combination\FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Combination\FULL\Name", value)
+            End Set
+        End Property
+
         ''' <summary>Combination\OBTS\Object Mod Template Item\Include Count</summary>
         Public Property ObjectModTemplateItemIncludeCount As UInteger
             Get
@@ -5983,6 +6143,26 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
+        ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Description As String
+            Get
+                Return TextoTraducible("DESC\Description")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("DESC\Description", value)
+            End Set
+        End Property
+
         ''' <summary>Model\MODL\Model FileName</summary>
         Public Property ModelModelFileName As String
             Get
@@ -6463,6 +6643,26 @@ Namespace Canon
             End Get
             Set(value As UInteger)
                 PonerReferencia("STCP\Animation Sound", value)
+            End Set
+        End Property
+
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
+        ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Description As String
+            Get
+                Return TextoTraducible("DESC\Description")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("DESC\Description", value)
             End Set
         End Property
 
@@ -15006,6 +15206,13 @@ Namespace Canon
             End Get
         End Property
 
+        ''' <summary>Male Tint Layers</summary>
+        Public ReadOnly Property MaleTintLayers As IReadOnlyList(Of RaceFO4_MaleTintLayers)
+            Get
+                Return Elementos(Of RaceFO4_MaleTintLayers)("Male Tint Layers", Function(n) New RaceFO4_MaleTintLayers(n, Context, Resolver))
+            End Get
+        End Property
+
         ''' <summary>Male Tint Layers\Group\Options</summary>
         Public ReadOnly Property Options As IReadOnlyList(Of RaceFO4_Options)
             Get
@@ -15031,13 +15238,6 @@ Namespace Canon
         Public ReadOnly Property TemplateColors As IReadOnlyList(Of RaceFO4_TemplateColors)
             Get
                 Return Elementos(Of RaceFO4_TemplateColors)("Male Tint Layers\Group\Options\Option\TTEC\Template Colors", Function(n) New RaceFO4_TemplateColors(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Male Tint Layers</summary>
-        Public ReadOnly Property MaleTintLayers As IReadOnlyList(Of RaceFO4_MaleTintLayers)
-            Get
-                Return Elementos(Of RaceFO4_MaleTintLayers)("Male Tint Layers", Function(n) New RaceFO4_MaleTintLayers(n, Context, Resolver))
             End Get
         End Property
 
@@ -15097,6 +15297,13 @@ Namespace Canon
             End Get
         End Property
 
+        ''' <summary>Female Tint Layers</summary>
+        Public ReadOnly Property FemaleTintLayers As IReadOnlyList(Of RaceFO4_FemaleTintLayers)
+            Get
+                Return Elementos(Of RaceFO4_FemaleTintLayers)("Female Tint Layers", Function(n) New RaceFO4_FemaleTintLayers(n, Context, Resolver))
+            End Get
+        End Property
+
         ''' <summary>Female Tint Layers\Group\Options</summary>
         Public ReadOnly Property Options2 As IReadOnlyList(Of RaceFO4_Options2)
             Get
@@ -15122,13 +15329,6 @@ Namespace Canon
         Public ReadOnly Property TemplateColors2 As IReadOnlyList(Of RaceFO4_TemplateColors2)
             Get
                 Return Elementos(Of RaceFO4_TemplateColors2)("Female Tint Layers\Group\Options\Option\TTEC\Template Colors", Function(n) New RaceFO4_TemplateColors2(n, Context, Resolver))
-            End Get
-        End Property
-
-        ''' <summary>Female Tint Layers</summary>
-        Public ReadOnly Property FemaleTintLayers As IReadOnlyList(Of RaceFO4_FemaleTintLayers)
-            Get
-                Return Elementos(Of RaceFO4_FemaleTintLayers)("Female Tint Layers", Function(n) New RaceFO4_FemaleTintLayers(n, Context, Resolver))
             End Get
         End Property
 
@@ -15992,6 +16192,36 @@ Namespace Canon
 
     End Class
 
+    ''' <summary>Un elemento de Male Tint Layers.</summary>
+    Public NotInheritable Class RaceFO4_MaleTintLayers
+        Inherits CanonView
+
+        Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
+            MyBase.New(node, ctx, resolver)
+        End Sub
+
+        ''' <summary>Group\TTGP\Group Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property GroupGroupName As String
+            Get
+                Return TextoTraducible("Group\TTGP\Group Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Group\TTGP\Group Name", value)
+            End Set
+        End Property
+
+        ''' <summary>Group\TTGE\Category Index</summary>
+        Public Property GroupCategoryIndex As UInteger
+            Get
+                Return CUInt(Entero("Group\TTGE\Category Index"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Group\TTGE\Category Index", CLng(value))
+            End Set
+        End Property
+
+    End Class
+
     ''' <summary>Un elemento de Male Tint Layers\Group\Options.</summary>
     Public NotInheritable Class RaceFO4_Options
         Inherits CanonView
@@ -16017,6 +16247,16 @@ Namespace Canon
             End Get
             Set(value As UShort)
                 Escribir("Option\TETI\Index\Index", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Option\TTGP\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property OptionName As String
+            Get
+                Return TextoTraducible("Option\TTGP\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Option\TTGP\Name", value)
             End Set
         End Property
 
@@ -16209,26 +16449,6 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Male Tint Layers.</summary>
-    Public NotInheritable Class RaceFO4_MaleTintLayers
-        Inherits CanonView
-
-        Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
-            MyBase.New(node, ctx, resolver)
-        End Sub
-
-        ''' <summary>Group\TTGE\Category Index</summary>
-        Public Property GroupCategoryIndex As UInteger
-            Get
-                Return CUInt(Entero("Group\TTGE\Category Index"))
-            End Get
-            Set(value As UInteger)
-                Escribir("Group\TTGE\Category Index", CLng(value))
-            End Set
-        End Property
-
-    End Class
-
     ''' <summary>Un elemento de Male Morph Groups.</summary>
     Public NotInheritable Class RaceFO4_MaleMorphGroups
         Inherits CanonView
@@ -16284,6 +16504,16 @@ Namespace Canon
             End Get
             Set(value As UInteger)
                 Escribir("Morph Preset\MPPI\Index", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Morph Preset\MPPN\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property MorphPresetName As String
+            Get
+                Return TextoTraducible("Morph Preset\MPPN\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Morph Preset\MPPN\Name", value)
             End Set
         End Property
 
@@ -16354,6 +16584,16 @@ Namespace Canon
             End Get
             Set(value As UInteger)
                 Escribir("Face Morph\FMRI\Index", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Face Morph\FMRN\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property FaceMorphName As String
+            Get
+                Return TextoTraducible("Face Morph\FMRN\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Face Morph\FMRN\Name", value)
             End Set
         End Property
 
@@ -16449,6 +16689,36 @@ Namespace Canon
 
     End Class
 
+    ''' <summary>Un elemento de Female Tint Layers.</summary>
+    Public NotInheritable Class RaceFO4_FemaleTintLayers
+        Inherits CanonView
+
+        Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
+            MyBase.New(node, ctx, resolver)
+        End Sub
+
+        ''' <summary>Group\TTGP\Group Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property GroupGroupName As String
+            Get
+                Return TextoTraducible("Group\TTGP\Group Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Group\TTGP\Group Name", value)
+            End Set
+        End Property
+
+        ''' <summary>Group\TTGE\Category Index</summary>
+        Public Property GroupCategoryIndex As UInteger
+            Get
+                Return CUInt(Entero("Group\TTGE\Category Index"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Group\TTGE\Category Index", CLng(value))
+            End Set
+        End Property
+
+    End Class
+
     ''' <summary>Un elemento de Female Tint Layers\Group\Options.</summary>
     Public NotInheritable Class RaceFO4_Options2
         Inherits CanonView
@@ -16474,6 +16744,16 @@ Namespace Canon
             End Get
             Set(value As UShort)
                 Escribir("Option\TETI\Index\Index", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Option\TTGP\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property OptionName As String
+            Get
+                Return TextoTraducible("Option\TTGP\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Option\TTGP\Name", value)
             End Set
         End Property
 
@@ -16666,26 +16946,6 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Female Tint Layers.</summary>
-    Public NotInheritable Class RaceFO4_FemaleTintLayers
-        Inherits CanonView
-
-        Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
-            MyBase.New(node, ctx, resolver)
-        End Sub
-
-        ''' <summary>Group\TTGE\Category Index</summary>
-        Public Property GroupCategoryIndex As UInteger
-            Get
-                Return CUInt(Entero("Group\TTGE\Category Index"))
-            End Get
-            Set(value As UInteger)
-                Escribir("Group\TTGE\Category Index", CLng(value))
-            End Set
-        End Property
-
-    End Class
-
     ''' <summary>Un elemento de Female Morph Groups.</summary>
     Public NotInheritable Class RaceFO4_FemaleMorphGroups
         Inherits CanonView
@@ -16741,6 +17001,16 @@ Namespace Canon
             End Get
             Set(value As UInteger)
                 Escribir("Morph Preset\MPPI\Index", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Morph Preset\MPPN\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property MorphPresetName As String
+            Get
+                Return TextoTraducible("Morph Preset\MPPN\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Morph Preset\MPPN\Name", value)
             End Set
         End Property
 
@@ -16811,6 +17081,16 @@ Namespace Canon
             End Get
             Set(value As UInteger)
                 Escribir("Face Morph\FMRI\Index", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Face Morph\FMRN\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property FaceMorphName As String
+            Get
+                Return TextoTraducible("Face Morph\FMRN\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Face Morph\FMRN\Name", value)
             End Set
         End Property
 

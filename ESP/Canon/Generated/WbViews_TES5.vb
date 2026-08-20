@@ -311,6 +311,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -340,6 +350,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -371,6 +391,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -400,6 +430,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -538,6 +578,16 @@ Namespace Canon
             End Get
             Set(value As Short)
                 Escribir("OBND\Object Bounds\Z2", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
             End Set
         End Property
 
@@ -770,6 +820,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Description As String
+            Get
+                Return TextoTraducible("DESC\Description")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("DESC\Description", value)
+            End Set
+        End Property
+
         ''' <summary>DATA\Data\Value</summary>
         Public Property DataValue As Integer
             Get
@@ -876,6 +936,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Script\ScriptName</summary>
+        Public Property ScriptScriptName As String
+            Get
+                Return Txt("Script\ScriptName")
+            End Get
+            Set(value As String)
+                Escribir("Script\ScriptName", value)
+            End Set
+        End Property
+
         ''' <summary>Script\Flags</summary>
         Public Property ScriptFlags As Byte
             Get
@@ -902,6 +972,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Property\propertyName</summary>
+        Public Property PropertyPropertyName As String
+            Get
+                Return Txt("Property\propertyName")
+            End Get
+            Set(value As String)
+                Escribir("Property\propertyName", value)
+            End Set
+        End Property
 
         ''' <summary>Property\Type</summary>
         Public Property PropertyType As Byte
@@ -960,6 +1040,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -989,6 +1079,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -1157,6 +1257,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -1271,6 +1381,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -1300,6 +1420,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Body Part\BPTN\Part Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property BodyPartPartName As String
+            Get
+                Return TextoTraducible("Body Part\BPTN\Part Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("Body Part\BPTN\Part Name", value)
+            End Set
+        End Property
 
         ''' <summary>Body Part\PNAM\Pose Matching</summary>
         Public Property BodyPartPoseMatching As String
@@ -1722,6 +1852,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
         ''' <summary>CNAM\Color\Red</summary>
         Public Property ColorRed As Byte
             Get
@@ -1839,6 +1979,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
         ''' <summary>Model\MODL\Model FileName</summary>
         Public Property ModelModelFileName As String
             Get
@@ -1929,6 +2079,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -2400,6 +2560,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -3093,6 +3263,26 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
+        ''' <summary>SHRT\Short Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property ShortName As String
+            Get
+                Return TextoTraducible("SHRT\Short Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("SHRT\Short Name", value)
+            End Set
+        End Property
+
         ''' <summary>DNAM\Player Skills\Health</summary>
         Public Property PlayerSkillsHealth As UShort
             Get
@@ -3642,6 +3832,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Script\ScriptName</summary>
+        Public Property ScriptScriptName As String
+            Get
+                Return Txt("Script\ScriptName")
+            End Get
+            Set(value As String)
+                Escribir("Script\ScriptName", value)
+            End Set
+        End Property
+
         ''' <summary>Script\Flags</summary>
         Public Property ScriptFlags As Byte
             Get
@@ -3668,6 +3868,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Property\propertyName</summary>
+        Public Property PropertyPropertyName As String
+            Get
+                Return Txt("Property\propertyName")
+            End Get
+            Set(value As String)
+                Escribir("Property\propertyName", value)
+            End Set
+        End Property
 
         ''' <summary>Property\Type</summary>
         Public Property PropertyType As Byte
@@ -3912,6 +4122,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -4492,6 +4712,26 @@ Namespace Canon
             End Get
             Set(value As String)
                 Escribir("EDID\Editor ID", value)
+            End Set
+        End Property
+
+        ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Name As String
+            Get
+                Return TextoTraducible("FULL\Name")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("FULL\Name", value)
+            End Set
+        End Property
+
+        ''' <summary>DESC\Description. Resuelto contra las tablas de texto si el archivo las usa.</summary>
+        Public Property Description As String
+            Get
+                Return TextoTraducible("DESC\Description")
+            End Get
+            Set(value As String)
+                EscribirTextoTraducible("DESC\Description", value)
             End Set
         End Property
 
@@ -15373,6 +15613,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -15422,6 +15672,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -15493,6 +15753,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -15522,6 +15792,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
@@ -15913,6 +16193,16 @@ Namespace Canon
             MyBase.New(node, ctx, resolver)
         End Sub
 
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
+
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger
             Get
@@ -16122,6 +16412,16 @@ Namespace Canon
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
+
+        ''' <summary>Alternate Texture\3D Name</summary>
+        Public Property AlternateTexture3DName As String
+            Get
+                Return Txt("Alternate Texture\3D Name")
+            End Get
+            Set(value As String)
+                Escribir("Alternate Texture\3D Name", value)
+            End Set
+        End Property
 
         ''' <summary>Alternate Texture\New Texture  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property AlternateTextureNewTexture As UInteger

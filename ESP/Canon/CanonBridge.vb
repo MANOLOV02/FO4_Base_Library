@@ -129,7 +129,7 @@
         ''' proyección cuando un campo está dentro de un grupo.</summary>
         Public Function Find(node As WbNode, path As String) As WbNode
             If node Is Nothing OrElse String.IsNullOrEmpty(path) Then Return Nothing
-            Dim n = node.ByPath(path)
+            Dim n = node.ByFieldPath(path)
             If n IsNot Nothing Then Return n
             If path.Length = 4 Then Return node.BySignature(path)
             Return Nothing

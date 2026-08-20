@@ -122,7 +122,7 @@ Public Module FaceTintPaletteResolver
             If tplCol.ColorFormID = 0UI Then Continue For
             Dim clfmRec = pm.GetRecord(tplCol.ColorFormID)
             If clfmRec Is Nothing OrElse clfmRec.Header.Signature <> "CLFM" Then Continue For
-            Dim clfm = RecordParsers.ParseCLFM(clfmRec, pm)
+            Dim clfm = Canon.CanonRecords.Color(clfmRec, pm)
             If clfm Is Nothing OrElse Not clfm.HasColor Then Continue For
             If clfm.Color.R = targetR AndAlso clfm.Color.G = targetG AndAlso clfm.Color.B = targetB Then
                 matches.Add(tplCol)
@@ -179,7 +179,7 @@ Public Module FaceTintPaletteResolver
                 If tplByIdx.ColorFormID <> 0UI AndAlso pm IsNot Nothing Then
                     Dim tplRec = pm.GetRecord(tplByIdx.ColorFormID)
                     If tplRec IsNot Nothing AndAlso tplRec.Header.Signature = "CLFM" Then
-                        Dim tplClfm = RecordParsers.ParseCLFM(tplRec, pm)
+                        Dim tplClfm = Canon.CanonRecords.Color(tplRec, pm)
                         If tplClfm IsNot Nothing AndAlso tplClfm.HasColor Then
                             resolvedColor = tplClfm.Color
                         End If
@@ -214,7 +214,7 @@ Public Module FaceTintPaletteResolver
             If tc Is Nothing OrElse tc.ColorFormID = 0UI Then Continue For
             Dim rec = pm.GetRecord(tc.ColorFormID)
             If rec Is Nothing OrElse rec.Header.Signature <> "CLFM" Then Continue For
-            Dim clfm = RecordParsers.ParseCLFM(rec, pm)
+            Dim clfm = Canon.CanonRecords.Color(rec, pm)
             If clfm Is Nothing OrElse Not clfm.HasColor Then Continue For
             If clfm.Color.R = layerColor.R AndAlso clfm.Color.G = layerColor.G AndAlso clfm.Color.B = layerColor.B Then
                 result = tc.BlendOperation

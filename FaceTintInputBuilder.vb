@@ -209,7 +209,7 @@ Public Module FaceTintInputBuilder
                     If pluginManager IsNot Nothing AndAlso tc.ColorFormID <> 0UI Then
                         Dim rec = pluginManager.GetRecord(tc.ColorFormID)
                         If rec IsNot Nothing AndAlso rec.Header.Signature = "CLFM" Then
-                            Dim clfm = RecordParsers.ParseCLFM(rec, pluginManager)
+                            Dim clfm = Canon.CanonRecords.Color(rec, pluginManager)
                             If clfm IsNot Nothing AndAlso clfm.HasColor Then seedColor = clfm.Color
                         End If
                     End If
@@ -567,7 +567,7 @@ Public Module FaceTintInputBuilder
                         If tc.ColorFormID <> 0UI AndAlso pluginManager IsNot Nothing Then
                             Dim cr = pluginManager.GetRecord(tc.ColorFormID)
                             If cr IsNot Nothing AndAlso cr.Header.Signature = "CLFM" Then
-                                Dim cc = RecordParsers.ParseCLFM(cr, pluginManager)
+                                Dim cc = Canon.CanonRecords.Color(cr, pluginManager)
                                 If cc IsNot Nothing AndAlso cc.HasColor Then
                                     rgbStr = $"({cc.Color.R},{cc.Color.G},{cc.Color.B})"
                                 End If
@@ -615,7 +615,7 @@ Public Module FaceTintInputBuilder
                 Dim browIdxLog = tl.Index, browDiscLog = tl.Discriminator, browKindLog = layerInput.Kind
                 Dim browHairFidLog = hairColorFormID, browLutLog = hairLutPath
                 Dim browAction As String = "no-op (default)"
-                Dim browClfm As CLFM_Data = Nothing
+                Dim browClfm As Canon.ColorRecord = Nothing
                 If hairColorFormID = 0UI Then
                     browAction = "no-op (NPC has no HCLF -- race fallback returned 0)"
                 Else
@@ -623,7 +623,7 @@ Public Module FaceTintInputBuilder
                     If hairClfmRec Is Nothing OrElse hairClfmRec.Header.Signature <> "CLFM" Then
                         browAction = "no-op (HCLF record missing or wrong sig)"
                     Else
-                        browClfm = RecordParsers.ParseCLFM(hairClfmRec, pluginManager)
+                        browClfm = Canon.CanonRecords.Color(hairClfmRec, pluginManager)
                         If browClfm Is Nothing Then
                             browAction = "no-op (CLFM parse failed)"
                         ElseIf browClfm.HasColor Then
@@ -805,7 +805,7 @@ Public Module FaceTintInputBuilder
                     If tc.ColorFormID <> 0UI AndAlso pluginManager IsNot Nothing Then
                         Dim cr = pluginManager.GetRecord(tc.ColorFormID)
                         If cr IsNot Nothing AndAlso cr.Header.Signature = "CLFM" Then
-                            Dim cc = RecordParsers.ParseCLFM(cr, pluginManager)
+                            Dim cc = Canon.CanonRecords.Color(cr, pluginManager)
                             If cc IsNot Nothing Then
                                 tcHasColor = cc.HasColor
                                 If cc.HasColor Then

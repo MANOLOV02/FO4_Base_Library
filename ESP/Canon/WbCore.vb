@@ -297,6 +297,65 @@ Namespace Canon
             Return cur
         End Function
 
+        ''' <summary>Resuelve la ruta de un CAMPO tal como la nombra la estructura del record:
+        ''' <c>CNAM\Color/Index</c>, <c>Model\MODL\Model FileName</c>.
+        '''
+        ''' <para>Se diferencia de <see cref="ByPath"/> en un punto: no atraviesa el envoltorio de
+        ''' un subrecord hasta llegar al final de la ruta. Atravesarlo antes deja los segmentos que
+        ''' siguen buscando entre los hijos del valor en vez de entre los del subrecord, y la ruta
+        ''' no resuelve.</para>
+        '''
+        ''' <para>Las dos formas coexisten porque responden preguntas distintas: las rutas de
+        ''' contador declaradas en la estructura apuntan a la firma y quieren el valor, mientras que
+        ''' un campo se nombra bajando por la estructura completa.</para></summary>
+        Public Function ByFieldPath(path As String) As WbNode
+            If String.IsNullOrEmpty(path) Then Return Nothing
+            Dim cur = Me
+            Dim pasos = path.Split("\"c)
+            For idx = 0 To pasos.Length - 1
+                If cur Is Nothing Then Return Nothing
+                Dim s = pasos(idx).Trim()
+                If s.Length = 0 Then Continue For
+                If s = ".." Then
+                    cur = cur.Parent
+                    Continue For
+                End If
+                If s.StartsWith("[", StringComparison.Ordinal) AndAlso s.EndsWith("]", StringComparison.Ordinal) Then
+                    Dim i As Integer
+                    If Not Integer.TryParse(s.Substring(1, s.Length - 2), i) Then Return Nothing
+                    If i < 0 OrElse i >= cur.Children.Count Then Return Nothing
+                    cur = cur.Children(i)
+                    Continue For
+                End If
+                Dim nxt = cur.ByName(s)
+                If nxt Is Nothing Then nxt = cur.BySignature(s)
+                ' El segmento puede nombrar al nodo en el que YA estamos. Pasa cuando el elemento
+                ' de un arreglo es el subrecord mismo: la ruta del campo arranca con su firma, y
+                ' desde el elemento esa firma no es un hijo sino uno mismo.
+                If nxt Is Nothing AndAlso
+                   (String.Equals(cur.Signature, s, StringComparison.Ordinal) OrElse
+                    (cur.Def IsNot Nothing AndAlso String.Equals(cur.Def.Name, s, StringComparison.Ordinal))) Then
+                    nxt = cur
+                End If
+                If nxt Is Nothing AndAlso cur.Children.Count = 1 Then
+                    ' Un envoltorio anonimo en el camino: se lo atraviesa y se reintenta el mismo
+                    ' segmento contra su contenido.
+                    Dim solo = cur.Children(0)
+                    nxt = If(solo.ByName(s), solo.BySignature(s))
+                End If
+                cur = nxt
+            Next
+            ' Si la ruta termino en el envoltorio de un subrecord, lo que se busca es su valor.
+            ' Se exige que sea un subrecord y no cualquier nodo con un hijo: un ARREGLO DE UN SOLO
+            ' ELEMENTO tambien tiene un hijo, y devolver ese elemento en su lugar deja la lista
+            ' vacia para quien pidio el arreglo.
+            If cur IsNot Nothing AndAlso TypeOf cur.Def Is WbSubrecordDef AndAlso
+               cur.Children.Count = 1 AndAlso cur.Children(0).Children.Count = 0 Then
+                Return cur.Children(0)
+            End If
+            Return cur
+        End Function
+
         ''' <summary>Recorre el árbol en pre-orden.</summary>
         Public Iterator Function Walk() As IEnumerable(Of WbNode)
             Yield Me

@@ -261,7 +261,7 @@ Public Module LmHairColorLutLoader
     ''' no hace nada — que es exactamente lo que hace el motor (<c>test eax,eax; je</c> sobre el string).</para>
     '''
     ''' <para>⛔ Sólo FO4 en la práctica: el consumidor exige <c>CLFM.HasRemappingIndex</c>, que
-    ''' <c>ParseCLFM</c> sólo enciende en FO4 (RecordParsers.vb:4202). En SSE el color de pelo es RGB.</para></summary>
+    ''' El índice de paleta sólo existe en Fallout 4. En Skyrim el color de pelo es siempre RGB.</para></summary>
     ''' <para>⚠️ A propósito NO copia la preferencia-por-existencia de
     ''' <c>NpcMaterialResolver.ResolveRaceHairLookupTexture</c> (que entre HNAM y HLTX elige el que esté
     ''' instalado). Acá manda el motor: lee <c>race+0x6C0</c> = HNAM y nada más. Si el HNAM de una raza
@@ -371,7 +371,7 @@ Public Module LmHairColorLutLoader
             Try
                 ' ⛔ SOLO FO4. LooksMenu/f4ee no existe en Skyrim: SSE usa RaceMenu (skee64), que no tiene
                 ' registro de LUTs — el color de pelo ahí es un RGB absoluto. Y un CLFM de Skyrim NO lleva
-                ' RemappingIndex: ParseCLFM ya gatea eso por juego (RecordParsers.vb:4202), así que en SSE
+                ' El índice de paleta ya viene gateado por juego, así que en Skyrim
                 ' todo este camino queda inerte igual. El gate explícito evita depender de esa inercia.
                 If Config_App.Current Is Nothing OrElse Config_App.Current.Game <> Config_App.Game_Enum.Fallout4 Then
                     Logger.LogLazy(Function() "[LM-HAIRLUT] juego != FO4: el registro de LUTs de LooksMenu no aplica (SSE usa RaceMenu con RGB absoluto).")
