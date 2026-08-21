@@ -1,4 +1,4 @@
-﻿Imports System.IO
+Imports System.IO
 Imports System.Linq
 Imports System.Text
 Imports System.Threading
@@ -1143,6 +1143,15 @@ Public Class PluginManager
     ''' vs CK sin contaminación de mods. Lo prende el CLI con --vanillaonly. Default False (comportamiento app).</summary>
     Public Shared OfficialPluginsOnly As Boolean = False
 
+    ''' <summary>Con <see cref="OfficialPluginsOnly"/> puesto, deja afuera TAMBIEN el Creation Club, o sea
+    ''' que el corpus queda en juego base + DLC.
+    ''' <para>Existe porque "oficial" incluye el cc y eso hace que el corpus dependa de lo que el usuario
+    ''' tenga comprado: una instalacion con 74 plugins de cc mide 3602 NPC de Skyrim y otra sin ninguno
+    ''' mide bastante menos, asi que dos corridas no se pueden comparar cuenta contra cuenta. Con esto en
+    ''' True el corpus es REPRODUCIBLE entre maquinas.</para>
+    ''' <para>Default False: sin tocarlo, el comportamiento es exactamente el de antes.</para></summary>
+    Public Shared ExcludeCreationClub As Boolean = False
+
     ''' <summary>Plugin oficial de Bethesda (vanilla + DLC FO4/SSE + master VR + Creation Club cc*). Lo demás
     ''' = mod del usuario. Los .esm de VR son oficiales por definición: van en la misma lista de
     ''' oficiales que los DLC. Sin ellos acá,
@@ -1158,7 +1167,9 @@ Public Class PluginManager
                  "skyrimvr.esm"
                 Return True
         End Select
-        Return n.StartsWith("cc")   ' Creation Club (FO4 + SSE)
+        ' Creation Club (FO4 + SSE). Se puede dejar afuera para que el corpus no dependa de lo comprado.
+        If ExcludeCreationClub Then Return False
+        Return n.StartsWith("cc")
     End Function
 
     ''' <summary>La "partial index" de Bethesda para un FormID: el <c>modIndex</c> de un plugin completo, o
