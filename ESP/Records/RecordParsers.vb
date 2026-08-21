@@ -6,12 +6,18 @@ Imports FO4_Base_Library.Canon.CanonInterpretacion
 ' Bethesda plugin (.esp/.esm) record parsers — Fallout 4 / Skyrim SSE.
 '
 ' This file and related files in the same project (PluginReader.vb,
-' PluginWriter.vb, PluginManager.vb, PluginStructures.vb,
-' SaveNpcEspWriter.vb, ActorRecords.vb, AudioRecords.vb,
-' QuestRecords.vb, WorldRecords.vb, ItemRecords.vb, etc.) parse and write the
-' binary record formats of the Bethesda plugin format: record / subrecord
-' layouts, struct field offsets and types, FormID positions, MAST cleanup
-' semantics, and ESP/ESM/ESL flag conventions.
+' PluginWriter.vb, PluginManager.vb, PluginStructures.vb, SaveNpcEspWriter.vb)
+' parse and write the binary record formats of the Bethesda plugin format:
+' record / subrecord layouts, struct field offsets and types, FormID positions,
+' MAST cleanup semantics, and ESP/ESM/ESL flag conventions.
+'
+' 2026-08-21: esta lista nombraba tambien ActorRecords.vb, AudioRecords.vb,
+' WorldRecords.vb, ItemRecords.vb "etc.". Esos ocho archivos SE BORRARON: eran
+' 5.337 lineas con 122 tipos y 104 funciones, y ninguno tenia un solo llamador
+' en el arbol. De los 97 Parse<SIG> que declaraban entre todos, el unico vivo
+' es ParseNPC, que esta en ESTE archivo. El resto del formato lo lee y lo
+' escribe ahora el motor de layout de ESP/Canon/, generado de las
+' declaraciones de xEdit.
 ' ============================================================================
 
 Public Enum NPC_TemplateCategory As Integer

@@ -832,20 +832,31 @@ Public Class Nifcontent_Class_Manolo
                 Dim newLocalMat As Matrix4d = shapeWithoutRoot * destParentInverse
                 Dim newLocal As New Transform_Class(newLocalMat)
                 destShape.Translation = newLocal.Translation
-                destShape.Rotation = newLocal.Rotation
 
-                ' ⛔ `destShape.Scale = newLocal.Scale` era un bug SILENCIOSO. New(Matrix4d) deja la
-                ' escala en Scale SOLO si es uniforme; si no, pone Scale = 1.0F EXACTO y la escala
-                ' real en ScaleVector. O sea que para una matriz con escala per-eje esto escribia 1
-                ' al NIF y perdia la escala entera. El campo Scale de un NiShape no tiene per-eje,
-                ' asi que la proyeccion a escalar es inevitable; lo que no es inevitable es hacerla
-                ' en silencio y sobre el campo equivocado.
-                Dim escalaExacta As Boolean
-                destShape.Scale = newLocal.EscalaComoEscalar(escalaExacta)
-                If Not escalaExacta Then
-                    Dim ev = newLocal.EffectiveScale
-                    Logger.LogLazy(Function() $"[MERGE-SCALE] '{destShape.Name?.String}': la local resultante tiene escala NO uniforme ({ev.X:F6}, {ev.Y:F6}, {ev.Z:F6}); el campo Scale del NIF no la puede representar y se escribe {ev.X:F6}. La diferencia entre ejes queda sin aplicar.")
-                End If
+                ' ⛔ Antes esto era `destShape.Rotation = newLocal.Rotation` + `.Scale = newLocal.Scale`,
+                ' y perdia la escala per-eje ENTERA y en silencio. El motivo: New(Matrix4d) NORMALIZA
+                ' las columnas —saca la escala de la 3x3 y la pone en ScaleVector— y deja Scale = 1.0F
+                ' EXACTO cuando el resultado no es uniforme. Escribir sólo Rotation y Scale guardaba
+                ' la matriz sin su escala, más un 1.
+                '
+                ' La pérdida NO la impone el formato: `destShape.Rotation` es una MATRIZ 3x3, y la
+                ' parte lineal de un transform es R·diag(e), que entra entera ahí. Los NIF del corpus
+                ' que traen escala per-eje la guardan exactamente así, con las columnas de largo
+                ' distinto. Se escribe entonces la parte lineal COMPLETA en la 3x3 y en Scale queda
+                ' sólo el factor uniforme que New(Matrix4d) haya separado. Es la misma recomposición
+                ' por columna que hace ToMatrix4d, o sea la convención única de la clase.
+                '
+                ' Para el caso uniforme —el único que aparece en FO4 y SSE: medido, 0 de 181.964
+                ' NiNode con escala no uniforme, los 14 que hay son ruido de un esqueleto de Oblivion—
+                ' ScaleVector es (1,1,1) exacto y esto es BIT-IDÉNTICO a lo anterior.
+                Dim svLocal = newLocal.ScaleVector
+                Dim rLocal = newLocal.Rotation
+                destShape.Rotation = New Matrix33 With {
+                    .M11 = rLocal.M11 * svLocal.X, .M12 = rLocal.M12 * svLocal.Y, .M13 = rLocal.M13 * svLocal.Z,
+                    .M21 = rLocal.M21 * svLocal.X, .M22 = rLocal.M22 * svLocal.Y, .M23 = rLocal.M23 * svLocal.Z,
+                    .M31 = rLocal.M31 * svLocal.X, .M32 = rLocal.M32 * svLocal.Y, .M33 = rLocal.M33 * svLocal.Z
+                }
+                destShape.Scale = newLocal.Scale
             End If
         End If
 
