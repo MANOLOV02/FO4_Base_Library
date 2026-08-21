@@ -304,7 +304,12 @@ Public Class RaceUtil
         Dim fo4 = TryCast(race, Canon.RaceFO4)
         If fo4 IsNot Nothing Then Return BipedValueToBit(fo4.OcclusionFaceCullBipedDe())
         Dim sse = TryCast(race, Canon.RaceSSE)
-        If sse IsNot Nothing Then Return BipedValueToBit(sse.HeadBipedObject)
+        ' Campo ausente = la raza NO reserva ranura, que no es lo mismo que reservar la cero: sin
+        ' esto un record que no lo trae termina prendiendo el bit de la primera ranura.
+        If sse IsNot Nothing Then
+            If Not sse.HeadBipedObjectPresente Then Return 0UI
+            Return BipedValueToBit(sse.HeadBipedObject)
+        End If
         Return 0UI
     End Function
 
@@ -323,7 +328,10 @@ Public Class RaceUtil
             Return BipedValueToBit(b) Or BipedValueToBit(b + 1)
         End If
         Dim sse = TryCast(race, Canon.RaceSSE)
-        If sse IsNot Nothing Then Return BipedValueToBit(sse.HairBipedObject)
+        If sse IsNot Nothing Then
+            If Not sse.HairBipedObjectPresente Then Return 0UI
+            Return BipedValueToBit(sse.HairBipedObject)
+        End If
         Return 0UI
     End Function
 
@@ -333,6 +341,9 @@ Public Class RaceUtil
     Public Shared Function RaceFacialHairMask(race As Canon.IRace) As UInteger
         Dim fo4 = TryCast(race, Canon.RaceFO4)
         If fo4 Is Nothing Then Return 0UI
+        ' El formato declara este campo recien a partir de cierta version, asi que en un record mas
+        ' viejo el nodo NO existe y la raza no reserva ranura para vello facial.
+        If Not fo4.DataBeardBipedObjectPresente Then Return 0UI
         Return BipedValueToBit(fo4.DataBeardBipedObject)
     End Function
 
@@ -354,6 +365,7 @@ Public Class RaceUtil
         If IsSkyrim() Then Return 0UI
         Dim fo4 = TryCast(race, Canon.RaceFO4)
         If fo4 Is Nothing Then Return 0UI
+        If Not fo4.DataPipboyBipedObjectPresente Then Return 0UI
         Return BipedValueToBit(fo4.DataPipboyBipedObject)
     End Function
 End Class

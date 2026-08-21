@@ -191,6 +191,7 @@ Public Class PluginManager
         End Try
     End Sub
 
+
     ''' <summary>Append a loaded <see cref="PluginReader"/> as the next plugin in load order:
     ''' record it in the name→index map, assign its engine-faithful FileID slot, and merge its
     ''' records. Shared by <see cref="LoadAllPlugins"/> (batched: caller runs BuildTypeIndex once

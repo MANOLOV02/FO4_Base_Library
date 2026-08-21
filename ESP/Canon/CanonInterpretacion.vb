@@ -1131,10 +1131,10 @@ Namespace Canon
         <Extension>
         Public Function ColorDeIluminacionDeTextura(npc As INpc) As Color
             If npc Is Nothing OrElse Not npc.TextureLightingRedPresente Then Return Color.Empty
-            Dim a As Single = 0.0F
-            Dim nf = TryCast(npc, NpcFO4)
-            If nf IsNot Nothing AndAlso nf.TextureLightingAlphaPresente Then a = nf.TextureLightingAlpha
-            Return Color.FromArgb(CanalDeColorNormalizado(a),
+            ' El alpha sale de UN solo lugar. Estaba escrito dos veces con defaults opuestos: aca
+            ' arrancaba en cero, o sea transparente, y el tono de piel del cuerpo se componia con
+            ' opacidad nula contra una cara si tintada — la costura que este camino existe para evitar.
+            Return Color.FromArgb(CanalDeColorNormalizado(npc.AlphaDeIluminacionDeTextura()),
                                   CanalDeColorNormalizado(npc.TextureLightingRed),
                                   CanalDeColorNormalizado(npc.TextureLightingGreen),
                                   CanalDeColorNormalizado(npc.TextureLightingBlue))
@@ -1164,8 +1164,20 @@ Namespace Canon
                 Case 1 : v = nf.WeightMuscular
                 Case Else : v = nf.WeightFat
             End Select
-            If Single.IsNaN(v) OrElse v = Single.MaxValue Then Return Nothing
+            If EsPesoSinValor(v) Then Return Nothing
             Return v
+        End Function
+
+        ''' <summary>Ese float NO lleva un valor: es el centinela que le dice al motor que use el de
+        ''' la raza, o directamente un numero que no representa nada.
+        ''' <para>Son CUATRO casos, no dos: el centinela con signo positivo, el mismo con signo
+        ''' negativo, el no-numero, y el infinito. Dejar pasar cualquiera de ellos como si fuera un
+        ''' peso escala los huesos por una magnitud absurda.</para>
+        ''' <para>Vive aca, en un solo lugar, porque estaba escrito dos veces con criterios distintos
+        ''' y el que resolvia los valores por defecto de la raza ni siquiera miraba el centinela.</para></summary>
+        Public Function EsPesoSinValor(v As Single) As Boolean
+            If Single.IsNaN(v) OrElse Single.IsInfinity(v) Then Return True
+            Return v = Single.MaxValue OrElse v = -Single.MaxValue
         End Function
 
         ''' <summary>Escribe uno de los tres pesos de MWGT. Sin valor = el centinela que le dice al
@@ -1576,7 +1588,10 @@ Namespace Canon
             Dim ns = TryCast(npc, NpcSSE)
             If ns Is Nothing OrElse v Is Nothing Then Return
             If v.Length > 0 Then ns.FacePartsNose = v(0)
-            If v.Length > 1 Then ns.FacePartsUnknown = v(1)
+            ' El segundo de los cuatro lo declara el formato CON signo y los otros tres sin signo, asi
+            ' que asignarle el valor tal cual tira cuando no entra en el rango positivo. Se reinterpretan
+            ' los bits, igual que al leerlo: aca las cuatro partes viajan como un numero opaco.
+            If v.Length > 1 Then ns.FacePartsUnknown = CInt(CLng(v(1)) - If(v(1) > &H7FFFFFFFUI, 4294967296L, 0L))
             If v.Length > 2 Then ns.FacePartsEyes = v(2)
             If v.Length > 3 Then ns.FacePartsMouth = v(3)
         End Sub
