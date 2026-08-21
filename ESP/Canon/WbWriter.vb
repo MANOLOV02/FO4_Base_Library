@@ -94,13 +94,13 @@ Namespace Canon
             If vArr IsNot Nothing AndAlso Not String.IsNullOrEmpty(vArr.CountPath) _
                AndAlso root.ParsedCount <> root.Children.Count Then
                 Dim cn = WbPath.ResolveUpwards(root, vArr.CountPath)
-                If cn IsNot Nothing Then cn.Value = CLng(root.Children.Count)
+                If cn IsNot Nothing Then cn.Value = WbCajas.Caja(CLng(root.ChildCount))
             End If
             Dim mArr = TryCast(root.Def, WbRArrayDef)
             If mArr IsNot Nothing AndAlso Not String.IsNullOrEmpty(mArr.CountPath) _
                AndAlso root.ParsedCount <> root.Children.Count Then
                 Dim cn = WbPath.ResolveUpwards(root, mArr.CountPath)
-                If cn IsNot Nothing Then cn.Value = CLng(root.Children.Count)
+                If cn IsNot Nothing Then cn.Value = WbCajas.Caja(CLng(root.ChildCount))
             End If
         End Sub
 

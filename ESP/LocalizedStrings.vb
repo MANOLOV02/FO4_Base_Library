@@ -7,6 +7,41 @@ Public Enum LocalizedStringTableKind
     ILStrings
 End Enum
 
+''' <summary>Las extensiones de las tablas de texto externo, UNA sola vez y derivadas del enum: la
+''' extension de cada clase la decide <see cref="LocalizedStringResolver"/>, y el diccionario de Data
+''' las necesita para indexarlas.
+''' <para>Estaban escritas dos veces —aca y en el `SupportedExtensions` del diccionario—, y si esas
+''' dos listas divergen la resolucion devuelve cadena vacia PARA SIEMPRE y en silencio: el archivo
+''' existe, el diccionario no lo indexo, y nadie tira. Derivarlas hace que no puedan divergir.</para></summary>
+Public Module LocalizedStringExtensions
+
+    Public ReadOnly Property Todas As IReadOnlyList(Of String) = Construir()
+
+    Private Function Construir() As IReadOnlyList(Of String)
+        Dim vistas As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+        Dim result As New List(Of String)
+        For Each k As LocalizedStringTableKind In [Enum].GetValues(GetType(LocalizedStringTableKind))
+            Dim ext = ExtensionDe(k)
+            If vistas.Add(ext) Then result.Add(ext)
+        Next
+        Return result
+    End Function
+
+    ''' <summary>La extension de una clase de tabla. Unico sitio donde se decide.</summary>
+    Public Function ExtensionDe(kind As LocalizedStringTableKind) As String
+        Select Case kind
+            Case LocalizedStringTableKind.DLStrings
+                Return ".DLSTRINGS"
+            Case LocalizedStringTableKind.ILStrings
+                Return ".ILSTRINGS"
+            Case Else
+                Return ".STRINGS"
+        End Select
+    End Function
+
+End Module
+
+
 ''' <summary>
 ''' Thin compatibility shim. Authoritative encoding settings live in PluginEncodingSettings.
 ''' This module exposes only the helpers required by LocalizedStringTable / LocalizedStringResolver.
@@ -73,7 +108,35 @@ End Module
 
 Friend NotInheritable Class LocalizedStringTable
     Private ReadOnly _kind As LocalizedStringTableKind
-    Private ReadOnly _values As New Dictionary(Of UInteger, String)()
+
+    ''' <summary>Identificador → DÓNDE empieza su texto dentro de <see cref="_data"/>. Se arma
+    ''' recorriendo el directorio, SIN decodificar nada.
+    '''
+    ''' <para>⛔ Antes acá había un diccionario de identificador → TEXTO, y se llenaba decodificando
+    ''' la tabla ENTERA al construirla. Las tablas del juego traen del orden de cien mil textos —
+    ''' todos los diálogos, todas las descripciones— y la aplicación usa unos pocos miles: los
+    ''' nombres de los NPC que muestra la lista. MEDIDO en el orden de carga real: <b>1,35 s</b> de
+    ''' arranque y una cadena por entrada, para tirar el 95 %. Y lo pagaba también la 1.5.6.</para>
+    '''
+    ''' <para>El directorio es aritmética pura sobre el arreglo de bytes, así que indexarlo cuesta
+    ''' milisegundos; el texto se decodifica cuando alguien lo pide, y no antes.</para></summary>
+    Private ReadOnly _offsets As New Dictionary(Of UInteger, Integer)()
+
+    ''' <summary>Los textos YA decodificados. Es un caché, no la fuente.
+    ''' <para>Concurrente porque acá se llega desde el <c>Parallel.ForEach</c> por NPC del horneado:
+    ''' un diccionario común se corrompe con dos hilos escribiendo. Decodificar es una función pura
+    ''' del mismo arreglo de bytes, así que si dos hilos decodifican el mismo identificador a la vez
+    ''' producen la MISMA cadena y la carrera no puede dar un valor distinto.</para></summary>
+    Private ReadOnly _decodificados As New Concurrent.ConcurrentDictionary(Of UInteger, String)()
+
+    ''' <summary>Los bytes de la tabla. Se conservan porque son la fuente de la que se decodifica.
+    ''' <para>EL INTERCAMBIO, DICHO: quien resuelve POCO paga sólo el blob y ahorra las ~100 mil cadenas
+    ''' que la versión ansiosa construía —el caso de la app, que muestra unos miles de nombres—. Quien
+    ''' resuelve CASI TODO termina con el blob MÁS las cadenas, o sea peor que la ansiosa: es el caso de un
+    ''' volcado completo (`Tools/StringsResolverGate` resuelve 34.604 filas en FO4). El blob son unos pocos
+    ''' MB por plugin localizado; las cadenas, decenas.</para></summary>
+    Private ReadOnly _data As Byte()
+
     Private ReadOnly _primaryEncoding As Encoding
     Private ReadOnly _fallbackEncoding As Encoding
 
@@ -109,18 +172,32 @@ Friend NotInheritable Class LocalizedStringTable
 
         _primaryEncoding = primary
         _fallbackEncoding = fallback
-        Parse(data)
+        _data = data
+        Indexar(data)
     End Sub
 
+    ''' <summary>El texto de ese identificador, o "" si la tabla no lo trae.
+    ''' <para>Un identificador que el directorio no declara —o que declaraba un desplazamiento fuera
+    ''' de la tabla— devuelve "", igual que antes: esos nunca entraron al índice.</para></summary>
     Public Function Resolve(stringId As UInteger) As String
-        Dim value As String = Nothing
-        If _values.TryGetValue(stringId, value) Then
-            Return value
-        End If
-        Return ""
+        Dim yaEsta As String = Nothing
+        If _decodificados.TryGetValue(stringId, yaEsta) Then Return yaEsta
+
+        Dim offset As Integer
+        If Not _offsets.TryGetValue(stringId, offset) Then Return ""
+
+        ' GetOrAdd y no un Add pelado: dos hilos pueden llegar juntos al mismo identificador y los
+        ' dos decodifican lo mismo, pero el que publica tiene que ser uno solo.
+        Return _decodificados.GetOrAdd(stringId, Function(unused) ReadValue(_data, offset))
     End Function
 
-    Private Sub Parse(data As Byte())
+    ''' <summary>Recorre el DIRECTORIO y anota dónde empieza cada texto. No decodifica ninguno.
+    '''
+    ''' <para>La aceptación de entradas es EXACTAMENTE la de antes: un desplazamiento que se va de
+    ''' la tabla se saltea (y entonces ese identificador no existe, y <see cref="Resolve"/> devuelve
+    ''' ""), y si el mismo identificador aparece dos veces gana el ÚLTIMO. Que eso siga igual es lo
+    ''' que hace que el cambio no mueva ni un texto.</para></summary>
+    Private Sub Indexar(data As Byte())
         If data Is Nothing OrElse data.Length < 8 Then Return
 
         Dim stringCount = BitConverter.ToUInt32(data, 0)
@@ -136,8 +213,7 @@ Friend NotInheritable Class LocalizedStringTable
             Dim absoluteOffset = baseOffset + relativeOffset
             If absoluteOffset < 0 OrElse absoluteOffset >= data.Length Then Continue For
 
-            Dim value = ReadValue(data, CInt(absoluteOffset))
-            _values(stringId) = value
+            _offsets(stringId) = CInt(absoluteOffset)
         Next
     End Sub
 
@@ -179,36 +255,27 @@ Friend NotInheritable Class LocalizedStringTable
 End Class
 
 Friend NotInheritable Class LocalizedStringResolver
+    ''' <summary>Donde vive una tabla de textos. Guarda la CLAVE del diccionario de Data, no un archive
+    ''' con un indice: el indice de una entrada es un numero dentro de UN .ba2 concreto y deja de valer
+    ''' cuando ese archive se reescribe, mientras que la clave sigue nombrando el mismo archivo y deja
+    ''' que el ganador vigente lo decida el diccionario en cada lectura.</summary>
     Private NotInheritable Class ResourceLocation
-        Public Property LoosePath As String = ""
-        Public Property ArchivePath As String = ""
-        Public Property EntryIndex As Integer = -1
+        Public Property DictionaryKey As String = ""
         Public Property DisplayName As String = ""
+
+        ''' <summary>Ruta absoluta SOLO si el ganador es un archivo suelto. Es lo que necesita el sidecar
+        ''' `.cpoverride` de <see cref="PluginTextDecoding.TryGetCodePageOverride"/>, que por definicion
+        ''' no puede existir para una entrada empaquetada.</summary>
+        Public Property LoosePath As String = ""
 
         Public ReadOnly Property CacheKey As String
             Get
-                If LoosePath <> "" Then Return LoosePath
-                Return $"{ArchivePath}|{EntryIndex}|{DisplayName}"
+                Return DictionaryKey
             End Get
         End Property
 
         Public Function ReadAllBytes() As Byte()
-            If LoosePath <> "" Then
-                If File.Exists(LoosePath) Then
-                    Return File.ReadAllBytes(LoosePath)
-                End If
-                Return Array.Empty(Of Byte)()
-            End If
-
-            If ArchivePath = "" OrElse EntryIndex < 0 OrElse Not File.Exists(ArchivePath) Then
-                Return Array.Empty(Of Byte)()
-            End If
-
-            Using fs As FileStream = File.OpenRead(ArchivePath)
-                Using reader As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
-                    Return reader.ExtractToMemory(EntryIndex)
-                End Using
-            End Using
+            Return FilesDictionary_class.GetBytes(DictionaryKey)
         End Function
     End Class
 
@@ -216,9 +283,16 @@ Friend NotInheritable Class LocalizedStringResolver
     Private ReadOnly _preferredLanguages As List(Of String)
     Private ReadOnly _tableCache As New Dictionary(Of String, LocalizedStringTable)(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly _resourceCache As New Dictionary(Of String, ResourceLocation)(StringComparer.OrdinalIgnoreCase)
-    Private ReadOnly _archiveStringIndex As New Dictionary(Of String, ResourceLocation)(StringComparer.OrdinalIgnoreCase)
     Private ReadOnly _syncRoot As New Object()
-    Private _archiveIndexBuilt As Boolean
+
+    ''' <summary>Los paths bajo `Strings\` que hay en Data, sacados del diccionario del preflight, junto
+    ''' con la generacion de scan de la que salieron. Sirve para el descubrimiento por patron
+    ''' (`&lt;plugin&gt;_*.EXT`), que es lo unico que no se puede contestar con un TryGetEntry por clave.
+    ''' <para>Un re-scan de Data cambia que archivo gana para cada path, asi que la generacion invalida
+    ''' esta lista Y las dos caches de arriba: una tabla cacheada de la carga anterior es justo el
+    ''' resultado equivocado.</para></summary>
+    Private _clavesStrings As List(Of String)
+    Private _generacionDeLasClaves As Integer = -1
 
     Public Sub New(dataPath As String)
         _dataPath = dataPath
@@ -245,13 +319,21 @@ Friend NotInheritable Class LocalizedStringResolver
             End If
         End SyncLock
 
+        ' Leer los bytes y armar la tabla van FUERA del candado a proposito (descomprimir del BA2 y
+        ' indexar el directorio no tienen por que serializar a los demas lectores), pero entonces entre
+        ' esas dos cosas y la publicacion cabe una invalidacion: si el diccionario cambio en el medio, esta
+        ' tabla es de la generacion VIEJA y publicarla la deja viva en un cache recien vaciado.
+        Dim genAlLeer = FilesDictionary_class.ScanGeneration
         Dim bytes = location.ReadAllBytes()
         If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
 
         Dim table = New LocalizedStringTable(location.DisplayName, kind, bytes, location.LoosePath)
 
         SyncLock _syncRoot
-            _tableCache(location.CacheKey) = table
+            InvalidarSiCambioElDiccionario()
+            ' Se DEVUELVE igual: para este llamador la tabla sirve —la leyo de lo que habia—, lo que no se
+            ' hace es dejarla en el cache para los que vengan despues.
+            If FilesDictionary_class.ScanGeneration = genAlLeer Then _tableCache(location.CacheKey) = table
         End SyncLock
 
         Return table
@@ -262,9 +344,8 @@ Friend NotInheritable Class LocalizedStringResolver
         Dim cacheKey = $"{pluginBase}|{CInt(kind)}"
 
         SyncLock _syncRoot
-
+            InvalidarSiCambioElDiccionario()
             Dim value As ResourceLocation = Nothing
-
             If _resourceCache.TryGetValue(cacheKey, value) Then
                 Return value
             End If
@@ -279,31 +360,65 @@ Friend NotInheritable Class LocalizedStringResolver
         Return found
     End Function
 
+    ''' <summary>Que archivo de textos gana para este plugin. NO abre ningun archive: el diccionario de
+    ''' Data ya resolvio, en el preflight, cual es el archivo final para esta carga de plugins — incluida
+    ''' la precedencia del suelto sobre el empaquetado y el orden entre archives. Aca solo queda elegir
+    ''' el IDIOMA, que es lo unico que este resolver decide por si mismo.
+    ''' <para>⚠️ ESTO CAMBIA LA PRECEDENCIA ENTRE IDIOMA Y MEDIO, a proposito. Antes se probaban TODOS los
+    ''' idiomas preferidos en SUELTOS y recien despues todos en archives, asi que un `X_en.STRINGS` suelto
+    ''' le ganaba a un `X_de.STRINGS` empaquetado aunque el INI dijera aleman. Ahora manda el idioma y el
+    ''' medio lo decide el diccionario —que es como resuelve el motor: pide `Strings\X_&lt;sLanguage&gt;.STRINGS`
+    ''' y la capa de archivos elige suelto o empaquetado—. El gate de textos no puede ver esta diferencia:
+    ''' el corpus tiene un solo idioma instalado.</para>
+    ''' <para>Las DOS fases estan escritas separadas y no como `preferidos.Concat(descubiertos)` a
+    ''' proposito: VB evalua los argumentos ANTES de llamar, asi que ese Concat corria el descubrimiento
+    ''' —que recorre el diccionario entero— aunque el primer nombre preferido acertara. Con las fases
+    ''' separadas, el caso normal (el idioma del INI existe) son tres busquedas por clave y nada mas.</para></summary>
     Private Function FindResourceLocation(pluginBase As String, kind As LocalizedStringTableKind) As ResourceLocation
-        Dim preferred = BuildPreferredResourceNames(pluginBase, kind)
+        AvisarSiElDiccionarioNoEstaMontado()
 
-        For Each relativePath In preferred.Concat(DiscoverLooseCandidates(pluginBase, kind))
-            Dim fullPath = Path.Combine(_dataPath, relativePath.Replace("\"c, Path.DirectorySeparatorChar))
-            If File.Exists(fullPath) Then
-                Return New ResourceLocation With {
-                    .LoosePath = fullPath,
-                    .DisplayName = relativePath
-                }
-            End If
+        For Each relativePath In BuildPreferredResourceNames(pluginBase, kind)
+            Dim porIdioma = ArmarUbicacion(relativePath)
+            If porIdioma IsNot Nothing Then Return porIdioma
         Next
 
-        EnsureArchiveIndex()
-
-        For Each relativePath In preferred.Concat(DiscoverArchiveCandidates(pluginBase, kind))
-            Dim archived As ResourceLocation = Nothing
-            SyncLock _syncRoot
-                If _archiveStringIndex.TryGetValue(relativePath, archived) Then
-                    Return archived
-                End If
-            End SyncLock
+        For Each relativePath In DiscoverCandidates(pluginBase, kind)
+            Dim descubierta = ArmarUbicacion(relativePath)
+            If descubierta IsNot Nothing Then Return descubierta
         Next
 
         Return Nothing
+    End Function
+
+    ''' <summary>Grita UNA vez si se pide un texto sin que nadie haya escaneado Data.
+    ''' <para>Este resolver depende del diccionario del preflight. Si no se monto, no hay ninguna tabla que
+    ''' encontrar y CADA nombre sale vacio — con la forma exacta de "este plugin no trae textos", que es un
+    ''' caso legitimo. Un arnes que se olvide de llamar a `Fill_DictionaryAsync` mediria entonces una
+    ''' resolucion de nombres que no ocurre y la reportaria como rapidisima. El aviso es lo que separa "no
+    ''' hay nada que resolver" de "no se puede resolver".</para></summary>
+    Private Sub AvisarSiElDiccionarioNoEstaMontado()
+        If _avisoDeDiccionarioDado Then Return
+        If FilesDictionary_class.ScanGeneration <> 0 Then Return
+        _avisoDeDiccionarioDado = True
+        Logger.LogLazy(Function() "[Strings] se pidio un texto externo y el diccionario de Data NUNCA se " &
+                                  "escaneo (ScanGeneration = 0): TODOS los nombres van a salir vacios. " &
+                                  "Falta un Fill_DictionaryAsync antes de leer records.")
+    End Sub
+
+    Private _avisoDeDiccionarioDado As Boolean
+
+    Private Function ArmarUbicacion(relativePath As String) As ResourceLocation
+        Dim entrada = FilesDictionary_class.TryGetEntry(relativePath)
+        If entrada Is Nothing Then Return Nothing
+
+        Dim suelto As String = ""
+        If entrada.IsLosseFile Then suelto = Path.Combine(_dataPath, entrada.FullPath)
+
+        Return New ResourceLocation With {
+            .DictionaryKey = entrada.FullPath,
+            .DisplayName = entrada.FullPath,
+            .LoosePath = suelto
+        }
     End Function
 
     Private Function BuildPreferredResourceNames(pluginBase As String, kind As LocalizedStringTableKind) As IEnumerable(Of String)
@@ -311,28 +426,53 @@ Friend NotInheritable Class LocalizedStringResolver
         Return _preferredLanguages.Select(Function(lang) $"Strings\{pluginBase}_{lang}{ext}")
     End Function
 
-    Private Function DiscoverLooseCandidates(pluginBase As String, kind As LocalizedStringTableKind) As IEnumerable(Of String)
-        Dim stringsDir = Path.Combine(_dataPath, "Strings")
-        If Not Directory.Exists(stringsDir) Then Return Enumerable.Empty(Of String)()
-
-        Dim pattern = $"{pluginBase}_*{GetExtension(kind)}"
-        Dim matches = Directory.EnumerateFiles(stringsDir, pattern, SearchOption.TopDirectoryOnly).
-            Select(Function(path) $"Strings\{IO.Path.GetFileName(path)}")
-
-        Return OrderByLanguagePreference(matches)
-    End Function
-
-    Private Function DiscoverArchiveCandidates(pluginBase As String, kind As LocalizedStringTableKind) As IEnumerable(Of String)
+    ''' <summary>Los textos de este plugin que hay en Data en CUALQUIER idioma, por orden de preferencia.
+    ''' Es el camino para cuando ninguno de los idiomas preferidos existe: un plugin traducido puede
+    ''' shippear un unico sufijo que no esta en la lista.</summary>
+    Private Function DiscoverCandidates(pluginBase As String, kind As LocalizedStringTableKind) As IEnumerable(Of String)
         Dim ext = GetExtension(kind)
         Dim prefix = $"Strings\{pluginBase}_"
 
+        Return OrderByLanguagePreference(ClavesDeStrings().
+            Where(Function(key) key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) AndAlso
+                                key.EndsWith(ext, StringComparison.OrdinalIgnoreCase)))
+    End Function
+
+    ''' <summary>Los paths bajo `Strings\` del diccionario, cacheados por generacion de scan.
+    ''' <para>Una pasada directa sobre las claves, no `GetFilteredKeys`: esa consulta construye —la
+    ''' primera vez que alguien la usa— un indice por (directorio, extension) de TODO Data, y hacer que
+    ''' lo dispare la primera resolucion de un nombre pone medio segundo donde no corresponde. Aca hace
+    ''' falta UN directorio.</para></summary>
+    Private Function ClavesDeStrings() As List(Of String)
         SyncLock _syncRoot
-            Return OrderByLanguagePreference(_archiveStringIndex.Keys.
-                Where(Function(key) key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) AndAlso
-                                     key.EndsWith(ext, StringComparison.OrdinalIgnoreCase)).
-                ToList())
+            InvalidarSiCambioElDiccionario()
+            If _clavesStrings IsNot Nothing Then Return _clavesStrings
+
+            ' El sello se lee ANTES de copiar, no despues: si un scan termina entre la copia y la lectura,
+            ' esta lista a medias quedaria estampada con la generacion NUEVA y no se invalidaria nunca mas —
+            ' y con ella se congelarian tambien las dos caches de tablas, que usan el mismo sello.
+            Dim gen = FilesDictionary_class.ScanGeneration
+            Dim encontradas As New List(Of String)
+            For Each clave In FilesDictionary_class.Dictionary.Keys
+                If clave.StartsWith("Strings\", StringComparison.OrdinalIgnoreCase) Then encontradas.Add(clave)
+            Next
+            _clavesStrings = encontradas
+            _generacionDeLasClaves = gen
+            Return _clavesStrings
         End SyncLock
     End Function
+
+    ''' <summary>Tira todo lo derivado del diccionario si Data se re-escaneo. Se llama con `_syncRoot`
+    ''' tomado. Sin esto, un re-scan (montar o desmontar archives, cambiar la seleccion de plugins) deja
+    ''' vivas tablas de textos del load order ANTERIOR, que es exactamente el resultado equivocado.</summary>
+    Private Sub InvalidarSiCambioElDiccionario()
+        Dim gen = FilesDictionary_class.ScanGeneration
+        If gen = _generacionDeLasClaves Then Return
+        _clavesStrings = Nothing
+        _resourceCache.Clear()
+        _tableCache.Clear()
+        _generacionDeLasClaves = gen
+    End Sub
 
     Private Function OrderByLanguagePreference(paths As IEnumerable(Of String)) As IEnumerable(Of String)
         Return paths.
@@ -348,132 +488,8 @@ Friend NotInheritable Class LocalizedStringResolver
             ToList()
     End Function
 
-    Private Sub EnsureArchiveIndex()
-        SyncLock _syncRoot
-            If _archiveIndexBuilt Then Return
-        End SyncLock
-
-        Dim tempIndex As New Dictionary(Of String, ResourceLocation)(StringComparer.OrdinalIgnoreCase)
-        Dim archives = EnumerateArchivePathsByPriority()
-
-        For Each archivePath In archives
-            Try
-                Using fs As FileStream = File.OpenRead(archivePath)
-                    Using reader As New BSA_BA2_Library_DLL.BethesdaArchive.Core.BethesdaReader(fs)
-                        For Each entry In reader.EntriesFiles
-                            Dim fullPath = NormalizeArchivePath(entry.FullPath)
-                            If Not fullPath.StartsWith("Strings\", StringComparison.OrdinalIgnoreCase) Then Continue For
-                            If Not IsLocalizationExtension(Path.GetExtension(fullPath)) Then Continue For
-
-                            tempIndex(fullPath) = New ResourceLocation With {
-                                .ArchivePath = archivePath,
-                                .EntryIndex = entry.Index,
-                                .DisplayName = fullPath
-                            }
-                        Next
-                    End Using
-                End Using
-            Catch ex As Exception
-                Logger.LogLazy(Function() $"[Strings] Failed to scan archive {Path.GetFileName(archivePath)}: {ex.Message}")
-            End Try
-        Next
-
-        SyncLock _syncRoot
-            If _archiveIndexBuilt Then Return
-            _archiveStringIndex.Clear()
-            For Each kvp In tempIndex
-                _archiveStringIndex(kvp.Key) = kvp.Value
-            Next
-            _archiveIndexBuilt = True
-        End SyncLock
-    End Sub
-
-    Private Function EnumerateArchivePathsByPriority() As List(Of String)
-        Dim archives = Directory.EnumerateFiles(_dataPath, "*.ba2", SearchOption.TopDirectoryOnly).
-            Concat(Directory.EnumerateFiles(_dataPath, "*.bsa", SearchOption.TopDirectoryOnly)).
-            Distinct(StringComparer.OrdinalIgnoreCase).
-            ToList()
-
-        Dim archivePriority As New Dictionary(Of String, Integer)(StringComparer.OrdinalIgnoreCase)
-        Dim nextOrder = 0
-
-        Dim baseAndDlcOrder = {
-            "Fallout4",
-            "DLCRobot",
-            "DLCworkshop01",
-            "DLCCoast",
-            "DLCworkshop02",
-            "DLCworkshop03",
-            "DLCNukaWorld",
-            "DLCUltraHighResolution"
-        }
-
-        Dim pending = New HashSet(Of String)(archives.Select(Function(path) IO.Path.GetFileName(path)), StringComparer.OrdinalIgnoreCase)
-
-        For Each prefix In baseAndDlcOrder
-            Dim matches = pending.
-                Where(Function(name) Path.GetFileNameWithoutExtension(name).StartsWith(prefix, StringComparison.OrdinalIgnoreCase)).
-                OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
-                ToList()
-
-            For Each match In matches
-                archivePriority(match) = nextOrder
-                nextOrder += 1
-                pending.Remove(match)
-            Next
-        Next
-
-        For Each plugin In PluginManager.ReadLoadOrder()
-            Dim matches = pending.
-                Where(Function(name) ArchiveBelongsToPlugin(name, plugin)).
-                OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase).
-                ToList()
-
-            For Each match In matches
-                archivePriority(match) = nextOrder
-                nextOrder += 1
-                pending.Remove(match)
-            Next
-        Next
-
-        For Each match In pending.OrderBy(Function(name) name, StringComparer.OrdinalIgnoreCase)
-            archivePriority(match) = nextOrder
-            nextOrder += 1
-        Next
-
-        Return archives.
-            OrderBy(Function(path) archivePriority(IO.Path.GetFileName(path))).
-            ThenBy(Function(path) path, StringComparer.OrdinalIgnoreCase).
-            ToList()
-    End Function
-
-    Private Shared Function ArchiveBelongsToPlugin(archiveFileName As String, pluginFileName As String) As Boolean
-        Dim archiveBase = Path.GetFileNameWithoutExtension(archiveFileName)
-        Dim pluginBase = Path.GetFileNameWithoutExtension(pluginFileName)
-        If archiveBase.Equals(pluginBase, StringComparison.OrdinalIgnoreCase) Then Return True
-        If archiveBase.StartsWith(pluginBase & " - ", StringComparison.OrdinalIgnoreCase) Then Return True
-        Return False
-    End Function
-
-    Private Shared Function NormalizeArchivePath(path As String) As String
-        Return path.Replace("/"c, "\"c)
-    End Function
-
-    Private Shared Function IsLocalizationExtension(ext As String) As Boolean
-        Return ext.Equals(".STRINGS", StringComparison.OrdinalIgnoreCase) OrElse
-               ext.Equals(".DLSTRINGS", StringComparison.OrdinalIgnoreCase) OrElse
-               ext.Equals(".ILSTRINGS", StringComparison.OrdinalIgnoreCase)
-    End Function
-
     Private Shared Function GetExtension(kind As LocalizedStringTableKind) As String
-        Select Case kind
-            Case LocalizedStringTableKind.DLStrings
-                Return ".DLSTRINGS"
-            Case LocalizedStringTableKind.ILStrings
-                Return ".ILSTRINGS"
-            Case Else
-                Return ".STRINGS"
-        End Select
+        Return LocalizedStringExtensions.ExtensionDe(kind)
     End Function
 
     Private Shared Function BuildPreferredLanguageList() As List(Of String)

@@ -165,14 +165,14 @@ Namespace Canon
                 For i = 0 To avail - 1
                     acc = acc Or (CLng(data(offset + i)) << (8 * i))
                 Next
-                n.Value = acc
+                n.Value = WbCajas.Caja(acc)
                 n.SourceLength = avail
                 n.ShortRead = True
                 ctx.Report(WbFindingKind.Tessellation, n.Path,
                            $"entero declarado de {w} bytes con sólo {avail} en el dato")
                 Return n
             End If
-            n.Value = ReadRaw(data, offset)
+            n.Value = WbCajas.Caja(ReadRaw(data, offset))
             n.SourceLength = w
             Return n
         End Function
@@ -224,7 +224,7 @@ Namespace Canon
 
         Public Overrides Function CreateDefault(ctx As WbContext) As WbNode
             Dim n = NewNode()
-            n.Value = 0L
+            n.Value = WbCajas.Caja(0L)
             n.SourceLength = WidthOf(IntType)
             Return n
         End Function
@@ -246,7 +246,7 @@ Namespace Canon
             Dim n = NewNode()
             n.Parent = parent
             Need(n, avail, 4)
-            n.Value = BitConverter.ToSingle(data, offset)
+            n.Value = WbCajas.Caja(BitConverter.ToSingle(data, offset))
             n.SourceLength = 4
             Return n
         End Function
@@ -257,7 +257,7 @@ Namespace Canon
 
         Public Overrides Function CreateDefault(ctx As WbContext) As WbNode
             Dim n = NewNode()
-            n.Value = 0.0F
+            n.Value = WbCajas.Caja(0.0F)
             n.SourceLength = 4
             Return n
         End Function
@@ -295,7 +295,7 @@ Namespace Canon
             Dim n = NewNode()
             n.Parent = parent
             Need(n, avail, 4)
-            n.Value = BitConverter.ToUInt32(data, offset)
+            n.Value = WbCajas.Caja(BitConverter.ToUInt32(data, offset))
             n.SourceLength = 4
             Return n
         End Function
@@ -306,7 +306,7 @@ Namespace Canon
 
         Public Overrides Function CreateDefault(ctx As WbContext) As WbNode
             Dim n = NewNode()
-            n.Value = 0UI
+            n.Value = WbCajas.Caja(0UI)
             n.SourceLength = 4
             Return n
         End Function
@@ -449,7 +449,7 @@ Namespace Canon
             n.Parent = parent
             If ctx.Localized Then
                 Need(n, avail, 4)
-                n.Value = CLng(BitConverter.ToUInt32(data, offset))
+                n.Value = WbCajas.Caja(CLng(BitConverter.ToUInt32(data, offset)))
                 n.SourceLength = 4
                 Return n
             End If
@@ -498,7 +498,7 @@ Namespace Canon
         Public Overrides Function CreateDefault(ctx As WbContext) As WbNode
             Dim n = NewNode()
             If ctx.Localized Then
-                n.Value = 0L
+                n.Value = WbCajas.Caja(0L)
                 n.SourceLength = 4
             Else
                 n.Value = ""
@@ -918,7 +918,7 @@ Namespace Canon
             ' Sólo si el array CAMBIÓ respecto de lo parseado (ver WbNode.ParsedCount).
             If Not String.IsNullOrEmpty(CountPath) AndAlso node.ParsedCount <> node.Children.Count Then
                 Dim cn = WbPath.ResolveUpwards(node, CountPath)
-                If cn IsNot Nothing Then cn.Value = CLng(node.Children.Count)
+                If cn IsNot Nothing Then cn.Value = WbCajas.Caja(CLng(node.ChildCount))
             End If
             ' Si la fuente no traía ni el prefijo (subrecord de 0 bytes), tampoco se emite:
             ' escribirlo convertiría un NAM5 de 0 bytes en uno de 4 en cada Body Part de BPTD.

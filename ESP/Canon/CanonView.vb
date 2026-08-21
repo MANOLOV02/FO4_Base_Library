@@ -201,7 +201,7 @@
                 n = n.Parent
             End While
             If n Is Nothing OrElse n.Parent Is Nothing Then Return False
-            Return n.Parent.Children.Remove(n)
+            Return n.Parent.QuitarHijo(n)
         End Function
 
         ''' <summary>El nodo de esa ruta, creándolo si falta. Devuelve Nothing si el formato no

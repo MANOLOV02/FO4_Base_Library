@@ -314,7 +314,7 @@ Namespace Canon
             If semilla Is Nothing Then Return
             Dim cont = semilla.Parent
             If cont Is Nothing Then Return
-            cont.Children.Clear()
+            cont.LimpiarHijos()
             For Each n In clones
                 cont.AddChild(n)
             Next
@@ -354,7 +354,7 @@ Namespace Canon
                                       origen As IBloque_Combinations)
             If destino Is Nothing OrElse destino.Node Is Nothing Then Return
             If origen Is Nothing OrElse origen.Node Is Nothing Then Return
-            destino.Node.Children.Clear()
+            destino.Node.LimpiarHijos()
             For Each h In origen.Node.Children
                 destino.Node.AddChild(h.Clonar(destino.Node))
             Next
@@ -974,18 +974,18 @@ Namespace Canon
             If def Is Nothing Then Return
             Dim hueco = WbEdit.EnsureSubrecord(vd.Node, def, firma, vd.Context)
             If hueco Is Nothing Then Return
-            Dim donde = vd.Node.Children.IndexOf(hueco)
+            Dim donde = vd.Node.IndiceDeHijo(hueco)
             If donde < 0 Then Return
 
             ' Sacar los que ya estaban DESPUES de ubicar el hueco: asi la posicion sale de la declaracion
             ' tanto cuando el destino ya lo traia como cuando no.
             For i = vd.Node.Children.Count - 1 To donde Step -1
                 If String.Equals(vd.Node.Children(i).Signature, firma, StringComparison.Ordinal) Then
-                    vd.Node.Children.RemoveAt(i)
+                    vd.Node.QuitarHijoEn(i)
                 End If
             Next
             For i = 0 To fuentes.Count - 1
-                vd.Node.Children.Insert(donde + i, fuentes(i).Clonar(vd.Node))
+                vd.Node.InsertarHijo(donde + i, fuentes(i).Clonar(vd.Node))
             Next
         End Sub
 
@@ -1016,7 +1016,7 @@ Namespace Canon
             If mswp Is Nothing OrElse mswp.Node Is Nothing Then Return
             Dim cont = mswp.Node.ByFieldPath("Material Substitutions")
             If cont Is Nothing Then Return
-            cont.Children.Clear()
+            cont.LimpiarHijos()
             If lista Is Nothing Then Return
             For Each x In lista
                 Dim nuevo = mswp.AgregarSustitucion()

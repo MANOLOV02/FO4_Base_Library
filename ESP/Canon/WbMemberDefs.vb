@@ -246,16 +246,22 @@ Namespace Canon
             Return Me
         End Function
 
+        ''' <summary>Las firmas que este contenedor puede aceptar, memoizadas.
+        ''' <para>El grafo de definiciones se cachea POR PROCESO (WbSchemaGen*.Get) y los arboles se arman
+        ''' desde varios hilos, asi que esta memoizacion la corren N hilos EN FRIO sobre la MISMA def. La
+        ''' publicacion va con `Volatile.Write` y la lectura con `Volatile.Read`: sin la barrera, un lector
+        ''' podria ver la referencia publicada y el HashSet a medio construir. Que dos hilos construyan el
+        ''' mismo set y uno pise al otro es inofensivo — son iguales por construccion.</para></summary>
         Private ReadOnly Property AllSignatures As HashSet(Of String)
             Get
-                If _sigCache Is Nothing Then
-                    Dim s As New HashSet(Of String)(StringComparer.Ordinal)
-                    For Each m In Members
-                        m.CollectSignatures(s)
-                    Next
-                    _sigCache = s
-                End If
-                Return _sigCache
+                Dim actual = Threading.Volatile.Read(_sigCache)
+                If actual IsNot Nothing Then Return actual
+                Dim s As New HashSet(Of String)(StringComparer.Ordinal)
+                For Each m In Members
+                    m.CollectSignatures(s)
+                Next
+                Threading.Volatile.Write(_sigCache, s)
+                Return s
             End Get
         End Property
 
@@ -399,7 +405,7 @@ Namespace Canon
         Public Overrides Sub Emit(node As WbNode, bw As BinaryWriter, ctx As WbContext)
             If Not String.IsNullOrEmpty(CountPath) AndAlso node.ParsedCount <> node.Children.Count Then
                 Dim cn = WbPath.ResolveUpwards(node, CountPath)
-                If cn IsNot Nothing Then cn.Value = CLng(node.Children.Count)
+                If cn IsNot Nothing Then cn.Value = WbCajas.Caja(CLng(node.ChildCount))
             End If
             For Each c In node.Children
                 CType(c.Def, WbMemberDef).Emit(c, bw, ctx)
@@ -504,16 +510,18 @@ Namespace Canon
             _Members = members
         End Sub
 
+        ''' <summary>Las firmas que este record puede aceptar, memoizadas. Misma barrera y mismo motivo que
+        ''' la de <c>WbRStructDef</c>: la def esta cacheada por proceso y varios hilos arman arboles a la vez.</summary>
         Public ReadOnly Property AllSignatures As HashSet(Of String)
             Get
-                If _sigCache Is Nothing Then
-                    Dim s As New HashSet(Of String)(StringComparer.Ordinal)
-                    For Each m In Members
-                        m.CollectSignatures(s)
-                    Next
-                    _sigCache = s
-                End If
-                Return _sigCache
+                Dim actual = Threading.Volatile.Read(_sigCache)
+                If actual IsNot Nothing Then Return actual
+                Dim s As New HashSet(Of String)(StringComparer.Ordinal)
+                For Each m In Members
+                    m.CollectSignatures(s)
+                Next
+                Threading.Volatile.Write(_sigCache, s)
+                Return s
             End Get
         End Property
     End Class

@@ -130,7 +130,7 @@
             Dim removed = 0
             For i = root.Children.Count - 1 To 0 Step -1
                 If String.Equals(root.Children(i).Signature, sig, StringComparison.Ordinal) Then
-                    root.Children.RemoveAt(i)
+                    root.QuitarHijoEn(i)
                     removed += 1
                 End If
             Next
@@ -192,7 +192,7 @@
             If nuevo IsNot Nothing Then
                 Dim r = Asegurar(nuevo, ctx, pasos, idx + 1)
                 If r IsNot Nothing Then Return r
-                If cur.Children.Count > antes Then cur.Children.Remove(nuevo)
+                If cur.ChildCount > antes Then cur.QuitarHijo(nuevo)
             End If
 
             Return Nothing
@@ -221,7 +221,7 @@
             Dim nuevo = elegida.CreateDefault(ctx)
             If nuevo Is Nothing Then Return Nothing
             nuevo.Parent = nodo
-            nodo.Children.Clear()
+            nodo.LimpiarHijos()
             nodo.AddChild(nuevo)
             nodo.UnionBranch = idx
             Return nuevo
@@ -246,7 +246,7 @@
             Dim nuevo = miembros(idx).CreateRequired(ctx)
             If nuevo Is Nothing Then Return Nothing
             nuevo.Parent = cur
-            cur.Children.Insert(PosicionDe(cur, miembros, idx), nuevo)
+            cur.InsertarHijo(PosicionDe(cur, miembros, idx), nuevo)
             Return cur.ByFieldPath(tramo)
         End Function
 
@@ -358,7 +358,7 @@
                     Exit For
                 End If
             Next
-            root.Children.Insert(insertAt, node)
+            root.InsertarHijo(insertAt, node)
             Return node
         End Function
 
@@ -446,7 +446,7 @@
 
         Public Function QuitarElemento(contenedor As WbNode, indice As Integer) As Boolean
             If contenedor Is Nothing OrElse indice < 0 OrElse indice >= contenedor.Children.Count Then Return False
-            contenedor.Children.RemoveAt(indice)
+            contenedor.QuitarHijoEn(indice)
             Return True
         End Function
 
@@ -472,9 +472,9 @@
             For Each i In permutacion
                 ordenados.Add(contenedor.Children(i))
             Next
-            contenedor.Children.Clear()
+            contenedor.LimpiarHijos()
             For Each hijo In ordenados
-                contenedor.Children.Add(hijo)
+                contenedor.AddChild(hijo)
             Next
             Return True
         End Function

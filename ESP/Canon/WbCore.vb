@@ -185,12 +185,157 @@ Namespace Canon
         Public Property DefParent As WbDef
     End Class
 
+    ''' <summary>Cajas compartidas para los valores CHICOS de las hojas.
+    ''' <para><see cref="WbNode.Value"/> es `Object`, asi que cada entero y cada flotante que se lee
+    ''' de un archivo se empaqueta en un objeto propio de 24 bytes. En un arbol de NPC de Fallout 4
+    ''' eso son 1.077.727 cajas — 24,7 MB —, y el 76 % de los enteros, el 30 % de las referencias y
+    ''' el 52 % de los flotantes son el MISMO punado de valores (0, 1, -1, indices bajos). Repartir
+    ''' una sola caja por valor no cambia nada observable: una caja es inmutable, se compara por
+    ''' valor en todo el arbol y no hay un solo `ReferenceEquals` sobre `Value`.</para>
+    ''' <para>EL FLOTANTE SE INDEXA POR BITS, NO POR VALOR. `-0.0F = 0.0F` da True en IEEE pero sus
+    ''' bytes son distintos, y el escritor emite los bytes: cachear por igualdad numerica convertiria
+    ''' un `-0.0` del archivo en `+0.0` y romperia el round-trip. Por eso solo entran patrones de
+    ''' bits exactos, y NaN —que ni siquiera es igual a si mismo— queda afuera solo.</para></summary>
+    Friend Module WbCajas
+
+        ''' <summary>Hasta que valor se comparte la caja. MEDIDO sobre los 1.872.192 nodos del arbol de NPC
+        ''' de Fallout 4 (`Tools/ArbolMemProbe`, que imprime la sensibilidad):
+        ''' <code>
+        '''   &lt;=  255   Long 75,7 %   UInt  6,9 %   ~6,5 MB
+        '''   &lt;= 1023   Long 76,4 %   UInt 29,9 %   ~7,7 MB
+        '''   &lt;= 4095   Long 82,0 %   UInt 29,9 %   ~8,1 MB
+        ''' </code>
+        ''' 1023 se lleva casi todo lo que hay; 4095 agrega 0,4 MB con una tabla cuatro veces mas grande.
+        ''' Las dos tablas juntas ocupan ~74 KB.</summary>
+        Private Const MAXIMO As Integer = 1023
+
+        ''' <summary>-1 va en el indice 0; de ahi en adelante 0..MAXIMO.</summary>
+        Private ReadOnly Enteros As Object() = ConstruirEnteros()
+        Private ReadOnly SinSigno As Object() = ConstruirSinSigno()
+        Private ReadOnly CeroF As Object = 0.0F
+        Private ReadOnly UnoF As Object = 1.0F
+        Private ReadOnly MenosUnoF As Object = -1.0F
+
+        Private Function ConstruirEnteros() As Object()
+            Dim tabla(MAXIMO + 1) As Object
+            tabla(0) = -1L
+            For i = 0 To MAXIMO
+                tabla(i + 1) = CLng(i)
+            Next
+            Return tabla
+        End Function
+
+        Private Function ConstruirSinSigno() As Object()
+            Dim tabla(MAXIMO) As Object
+            For i = 0 To MAXIMO
+                tabla(i) = CUInt(i)
+            Next
+            Return tabla
+        End Function
+
+        Public Function Caja(v As Long) As Object
+            If v = -1L Then Return Enteros(0)
+            If v >= 0L AndAlso v <= MAXIMO Then Return Enteros(CInt(v) + 1)
+            Return v
+        End Function
+
+        Public Function Caja(v As UInteger) As Object
+            If v <= CUInt(MAXIMO) Then Return SinSigno(CInt(v))
+            Return v
+        End Function
+
+        Public Function Caja(v As Single) As Object
+            Select Case BitConverter.SingleToInt32Bits(v)
+                Case 0 : Return CeroF                       ' +0.0F  (el -0.0F queda afuera: otros bits)
+                Case &H3F800000 : Return UnoF               ' 1.0F
+                Case &HBF800000 : Return MenosUnoF          ' -1.0F
+                Case Else : Return v
+            End Select
+        End Function
+
+    End Module
+
     ''' <summary>Nodo del árbol parseado. Presencia = existencia del nodo: "" y AUSENTE son cosas
     ''' distintas por construcción, sin banderas <c>HasXxx</c> paralelas al valor.</summary>
+    ''' <remarks>⛔ NO ES SEGURO ESCRIBIRLE DESDE VARIOS HILOS AL MISMO NODO. Leer sí: el parseo arma un
+    ''' árbol por hilo y el bake recorre árboles distintos en paralelo, que es lo que hace hoy.
+    ''' <para>Escribir no: los hijos y los campos poco usados viven en objetos que se crean al primer uso
+    ''' (<c>HijosMutables</c>, <c>ExtrasMutables</c>), y dos hilos que escriban campos DISTINTOS del mismo
+    ''' nodo pueden crear cada uno el suyo y perder la escritura del otro. Con los campos planos de antes
+    ''' eso no podía pasar — por accidente, no por diseño: nunca hubo un escritor concurrente sobre el
+    ''' mismo nodo, y el día que lo haya hace falta sincronizarlo acá.</para></remarks>
     Public NotInheritable Class WbNode
         Public ReadOnly Property Def As WbDef
         Public Property Parent As WbNode
-        Public ReadOnly Property Children As New List(Of WbNode)
+        ''' <summary>Los hijos del nodo, o una lista VACIA compartida si no tiene ninguno.
+        ''' <para>La lista real se crea recien en el primer <see cref="AgregarHijo"/>. El 62 % de los
+        ''' nodos de un arbol de NPC son hojas, y darle a cada una su propia `List` vacia costaba 32
+        ''' bytes por nodo que no se usan nunca.</para>
+        ''' <para>EL TIPO DE RETORNO ES DE SOLO LECTURA A PROPOSITO. Con `List(Of WbNode)`, un
+        ''' `nodo.Children.Add(x)` sobre un nodo sin hijos escribiria en la instancia COMPARTIDA y
+        ''' contaminaria a todos los demas nodos vacios del proceso — en silencio. Con
+        ''' `IReadOnlyList` eso no compila, asi que el gate es el compilador y no una convencion.</para></summary>
+        Public ReadOnly Property Children As IReadOnlyList(Of WbNode)
+            Get
+                If _children Is Nothing Then Return SinHijos
+                Return _children
+            End Get
+        End Property
+        Private _children As List(Of WbNode)
+        Private Shared ReadOnly SinHijos As IReadOnlyList(Of WbNode) = Array.Empty(Of WbNode)()
+
+        ''' <summary>Cuantos hijos tiene, sin materializar nada.</summary>
+        Public ReadOnly Property ChildCount As Integer
+            Get
+                If _children Is Nothing Then Return 0
+                Return _children.Count
+            End Get
+        End Property
+
+        ''' <summary>La lista mutable, creandola si hace falta. Privada: toda mutacion entra por los
+        ''' metodos de abajo, que son los que mantienen la invariante padre-hijo.</summary>
+        Private ReadOnly Property HijosMutables As List(Of WbNode)
+            Get
+                If _children Is Nothing Then _children = New List(Of WbNode)()
+                Return _children
+            End Get
+        End Property
+
+        ''' <summary>Cuelga un hijo y le pone el padre. PRIVADA: el alta publica es <see cref="AddChild"/>,
+        ''' una sola, para que no haya un camino que deje el nodo sin `Parent` — sin `Parent` se rompen
+        ''' <see cref="Path"/> y la resolucion hacia arriba, o sea los contadores, y en silencio.</summary>
+        Private Sub AgregarHijo(hijo As WbNode)
+            hijo.Parent = Me
+            HijosMutables.Add(hijo)
+        End Sub
+
+        ''' <summary>Inserta un hijo en una posicion y le pone el padre. Misma invariante que
+        ''' <see cref="AddChild"/>.</summary>
+        Public Sub InsertarHijo(indice As Integer, hijo As WbNode)
+            hijo.Parent = Me
+            HijosMutables.Insert(indice, hijo)
+        End Sub
+
+        Public Function QuitarHijo(hijo As WbNode) As Boolean
+            If _children Is Nothing Then Return False
+            Return _children.Remove(hijo)
+        End Function
+
+        Public Sub QuitarHijoEn(indice As Integer)
+            If _children Is Nothing Then Return
+            _children.RemoveAt(indice)
+        End Sub
+
+        Public Sub LimpiarHijos()
+            If _children Is Nothing Then Return
+            _children.Clear()
+        End Sub
+
+        Public Function IndiceDeHijo(hijo As WbNode) As Integer
+            If _children Is Nothing Then Return -1
+            Return _children.IndexOf(hijo)
+        End Function
+
         ''' <summary>Valor tipado de una hoja. Nothing en los contenedores.</summary>
         Public Property Value As Object
         ''' <summary>Firma del subrecord si este nodo ES un subrecord; "" si no.</summary>
@@ -205,27 +350,81 @@ Namespace Canon
         ''' <summary>Para zstrings: cuántos NUL de terminación traía la fuente (0..n). Se re-emiten
         ''' tal cual, así el round-trip no depende de asumir que siempre hay exactamente uno.</summary>
         Public Property TerminatorCount As Integer
+            Get
+                If _extras Is Nothing Then Return VACIO.TerminatorCount
+                Return _extras.TerminatorCount
+            End Get
+            Set(value As Integer)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.TerminatorCount) Then Return
+                ExtrasMutables.TerminatorCount = value
+            End Set
+        End Property
         ''' <summary>Rama elegida por una unión (índice en Members). -1 si no es unión.</summary>
-        Public Property UnionBranch As Integer = -1
+        Public Property UnionBranch As Integer
+            Get
+                If _extras Is Nothing Then Return VACIO.UnionBranch
+                Return _extras.UnionBranch
+            End Get
+            Set(value As Integer)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.UnionBranch) Then Return
+                ExtrasMutables.UnionBranch = value
+            End Set
+        End Property
         ''' <summary>Bytes crudos SÓLO para hojas de texto cuyo decode→encode no reproduce la
         ''' fuente (secuencias que el codepage no representa de ida y vuelta). El campo sigue
         ''' declarado, nombrado y con sus bytes contabilizados; lo único que se conserva es la
         ''' forma exacta del texto. Se CUENTA en el reporte: no es un blob ni una copia por
         ''' firma.</summary>
         Public Property RawOverride As Byte()
+            Get
+                If _extras Is Nothing Then Return VACIO.RawOverride
+                Return _extras.RawOverride
+            End Get
+            Set(value As Byte())
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.RawOverride) Then Return
+                ExtrasMutables.RawOverride = value
+            End Set
+        End Property
         ''' <summary>Nombre por posición dentro de un array cuyos elementos tienen nombre propio
         ''' declarado ('Textures', 'Addon Nodes', …). Pisa al de la def.</summary>
         Public Property OverrideName As String
+            Get
+                If _extras Is Nothing Then Return VACIO.OverrideName
+                Return _extras.OverrideName
+            End Get
+            Set(value As String)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.OverrideName) Then Return
+                ExtrasMutables.OverrideName = value
+            End Set
+        End Property
         ''' <summary>Sólo en la RAÍZ: la Form Version con la que se parseó.
         ''' <para>Las ramas de unión que dependen de la versión se ELIGEN en el parseo según ese
         ''' número. Si el consumidor después escribe el header del override con otra versión, los
         ''' bytes de campos como MODT o DAMA quedan en un formato que el header desmiente. El
         ''' escritor verifica que la versión de emisión sea la misma; ver <c>WbWriter.EmitBody</c>.</para>
         ''' <para>-1 = árbol creado desde cero (record nuevo), no hay versión de origen que atar.</para></summary>
-        Public Property ParsedFormVersion As Integer = -1
+        Public Property ParsedFormVersion As Integer
+            Get
+                If _extras Is Nothing Then Return VACIO.ParsedFormVersion
+                Return _extras.ParsedFormVersion
+            End Get
+            Set(value As Integer)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.ParsedFormVersion) Then Return
+                ExtrasMutables.ParsedFormVersion = value
+            End Set
+        End Property
         ''' <summary>La hoja se leyó con MENOS bytes de los que declara su tipo. Se
         ''' re-emite con esa misma cantidad para no cambiar el archivo.</summary>
         Public Property ShortRead As Boolean
+            Get
+                If _extras Is Nothing Then Return VACIO.ShortRead
+                Return _extras.ShortRead
+            End Get
+            Set(value As Boolean)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.ShortRead) Then Return
+                ExtrasMutables.ShortRead = value
+            End Set
+        End Property
         ''' <summary>Cantidad de elementos que el CONTADOR declaraba al parsear.
         ''' <para>Un round-trip NO puede "corregir" nada: hay records cuyo contador ya viene mal en
         ''' el archivo original (hay NPC_ del master de Fallout 4 que declaran <c>COCT = 2</c> y
@@ -233,7 +432,16 @@ Namespace Canon
         ''' recalcula sólo si la cantidad de elementos CAMBIÓ respecto de lo que decía la fuente —
         ''' o sea, sólo si alguien editó el array.</para>
         ''' <para>-1 = el nodo no vino de un parseo (array creado desde cero).</para></summary>
-        Public Property ParsedCount As Integer = -1
+        Public Property ParsedCount As Integer
+            Get
+                If _extras Is Nothing Then Return VACIO.ParsedCount
+                Return _extras.ParsedCount
+            End Get
+            Set(value As Integer)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.ParsedCount) Then Return
+                ExtrasMutables.ParsedCount = value
+            End Set
+        End Property
 
         ''' <summary>Sólo en las hojas de REFERENCIA, y sólo cuando la lectura tradujo el valor al
         ''' espacio del orden de carga: qué decía el archivo y a qué se tradujo.
@@ -253,15 +461,87 @@ Namespace Canon
         ''' sin traducir (inspección de un archivo suelto). En los dos casos el valor ya ES el del
         ''' archivo y no hay nada que restituir.</para></summary>
         Public Property ReferenciaDeArchivo As Boolean
+            Get
+                If _extras Is Nothing Then Return VACIO.ReferenciaDeArchivo
+                Return _extras.ReferenciaDeArchivo
+            End Get
+            Set(value As Boolean)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.ReferenciaDeArchivo) Then Return
+                ExtrasMutables.ReferenciaDeArchivo = value
+            End Set
+        End Property
         ''' <summary>El valor TAL CUAL lo trae el archivo, con el índice de master de ESE archivo.
         ''' Sólo vale si <see cref="ReferenciaDeArchivo"/>.</summary>
         Public Property ReferenciaLocalDeArchivo As UInteger
+            Get
+                If _extras Is Nothing Then Return VACIO.ReferenciaLocalDeArchivo
+                Return _extras.ReferenciaLocalDeArchivo
+            End Get
+            Set(value As UInteger)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.ReferenciaLocalDeArchivo) Then Return
+                ExtrasMutables.ReferenciaLocalDeArchivo = value
+            End Set
+        End Property
         ''' <summary>El valor del orden de carga al que se tradujo ese local. Sirve para saber si
         ''' alguien cambió a dónde apunta la referencia después de leerla: si el valor actual
         ''' del nodo ya no es éste, el local de origen dejó de describirlo y no se
         ''' restituye.</summary>
         Public Property ReferenciaGlobalDeArchivo As UInteger
+            Get
+                If _extras Is Nothing Then Return VACIO.ReferenciaGlobalDeArchivo
+                Return _extras.ReferenciaGlobalDeArchivo
+            End Get
+            Set(value As UInteger)
+                If _extras Is Nothing AndAlso EsElDefault(value, VACIO.ReferenciaGlobalDeArchivo) Then Return
+                ExtrasMutables.ReferenciaGlobalDeArchivo = value
+            End Set
+        End Property
 
+
+        ''' <summary>Los campos que casi ningun nodo usa, apartados en un objeto que se crea recien
+        ''' cuando alguno se aparta de su valor por defecto.
+        ''' <para>Un arbol de NPC de Fallout 4 tiene 1.872.192 nodos. Diez campos que solo importan en
+        ''' las hojas de REFERENCIA (203.486), en los zstring (10.237), en las uniones y en la RAIZ de
+        ''' cada record (4.473) costaban 40 bytes en CADA nodo — 71 MB para llenar de ceros y de -1.
+        ''' Aca cuestan una referencia, y el objeto lo pagan los ~200.000 nodos que de verdad lo usan.</para>
+        ''' <para>Los defaults se conservan EXACTOS —los -1 no son cero— y por eso cada setter no aloca
+        ''' nada si le asignan el default a un nodo que todavia no tiene extras: es la asignacion que hace
+        ''' el inicializador de <see cref="Clonar"/> para todos los campos que el original no uso.</para></summary>
+        Private NotInheritable Class WbNodeExtras
+            Public TerminatorCount As Integer
+            Public UnionBranch As Integer = -1
+            Public RawOverride As Byte()
+            Public OverrideName As String
+            Public ParsedFormVersion As Integer = -1
+            Public ParsedCount As Integer = -1
+            Public ShortRead As Boolean
+            Public ReferenciaDeArchivo As Boolean
+            Public ReferenciaLocalDeArchivo As UInteger
+            Public ReferenciaGlobalDeArchivo As UInteger
+        End Class
+
+        ''' <summary>El nodo SIN extras. Es de donde sale el valor por defecto de cada campo, para los
+        ''' getters y para el guard de los setters: asi el default de un campo esta escrito UNA sola vez —en
+        ''' el inicializador del campo— y no tres. Con tres copias, mover una dejaba un nodo sin extras
+        ''' devolviendo -1 y uno con extras devolviendo 0, segun si alguien toco un campo NO RELACIONADO.
+        ''' NUNCA se muta: los setters escriben en <see cref="ExtrasMutables"/>.</summary>
+        Private Shared ReadOnly VACIO As New WbNodeExtras()
+
+        ''' <summary>Si el valor que entra ES el default del campo. Un setter que reciba el default sobre un
+        ''' nodo sin extras no tiene nada que guardar — y asi el inicializador de <see cref="Clonar"/>, que
+        ''' asigna los diez campos, no aloca nada para los que el original no uso.</summary>
+        Private Shared Function EsElDefault(Of T)(valor As T, porDefecto As T) As Boolean
+            Return Equals(valor, porDefecto)
+        End Function
+
+        Private _extras As WbNodeExtras
+
+        Private ReadOnly Property ExtrasMutables As WbNodeExtras
+            Get
+                If _extras Is Nothing Then _extras = New WbNodeExtras()
+                Return _extras
+            End Get
+        End Property
         Public Sub New(d As WbDef)
             _Def = d
         End Sub
@@ -272,9 +552,10 @@ Namespace Canon
             End Get
         End Property
 
+        ''' <summary>Cuelga un hijo al final y devuelve el hijo. Es EL alta: pone el padre y es lo unico
+        ''' publico que agrega al final.</summary>
         Public Function AddChild(child As WbNode) As WbNode
-            child.Parent = Me
-            Children.Add(child)
+            AgregarHijo(child)
             Return child
         End Function
 

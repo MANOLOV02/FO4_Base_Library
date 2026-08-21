@@ -263,12 +263,27 @@ Public Class FilesDictionary_class
     Public Shared Function OverridePushCount() As Integer
         Return Threading.Volatile.Read(_overridePushCount)
     End Function
-    ''' <summary>Extensiones que el diccionario indexa de sueltos y archives. Las ultimas cubren archivos de
-    ''' configuracion de RaceMenu (skee64) y LooksMenu (f4ee): los dos los abren por la capa de archives del
-    ''' juego, asi que pueden vivir DENTRO de un BSA/BA2 y a menudo lo hacen - .ini (morphs extendidos, BodyGen),
-    ''' .jslot/.slot (presets) y .pex/.psc (de donde salen las listas de paints, ver 60-racemenu-listas-de-paint).
-    ''' Sin .ini el catalogo de sliders extendidos cargaba vacio y todo slider extra resolvia a "sin morph".</summary>
-    Private Shared ReadOnly SupportedExtensions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt", ".json", ".xml", ".ssf", ".sclp", ".hkx", ".hkt", ".ini", ".jslot", ".slot", ".pex", ".psc"}
+    ''' <summary>Extensiones que el diccionario indexa de sueltos y archives.
+    ''' <para>.ini, .jslot/.slot y .pex/.psc son de RaceMenu (skee64) y LooksMenu (f4ee): los dos los abren
+    ''' por la capa de archives del juego, asi que pueden vivir DENTRO de un BSA/BA2 y a menudo lo hacen.
+    ''' Sin .ini el catalogo de sliders extendidos cargaba vacio y todo slider extra resolvia a "sin morph".</para>
+    ''' <para>Las de TEXTO EXTERNO (.STRINGS/.DLSTRINGS/.ILSTRINGS) no se listan aca: salen de
+    ''' <see cref="LocalizedStringExtensions.Todas"/>, que las deriva del enum de clases de tabla. Escribirlas
+    ''' dos veces era el mismo dato en dos lugares, y si divergen la resolucion de nombres devuelve cadena
+    ''' vacia PARA SIEMPRE y en silencio: el archivo esta, el diccionario no lo indexo, nadie tira.</para>
+    ''' <para>⚠️ Agregar una extension cambia <see cref="ExtensionSetTag"/>, o sea la subcarpeta del cache de
+    ''' indices: el primer arranque despues re-indexa los archives UNA vez y deja los .cac viejos huerfanos.</para></summary>
+    Private Shared ReadOnly SupportedExtensions As HashSet(Of String) = ConstruirExtensiones()
+
+    Private Shared Function ConstruirExtensiones() As HashSet(Of String)
+        Dim r As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase) From {
+            ".dds", ".bgsm", ".bgem", ".nif", ".tri", ".txt", ".json", ".xml",
+            ".ssf", ".sclp", ".hkx", ".hkt", ".ini", ".jslot", ".slot", ".pex", ".psc"}
+        For Each ext In LocalizedStringExtensions.Todas
+            r.Add(ext)
+        Next
+        Return r
+    End Function
 
     ''' <summary>App-specific data store. Apps register their own data here (presets, high heels, etc.) keyed by type.</summary>
     Private Shared ReadOnly _appData As New ConcurrentDictionary(Of Type, Object)
@@ -716,7 +731,12 @@ Public Class FilesDictionary_class
     ''' <summary>Pool para de-duplicar las strings que se guardan A LARGO PLAZO (claves y FullPath).
     ''' <para>No se usa String.Intern: toma un lock sobre la tabla GLOBAL del runtime con millones de paths
     ''' desde varios workers, y lo interned no se libera nunca, asi que cada recarga de load order filtraba
-    ''' los paths del scan anterior. Este pool se limpia al empezar cada scan.</para>
+    ''' los paths del scan anterior. Este pool se DESCARTA al TERMINAR cada scan: su trabajo —que la clave del
+    ''' diccionario y el FullPath de la entrada sean la misma instancia— ya esta hecho ahi, y lo unico que
+    ''' quedaba vivo despues era la tabla de busqueda (380.054 entradas de puro indice, ~23 MB).</para>
+    ''' <para>Consecuencia para <see cref="RegisterArchive"/> y <see cref="TryAddDictionaryEntry"/>: lo que se
+    ''' monte DESPUES del scan no deduplica contra los paths de ese scan. No afecta a la identidad
+    ''' clave-FullPath, que la garantiza el propio insertador usando la MISMA instancia para las dos.</para>
     ''' <para>Ordinal, NO OrdinalIgnoreCase: colapsaria Textures\A.dds con textures\a.dds y reescribiria el
     ''' casing en silencio, y estas strings se muestran verbatim en los pickers y se escriben en records.</para>
     ''' <para>Solo en los sitios de INSERCION, nunca en el lookup: poolear strings arbitrarias del caller
@@ -726,6 +746,43 @@ Public Class FilesDictionary_class
     Private Shared Function PoolPath(s As String) As String
         If String.IsNullOrEmpty(s) Then Return s
         Return _pathPool.GetOrAdd(s, s)
+    End Function
+
+    ''' <summary>Cuantas veces cambio el CONTENIDO del diccionario de Data. Es el sello que necesita
+    ''' cualquier vista derivada del diccionario (una lista de claves, un indice propio) para saber que
+    ''' tiene que rearmarse, sin espiar el diccionario ni depender de un evento.
+    ''' <para>Se incrementa AL TERMINAR el scan, no al empezarlo: mientras el scan corre el diccionario
+    ''' esta a medio llenar, asi que una vista cacheada en el medio queda bajo la generacion VIEJA y el
+    ''' bump del final la invalida. Sube tambien si el scan falla — el `Dictionary.Clear()` ya paso.</para>
+    ''' <para>Y sube en TODOS los mutadores, no solo en el scan: <see cref="RegisterArchive"/>,
+    ''' <see cref="UnregisterArchive"/>, <see cref="TryAddDictionaryEntry"/>,
+    ''' <see cref="AddOrUpdateDictionaryEntry"/> y <see cref="RemoveDictionaryEntry"/> tambien cambian el
+    ''' contenido. Con el bump solo en el scan, el sello prometia "cambios de contenido" y contaba scans:
+    ''' montar un BA2 en runtime —lo que hace WM al empaquetar— dejaba viva toda vista derivada.</para></summary>
+    Public Shared ReadOnly Property ScanGeneration As Integer
+        Get
+            Return Threading.Volatile.Read(_scanGeneration)
+        End Get
+    End Property
+    Private Shared _scanGeneration As Integer = 0
+
+    ''' <summary>La entrada GANADORA para un path de Data, o Nothing si no hay ninguna. Es la consulta
+    ''' que contesta "cual es el archivo final para esta carga de plugins y este load order": la
+    ''' precedencia entre suelto y archives ya la aplico el scan (ver Resolve_Conflict), asi que
+    ''' preguntar aca no abre ningun archive.</summary>
+    ''' <summary>Si dos entradas nombran EL MISMO archivo: mismo medio (suelto o archive), mismo archive y
+    ''' mismo indice dentro de el. Es lo que decide si republicar una clave es un cambio de contenido o un
+    ''' no-op. La fecha y el `SourceOrder` no entran: no cambian QUE bytes devuelve la entrada.</summary>
+    Private Shared Function MismaEntrada(a As File_Location, b As File_Location) As Boolean
+        If a Is Nothing OrElse b Is Nothing Then Return False
+        If a.Index <> b.Index Then Return False
+        Return String.Equals(a.BA2File, b.BA2File, StringComparison.OrdinalIgnoreCase)
+    End Function
+
+    Public Shared Function TryGetEntry(path As String) As File_Location
+        Dim encontrado As File_Location = Nothing
+        If Dictionary.TryGetValue(NormalizeDictionaryKey(path), encontrado) Then Return encontrado
+        Return Nothing
     End Function
 
     Public Shared Function GetBytes(File As String) As Byte()
@@ -1417,6 +1474,12 @@ Public Class FilesDictionary_class
                 ' Best-effort: si no se puede limpiar, son bytes muertos y nada más. No romper el scan por esto.
             End Try
         Next
+
+        ' ⛔ LAS CARPETAS DE OTROS SETS DE EXTENSIONES NO SE BORRAN, Y NO ES UN OLVIDO. `ExtensionSetTag`
+        ' es el nombre de la subcarpeta justamente para que NPC Manager y Wardrobe Manager —que declaran
+        ' sets distintos: WM agrega .osp— COEXISTAN en vez de rechazarse y reescribirse los .cac. Barrer
+        ' las hermanas haria que cada app destruya el cache de la otra en cada arranque, que es el bug que
+        ' la subcarpeta vino a arreglar. El precio es que cambiar el set deja la carpeta anterior en disco.
     End Sub
     ' =========================================================
 
@@ -1642,6 +1705,7 @@ Public Class FilesDictionary_class
         SyncLock _overriddenEntriesLock
             If _dictionary.TryAdd(normalized, location) Then
                 IndexDictionaryKey(normalized)
+                Threading.Interlocked.Increment(_scanGeneration)   ' cambio de contenido: ver ScanGeneration
                 ' Clear stale byte cache for this entry
                 Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
                 _bytesCache.TryRemove(normalized, dummy)
@@ -1671,6 +1735,16 @@ Public Class FilesDictionary_class
         SyncLock _overriddenEntriesLock
             Dim existing As File_Location = Nothing
             Dim habia = _dictionary.TryGetValue(normalized, existing) AndAlso existing IsNot Nothing
+
+            ' EL SELLO SUBE SOLO SI LA ENTRADA CAMBIO DE VERDAD. Este metodo se llama en el camino
+            ' CALIENTE: el resolver de materiales republica la textura de nuca en cada render y en cada
+            ' NPC del bake, casi siempre con la MISMA entrada. Bumpeando incondicionalmente, cada render
+            ' invalidaba toda vista derivada del diccionario —entre ellas las tablas de texto, que
+            ' entonces se re-abren del BA2 y se re-indexan— o sea el segundo largo que este trabajo vino
+            ' a sacar, re-pagado despues de cada cuadro.
+            If Not habia OrElse Not MismaEntrada(existing, location) Then
+                Threading.Interlocked.Increment(_scanGeneration)
+            End If
             _dictionary(normalized) = location
             If habia AndAlso Not existing.IsLosseFile Then PushOverriddenEntryUnlocked(normalized, existing)
 
@@ -1687,6 +1761,10 @@ Public Class FilesDictionary_class
         ' de las demas mutaciones estructurales: con el TryPop adentro y la publicacion en _dictionary afuera,
         ' dos removedores popean entradas distintas y se pisan al publicar.
         SyncLock _overriddenEntriesLock
+            ' Quitar una entrada SI es siempre un cambio de contenido (si la clave no estaba, el metodo
+            ' no llega hasta aca con nada que quitar, pero el bump de mas es inocuo y no esta en un
+            ' camino caliente como el de AddOrUpdate).
+            Threading.Interlocked.Increment(_scanGeneration)
             Dim dummy As (Datos As WeakReference(Of Byte()), Gen As Integer, Token As ArchiveGenToken) = Nothing
             _bytesCache.TryRemove(normalized, dummy)
 
@@ -1769,6 +1847,12 @@ Public Class FilesDictionary_class
             ' Montar es CAMBIAR lo que hay en esa ruta: los readers pooleados tienen la tabla de entradas VIEJA.
             BumpArchiveEpoch(ArchiveKey(absolutePath))
 
+            ' Y ES UN CAMBIO DE CONTENIDO DEL DICCIONARIO: sube tambien el sello de generacion. Sin esto,
+            ' una vista derivada (la lista de claves bajo Strings\ del resolver de textos, por ejemplo)
+            ' sobrevive al montaje y sigue contestando por el load order de ANTES. El sello se llama
+            ' `ScanGeneration` pero promete cambios de CONTENIDO, y montar los cambia.
+            Threading.Interlocked.Increment(_scanGeneration)
+
             Dim added As New ConcurrentBag(Of String)()
             Dim noopProgress As IProgress(Of (String, Integer, Integer)) =
                 New Progress(Of (String, Integer, Integer))(Sub(_x)
@@ -1832,6 +1916,9 @@ Public Class FilesDictionary_class
     ''' `RemoveDictionaryEntry` la restaura como GANADOR — vuelve el asset permanentemente vacio.</para>
     ''' <para>Lo llaman <see cref="UnregisterArchive"/> y el rollback de <see cref="RegisterArchive"/>.</para></summary>
     Private Shared Function DesmontarBajoCandado(absolutePath As String, archiveFileName As String) As Integer
+        ' Mismo motivo que en RegisterArchive: desmontar cambia el CONTENIDO del diccionario, asi que sube
+        ' el sello y toda vista derivada se rearma. Va primero, junto con los otros dos bumps.
+        Threading.Interlocked.Increment(_scanGeneration)
         ' LOS DOS BUMPS VAN PRIMERO, ANTES DE TOCAR EL DICCIONARIO. `RemoveDictionaryEntry` purga
         ' `_bytesCache` clave por clave y el barrido es O(diccionario) —cientos de miles de entradas—, así
         ' que con el bump al final quedaba una ventana larga en la que un lector todavía pasaba el sello y
@@ -2055,10 +2142,6 @@ Public Class FilesDictionary_class
                 ClearSearchIndexes()
             End SyncLock
 
-            ' Drop the previous scan's pooled paths — they're only referenced by the dictionary we
-            ' just cleared. (String.Intern, which this replaced, could never release them.)
-            _pathPool = New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
-
             ' O1.1: Clear byte cache when dictionary is rebuilt
             ClearBytesCache()
 
@@ -2252,6 +2335,20 @@ Public Class FilesDictionary_class
             ' ThreadPool, sin sync context de la UI. MsgBox desde worker cuelga.
             _scanErrors.Enqueue("Fill_DictionaryAsync failed: " & ex.Message)
             Logger.LogLazy(Function() "[FilesDictionary] Fill_DictionaryAsync error: " & ex.ToString())
+        Finally
+            ' EL POOL DE PATHS NO SOBREVIVE AL SCAN. Su trabajo —que la clave del diccionario y el
+            ' `FullPath` de la entrada sean LA MISMA instancia— ya esta hecho cuando el scan termina; lo
+            ' unico que queda vivo despues es la tabla de busqueda, y son 380.054 entradas de puro
+            ' indice que nadie vuelve a consultar. Se descarta aca y no en el proximo scan, que es
+            ' donde estaba: asi no se paga entre uno y otro, que es el 100 % del tiempo de uso.
+            ' Lo que se pierde: un `RegisterArchive` posterior deja de deduplicar contra los paths de
+            ' ESTE scan y podria quedarse con una copia propia de una ruta repetida. Es un puñado de
+            ' rutas por montaje, contra decenas de MB permanentes.
+            _pathPool = New ConcurrentDictionary(Of String, String)(StringComparer.Ordinal)
+
+            ' El sello sube SIEMPRE, tambien si el scan reviento: el `Dictionary.Clear()` de arriba ya
+            ' invalido toda vista derivada, asi que dejarla viva porque el scan fallo es peor.
+            Threading.Interlocked.Increment(_scanGeneration)
         End Try
     End Function
     Private Shared Function ArchiveBelongsToPlugin(archiveFileName As String, pluginFileName As String) As Boolean
