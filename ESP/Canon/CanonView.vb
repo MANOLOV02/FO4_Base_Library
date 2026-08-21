@@ -104,6 +104,17 @@
 
         ''' <summary>Referencia a otro record. El árbol ya viene con las referencias en el espacio
         ''' del orden de carga, así que leer y escribir usan el mismo valor.</summary>
+        ''' <summary>Pone o saca el campo de esa ruta. Con False lo deja AUSENTE; con True se
+        ''' asegura de que exista, con su valor por defecto.</summary>
+        Protected Sub PonerPresencia(ruta As String, presente As Boolean)
+            If Node Is Nothing Then Return
+            If presente Then
+                WbEdit.EnsureFieldPath(Node, Context, ruta)
+            Else
+                WbEdit.QuitarCampo(Node, ruta)
+            End If
+        End Sub
+
         Protected Function Referencia(ruta As String) As UInteger
             Return CanonBridge.U32(Node, ruta)
         End Function

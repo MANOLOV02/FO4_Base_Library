@@ -421,9 +421,59 @@
         ''' <summary>Quita un elemento de un arreglo. Devuelve False si el índice no existe.
         ''' <para>El contador del arreglo, si el formato lo declara aparte, se recalcula solo al
         ''' escribir: no hay que acordarse de bajarlo a mano.</para></summary>
+        ''' <summary>Saca del record el campo que esta en esa ruta, dejandolo AUSENTE.
+        ''' <para>Ausente no es lo mismo que valer cero: el formato distingue las dos cosas y hay
+        ''' campos donde el motor se comporta distinto segun el subrecord este o no. Sin esto la API
+        ''' solo sabia preguntar si un campo estaba y ponerle valor, pero no sacarlo.</para>
+        ''' <para>Devuelve False si la ruta no resolvia: no habia nada que sacar.</para></summary>
+        Public Function QuitarCampo(nodo As WbNode, ruta As String) As Boolean
+            If nodo Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return False
+            Dim destino = nodo.ByFieldPath(ruta)
+            If destino Is Nothing Then Return False
+            Dim actual = destino
+            While actual IsNot Nothing AndAlso actual.Parent IsNot Nothing
+                If TypeOf actual.Def Is WbSubrecordDef Then
+                    actual.Parent.Children.Remove(actual)
+                    Return True
+                End If
+                actual = actual.Parent
+            End While
+            If destino.Parent Is Nothing Then Return False
+            Return destino.Parent.Children.Remove(destino)
+        End Function
+
         Public Function QuitarElemento(contenedor As WbNode, indice As Integer) As Boolean
             If contenedor Is Nothing OrElse indice < 0 OrElse indice >= contenedor.Children.Count Then Return False
             contenedor.Children.RemoveAt(indice)
+            Return True
+        End Function
+
+''' <summary>Reordena los elementos de un arreglo segun una permutacion de sus posiciones
+''' actuales: <c>permutacion(i)</c> es el elemento que queda en la posicion i.
+''' <para>El orden de los elementos ES un dato del record —el formato lo conserva tal cual y hay
+''' arreglos donde la posicion misma significa algo—, asi que moverlos tiene que ser una
+''' operacion del motor y no algo que cada consumidor arme sacando y volviendo a poner: eso
+''' obligaria a copiar los campos de cada elemento a mano.</para>
+''' <para>Exige una permutacion COMPLETA. Una lista parcial o con repetidos no reordena a medias:
+''' devuelve False y no toca nada, porque un reorden silenciosamente incompleto deja el record
+''' en un estado que nadie pidio.</para></summary>
+        Public Function ReordenarElementos(contenedor As WbNode, permutacion As IList(Of Integer)) As Boolean
+            If contenedor Is Nothing OrElse permutacion Is Nothing Then Return False
+            Dim n = contenedor.Children.Count
+            If permutacion.Count <> n Then Return False
+            Dim visto(If(n = 0, 0, n - 1)) As Boolean
+            For Each i In permutacion
+                If i < 0 OrElse i >= n OrElse visto(i) Then Return False
+                visto(i) = True
+            Next
+            Dim ordenados As New List(Of WbNode)(n)
+            For Each i In permutacion
+                ordenados.Add(contenedor.Children(i))
+            Next
+            contenedor.Children.Clear()
+            For Each hijo In ordenados
+                contenedor.Children.Add(hijo)
+            Next
             Return True
         End Function
 

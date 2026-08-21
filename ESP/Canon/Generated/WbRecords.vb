@@ -386,49 +386,49 @@ Namespace Canon
             Dim res = vista.Resolver
             Select Case ctx.RecordSignature
                 Case "ARMA"
-                    If ctx.Game = WbGame.Fallout4 Then Return New ArmaFO4(raiz, ctx, res)
-                    Return New ArmaSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New ArmaFO4(raiz, ctx, res)
+            Return New ArmaSSE(raiz, ctx, res)
                 Case "ARMO"
-                    If ctx.Game = WbGame.Fallout4 Then Return New ArmoFO4(raiz, ctx, res)
-                    Return New ArmoSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New ArmoFO4(raiz, ctx, res)
+            Return New ArmoSSE(raiz, ctx, res)
                 Case "BPTD"
-                    If ctx.Game = WbGame.Fallout4 Then Return New BptdFO4(raiz, ctx, res)
-                    Return New BptdSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New BptdFO4(raiz, ctx, res)
+            Return New BptdSSE(raiz, ctx, res)
                 Case "CLFM"
-                    If ctx.Game = WbGame.Fallout4 Then Return New ClfmFO4(raiz, ctx, res)
-                    Return New ClfmSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New ClfmFO4(raiz, ctx, res)
+            Return New ClfmSSE(raiz, ctx, res)
                 Case "DFOB"
-                    Return New DfobFO4(raiz, ctx, res)
+            Return New DfobFO4(raiz, ctx, res)
                 Case "FLST"
-                    If ctx.Game = WbGame.Fallout4 Then Return New FlstFO4(raiz, ctx, res)
-                    Return New FlstSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New FlstFO4(raiz, ctx, res)
+            Return New FlstSSE(raiz, ctx, res)
                 Case "HDPT"
-                    If ctx.Game = WbGame.Fallout4 Then Return New HdptFO4(raiz, ctx, res)
-                    Return New HdptSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New HdptFO4(raiz, ctx, res)
+            Return New HdptSSE(raiz, ctx, res)
                 Case "IDLE"
-                    If ctx.Game = WbGame.Fallout4 Then Return New IdleFO4(raiz, ctx, res)
-                    Return New IdleSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New IdleFO4(raiz, ctx, res)
+            Return New IdleSSE(raiz, ctx, res)
                 Case "LVLI"
-                    If ctx.Game = WbGame.Fallout4 Then Return New LvliFO4(raiz, ctx, res)
-                    Return New LvliSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New LvliFO4(raiz, ctx, res)
+            Return New LvliSSE(raiz, ctx, res)
                 Case "LVLN"
-                    If ctx.Game = WbGame.Fallout4 Then Return New LvlnFO4(raiz, ctx, res)
-                    Return New LvlnSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New LvlnFO4(raiz, ctx, res)
+            Return New LvlnSSE(raiz, ctx, res)
                 Case "MSWP"
-                    Return New MswpFO4(raiz, ctx, res)
+            Return New MswpFO4(raiz, ctx, res)
                 Case "NPC_"
-                    If ctx.Game = WbGame.Fallout4 Then Return New NpcFO4(raiz, ctx, res)
-                    Return New NpcSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New NpcFO4(raiz, ctx, res)
+            Return New NpcSSE(raiz, ctx, res)
                 Case "OMOD"
-                    Return New OmodFO4(raiz, ctx, res)
+            Return New OmodFO4(raiz, ctx, res)
                 Case "OTFT"
-                    If ctx.Game = WbGame.Fallout4 Then Return New OtftFO4(raiz, ctx, res)
-                    Return New OtftSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New OtftFO4(raiz, ctx, res)
+            Return New OtftSSE(raiz, ctx, res)
                 Case "QUST"
-                    If ctx.Game = WbGame.Fallout4 Then Return New QustFO4(raiz, ctx, res)
-                    Return New QustSSE(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New QustFO4(raiz, ctx, res)
+            Return New QustSSE(raiz, ctx, res)
                 Case "RACE"
-                    If ctx.Game = WbGame.Fallout4 Then Return New RaceFO4(raiz, ctx, res)
+            If ctx.Game = WbGame.Fallout4 Then Return New RaceFO4(raiz, ctx, res)
             Return New RaceSSE(raiz, ctx, res)
                 Case "TXST"
             If ctx.Game = WbGame.Fallout4 Then Return New TxstFO4(raiz, ctx, res)
