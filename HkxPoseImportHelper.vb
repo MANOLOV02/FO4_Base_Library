@@ -1,4 +1,4 @@
-Option Strict On
+﻿Option Strict On
 Option Explicit On
 
 Imports System.IO
@@ -387,6 +387,10 @@ Public NotInheritable Class HkxPoseImportSession
                 ' to refPose too. (Shared with the WM-format path via BuildUnboundFrameLocal.)
                 Dim tr = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
 
+                ' Sólo Scale. tr sale de BuildUnboundFrameLocal, que arma su escala con
+                ' HkxTransformConventionHelper.ResolveUniformScale — o sea que el per-eje del clip
+                ' HKX ya se PROMEDIÓ ahí y nunca llega hasta acá. Ver el remarks de
+                ' ToPoseTransformData: la misma línea en el otro camino NO tiene esa garantía.
                 Dim nuevo As New PoseTransformData With {
                     .X = tr.Translation.X,
                     .Y = tr.Translation.Y,
@@ -731,6 +735,22 @@ Public NotInheritable Class HkxPoseImportSession
         If Single.IsFinite(degrees) AndAlso degrees > diagnostics.MaxDeltaRotationDegrees Then diagnostics.MaxDeltaRotationDegrees = degrees
     End Sub
 
+    ''' <remarks>⛔ Copia sólo <c>Scale</c> aunque <c>PoseTransformData</c> tenga <c>ScaleX/Y/Z</c>.
+    ''' Se probó copiar también <c>ScaleVector</c> y HOY es un no-op, pero la razón NO es que el
+    ''' <c>source</c> no pueda traer per-eje: los dos llamadores le pasan un <c>ComposeTransforms</c>
+    ''' (un delta), no un producto de <see cref="HkxTransformConventionHelper"/>. La razón real es
+    ''' que ese delta tiene escala ≈1 y el epsilon ABSOLUTO de uniformidad (1e-6) lo clasifica
+    ''' uniforme, así que <c>ComposeTransforms</c> emite <c>ScaleVector=(1,1,1)</c>.
+    ''' <para>⚠️ Deja de valer en cuanto un delta traiga escala per-eje de verdad — p.ej. con un
+    ''' mount no uniforme, porque <c>BuildNoAnimSyncLocal</c> copia <c>ScaleVector</c> del local
+    ''' estructural. Ahí <c>ComposeTransforms</c> pondría <c>Scale = 1.0F</c> y esta línea escribiría
+    ''' 1, tirando la escala entera y en silencio.</para>
+    ''' <para>Y arreglarlo no es agregar tres asignaciones: <c>ScaleX/Y/Z</c> son <c>JsonIgnore</c>,
+    ''' ni el export SAM ni <c>SaveImportedHkxPoseXml</c> ni <c>Poses_class.Clone</c> los guardan —o
+    ''' sea previsualizar y guardar darían poses distintas— y <c>PoseTransformData.Isidentity</c> los
+    ''' mira, así que cambiaría QUÉ HUESOS entran a la pose, no sólo sus valores. Aparte, el clip HKX
+    ''' ya perdió su per-eje antes, en <c>ResolveUniformScale</c>, que PROMEDIA los tres ejes. Es un
+    ''' frente propio, no una línea.</para></remarks>
     Private Shared Function ToPoseTransformData(source As Transform_Class) As PoseTransformData
         Dim rot = Transform_Class.Matrix33ToBSRotation(source.Rotation)
         Return New PoseTransformData With {

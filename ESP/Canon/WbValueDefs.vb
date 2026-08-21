@@ -1,4 +1,16 @@
-﻿Imports System.IO
+﻿' ============================================================================================
+' Este archivo transcribe a mano material de las declaraciones de formato de xEdit (ordinales de
+' tipo, constantes de formato, y el DSL de declaracion en si), que estan bajo Mozilla Public
+' License 2.0, y por lo tanto es una obra derivada de ellas.
+'
+' This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+' If a copy of the MPL was not distributed with this file, You can obtain one at
+' https://mozilla.org/MPL/2.0/
+'
+' Proyecto original: https://github.com/TES5Edit/TES5Edit  (ElminsterAU y colaboradores)
+' Ver THIRD-PARTY-NOTICES.md en la raiz del repositorio.
+' ============================================================================================
+Imports System.IO
 Imports System.Text
 Imports FO4_Base_Library
 
@@ -359,6 +371,12 @@ Namespace Canon
                 Dim raw(textLen - 1) As Byte
                 If textLen > 0 Then Buffer.BlockCopy(data, offset, raw, 0, textLen)
                 n.RawOverride = raw
+                ' Aviso al contenedor de que ACÁ hubo un crudo. Sin esto, el subrecord que envuelve a
+                ' esta hoja tiene que recorrer todo su subárbol para averiguarlo, y lo hacía SIEMPRE
+                ' — también en el 99,9 % de los subrecords donde no hay ningún texto. Ver
+                ' WbSubrecordDef.Parse. Sólo lo incrementa ESTA clase, que es la única cuyo nodo
+                ' cuenta para ese aviso (el filtro de allá es `TypeOf leaf.Def Is WbStringDef`).
+                ctx.TextosCrudos += 1
             End If
             Return n
         End Function

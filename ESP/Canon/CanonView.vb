@@ -81,11 +81,7 @@
         Protected Function Entero(ruta As String) As Long
             Dim n = CanonBridge.Find(Node, ruta)
             If n Is Nothing OrElse n.Value Is Nothing Then Return 0L
-            Try
-                Return Convert.ToInt64(n.Value)
-            Catch
-                Return 0L
-            End Try
+            Return CanonBridge.AEntero(n.Value)
         End Function
 
         Protected Function Flt(ruta As String) As Single

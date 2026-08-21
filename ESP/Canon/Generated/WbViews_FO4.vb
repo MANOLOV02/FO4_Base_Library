@@ -1230,6 +1230,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As IArma_Textures) As Boolean Implements IArma.QuitarTextures
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Male\MO2T\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarTextures
@@ -1259,6 +1272,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Male\MO2T\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As IArma_Counters) As Boolean Implements IArma.QuitarCounters
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Male\MO2T\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1292,6 +1318,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As IArma_AddonNodes) As Boolean Implements IArma.QuitarAddonNodes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Male\MO2T\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarAddonNodes
@@ -1321,6 +1360,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Male\MO2T\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As ArmaFO4_Materials) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Male\MO2T\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1354,6 +1406,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures2(elemento As IArma_Textures2) As Boolean Implements IArma.QuitarTextures2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Female\MO3T\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures2(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarTextures2
@@ -1383,6 +1448,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Female\MO3T\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters2(elemento As IArma_Counters2) As Boolean Implements IArma.QuitarCounters2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Female\MO3T\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1416,6 +1494,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes2(elemento As IArma_AddonNodes2) As Boolean Implements IArma.QuitarAddonNodes2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Female\MO3T\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes2(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarAddonNodes2
@@ -1445,6 +1536,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Female\MO3T\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials2(elemento As ArmaFO4_Materials2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Model\Female\MO3T\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1478,6 +1582,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures3(elemento As IArma_Textures3) As Boolean Implements IArma.QuitarTextures3
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Male\MO4T\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures3(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarTextures3
@@ -1507,6 +1624,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Male\MO4T\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters3(elemento As IArma_Counters3) As Boolean Implements IArma.QuitarCounters3
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Male\MO4T\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1540,6 +1670,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes3(elemento As IArma_AddonNodes3) As Boolean Implements IArma.QuitarAddonNodes3
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Male\MO4T\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes3(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarAddonNodes3
@@ -1569,6 +1712,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Male\MO4T\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials3(elemento As ArmaFO4_Materials3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Male\MO4T\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1602,6 +1758,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures4(elemento As IArma_Textures4) As Boolean Implements IArma.QuitarTextures4
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Female\MO5T\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures4(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarTextures4
@@ -1631,6 +1800,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Female\MO5T\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters4(elemento As IArma_Counters4) As Boolean Implements IArma.QuitarCounters4
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Female\MO5T\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1664,6 +1846,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes4(elemento As IArma_AddonNodes4) As Boolean Implements IArma.QuitarAddonNodes4
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Female\MO5T\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes4(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarAddonNodes4
@@ -1693,6 +1888,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Female\MO5T\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials4(elemento As ArmaFO4_Materials4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("1st Person\Female\MO5T\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -1726,6 +1934,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAdditionalRaces(elemento As IArma_AdditionalRaces) As Boolean Implements IArma.QuitarAdditionalRaces
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Additional Races"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAdditionalRaces(permutacion As IList(Of Integer)) As Boolean Implements IArma.ReordenarAdditionalRaces
@@ -1755,6 +1976,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Sculpt Data"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarSculptData(elemento As ArmaFO4_SculptData) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Sculpt Data"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -2772,6 +3006,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Bone Scale Modifier Set\Bone Scale Modifiers"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarBoneScaleModifiers(elemento As ArmaFO4_BoneScaleModifiers) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Bone Scale Modifier Set\Bone Scale Modifiers"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4215,6 +4462,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarScripts(elemento As IArmo_Scripts) As Boolean Implements IArmo.QuitarScripts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Scripts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarScripts(permutacion As IList(Of Integer)) As Boolean Implements IArmo.ReordenarScripts
@@ -4244,6 +4504,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male\World Model\MO2T\Model Information\Textures"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As IArmo_Textures) As Boolean Implements IArmo.QuitarTextures
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male\World Model\MO2T\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4277,6 +4550,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As IArmo_Counters) As Boolean Implements IArmo.QuitarCounters
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male\World Model\MO2T\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean Implements IArmo.ReordenarCounters
@@ -4306,6 +4592,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male\World Model\MO2T\Model Information\Addon Nodes"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As IArmo_AddonNodes) As Boolean Implements IArmo.QuitarAddonNodes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male\World Model\MO2T\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4339,6 +4638,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As ArmoFO4_Materials) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male\World Model\MO2T\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMaterials(permutacion As IList(Of Integer)) As Boolean
@@ -4368,6 +4680,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female\World Model\MO4T\Model Information\Textures"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures2(elemento As IArmo_Textures2) As Boolean Implements IArmo.QuitarTextures2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female\World Model\MO4T\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4401,6 +4726,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters2(elemento As IArmo_Counters2) As Boolean Implements IArmo.QuitarCounters2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female\World Model\MO4T\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarCounters2(permutacion As IList(Of Integer)) As Boolean Implements IArmo.ReordenarCounters2
@@ -4430,6 +4768,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female\World Model\MO4T\Model Information\Addon Nodes"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes2(elemento As IArmo_AddonNodes2) As Boolean Implements IArmo.QuitarAddonNodes2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female\World Model\MO4T\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4463,6 +4814,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials2(elemento As ArmoFO4_Materials2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female\World Model\MO4T\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMaterials2(permutacion As IList(Of Integer)) As Boolean
@@ -4492,6 +4856,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Destructible\DAMC\Resistances"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarResistances(elemento As ArmoFO4_Resistances) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Destructible\DAMC\Resistances"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4525,6 +4902,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStages(elemento As IArmo_Stages) As Boolean Implements IArmo.QuitarStages
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Destructible\Stages"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarStages(permutacion As IList(Of Integer)) As Boolean Implements IArmo.ReordenarStages
@@ -4554,6 +4944,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Keywords\KWDA\Keywords"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarKeywords(elemento As IArmo_Keywords) As Boolean Implements IArmo.QuitarKeywords
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Keywords\KWDA\Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4587,6 +4990,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarModels(elemento As ArmoFO4_Models) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Models"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarModels(permutacion As IList(Of Integer)) As Boolean
@@ -4616,6 +5032,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DAMA"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarDAMA(elemento As ArmoFO4_DAMA) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DAMA"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4649,6 +5078,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAttachParentSlots(elemento As ArmoFO4_AttachParentSlots) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("APPR\Attach Parent Slots"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAttachParentSlots(permutacion As IList(Of Integer)) As Boolean
@@ -4678,6 +5120,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Object Template\Combinations"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCombinations(elemento As ArmoFO4_Combinations) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Object Template\Combinations"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -4773,6 +5228,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties(elemento As ArmoFO4_Properties) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -5084,6 +5552,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct(elemento As ArmoFO4_Struct) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarStruct(permutacion As IList(Of Integer)) As Boolean
@@ -5120,6 +5601,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject2(elemento As ArmoFO4_ArrayOfObject2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -5160,6 +5654,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString2(elemento As ArmoFO4_ArrayOfString2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfString2(permutacion As IList(Of Integer)) As Boolean
@@ -5196,6 +5703,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt322(elemento As ArmoFO4_ArrayOfInt322) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -5236,6 +5756,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat2(elemento As ArmoFO4_ArrayOfFloat2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat2(permutacion As IList(Of Integer)) As Boolean
@@ -5274,6 +5807,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool2(elemento As ArmoFO4_ArrayOfBool2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfBool2(permutacion As IList(Of Integer)) As Boolean
@@ -5310,6 +5856,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct2(elemento As ArmoFO4_Struct2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -5621,6 +6180,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject(elemento As ArmoFO4_ArrayOfObject) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject(permutacion As IList(Of Integer)) As Boolean
@@ -5657,6 +6229,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString(elemento As ArmoFO4_ArrayOfString) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -5697,6 +6282,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt32(elemento As ArmoFO4_ArrayOfInt32) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt32(permutacion As IList(Of Integer)) As Boolean
@@ -5735,6 +6333,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat(elemento As ArmoFO4_ArrayOfFloat) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat(permutacion As IList(Of Integer)) As Boolean
@@ -5771,6 +6382,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool(elemento As ArmoFO4_ArrayOfBool) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -6572,6 +7196,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject3(elemento As ArmoFO4_ArrayOfObject3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject3(permutacion As IList(Of Integer)) As Boolean
@@ -6608,6 +7245,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString3(elemento As ArmoFO4_ArrayOfString3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -6648,6 +7298,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt323(elemento As ArmoFO4_ArrayOfInt323) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt323(permutacion As IList(Of Integer)) As Boolean
@@ -6686,6 +7349,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat3(elemento As ArmoFO4_ArrayOfFloat3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat3(permutacion As IList(Of Integer)) As Boolean
@@ -6722,6 +7398,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool3(elemento As ArmoFO4_ArrayOfBool3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -7857,6 +8546,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures3(elemento As ArmoFO4_Textures3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures3(permutacion As IList(Of Integer)) As Boolean
@@ -7893,6 +8595,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters3(elemento As ArmoFO4_Counters3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -7933,6 +8648,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes3(elemento As ArmoFO4_AddonNodes3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes3(permutacion As IList(Of Integer)) As Boolean
@@ -7969,6 +8697,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials3(elemento As ArmoFO4_Materials3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -8638,6 +9379,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarKeywords2(elemento As ArmoFO4_Keywords2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarKeywords2(permutacion As IList(Of Integer)) As Boolean
@@ -8676,6 +9430,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarIncludes(elemento As ArmoFO4_Includes) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Includes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarIncludes(permutacion As IList(Of Integer)) As Boolean
@@ -8712,6 +9479,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties2(elemento As ArmoFO4_Properties2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -9421,6 +10201,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As IBptd_Textures) As Boolean Implements IBptd.QuitarTextures
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean Implements IBptd.ReordenarTextures
@@ -9450,6 +10243,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As IBptd_Counters) As Boolean Implements IBptd.QuitarCounters
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -9483,6 +10289,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As IBptd_AddonNodes) As Boolean Implements IBptd.QuitarAddonNodes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean Implements IBptd.ReordenarAddonNodes
@@ -9514,6 +10333,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As BptdFO4_Materials) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMaterials(permutacion As IList(Of Integer)) As Boolean
@@ -9543,6 +10375,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Parts"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarBodyParts(elemento As IBptd_BodyParts) As Boolean Implements IBptd.QuitarBodyParts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -10888,6 +11733,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures2(elemento As BptdFO4_Textures2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Part\NAM5\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures2(permutacion As IList(Of Integer)) As Boolean
@@ -10917,6 +11775,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Part\NAM5\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters2(elemento As BptdFO4_Counters2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Part\NAM5\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -10950,6 +11821,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes2(elemento As BptdFO4_AddonNodes2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Part\NAM5\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes2(permutacion As IList(Of Integer)) As Boolean
@@ -10979,6 +11863,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Part\NAM5\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials2(elemento As BptdFO4_Materials2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Part\NAM5\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -11381,6 +12278,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Conditions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions(elemento As ClfmFO4_Conditions) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -13917,6 +14827,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFormIDs(elemento As IFlst_FormIDs) As Boolean Implements IFlst.QuitarFormIDs
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("FormIDs"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarFormIDs(permutacion As IList(Of Integer)) As Boolean Implements IFlst.ReordenarFormIDs
@@ -14345,6 +15268,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As IHdpt_Textures) As Boolean Implements IHdpt.QuitarTextures
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean Implements IHdpt.ReordenarTextures
@@ -14374,6 +15310,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As IHdpt_Counters) As Boolean Implements IHdpt.QuitarCounters
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -14407,6 +15356,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As IHdpt_AddonNodes) As Boolean Implements IHdpt.QuitarAddonNodes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean Implements IHdpt.ReordenarAddonNodes
@@ -14436,6 +15398,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As HdptFO4_Materials) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -14469,6 +15444,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarExtraParts(elemento As IHdpt_ExtraParts) As Boolean Implements IHdpt.QuitarExtraParts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Extra Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarExtraParts(permutacion As IList(Of Integer)) As Boolean Implements IHdpt.ReordenarExtraParts
@@ -14500,6 +15488,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarParts(elemento As IHdpt_Parts) As Boolean Implements IHdpt.QuitarParts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarParts(permutacion As IList(Of Integer)) As Boolean Implements IHdpt.ReordenarParts
@@ -14529,6 +15530,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Conditions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions(elemento As HdptFO4_Conditions) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -17551,6 +18565,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions(elemento As IIdle_Conditions) As Boolean Implements IIdle.QuitarConditions
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions(permutacion As IList(Of Integer)) As Boolean Implements IIdle.ReordenarConditions
@@ -20292,6 +21319,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarLeveledListEntries(elemento As ILvli_LeveledListEntries) As Boolean Implements ILvli.QuitarLeveledListEntries
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Leveled List Entries"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarLeveledListEntries(permutacion As IList(Of Integer)) As Boolean Implements ILvli.ReordenarLeveledListEntries
@@ -20321,6 +21361,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("LLKC\Filter Keyword Chances"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFilterKeywordChances(elemento As LvliFO4_FilterKeywordChances) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("LLKC\Filter Keyword Chances"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -21001,6 +22054,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarLeveledListEntries(elemento As ILvln_LeveledListEntries) As Boolean Implements ILvln.QuitarLeveledListEntries
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Leveled List Entries"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarLeveledListEntries(permutacion As IList(Of Integer)) As Boolean Implements ILvln.ReordenarLeveledListEntries
@@ -21030,6 +22096,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("LLKC\Filter Keyword Chances"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFilterKeywordChances(elemento As LvlnFO4_FilterKeywordChances) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("LLKC\Filter Keyword Chances"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -21063,6 +22142,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As ILvln_Textures) As Boolean Implements ILvln.QuitarTextures
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean Implements ILvln.ReordenarTextures
@@ -21092,6 +22184,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As ILvln_Counters) As Boolean Implements ILvln.QuitarCounters
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -21125,6 +22230,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As ILvln_AddonNodes) As Boolean Implements ILvln.QuitarAddonNodes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean Implements ILvln.ReordenarAddonNodes
@@ -21154,6 +22272,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As LvlnFO4_Materials) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -21720,6 +22851,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Material Substitutions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterialSubstitutions(elemento As IMswp_MaterialSubstitutions) As Boolean Implements IMswp.QuitarMaterialSubstitutions
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Material Substitutions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24485,6 +25629,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarScripts(elemento As INpc_Scripts) As Boolean Implements INpc.QuitarScripts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Scripts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarScripts(permutacion As IList(Of Integer)) As Boolean Implements INpc.ReordenarScripts
@@ -24514,6 +25671,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Factions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFactions(elemento As INpc_Factions) As Boolean Implements INpc.QuitarFactions
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Factions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24547,6 +25717,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarActorEffects(elemento As INpc_ActorEffects) As Boolean Implements INpc.QuitarActorEffects
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Actor Effects"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarActorEffects(permutacion As IList(Of Integer)) As Boolean Implements INpc.ReordenarActorEffects
@@ -24576,6 +25759,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Destructible\DAMC\Resistances"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarResistances(elemento As NpcFO4_Resistances) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Destructible\DAMC\Resistances"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24609,6 +25805,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStages(elemento As INpc_Stages) As Boolean Implements INpc.QuitarStages
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Destructible\Stages"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarStages(permutacion As IList(Of Integer)) As Boolean Implements INpc.ReordenarStages
@@ -24638,6 +25847,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Attacks"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAttacks(elemento As INpc_Attacks) As Boolean Implements INpc.QuitarAttacks
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Attacks"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24671,6 +25893,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarPerks(elemento As INpc_Perks) As Boolean Implements INpc.QuitarPerks
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Perks"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarPerks(permutacion As IList(Of Integer)) As Boolean Implements INpc.ReordenarPerks
@@ -24700,6 +25935,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("PRPS\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties2(elemento As NpcFO4_Properties2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("PRPS\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24733,6 +25981,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarItems(elemento As INpc_Items) As Boolean Implements INpc.QuitarItems
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Items"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarItems(permutacion As IList(Of Integer)) As Boolean Implements INpc.ReordenarItems
@@ -24762,6 +26023,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Packages"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarPackages(elemento As INpc_Packages) As Boolean Implements INpc.QuitarPackages
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Packages"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24795,6 +26069,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarKeywords(elemento As INpc_Keywords) As Boolean Implements INpc.QuitarKeywords
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Keywords\KWDA\Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarKeywords(permutacion As IList(Of Integer)) As Boolean Implements INpc.ReordenarKeywords
@@ -24824,6 +26111,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("APPR\Attach Parent Slots"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAttachParentSlots(elemento As NpcFO4_AttachParentSlots) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("APPR\Attach Parent Slots"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24857,6 +26157,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCombinations(elemento As NpcFO4_Combinations) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Object Template\Combinations"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarCombinations(permutacion As IList(Of Integer)) As Boolean
@@ -24886,6 +26199,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Head Parts"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarHeadParts(elemento As INpc_HeadParts) As Boolean Implements INpc.QuitarHeadParts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Head Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24919,6 +26245,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarSounds(elemento As NpcFO4_Sounds) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Actor Sounds\Sounds"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarSounds(permutacion As IList(Of Integer)) As Boolean
@@ -24948,6 +26287,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MSDK\Morph Keys"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMorphKeys(elemento As NpcFO4_MorphKeys) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MSDK\Morph Keys"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -24981,6 +26333,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMorphValues(elemento As NpcFO4_MorphValues) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MSDV\Morph Values"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMorphValues(permutacion As IList(Of Integer)) As Boolean
@@ -25012,6 +26377,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFaceTintingLayers(elemento As NpcFO4_FaceTintingLayers) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Face Tinting Layers"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarFaceTintingLayers(permutacion As IList(Of Integer)) As Boolean
@@ -25041,6 +26419,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Face Morphs"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFaceMorphs(elemento As NpcFO4_FaceMorphs) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Face Morphs"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -25136,6 +26527,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties(elemento As NpcFO4_Properties) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -25447,6 +26851,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct(elemento As NpcFO4_Struct) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarStruct(permutacion As IList(Of Integer)) As Boolean
@@ -25483,6 +26900,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject2(elemento As NpcFO4_ArrayOfObject2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -25523,6 +26953,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString2(elemento As NpcFO4_ArrayOfString2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfString2(permutacion As IList(Of Integer)) As Boolean
@@ -25559,6 +27002,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt322(elemento As NpcFO4_ArrayOfInt322) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -25599,6 +27055,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat2(elemento As NpcFO4_ArrayOfFloat2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat2(permutacion As IList(Of Integer)) As Boolean
@@ -25637,6 +27106,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool2(elemento As NpcFO4_ArrayOfBool2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfBool2(permutacion As IList(Of Integer)) As Boolean
@@ -25673,6 +27155,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct2(elemento As NpcFO4_Struct2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -25984,6 +27479,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject(elemento As NpcFO4_ArrayOfObject) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject(permutacion As IList(Of Integer)) As Boolean
@@ -26020,6 +27528,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString(elemento As NpcFO4_ArrayOfString) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -26060,6 +27581,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt32(elemento As NpcFO4_ArrayOfInt32) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt32(permutacion As IList(Of Integer)) As Boolean
@@ -26098,6 +27632,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat(elemento As NpcFO4_ArrayOfFloat) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat(permutacion As IList(Of Integer)) As Boolean
@@ -26134,6 +27681,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool(elemento As NpcFO4_ArrayOfBool) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -26935,6 +28495,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject3(elemento As NpcFO4_ArrayOfObject3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject3(permutacion As IList(Of Integer)) As Boolean
@@ -26971,6 +28544,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString3(elemento As NpcFO4_ArrayOfString3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -27011,6 +28597,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt323(elemento As NpcFO4_ArrayOfInt323) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt323(permutacion As IList(Of Integer)) As Boolean
@@ -27049,6 +28648,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat3(elemento As NpcFO4_ArrayOfFloat3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat3(permutacion As IList(Of Integer)) As Boolean
@@ -27085,6 +28697,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool3(elemento As NpcFO4_ArrayOfBool3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -27858,6 +29483,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As NpcFO4_Textures) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
@@ -27894,6 +29532,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As NpcFO4_Counters) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -27934,6 +29585,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As NpcFO4_AddonNodes) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
@@ -27970,6 +29634,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As NpcFO4_Materials) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Model\DMDT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -29194,6 +30871,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarKeywords2(elemento As NpcFO4_Keywords2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarKeywords2(permutacion As IList(Of Integer)) As Boolean
@@ -29232,6 +30922,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarIncludes(elemento As NpcFO4_Includes) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Includes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarIncludes(permutacion As IList(Of Integer)) As Boolean
@@ -29268,6 +30971,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties3(elemento As NpcFO4_Properties3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Combination\OBTS\Object Mod Template Item\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -30751,6 +32467,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As IOmod_Textures) As Boolean Implements IOmod.QuitarTextures
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean Implements IOmod.ReordenarTextures
@@ -30780,6 +32509,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As IOmod_Counters) As Boolean Implements IOmod.QuitarCounters
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -30813,6 +32555,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As IOmod_AddonNodes) As Boolean Implements IOmod.QuitarAddonNodes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean Implements IOmod.ReordenarAddonNodes
@@ -30842,6 +32597,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As IOmod_Materials) As Boolean Implements IOmod.QuitarMaterials
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -30875,6 +32643,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAttachParentSlots(elemento As IOmod_AttachParentSlots) As Boolean Implements IOmod.QuitarAttachParentSlots
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DATA\Data\Attach Parent Slots"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAttachParentSlots(permutacion As IList(Of Integer)) As Boolean Implements IOmod.ReordenarAttachParentSlots
@@ -30904,6 +32685,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DATA\Data\Items"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarItems(elemento As IOmod_Items) As Boolean Implements IOmod.QuitarItems
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DATA\Data\Items"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -30937,6 +32731,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarIncludes(elemento As IOmod_Includes) As Boolean Implements IOmod.QuitarIncludes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DATA\Data\Includes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarIncludes(permutacion As IList(Of Integer)) As Boolean Implements IOmod.ReordenarIncludes
@@ -30966,6 +32773,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DATA\Data\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties(elemento As IOmod_Properties) As Boolean Implements IOmod.QuitarProperties
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("DATA\Data\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -30999,6 +32819,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTargetOMODKeywords(elemento As IOmod_TargetOMODKeywords) As Boolean Implements IOmod.QuitarTargetOMODKeywords
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MNAM\Target OMOD Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTargetOMODKeywords(permutacion As IList(Of Integer)) As Boolean Implements IOmod.ReordenarTargetOMODKeywords
@@ -31028,6 +32861,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("FNAM\Filter Keywords"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFilterKeywords(elemento As IOmod_FilterKeywords) As Boolean Implements IOmod.QuitarFilterKeywords
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("FNAM\Filter Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -31969,6 +33815,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarItems(elemento As IOtft_Items) As Boolean Implements IOtft.QuitarItems
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("INAM\Items"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarItems(permutacion As IList(Of Integer)) As Boolean Implements IOtft.ReordenarItems
@@ -32654,6 +34513,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarScripts(elemento As IQust_Scripts) As Boolean Implements IQust.QuitarScripts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Scripts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarScripts(permutacion As IList(Of Integer)) As Boolean Implements IQust.ReordenarScripts
@@ -32683,6 +34555,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties2(elemento As QustFO4_Properties2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -32716,6 +34601,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFragments(elemento As IQust_Fragments) As Boolean Implements IQust.QuitarFragments
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Script Fragments\Fragments"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarFragments(permutacion As IList(Of Integer)) As Boolean Implements IQust.ReordenarFragments
@@ -32745,6 +34643,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Aliases"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAliases(elemento As IQust_Aliases) As Boolean Implements IQust.QuitarAliases
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VMAD\Virtual Machine Adapter\Aliases"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -32778,6 +34689,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextDisplayGlobals(elemento As IQust_TextDisplayGlobals) As Boolean Implements IQust.QuitarTextDisplayGlobals
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Text Display Globals"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextDisplayGlobals(permutacion As IList(Of Integer)) As Boolean Implements IQust.ReordenarTextDisplayGlobals
@@ -32807,6 +34731,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Quest Dialogue Conditions\Conditions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions(elemento As IQust_Conditions) As Boolean Implements IQust.QuitarConditions
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Quest Dialogue Conditions\Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -32840,6 +34777,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions2(elemento As IQust_Conditions2) As Boolean Implements IQust.QuitarConditions2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Story Manager Conditions\Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions2(permutacion As IList(Of Integer)) As Boolean Implements IQust.ReordenarConditions2
@@ -32869,6 +34819,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stages"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStages(elemento As IQust_Stages) As Boolean Implements IQust.QuitarStages
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stages"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -32902,6 +34865,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarObjectives(elemento As IQust_Objectives) As Boolean Implements IQust.QuitarObjectives
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Objectives"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarObjectives(permutacion As IList(Of Integer)) As Boolean Implements IQust.ReordenarObjectives
@@ -32931,6 +34907,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Aliases"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAliases2(elemento As IQust_Aliases2) As Boolean Implements IQust.QuitarAliases2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Aliases"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -33026,6 +35015,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties(elemento As QustFO4_Properties) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -33337,6 +35339,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct(elemento As QustFO4_Struct) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarStruct(permutacion As IList(Of Integer)) As Boolean
@@ -33373,6 +35388,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject2(elemento As QustFO4_ArrayOfObject2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -33413,6 +35441,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString2(elemento As QustFO4_ArrayOfString2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfString2(permutacion As IList(Of Integer)) As Boolean
@@ -33449,6 +35490,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt322(elemento As QustFO4_ArrayOfInt322) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -33489,6 +35543,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat2(elemento As QustFO4_ArrayOfFloat2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat2(permutacion As IList(Of Integer)) As Boolean
@@ -33527,6 +35594,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool2(elemento As QustFO4_ArrayOfBool2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfBool2(permutacion As IList(Of Integer)) As Boolean
@@ -33563,6 +35643,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct2(elemento As QustFO4_Struct2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -33874,6 +35967,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject(elemento As QustFO4_ArrayOfObject) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject(permutacion As IList(Of Integer)) As Boolean
@@ -33910,6 +36016,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString(elemento As QustFO4_ArrayOfString) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -33950,6 +36069,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt32(elemento As QustFO4_ArrayOfInt32) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt32(permutacion As IList(Of Integer)) As Boolean
@@ -33988,6 +36120,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat(elemento As QustFO4_ArrayOfFloat) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat(permutacion As IList(Of Integer)) As Boolean
@@ -34024,6 +36169,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool(elemento As QustFO4_ArrayOfBool) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -34825,6 +36983,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject3(elemento As QustFO4_ArrayOfObject3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject3(permutacion As IList(Of Integer)) As Boolean
@@ -34861,6 +37032,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString3(elemento As QustFO4_ArrayOfString3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -34901,6 +37085,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt323(elemento As QustFO4_ArrayOfInt323) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt323(permutacion As IList(Of Integer)) As Boolean
@@ -34939,6 +37136,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat3(elemento As QustFO4_ArrayOfFloat3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat3(permutacion As IList(Of Integer)) As Boolean
@@ -34975,6 +37185,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool3(elemento As QustFO4_ArrayOfBool3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -35531,6 +37754,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct3(elemento As QustFO4_Struct3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarStruct3(permutacion As IList(Of Integer)) As Boolean
@@ -35567,6 +37803,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject5(elemento As QustFO4_ArrayOfObject5) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -35607,6 +37856,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString5(elemento As QustFO4_ArrayOfString5) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfString5(permutacion As IList(Of Integer)) As Boolean
@@ -35643,6 +37905,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt325(elemento As QustFO4_ArrayOfInt325) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -35683,6 +37958,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat5(elemento As QustFO4_ArrayOfFloat5) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat5(permutacion As IList(Of Integer)) As Boolean
@@ -35721,6 +38009,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool5(elemento As QustFO4_ArrayOfBool5) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfBool5(permutacion As IList(Of Integer)) As Boolean
@@ -35757,6 +38058,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct4(elemento As QustFO4_Struct4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -36068,6 +38382,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject4(elemento As QustFO4_ArrayOfObject4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject4(permutacion As IList(Of Integer)) As Boolean
@@ -36104,6 +38431,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString4(elemento As QustFO4_ArrayOfString4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -36144,6 +38484,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt324(elemento As QustFO4_ArrayOfInt324) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt324(permutacion As IList(Of Integer)) As Boolean
@@ -36182,6 +38535,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat4(elemento As QustFO4_ArrayOfFloat4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat4(permutacion As IList(Of Integer)) As Boolean
@@ -36218,6 +38584,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool4(elemento As QustFO4_ArrayOfBool4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -37019,6 +39398,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject6(elemento As QustFO4_ArrayOfObject6) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject6(permutacion As IList(Of Integer)) As Boolean
@@ -37055,6 +39447,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString6(elemento As QustFO4_ArrayOfString6) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -37095,6 +39500,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt326(elemento As QustFO4_ArrayOfInt326) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt326(permutacion As IList(Of Integer)) As Boolean
@@ -37133,6 +39551,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat6(elemento As QustFO4_ArrayOfFloat6) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat6(permutacion As IList(Of Integer)) As Boolean
@@ -37169,6 +39600,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool6(elemento As QustFO4_ArrayOfBool6) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -37708,6 +40152,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAliasScripts(elemento As QustFO4_AliasScripts) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Alias Scripts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAliasScripts(permutacion As IList(Of Integer)) As Boolean
@@ -37794,6 +40251,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties3(elemento As QustFO4_Properties3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Script\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -38098,6 +40568,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct5(elemento As QustFO4_Struct5) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarStruct5(permutacion As IList(Of Integer)) As Boolean
@@ -38134,6 +40617,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject8(elemento As QustFO4_ArrayOfObject8) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -38174,6 +40670,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString8(elemento As QustFO4_ArrayOfString8) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfString8(permutacion As IList(Of Integer)) As Boolean
@@ -38210,6 +40719,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt328(elemento As QustFO4_ArrayOfInt328) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -38250,6 +40772,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat8(elemento As QustFO4_ArrayOfFloat8) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat8(permutacion As IList(Of Integer)) As Boolean
@@ -38288,6 +40823,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool8(elemento As QustFO4_ArrayOfBool8) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfBool8(permutacion As IList(Of Integer)) As Boolean
@@ -38324,6 +40872,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarStruct6(elemento As QustFO4_Struct6) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Property\Value\Array of Struct\Struct"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -38635,6 +41196,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject7(elemento As QustFO4_ArrayOfObject7) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject7(permutacion As IList(Of Integer)) As Boolean
@@ -38671,6 +41245,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString7(elemento As QustFO4_ArrayOfString7) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -38711,6 +41298,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt327(elemento As QustFO4_ArrayOfInt327) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt327(permutacion As IList(Of Integer)) As Boolean
@@ -38749,6 +41349,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat7(elemento As QustFO4_ArrayOfFloat7) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat7(permutacion As IList(Of Integer)) As Boolean
@@ -38785,6 +41398,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool7(elemento As QustFO4_ArrayOfBool7) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -39586,6 +42212,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfObject9(elemento As QustFO4_ArrayOfObject9) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Object"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfObject9(permutacion As IList(Of Integer)) As Boolean
@@ -39622,6 +42261,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfString9(elemento As QustFO4_ArrayOfString9) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of String"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -39662,6 +42314,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfInt329(elemento As QustFO4_ArrayOfInt329) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Int32"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfInt329(permutacion As IList(Of Integer)) As Boolean
@@ -39700,6 +42365,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfFloat9(elemento As QustFO4_ArrayOfFloat9) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Float"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarArrayOfFloat9(permutacion As IList(Of Integer)) As Boolean
@@ -39736,6 +42414,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarArrayOfBool9(elemento As QustFO4_ArrayOfBool9) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Member\Value\Array of Bool"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -44919,6 +47610,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarLogEntries(elemento As QustFO4_LogEntries) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Stage\Log Entries"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarLogEntries(permutacion As IList(Of Integer)) As Boolean
@@ -45058,6 +47762,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Log Entry\Conditions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions3(elemento As QustFO4_Conditions3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Log Entry\Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -47565,6 +50282,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTargets(elemento As QustFO4_Targets) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Objective\Targets"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTargets(permutacion As IList(Of Integer)) As Boolean
@@ -47694,6 +50424,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Target\Conditions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions4(elemento As QustFO4_Conditions4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Target\Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -51216,6 +53959,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions5(elemento As QustFO4_Conditions5) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions5(permutacion As IList(Of Integer)) As Boolean
@@ -51245,6 +54001,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Keywords\KWDA\Keywords"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarKeywords(elemento As QustFO4_Keywords) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Keywords\KWDA\Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -51278,6 +54047,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarItems(elemento As QustFO4_Items) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Items"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarItems(permutacion As IList(Of Integer)) As Boolean
@@ -51307,6 +54089,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\ALLA\Linked Aliases"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarLinkedAliases(elemento As QustFO4_LinkedAliases) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\ALLA\Linked Aliases"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -51340,6 +54135,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAliasSpells(elemento As QustFO4_AliasSpells) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Alias Spells"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAliasSpells(permutacion As IList(Of Integer)) As Boolean
@@ -51371,6 +54179,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAliasFactions(elemento As QustFO4_AliasFactions) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Alias Factions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAliasFactions(permutacion As IList(Of Integer)) As Boolean
@@ -51400,6 +54221,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Alias Package Data"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAliasPackageData(elemento As QustFO4_AliasPackageData) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Alias\Alias Package Data"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72263,6 +75097,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarActorEffects(elemento As IRace_ActorEffects) As Boolean Implements IRace.QuitarActorEffects
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Actor Effects"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarActorEffects(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarActorEffects
@@ -72292,6 +75139,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Keywords\KWDA\Keywords"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarKeywords(elemento As IRace_Keywords) As Boolean Implements IRace.QuitarKeywords
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Keywords\KWDA\Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72325,6 +75185,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarProperties(elemento As RaceFO4_Properties) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("PRPS\Properties"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarProperties(permutacion As IList(Of Integer)) As Boolean
@@ -72354,6 +75227,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("APPR\Attach Parent Slots"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAttachParentSlots(elemento As RaceFO4_AttachParentSlots) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("APPR\Attach Parent Slots"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72387,6 +75273,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures(elemento As IRace_Textures) As Boolean Implements IRace.QuitarTextures
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarTextures
@@ -72416,6 +75315,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters(elemento As IRace_Counters) As Boolean Implements IRace.QuitarCounters
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72449,6 +75361,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes(elemento As IRace_AddonNodes) As Boolean Implements IRace.QuitarAddonNodes
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarAddonNodes
@@ -72478,6 +75403,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials(elemento As RaceFO4_Materials) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72511,6 +75449,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMovementTypeNames(elemento As IRace_MovementTypeNames) As Boolean Implements IRace.QuitarMovementTypeNames
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Movement Type Names"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMovementTypeNames(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarMovementTypeNames
@@ -72540,6 +75491,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VTCK\Voices"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarVoices(elemento As IRace_Voices) As Boolean Implements IRace.QuitarVoices
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("VTCK\Voices"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72573,6 +75537,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarDefaultHairColors(elemento As IRace_DefaultHairColors) As Boolean Implements IRace.QuitarDefaultHairColors
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("HCLF\Default Hair Colors"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarDefaultHairColors(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarDefaultHairColors
@@ -72602,6 +75579,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Attacks"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAttacks(elemento As IRace_Attacks) As Boolean Implements IRace.QuitarAttacks
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Attacks"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72635,6 +75625,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarParts(elemento As IRace_Parts) As Boolean Implements IRace.QuitarParts
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Data\Male Body Data\Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarParts(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarParts
@@ -72664,6 +75667,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Data\Female Body Data\Parts"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarParts2(elemento As IRace_Parts2) As Boolean Implements IRace.QuitarParts2
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Body Data\Female Body Data\Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72697,6 +75713,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures4(elemento As IRace_Textures4) As Boolean Implements IRace.QuitarTextures4
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Behavior Graph\Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures4(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarTextures4
@@ -72726,6 +75755,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Behavior Graph\Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters4(elemento As IRace_Counters4) As Boolean Implements IRace.QuitarCounters4
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Behavior Graph\Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72759,6 +75801,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes4(elemento As IRace_AddonNodes4) As Boolean Implements IRace.QuitarAddonNodes4
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Behavior Graph\Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes4(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarAddonNodes4
@@ -72788,6 +75843,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Behavior Graph\Model\MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials4(elemento As RaceFO4_Materials4) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Behavior Graph\Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72821,6 +75889,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures5(elemento As IRace_Textures5) As Boolean Implements IRace.QuitarTextures5
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Behavior Graph\Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures5(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarTextures5
@@ -72850,6 +75931,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Behavior Graph\Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters5(elemento As IRace_Counters5) As Boolean Implements IRace.QuitarCounters5
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Behavior Graph\Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72883,6 +75977,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes5(elemento As IRace_AddonNodes5) As Boolean Implements IRace.QuitarAddonNodes5
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Behavior Graph\Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes5(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarAddonNodes5
@@ -72912,6 +76019,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Behavior Graph\Model\MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials5(elemento As RaceFO4_Materials5) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Behavior Graph\Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -72945,6 +76065,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarBipedObjectNames(elemento As IRace_BipedObjectNames) As Boolean Implements IRace.QuitarBipedObjectNames
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Biped Object Names"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarBipedObjectNames(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarBipedObjectNames
@@ -72974,6 +76107,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("RBPC\Biped Object Conditions"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarBipedObjectConditions(elemento As RaceFO4_BipedObjectConditions) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("RBPC\Biped Object Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73007,6 +76153,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMovementDataOverrides(elemento As RaceFO4_MovementDataOverrides) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Movement Data Overrides"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMovementDataOverrides(permutacion As IList(Of Integer)) As Boolean
@@ -73036,6 +76195,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Equip Slots"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarEquipSlots(elemento As IRace_EquipSlots) As Boolean Implements IRace.QuitarEquipSlots
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Equip Slots"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73069,6 +76241,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarPhonemeTargetNames(elemento As IRace_PhonemeTargetNames) As Boolean Implements IRace.QuitarPhonemeTargetNames
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Phoneme Target Names"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarPhonemeTargetNames(permutacion As IList(Of Integer)) As Boolean Implements IRace.ReordenarPhonemeTargetNames
@@ -73098,6 +76283,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Head Parts"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaleHeadParts(elemento As RaceFO4_MaleHeadParts) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Head Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73131,6 +76329,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaleRacePresets(elemento As RaceFO4_MaleRacePresets) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Race Presets"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMaleRacePresets(permutacion As IList(Of Integer)) As Boolean
@@ -73160,6 +76371,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Hair Colors"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaleHairColors(elemento As RaceFO4_MaleHairColors) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Hair Colors"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73193,6 +76417,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaleFaceDetails(elemento As RaceFO4_MaleFaceDetails) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Face Details"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMaleFaceDetails(permutacion As IList(Of Integer)) As Boolean
@@ -73222,6 +76459,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Tint Layers"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaleTintLayers(elemento As RaceFO4_MaleTintLayers) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Tint Layers"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73255,6 +76505,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaleMorphGroups(elemento As RaceFO4_MaleMorphGroups) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Morph Groups"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMaleMorphGroups(permutacion As IList(Of Integer)) As Boolean
@@ -73284,6 +76547,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Face Morphs"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaleFaceMorphs(elemento As RaceFO4_MaleFaceMorphs) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Male Face Morphs"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73317,6 +76593,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFemaleHeadParts(elemento As RaceFO4_FemaleHeadParts) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Head Parts"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarFemaleHeadParts(permutacion As IList(Of Integer)) As Boolean
@@ -73346,6 +76635,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Race Presets"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFemaleRacePresets(elemento As RaceFO4_FemaleRacePresets) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Race Presets"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73379,6 +76681,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFemaleHairColors(elemento As RaceFO4_FemaleHairColors) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Hair Colors"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarFemaleHairColors(permutacion As IList(Of Integer)) As Boolean
@@ -73408,6 +76723,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Face Details"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFemaleFaceDetails(elemento As RaceFO4_FemaleFaceDetails) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Face Details"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73441,6 +76769,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFemaleTintLayers(elemento As RaceFO4_FemaleTintLayers) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Tint Layers"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarFemaleTintLayers(permutacion As IList(Of Integer)) As Boolean
@@ -73470,6 +76811,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Morph Groups"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFemaleMorphGroups(elemento As RaceFO4_FemaleMorphGroups) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Morph Groups"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73503,6 +76857,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarFemaleFaceMorphs(elemento As RaceFO4_FemaleFaceMorphs) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Female Face Morphs"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarFemaleFaceMorphs(permutacion As IList(Of Integer)) As Boolean
@@ -73532,6 +76899,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Subgraph Data"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarSubgraphData(elemento As RaceFO4_SubgraphData) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Subgraph Data"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -73565,6 +76945,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMorphValues(elemento As RaceFO4_MorphValues) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Morph Values"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMorphValues(permutacion As IList(Of Integer)) As Boolean
@@ -73594,6 +76987,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Bone Scale Data"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarBoneScaleData(elemento As RaceFO4_BoneScaleData) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Bone Scale Data"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -74658,6 +78064,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures2(elemento As RaceFO4_Textures2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures2(permutacion As IList(Of Integer)) As Boolean
@@ -74694,6 +78113,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters2(elemento As RaceFO4_Counters2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -74734,6 +78166,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes2(elemento As RaceFO4_AddonNodes2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes2(permutacion As IList(Of Integer)) As Boolean
@@ -74770,6 +78215,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials2(elemento As RaceFO4_Materials2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -75175,6 +78633,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures3(elemento As RaceFO4_Textures3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures3(permutacion As IList(Of Integer)) As Boolean
@@ -75211,6 +78682,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Counters"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarCounters3(elemento As RaceFO4_Counters3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Counters"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -75251,6 +78735,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAddonNodes3(elemento As RaceFO4_AddonNodes3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Addon Nodes"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAddonNodes3(permutacion As IList(Of Integer)) As Boolean
@@ -75287,6 +78784,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Materials"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMaterials3(elemento As RaceFO4_Materials3) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Part\Model\MODT\Model Information\Materials"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -77047,6 +80557,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarOptions(elemento As RaceFO4_Options) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Group\Options"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarOptions(permutacion As IList(Of Integer)) As Boolean
@@ -77222,6 +80745,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions(elemento As RaceFO4_Conditions) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions(permutacion As IList(Of Integer)) As Boolean
@@ -77260,6 +80796,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures6(elemento As RaceFO4_Textures6) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures6(permutacion As IList(Of Integer)) As Boolean
@@ -77296,6 +80845,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\TTEC\Template Colors"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTemplateColors(elemento As RaceFO4_TemplateColors) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\TTEC\Template Colors"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -79931,6 +83493,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMorphPresets(elemento As RaceFO4_MorphPresets) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Morph Group\Morph Presets"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMorphPresets(permutacion As IList(Of Integer)) As Boolean
@@ -79967,6 +83542,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Morph Group\MPGS\Morph Group Sliders"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMorphGroupSliders(elemento As RaceFO4_MorphGroupSliders) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Morph Group\MPGS\Morph Group Sliders"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -80443,6 +84031,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarOptions2(elemento As RaceFO4_Options2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Group\Options"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarOptions2(permutacion As IList(Of Integer)) As Boolean
@@ -80618,6 +84219,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions2(elemento As RaceFO4_Conditions2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\Conditions"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions2(permutacion As IList(Of Integer)) As Boolean
@@ -80656,6 +84270,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTextures7(elemento As RaceFO4_Textures7) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\Textures"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarTextures7(permutacion As IList(Of Integer)) As Boolean
@@ -80692,6 +84319,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\TTEC\Template Colors"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTemplateColors2(elemento As RaceFO4_TemplateColors2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Option\TTEC\Template Colors"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -83327,6 +86967,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMorphPresets2(elemento As RaceFO4_MorphPresets2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Morph Group\Morph Presets"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarMorphPresets2(permutacion As IList(Of Integer)) As Boolean
@@ -83363,6 +87016,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Morph Group\MPGS\Morph Group Sliders"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarMorphGroupSliders2(elemento As RaceFO4_MorphGroupSliders2) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Morph Group\MPGS\Morph Group Sliders"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -83698,6 +87364,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarActorKeywords(elemento As RaceFO4_ActorKeywords) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Data\Actor Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarActorKeywords(permutacion As IList(Of Integer)) As Boolean
@@ -83729,6 +87408,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarAnimationPaths(elemento As RaceFO4_AnimationPaths) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Data\Animation Paths"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAnimationPaths(permutacion As IList(Of Integer)) As Boolean
@@ -83758,6 +87450,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Data\Target Keywords"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarTargetKeywords(elemento As RaceFO4_TargetKeywords) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Data\Target Keywords"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
@@ -84015,6 +87720,19 @@ Namespace Canon
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
 
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarBoneWeightScales(elemento As RaceFO4_BoneWeightScales) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Bone Data Set\Bone Weight Scale Data\Bone Weight Scales"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarBoneWeightScales(permutacion As IList(Of Integer)) As Boolean
@@ -84044,6 +87762,19 @@ Namespace Canon
             Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Bone Data Set\Bone Range Modifier Data\Bone Range Modifiers"))
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarBoneRangeModifiers(elemento As RaceFO4_BoneRangeModifiers) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = If(Node Is Nothing, Nothing, Node.ByFieldPath("Bone Data Set\Bone Range Modifier Data\Bone Range Modifiers"))
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
         End Function
 
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA

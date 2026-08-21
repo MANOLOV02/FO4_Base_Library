@@ -139,66 +139,79 @@ Namespace Canon
         Function AgregarTextures() As IArma_Textures
         Function QuitarTextures(indice As Integer) As Boolean
         Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures(elemento As IArma_Textures) As Boolean
         ''' <summary>Biped Model\Male\MO2T\Model Information\Counters</summary>
         ReadOnly Property Counters As IReadOnlyList(Of IArma_Counters)
         Function AgregarCounters() As IArma_Counters
         Function QuitarCounters(indice As Integer) As Boolean
         Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters(elemento As IArma_Counters) As Boolean
         ''' <summary>Biped Model\Male\MO2T\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes As IReadOnlyList(Of IArma_AddonNodes)
         Function AgregarAddonNodes() As IArma_AddonNodes
         Function QuitarAddonNodes(indice As Integer) As Boolean
         Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes(elemento As IArma_AddonNodes) As Boolean
         ''' <summary>Biped Model\Female\MO3T\Model Information\Textures</summary>
         ReadOnly Property Textures2 As IReadOnlyList(Of IArma_Textures2)
         Function AgregarTextures2() As IArma_Textures2
         Function QuitarTextures2(indice As Integer) As Boolean
         Function ReordenarTextures2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures2(elemento As IArma_Textures2) As Boolean
         ''' <summary>Biped Model\Female\MO3T\Model Information\Counters</summary>
         ReadOnly Property Counters2 As IReadOnlyList(Of IArma_Counters2)
         Function AgregarCounters2() As IArma_Counters2
         Function QuitarCounters2(indice As Integer) As Boolean
         Function ReordenarCounters2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters2(elemento As IArma_Counters2) As Boolean
         ''' <summary>Biped Model\Female\MO3T\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes2 As IReadOnlyList(Of IArma_AddonNodes2)
         Function AgregarAddonNodes2() As IArma_AddonNodes2
         Function QuitarAddonNodes2(indice As Integer) As Boolean
         Function ReordenarAddonNodes2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes2(elemento As IArma_AddonNodes2) As Boolean
         ''' <summary>1st Person\Male\MO4T\Model Information\Textures</summary>
         ReadOnly Property Textures3 As IReadOnlyList(Of IArma_Textures3)
         Function AgregarTextures3() As IArma_Textures3
         Function QuitarTextures3(indice As Integer) As Boolean
         Function ReordenarTextures3(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures3(elemento As IArma_Textures3) As Boolean
         ''' <summary>1st Person\Male\MO4T\Model Information\Counters</summary>
         ReadOnly Property Counters3 As IReadOnlyList(Of IArma_Counters3)
         Function AgregarCounters3() As IArma_Counters3
         Function QuitarCounters3(indice As Integer) As Boolean
         Function ReordenarCounters3(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters3(elemento As IArma_Counters3) As Boolean
         ''' <summary>1st Person\Male\MO4T\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes3 As IReadOnlyList(Of IArma_AddonNodes3)
         Function AgregarAddonNodes3() As IArma_AddonNodes3
         Function QuitarAddonNodes3(indice As Integer) As Boolean
         Function ReordenarAddonNodes3(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes3(elemento As IArma_AddonNodes3) As Boolean
         ''' <summary>1st Person\Female\MO5T\Model Information\Textures</summary>
         ReadOnly Property Textures4 As IReadOnlyList(Of IArma_Textures4)
         Function AgregarTextures4() As IArma_Textures4
         Function QuitarTextures4(indice As Integer) As Boolean
         Function ReordenarTextures4(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures4(elemento As IArma_Textures4) As Boolean
         ''' <summary>1st Person\Female\MO5T\Model Information\Counters</summary>
         ReadOnly Property Counters4 As IReadOnlyList(Of IArma_Counters4)
         Function AgregarCounters4() As IArma_Counters4
         Function QuitarCounters4(indice As Integer) As Boolean
         Function ReordenarCounters4(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters4(elemento As IArma_Counters4) As Boolean
         ''' <summary>1st Person\Female\MO5T\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes4 As IReadOnlyList(Of IArma_AddonNodes4)
         Function AgregarAddonNodes4() As IArma_AddonNodes4
         Function QuitarAddonNodes4(indice As Integer) As Boolean
         Function ReordenarAddonNodes4(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes4(elemento As IArma_AddonNodes4) As Boolean
         ''' <summary>Additional Races</summary>
         ReadOnly Property AdditionalRaces As IReadOnlyList(Of IArma_AdditionalRaces)
         Function AgregarAdditionalRaces() As IArma_AdditionalRaces
         Function QuitarAdditionalRaces(indice As Integer) As Boolean
         Function ReordenarAdditionalRaces(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAdditionalRaces(elemento As IArma_AdditionalRaces) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Biped Model\Male\MO2T\Model Information\Textures, en lo que los dos juegos comparten.</summary>
@@ -503,46 +516,55 @@ Namespace Canon
         Function AgregarScripts() As IArmo_Scripts
         Function QuitarScripts(indice As Integer) As Boolean
         Function ReordenarScripts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarScripts(elemento As IArmo_Scripts) As Boolean
         ''' <summary>Male\World Model\MO2T\Model Information\Textures</summary>
         ReadOnly Property Textures As IReadOnlyList(Of IArmo_Textures)
         Function AgregarTextures() As IArmo_Textures
         Function QuitarTextures(indice As Integer) As Boolean
         Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures(elemento As IArmo_Textures) As Boolean
         ''' <summary>Male\World Model\MO2T\Model Information\Counters</summary>
         ReadOnly Property Counters As IReadOnlyList(Of IArmo_Counters)
         Function AgregarCounters() As IArmo_Counters
         Function QuitarCounters(indice As Integer) As Boolean
         Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters(elemento As IArmo_Counters) As Boolean
         ''' <summary>Male\World Model\MO2T\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes As IReadOnlyList(Of IArmo_AddonNodes)
         Function AgregarAddonNodes() As IArmo_AddonNodes
         Function QuitarAddonNodes(indice As Integer) As Boolean
         Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes(elemento As IArmo_AddonNodes) As Boolean
         ''' <summary>Female\World Model\MO4T\Model Information\Textures</summary>
         ReadOnly Property Textures2 As IReadOnlyList(Of IArmo_Textures2)
         Function AgregarTextures2() As IArmo_Textures2
         Function QuitarTextures2(indice As Integer) As Boolean
         Function ReordenarTextures2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures2(elemento As IArmo_Textures2) As Boolean
         ''' <summary>Female\World Model\MO4T\Model Information\Counters</summary>
         ReadOnly Property Counters2 As IReadOnlyList(Of IArmo_Counters2)
         Function AgregarCounters2() As IArmo_Counters2
         Function QuitarCounters2(indice As Integer) As Boolean
         Function ReordenarCounters2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters2(elemento As IArmo_Counters2) As Boolean
         ''' <summary>Female\World Model\MO4T\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes2 As IReadOnlyList(Of IArmo_AddonNodes2)
         Function AgregarAddonNodes2() As IArmo_AddonNodes2
         Function QuitarAddonNodes2(indice As Integer) As Boolean
         Function ReordenarAddonNodes2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes2(elemento As IArmo_AddonNodes2) As Boolean
         ''' <summary>Destructible\Stages</summary>
         ReadOnly Property Stages As IReadOnlyList(Of IArmo_Stages)
         Function AgregarStages() As IArmo_Stages
         Function QuitarStages(indice As Integer) As Boolean
         Function ReordenarStages(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarStages(elemento As IArmo_Stages) As Boolean
         ''' <summary>Keywords\KWDA\Keywords</summary>
         ReadOnly Property Keywords As IReadOnlyList(Of IArmo_Keywords)
         Function AgregarKeywords() As IArmo_Keywords
         Function QuitarKeywords(indice As Integer) As Boolean
         Function ReordenarKeywords(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarKeywords(elemento As IArmo_Keywords) As Boolean
     End Interface
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts, en lo que los dos juegos comparten.</summary>
@@ -719,21 +741,25 @@ Namespace Canon
         Function AgregarTextures() As IBptd_Textures
         Function QuitarTextures(indice As Integer) As Boolean
         Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures(elemento As IBptd_Textures) As Boolean
         ''' <summary>Model\MODT\Model Information\Counters</summary>
         ReadOnly Property Counters As IReadOnlyList(Of IBptd_Counters)
         Function AgregarCounters() As IBptd_Counters
         Function QuitarCounters(indice As Integer) As Boolean
         Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters(elemento As IBptd_Counters) As Boolean
         ''' <summary>Model\MODT\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes As IReadOnlyList(Of IBptd_AddonNodes)
         Function AgregarAddonNodes() As IBptd_AddonNodes
         Function QuitarAddonNodes(indice As Integer) As Boolean
         Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes(elemento As IBptd_AddonNodes) As Boolean
         ''' <summary>Body Parts</summary>
         ReadOnly Property BodyParts As IReadOnlyList(Of IBptd_BodyParts)
         Function AgregarBodyParts() As IBptd_BodyParts
         Function QuitarBodyParts(indice As Integer) As Boolean
         Function ReordenarBodyParts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarBodyParts(elemento As IBptd_BodyParts) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Model\MODT\Model Information\Textures, en lo que los dos juegos comparten.</summary>
@@ -931,6 +957,7 @@ Namespace Canon
         Function AgregarFormIDs() As IFlst_FormIDs
         Function QuitarFormIDs(indice As Integer) As Boolean
         Function ReordenarFormIDs(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarFormIDs(elemento As IFlst_FormIDs) As Boolean
     End Interface
 
     ''' <summary>Un elemento de FormIDs, en lo que los dos juegos comparten.</summary>
@@ -1005,26 +1032,31 @@ Namespace Canon
         Function AgregarTextures() As IHdpt_Textures
         Function QuitarTextures(indice As Integer) As Boolean
         Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures(elemento As IHdpt_Textures) As Boolean
         ''' <summary>Model\MODT\Model Information\Counters</summary>
         ReadOnly Property Counters As IReadOnlyList(Of IHdpt_Counters)
         Function AgregarCounters() As IHdpt_Counters
         Function QuitarCounters(indice As Integer) As Boolean
         Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters(elemento As IHdpt_Counters) As Boolean
         ''' <summary>Model\MODT\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes As IReadOnlyList(Of IHdpt_AddonNodes)
         Function AgregarAddonNodes() As IHdpt_AddonNodes
         Function QuitarAddonNodes(indice As Integer) As Boolean
         Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes(elemento As IHdpt_AddonNodes) As Boolean
         ''' <summary>Extra Parts</summary>
         ReadOnly Property ExtraParts As IReadOnlyList(Of IHdpt_ExtraParts)
         Function AgregarExtraParts() As IHdpt_ExtraParts
         Function QuitarExtraParts(indice As Integer) As Boolean
         Function ReordenarExtraParts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarExtraParts(elemento As IHdpt_ExtraParts) As Boolean
         ''' <summary>Parts</summary>
         ReadOnly Property Parts As IReadOnlyList(Of IHdpt_Parts)
         Function AgregarParts() As IHdpt_Parts
         Function QuitarParts(indice As Integer) As Boolean
         Function ReordenarParts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarParts(elemento As IHdpt_Parts) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Model\MODT\Model Information\Textures, en lo que los dos juegos comparten.</summary>
@@ -1123,6 +1155,7 @@ Namespace Canon
         Function AgregarConditions() As IIdle_Conditions
         Function QuitarConditions(indice As Integer) As Boolean
         Function ReordenarConditions(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarConditions(elemento As IIdle_Conditions) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Conditions, en lo que los dos juegos comparten.</summary>
@@ -1637,6 +1670,7 @@ Namespace Canon
         Function AgregarLeveledListEntries() As ILvli_LeveledListEntries
         Function QuitarLeveledListEntries(indice As Integer) As Boolean
         Function ReordenarLeveledListEntries(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarLeveledListEntries(elemento As ILvli_LeveledListEntries) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Leveled List Entries, en lo que los dos juegos comparten.</summary>
@@ -1737,21 +1771,25 @@ Namespace Canon
         Function AgregarLeveledListEntries() As ILvln_LeveledListEntries
         Function QuitarLeveledListEntries(indice As Integer) As Boolean
         Function ReordenarLeveledListEntries(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarLeveledListEntries(elemento As ILvln_LeveledListEntries) As Boolean
         ''' <summary>Model\MODT\Model Information\Textures</summary>
         ReadOnly Property Textures As IReadOnlyList(Of ILvln_Textures)
         Function AgregarTextures() As ILvln_Textures
         Function QuitarTextures(indice As Integer) As Boolean
         Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures(elemento As ILvln_Textures) As Boolean
         ''' <summary>Model\MODT\Model Information\Counters</summary>
         ReadOnly Property Counters As IReadOnlyList(Of ILvln_Counters)
         Function AgregarCounters() As ILvln_Counters
         Function QuitarCounters(indice As Integer) As Boolean
         Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters(elemento As ILvln_Counters) As Boolean
         ''' <summary>Model\MODT\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes As IReadOnlyList(Of ILvln_AddonNodes)
         Function AgregarAddonNodes() As ILvln_AddonNodes
         Function QuitarAddonNodes(indice As Integer) As Boolean
         Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes(elemento As ILvln_AddonNodes) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Leveled List Entries, en lo que los dos juegos comparten.</summary>
@@ -1845,6 +1883,7 @@ Namespace Canon
         Function AgregarMaterialSubstitutions() As IMswp_MaterialSubstitutions
         Function QuitarMaterialSubstitutions(indice As Integer) As Boolean
         Function ReordenarMaterialSubstitutions(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarMaterialSubstitutions(elemento As IMswp_MaterialSubstitutions) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Material Substitutions, en lo que los dos juegos comparten.</summary>
@@ -2189,51 +2228,61 @@ Namespace Canon
         Function AgregarScripts() As INpc_Scripts
         Function QuitarScripts(indice As Integer) As Boolean
         Function ReordenarScripts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarScripts(elemento As INpc_Scripts) As Boolean
         ''' <summary>Factions</summary>
         ReadOnly Property Factions As IReadOnlyList(Of INpc_Factions)
         Function AgregarFactions() As INpc_Factions
         Function QuitarFactions(indice As Integer) As Boolean
         Function ReordenarFactions(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarFactions(elemento As INpc_Factions) As Boolean
         ''' <summary>Actor Effects</summary>
         ReadOnly Property ActorEffects As IReadOnlyList(Of INpc_ActorEffects)
         Function AgregarActorEffects() As INpc_ActorEffects
         Function QuitarActorEffects(indice As Integer) As Boolean
         Function ReordenarActorEffects(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarActorEffects(elemento As INpc_ActorEffects) As Boolean
         ''' <summary>Destructible\Stages</summary>
         ReadOnly Property Stages As IReadOnlyList(Of INpc_Stages)
         Function AgregarStages() As INpc_Stages
         Function QuitarStages(indice As Integer) As Boolean
         Function ReordenarStages(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarStages(elemento As INpc_Stages) As Boolean
         ''' <summary>Attacks</summary>
         ReadOnly Property Attacks As IReadOnlyList(Of INpc_Attacks)
         Function AgregarAttacks() As INpc_Attacks
         Function QuitarAttacks(indice As Integer) As Boolean
         Function ReordenarAttacks(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAttacks(elemento As INpc_Attacks) As Boolean
         ''' <summary>Perks</summary>
         ReadOnly Property Perks As IReadOnlyList(Of INpc_Perks)
         Function AgregarPerks() As INpc_Perks
         Function QuitarPerks(indice As Integer) As Boolean
         Function ReordenarPerks(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarPerks(elemento As INpc_Perks) As Boolean
         ''' <summary>Items</summary>
         ReadOnly Property Items As IReadOnlyList(Of INpc_Items)
         Function AgregarItems() As INpc_Items
         Function QuitarItems(indice As Integer) As Boolean
         Function ReordenarItems(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarItems(elemento As INpc_Items) As Boolean
         ''' <summary>Packages</summary>
         ReadOnly Property Packages As IReadOnlyList(Of INpc_Packages)
         Function AgregarPackages() As INpc_Packages
         Function QuitarPackages(indice As Integer) As Boolean
         Function ReordenarPackages(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarPackages(elemento As INpc_Packages) As Boolean
         ''' <summary>Keywords\KWDA\Keywords</summary>
         ReadOnly Property Keywords As IReadOnlyList(Of INpc_Keywords)
         Function AgregarKeywords() As INpc_Keywords
         Function QuitarKeywords(indice As Integer) As Boolean
         Function ReordenarKeywords(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarKeywords(elemento As INpc_Keywords) As Boolean
         ''' <summary>Head Parts</summary>
         ReadOnly Property HeadParts As IReadOnlyList(Of INpc_HeadParts)
         Function AgregarHeadParts() As INpc_HeadParts
         Function QuitarHeadParts(indice As Integer) As Boolean
         Function ReordenarHeadParts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarHeadParts(elemento As INpc_HeadParts) As Boolean
     End Interface
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts, en lo que los dos juegos comparten.</summary>
@@ -2549,51 +2598,61 @@ Namespace Canon
         Function AgregarTextures() As IOmod_Textures
         Function QuitarTextures(indice As Integer) As Boolean
         Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures(elemento As IOmod_Textures) As Boolean
         ''' <summary>Model\MODT\Model Information\Counters</summary>
         ReadOnly Property Counters As IReadOnlyList(Of IOmod_Counters)
         Function AgregarCounters() As IOmod_Counters
         Function QuitarCounters(indice As Integer) As Boolean
         Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters(elemento As IOmod_Counters) As Boolean
         ''' <summary>Model\MODT\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes As IReadOnlyList(Of IOmod_AddonNodes)
         Function AgregarAddonNodes() As IOmod_AddonNodes
         Function QuitarAddonNodes(indice As Integer) As Boolean
         Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes(elemento As IOmod_AddonNodes) As Boolean
         ''' <summary>Model\MODT\Model Information\Materials</summary>
         ReadOnly Property Materials As IReadOnlyList(Of IOmod_Materials)
         Function AgregarMaterials() As IOmod_Materials
         Function QuitarMaterials(indice As Integer) As Boolean
         Function ReordenarMaterials(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarMaterials(elemento As IOmod_Materials) As Boolean
         ''' <summary>DATA\Data\Attach Parent Slots</summary>
         ReadOnly Property AttachParentSlots As IReadOnlyList(Of IOmod_AttachParentSlots)
         Function AgregarAttachParentSlots() As IOmod_AttachParentSlots
         Function QuitarAttachParentSlots(indice As Integer) As Boolean
         Function ReordenarAttachParentSlots(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAttachParentSlots(elemento As IOmod_AttachParentSlots) As Boolean
         ''' <summary>DATA\Data\Items</summary>
         ReadOnly Property Items As IReadOnlyList(Of IOmod_Items)
         Function AgregarItems() As IOmod_Items
         Function QuitarItems(indice As Integer) As Boolean
         Function ReordenarItems(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarItems(elemento As IOmod_Items) As Boolean
         ''' <summary>DATA\Data\Includes</summary>
         ReadOnly Property Includes As IReadOnlyList(Of IOmod_Includes)
         Function AgregarIncludes() As IOmod_Includes
         Function QuitarIncludes(indice As Integer) As Boolean
         Function ReordenarIncludes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarIncludes(elemento As IOmod_Includes) As Boolean
         ''' <summary>DATA\Data\Properties</summary>
         ReadOnly Property Properties As IReadOnlyList(Of IOmod_Properties)
         Function AgregarProperties() As IOmod_Properties
         Function QuitarProperties(indice As Integer) As Boolean
         Function ReordenarProperties(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarProperties(elemento As IOmod_Properties) As Boolean
         ''' <summary>MNAM\Target OMOD Keywords</summary>
         ReadOnly Property TargetOMODKeywords As IReadOnlyList(Of IOmod_TargetOMODKeywords)
         Function AgregarTargetOMODKeywords() As IOmod_TargetOMODKeywords
         Function QuitarTargetOMODKeywords(indice As Integer) As Boolean
         Function ReordenarTargetOMODKeywords(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTargetOMODKeywords(elemento As IOmod_TargetOMODKeywords) As Boolean
         ''' <summary>FNAM\Filter Keywords</summary>
         ReadOnly Property FilterKeywords As IReadOnlyList(Of IOmod_FilterKeywords)
         Function AgregarFilterKeywords() As IOmod_FilterKeywords
         Function QuitarFilterKeywords(indice As Integer) As Boolean
         Function ReordenarFilterKeywords(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarFilterKeywords(elemento As IOmod_FilterKeywords) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Model\MODT\Model Information\Textures, en lo que los dos juegos comparten.</summary>
@@ -2805,6 +2864,7 @@ Namespace Canon
         Function AgregarItems() As IOtft_Items
         Function QuitarItems(indice As Integer) As Boolean
         Function ReordenarItems(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarItems(elemento As IOtft_Items) As Boolean
     End Interface
 
     ''' <summary>Un elemento de INAM\Items, en lo que los dos juegos comparten.</summary>
@@ -2911,46 +2971,55 @@ Namespace Canon
         Function AgregarScripts() As IQust_Scripts
         Function QuitarScripts(indice As Integer) As Boolean
         Function ReordenarScripts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarScripts(elemento As IQust_Scripts) As Boolean
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Fragments</summary>
         ReadOnly Property Fragments As IReadOnlyList(Of IQust_Fragments)
         Function AgregarFragments() As IQust_Fragments
         Function QuitarFragments(indice As Integer) As Boolean
         Function ReordenarFragments(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarFragments(elemento As IQust_Fragments) As Boolean
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases</summary>
         ReadOnly Property Aliases As IReadOnlyList(Of IQust_Aliases)
         Function AgregarAliases() As IQust_Aliases
         Function QuitarAliases(indice As Integer) As Boolean
         Function ReordenarAliases(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAliases(elemento As IQust_Aliases) As Boolean
         ''' <summary>Text Display Globals</summary>
         ReadOnly Property TextDisplayGlobals As IReadOnlyList(Of IQust_TextDisplayGlobals)
         Function AgregarTextDisplayGlobals() As IQust_TextDisplayGlobals
         Function QuitarTextDisplayGlobals(indice As Integer) As Boolean
         Function ReordenarTextDisplayGlobals(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextDisplayGlobals(elemento As IQust_TextDisplayGlobals) As Boolean
         ''' <summary>Quest Dialogue Conditions\Conditions</summary>
         ReadOnly Property Conditions As IReadOnlyList(Of IQust_Conditions)
         Function AgregarConditions() As IQust_Conditions
         Function QuitarConditions(indice As Integer) As Boolean
         Function ReordenarConditions(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarConditions(elemento As IQust_Conditions) As Boolean
         ''' <summary>Story Manager Conditions\Conditions</summary>
         ReadOnly Property Conditions2 As IReadOnlyList(Of IQust_Conditions2)
         Function AgregarConditions2() As IQust_Conditions2
         Function QuitarConditions2(indice As Integer) As Boolean
         Function ReordenarConditions2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarConditions2(elemento As IQust_Conditions2) As Boolean
         ''' <summary>Stages</summary>
         ReadOnly Property Stages As IReadOnlyList(Of IQust_Stages)
         Function AgregarStages() As IQust_Stages
         Function QuitarStages(indice As Integer) As Boolean
         Function ReordenarStages(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarStages(elemento As IQust_Stages) As Boolean
         ''' <summary>Objectives</summary>
         ReadOnly Property Objectives As IReadOnlyList(Of IQust_Objectives)
         Function AgregarObjectives() As IQust_Objectives
         Function QuitarObjectives(indice As Integer) As Boolean
         Function ReordenarObjectives(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarObjectives(elemento As IQust_Objectives) As Boolean
         ''' <summary>Aliases</summary>
         ReadOnly Property Aliases2 As IReadOnlyList(Of IQust_Aliases2)
         Function AgregarAliases2() As IQust_Aliases2
         Function QuitarAliases2(indice As Integer) As Boolean
         Function ReordenarAliases2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAliases2(elemento As IQust_Aliases2) As Boolean
     End Interface
 
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts, en lo que los dos juegos comparten.</summary>
@@ -6965,101 +7034,121 @@ Namespace Canon
         Function AgregarActorEffects() As IRace_ActorEffects
         Function QuitarActorEffects(indice As Integer) As Boolean
         Function ReordenarActorEffects(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarActorEffects(elemento As IRace_ActorEffects) As Boolean
         ''' <summary>Keywords\KWDA\Keywords</summary>
         ReadOnly Property Keywords As IReadOnlyList(Of IRace_Keywords)
         Function AgregarKeywords() As IRace_Keywords
         Function QuitarKeywords(indice As Integer) As Boolean
         Function ReordenarKeywords(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarKeywords(elemento As IRace_Keywords) As Boolean
         ''' <summary>MODT\Model Information\Textures</summary>
         ReadOnly Property Textures As IReadOnlyList(Of IRace_Textures)
         Function AgregarTextures() As IRace_Textures
         Function QuitarTextures(indice As Integer) As Boolean
         Function ReordenarTextures(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures(elemento As IRace_Textures) As Boolean
         ''' <summary>MODT\Model Information\Counters</summary>
         ReadOnly Property Counters As IReadOnlyList(Of IRace_Counters)
         Function AgregarCounters() As IRace_Counters
         Function QuitarCounters(indice As Integer) As Boolean
         Function ReordenarCounters(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters(elemento As IRace_Counters) As Boolean
         ''' <summary>MODT\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes As IReadOnlyList(Of IRace_AddonNodes)
         Function AgregarAddonNodes() As IRace_AddonNodes
         Function QuitarAddonNodes(indice As Integer) As Boolean
         Function ReordenarAddonNodes(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes(elemento As IRace_AddonNodes) As Boolean
         ''' <summary>Movement Type Names</summary>
         ReadOnly Property MovementTypeNames As IReadOnlyList(Of IRace_MovementTypeNames)
         Function AgregarMovementTypeNames() As IRace_MovementTypeNames
         Function QuitarMovementTypeNames(indice As Integer) As Boolean
         Function ReordenarMovementTypeNames(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarMovementTypeNames(elemento As IRace_MovementTypeNames) As Boolean
         ''' <summary>VTCK\Voices</summary>
         ReadOnly Property Voices As IReadOnlyList(Of IRace_Voices)
         Function AgregarVoices() As IRace_Voices
         Function QuitarVoices(indice As Integer) As Boolean
         Function ReordenarVoices(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarVoices(elemento As IRace_Voices) As Boolean
         ''' <summary>HCLF\Default Hair Colors</summary>
         ReadOnly Property DefaultHairColors As IReadOnlyList(Of IRace_DefaultHairColors)
         Function AgregarDefaultHairColors() As IRace_DefaultHairColors
         Function QuitarDefaultHairColors(indice As Integer) As Boolean
         Function ReordenarDefaultHairColors(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarDefaultHairColors(elemento As IRace_DefaultHairColors) As Boolean
         ''' <summary>Attacks</summary>
         ReadOnly Property Attacks As IReadOnlyList(Of IRace_Attacks)
         Function AgregarAttacks() As IRace_Attacks
         Function QuitarAttacks(indice As Integer) As Boolean
         Function ReordenarAttacks(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAttacks(elemento As IRace_Attacks) As Boolean
         ''' <summary>Body Data\Male Body Data\Parts</summary>
         ReadOnly Property Parts As IReadOnlyList(Of IRace_Parts)
         Function AgregarParts() As IRace_Parts
         Function QuitarParts(indice As Integer) As Boolean
         Function ReordenarParts(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarParts(elemento As IRace_Parts) As Boolean
         ''' <summary>Body Data\Female Body Data\Parts</summary>
         ReadOnly Property Parts2 As IReadOnlyList(Of IRace_Parts2)
         Function AgregarParts2() As IRace_Parts2
         Function QuitarParts2(indice As Integer) As Boolean
         Function ReordenarParts2(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarParts2(elemento As IRace_Parts2) As Boolean
         ''' <summary>Male Behavior Graph\Model\MODT\Model Information\Textures</summary>
         ReadOnly Property Textures4 As IReadOnlyList(Of IRace_Textures4)
         Function AgregarTextures4() As IRace_Textures4
         Function QuitarTextures4(indice As Integer) As Boolean
         Function ReordenarTextures4(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures4(elemento As IRace_Textures4) As Boolean
         ''' <summary>Male Behavior Graph\Model\MODT\Model Information\Counters</summary>
         ReadOnly Property Counters4 As IReadOnlyList(Of IRace_Counters4)
         Function AgregarCounters4() As IRace_Counters4
         Function QuitarCounters4(indice As Integer) As Boolean
         Function ReordenarCounters4(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters4(elemento As IRace_Counters4) As Boolean
         ''' <summary>Male Behavior Graph\Model\MODT\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes4 As IReadOnlyList(Of IRace_AddonNodes4)
         Function AgregarAddonNodes4() As IRace_AddonNodes4
         Function QuitarAddonNodes4(indice As Integer) As Boolean
         Function ReordenarAddonNodes4(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes4(elemento As IRace_AddonNodes4) As Boolean
         ''' <summary>Female Behavior Graph\Model\MODT\Model Information\Textures</summary>
         ReadOnly Property Textures5 As IReadOnlyList(Of IRace_Textures5)
         Function AgregarTextures5() As IRace_Textures5
         Function QuitarTextures5(indice As Integer) As Boolean
         Function ReordenarTextures5(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarTextures5(elemento As IRace_Textures5) As Boolean
         ''' <summary>Female Behavior Graph\Model\MODT\Model Information\Counters</summary>
         ReadOnly Property Counters5 As IReadOnlyList(Of IRace_Counters5)
         Function AgregarCounters5() As IRace_Counters5
         Function QuitarCounters5(indice As Integer) As Boolean
         Function ReordenarCounters5(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarCounters5(elemento As IRace_Counters5) As Boolean
         ''' <summary>Female Behavior Graph\Model\MODT\Model Information\Addon Nodes</summary>
         ReadOnly Property AddonNodes5 As IReadOnlyList(Of IRace_AddonNodes5)
         Function AgregarAddonNodes5() As IRace_AddonNodes5
         Function QuitarAddonNodes5(indice As Integer) As Boolean
         Function ReordenarAddonNodes5(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarAddonNodes5(elemento As IRace_AddonNodes5) As Boolean
         ''' <summary>Biped Object Names</summary>
         ReadOnly Property BipedObjectNames As IReadOnlyList(Of IRace_BipedObjectNames)
         Function AgregarBipedObjectNames() As IRace_BipedObjectNames
         Function QuitarBipedObjectNames(indice As Integer) As Boolean
         Function ReordenarBipedObjectNames(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarBipedObjectNames(elemento As IRace_BipedObjectNames) As Boolean
         ''' <summary>Equip Slots</summary>
         ReadOnly Property EquipSlots As IReadOnlyList(Of IRace_EquipSlots)
         Function AgregarEquipSlots() As IRace_EquipSlots
         Function QuitarEquipSlots(indice As Integer) As Boolean
         Function ReordenarEquipSlots(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarEquipSlots(elemento As IRace_EquipSlots) As Boolean
         ''' <summary>Phoneme Target Names</summary>
         ReadOnly Property PhonemeTargetNames As IReadOnlyList(Of IRace_PhonemeTargetNames)
         Function AgregarPhonemeTargetNames() As IRace_PhonemeTargetNames
         Function QuitarPhonemeTargetNames(indice As Integer) As Boolean
         Function ReordenarPhonemeTargetNames(permutacion As IList(Of Integer)) As Boolean
+        Function QuitarPhonemeTargetNames(elemento As IRace_PhonemeTargetNames) As Boolean
     End Interface
 
     ''' <summary>Un elemento de Actor Effects, en lo que los dos juegos comparten.</summary>

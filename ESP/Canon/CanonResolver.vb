@@ -30,13 +30,12 @@
             End Get
         End Property
 
-        ''' <summary>Sin gestor de plugins no hay orden de carga contra el cual traducir, así que el
-        ''' FormID vuelve crudo. Es la misma política que tenían los parsers: es preferible un valor
-        ''' local reconocible a uno traducido con una tabla que no está.</summary>
-        Public Function GlobalId(raw As UInteger) As UInteger
-            If raw = 0UI OrElse _plugins Is Nothing OrElse _rec Is Nothing Then Return raw
-            Return _plugins.ResolveReferencedFormID(_rec.SourcePluginName, raw)
-        End Function
+        ' Acá había un GlobalId(raw) que traducía una referencia al orden de carga. Se borró: no lo
+        ' llamaba NADIE, y era una TERCERA copia de la ley que ahora vive en
+        ' PluginManager.ResolveReferenciaNoLock. Una copia muerta de una ley es peor que una viva:
+        ' el próximo lector la toma por buena y la usa, o la "arregla" en un solo lado.
+        ' El árbol ya viene con las referencias traducidas (CanonBridge.NormalizarReferencias), así
+        ' que una vista NO tiene que traducir nada al leer un campo.
 
         ''' <summary>Texto de un campo traducible.
         ''' <para>El árbol guarda lo que había en el record: el texto mismo cuando el archivo no usa

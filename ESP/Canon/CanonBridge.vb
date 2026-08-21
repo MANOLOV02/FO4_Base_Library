@@ -75,13 +75,33 @@
         ''' tiene se pliega al propio archivo, igual que el indice canonico de "propio", y el camino
         ''' inverso solo puede devolver el canonico. Por eso la pasada deja anotado en cada nodo que
         ''' decia el archivo; ver <see cref="WbFormIdWalker.NormalizarDesdeArchivo"/>.</para>
+        '''
+        ''' <para>El plugin de origen se resuelve UNA vez y el lock de lectura se toma UNA vez, para
+        ''' todo el record. Antes cada referencia hacia lo mismo por su cuenta: tomar el lock, buscar
+        ''' el plugin por NOMBRE y recien ahi traducir. El arbol de los NPC de un orden de carga real
+        ''' tiene 203 mil referencias.</para>
+        '''
+        ''' <para>La LEY no se re-escribe: se llama a <c>PluginManager.ResolveReferenciaNoLock</c>,
+        ''' que es la misma que usa el camino con lock. Un mapa "indice de master -> byte alto"
+        ''' habria sido una segunda implementacion Y ADEMAS estaria mal: para un dueno light el
+        ''' resultado depende del object id, y por debajo de 0x800 la ley tambien.</para>
         ''' </summary>
         Public Sub NormalizarReferencias(raiz As WbNode, rec As PluginRecord, plugins As PluginManager)
             If raiz Is Nothing OrElse plugins Is Nothing OrElse rec Is Nothing Then Return
             Dim origen = rec.SourcePluginName
             If String.IsNullOrEmpty(origen) Then Return
-            WbFormIdWalker.NormalizarDesdeArchivo(
-                raiz, Function(local) plugins.ResolveReferencedFormID(origen, local))
+
+            plugins.RunUnderRecordsReadLock(
+                Function()
+                    ' El plugin se resuelve por nombre UNA vez; la LEY de la traduccion es la del
+                    ' gestor y no se re-escribe aca. Un plugin no indexado deja la referencia cruda,
+                    ' que es lo que hacia antes, incluida la ANOTACION en el nodo — que es lo que
+                    ' hace reversible la vuelta.
+                    Dim duenio = plugins.GetPluginByNameNoLock(origen)
+                    WbFormIdWalker.NormalizarDesdeArchivo(
+                        raiz, Function(local As UInteger) plugins.ResolveReferenciaNoLock(duenio, local))
+                    Return True
+                End Function)
         End Sub
 
         '==========================================================================================
@@ -90,11 +110,35 @@
         ' la vista en su valor inicial.
         '==========================================================================================
 
+        ''' <summary>El valor de una hoja como entero. Los tipos que el motor pone en una hoja son
+        ''' pocos y conocidos —<c>Long</c> en todos los enteros, <c>UInteger</c> en las referencias,
+        ''' <c>Single</c> en los flotantes, <c>String</c> en los textos, <c>Byte()</c> en los
+        ''' bloques—, así que los dos primeros se resuelven sin pasar por la conversión general, que
+        ''' EMPAQUETA y es varias veces más cara. Esto se llama una vez por lectura de campo y hay
+        ''' millones por carga.
+        '''
+        ''' <para>⛔ El atajo va DENTRO del <c>Try</c> igual que todo lo demás, y sólo cubre los dos
+        ''' tipos que no pueden fallar. Un <c>Single</c> infinito —los hay en el corpus de Skyrim— tira
+        ''' al convertirlo, y hoy eso devuelve cero; sacarlo del <c>Try</c> lo convertiría en una
+        ''' excepción que sube hasta la propiedad y hace desaparecer al NPC de la lista. Un texto
+        ''' también sigue por el camino general: <c>Convert</c> sabe leer "12" y un atajo por tipo no.</para></summary>
+        Public Function AEntero(v As Object) As Long
+            Try
+                If TypeOf v Is Long Then Return DirectCast(v, Long)
+                If TypeOf v Is UInteger Then Return CLng(DirectCast(v, UInteger))
+                Return Convert.ToInt64(v)
+            Catch
+                Return 0L
+            End Try
+        End Function
+
         Public Function U32(node As WbNode, path As String) As UInteger
             Dim n = Find(node, path)
             If n Is Nothing OrElse n.Value Is Nothing Then Return 0UI
+            Dim v = n.Value
+            If TypeOf v Is UInteger Then Return DirectCast(v, UInteger)
             Try
-                Return CUInt(Convert.ToInt64(n.Value) And &HFFFFFFFFL)
+                Return CUInt(Convert.ToInt64(v) And &HFFFFFFFFL)
             Catch
                 Return 0UI
             End Try
@@ -103,18 +147,16 @@
         Public Function I64(node As WbNode, path As String) As Long
             Dim n = Find(node, path)
             If n Is Nothing OrElse n.Value Is Nothing Then Return 0L
-            Try
-                Return Convert.ToInt64(n.Value)
-            Catch
-                Return 0L
-            End Try
+            Return AEntero(n.Value)
         End Function
 
         Public Function Flt(node As WbNode, path As String) As Single
             Dim n = Find(node, path)
             If n Is Nothing OrElse n.Value Is Nothing Then Return 0.0F
+            Dim v = n.Value
+            If TypeOf v Is Single Then Return DirectCast(v, Single)
             Try
-                Return Convert.ToSingle(n.Value)
+                Return Convert.ToSingle(v)
             Catch
                 Return 0.0F
             End Try

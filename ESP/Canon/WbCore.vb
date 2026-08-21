@@ -1,4 +1,16 @@
-﻿Imports System.Text
+﻿' ============================================================================================
+' Este archivo transcribe a mano material de las declaraciones de formato de xEdit (ordinales de
+' tipo, constantes de formato, y el DSL de declaracion en si), que estan bajo Mozilla Public
+' License 2.0, y por lo tanto es una obra derivada de ellas.
+'
+' This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+' If a copy of the MPL was not distributed with this file, You can obtain one at
+' https://mozilla.org/MPL/2.0/
+'
+' Proyecto original: https://github.com/TES5Edit/TES5Edit  (ElminsterAU y colaboradores)
+' Ver THIRD-PARTY-NOTICES.md en la raiz del repositorio.
+' ============================================================================================
+Imports System.Text
 
 ''' <summary>
 ''' Motor de layout: declara cómo está armado por dentro un record de un plugin, y esa MISMA
@@ -108,6 +120,17 @@ Namespace Canon
         Public Sub Report(kind As WbFindingKind, path As String, message As String)
             Findings.Add(New WbFinding(kind, RecordSignature, path, message))
         End Sub
+
+        ''' <summary>Cuántas hojas de TEXTO conservaron el crudo porque decode→encode no reproduce la
+        ''' fuente. Lo incrementa <c>WbStringDef</c> al conservarlo.
+        ''' <para>Es un CONTADOR y no una bandera porque quien lo consulta no pregunta "hubo alguno"
+        ''' sino "hubo alguno DENTRO de este subrecord": toma el valor antes de parsearlo y lo compara
+        ''' después. Sirve para eso y para nada más — el aviso lo sigue emitiendo el mismo recorrido de
+        ''' siempre, con la misma ruta y en el mismo orden; lo único que cambia es que ese recorrido no
+        ''' corre cuando no hay nada que encontrar.</para>
+        ''' <para>Vive en el contexto, que es POR RECORD. No puede vivir en la definición: el esquema
+        ''' se comparte entre hilos.</para></summary>
+        Public Property TextosCrudos As Integer
 
         Public Sub New(game As WbGame)
             _Game = game
@@ -374,7 +397,41 @@ Namespace Canon
         ''' un campo se nombra bajando por la estructura completa.</para></summary>
         Public Function ByFieldPath(path As String) As WbNode
             If String.IsNullOrEmpty(path) Then Return Nothing
-            Return ResolverCampo(Me, path.Split("\"c), 0)
+            Return ResolverCampo(Me, Segmentos(path), 0)
+        End Function
+
+        ''' <summary>Los tramos de una ruta, ya partidos y sin espacios sobrantes.
+        '''
+        ''' <para>Memoizados porque las rutas son LITERALES del código generado —una por propiedad,
+        ''' un conjunto finito y estable— y esto se llama una vez por lectura de campo. Partir la
+        ''' cadena asignaba un arreglo y un string por tramo en cada lectura.</para>
+        '''
+        ''' <para>El arreglo se devuelve compartido y NADIE lo escribe: <c>ResolverCampo</c> sólo
+        ''' lee <c>pasos(idx)</c>. Si alguna vez hiciera falta modificarlo, hay que copiarlo primero.</para>
+        '''
+        ''' <para>Con el techo puesto el diccionario no puede crecer sin control aunque alguien
+        ''' empiece a armar rutas a mano: pasado el tope se parte igual, sólo que sin memo.</para></summary>
+        Private Const TopeDeRutasMemoizadas As Integer = 20000
+        Private Shared ReadOnly _segmentosPorRuta As New Concurrent.ConcurrentDictionary(Of String, String())(StringComparer.Ordinal)
+        ''' <summary>Cuántas rutas hay memoizadas. Es un contador propio y NO <c>_segmentosPorRuta.Count</c>:
+        ''' esa propiedad toma TODOS los locks internos del diccionario, y si alguna vez se llegara al
+        ''' tope toda lectura de campo pasaría a ser un fallo de caché y por lo tanto un bloqueo
+        ''' completo del diccionario. El techo existe para acotar la memoria, no para agregar un
+        ''' cuello de botella cuando se alcanza.</summary>
+        Private Shared _rutasMemoizadas As Integer
+
+        Private Shared Function Segmentos(path As String) As String()
+            Dim ps As String() = Nothing
+            If _segmentosPorRuta.TryGetValue(path, ps) Then Return ps
+            ps = path.Split("\"c)
+            For i = 0 To ps.Length - 1
+                ps(i) = ps(i).Trim()
+            Next
+            If Threading.Volatile.Read(_rutasMemoizadas) < TopeDeRutasMemoizadas AndAlso
+               _segmentosPorRuta.TryAdd(path, ps) Then
+                Threading.Interlocked.Increment(_rutasMemoizadas)
+            End If
+            Return ps
         End Function
 
         ''' <summary>Busca el nodo que satisface la ruta ENTERA, no el primero que coincide con un
@@ -394,7 +451,8 @@ Namespace Canon
             If cur Is Nothing Then Return Nothing
             If idx >= pasos.Length Then Return Desenvolver(cur)
 
-            Dim s = pasos(idx).Trim()
+            ' Los tramos vienen ya recortados de Segmentos().
+            Dim s = pasos(idx)
             If s.Length = 0 Then Return ResolverCampo(cur, pasos, idx + 1)
             If s = ".." Then Return ResolverCampo(cur.Parent, pasos, idx + 1)
 
@@ -405,10 +463,8 @@ Namespace Canon
                 Return ResolverCampo(cur.Children(i), pasos, idx + 1)
             End If
 
-            For Each cand In Candidatos(cur, s)
-                Dim r = ResolverCampo(cand, pasos, idx + 1)
-                If r IsNot Nothing Then Return r
-            Next
+            Dim porCandidato = ProbarCandidatos(cur, s, pasos, idx)
+            If porCandidato IsNot Nothing Then Return porCandidato
 
             ' El segmento puede nombrar al nodo en el que YA estamos. Pasa cuando el elemento de un
             ' arreglo es el subrecord mismo: la ruta del campo arranca con su firma, y desde el
@@ -421,24 +477,58 @@ Namespace Canon
             Return Nothing
         End Function
 
-        ''' <summary>Hijos que pueden ser el tramo <paramref name="s"/>, en orden de preferencia.
-        ''' <para>Un envoltorio sin nombre no es un candidato en sí: se lo atraviesa y se prueba el
-        ''' mismo tramo contra lo que tiene adentro.</para></summary>
-        Private Shared Iterator Function Candidatos(cur As WbNode, s As String) As IEnumerable(Of WbNode)
-            For Each c In cur.Children
-                If String.Equals(c.Name, s, StringComparison.Ordinal) Then Yield c
-            Next
-            For Each c In cur.Children
-                If String.IsNullOrEmpty(c.Name) Then
-                    For Each d In Candidatos(c, s)
-                        Yield d
-                    Next
+        ''' <summary>Prueba los hijos que pueden ser el tramo <paramref name="s"/>, EN ORDEN DE
+        ''' PREFERENCIA, siguiendo con el resto de la ruta desde cada uno; devuelve el primero que
+        ''' llega a destino.
+        '''
+        ''' <para>El orden es: (1) los que coinciden por NOMBRE, (2) atravesando cada envoltorio sin
+        ''' nombre —y dentro de él, otra vez las tres fases—, y (3) los que coinciden por FIRMA.
+        ''' Un envoltorio sin nombre no es un candidato en sí: se lo atraviesa y se prueba el mismo
+        ''' tramo contra lo que tiene adentro.</para>
+        '''
+        ''' <para>⛔ ESE ORDEN ES CARGA ÚTIL, no un detalle. Hay hermanos que comparten la firma y sólo
+        ''' se distinguen por el nombre de su valor —una raza declara el esqueleto masculino y el
+        ''' femenino con la MISMA firma, uno detrás del otro—, así que aplanar las fases (todos los
+        ''' nombres a toda profundidad primero, después todas las firmas) hace que una ruta ambigua
+        ''' resuelva a OTRO hermano. Ese defecto ya pasó: el femenino de RACE leía vacío para siempre,
+        ''' sin ningún aviso.</para>
+        '''
+        ''' <para>Antes esto era un iterador que devolvía los candidatos y el que lo llamaba los
+        ''' probaba. Devolver el resultado en vez de los candidatos da EXACTAMENTE el mismo orden
+        ''' —fase por fase, con la misma recursión— y saca una máquina de estados por nodo visitado,
+        ''' que era el grueso del costo de leer un campo.</para></summary>
+        Private Shared Function ProbarCandidatos(cur As WbNode, s As String, pasos As String(), idx As Integer) As WbNode
+            Dim hijos = cur.Children
+
+            ' (1) por NOMBRE
+            For i = 0 To hijos.Count - 1
+                Dim c = hijos(i)
+                If String.Equals(c.Name, s, StringComparison.Ordinal) Then
+                    Dim r = ResolverCampo(c, pasos, idx + 1)
+                    If r IsNot Nothing Then Return r
                 End If
             Next
-            For Each c In cur.Children
-                If String.Equals(c.Signature, s, StringComparison.Ordinal) AndAlso
-                   Not String.Equals(c.Name, s, StringComparison.Ordinal) Then Yield c
+
+            ' (2) atravesando los envoltorios ANÓNIMOS, con las tres fases adentro de cada uno
+            For i = 0 To hijos.Count - 1
+                Dim c = hijos(i)
+                If String.IsNullOrEmpty(c.Name) Then
+                    Dim r = ProbarCandidatos(c, s, pasos, idx)
+                    If r IsNot Nothing Then Return r
+                End If
             Next
+
+            ' (3) por FIRMA
+            For i = 0 To hijos.Count - 1
+                Dim c = hijos(i)
+                If String.Equals(c.Signature, s, StringComparison.Ordinal) AndAlso
+                   Not String.Equals(c.Name, s, StringComparison.Ordinal) Then
+                    Dim r = ResolverCampo(c, pasos, idx + 1)
+                    If r IsNot Nothing Then Return r
+                End If
+            Next
+
+            Return Nothing
         End Function
 
         ''' <summary>Si la ruta terminó en el envoltorio de un subrecord, lo que se busca es su
@@ -454,14 +544,29 @@ Namespace Canon
             Return cur
         End Function
 
-        ''' <summary>Recorre el árbol en pre-orden.</summary>
+        ''' <summary>Recorre el árbol en pre-orden: primero el nodo, después cada hijo en orden.
+        '''
+        ''' <para>Sigue siendo PEREZOSO —hay quien corta en la primera coincidencia
+        ''' (<c>WbEdit.FindSubrecord</c>)— pero con UNA pila propia en vez de un iterador por nodo y
+        ''' por nivel. La versión recursiva creaba una máquina de estados nueva por cada nodo, y
+        ''' además cada elemento que salía de una hoja tenía que atravesar tantos <c>MoveNext</c>
+        ''' como profundidad hubiera: el costo era O(nodos × profundidad) en llamadas y O(nodos) en
+        ''' asignaciones. Con la pila es O(nodos) y una sola asignación por recorrido.</para>
+        '''
+        ''' <para>Los hijos se apilan del último al primero para que salgan en su orden: el orden de
+        ''' visita es EXACTAMENTE el mismo que el de la versión recursiva, y de ese orden dependen el
+        ''' orden de los avisos y el de la traducción de referencias.</para></summary>
         Public Iterator Function Walk() As IEnumerable(Of WbNode)
-            Yield Me
-            For Each c In Children
-                For Each d In c.Walk()
-                    Yield d
+            Dim pila As New Stack(Of WbNode)()
+            pila.Push(Me)
+            While pila.Count > 0
+                Dim n = pila.Pop()
+                Yield n
+                Dim hijos = n.Children
+                For i = hijos.Count - 1 To 0 Step -1
+                    pila.Push(hijos(i))
                 Next
-            Next
+            End While
         End Function
     End Class
 

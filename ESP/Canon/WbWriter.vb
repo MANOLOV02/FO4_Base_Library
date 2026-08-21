@@ -145,16 +145,17 @@ Namespace Canon
         Public Shared Function NormalizarDesdeArchivo(root As WbNode,
                                                       map As Func(Of UInteger, UInteger)) As Integer
             Dim touched = 0
-            For Each n In Enumerate(root)
-                Dim v = CUInt(n.Value)
-                If v = SENTINEL AndAlso CType(n.Def, WbFormIdDef).AllowsSentinel Then Continue For
-                Dim g = map(v)
-                n.Value = g
-                n.ReferenciaDeArchivo = True
-                n.ReferenciaLocalDeArchivo = v
-                n.ReferenciaGlobalDeArchivo = g
-                touched += 1
-            Next
+            ParaCadaReferencia(root,
+                Sub(n)
+                    Dim v = CUInt(n.Value)
+                    If v = SENTINEL AndAlso CType(n.Def, WbFormIdDef).AllowsSentinel Then Return
+                    Dim g = map(v)
+                    n.Value = g
+                    n.ReferenciaDeArchivo = True
+                    n.ReferenciaLocalDeArchivo = v
+                    n.ReferenciaGlobalDeArchivo = g
+                    touched += 1
+                End Sub)
             Return touched
         End Function
 
@@ -187,17 +188,18 @@ Namespace Canon
         Public Shared Function ReindexarADestino(root As WbNode, map As Func(Of UInteger, UInteger),
                                                  indicePropioDelDestino As Integer) As Integer
             Dim touched = 0
-            For Each n In Enumerate(root)
-                Dim v = CUInt(n.Value)
-                If v = SENTINEL AndAlso CType(n.Def, WbFormIdDef).AllowsSentinel Then Continue For
-                Dim traducido = map(v)
-                If EsLaMismaReferencia(n, v, traducido, indicePropioDelDestino) Then
-                    n.Value = n.ReferenciaLocalDeArchivo
-                Else
-                    n.Value = traducido
-                End If
-                touched += 1
-            Next
+            ParaCadaReferencia(root,
+                Sub(n)
+                    Dim v = CUInt(n.Value)
+                    If v = SENTINEL AndAlso CType(n.Def, WbFormIdDef).AllowsSentinel Then Return
+                    Dim traducido = map(v)
+                    If EsLaMismaReferencia(n, v, traducido, indicePropioDelDestino) Then
+                        n.Value = n.ReferenciaLocalDeArchivo
+                    Else
+                        n.Value = traducido
+                    End If
+                    touched += 1
+                End Sub)
             Return touched
         End Function
 
@@ -220,12 +222,42 @@ Namespace Canon
             Return (original And &HFFFFFFUI) = (traducido And &HFFFFFFUI)
         End Function
 
+        ''' <summary>QUÉ es una referencia. UNA sola definición, que consumen la lectura, la
+        ''' escritura y el enumerador.
+        ''' <para>Estaba escrita dentro de <see cref="Enumerate"/> y nada más; al agregar el
+        ''' recorrido por callback quedaba escrita dos veces, y el día que se le sume una condición
+        ''' —el centinela, por ejemplo— en una sola, la lectura remapea un nodo que la escritura no
+        ''' (o al revés) y el archivo sale apuntando a otro mod sin aviso.</para></summary>
+        Public Shared Function EsReferencia(n As WbNode) As Boolean
+            Return TypeOf n.Def Is WbFormIdDef AndAlso n.Value IsNot Nothing
+        End Function
+
         ''' <summary>Todos los nodos que SON una referencia. Nada más entra en esta lista.</summary>
         Public Shared Iterator Function Enumerate(root As WbNode) As IEnumerable(Of WbNode)
             For Each n In root.Walk()
-                If TypeOf n.Def Is WbFormIdDef AndAlso n.Value IsNot Nothing Then Yield n
+                If EsReferencia(n) Then Yield n
             Next
         End Function
+
+        ''' <summary>Aplica <paramref name="accion"/> a cada referencia, en el MISMO orden de
+        ''' <see cref="Enumerate"/> (pre-orden), sin crear enumeradores.
+        ''' <para>Es el recorrido que usan las dos pasadas de traducción. Se separó de
+        ''' <see cref="Enumerate"/> porque las dos corren por CADA record que se lee o se escribe, y
+        ''' ahí el enumerador se paga por nodo: la pasada de lectura sobre los NPC de un orden de
+        ''' carga real visita 1,87 millones de nodos para tocar 203 mil referencias.</para></summary>
+        Public Shared Sub ParaCadaReferencia(root As WbNode, accion As Action(Of WbNode))
+            If root Is Nothing Then Return
+            Dim pila As New Stack(Of WbNode)()
+            pila.Push(root)
+            While pila.Count > 0
+                Dim n = pila.Pop()
+                If EsReferencia(n) Then accion(n)
+                Dim hijos = n.Children
+                For i = hijos.Count - 1 To 0 Step -1
+                    pila.Push(hijos(i))
+                Next
+            End While
+        End Sub
     End Class
 
 End Namespace

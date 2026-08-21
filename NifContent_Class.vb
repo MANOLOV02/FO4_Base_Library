@@ -833,7 +833,19 @@ Public Class Nifcontent_Class_Manolo
                 Dim newLocal As New Transform_Class(newLocalMat)
                 destShape.Translation = newLocal.Translation
                 destShape.Rotation = newLocal.Rotation
-                destShape.Scale = newLocal.Scale
+
+                ' ⛔ `destShape.Scale = newLocal.Scale` era un bug SILENCIOSO. New(Matrix4d) deja la
+                ' escala en Scale SOLO si es uniforme; si no, pone Scale = 1.0F EXACTO y la escala
+                ' real en ScaleVector. O sea que para una matriz con escala per-eje esto escribia 1
+                ' al NIF y perdia la escala entera. El campo Scale de un NiShape no tiene per-eje,
+                ' asi que la proyeccion a escalar es inevitable; lo que no es inevitable es hacerla
+                ' en silencio y sobre el campo equivocado.
+                Dim escalaExacta As Boolean
+                destShape.Scale = newLocal.EscalaComoEscalar(escalaExacta)
+                If Not escalaExacta Then
+                    Dim ev = newLocal.EffectiveScale
+                    Logger.LogLazy(Function() $"[MERGE-SCALE] '{destShape.Name?.String}': la local resultante tiene escala NO uniforme ({ev.X:F6}, {ev.Y:F6}, {ev.Z:F6}); el campo Scale del NIF no la puede representar y se escribe {ev.X:F6}. La diferencia entre ejes queda sin aplicar.")
+                End If
             End If
         End If
 

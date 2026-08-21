@@ -1,4 +1,16 @@
-﻿Imports System.IO
+﻿' ============================================================================================
+' Este archivo transcribe a mano material de las declaraciones de formato de xEdit (ordinales de
+' tipo, constantes de formato, y el DSL de declaracion en si), que estan bajo Mozilla Public
+' License 2.0, y por lo tanto es una obra derivada de ellas.
+'
+' This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+' If a copy of the MPL was not distributed with this file, You can obtain one at
+' https://mozilla.org/MPL/2.0/
+'
+' Proyecto original: https://github.com/TES5Edit/TES5Edit  (ElminsterAU y colaboradores)
+' Ver THIRD-PARTY-NOTICES.md en la raiz del repositorio.
+' ============================================================================================
+Imports System.IO
 Imports FO4_Base_Library
 
 Namespace Canon
@@ -112,6 +124,9 @@ Namespace Canon
             Dim n As New WbNode(Me) With {.Signature = sr.Signature}
             n.Parent = parent
             n.DataLength = data.Length
+            ' Cuántos textos crudos había ANTES de parsear el contenido de este subrecord: la
+            ' diferencia dice si hay alguno ADENTRO. Ver el barrido de fidelidad al final.
+            Dim crudosAntes = ctx.TextosCrudos
             Dim child = Value.Parse(ctx, data, 0, data.Length, n)
             n.AddChild(child)
             n.SourceLength = child.SourceLength
@@ -136,11 +151,18 @@ Namespace Canon
                 ctx.Report(WbFindingKind.Pending, n.Path, $"{sr.Signature}: {data.Length} bytes sin declarar")
             End If
             ' Fidelidad de texto: se cuenta cada hoja de TEXTO que no vuelve a los mismos bytes.
-            For Each leaf In n.Walk()
-                If leaf.RawOverride IsNot Nothing AndAlso TypeOf leaf.Def Is WbStringDef Then
-                    ctx.Report(WbFindingKind.EncodingFallback, leaf.Path, "decode→encode no reproduce la fuente")
-                End If
-            Next
+            ' El recorrido corre SÓLO si el parseo de este subrecord conservó algún crudo. Antes
+            ' corría siempre: un barrido del subárbol entero POR SUBRECORD, y el caso que busca es el
+            ' 0,02 % (218 hojas en Fallout 4 y 448 en Skyrim, sobre 1,87 millones de nodos).
+            ' El aviso que sale es EL MISMO, con la misma ruta y en el mismo orden: lo único que se
+            ' saltea es el recorrido cuando no hay nada que encontrar.
+            If ctx.TextosCrudos <> crudosAntes Then
+                For Each leaf In n.Walk()
+                    If leaf.RawOverride IsNot Nothing AndAlso TypeOf leaf.Def Is WbStringDef Then
+                        ctx.Report(WbFindingKind.EncodingFallback, leaf.Path, "decode→encode no reproduce la fuente")
+                    End If
+                Next
+            End If
             pos += 1
             Return n
         End Function

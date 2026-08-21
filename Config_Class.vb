@@ -17,10 +17,72 @@ Public Class Config_App
     End Structure
 
     Public Property FO4ExePath As String = ""
+
+    ' Estado del memo. Va ANTES del doc para que el <summary> quede pegado a la PROPIEDAD: dos
+    ' bloques de doc seguidos hacen que el primero se lo lleve el campo y la propiedad quede sin
+    ' documentar, que es justo la explicacion que evita que alguien "limpie" el memo.
+    Private _dataPathMemoExePropio As String = Nothing
+    Private _dataPathMemoExeActual As String = Nothing
+    Private _dataPathMemoValido As Boolean = False
+    Private _dataPathMemoValor As String = ""
+
+    ''' <summary>Carpeta Data del juego, o "" si el exe configurado no está o no tiene Data al lado.
+    '''
+    ''' <para><b>MEMOIZADA, y no por prolijidad.</b> Sin el memo esta propiedad hace
+    ''' <c>File.Exists</c> + <c>Directory.Exists</c> —dos transiciones al kernel— cada vez que se la
+    ''' lee, y hay un camino que la lee POR REFERENCIA de FormID:
+    ''' <c>PluginManager.ResolveFormID</c> la pasa como argumento a <c>AllowsHardcodedRange</c>, y VB
+    ''' evalúa los argumentos siempre, aunque la rama que lo usa no se tome. MEDIDO en el rig del
+    ''' usuario: <b>12-30 µs por lectura</b>, y 60.820 referencias con object id &lt; 0x800 sólo en la
+    ''' pasada de los NPC. Es el mismo defecto que un revisor ya arregló en la línea de al lado
+    ''' (<c>PluginManager.IsVrBuild</c>, memoizado por esta misma razón) y que a <c>DataPath</c> se le
+    ''' escapó.</para>
+    '''
+    ''' <para>La clave son las DOS rutas de exe de las que depende la respuesta, guardadas y
+    ''' comparadas POR SEPARADO: armar una clave concatenada asignaba un string en cada lectura, y
+    ''' una lectura que asigna no es un memo — medido, 3,19 µs por llamada contra los ~10 ns de
+    ''' comparar los dos campos. Cambiar de juego o de exe lo recalcula solo, que es la única
+    ''' mutación que importa.</para></summary>
     Public ReadOnly Property FO4EDataPath As String
         Get
-            If Check_FOFolder() = False Then Return ""
-            Return IO.Path.Combine(IO.Path.GetDirectoryName(FO4ExePath), "Data")
+            ' Hacen falta las dos porque el cuerpo depende de las dos: el valor sale de
+            ' `Me.FO4ExePath` y la validación (`Check_FOFolder`) mira `Current.FO4ExePath`. En la
+            ' práctica son la misma instancia, pero atar el memo a una sola dejaría una respuesta
+            ' pegada si cambiara la otra.
+            Dim propio = FO4ExePath
+            ' `Current` sin guarda a propósito: `Check_FOFolder`, ocho líneas más abajo, lo
+            ' desreferencia igual. Una guarda acá no evitaría nada y haría creer que sí.
+            Dim actual = Current.FO4ExePath
+            ' ⛔ La lectura de la bandera es VOLÁTIL y la publicación también. Esto lo lee el
+            ' `Parallel.For` que parsea los plugins (PluginReader.ReadTES4 → IsLightSlot), así que
+            ' hay varios hilos acá a la vez. Sin las dos barreras, el modelo de memoria permite ver
+            ' la bandera en verdadero con el valor todavía en su valor inicial: un dataPath vacío
+            ' haría que un .esl se clasifique con slot FULL y corra el byte alto de ese plugin y de
+            ' todos los completos que vengan después. En x64 no pasa por el orden del procesador —
+            ' pero entonces el comentario estaría afirmando una garantía que el código no da.
+            ' Comparación ordinal: el memo es una identidad de cadena, no una comparación de rutas.
+            If Threading.Volatile.Read(_dataPathMemoValido) AndAlso
+               String.Equals(propio, _dataPathMemoExePropio, StringComparison.Ordinal) AndAlso
+               String.Equals(actual, _dataPathMemoExeActual, StringComparison.Ordinal) Then
+                Return _dataPathMemoValor
+            End If
+            ' ⛔ SOLO se memoiza el resultado POSITIVO. Cachear el fracaso deja "" pegado a una clave
+            ' que no va a cambiar —la ruta del exe es la misma— y no hay forma de invalidarlo sin
+            ' reiniciar: la carpeta Data puede aparecer TARDE (el sistema de archivos virtual de un
+            ' gestor de mods que engancha después, una unidad de red, archivos bajo demanda), y a
+            ' partir de ahí la carga de plugins y el montaje de archives correrían con una ruta
+            ' vacía, devolviendo una lista vacía sin un solo error. En una sesión que llega a
+            ' parsear algo el resultado es positivo, así que los 60.820 accesos siguen dando en el
+            ' memo; lo único que se repite es el caso en que no hay juego.
+            If Not Check_FOFolder() Then Return ""
+            Dim valor = IO.Path.Combine(IO.Path.GetDirectoryName(FO4ExePath), "Data")
+            ' El valor y las claves se publican ANTES de marcar el memo como válido: un lector
+            ' concurrente ve "no válido" (y recalcula) o un juego completo, nunca una mezcla.
+            _dataPathMemoValor = valor
+            _dataPathMemoExePropio = propio
+            _dataPathMemoExeActual = actual
+            Threading.Volatile.Write(_dataPathMemoValido, True)
+            Return valor
         End Get
     End Property
     Public ReadOnly Property DataPath As String

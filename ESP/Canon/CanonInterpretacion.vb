@@ -15,6 +15,22 @@ Namespace Canon
     ''' se puede, va la propiedad generada y no una copia con otro nombre.</para></summary>
     Public Module CanonInterpretacion
 
+        ''' <summary>Las categorías de plantilla de un NPC, en el orden en que las declara la
+        ''' enumeración. DERIVADAS de la enumeración, no listadas a mano: agregar una categoría la
+        ''' incluye sola, que es lo contrario de un arreglo literal que hay que acordarse de tocar.
+        '''
+        ''' <para>Lo que cambia respecto de llamar a <c>[Enum].GetValues</c> en cada uso es que la
+        ''' reflexión y el arreglo se pagan UNA vez y no una por NPC. Los cuatro sitios que
+        ''' recorrían las categorías lo hacían por NPC, y la clasificación de la lista las recorre
+        ''' dos veces por cada uno.</para></summary>
+        ''' <para>⛔ Se expone como lista de SOLO LECTURA, no como arreglo. `ReadOnly` protege la
+        ''' referencia, no el contenido: `[Enum].GetValues` devolvia un arreglo NUEVO en cada
+        ''' llamada, y compartir uno solo hace que cualquiera de los tres exes —o de los ~130
+        ''' arneses— pueda escribirle un elemento y dejar corrupta, para todo el proceso, la
+        ''' clasificacion de la lista, los checkboxes de categoria y el filtro avanzado.</para>
+        Public ReadOnly CategoriasDePlantilla As IReadOnlyList(Of NPC_TemplateCategory) =
+            Array.AsReadOnly(DirectCast([Enum].GetValues(GetType(NPC_TemplateCategory)), NPC_TemplateCategory()))
+
         '======================================================================================
         ' Color
         '======================================================================================
@@ -1449,7 +1465,7 @@ Namespace Canon
         <Extension>
         Public Function ActoresDePlantilla(npc As INpc) As List(Of UInteger)
             Dim salida As New List(Of UInteger)
-            For Each cat As NPC_TemplateCategory In [Enum].GetValues(GetType(NPC_TemplateCategory))
+            For Each cat As NPC_TemplateCategory In CategoriasDePlantilla
                 Dim actor = ActorDePlantilla(npc, cat)
                 If actor <> 0UI AndAlso Not salida.Contains(actor) Then salida.Add(actor)
             Next

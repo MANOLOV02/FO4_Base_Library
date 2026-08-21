@@ -79,6 +79,57 @@ Public Module PluginConstants
         StringComparer.Ordinal)
 End Module
 
+''' <summary>Las firmas de 4 bytes, compartidas en vez de recreadas.
+'''
+''' <para>Un archivo de plugin es una sucesión de firmas de cuatro letras: una por grupo, una por
+''' record y una por subrecord. Decodificar cada una construye un arreglo de 4 bytes y una cadena
+''' nueva; en un orden de carga real eso son varios MILLONES de pares de objetos que existen sólo
+''' para volver a decir "EDID" o "FULL". El conjunto de firmas distintas, en cambio, es de unos
+''' cientos.</para>
+'''
+''' <para>La clave es el u32 que forman esos mismos 4 bytes, o sea exactamente lo que ya está en el
+''' archivo: no hay que decodificar nada para buscarlo.</para>
+'''
+''' <para>⛔ Al no encontrarla se construye con <see cref="Encoding.ASCII"/>, igual que antes y sin
+''' excepción: ese decodificador mapea todo byte mayor que 127 a <c>?</c>, y esa es justamente la
+''' forma que después se compara contra los conjuntos de firmas. Armarla de otra manera haría que un
+''' archivo con una firma corrupta dejara de colapsar y pasara a coincidir con otra cosa.</para>
+'''
+''' <para>El techo evita que un archivo corrupto —con firmas basura, todas distintas— haga crecer la
+''' tabla sin control. Pasado el tope se decodifica igual, sólo que sin compartir.</para></summary>
+Friend Module PluginSignatures
+    Private Const Tope As Integer = 8192
+    Private ReadOnly _porClave As New System.Collections.Concurrent.ConcurrentDictionary(Of UInteger, String)()
+
+    ''' <summary>u32 de la firma "GRUP" tal como aparece en el archivo (little-endian).</summary>
+    Friend Const ClaveGRUP As UInteger = &H50555247UI
+
+    ''' <summary>Lee los 4 bytes de una firma y devuelve su clave. NO construye ninguna cadena: sirve
+    ''' para comparar contra una firma conocida sin pagar la decodificación.</summary>
+    Friend Function LeerClave(br As BinaryReader) As UInteger
+        Return br.ReadUInt32()
+    End Function
+
+    ''' <summary>La cadena de esa clave, compartida.</summary>
+    Friend Function Texto(clave As UInteger) As String
+        Dim s As String = Nothing
+        If _porClave.TryGetValue(clave, s) Then Return s
+        Dim b(3) As Byte
+        b(0) = CByte(clave And &HFFUI)
+        b(1) = CByte((clave >> 8) And &HFFUI)
+        b(2) = CByte((clave >> 16) And &HFFUI)
+        b(3) = CByte((clave >> 24) And &HFFUI)
+        s = Encoding.ASCII.GetString(b, 0, 4)
+        If _porClave.Count < Tope Then _porClave.TryAdd(clave, s)
+        Return s
+    End Function
+
+    ''' <summary>Lee la firma y devuelve su cadena compartida.</summary>
+    Friend Function Leer(br As BinaryReader) As String
+        Return Texto(br.ReadUInt32())
+    End Function
+End Module
+
 Public Structure RecordHeader
     Public Signature As String    ' 4 chars
     Public DataSize As UInteger   ' Size of data after this header
@@ -96,7 +147,7 @@ Public Structure RecordHeader
 
     Public Shared Function Read(br As BinaryReader) As RecordHeader
         Dim h As New RecordHeader With {
-            .Signature = Encoding.ASCII.GetString(br.ReadBytes(4)),
+            .Signature = PluginSignatures.Leer(br),
             .DataSize = br.ReadUInt32(),
             .Flags = br.ReadUInt32(),
             .FormID = br.ReadUInt32(),
@@ -116,17 +167,18 @@ Public Structure GroupHeader
     Public Stamp As UInteger
     Public Unknown As UInteger
 
-    ''' <summary>Label as a 4-char signature string (for type 0 groups)</summary>
+    ''' <summary>Label as a 4-char signature string (for type 0 groups). La cadena sale de la tabla
+    ''' compartida: es la MISMA decodificación (ASCII sobre los 4 bytes en el orden del archivo), sin
+    ''' construir un arreglo y una cadena por grupo.</summary>
     Public ReadOnly Property LabelAsSignature As String
         Get
-            Dim bytes = BitConverter.GetBytes(Label)
-            Return Encoding.ASCII.GetString(bytes, 0, 4)
+            Return PluginSignatures.Texto(Label)
         End Get
     End Property
 
     Public Shared Function Read(br As BinaryReader) As GroupHeader
         Dim h As New GroupHeader With {
-            .Signature = Encoding.ASCII.GetString(br.ReadBytes(4)),
+            .Signature = PluginSignatures.Leer(br),
             .GroupSize = br.ReadUInt32(),
             .Label = br.ReadUInt32(),
             .GroupType = br.ReadInt32(),

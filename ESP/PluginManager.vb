@@ -477,48 +477,59 @@ Public Class PluginManager
     Public Function ResolveFormID(localFormID As UInteger, plugin As PluginReader) As UInteger
         _rwLock.EnterReadLock()
         Try
-            Dim masterIndex = CInt(localFormID >> 24)
-            Dim objectID = localFormID And &HFFFFFFUI
-
-            ' RANGO HARDCODED. Esta rama faltaba entera acá. La regla completa:
-            '     si el object id es < 0x800:
-            '       si el archivo permite el rango hardcoded:
-            '         si el FormID entero también es < 0x800, pasa SIN TOCAR
-            '         (si no, cae al mapeo normal)
-            '       si no lo permite:
-            '         el resultado ES el master del juego (FileID nulo)
-            ' Son TRES casos, no dos, y el del medio CAE al mapeo normal:
-            '   (a) permitido + FormID entero < 0x800 (hardcoded) ⇒ tal cual;
-            '   (b) permitido + FileID != 0 ⇒ sigue de largo, el archivo posee records ahí legítimamente;
-            '   (c) NO permitido ⇒ FileID := 0. En espacio de load order el slot 0 es el master del juego,
-            '       y como el objectID ya es < 0x800 el resultado ES el objectID.
-            ' El escritor ya cortaba en 0x800 (TryMapGlobalToFileLocal); el lector no, o sea que las dos
-            ' direcciones estaban asimétricas y un ida-y-vuelta podía no cerrar.
-            If objectID < &H800UI Then
-                If AllowsHardcodedRange(plugin.HeaderVersion, plugin.Masters.Count, Config_App.Current.DataPath) Then
-                    If localFormID < &H800UI Then Return localFormID          ' (a)
-                    ' (b) cae al mapeo normal
-                Else
-                    Return objectID                                           ' (c)
-                End If
-            End If
-
-            Dim owner As PluginReader = Nothing
-            If masterIndex < plugin.Masters.Count Then
-                ' Reference into one of this plugin's masters. The master index is always full-style,
-                ' even when the master itself is an ESL.
-                Dim masterName = plugin.Masters(masterIndex)
-                Dim mi As Integer = -1
-                If _pluginIndex.TryGetValue(masterName, mi) Then owner = Plugins(mi)
-            Else
-                owner = plugin   ' self record (master index == master count)
-            End If
-
-            If owner Is Nothing Then Return localFormID   ' unresolved master — best effort
-            Return MakeGlobalFormID(owner, objectID)
+            Return ResolveFormIDNoLock(localFormID, plugin)
         Finally
             _rwLock.ExitReadLock()
         End Try
+    End Function
+
+    ''' <summary>Hermano SIN LOCK de <see cref="ResolveFormID"/>: MISMO cuerpo, misma ley, mismo
+    ''' resultado. Sólo vale si el llamador ya tiene tomado el lock de lectura — típicamente dentro
+    ''' de un <see cref="RunUnderRecordsReadLock"/>, igual que <see cref="GetRecordNoLock"/>.
+    ''' <para>Existe porque hay UN camino que resuelve decenas de miles de referencias seguidas
+    ''' (la traducción del árbol de un record al espacio del orden de carga) y tomar el lock por cada
+    ''' una es pagarlo una vez por referencia en vez de una vez por record. La ley NO se duplica: la
+    ''' versión con lock es una línea que delega en ésta.</para></summary>
+    Friend Function ResolveFormIDNoLock(localFormID As UInteger, plugin As PluginReader) As UInteger
+        Dim masterIndex = CInt(localFormID >> 24)
+        Dim objectID = localFormID And &HFFFFFFUI
+
+        ' RANGO HARDCODED. Esta rama faltaba entera acá. La regla completa:
+        '     si el object id es < 0x800:
+        '       si el archivo permite el rango hardcoded:
+        '         si el FormID entero también es < 0x800, pasa SIN TOCAR
+        '         (si no, cae al mapeo normal)
+        '       si no lo permite:
+        '         el resultado ES el master del juego (FileID nulo)
+        ' Son TRES casos, no dos, y el del medio CAE al mapeo normal:
+        '   (a) permitido + FormID entero < 0x800 (hardcoded) ⇒ tal cual;
+        '   (b) permitido + FileID != 0 ⇒ sigue de largo, el archivo posee records ahí legítimamente;
+        '   (c) NO permitido ⇒ FileID := 0. En espacio de load order el slot 0 es el master del juego,
+        '       y como el objectID ya es < 0x800 el resultado ES el objectID.
+        ' El escritor ya cortaba en 0x800 (TryMapGlobalToFileLocal); el lector no, o sea que las dos
+        ' direcciones estaban asimétricas y un ida-y-vuelta podía no cerrar.
+        If objectID < &H800UI Then
+            If AllowsHardcodedRange(plugin.HeaderVersion, plugin.Masters.Count, Config_App.Current.DataPath) Then
+                If localFormID < &H800UI Then Return localFormID          ' (a)
+                ' (b) cae al mapeo normal
+            Else
+                Return objectID                                           ' (c)
+            End If
+        End If
+
+        Dim owner As PluginReader = Nothing
+        If masterIndex < plugin.Masters.Count Then
+            ' Reference into one of this plugin's masters. The master index is always full-style,
+            ' even when the master itself is an ESL.
+            Dim masterName = plugin.Masters(masterIndex)
+            Dim mi As Integer = -1
+            If _pluginIndex.TryGetValue(masterName, mi) Then owner = Plugins(mi)
+        Else
+            owner = plugin   ' self record (master index == master count)
+        End If
+
+        If owner Is Nothing Then Return localFormID   ' unresolved master — best effort
+        Return MakeGlobalFormID(owner, objectID)
     End Function
 
     ''' <summary>Build the global FormID for a record owned by <paramref name="owner"/>: full plugins →
@@ -583,14 +594,32 @@ Public Class PluginManager
 
         _rwLock.EnterReadLock()
         Try
-            Dim pluginIdx As Integer = -1
-            If Not _pluginIndex.TryGetValue(sourcePluginName, pluginIdx) Then Return localFormID
-            If pluginIdx < 0 OrElse pluginIdx >= Plugins.Count Then Return localFormID
-
-            Return ResolveFormID(localFormID, Plugins(pluginIdx))
+            Return ResolveReferenciaNoLock(GetPluginByNameNoLock(sourcePluginName), localFormID)
         Finally
             _rwLock.ExitReadLock()
         End Try
+    End Function
+
+    ''' <summary>Traduce UNA referencia al espacio del orden de carga, con el plugin de origen YA
+    ''' resuelto y con el lock de lectura ya tomado por el llamador.
+    '''
+    ''' <para><b>Acá vive la ley completa</b>, y por eso existe: los DOS caminos que traducen
+    ''' referencias la comparten. <see cref="ResolveReferencedFormID"/> es el que resuelve el plugin
+    ''' por nombre y toma el lock; la traducción del árbol de un record
+    ''' (<c>CanonBridge.NormalizarReferencias</c>) resuelve el plugin UNA vez y toma el lock UNA vez
+    ''' para todo el record, y después llama acá por cada referencia.</para>
+    '''
+    ''' <para>Estuvo escrita en los dos sitios y ya habían empezado a divergir en el corte del nombre
+    ''' vacío. Es el mismo modo de falla que <c>WbFormIdWalker.EsReferencia</c> viene a evitar del otro
+    ''' lado: dos traducciones distintas para el mismo FormID en la misma sesión, y un ESP que sale
+    ''' apuntando a otro mod sin ningún aviso.</para>
+    '''
+    ''' <para>Sin plugin de origen la referencia vuelve CRUDA, que es la misma política de siempre:
+    ''' es preferible un valor local reconocible a uno traducido con una tabla que no está.</para></summary>
+    Friend Function ResolveReferenciaNoLock(duenio As PluginReader, localFormID As UInteger) As UInteger
+        If localFormID = 0UI Then Return 0UI
+        If duenio Is Nothing Then Return localFormID
+        Return ResolveFormIDNoLock(localFormID, duenio)
     End Function
 
     ''' <summary>Alias histórico de <see cref="GlobalFormIDFromObjectID"/>, conservado porque lo nombran ~20 call
@@ -855,6 +884,17 @@ Public Class PluginManager
         Finally
             _rwLock.ExitReadLock()
         End Try
+    End Function
+
+    ''' <summary>El <see cref="PluginReader"/> de ese nombre SIN tomar el lock. Sólo vale con el lock
+    ''' de lectura ya tomado por el llamador (ver <see cref="RunUnderRecordsReadLock"/>), igual que
+    ''' <see cref="GetRecordNoLock"/>. Nothing si el plugin no está cargado.</summary>
+    Friend Function GetPluginByNameNoLock(pluginName As String) As PluginReader
+        If String.IsNullOrEmpty(pluginName) Then Return Nothing
+        Dim idx As Integer
+        If Not _pluginIndex.TryGetValue(pluginName, idx) Then Return Nothing
+        If idx < 0 OrElse idx >= Plugins.Count Then Return Nothing
+        Return Plugins(idx)
     End Function
 
     ''' <summary>Lock-free sibling of <see cref="GetRecord"/>: returns the SAME final resolved record
@@ -1249,6 +1289,18 @@ Public Class PluginManager
     ''' <para>Es UN SOLO booleano del que cuelgan las DOS capacidades. Por eso vive en una función sola y
     ''' <see cref="LightIsSupported"/> y <see cref="UpdateIsSupported"/> la llaman: si algún día cambia la
     ''' detección, cambia para las dos.</para></summary>
+    ''' <para>⛔ NO MEMOIZAR. Lo intenté: un revisor señaló —con razón— que esto cuelga de
+    ''' <see cref="AllowsHardcodedRange"/>, al que <see cref="ResolveFormIDNoLock"/> llama por CADA
+    ''' referencia con object id &lt; 0x800, así que en un build de VR son decenas de miles de
+    ''' <c>File.Exists</c>. Pero un memo por (exe, dataPath, juego) <b>no puede ver que el archivo
+    ''' apareció o desapareció</b>, que es justamente el dato: instalar VRESL sin reiniciar la
+    ''' aplicación dejaría de tener efecto. Lo cazó <c>SlotResolutionProbe</c> (114/1: el caso
+    ''' "SkyrimVR CON VRESL" pasaba a responder que no, porque el memo tenía la respuesta del caso
+    ''' anterior). Un cambio que rompe un gate verde, cuyo beneficio no se puede medir acá —no hay
+    ''' rig de VR— y que sólo afecta a esa configuración, no se paga.
+    ''' <para>Para el usuario que NO está en VR el costo ya es cero: la primera línea corta antes de
+    ''' tocar el disco, y <see cref="IsVrBuild"/> sí está memoizado. Si algún día hay que arreglarlo
+    ''' para VR, el camino es sacar la llamada del bucle por referencia, no cachear el resultado.</para></summary>
     Private Shared Function VreslInstalled(dataPath As String) As Boolean
         If Not IsVrBuild() Then Return False
         If String.IsNullOrEmpty(dataPath) Then Return False

@@ -1,4 +1,15 @@
-﻿Namespace Canon
+﻿' ============================================================================================
+' Este archivo transcribe a mano logica de decision de las declaraciones de formato de xEdit,
+' que estan bajo Mozilla Public License 2.0, y por lo tanto es una obra derivada de ellas.
+'
+' This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+' If a copy of the MPL was not distributed with this file, You can obtain one at
+' https://mozilla.org/MPL/2.0/
+'
+' Proyecto original: https://github.com/TES5Edit/TES5Edit  (ElminsterAU y colaboradores)
+' Ver THIRD-PARTY-NOTICES.md en la raiz del repositorio.
+' ============================================================================================
+Namespace Canon
 
     ''' <summary>Deciders de los PARÁMETROS de una condición (CTDA). Son los únicos que no
     ''' despachan por un valor del propio dato sino por una TABLA: la que dice, para cada función de

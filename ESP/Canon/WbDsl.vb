@@ -1,4 +1,16 @@
-﻿Namespace Canon
+﻿' ============================================================================================
+' Este archivo transcribe a mano material de las declaraciones de formato de xEdit (ordinales de
+' tipo, constantes de formato, y el DSL de declaracion en si), que estan bajo Mozilla Public
+' License 2.0, y por lo tanto es una obra derivada de ellas.
+'
+' This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+' If a copy of the MPL was not distributed with this file, You can obtain one at
+' https://mozilla.org/MPL/2.0/
+'
+' Proyecto original: https://github.com/TES5Edit/TES5Edit  (ElminsterAU y colaboradores)
+' Ver THIRD-PARTY-NOTICES.md en la raiz del repositorio.
+' ============================================================================================
+Namespace Canon
 
     ''' <summary>DSL con el que se declara el layout de los records: una función corta por cada
     ''' construcción del formato, para que la declaración de un record se lea como una lista de

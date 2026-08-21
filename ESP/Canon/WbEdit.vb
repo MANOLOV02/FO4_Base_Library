@@ -430,16 +430,18 @@
             If nodo Is Nothing OrElse String.IsNullOrEmpty(ruta) Then Return False
             Dim destino = nodo.ByFieldPath(ruta)
             If destino Is Nothing Then Return False
+            ' Se sube hasta el SUBRECORD que contiene al campo: sacar una hoja de adentro de una
+            ' estructura dejaria el subrecord con menos bytes de los que su declaracion espera, y la
+            ' relectura descartaria todo lo que viniera despues. El que se va es el subrecord entero.
             Dim actual = destino
-            While actual IsNot Nothing AndAlso actual.Parent IsNot Nothing
-                If TypeOf actual.Def Is WbSubrecordDef Then
-                    actual.Parent.Children.Remove(actual)
-                    Return True
+            While actual IsNot Nothing
+                If TypeOf actual.Def Is WbSubrecordDef AndAlso actual.Parent IsNot Nothing Then
+                    ' Una sola implementacion de "sacar": la misma que usa QuitarSubrecord.
+                    Return RemoveSubrecord(actual.Parent, actual.Signature) > 0
                 End If
                 actual = actual.Parent
             End While
-            If destino.Parent Is Nothing Then Return False
-            Return destino.Parent.Children.Remove(destino)
+            Return False
         End Function
 
         Public Function QuitarElemento(contenedor As WbNode, indice As Integer) As Boolean
