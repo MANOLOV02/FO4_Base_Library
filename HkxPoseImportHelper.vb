@@ -266,18 +266,28 @@ Public NotInheritable Class HkxPoseImportSession
         Dim droppedIdentity = 0
         Dim skippedMissingLiveBones = 0
         ' ── ADITIVOS: los tracks son DELTAS cerca de identidad, van DIRECTO a la capa Δ (componentes
-        ' sin dato = identidad — ver BuildFrameLocalTransform). Aditividad declarada por (a) blendHint
-        ' del binding del archivo (CrippledNoise) O (b) el behavior graph vía additiveHint (clip envuelto
-        ' en DynamicAnimationTaggingGenerator 'Additive*', ej. AdditiveDynamicIdle con blendHint=0).
+        ' sin dato = identidad — ver BuildFrameLocalTransform).
         ' NORMALES: Δ = inv(S) × frameLocal, donde frameLocal toma del clip SOLO los componentes CON
-        ' CONTENIDO (ver AnalyzeTrackContent) y conserva S en los demás.
-        ' blendHint aditivo ⟺ ∈ {1=ADDITIVE_DEPRECATED, 2=ADDITIVE} (enum hkaAnimationBinding, verificado en el binario:
-        ' NORMAL=0/ADDITIVE_DEPRECATED=1/ADDITIVE=2). Engine-faithful: hkbClipGenerator::generate (0x1414AFBBD) lee
-        ' binding.blendHint en [binding+0x50] y marca aditivo con `(bh−1) ≤ 1` unsigned ⇒ SOLO 1 y 2 (NO cualquier ≠0:
-        ' bh=0 y bh≥3 son NORMALES). El motor COLAPSA 1 y 2 al MISMO tag aditivo (bool output+0x8f) ⇒ procesamiento
-        ' idéntico; la diferencia 1/2 es histórica (SSE viejo usa 1, FO4 usa 2). (b) behavior graph vía _additiveHint.
+        ' CONTENIDO y conserva S en los demás.
+        '
+        ' ES aditivo ⟺ (a) blendHint ∈ {1,2} del binding del archivo, O (b) el behavior graph lo declara
+        ' vía `_additiveHint` (clip envuelto en DynamicAnimationTaggingGenerator 'Additive*', ej.
+        ' AdditiveDynamicIdle con blendHint=0). Enum `hkaAnimationBinding::BlendHint`, leído de la
+        ' reflexión del binario (.rdata 0x14263e428, build 2026-08-18): NORMAL=0 · ADDITIVE_DEPRECATED=1 ·
+        ' ADDITIVE=2. `hkbClipGenerator` (0x1414afedd) lo lee en [binding+0x50] y marca aditivo con
+        ' `(bh−1) ≤ 1` unsigned ⇒ SOLO 1 y 2 (bh=0 y bh≥3 no).
+        '
+        ' ⛔ CORRECCIÓN de la nota vieja, que decía «el motor COLAPSA 1 y 2 ⇒ procesamiento idéntico».
+        ' Es FALSO. Colapsa sólo en el CLIP GENERATOR, que guarda un booleano «es aditivo». El BLEND los
+        ' SEPARA: `hkbBlenderGeneratorUtils` (fn 0x1414c773d) lleva las dos clases en bits distintos del
+        ' pose-header y ABORTA si se mezclan — cadena literal del binario: "Trying to mix deprecated and
+        ' current additive animations in blend, this is not supported. Older assets must be re-exported."
+        ' (hkbblendergeneratorutils.cpp; gemela en hkblayergeneratorutils.cpp, 0x141a5904d).
         Dim bh = If(_animation.Binding IsNot Nothing, _animation.Binding.BlendHint, 0)
         Dim additive = (bh = 1 OrElse bh = 2) OrElse _additiveHint
+        ' ORDEN de composición del aditivo: lo DECLARA el binding; no se infiere en runtime ni se vota.
+        ' Ver la ley, su DOMINIO y su evidencia en el sitio de uso, más abajo.
+        Dim additiveCurrent = (bh = 2)
 
         For Each resolved In _tracks
             Dim hkxTransform = _animation.GetTransform(usedFrame, resolved.TrackIndex)
@@ -316,18 +326,89 @@ Public NotInheritable Class HkxPoseImportSession
             Dim frameLocal = BuildFrameLocalTransform(hkxTransform, resolved, additive, diagnostics)
             Dim naMask As Byte = If(resolved.LiveBone IsNot Nothing, resolved.LiveBone.NoAnimSyncMask, CByte(0))
             Dim delta As Transform_Class
-            ' Ambos caminos hacen lo MISMO: (1) construir el LOCAL ABSOLUTO del hueso en el frame,
-            ' (2) re-basarlo a la skeleton viva ⇒ Δ = inv(S)∘absoluto (S=OriginalLocaL∘Mount).
+            ' Los TRES caminos hacen lo MISMO: (1) armar el LOCAL ABSOLUTO del hueso en el frame,
+            ' (2) re-basarlo a la skeleton viva ⇒ Δ = inv(S)∘absoluto (S = OriginalLocaL∘Mount).
             ' Difieren SOLO en cómo se arma el absoluto:
-            '   • no-additive: el clip YA es el absoluto (componentes no-animadas ← S).
-            '   • additive: el clip es un DELTA relativo al reference pose ⇒ absoluto = additive × base = delta∘S
-            '     (base=S ADENTRO, additive AFUERA). ⛔ NO invertir el orden: S∘delta (= base×additive) desarma
-            '     el vertibird (palas a las esquinas). Medido con --animsynccheck [ADD-ORDER] (LeftPropeller
-            '     f110): additive×base ⇒ d(rest)=0.2 (root fijo, gira en su lugar) vs base×additive ⇒ d=748.1.
-            '     La traslación del delta compensa EXACTO la rotación: sólo con la rotación afuera el root queda fijo.
+            '   • no-additive   : el clip YA es el absoluto (componentes no-animadas ← S).
+            '   • additive bh=2 : S ∘ add   (el aditivo compone en el frame local del hueso).
+            '   • additive RESTO: add ∘ S   (el aditivo entra como PADRE). Cubre bh=1 Y el caso
+            '                     `_additiveHint` sin blendHint propio (bh=0, ej. AdditiveDynamicIdle;
+            '                     también bh≥3). ⚠️ Para ese caso NO hay ley medida ni respaldo del motor:
+            '                     con bh=0 el clip generator ni siquiera lo marca aditivo. Queda en add∘S
+            '                     = el comportamiento previo, sin cambio, a propósito.
+            '
+            ' ⭐ LEY: bh=2 ⇒ S∘add · TODO LO DEMÁS ⇒ add∘S. Contraejemplo de cada lado:
+            '   add∘S (bh=1): Meshes\Actors\Vertibird\Animations\ForwardGlideInjured.hkx, LeftPropeller
+            '        f110 — la traslación autorada (|addT| = 748,081, rotación 160,19°) CANCELA el arco de
+            '        su propia rotación sobre una palanca de 414 u con residuo 0,225 (0,03 %). Con S∘add el
+            '        propeller se va 748 u.
+            '   S∘add (bh=2): Meshes\Actors\Vertibird\Animations\RudderAndFlaps.hkx — sus 71 tracks declaran
+            '        la traslación Identity y aun así add∘S corre el ORIGEN de Rudder/LeftElevator/
+            '        RightElevator 403,66 / 423,85 / 423,85 u (frame 0 bien, frame 1 volando: reportado en
+            '        la app por el usuario).
+            '
+            ' De dónde sale la DIRECCIÓN de la ley, para que nadie la re-litigue con el RE en la mano:
+            '   • El RE prueba que el motor tiene EXACTAMENTE estos dos órdenes y elige uno POR CLIP —
+            '     helper 0x141543d40, misma función con los operandos cruzados: modo A∘B (out.T = A.T +
+            '     rot(A.R, B.T), out.R = A.R·B.R) vs modo B∘A. A = pose acumulada, B = hijo aditivo.
+            '   • El RE **NO** prueba cuál de los dos bits de clase corresponde a cuál blendHint. Eso NO se
+            '     infirió: se MIDIÓ, con dos pruebas de imposibilidad de una sola dirección:
+            '       – un track con la traslación declarada Identity y palanca no puede ser add∘S-autorado
+            '         (autorar así con rotación EXIGE traslación compensatoria) ⇒ es S∘add;
+            '       – una traslación que coincide con el arco de su propia rotación (error EXACTAMENTE 0 en
+            '         decenas de tracks) es la firma de add∘S.
+            '     Resultado: 316 determinaciones sobre 1.065 aditivas MEDIDAS, CERO contradicciones, cero
+            '     archivos que activen las dos pruebas. Las ~749 restantes NO fueron determinadas: heredan
+            '     la ley por el blendHint DECLARADO, que es justamente el punto del diseño.
+            '
+            ' Alcance medido (corpus completo del load order, sin filtro de carpeta):
+            '   FO4 17.513 .hkx · bh1 108 · bh2 941. SSE 7.704 .hkx · bh1 21 · bh2 0 ⇒ el cambio es no-op
+            '   para Skyrim EN EL CORPUS INSTALADO (es propiedad del corpus, no del código: un mod con bh=2
+            '   recibiría una ley cuya evidencia es 100 % de FO4 — para SSE bh=2 la muestra es n=0).
+            '   Total aditivas 1.070; 1.065 medidas (5 de FO4 sin esqueleto resoluble, nunca evaluadas).
+            '   La SALIDA cambia para los ~941 bh=2; de esos, 443 tienen al menos un track «afectado» en el
+            '   sentido estrecho (traslación declarada Identity y origen corrido > 1 u).
+            '   29 archivos bh=2 (todos Character\_1stPerson\WPN*Add) miden mejor con el orden viejo; peor
+            '   caso 2,096 u sobre COM (WPNAfterJiggleSneakDown f5). Se aceptan: son aditivos de viewmodel
+            '   que el juego nunca muestra aislados. ⚠️ Ocultos POR DEFECTO en el selector de NPC Manager
+            '   (BehaviorClipEnumerator, Is1stPersonOnly), pero el picker de Wardrobe Manager NO filtra
+            '   carpeta (HkxPoseImport_Form: GetFilteredKeys("Meshes\", …)) ⇒ ahí están a la vista.
+            '
+            ' ⛔ NO-ANIM-SYNC: el mask se aplica al DELTA (structural = identidad), NO al absoluto. Se deja
+            ' así a propósito, y con este alcance exacto:
+            '   • Censo de los NIF vanilla replicando PlumbNoAnimSyncMasks (FO4 5.513 NIF / 75.161 nodos;
+            '     SSE 6.152 / 44.905): las únicas máscaras que existen son 0, 7=X|Y|Z, 8=S y 15=X|Y|Z|S.
+            '     CERO parciales ⇒ los bits de traslación vienen los tres juntos o ninguno.
+            '   • Con máscara de traslación completa `honored.T = 0` ⇒ S∘honored da out.T = S.T EXACTO, que
+            '     es lo que hace el pose-writer del motor (mantiene la traslación estructural del eje
+            '     flagueado). Esto vale SEA CUAL SEA el orden del blend, así que para los chunks de robot el
+            '     cambio es correcto con independencia de la ley del blendHint: el orden viejo entregaba
+            '     rot(add.R, S.T), que está mal bajo cualquier orden.
+            '   • Medición: 12.997.836 comparaciones pre-mask (app) vs post-mask (motor), mount con
+            '     rotación. ⚠️ Las filas de mask=0 y mask=8 son CIRCULARES para el origen (la referencia usa
+            '     la composición post, y mask=8 no toca la traslación: BuildNoAnimSyncLocal la decide con
+            '     fx/fy/fz y `fs` sólo elige scaleSrc). No circulares en las TRES componentes: mask=7 y
+            '     mask=15 ⇒ 1/3 de las comparaciones = 4.332.612 (el probe recorre las 6 máscaras una vez
+            '     por (track, mount, frame) ⇒ 2.166.306 por máscara); los dos controles parciales son no
+            '     circulares sólo en su eje. En las no circulares el orden nuevo da 0,000000 contra el motor
+            '     y el viejo hasta 693,57 u.
+            '   • ⛔ LATENTE, no arreglado: para bh=1 CON máscara, add∘S sigue entregando rot(add.R, S.T)
+            '     donde el pose-writer entregaría S.T ⇒ bh=1 + mask queda engine-infiel. Único bh=1 en
+            '     carpeta de robot: Meshes\Actors\CreateABot\Animations\SentryBot\CrippledNoise.hkx, con
+            '     add.R ≈ I (maxAddT 0,474, desplazamiento medido 0) ⇒ arco ≈ 0. ⚠️ OJO al grepear
+            '     "CrippledNoise": hay TRES archivos distintos y NO comparten blendHint — medido:
+            '     CreateABot\Animations\{Assaultron,Protectron}\CrippledNoise\CrippledNoise.hkx son bh=2 y
+            '     sólo el de SentryBot es bh=1 (por eso BehaviorClipEnumerator dice "=2 en …/CrippledNoise/…"
+            '     y acá dice bh=1: hablan de archivos distintos). Con máscaras parciales (inexistentes en
+            '     vanilla) el pre-mask también divergiría. Los dos casos quedan documentados acá.
             Dim absoluteLocal As Transform_Class
             If additive Then
-                absoluteLocal = BuildNoAnimSyncLocal(frameLocal, New Transform_Class(), naMask).ComposeTransforms(resolved.StructuralLocal)
+                Dim honored = BuildNoAnimSyncLocal(frameLocal, New Transform_Class(), naMask)
+                If additiveCurrent Then
+                    absoluteLocal = resolved.StructuralLocal.ComposeTransforms(honored)   ' bh=2 : S ∘ add
+                Else
+                    absoluteLocal = honored.ComposeTransforms(resolved.StructuralLocal)   ' resto: add ∘ S
+                End If
             Else
                 absoluteLocal = BuildNoAnimSyncLocal(frameLocal, resolved.StructuralLocal, naMask)
             End If
@@ -463,7 +544,14 @@ Public NotInheritable Class HkxPoseImportSession
     ''' track filtering, but encodes the WM delta (inv(rigRest) × frameLocal → Matrix33ToBSRotation via
     ''' ToPoseTransformData) instead of the SAM absolute local. Used by the EXPORT/save path only to
     ''' append the missing bones — NOT by BuildPose (per-frame playback). Identity deltas are skipped,
-    ''' same criterion as BuildPose. Keyed by bone name; never Nothing.</summary>
+    ''' same criterion as BuildPose. Keyed by bone name; never Nothing.
+    ''' <para>⛔ NO RAMIFICA POR ADITIVIDAD, y BuildPose SÍ (desde el fix del orden aditivo: bh=2 ⇒
+    ''' S∘add). Consecuencia VERIFICABLE, no una magnitud estimada: en un mismo &lt;Pose&gt; del XML los
+    ''' huesos LIGADOS salen con la ley del blendHint y los NO LIGADOS con <c>inv(refPose)∘frameLocal</c>,
+    ''' que rellena las componentes no animadas con el refPose — semántica de clip NORMAL, no de delta
+    ''' aditivo. El archivo queda internamente ASIMÉTRICO para clips bh=2. Hueco PREEXISTENTE: el fix no
+    ''' lo introduce. Arreglarlo = pasarle <c>additive</c>/<c>additiveCurrent</c>; fuera del alcance de
+    ''' ese cambio a propósito.</para></summary>
     Public Function BuildUnboundBoneWmData(frameIndex As Integer) As Dictionary(Of String, PoseTransformData)
         Dim usedFrame = Math.Max(0, Math.Min(frameIndex, _animation.NumFrames - 1))
         Dim result As New Dictionary(Of String, PoseTransformData)(StringComparer.OrdinalIgnoreCase)
@@ -480,7 +568,10 @@ Public NotInheritable Class HkxPoseImportSession
 
                 Dim frameLocal = BuildUnboundFrameLocal(ht, resolved.ReferencePose)
                 Dim s = RefPoseToStructural(resolved.ReferencePose)   ' structural proxy = HKX rig rest
-                Dim delta = s.Inverse().ComposeTransforms(frameLocal)  ' SAME formula as BuildPose's live delta
+                ' ⛔ YA NO es la misma fórmula que el delta vivo de BuildPose: desde el fix del orden
+                ' aditivo, BuildPose ramifica por blendHint (bh=2 ⇒ S∘add) y esta función no. Coincide
+                ' sólo para clips NO aditivos. Ver el <para> del docstring.
+                Dim delta = s.Inverse().ComposeTransforms(frameLocal)
                 Dim poseData = ToPoseTransformData(delta)              ' reuse → Matrix33ToBSRotation
                 If Not poseData.Isidentity AndAlso Not result.ContainsKey(resolved.BoneName) Then result.Add(resolved.BoneName, poseData)
             Catch ex As Exception
