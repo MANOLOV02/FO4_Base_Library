@@ -1,4 +1,13 @@
 ==============================================================================================
+PROCEDENCIA
+==============================================================================================
+  Generado desde xEdit, commit 93cc0bc5a1251936c3c7859eee3150eda12a62d7
+    wbDefinitionsFO4.pas         sha256 5bd45c7560fbfd7e6d02cddaeac87b0c3719408060345c383507a23efc6a09b5
+    wbDefinitionsTES5.pas        sha256 bb002282b55b7252ed3bfa93419f5ae743109a007ea0beec4863f255531a6a2e
+    wbDefinitionsCommon.pas      sha256 eeae173c40bb5efd0a647ae762369fba9d8a26e5823e30b751c5402c19dbee3a
+    wbDefinitionsSignatures.pas  sha256 002741846e1591e945448228128cd50534251d78ca2d2e71fa741561a7ded3b4
+
+==============================================================================================
 Fallout 4
 ==============================================================================================
   tipos de record       : 137
@@ -22,4 +31,95 @@ TIPOS DE CAMPO QUE EL TRADUCTOR NO SABE BAJAR
 REGLAS DE ELECCION ENTRE VARIANTES QUE FALTAN
 ==============================================================================================
 
-Reglas de eleccion implementadas: 32
+Reglas de eleccion implementadas: 31
+
+==============================================================================================
+POSTFIJOS DEL FORMATO QUE NO SE TRADUCEN, Y POR QUE
+==============================================================================================
+  Ninguno de estos puede cambiar un byte. Si xEdit agrega uno que si puede, no
+  esta en ninguna de las dos listas y la generacion se detiene.
+      80  AddOverlay                       sustituye el valor MOSTRADO de un entero (un 0 se muestra como la quest que lo contiene). Corre solo para ctCheck/ctLinksTo/ctToStr/ctToSortKey/ctToSummary/ctBuildRef/ctFromEditValue: el valor ALMACENADO no se toca, y el reindexado de masters escribe el almacenado
+      14  SetAddInfo                       texto auxiliar de la vista
+      40  SetAfterLoad                     retoque del EDITOR al cargar; el lector no lo aplica y por eso el round-trip byte a byte sigue siendo la ley
+     306  SetAfterSet                      retoque del EDITOR al asignar
+       4  SetBuildIndexKeys                indice de busqueda de xEdit
+     927  SetDefaultEditValue              valor que ofrece el editor de xEdit; no se emite al archivo
+       2  SetDefaultEditValues             idem, por elemento de un arreglo
+    2433  SetDefaultNativeValue            idem, en representacion nativa
+     169  SetDontShow                      oculta el campo en el arbol de xEdit
+     522  SetFormIDFilter                  valida a que records puede apuntar; no cambia los 4 bytes
+       2  SetFormaterOnValue               idem
+      23  SetGetCP                         prioridad de conflicto: coloreo de la vista de conflictos
+      16  SetIsRemovable                   si el editor deja borrarlo
+       2  SetIsSorted                      xEdit ordena el arreglo al MOSTRARLO y al guardarlo desde su editor; nuestro escritor conserva el orden leido, que es lo que exige el round-trip byte a byte
+     528  SetLinksToCallback               a donde apunta un campo para navegar; no cambia sus bytes
+       6  SetLinksToCallbackOnValue        idem
+      67  SetNormalizer                    clamp que aplica el EDITOR al escribir un valor a mano
+     978  SetSummaryDelimiter              separador del resumen
+     154  SetSummaryDelimiterOnValue       idem
+    1345  SetSummaryKey                    orden de las columnas del resumen
+     278  SetSummaryKeyOnValue             idem
+       6  SetSummaryMemberMaxDepth         profundidad del resumen
+       2  SetSummaryMemberMaxDepthOnValue  profundidad del resumen
+    2022  SetSummaryMemberPrefixSuffix     adornos del resumen
+       5  SetSummaryName                   nombre en el resumen
+       2  SetSummaryPassthroughMaxCount    cantidad en el resumen
+      22  SetSummaryPassthroughMaxCountOnValue cantidad en el resumen
+      61  SetSummaryPassthroughMaxDepth    profundidad del resumen
+     116  SetSummaryPassthroughMaxLength   largo del resumen
+      22  SetSummaryPassthroughMaxLengthOnValue largo del resumen
+     217  SetSummaryPrefixSuffixOnValue    adornos del resumen
+     717  SetToStr                         como se MUESTRA el numero; el numero no cambia
+
+  TRADUCIDOS (cambian como se leen los bytes):
+    4834  IncludeFlag                      banderas de definicion; ver DEFFLAG_ESTRUCTURAL
+     240  IncludeFlagOnValue               idem, aplicada al valor
+     258  OverrideEncoding                 cambia el juego de caracteres con el que se decodifica el texto
+     133  SetCountPath                     el conteo del arreglo vive en otro campo
+      53  SetCountPathOnValue              idem, aplicado al valor y no al subrecord
+     170  SetOptionalFrom                  los campos desde el indice N pueden faltar
+     590  SetRequired                      obliga a crear el campo al construir un record nuevo
+      91  SetUnordered                     el grupo acepta sus firmas en cualquier orden y reinicia su cursor
+
+==============================================================================================
+BANDERAS DE DEFINICION (dfXxx) VISTAS
+==============================================================================================
+      60  dfAllowAnyMember                   TRADUCIDA - el grupo acepta cualquiera de sus firmas
+       1  dfArrayCanBeEmpty                  no se traduce
+       2  dfArrayStaticSize                  no se traduce
+    1963  dfCollapsed                        no se traduce
+       4  dfDontAssign                       no se traduce
+       4  dfDontSave                         no se traduce
+       3  dfExcludeFromBuildRef              no se traduce
+       7  dfFastAssign                       no se traduce
+       2  dfIncludeValueInDisplaySignature   no se traduce
+       3  dfIndexEditorID                    no se traduce
+      22  dfInternalEditOnly                 no se traduce
+       6  dfNoCopyAsOverride                 no se traduce
+       1  dfNoMove                           no se traduce
+      61  dfNotAlignable                     no se traduce
+     173  dfSkipImplicitEdit                 no se traduce
+       4  dfStringTrim                       no se traduce
+      19  dfStructFirstNotRequired           no se traduce
+      45  dfSummaryExcludeNULL               no se traduce
+       2  dfSummaryExcludeNull               no se traduce
+    1364  dfSummaryMembersNoName             no se traduce
+     122  dfSummaryNoName                    no se traduce
+     452  dfSummaryNoSortKey                 no se traduce
+       1  dfTerminator                       TRADUCIDA - cierra la estructura que lo contiene apenas aparece
+      13  dfUnionStaticResolve               no se traduce
+       4  dfUseLoadOrder                     no se traduce
+     736  dfZeroSortKey                      no se traduce
+
+==============================================================================================
+CAMBIO ESTRUCTURAL RESPECTO DEL ESQUEMA ANTERIOR
+==============================================================================================
+==============================================================================================
+FO4   records 137 -> 137
+==============================================================================================
+==============================================================================================
+TES5   records 124 -> 124
+==============================================================================================
+
+  hallazgos que exigian revision: 0
+

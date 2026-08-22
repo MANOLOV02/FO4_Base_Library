@@ -387,30 +387,30 @@ Namespace Canon
         Property VirtualMachineAdapterObjectFormatPresente As Boolean
         ''' <summary>VMAD\Virtual Machine Adapter\Object Format</summary>
         Property VirtualMachineAdapterObjectFormat As Short
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Property ObjectBoundsX1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Property ObjectBoundsY1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Property ObjectBoundsZ1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Property ObjectBoundsX2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Property ObjectBoundsY2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Property ObjectBoundsZ2 As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Property MinXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Property MinX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Property MinYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Property MinY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Property MinZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Property MinZ As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Property MaxXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Property MaxX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Property MaxYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Property MaxY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Property MaxZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Property MaxZ As Short
         ''' <summary>El record trae FULL\Name. Distinto de que el campo valga cero.</summary>
         Property NamePresente As Boolean
         ''' <summary>FULL\Name. Resuelto contra las tablas de texto si el archivo las usa.</summary>
@@ -1112,10 +1112,10 @@ Namespace Canon
         Property PartType As UInteger
         ''' <summary>Nombre del valor de Part\NAM0\Part Type.</summary>
         ReadOnly Property PartTypeNombre As String
-        ''' <summary>El record trae Part\NAM1\FileName. Distinto de que el campo valga cero.</summary>
-        Property PartFileNamePresente As Boolean
-        ''' <summary>Part\NAM1\FileName</summary>
-        Property PartFileName As String
+        ''' <summary>El record trae Part\NAM1\Filename. Distinto de que el campo valga cero.</summary>
+        Property PartFilenamePresente As Boolean
+        ''' <summary>Part\NAM1\Filename</summary>
+        Property PartFilename As String
     End Interface
 
     ''' <summary>Campos de un record IDLE que los dos juegos declaran igual.
@@ -1335,7 +1335,7 @@ Namespace Canon
         Property Parameter1LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter1OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter1Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter1PackagePresente As Boolean
@@ -1535,7 +1535,7 @@ Namespace Canon
         Property Parameter2LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter2OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter2Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter2PackagePresente As Boolean
@@ -1623,30 +1623,30 @@ Namespace Canon
         Property EditorIDPresente As Boolean
         ''' <summary>EDID\Editor ID</summary>
         Property EditorID As String
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Property ObjectBoundsX1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Property ObjectBoundsY1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Property ObjectBoundsZ1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Property ObjectBoundsX2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Property ObjectBoundsY2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Property ObjectBoundsZ2 As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Property MinXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Property MinX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Property MinYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Property MinY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Property MinZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Property MinZ As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Property MaxXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Property MaxX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Property MaxYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Property MaxY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Property MaxZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Property MaxZ As Short
         ''' <summary>El record trae LVLD\Chance None. Distinto de que el campo valga cero.</summary>
         Property ChanceNonePresente As Boolean
         ''' <summary>LVLD\Chance None</summary>
@@ -1718,30 +1718,30 @@ Namespace Canon
         Property EditorIDPresente As Boolean
         ''' <summary>EDID\Editor ID</summary>
         Property EditorID As String
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Property ObjectBoundsX1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Property ObjectBoundsY1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Property ObjectBoundsZ1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Property ObjectBoundsX2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Property ObjectBoundsY2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Property ObjectBoundsZ2 As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Property MinXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Property MinX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Property MinYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Property MinY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Property MinZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Property MinZ As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Property MaxXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Property MaxX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Property MaxYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Property MaxY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Property MaxZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Property MaxZ As Short
         ''' <summary>El record trae LVLD\Chance None. Distinto de que el campo valga cero.</summary>
         Property ChanceNonePresente As Boolean
         ''' <summary>LVLD\Chance None</summary>
@@ -1931,30 +1931,30 @@ Namespace Canon
         Property VirtualMachineAdapterObjectFormatPresente As Boolean
         ''' <summary>VMAD\Virtual Machine Adapter\Object Format</summary>
         Property VirtualMachineAdapterObjectFormat As Short
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Property ObjectBoundsX1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Property ObjectBoundsY1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Property ObjectBoundsZ1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Property ObjectBoundsX2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Property ObjectBoundsY2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Property ObjectBoundsZ2 As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Property MinXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Property MinX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Property MinYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Property MinY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Property MinZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Property MinZ As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Property MaxXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Property MaxX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Property MaxYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Property MaxY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Property MaxZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Property MaxZ As Short
         ''' <summary>El record trae ACBS\Configuration\Flags. Distinto de que el campo valga cero.</summary>
         Property ConfigurationFlagsPresente As Boolean
         ''' <summary>ACBS\Configuration\Flags</summary>
@@ -1981,10 +1981,6 @@ Namespace Canon
         Property ConfigurationFlagsSummonable As Boolean
         ''' <summary>Bit 16 de ACBS\Configuration\Flags: Doesn't bleed</summary>
         Property ConfigurationFlagsDoesnTBleed As Boolean
-        ''' <summary>Bit 18 de ACBS\Configuration\Flags: Bleedout Override</summary>
-        Property ConfigurationFlagsBleedoutOverride As Boolean
-        ''' <summary>Bit 19 de ACBS\Configuration\Flags: Opposite Gender Anims</summary>
-        Property ConfigurationFlagsOppositeGenderAnims As Boolean
         ''' <summary>Bit 20 de ACBS\Configuration\Flags: Simple Actor</summary>
         Property ConfigurationFlagsSimpleActor As Boolean
         ''' <summary>Bit 29 de ACBS\Configuration\Flags: Is Ghost</summary>
@@ -3043,15 +3039,11 @@ Namespace Canon
         ''' <summary>El record trae Fragment\Quest Stage. Distinto de que el campo valga cero.</summary>
         Property FragmentQuestStagePresente As Boolean
         ''' <summary>Fragment\Quest Stage</summary>
-        Property FragmentQuestStage As UShort
+        Property FragmentQuestStage As UInteger
         ''' <summary>El record trae Fragment\Unknown. Distinto de que el campo valga cero.</summary>
         Property FragmentUnknownPresente As Boolean
         ''' <summary>Fragment\Unknown</summary>
-        Property FragmentUnknown As Short
-        ''' <summary>El record trae Fragment\Quest Stage Index. Distinto de que el campo valga cero.</summary>
-        Property FragmentQuestStageIndexPresente As Boolean
-        ''' <summary>Fragment\Quest Stage Index</summary>
-        Property FragmentQuestStageIndex As Integer
+        Property FragmentUnknown As Byte()
         ''' <summary>El record trae Fragment\ScriptName. Distinto de que el campo valga cero.</summary>
         Property FragmentScriptNamePresente As Boolean
         ''' <summary>Fragment\ScriptName</summary>
@@ -3277,7 +3269,7 @@ Namespace Canon
         Property Parameter1LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter1OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter1Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter1PackagePresente As Boolean
@@ -3477,7 +3469,7 @@ Namespace Canon
         Property Parameter2LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter2OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter2Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter2PackagePresente As Boolean
@@ -3730,7 +3722,7 @@ Namespace Canon
         Property Parameter1LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter1OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter1Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter1PackagePresente As Boolean
@@ -3930,7 +3922,7 @@ Namespace Canon
         Property Parameter2LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter2OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter2Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter2PackagePresente As Boolean
@@ -4039,86 +4031,192 @@ Namespace Canon
     ''' <summary>Un elemento de Aliases, en lo que los dos juegos comparten.</summary>
     Public Interface IQust_Aliases2
         ReadOnly Property Node As WbNode
-        ''' <summary>El record trae Alias\Location Alias Reference\ALFA\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\ALST\Alias ID. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasAliasIDPresente As Boolean
+        ''' <summary>Reference Alias\ALST\Alias ID</summary>
+        Property ReferenceAliasAliasID As UInteger
+        ''' <summary>El record trae Reference Alias\ALID\Alias Name. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasAliasNamePresente As Boolean
+        ''' <summary>Reference Alias\ALID\Alias Name</summary>
+        Property ReferenceAliasAliasName As String
+        ''' <summary>El record trae Reference Alias\FNAM\Flags. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasFlagsPresente As Boolean
+        ''' <summary>Reference Alias\FNAM\Flags</summary>
+        Property ReferenceAliasFlags As UInteger
+        ''' <summary>Bit 1 de Reference Alias\FNAM\Flags: Optional</summary>
+        Property ReferenceAliasFlagsOptional As Boolean
+        ''' <summary>Bit 2 de Reference Alias\FNAM\Flags: Quest Object</summary>
+        Property ReferenceAliasFlagsQuestObject As Boolean
+        ''' <summary>Bit 3 de Reference Alias\FNAM\Flags: Allow Reuse in Quest</summary>
+        Property ReferenceAliasFlagsAllowReuseInQuest As Boolean
+        ''' <summary>Bit 4 de Reference Alias\FNAM\Flags: Allow Dead</summary>
+        Property ReferenceAliasFlagsAllowDead As Boolean
+        ''' <summary>Bit 5 de Reference Alias\FNAM\Flags: Matching Ref - In Loaded Area</summary>
+        Property ReferenceAliasFlagsMatchingRefInLoadedArea As Boolean
+        ''' <summary>Bit 6 de Reference Alias\FNAM\Flags: Essential</summary>
+        Property ReferenceAliasFlagsEssential As Boolean
+        ''' <summary>Bit 7 de Reference Alias\FNAM\Flags: Allow Disabled</summary>
+        Property ReferenceAliasFlagsAllowDisabled As Boolean
+        ''' <summary>Bit 8 de Reference Alias\FNAM\Flags: Stores Text</summary>
+        Property ReferenceAliasFlagsStoresText As Boolean
+        ''' <summary>Bit 9 de Reference Alias\FNAM\Flags: Allow Reserved</summary>
+        Property ReferenceAliasFlagsAllowReserved As Boolean
+        ''' <summary>Bit 10 de Reference Alias\FNAM\Flags: Protected</summary>
+        Property ReferenceAliasFlagsProtected As Boolean
+        ''' <summary>Bit 11 de Reference Alias\FNAM\Flags: Forced by Aliases</summary>
+        Property ReferenceAliasFlagsForcedByAliases As Boolean
+        ''' <summary>Bit 12 de Reference Alias\FNAM\Flags: Allow Destroyed</summary>
+        Property ReferenceAliasFlagsAllowDestroyed As Boolean
+        ''' <summary>Bit 13 de Reference Alias\FNAM\Flags: Matching Ref - Closest</summary>
+        Property ReferenceAliasFlagsMatchingRefClosest As Boolean
+        ''' <summary>Bit 14 de Reference Alias\FNAM\Flags: Uses Stored Text</summary>
+        Property ReferenceAliasFlagsUsesStoredText As Boolean
+        ''' <summary>Bit 15 de Reference Alias\FNAM\Flags: Initially Disabled</summary>
+        Property ReferenceAliasFlagsInitiallyDisabled As Boolean
+        ''' <summary>Bit 17 de Reference Alias\FNAM\Flags: Clear Names When Removed</summary>
+        Property ReferenceAliasFlagsClearNamesWhenRemoved As Boolean
+        ''' <summary>El record trae Reference Alias\ALFI\Force Into Alias When Filled. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasForceIntoAliasWhenFilledPresente As Boolean
+        ''' <summary>Reference Alias\ALFI\Force Into Alias When Filled</summary>
+        Property ReferenceAliasForceIntoAliasWhenFilled As Integer
+        ''' <summary>El record trae Reference Alias\Specific Reference\ALFR\Reference. Distinto de que el campo valga cero.</summary>
+        Property SpecificReferenceReferencePresente As Boolean
+        ''' <summary>Reference Alias\Specific Reference\ALFR\Reference  -&gt;  ACHR / PARW / PBAR / PBAR / PCON / PFLA / PGRE / PHZD / PLYR / PMIS / REFR. Referencia en el espacio del orden de carga.</summary>
+        Property SpecificReferenceReference As UInteger
+        ''' <summary>El record trae Reference Alias\Unique Actor\ALUA\Actor. Distinto de que el campo valga cero.</summary>
+        Property UniqueActorActorPresente As Boolean
+        ''' <summary>Reference Alias\Unique Actor\ALUA\Actor  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
+        Property UniqueActorActor As UInteger
+        ''' <summary>El record trae Reference Alias\Location Alias Reference\ALFA\Alias. Distinto de que el campo valga cero.</summary>
         Property LocationAliasReferenceAliasPresente As Boolean
-        ''' <summary>Alias\Location Alias Reference\ALFA\Alias</summary>
+        ''' <summary>Reference Alias\Location Alias Reference\ALFA\Alias</summary>
         Property LocationAliasReferenceAlias As Integer
-        ''' <summary>El record trae Alias\Location Alias Reference\KNAM\Keyword. Distinto de que el campo valga cero.</summary>
-        Property LocationAliasReferenceKeywordPresente As Boolean
-        ''' <summary>Alias\Location Alias Reference\KNAM\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
-        Property LocationAliasReferenceKeyword As UInteger
-        ''' <summary>El record trae Alias\Location Alias Reference\ALRT\Ref Type. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Location Alias Reference\ALRT\Ref Type. Distinto de que el campo valga cero.</summary>
         Property LocationAliasReferenceRefTypePresente As Boolean
-        ''' <summary>Alias\Location Alias Reference\ALRT\Ref Type  -&gt;  LCRT. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Reference Alias\Location Alias Reference\ALRT\Ref Type  -&gt;  LCRT. Referencia en el espacio del orden de carga.</summary>
         Property LocationAliasReferenceRefType As UInteger
-        ''' <summary>El record trae Alias\External Alias Reference\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\External Alias Reference\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
         Property ExternalAliasReferenceQuestPresente As Boolean
-        ''' <summary>Alias\External Alias Reference\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Reference Alias\External Alias Reference\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
         Property ExternalAliasReferenceQuest As UInteger
-        ''' <summary>El record trae Alias\External Alias Reference\ALEA\Alias. Distinto de que el campo valga cero.</summary>
-        Property ExternalAliasReferenceAliasPresente As Boolean
-        ''' <summary>Alias\External Alias Reference\ALEA\Alias</summary>
-        Property ExternalAliasReferenceAlias As Integer
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCO\Object. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCO\Object. Distinto de que el campo valga cero.</summary>
         Property CreateReferenceToObjectObjectPresente As Boolean
-        ''' <summary>Alias\Create Reference to Object\ALCO\Object. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCO\Object. Referencia en el espacio del orden de carga.</summary>
         Property CreateReferenceToObjectObject As UInteger
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCA\Alias\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCA\Alias\Alias. Distinto de que el campo valga cero.</summary>
         Property CreateReferenceToObjectAliasPresente As Boolean
-        ''' <summary>Alias\Create Reference to Object\ALCA\Alias\Alias</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCA\Alias\Alias</summary>
         Property CreateReferenceToObjectAlias As Short
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCA\Alias\Create. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCA\Alias\Create. Distinto de que el campo valga cero.</summary>
         Property AliasCreatePresente As Boolean
-        ''' <summary>Alias\Create Reference to Object\ALCA\Alias\Create</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCA\Alias\Create</summary>
         Property AliasCreate As UShort
-        ''' <summary>Nombre del valor de Alias\Create Reference to Object\ALCA\Alias\Create.</summary>
+        ''' <summary>Nombre del valor de Reference Alias\Create Reference to Object\ALCA\Alias\Create.</summary>
         ReadOnly Property AliasCreateNombre As String
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCL\Level. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCL\Level. Distinto de que el campo valga cero.</summary>
         Property CreateReferenceToObjectLevelPresente As Boolean
-        ''' <summary>Alias\Create Reference to Object\ALCL\Level</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCL\Level</summary>
         Property CreateReferenceToObjectLevel As UInteger
-        ''' <summary>Nombre del valor de Alias\Create Reference to Object\ALCL\Level.</summary>
+        ''' <summary>Nombre del valor de Reference Alias\Create Reference to Object\ALCL\Level.</summary>
         ReadOnly Property CreateReferenceToObjectLevelNombre As String
-        ''' <summary>El record trae Alias\Find Matching Reference Near Alias\ALNA\Alias. Distinto de que el campo valga cero.</summary>
-        Property FindMatchingReferenceNearAliasAliasPresente As Boolean
-        ''' <summary>Alias\Find Matching Reference Near Alias\ALNA\Alias</summary>
-        Property FindMatchingReferenceNearAliasAlias As Integer
-        ''' <summary>El record trae Alias\Find Matching Reference Near Alias\ALNT\Type. Distinto de que el campo valga cero.</summary>
-        Property FindMatchingReferenceNearAliasTypePresente As Boolean
-        ''' <summary>Alias\Find Matching Reference Near Alias\ALNT\Type</summary>
-        Property FindMatchingReferenceNearAliasType As UInteger
-        ''' <summary>Nombre del valor de Alias\Find Matching Reference Near Alias\ALNT\Type.</summary>
-        ReadOnly Property FindMatchingReferenceNearAliasTypeNombre As String
-        ''' <summary>El record trae Alias\Find Matching Reference From Event\ALFE\From Event. Distinto de que el campo valga cero.</summary>
-        Property FindMatchingReferenceFromEventFromEventPresente As Boolean
-        ''' <summary>Alias\Find Matching Reference From Event\ALFE\From Event</summary>
-        Property FindMatchingReferenceFromEventFromEvent As UInteger
-        ''' <summary>El record trae Alias\Find Matching Reference From Event\ALFD\Event Data. Distinto de que el campo valga cero.</summary>
-        Property FindMatchingReferenceFromEventEventDataPresente As Boolean
-        ''' <summary>Alias\Find Matching Reference From Event\ALFD\Event Data</summary>
-        Property FindMatchingReferenceFromEventEventData As UInteger
-        ''' <summary>Nombre del valor de Alias\Find Matching Reference From Event\ALFD\Event Data.</summary>
-        ReadOnly Property FindMatchingReferenceFromEventEventDataNombre As String
-        ''' <summary>El record trae Alias\Keywords\KSIZ\Keyword Count. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias. Distinto de que el campo valga cero.</summary>
+        Property NearAliasAliasPresente As Boolean
+        ''' <summary>Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias</summary>
+        Property NearAliasAlias As Integer
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\From Event\ALFE\Event. Distinto de que el campo valga cero.</summary>
+        Property FromEventEventPresente As Boolean
+        ''' <summary>Reference Alias\Find Matching Reference\From Event\ALFE\Event</summary>
+        Property FromEventEvent As UInteger
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\From Event\ALFD\Data. Distinto de que el campo valga cero.</summary>
+        Property FromEventDataPresente As Boolean
+        ''' <summary>Reference Alias\Find Matching Reference\From Event\ALFD\Data</summary>
+        Property FromEventData As UInteger
+        ''' <summary>Nombre del valor de Reference Alias\Find Matching Reference\From Event\ALFD\Data.</summary>
+        ReadOnly Property FromEventDataNombre As String
+        ''' <summary>El record trae Reference Alias\Keywords\KSIZ\Keyword Count. Distinto de que el campo valga cero.</summary>
         Property KeywordsKeywordCountPresente As Boolean
-        ''' <summary>Alias\Keywords\KSIZ\Keyword Count</summary>
+        ''' <summary>Reference Alias\Keywords\KSIZ\Keyword Count</summary>
         Property KeywordsKeywordCount As UInteger
-        ''' <summary>El record trae Alias\Reference Alias Location\ALFA\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\COCT\Count. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasCountPresente As Boolean
+        ''' <summary>Reference Alias\COCT\Count</summary>
+        Property ReferenceAliasCount As UInteger
+        ''' <summary>El record trae Reference Alias\SPOR\Spectator override package list. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasSpectatorOverridePackageListPresente As Boolean
+        ''' <summary>Reference Alias\SPOR\Spectator override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Property ReferenceAliasSpectatorOverridePackageList As UInteger
+        ''' <summary>El record trae Reference Alias\OCOR\Observe dead body override package list. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasObserveDeadBodyOverridePackageListPresente As Boolean
+        ''' <summary>Reference Alias\OCOR\Observe dead body override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Property ReferenceAliasObserveDeadBodyOverridePackageList As UInteger
+        ''' <summary>El record trae Reference Alias\GWOR\Guard warn override package list. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasGuardWarnOverridePackageListPresente As Boolean
+        ''' <summary>Reference Alias\GWOR\Guard warn override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Property ReferenceAliasGuardWarnOverridePackageList As UInteger
+        ''' <summary>El record trae Reference Alias\ECOR\Combat override package list. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasCombatOverridePackageListPresente As Boolean
+        ''' <summary>Reference Alias\ECOR\Combat override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Property ReferenceAliasCombatOverridePackageList As UInteger
+        ''' <summary>El record trae Reference Alias\ALDN\Display Name. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasDisplayNamePresente As Boolean
+        ''' <summary>Reference Alias\ALDN\Display Name  -&gt;  MESG. Referencia en el espacio del orden de carga.</summary>
+        Property ReferenceAliasDisplayName As UInteger
+        ''' <summary>El record trae Reference Alias\VTCK\Voice Types. Distinto de que el campo valga cero.</summary>
+        Property ReferenceAliasVoiceTypesPresente As Boolean
+        ''' <summary>Reference Alias\VTCK\Voice Types  -&gt;  NPC_ / FACT / FLST / VTYP / NULL. Referencia en el espacio del orden de carga.</summary>
+        Property ReferenceAliasVoiceTypes As UInteger
+        ''' <summary>El record trae el marcador Reference Alias\ALED\Alias End. No lleva valor: el dato es que esté, así que ponerlo en verdadero lo crea y en falso lo saca.</summary>
+        Property ReferenceAliasAliasEnd As Boolean
+        ''' <summary>El record trae Location Alias\ALLS\Alias ID. Distinto de que el campo valga cero.</summary>
+        Property LocationAliasAliasIDPresente As Boolean
+        ''' <summary>Location Alias\ALLS\Alias ID</summary>
+        Property LocationAliasAliasID As UInteger
+        ''' <summary>El record trae Location Alias\ALID\Alias Name. Distinto de que el campo valga cero.</summary>
+        Property LocationAliasAliasNamePresente As Boolean
+        ''' <summary>Location Alias\ALID\Alias Name</summary>
+        Property LocationAliasAliasName As String
+        ''' <summary>El record trae Location Alias\FNAM\Flags. Distinto de que el campo valga cero.</summary>
+        Property LocationAliasFlagsPresente As Boolean
+        ''' <summary>Location Alias\FNAM\Flags</summary>
+        Property LocationAliasFlags As UInteger
+        ''' <summary>Bit 1 de Location Alias\FNAM\Flags: Optional</summary>
+        Property LocationAliasFlagsOptional As Boolean
+        ''' <summary>Bit 3 de Location Alias\FNAM\Flags: Allow Reuse in Quest</summary>
+        Property LocationAliasFlagsAllowReuseInQuest As Boolean
+        ''' <summary>Bit 8 de Location Alias\FNAM\Flags: Stores Text</summary>
+        Property LocationAliasFlagsStoresText As Boolean
+        ''' <summary>Bit 9 de Location Alias\FNAM\Flags: Allow Reserved</summary>
+        Property LocationAliasFlagsAllowReserved As Boolean
+        ''' <summary>Bit 11 de Location Alias\FNAM\Flags: Forced by Aliases</summary>
+        Property LocationAliasFlagsForcedByAliases As Boolean
+        ''' <summary>Bit 16 de Location Alias\FNAM\Flags: Allow Cleared</summary>
+        Property LocationAliasFlagsAllowCleared As Boolean
+        ''' <summary>El record trae Location Alias\ALFI\Force Into Alias When Filled. Distinto de que el campo valga cero.</summary>
+        Property LocationAliasForceIntoAliasWhenFilledPresente As Boolean
+        ''' <summary>Location Alias\ALFI\Force Into Alias When Filled</summary>
+        Property LocationAliasForceIntoAliasWhenFilled As Integer
+        ''' <summary>El record trae Location Alias\Specific Location\ALFL\Location. Distinto de que el campo valga cero.</summary>
+        Property SpecificLocationLocationPresente As Boolean
+        ''' <summary>Location Alias\Specific Location\ALFL\Location  -&gt;  LCTN. Referencia en el espacio del orden de carga.</summary>
+        Property SpecificLocationLocation As UInteger
+        ''' <summary>El record trae Location Alias\Reference Alias Location\ALFA\Alias. Distinto de que el campo valga cero.</summary>
         Property ReferenceAliasLocationAliasPresente As Boolean
-        ''' <summary>Alias\Reference Alias Location\ALFA\Alias</summary>
+        ''' <summary>Location Alias\Reference Alias Location\ALFA\Alias</summary>
         Property ReferenceAliasLocationAlias As Integer
-        ''' <summary>El record trae Alias\Reference Alias Location\KNAM\Keyword. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Location Alias\Reference Alias Location\KNAM\Keyword. Distinto de que el campo valga cero.</summary>
         Property ReferenceAliasLocationKeywordPresente As Boolean
-        ''' <summary>Alias\Reference Alias Location\KNAM\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Location Alias\Reference Alias Location\KNAM\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
         Property ReferenceAliasLocationKeyword As UInteger
-        ''' <summary>El record trae Alias\External Alias Location\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Location Alias\External Alias Location\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
         Property ExternalAliasLocationQuestPresente As Boolean
-        ''' <summary>Alias\External Alias Location\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Location Alias\External Alias Location\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
         Property ExternalAliasLocationQuest As UInteger
-        ''' <summary>El record trae Alias\External Alias Location\ALEA\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Location Alias\External Alias Location\ALEA\Alias. Distinto de que el campo valga cero.</summary>
         Property ExternalAliasLocationAliasPresente As Boolean
-        ''' <summary>Alias\External Alias Location\ALEA\Alias</summary>
+        ''' <summary>Location Alias\External Alias Location\ALEA\Alias</summary>
         Property ExternalAliasLocationAlias As Integer
+        ''' <summary>El record trae el marcador Location Alias\ALED\Alias End. No lleva valor: el dato es que esté, así que ponerlo en verdadero lo crea y en falso lo saca.</summary>
+        Property LocationAliasAliasEnd As Boolean
     End Interface
 
     ''' <summary>Campos de un record RACE que los dos juegos declaran igual.
@@ -7421,30 +7519,30 @@ Namespace Canon
         Property EditorIDPresente As Boolean
         ''' <summary>EDID\Editor ID</summary>
         Property EditorID As String
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Property ObjectBoundsX1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Property ObjectBoundsY1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ1Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Property ObjectBoundsZ1 As Short
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsX2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Property ObjectBoundsX2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsY2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Property ObjectBoundsY2 As Short
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Property ObjectBoundsZ2Presente As Boolean
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Property ObjectBoundsZ2 As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Property MinXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Property MinX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Property MinYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Property MinY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Property MinZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Property MinZ As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Property MaxXPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Property MaxX As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Property MaxYPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Property MaxY As Short
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Property MaxZPresente As Boolean
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Property MaxZ As Short
         ''' <summary>El record trae Textures (RGB/A)\TX00\Diffuse. Distinto de que el campo valga cero.</summary>
         Property TexturesRGBADiffusePresente As Boolean
         ''' <summary>Textures (RGB/A)\TX00\Diffuse</summary>
@@ -8161,7 +8259,7 @@ Namespace Canon
         Property Parameter1MagicEffect As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter1OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter1Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter1PackagePresente As Boolean
@@ -8475,7 +8573,7 @@ Namespace Canon
         Property Parameter2MagicEffect As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter2OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter2Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter2PackagePresente As Boolean
@@ -8556,7 +8654,7 @@ Namespace Canon
     End Interface
 
     ''' <summary>Un bloque Conditions2, venga del record que venga.
-    ''' <para>Lo declaran igual: ClfmFO4_Conditions, HdptFO4_Conditions, IdleFO4_Conditions, QustFO4_Conditions, QustFO4_Conditions2, QustFO4_Conditions3, QustFO4_Conditions4, QustFO4_Conditions5, RaceFO4_Conditions, RaceFO4_Conditions2.</para></summary>
+    ''' <para>Lo declaran igual: ClfmFO4_Conditions, HdptFO4_Conditions, IdleFO4_Conditions, QustFO4_Conditions, QustFO4_Conditions2, QustFO4_Conditions3, QustFO4_Conditions4, QustFO4_Conditions5, QustFO4_Conditions6, RaceFO4_Conditions, RaceFO4_Conditions2.</para></summary>
     Public Interface IBloque_Conditions2
         ReadOnly Property Node As WbNode
         ''' <summary>El record trae Condition\CTDA\Type. Distinto de que el campo valga cero.</summary>
@@ -8751,7 +8849,7 @@ Namespace Canon
         Property Parameter1LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter1OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter1Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #1\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter1PackagePresente As Boolean
@@ -8969,7 +9067,7 @@ Namespace Canon
         Property Parameter2LocationRefType As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Owner. Distinto de que el campo valga cero.</summary>
         Property Parameter2OwnerPresente As Boolean
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Property Parameter2Owner As UInteger
         ''' <summary>El record trae Condition\CTDA\Parameter #2\Package. Distinto de que el campo valga cero.</summary>
         Property Parameter2PackagePresente As Boolean
@@ -9386,7 +9484,7 @@ Namespace Canon
     End Interface
 
     ''' <summary>Un bloque Properties2, venga del record que venga.
-    ''' <para>Lo declaran igual: ArmoSSE_Properties, NpcSSE_Properties, QustSSE_Properties, QustSSE_Properties2.</para></summary>
+    ''' <para>Lo declaran igual: ArmoFO4_Properties, NpcFO4_Properties, QustFO4_Properties, QustFO4_Properties2, QustFO4_Properties3.</para></summary>
     Public Interface IBloque_Properties2
         ReadOnly Property Node As WbNode
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
@@ -9397,70 +9495,6 @@ Namespace Canon
         Property PropertyTypePresente As Boolean
         ''' <summary>Property\Type</summary>
         Property PropertyType As Byte
-        ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Property PropertyFlagsPresente As Boolean
-        ''' <summary>Property\Flags</summary>
-        Property PropertyFlags As Byte
-        ''' <summary>Nombre del valor de Property\Flags.</summary>
-        ReadOnly Property PropertyFlagsNombre As String
-        ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Property ObjectV2AliasPresente As Boolean
-        ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Property ObjectV2Alias As Short
-        ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Property ObjectV2FormIDPresente As Boolean
-        ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Property ObjectV2FormID As UInteger
-        ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Property ObjectV1FormIDPresente As Boolean
-        ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Property ObjectV1FormID As UInteger
-        ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Property ObjectV1AliasPresente As Boolean
-        ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Property ObjectV1Alias As Short
-        ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Property ValueStringPresente As Boolean
-        ''' <summary>Property\Value\String</summary>
-        Property ValueString As String
-        ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Property ValueInt32Presente As Boolean
-        ''' <summary>Property\Value\Int32</summary>
-        Property ValueInt32 As Integer
-        ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Property ValueFloatPresente As Boolean
-        ''' <summary>Property\Value\Float</summary>
-        Property ValueFloat As Single
-        ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Property ValueBoolPresente As Boolean
-        ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Property ValueBool As Boolean
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object</summary>
-        ReadOnly Property ArrayOfObject As IReadOnlyList(Of IBloque_ArrayOfObject)
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String</summary>
-        ReadOnly Property ArrayOfString As IReadOnlyList(Of IBloque_ArrayOfString)
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32</summary>
-        ReadOnly Property ArrayOfInt32 As IReadOnlyList(Of IBloque_ArrayOfInt32)
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float</summary>
-        ReadOnly Property ArrayOfFloat As IReadOnlyList(Of IBloque_ArrayOfFloat)
-        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool</summary>
-        ReadOnly Property ArrayOfBool As IReadOnlyList(Of IBloque_ArrayOfBool)
-    End Interface
-
-    ''' <summary>Un bloque Properties3, venga del record que venga.
-    ''' <para>Lo declaran igual: ArmoFO4_Properties, NpcFO4_Properties, QustFO4_Properties, QustFO4_Properties2, QustFO4_Properties3.</para></summary>
-    Public Interface IBloque_Properties3
-        ReadOnly Property Node As WbNode
-        ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Property PropertyNamePresente As Boolean
-        ''' <summary>Property\propertyName</summary>
-        Property PropertyName As String
-        ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Property PropertyTypePresente As Boolean
-        ''' <summary>Property\Type</summary>
-        Property PropertyType As Byte
-        ''' <summary>Nombre del valor de Property\Type.</summary>
-        ReadOnly Property PropertyTypeNombre As String
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
         Property PropertyFlagsPresente As Boolean
         ''' <summary>Property\Flags</summary>
@@ -9517,6 +9551,68 @@ Namespace Canon
         ReadOnly Property ArrayOfBool As IReadOnlyList(Of IBloque_ArrayOfBool)
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Struct\Struct</summary>
         ReadOnly Property Struct2 As IReadOnlyList(Of IBloque_Struct)
+    End Interface
+
+    ''' <summary>Un bloque Properties3, venga del record que venga.
+    ''' <para>Lo declaran igual: ArmoSSE_Properties, NpcSSE_Properties, QustSSE_Properties, QustSSE_Properties2.</para></summary>
+    Public Interface IBloque_Properties3
+        ReadOnly Property Node As WbNode
+        ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
+        Property PropertyNamePresente As Boolean
+        ''' <summary>Property\propertyName</summary>
+        Property PropertyName As String
+        ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
+        Property PropertyTypePresente As Boolean
+        ''' <summary>Property\Type</summary>
+        Property PropertyType As Byte
+        ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
+        Property PropertyFlagsPresente As Boolean
+        ''' <summary>Property\Flags</summary>
+        Property PropertyFlags As Byte
+        ''' <summary>Nombre del valor de Property\Flags.</summary>
+        ReadOnly Property PropertyFlagsNombre As String
+        ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
+        Property ObjectV2AliasPresente As Boolean
+        ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
+        Property ObjectV2Alias As Short
+        ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
+        Property ObjectV2FormIDPresente As Boolean
+        ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
+        Property ObjectV2FormID As UInteger
+        ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
+        Property ObjectV1FormIDPresente As Boolean
+        ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
+        Property ObjectV1FormID As UInteger
+        ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
+        Property ObjectV1AliasPresente As Boolean
+        ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
+        Property ObjectV1Alias As Short
+        ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
+        Property ValueStringPresente As Boolean
+        ''' <summary>Property\Value\String</summary>
+        Property ValueString As String
+        ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
+        Property ValueInt32Presente As Boolean
+        ''' <summary>Property\Value\Int32</summary>
+        Property ValueInt32 As Integer
+        ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
+        Property ValueFloatPresente As Boolean
+        ''' <summary>Property\Value\Float</summary>
+        Property ValueFloat As Single
+        ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
+        Property ValueBoolPresente As Boolean
+        ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
+        Property ValueBool As Boolean
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object</summary>
+        ReadOnly Property ArrayOfObject As IReadOnlyList(Of IBloque_ArrayOfObject)
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String</summary>
+        ReadOnly Property ArrayOfString As IReadOnlyList(Of IBloque_ArrayOfString)
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32</summary>
+        ReadOnly Property ArrayOfInt32 As IReadOnlyList(Of IBloque_ArrayOfInt32)
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float</summary>
+        ReadOnly Property ArrayOfFloat As IReadOnlyList(Of IBloque_ArrayOfFloat)
+        ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool</summary>
+        ReadOnly Property ArrayOfBool As IReadOnlyList(Of IBloque_ArrayOfBool)
     End Interface
 
     ''' <summary>Un bloque Properties4, venga del record que venga.
@@ -9624,7 +9720,7 @@ Namespace Canon
     End Interface
 
     ''' <summary>Un bloque Scripts, venga del record que venga.
-    ''' <para>Lo declaran igual: ArmoSSE_Scripts, NpcSSE_Scripts, QustSSE_Scripts.</para></summary>
+    ''' <para>Lo declaran igual: ArmoFO4_Scripts, NpcFO4_Scripts, QustFO4_Scripts.</para></summary>
     Public Interface IBloque_Scripts
         ReadOnly Property Node As WbNode
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
@@ -9642,7 +9738,7 @@ Namespace Canon
     End Interface
 
     ''' <summary>Un bloque Scripts2, venga del record que venga.
-    ''' <para>Lo declaran igual: ArmoFO4_Scripts, NpcFO4_Scripts, QustFO4_Scripts.</para></summary>
+    ''' <para>Lo declaran igual: ArmoSSE_Scripts, NpcSSE_Scripts, QustSSE_Scripts.</para></summary>
     Public Interface IBloque_Scripts2
         ReadOnly Property Node As WbNode
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
@@ -9813,8 +9909,6 @@ Namespace Canon
         Property MemberTypePresente As Boolean
         ''' <summary>Member\Type</summary>
         Property MemberType As Byte
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        ReadOnly Property MemberTypeNombre As String
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
         Property MemberFlagsPresente As Boolean
         ''' <summary>Member\Flags</summary>

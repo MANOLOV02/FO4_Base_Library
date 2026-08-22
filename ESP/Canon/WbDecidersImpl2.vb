@@ -189,33 +189,41 @@ Namespace Canon
                    End Function
         End Function
 
-        ''' <summary>Qué enseña un libro. DEPENDE DEL JUEGO.
-        ''' <para>Fallout 4 distingue TRES banderas: 0x01 → 1, 0x04 → 2, 0x10 → 3. Skyrim mira SÓLO
-        ''' la 0x04 → 1. Los índices de rama no son comparables entre juegos.</para></summary>
+        ''' <summary>Qué enseña un libro. DEPENDE DEL JUEGO en la CANTIDAD DE RAMAS, no en la regla.
+        ''' <para>Las dos uniones empiezan con una rama de relleno de 4 bytes, así que la rama CERO
+        ''' es "no enseña nada": 0x01 → 1, 0x04 → 2, y sólo Fallout 4 tiene una tercera, 0x10 → 3.
+        ''' </para>
+        ''' <para>⛔ CONTRAEJEMPLO que costó encontrar: mientras la unión de Skyrim tuvo DOS ramas
+        ''' (sin la de relleno), la regla correcta era 0x04 → 1. Cuando el formato le antepuso la
+        ''' rama de relleno, esa misma regla pasó a devolver la rama del Skill para un libro que
+        ''' enseña un hechizo — un FormID leído como entero con signo. No lo ve ni la ida y vuelta
+        ''' byte a byte ni la cobertura, porque son los mismos cuatro bytes: lo único que lo caza es
+        ''' comparar la cantidad de ramas de la unión contra la implementación.</para></summary>
         Public Function BookTeaches() As WbDecider
             Return Function(ctx, data, offset, avail, parent)
                        Dim v = Sibling(parent, "Flags")
                        If Not v.HasValue Then Return 0
                        Dim i = v.Value
-                       If ctx.Game = WbGame.Skyrim Then
-                           Return If((i And &H4L) <> 0L, 1, 0)
-                       End If
                        If (i And &H1L) <> 0L Then Return 1
                        If (i And &H4L) <> 0L Then Return 2
-                       If (i And &H10L) <> 0L Then Return 3
+                       If ctx.Game <> WbGame.Skyrim AndAlso (i And &H10L) <> 0L Then Return 3
                        Return 0
                    End Function
         End Function
 
-        ''' <summary>Item asociado a un efecto mágico. DEPENDE DEL JUEGO en TRES cosas.
-        ''' <para>El campo que discrimina se llama <c>'Archetype'</c> en Fallout 4 y
-        ''' <c>'Archtype'</c> —sin la 'e'— en Skyrim, así que hay que buscarlo por los dos nombres.
-        ''' Además el arquetipo 46 significa Immunity en Fallout 4 y Vampire Lord en Skyrim, y el 45
-        ''' sólo existe en Fallout 4.</para></summary>
+        ''' <summary>Item asociado a un efecto mágico. DEPENDE DEL JUEGO en el arquetipo 45 y 46:
+        ''' el 46 es Immunity en Fallout 4 y Vampire Lord en Skyrim, y el 45 sólo existe en
+        ''' Fallout 4.
+        ''' <para>⛔ CONTRAEJEMPLO: el campo que discrimina se llamó <c>'Archtype'</c> —sin la 'e'—
+        ''' en Skyrim durante años, y buscarlo por ese nombre era lo correcto. Cuando el formato
+        ''' corrigió el error de tipeo, seguir buscando <c>'Archtype'</c> dejó de encontrar el campo
+        ''' y el efecto entero caía en la rama cero, sin que cambiara un solo byte. Buscar por el
+        ''' nombre de un campo obliga a validar ese nombre contra el esquema, no a recordarlo.
+        ''' </para></summary>
         Public Function MgefAssocItem() As WbDecider
             Return Function(ctx, data, offset, avail, parent)
                        Dim isSse = (ctx.Game = WbGame.Skyrim)
-                       Dim v = Sibling(parent, If(isSse, "Archtype", "Archetype"))
+                       Dim v = Sibling(parent, "Archetype")
                        If Not v.HasValue Then Return 0
                        Select Case v.Value
                            Case 12 : Return 1
@@ -255,15 +263,6 @@ Namespace Canon
                        Dim v = Sibling(parent, "Has Island Data")
                        Return If(v.HasValue, CInt(v.Value), 0)
                    End Function
-        End Function
-
-        ''' <summary>Atenuación cuadrática inversa de una luz: la rama alternativa está detrás de
-        ''' un modo de edición especial que no interviene al leer archivos de juego, así que en la
-        ''' práctica SIEMPRE se toma la rama 0.
-        ''' <para>Esa guarda es parte de la regla: mirar sólo el cuerpo del decider llevaría a
-        ''' elegir una rama que nunca corresponde.</para></summary>
-        Public Function LighInverseSquare() As WbDecider
-            Return Function(ctx, data, offset, avail, parent) 0
         End Function
 
         ''' <summary>Variante horaria de los datos de clima: se decide por el TAMAÑO del

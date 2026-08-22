@@ -3141,123 +3141,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements IArmo.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements IArmo.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements IArmo.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements IArmo.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements IArmo.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements IArmo.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements IArmo.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements IArmo.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements IArmo.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements IArmo.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements IArmo.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements IArmo.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements IArmo.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements IArmo.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements IArmo.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements IArmo.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements IArmo.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements IArmo.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements IArmo.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements IArmo.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements IArmo.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements IArmo.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements IArmo.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements IArmo.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -5148,20 +5148,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class ArmoSSE_Scripts
         Inherits CanonView
-        Implements IArmo_Scripts, IBloque_Scripts
+        Implements IArmo_Scripts, IBloque_Scripts2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Scripts.Node, IBloque_Scripts.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Scripts.Node, IBloque_Scripts2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptNamePresente As Boolean Implements IArmo_Scripts.ScriptNamePresente, IBloque_Scripts.ScriptNamePresente
+        Public Property ScriptNamePresente As Boolean Implements IArmo_Scripts.ScriptNamePresente, IBloque_Scripts2.ScriptNamePresente
             Get
                 Return Presente("Script\ScriptName")
             End Get
@@ -5171,7 +5171,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptName As String Implements IArmo_Scripts.ScriptName, IBloque_Scripts.ScriptName
+        Public Property ScriptName As String Implements IArmo_Scripts.ScriptName, IBloque_Scripts2.ScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -5181,7 +5181,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Script\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptFlagsPresente As Boolean Implements IArmo_Scripts.ScriptFlagsPresente, IBloque_Scripts.ScriptFlagsPresente
+        Public Property ScriptFlagsPresente As Boolean Implements IArmo_Scripts.ScriptFlagsPresente, IBloque_Scripts2.ScriptFlagsPresente
             Get
                 Return Presente("Script\Flags")
             End Get
@@ -5191,7 +5191,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte Implements IArmo_Scripts.ScriptFlags, IBloque_Scripts.ScriptFlags
+        Public Property ScriptFlags As Byte Implements IArmo_Scripts.ScriptFlags, IBloque_Scripts2.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -5201,7 +5201,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String Implements IArmo_Scripts.ScriptFlagsNombre, IBloque_Scripts.ScriptFlagsNombre
+        Public ReadOnly Property ScriptFlagsNombre As String Implements IArmo_Scripts.ScriptFlagsNombre, IBloque_Scripts2.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
@@ -5252,7 +5252,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties, como lista de la forma.</summary>
-        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties2) Implements IBloque_Scripts.Properties
+        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties3) Implements IBloque_Scripts2.Properties
             Get
                 Return Properties
             End Get
@@ -5263,20 +5263,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class ArmoSSE_Properties
         Inherits CanonView
-        Implements IBloque_Properties2
+        Implements IBloque_Properties3
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -5286,7 +5286,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -5296,7 +5296,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -5306,7 +5306,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -5316,7 +5316,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -5326,7 +5326,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -5336,14 +5336,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -5353,7 +5353,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -5363,7 +5363,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -5373,7 +5373,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -5383,7 +5383,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -5393,7 +5393,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -5403,7 +5403,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -5413,7 +5413,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -5423,7 +5423,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -5433,7 +5433,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties2.ValueString
+        Public Property ValueString As String Implements IBloque_Properties3.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -5443,7 +5443,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -5453,7 +5453,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -5463,7 +5463,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -5473,7 +5473,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -5483,7 +5483,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -5493,7 +5493,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -5547,7 +5547,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
             Get
                 Return ArrayOfObject
             End Get
@@ -5598,7 +5598,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
             Get
                 Return ArrayOfString
             End Get
@@ -5649,7 +5649,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
             Get
                 Return ArrayOfInt32
             End Get
@@ -5700,7 +5700,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
             Get
                 Return ArrayOfFloat
             End Get
@@ -5751,7 +5751,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
             Get
                 Return ArrayOfBool
             End Get
@@ -9376,7 +9376,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>TNAM\Texture Set  -&gt;  TXST / NULL. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>TNAM\Texture Set  -&gt;  TXST. Referencia en el espacio del orden de carga.</summary>
         Public Property TextureSet As UInteger Implements IHdpt.TextureSet
             Get
                 Return Referencia("TNAM\Texture Set")
@@ -9396,7 +9396,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>CNAM\Color  -&gt;  CLFM / NULL. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>CNAM\Color  -&gt;  CLFM. Referencia en el espacio del orden de carga.</summary>
         Public Property Color As UInteger Implements IHdpt.Color
             Get
                 Return Referencia("CNAM\Color")
@@ -9416,7 +9416,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>RNAM\Valid Races  -&gt;  FLST / NULL. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>RNAM\Valid Races  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
         Public Property ValidRaces As UInteger Implements IHdpt.ValidRaces
             Get
                 Return Referencia("RNAM\Valid Races")
@@ -9999,23 +9999,23 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>El record trae Part\NAM1\FileName. Distinto de que el campo valga cero.</summary>
-        Public Property PartFileNamePresente As Boolean Implements IHdpt_Parts.PartFileNamePresente
+        ''' <summary>El record trae Part\NAM1\Filename. Distinto de que el campo valga cero.</summary>
+        Public Property PartFilenamePresente As Boolean Implements IHdpt_Parts.PartFilenamePresente
             Get
-                Return Presente("Part\NAM1\FileName")
+                Return Presente("Part\NAM1\Filename")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Part\NAM1\FileName", value)
+                PonerPresencia("Part\NAM1\Filename", value)
             End Set
         End Property
 
-        ''' <summary>Part\NAM1\FileName</summary>
-        Public Property PartFileName As String Implements IHdpt_Parts.PartFileName
+        ''' <summary>Part\NAM1\Filename</summary>
+        Public Property PartFilename As String Implements IHdpt_Parts.PartFilename
             Get
-                Return Txt("Part\NAM1\FileName")
+                Return Txt("Part\NAM1\Filename")
             End Get
             Set(value As String)
-                Escribir("Part\NAM1\FileName", value)
+                Escribir("Part\NAM1\Filename", value)
             End Set
         End Property
 
@@ -10202,8 +10202,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Bit 0 de DATA\Data (unused)\Flags: Parent</summary>
-        Public Property DataUnusedFlagsParent As Boolean
+        ''' <summary>Bit 0 de DATA\Data (unused)\Flags: Loose</summary>
+        Public Property DataUnusedFlagsLoose As Boolean
             Get
                 Return Bit("DATA\Data (unused)\Flags", 0)
             End Get
@@ -11706,7 +11706,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IIdle_Conditions.Parameter1Owner, IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -13219,7 +13219,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IIdle_Conditions.Parameter2Owner, IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -13646,123 +13646,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements ILvli.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements ILvli.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements ILvli.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements ILvli.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements ILvli.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements ILvli.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements ILvli.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements ILvli.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements ILvli.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements ILvli.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements ILvli.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements ILvli.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements ILvli.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements ILvli.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements ILvli.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements ILvli.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements ILvli.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements ILvli.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements ILvli.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements ILvli.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements ILvli.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements ILvli.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements ILvli.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements ILvli.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -14130,123 +14130,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements ILvln.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements ILvln.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements ILvln.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements ILvln.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements ILvln.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements ILvln.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements ILvln.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements ILvln.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements ILvln.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements ILvln.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements ILvln.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements ILvln.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements ILvln.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements ILvln.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements ILvln.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements ILvln.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements ILvln.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements ILvln.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements ILvln.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements ILvln.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements ILvln.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements ILvln.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements ILvln.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements ILvln.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -15098,123 +15098,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements INpc.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements INpc.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements INpc.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements INpc.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements INpc.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements INpc.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements INpc.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements INpc.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements INpc.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements INpc.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements INpc.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements INpc.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements INpc.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements INpc.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements INpc.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements INpc.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements INpc.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements INpc.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements INpc.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements INpc.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements INpc.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements INpc.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements INpc.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements INpc.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -15359,7 +15359,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 18 de ACBS\Configuration\Flags: Bleedout Override</summary>
-        Public Property ConfigurationFlagsBleedoutOverride As Boolean Implements INpc.ConfigurationFlagsBleedoutOverride
+        Public Property ConfigurationFlagsBleedoutOverride As Boolean
             Get
                 Return Bit("ACBS\Configuration\Flags", 18)
             End Get
@@ -15369,7 +15369,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 19 de ACBS\Configuration\Flags: Opposite Gender Anims</summary>
-        Public Property ConfigurationFlagsOppositeGenderAnims As Boolean Implements INpc.ConfigurationFlagsOppositeGenderAnims
+        Public Property ConfigurationFlagsOppositeGenderAnims As Boolean
             Get
                 Return Bit("ACBS\Configuration\Flags", 19)
             End Get
@@ -17931,20 +17931,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class NpcSSE_Scripts
         Inherits CanonView
-        Implements INpc_Scripts, IBloque_Scripts
+        Implements INpc_Scripts, IBloque_Scripts2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Scripts.Node, IBloque_Scripts.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Scripts.Node, IBloque_Scripts2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptNamePresente As Boolean Implements INpc_Scripts.ScriptNamePresente, IBloque_Scripts.ScriptNamePresente
+        Public Property ScriptNamePresente As Boolean Implements INpc_Scripts.ScriptNamePresente, IBloque_Scripts2.ScriptNamePresente
             Get
                 Return Presente("Script\ScriptName")
             End Get
@@ -17954,7 +17954,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptName As String Implements INpc_Scripts.ScriptName, IBloque_Scripts.ScriptName
+        Public Property ScriptName As String Implements INpc_Scripts.ScriptName, IBloque_Scripts2.ScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -17964,7 +17964,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Script\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptFlagsPresente As Boolean Implements INpc_Scripts.ScriptFlagsPresente, IBloque_Scripts.ScriptFlagsPresente
+        Public Property ScriptFlagsPresente As Boolean Implements INpc_Scripts.ScriptFlagsPresente, IBloque_Scripts2.ScriptFlagsPresente
             Get
                 Return Presente("Script\Flags")
             End Get
@@ -17974,7 +17974,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte Implements INpc_Scripts.ScriptFlags, IBloque_Scripts.ScriptFlags
+        Public Property ScriptFlags As Byte Implements INpc_Scripts.ScriptFlags, IBloque_Scripts2.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -17984,7 +17984,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String Implements INpc_Scripts.ScriptFlagsNombre, IBloque_Scripts.ScriptFlagsNombre
+        Public ReadOnly Property ScriptFlagsNombre As String Implements INpc_Scripts.ScriptFlagsNombre, IBloque_Scripts2.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
@@ -18035,7 +18035,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties, como lista de la forma.</summary>
-        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties2) Implements IBloque_Scripts.Properties
+        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties3) Implements IBloque_Scripts2.Properties
             Get
                 Return Properties
             End Get
@@ -18046,20 +18046,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class NpcSSE_Properties
         Inherits CanonView
-        Implements IBloque_Properties2
+        Implements IBloque_Properties3
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -18069,7 +18069,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -18079,7 +18079,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -18089,7 +18089,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -18099,7 +18099,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -18109,7 +18109,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -18119,14 +18119,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -18136,7 +18136,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -18146,7 +18146,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -18156,7 +18156,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -18166,7 +18166,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -18176,7 +18176,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -18186,7 +18186,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -18196,7 +18196,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -18206,7 +18206,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -18216,7 +18216,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties2.ValueString
+        Public Property ValueString As String Implements IBloque_Properties3.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -18226,7 +18226,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -18236,7 +18236,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -18246,7 +18246,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -18256,7 +18256,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -18266,7 +18266,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -18276,7 +18276,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -18330,7 +18330,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
             Get
                 Return ArrayOfObject
             End Get
@@ -18381,7 +18381,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
             Get
                 Return ArrayOfString
             End Get
@@ -18432,7 +18432,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
             Get
                 Return ArrayOfInt32
             End Get
@@ -18483,7 +18483,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
             Get
                 Return ArrayOfFloat
             End Get
@@ -18534,7 +18534,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
             Get
                 Return ArrayOfBool
             End Get
@@ -21630,20 +21630,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class QustSSE_Scripts
         Inherits CanonView
-        Implements IQust_Scripts, IBloque_Scripts
+        Implements IQust_Scripts, IBloque_Scripts2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IQust_Scripts.Node, IBloque_Scripts.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IQust_Scripts.Node, IBloque_Scripts2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptNamePresente As Boolean Implements IQust_Scripts.ScriptNamePresente, IBloque_Scripts.ScriptNamePresente
+        Public Property ScriptNamePresente As Boolean Implements IQust_Scripts.ScriptNamePresente, IBloque_Scripts2.ScriptNamePresente
             Get
                 Return Presente("Script\ScriptName")
             End Get
@@ -21653,7 +21653,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptName As String Implements IQust_Scripts.ScriptName, IBloque_Scripts.ScriptName
+        Public Property ScriptName As String Implements IQust_Scripts.ScriptName, IBloque_Scripts2.ScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -21663,7 +21663,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Script\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptFlagsPresente As Boolean Implements IQust_Scripts.ScriptFlagsPresente, IBloque_Scripts.ScriptFlagsPresente
+        Public Property ScriptFlagsPresente As Boolean Implements IQust_Scripts.ScriptFlagsPresente, IBloque_Scripts2.ScriptFlagsPresente
             Get
                 Return Presente("Script\Flags")
             End Get
@@ -21673,7 +21673,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte Implements IQust_Scripts.ScriptFlags, IBloque_Scripts.ScriptFlags
+        Public Property ScriptFlags As Byte Implements IQust_Scripts.ScriptFlags, IBloque_Scripts2.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -21683,7 +21683,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String Implements IQust_Scripts.ScriptFlagsNombre, IBloque_Scripts.ScriptFlagsNombre
+        Public ReadOnly Property ScriptFlagsNombre As String Implements IQust_Scripts.ScriptFlagsNombre, IBloque_Scripts2.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
@@ -21734,7 +21734,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties, como lista de la forma.</summary>
-        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties2) Implements IBloque_Scripts.Properties
+        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties3) Implements IBloque_Scripts2.Properties
             Get
                 Return Properties
             End Get
@@ -21745,20 +21745,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class QustSSE_Properties
         Inherits CanonView
-        Implements IBloque_Properties2
+        Implements IBloque_Properties3
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -21768,7 +21768,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -21778,7 +21778,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -21788,7 +21788,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -21798,7 +21798,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -21808,7 +21808,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -21818,14 +21818,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -21835,7 +21835,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -21845,7 +21845,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -21855,7 +21855,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -21865,7 +21865,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -21875,7 +21875,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -21885,7 +21885,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -21895,7 +21895,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -21905,7 +21905,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -21915,7 +21915,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties2.ValueString
+        Public Property ValueString As String Implements IBloque_Properties3.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -21925,7 +21925,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -21935,7 +21935,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -21945,7 +21945,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -21955,7 +21955,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -21965,7 +21965,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -21975,7 +21975,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -22029,7 +22029,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
             Get
                 Return ArrayOfObject
             End Get
@@ -22080,7 +22080,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
             Get
                 Return ArrayOfString
             End Get
@@ -22131,7 +22131,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
             Get
                 Return ArrayOfInt32
             End Get
@@ -22182,7 +22182,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
             Get
                 Return ArrayOfFloat
             End Get
@@ -22233,7 +22233,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
             Get
                 Return ArrayOfBool
             End Get
@@ -22512,12 +22512,32 @@ Namespace Canon
         End Property
 
         ''' <summary>Fragment\Quest Stage</summary>
-        Public Property FragmentQuestStage As UShort Implements IQust_Fragments.FragmentQuestStage
+        Public Property FragmentQuestStage As UInteger Implements IQust_Fragments.FragmentQuestStage
             Get
-                Return CUShort(Entero("Fragment\Quest Stage"))
+                Return CUInt(Entero("Fragment\Quest Stage"))
             End Get
-            Set(value As UShort)
+            Set(value As UInteger)
                 Escribir("Fragment\Quest Stage", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Fragment\Log Entry. Distinto de que el campo valga cero.</summary>
+        Public Property FragmentLogEntryPresente As Boolean
+            Get
+                Return Presente("Fragment\Log Entry")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Fragment\Log Entry", value)
+            End Set
+        End Property
+
+        ''' <summary>Fragment\Log Entry</summary>
+        Public Property FragmentLogEntry As UInteger
+            Get
+                Return CUInt(Entero("Fragment\Log Entry"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Fragment\Log Entry", CLng(value))
             End Set
         End Property
 
@@ -22532,32 +22552,12 @@ Namespace Canon
         End Property
 
         ''' <summary>Fragment\Unknown</summary>
-        Public Property FragmentUnknown As Short Implements IQust_Fragments.FragmentUnknown
+        Public Property FragmentUnknown As Byte() Implements IQust_Fragments.FragmentUnknown
             Get
-                Return CShort(Entero("Fragment\Unknown"))
+                Return Bytes("Fragment\Unknown")
             End Get
-            Set(value As Short)
-                Escribir("Fragment\Unknown", CLng(value))
-            End Set
-        End Property
-
-        ''' <summary>El record trae Fragment\Quest Stage Index. Distinto de que el campo valga cero.</summary>
-        Public Property FragmentQuestStageIndexPresente As Boolean Implements IQust_Fragments.FragmentQuestStageIndexPresente
-            Get
-                Return Presente("Fragment\Quest Stage Index")
-            End Get
-            Set(value As Boolean)
-                PonerPresencia("Fragment\Quest Stage Index", value)
-            End Set
-        End Property
-
-        ''' <summary>Fragment\Quest Stage Index</summary>
-        Public Property FragmentQuestStageIndex As Integer Implements IQust_Fragments.FragmentQuestStageIndex
-            Get
-                Return CInt(Entero("Fragment\Quest Stage Index"))
-            End Get
-            Set(value As Integer)
-                Escribir("Fragment\Quest Stage Index", CLng(value))
+            Set(value As Byte())
+                Escribir("Fragment\Unknown", value)
             End Set
         End Property
 
@@ -22888,20 +22888,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties.</summary>
     Public NotInheritable Class QustSSE_Properties2
         Inherits CanonView
-        Implements IBloque_Properties2
+        Implements IBloque_Properties3
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -22911,7 +22911,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -22921,7 +22921,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -22931,7 +22931,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -22941,7 +22941,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -22951,7 +22951,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -22961,14 +22961,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -22978,7 +22978,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -22988,7 +22988,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -22998,7 +22998,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -23008,7 +23008,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -23018,7 +23018,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -23028,7 +23028,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -23038,7 +23038,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -23048,7 +23048,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -23058,7 +23058,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties2.ValueString
+        Public Property ValueString As String Implements IBloque_Properties3.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -23068,7 +23068,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -23078,7 +23078,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -23088,7 +23088,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -23098,7 +23098,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -23108,7 +23108,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -23118,7 +23118,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -23172,7 +23172,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
             Get
                 Return ArrayOfObject2
             End Get
@@ -23223,7 +23223,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
             Get
                 Return ArrayOfString2
             End Get
@@ -23274,7 +23274,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
             Get
                 Return ArrayOfInt322
             End Get
@@ -23325,7 +23325,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
             Get
                 Return ArrayOfFloat2
             End Get
@@ -23376,7 +23376,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
             Get
                 Return ArrayOfBool2
             End Get
@@ -25044,7 +25044,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IQust_Conditions.Parameter1Owner, IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -26557,7 +26557,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IQust_Conditions.Parameter2Owner, IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -28321,7 +28321,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IQust_Conditions2.Parameter1Owner, IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -29834,7 +29834,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IQust_Conditions2.Parameter2Owner, IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -31883,7 +31883,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -33396,7 +33396,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -35375,7 +35375,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -36888,7 +36888,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -37289,28 +37289,28 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>El record trae Reference Alias\ALST\Reference Alias ID. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasIDPresente As Boolean
+        ''' <summary>El record trae Reference Alias\ALST\Alias ID. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasAliasIDPresente As Boolean Implements IQust_Aliases2.ReferenceAliasAliasIDPresente
             Get
-                Return Presente("Reference Alias\ALST\Reference Alias ID")
+                Return Presente("Reference Alias\ALST\Alias ID")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Reference Alias\ALST\Reference Alias ID", value)
+                PonerPresencia("Reference Alias\ALST\Alias ID", value)
             End Set
         End Property
 
-        ''' <summary>Reference Alias\ALST\Reference Alias ID</summary>
-        Public Property ReferenceAliasID As UInteger
+        ''' <summary>Reference Alias\ALST\Alias ID</summary>
+        Public Property ReferenceAliasAliasID As UInteger Implements IQust_Aliases2.ReferenceAliasAliasID
             Get
-                Return CUInt(Entero("Reference Alias\ALST\Reference Alias ID"))
+                Return CUInt(Entero("Reference Alias\ALST\Alias ID"))
             End Get
             Set(value As UInteger)
-                Escribir("Reference Alias\ALST\Reference Alias ID", CLng(value))
+                Escribir("Reference Alias\ALST\Alias ID", CLng(value))
             End Set
         End Property
 
         ''' <summary>El record trae Reference Alias\ALID\Alias Name. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasAliasNamePresente As Boolean
+        Public Property ReferenceAliasAliasNamePresente As Boolean Implements IQust_Aliases2.ReferenceAliasAliasNamePresente
             Get
                 Return Presente("Reference Alias\ALID\Alias Name")
             End Get
@@ -37320,7 +37320,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\ALID\Alias Name</summary>
-        Public Property ReferenceAliasAliasName As String
+        Public Property ReferenceAliasAliasName As String Implements IQust_Aliases2.ReferenceAliasAliasName
             Get
                 Return Txt("Reference Alias\ALID\Alias Name")
             End Get
@@ -37330,7 +37330,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\FNAM\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasFlagsPresente As Boolean
+        Public Property ReferenceAliasFlagsPresente As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsPresente
             Get
                 Return Presente("Reference Alias\FNAM\Flags")
             End Get
@@ -37340,7 +37340,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\FNAM\Flags</summary>
-        Public Property ReferenceAliasFlags As UInteger
+        Public Property ReferenceAliasFlags As UInteger Implements IQust_Aliases2.ReferenceAliasFlags
             Get
                 Return CUInt(Entero("Reference Alias\FNAM\Flags"))
             End Get
@@ -37360,7 +37360,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 1 de Reference Alias\FNAM\Flags: Optional</summary>
-        Public Property ReferenceAliasFlagsOptional As Boolean
+        Public Property ReferenceAliasFlagsOptional As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsOptional
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 1)
             End Get
@@ -37370,7 +37370,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 2 de Reference Alias\FNAM\Flags: Quest Object</summary>
-        Public Property ReferenceAliasFlagsQuestObject As Boolean
+        Public Property ReferenceAliasFlagsQuestObject As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsQuestObject
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 2)
             End Get
@@ -37380,7 +37380,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 3 de Reference Alias\FNAM\Flags: Allow Reuse in Quest</summary>
-        Public Property ReferenceAliasFlagsAllowReuseInQuest As Boolean
+        Public Property ReferenceAliasFlagsAllowReuseInQuest As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowReuseInQuest
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 3)
             End Get
@@ -37390,7 +37390,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 4 de Reference Alias\FNAM\Flags: Allow Dead</summary>
-        Public Property ReferenceAliasFlagsAllowDead As Boolean
+        Public Property ReferenceAliasFlagsAllowDead As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowDead
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 4)
             End Get
@@ -37400,7 +37400,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 5 de Reference Alias\FNAM\Flags: Matching Ref - In Loaded Area</summary>
-        Public Property ReferenceAliasFlagsMatchingRefInLoadedArea As Boolean
+        Public Property ReferenceAliasFlagsMatchingRefInLoadedArea As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsMatchingRefInLoadedArea
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 5)
             End Get
@@ -37410,7 +37410,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 6 de Reference Alias\FNAM\Flags: Essential</summary>
-        Public Property ReferenceAliasFlagsEssential As Boolean
+        Public Property ReferenceAliasFlagsEssential As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsEssential
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 6)
             End Get
@@ -37420,7 +37420,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 7 de Reference Alias\FNAM\Flags: Allow Disabled</summary>
-        Public Property ReferenceAliasFlagsAllowDisabled As Boolean
+        Public Property ReferenceAliasFlagsAllowDisabled As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowDisabled
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 7)
             End Get
@@ -37430,7 +37430,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 8 de Reference Alias\FNAM\Flags: Stores Text</summary>
-        Public Property ReferenceAliasFlagsStoresText As Boolean
+        Public Property ReferenceAliasFlagsStoresText As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsStoresText
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 8)
             End Get
@@ -37440,7 +37440,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 9 de Reference Alias\FNAM\Flags: Allow Reserved</summary>
-        Public Property ReferenceAliasFlagsAllowReserved As Boolean
+        Public Property ReferenceAliasFlagsAllowReserved As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowReserved
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 9)
             End Get
@@ -37450,7 +37450,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 10 de Reference Alias\FNAM\Flags: Protected</summary>
-        Public Property ReferenceAliasFlagsProtected As Boolean
+        Public Property ReferenceAliasFlagsProtected As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsProtected
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 10)
             End Get
@@ -37459,8 +37459,18 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Bit 11 de Reference Alias\FNAM\Flags: Forced By Aliases</summary>
+        Public Property ReferenceAliasFlagsForcedByAliases As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsForcedByAliases
+            Get
+                Return Bit("Reference Alias\FNAM\Flags", 11)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Reference Alias\FNAM\Flags", 11, value)
+            End Set
+        End Property
+
         ''' <summary>Bit 12 de Reference Alias\FNAM\Flags: Allow Destroyed</summary>
-        Public Property ReferenceAliasFlagsAllowDestroyed As Boolean
+        Public Property ReferenceAliasFlagsAllowDestroyed As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowDestroyed
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 12)
             End Get
@@ -37470,7 +37480,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 13 de Reference Alias\FNAM\Flags: Matching Ref - Closest</summary>
-        Public Property ReferenceAliasFlagsMatchingRefClosest As Boolean
+        Public Property ReferenceAliasFlagsMatchingRefClosest As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsMatchingRefClosest
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 13)
             End Get
@@ -37480,7 +37490,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 14 de Reference Alias\FNAM\Flags: Uses Stored Text</summary>
-        Public Property ReferenceAliasFlagsUsesStoredText As Boolean
+        Public Property ReferenceAliasFlagsUsesStoredText As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsUsesStoredText
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 14)
             End Get
@@ -37490,7 +37500,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 15 de Reference Alias\FNAM\Flags: Initially Disabled</summary>
-        Public Property ReferenceAliasFlagsInitiallyDisabled As Boolean
+        Public Property ReferenceAliasFlagsInitiallyDisabled As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsInitiallyDisabled
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 15)
             End Get
@@ -37500,7 +37510,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 17 de Reference Alias\FNAM\Flags: Clear Names When Removed</summary>
-        Public Property ReferenceAliasFlagsClearNamesWhenRemoved As Boolean
+        Public Property ReferenceAliasFlagsClearNamesWhenRemoved As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsClearNamesWhenRemoved
             Get
                 Return Bit("Reference Alias\FNAM\Flags", 17)
             End Get
@@ -37510,7 +37520,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\ALFI\Force Into Alias When Filled. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasForceIntoAliasWhenFilledPresente As Boolean
+        Public Property ReferenceAliasForceIntoAliasWhenFilledPresente As Boolean Implements IQust_Aliases2.ReferenceAliasForceIntoAliasWhenFilledPresente
             Get
                 Return Presente("Reference Alias\ALFI\Force Into Alias When Filled")
             End Get
@@ -37520,7 +37530,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\ALFI\Force Into Alias When Filled</summary>
-        Public Property ReferenceAliasForceIntoAliasWhenFilled As Integer
+        Public Property ReferenceAliasForceIntoAliasWhenFilled As Integer Implements IQust_Aliases2.ReferenceAliasForceIntoAliasWhenFilled
             Get
                 Return CInt(Entero("Reference Alias\ALFI\Force Into Alias When Filled"))
             End Get
@@ -37529,43 +37539,43 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae Reference Alias\ALFR\Specific Reference. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasSpecificReferencePresente As Boolean
+        ''' <summary>El record trae Reference Alias\Specific Reference\ALFR\Reference. Distinto de que el campo valga cero.</summary>
+        Public Property SpecificReferenceReferencePresente As Boolean Implements IQust_Aliases2.SpecificReferenceReferencePresente
             Get
-                Return Presente("Reference Alias\ALFR\Specific Reference")
+                Return Presente("Reference Alias\Specific Reference\ALFR\Reference")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Reference Alias\ALFR\Specific Reference", value)
+                PonerPresencia("Reference Alias\Specific Reference\ALFR\Reference", value)
             End Set
         End Property
 
-        ''' <summary>Reference Alias\ALFR\Specific Reference  -&gt;  ACHR / PARW / PBAR / PBAR / PCON / PFLA / PGRE / PHZD / PLYR / PMIS / REFR. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasSpecificReference As UInteger
+        ''' <summary>Reference Alias\Specific Reference\ALFR\Reference  -&gt;  ACHR / PARW / PBAR / PBAR / PCON / PFLA / PGRE / PHZD / PLYR / PMIS / REFR. Referencia en el espacio del orden de carga.</summary>
+        Public Property SpecificReferenceReference As UInteger Implements IQust_Aliases2.SpecificReferenceReference
             Get
-                Return Referencia("Reference Alias\ALFR\Specific Reference")
+                Return Referencia("Reference Alias\Specific Reference\ALFR\Reference")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Reference Alias\ALFR\Specific Reference", value)
+                PonerReferencia("Reference Alias\Specific Reference\ALFR\Reference", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Reference Alias\ALUA\Unique Actor. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasUniqueActorPresente As Boolean
+        ''' <summary>El record trae Reference Alias\Unique Actor\ALUA\Actor. Distinto de que el campo valga cero.</summary>
+        Public Property UniqueActorActorPresente As Boolean Implements IQust_Aliases2.UniqueActorActorPresente
             Get
-                Return Presente("Reference Alias\ALUA\Unique Actor")
+                Return Presente("Reference Alias\Unique Actor\ALUA\Actor")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Reference Alias\ALUA\Unique Actor", value)
+                PonerPresencia("Reference Alias\Unique Actor\ALUA\Actor", value)
             End Set
         End Property
 
-        ''' <summary>Reference Alias\ALUA\Unique Actor  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasUniqueActor As UInteger
+        ''' <summary>Reference Alias\Unique Actor\ALUA\Actor  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
+        Public Property UniqueActorActor As UInteger Implements IQust_Aliases2.UniqueActorActor
             Get
-                Return Referencia("Reference Alias\ALUA\Unique Actor")
+                Return Referencia("Reference Alias\Unique Actor\ALUA\Actor")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Reference Alias\ALUA\Unique Actor", value)
+                PonerReferencia("Reference Alias\Unique Actor\ALUA\Actor", value)
             End Set
         End Property
 
@@ -37586,26 +37596,6 @@ Namespace Canon
             End Get
             Set(value As Integer)
                 Escribir("Reference Alias\Location Alias Reference\ALFA\Alias", CLng(value))
-            End Set
-        End Property
-
-        ''' <summary>El record trae Reference Alias\Location Alias Reference\KNAM\Keyword. Distinto de que el campo valga cero.</summary>
-        Public Property LocationAliasReferenceKeywordPresente As Boolean Implements IQust_Aliases2.LocationAliasReferenceKeywordPresente
-            Get
-                Return Presente("Reference Alias\Location Alias Reference\KNAM\Keyword")
-            End Get
-            Set(value As Boolean)
-                PonerPresencia("Reference Alias\Location Alias Reference\KNAM\Keyword", value)
-            End Set
-        End Property
-
-        ''' <summary>Reference Alias\Location Alias Reference\KNAM\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
-        Public Property LocationAliasReferenceKeyword As UInteger Implements IQust_Aliases2.LocationAliasReferenceKeyword
-            Get
-                Return Referencia("Reference Alias\Location Alias Reference\KNAM\Keyword")
-            End Get
-            Set(value As UInteger)
-                PonerReferencia("Reference Alias\Location Alias Reference\KNAM\Keyword", value)
             End Set
         End Property
 
@@ -37650,7 +37640,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\External Alias Reference\ALEA\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ExternalAliasReferenceAliasPresente As Boolean Implements IQust_Aliases2.ExternalAliasReferenceAliasPresente
+        Public Property ExternalAliasReferenceAliasPresente As Boolean
             Get
                 Return Presente("Reference Alias\External Alias Reference\ALEA\Alias")
             End Get
@@ -37660,7 +37650,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\External Alias Reference\ALEA\Alias</summary>
-        Public Property ExternalAliasReferenceAlias As Integer Implements IQust_Aliases2.ExternalAliasReferenceAlias
+        Public Property ExternalAliasReferenceAlias As Integer
             Get
                 Return CInt(Entero("Reference Alias\External Alias Reference\ALEA\Alias"))
             End Get
@@ -37763,97 +37753,97 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>El record trae Reference Alias\Find Matching Reference Near Alias\ALNA\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceNearAliasAliasPresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceNearAliasAliasPresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias. Distinto de que el campo valga cero.</summary>
+        Public Property NearAliasAliasPresente As Boolean Implements IQust_Aliases2.NearAliasAliasPresente
             Get
-                Return Presente("Reference Alias\Find Matching Reference Near Alias\ALNA\Alias")
+                Return Presente("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Reference Alias\Find Matching Reference Near Alias\ALNA\Alias", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias", value)
             End Set
         End Property
 
-        ''' <summary>Reference Alias\Find Matching Reference Near Alias\ALNA\Alias</summary>
-        Public Property FindMatchingReferenceNearAliasAlias As Integer Implements IQust_Aliases2.FindMatchingReferenceNearAliasAlias
+        ''' <summary>Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias</summary>
+        Public Property NearAliasAlias As Integer Implements IQust_Aliases2.NearAliasAlias
             Get
-                Return CInt(Entero("Reference Alias\Find Matching Reference Near Alias\ALNA\Alias"))
+                Return CInt(Entero("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias"))
             End Get
             Set(value As Integer)
-                Escribir("Reference Alias\Find Matching Reference Near Alias\ALNA\Alias", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Reference Alias\Find Matching Reference Near Alias\ALNT\Type. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceNearAliasTypePresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceNearAliasTypePresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type. Distinto de que el campo valga cero.</summary>
+        Public Property NearAliasNearTypePresente As Boolean
             Get
-                Return Presente("Reference Alias\Find Matching Reference Near Alias\ALNT\Type")
+                Return Presente("Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Reference Alias\Find Matching Reference Near Alias\ALNT\Type", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type", value)
             End Set
         End Property
 
-        ''' <summary>Reference Alias\Find Matching Reference Near Alias\ALNT\Type</summary>
-        Public Property FindMatchingReferenceNearAliasType As UInteger Implements IQust_Aliases2.FindMatchingReferenceNearAliasType
+        ''' <summary>Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type</summary>
+        Public Property NearAliasNearType As UInteger
             Get
-                Return CUInt(Entero("Reference Alias\Find Matching Reference Near Alias\ALNT\Type"))
+                Return CUInt(Entero("Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type"))
             End Get
             Set(value As UInteger)
-                Escribir("Reference Alias\Find Matching Reference Near Alias\ALNT\Type", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Reference Alias\Find Matching Reference Near Alias\ALNT\Type.</summary>
-        Public ReadOnly Property FindMatchingReferenceNearAliasTypeNombre As String Implements IQust_Aliases2.FindMatchingReferenceNearAliasTypeNombre
+        ''' <summary>Nombre del valor de Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type.</summary>
+        Public ReadOnly Property NearAliasNearTypeNombre As String
             Get
-                Return NombreDeValor("Reference Alias\Find Matching Reference Near Alias\ALNT\Type")
+                Return NombreDeValor("Reference Alias\Find Matching Reference\Near Alias\ALNT\Near Type")
             End Get
         End Property
 
-        ''' <summary>El record trae Reference Alias\Find Matching Reference From Event\ALFE\From Event. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceFromEventFromEventPresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceFromEventFromEventPresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\From Event\ALFE\Event. Distinto de que el campo valga cero.</summary>
+        Public Property FromEventEventPresente As Boolean Implements IQust_Aliases2.FromEventEventPresente
             Get
-                Return Presente("Reference Alias\Find Matching Reference From Event\ALFE\From Event")
+                Return Presente("Reference Alias\Find Matching Reference\From Event\ALFE\Event")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Reference Alias\Find Matching Reference From Event\ALFE\From Event", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\From Event\ALFE\Event", value)
             End Set
         End Property
 
-        ''' <summary>Reference Alias\Find Matching Reference From Event\ALFE\From Event</summary>
-        Public Property FindMatchingReferenceFromEventFromEvent As UInteger Implements IQust_Aliases2.FindMatchingReferenceFromEventFromEvent
+        ''' <summary>Reference Alias\Find Matching Reference\From Event\ALFE\Event</summary>
+        Public Property FromEventEvent As UInteger Implements IQust_Aliases2.FromEventEvent
             Get
-                Return CUInt(Entero("Reference Alias\Find Matching Reference From Event\ALFE\From Event"))
+                Return CUInt(Entero("Reference Alias\Find Matching Reference\From Event\ALFE\Event"))
             End Get
             Set(value As UInteger)
-                Escribir("Reference Alias\Find Matching Reference From Event\ALFE\From Event", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\From Event\ALFE\Event", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Reference Alias\Find Matching Reference From Event\ALFD\Event Data. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceFromEventEventDataPresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceFromEventEventDataPresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\From Event\ALFD\Data. Distinto de que el campo valga cero.</summary>
+        Public Property FromEventDataPresente As Boolean Implements IQust_Aliases2.FromEventDataPresente
             Get
-                Return Presente("Reference Alias\Find Matching Reference From Event\ALFD\Event Data")
+                Return Presente("Reference Alias\Find Matching Reference\From Event\ALFD\Data")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Reference Alias\Find Matching Reference From Event\ALFD\Event Data", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\From Event\ALFD\Data", value)
             End Set
         End Property
 
-        ''' <summary>Reference Alias\Find Matching Reference From Event\ALFD\Event Data</summary>
-        Public Property FindMatchingReferenceFromEventEventData As UInteger Implements IQust_Aliases2.FindMatchingReferenceFromEventEventData
+        ''' <summary>Reference Alias\Find Matching Reference\From Event\ALFD\Data</summary>
+        Public Property FromEventData As UInteger Implements IQust_Aliases2.FromEventData
             Get
-                Return CUInt(Entero("Reference Alias\Find Matching Reference From Event\ALFD\Event Data"))
+                Return CUInt(Entero("Reference Alias\Find Matching Reference\From Event\ALFD\Data"))
             End Get
             Set(value As UInteger)
-                Escribir("Reference Alias\Find Matching Reference From Event\ALFD\Event Data", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\From Event\ALFD\Data", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Reference Alias\Find Matching Reference From Event\ALFD\Event Data.</summary>
-        Public ReadOnly Property FindMatchingReferenceFromEventEventDataNombre As String Implements IQust_Aliases2.FindMatchingReferenceFromEventEventDataNombre
+        ''' <summary>Nombre del valor de Reference Alias\Find Matching Reference\From Event\ALFD\Data.</summary>
+        Public ReadOnly Property FromEventDataNombre As String Implements IQust_Aliases2.FromEventDataNombre
             Get
-                Return NombreDeValor("Reference Alias\Find Matching Reference From Event\ALFD\Event Data")
+                Return NombreDeValor("Reference Alias\Find Matching Reference\From Event\ALFD\Data")
             End Get
         End Property
 
@@ -37878,7 +37868,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\COCT\Count. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasCountPresente As Boolean
+        Public Property ReferenceAliasCountPresente As Boolean Implements IQust_Aliases2.ReferenceAliasCountPresente
             Get
                 Return Presente("Reference Alias\COCT\Count")
             End Get
@@ -37888,7 +37878,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\COCT\Count</summary>
-        Public Property ReferenceAliasCount As UInteger
+        Public Property ReferenceAliasCount As UInteger Implements IQust_Aliases2.ReferenceAliasCount
             Get
                 Return CUInt(Entero("Reference Alias\COCT\Count"))
             End Get
@@ -37898,7 +37888,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\SPOR\Spectator override package list. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasSpectatorOverridePackageListPresente As Boolean
+        Public Property ReferenceAliasSpectatorOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasSpectatorOverridePackageListPresente
             Get
                 Return Presente("Reference Alias\SPOR\Spectator override package list")
             End Get
@@ -37908,7 +37898,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\SPOR\Spectator override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasSpectatorOverridePackageList As UInteger
+        Public Property ReferenceAliasSpectatorOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasSpectatorOverridePackageList
             Get
                 Return Referencia("Reference Alias\SPOR\Spectator override package list")
             End Get
@@ -37918,7 +37908,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\OCOR\Observe dead body override package list. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasObserveDeadBodyOverridePackageListPresente As Boolean
+        Public Property ReferenceAliasObserveDeadBodyOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasObserveDeadBodyOverridePackageListPresente
             Get
                 Return Presente("Reference Alias\OCOR\Observe dead body override package list")
             End Get
@@ -37928,7 +37918,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\OCOR\Observe dead body override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasObserveDeadBodyOverridePackageList As UInteger
+        Public Property ReferenceAliasObserveDeadBodyOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasObserveDeadBodyOverridePackageList
             Get
                 Return Referencia("Reference Alias\OCOR\Observe dead body override package list")
             End Get
@@ -37938,7 +37928,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\GWOR\Guard warn override package list. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasGuardWarnOverridePackageListPresente As Boolean
+        Public Property ReferenceAliasGuardWarnOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasGuardWarnOverridePackageListPresente
             Get
                 Return Presente("Reference Alias\GWOR\Guard warn override package list")
             End Get
@@ -37948,7 +37938,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\GWOR\Guard warn override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasGuardWarnOverridePackageList As UInteger
+        Public Property ReferenceAliasGuardWarnOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasGuardWarnOverridePackageList
             Get
                 Return Referencia("Reference Alias\GWOR\Guard warn override package list")
             End Get
@@ -37958,7 +37948,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\ECOR\Combat override package list. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasCombatOverridePackageListPresente As Boolean
+        Public Property ReferenceAliasCombatOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasCombatOverridePackageListPresente
             Get
                 Return Presente("Reference Alias\ECOR\Combat override package list")
             End Get
@@ -37968,7 +37958,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\ECOR\Combat override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasCombatOverridePackageList As UInteger
+        Public Property ReferenceAliasCombatOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasCombatOverridePackageList
             Get
                 Return Referencia("Reference Alias\ECOR\Combat override package list")
             End Get
@@ -37978,7 +37968,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\ALDN\Display Name. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasDisplayNamePresente As Boolean
+        Public Property ReferenceAliasDisplayNamePresente As Boolean Implements IQust_Aliases2.ReferenceAliasDisplayNamePresente
             Get
                 Return Presente("Reference Alias\ALDN\Display Name")
             End Get
@@ -37988,7 +37978,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\ALDN\Display Name  -&gt;  MESG. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasDisplayName As UInteger
+        Public Property ReferenceAliasDisplayName As UInteger Implements IQust_Aliases2.ReferenceAliasDisplayName
             Get
                 Return Referencia("Reference Alias\ALDN\Display Name")
             End Get
@@ -37998,7 +37988,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Reference Alias\VTCK\Voice Types. Distinto de que el campo valga cero.</summary>
-        Public Property ReferenceAliasVoiceTypesPresente As Boolean
+        Public Property ReferenceAliasVoiceTypesPresente As Boolean Implements IQust_Aliases2.ReferenceAliasVoiceTypesPresente
             Get
                 Return Presente("Reference Alias\VTCK\Voice Types")
             End Get
@@ -38008,7 +37998,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Reference Alias\VTCK\Voice Types  -&gt;  FLST / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property ReferenceAliasVoiceTypes As UInteger
+        Public Property ReferenceAliasVoiceTypes As UInteger Implements IQust_Aliases2.ReferenceAliasVoiceTypes
             Get
                 Return Referencia("Reference Alias\VTCK\Voice Types")
             End Get
@@ -38018,7 +38008,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae el marcador Reference Alias\ALED\Alias End. No lleva valor: el dato es que esté, así que ponerlo en verdadero lo crea y en falso lo saca.</summary>
-        Public Property ReferenceAliasAliasEnd As Boolean
+        Public Property ReferenceAliasAliasEnd As Boolean Implements IQust_Aliases2.ReferenceAliasAliasEnd
             Get
                 Return Presente("Reference Alias\ALED\Alias End")
             End Get
@@ -38027,28 +38017,28 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae Location Alias\ALLS\Location Alias ID. Distinto de que el campo valga cero.</summary>
-        Public Property LocationAliasIDPresente As Boolean
+        ''' <summary>El record trae Location Alias\ALLS\Alias ID. Distinto de que el campo valga cero.</summary>
+        Public Property LocationAliasAliasIDPresente As Boolean Implements IQust_Aliases2.LocationAliasAliasIDPresente
             Get
-                Return Presente("Location Alias\ALLS\Location Alias ID")
+                Return Presente("Location Alias\ALLS\Alias ID")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Location Alias\ALLS\Location Alias ID", value)
+                PonerPresencia("Location Alias\ALLS\Alias ID", value)
             End Set
         End Property
 
-        ''' <summary>Location Alias\ALLS\Location Alias ID</summary>
-        Public Property LocationAliasID As UInteger
+        ''' <summary>Location Alias\ALLS\Alias ID</summary>
+        Public Property LocationAliasAliasID As UInteger Implements IQust_Aliases2.LocationAliasAliasID
             Get
-                Return CUInt(Entero("Location Alias\ALLS\Location Alias ID"))
+                Return CUInt(Entero("Location Alias\ALLS\Alias ID"))
             End Get
             Set(value As UInteger)
-                Escribir("Location Alias\ALLS\Location Alias ID", CLng(value))
+                Escribir("Location Alias\ALLS\Alias ID", CLng(value))
             End Set
         End Property
 
         ''' <summary>El record trae Location Alias\ALID\Alias Name. Distinto de que el campo valga cero.</summary>
-        Public Property LocationAliasAliasNamePresente As Boolean
+        Public Property LocationAliasAliasNamePresente As Boolean Implements IQust_Aliases2.LocationAliasAliasNamePresente
             Get
                 Return Presente("Location Alias\ALID\Alias Name")
             End Get
@@ -38058,7 +38048,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Location Alias\ALID\Alias Name</summary>
-        Public Property LocationAliasAliasName As String
+        Public Property LocationAliasAliasName As String Implements IQust_Aliases2.LocationAliasAliasName
             Get
                 Return Txt("Location Alias\ALID\Alias Name")
             End Get
@@ -38068,7 +38058,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Location Alias\FNAM\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property LocationAliasFlagsPresente As Boolean
+        Public Property LocationAliasFlagsPresente As Boolean Implements IQust_Aliases2.LocationAliasFlagsPresente
             Get
                 Return Presente("Location Alias\FNAM\Flags")
             End Get
@@ -38078,7 +38068,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Location Alias\FNAM\Flags</summary>
-        Public Property LocationAliasFlags As UInteger
+        Public Property LocationAliasFlags As UInteger Implements IQust_Aliases2.LocationAliasFlags
             Get
                 Return CUInt(Entero("Location Alias\FNAM\Flags"))
             End Get
@@ -38098,7 +38088,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 1 de Location Alias\FNAM\Flags: Optional</summary>
-        Public Property LocationAliasFlagsOptional As Boolean
+        Public Property LocationAliasFlagsOptional As Boolean Implements IQust_Aliases2.LocationAliasFlagsOptional
             Get
                 Return Bit("Location Alias\FNAM\Flags", 1)
             End Get
@@ -38108,7 +38098,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 3 de Location Alias\FNAM\Flags: Allow Reuse in Quest</summary>
-        Public Property LocationAliasFlagsAllowReuseInQuest As Boolean
+        Public Property LocationAliasFlagsAllowReuseInQuest As Boolean Implements IQust_Aliases2.LocationAliasFlagsAllowReuseInQuest
             Get
                 Return Bit("Location Alias\FNAM\Flags", 3)
             End Get
@@ -38118,7 +38108,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 8 de Location Alias\FNAM\Flags: Stores Text</summary>
-        Public Property LocationAliasFlagsStoresText As Boolean
+        Public Property LocationAliasFlagsStoresText As Boolean Implements IQust_Aliases2.LocationAliasFlagsStoresText
             Get
                 Return Bit("Location Alias\FNAM\Flags", 8)
             End Get
@@ -38128,7 +38118,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Bit 9 de Location Alias\FNAM\Flags: Allow Reserved</summary>
-        Public Property LocationAliasFlagsAllowReserved As Boolean
+        Public Property LocationAliasFlagsAllowReserved As Boolean Implements IQust_Aliases2.LocationAliasFlagsAllowReserved
             Get
                 Return Bit("Location Alias\FNAM\Flags", 9)
             End Get
@@ -38137,8 +38127,18 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Bit 11 de Location Alias\FNAM\Flags: Forced by Aliases</summary>
+        Public Property LocationAliasFlagsForcedByAliases As Boolean Implements IQust_Aliases2.LocationAliasFlagsForcedByAliases
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 11)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 11, value)
+            End Set
+        End Property
+
         ''' <summary>Bit 16 de Location Alias\FNAM\Flags: Allow Cleared</summary>
-        Public Property LocationAliasFlagsAllowCleared As Boolean
+        Public Property LocationAliasFlagsAllowCleared As Boolean Implements IQust_Aliases2.LocationAliasFlagsAllowCleared
             Get
                 Return Bit("Location Alias\FNAM\Flags", 16)
             End Get
@@ -38148,7 +38148,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Location Alias\ALFI\Force Into Alias When Filled. Distinto de que el campo valga cero.</summary>
-        Public Property LocationAliasForceIntoAliasWhenFilledPresente As Boolean
+        Public Property LocationAliasForceIntoAliasWhenFilledPresente As Boolean Implements IQust_Aliases2.LocationAliasForceIntoAliasWhenFilledPresente
             Get
                 Return Presente("Location Alias\ALFI\Force Into Alias When Filled")
             End Get
@@ -38158,7 +38158,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Location Alias\ALFI\Force Into Alias When Filled</summary>
-        Public Property LocationAliasForceIntoAliasWhenFilled As Integer
+        Public Property LocationAliasForceIntoAliasWhenFilled As Integer Implements IQust_Aliases2.LocationAliasForceIntoAliasWhenFilled
             Get
                 Return CInt(Entero("Location Alias\ALFI\Force Into Alias When Filled"))
             End Get
@@ -38167,23 +38167,23 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae Location Alias\ALFL\Specific Location. Distinto de que el campo valga cero.</summary>
-        Public Property LocationAliasSpecificLocationPresente As Boolean
+        ''' <summary>El record trae Location Alias\Specific Location\ALFL\Location. Distinto de que el campo valga cero.</summary>
+        Public Property SpecificLocationLocationPresente As Boolean Implements IQust_Aliases2.SpecificLocationLocationPresente
             Get
-                Return Presente("Location Alias\ALFL\Specific Location")
+                Return Presente("Location Alias\Specific Location\ALFL\Location")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Location Alias\ALFL\Specific Location", value)
+                PonerPresencia("Location Alias\Specific Location\ALFL\Location", value)
             End Set
         End Property
 
-        ''' <summary>Location Alias\ALFL\Specific Location  -&gt;  LCTN. Referencia en el espacio del orden de carga.</summary>
-        Public Property LocationAliasSpecificLocation As UInteger
+        ''' <summary>Location Alias\Specific Location\ALFL\Location  -&gt;  LCTN. Referencia en el espacio del orden de carga.</summary>
+        Public Property SpecificLocationLocation As UInteger Implements IQust_Aliases2.SpecificLocationLocation
             Get
-                Return Referencia("Location Alias\ALFL\Specific Location")
+                Return Referencia("Location Alias\Specific Location\ALFL\Location")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Location Alias\ALFL\Specific Location", value)
+                PonerReferencia("Location Alias\Specific Location\ALFL\Location", value)
             End Set
         End Property
 
@@ -38335,7 +38335,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae el marcador Location Alias\ALED\Alias End. No lleva valor: el dato es que esté, así que ponerlo en verdadero lo crea y en falso lo saca.</summary>
-        Public Property LocationAliasAliasEnd As Boolean
+        Public Property LocationAliasAliasEnd As Boolean Implements IQust_Aliases2.LocationAliasAliasEnd
             Get
                 Return Presente("Location Alias\ALED\Alias End")
             End Get
@@ -38344,16 +38344,16 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Aliases\Reference Alias\Conditions</summary>
+        ''' <summary>Aliases\Reference Alias\Match Conditions\Conditions</summary>
         Public ReadOnly Property Conditions5 As IReadOnlyList(Of QustSSE_Conditions5)
             Get
-                Return Elementos(Of QustSSE_Conditions5)("Reference Alias\Conditions", Function(n) New QustSSE_Conditions5(n, Context, Resolver))
+                Return Elementos(Of QustSSE_Conditions5)("Reference Alias\Match Conditions\Conditions", Function(n) New QustSSE_Conditions5(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarConditions5() As QustSSE_Conditions5
-            Dim cont = Asegurar("Reference Alias\Conditions")
+            Dim cont = Asegurar("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -38362,7 +38362,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarConditions5(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Reference Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -38372,7 +38372,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarConditions5(elemento As QustSSE_Conditions5) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Reference Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -38383,7 +38383,7 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions5(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Reference Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
@@ -38608,16 +38608,16 @@ Namespace Canon
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
-        ''' <summary>Aliases\Location Alias\Conditions</summary>
+        ''' <summary>Aliases\Location Alias\Match Conditions\Conditions</summary>
         Public ReadOnly Property Conditions6 As IReadOnlyList(Of QustSSE_Conditions6)
             Get
-                Return Elementos(Of QustSSE_Conditions6)("Location Alias\Conditions", Function(n) New QustSSE_Conditions6(n, Context, Resolver))
+                Return Elementos(Of QustSSE_Conditions6)("Location Alias\Match Conditions\Conditions", Function(n) New QustSSE_Conditions6(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarConditions6() As QustSSE_Conditions6
-            Dim cont = Asegurar("Location Alias\Conditions")
+            Dim cont = Asegurar("Location Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -38626,7 +38626,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarConditions6(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Location Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Location Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -38636,7 +38636,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarConditions6(elemento As QustSSE_Conditions6) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Location Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Location Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -38647,14 +38647,14 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions6(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Location Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Location Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Reference Alias\Conditions.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\Match Conditions\Conditions.</summary>
     Public NotInheritable Class QustSSE_Conditions5
         Inherits CanonView
         Implements IBloque_Conditions
@@ -40032,7 +40032,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -41545,7 +41545,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -42216,7 +42216,7 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Location Alias\Conditions.</summary>
+    ''' <summary>Un elemento de Aliases\Location Alias\Match Conditions\Conditions.</summary>
     Public NotInheritable Class QustSSE_Conditions6
         Inherits CanonView
         Implements IBloque_Conditions
@@ -43594,7 +43594,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -45107,7 +45107,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -46985,7 +46985,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -48498,7 +48498,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -74418,123 +74418,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements ITxst.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements ITxst.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements ITxst.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements ITxst.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements ITxst.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements ITxst.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements ITxst.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements ITxst.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements ITxst.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements ITxst.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements ITxst.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements ITxst.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements ITxst.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements ITxst.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements ITxst.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements ITxst.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements ITxst.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements ITxst.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements ITxst.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements ITxst.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements ITxst.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements ITxst.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements ITxst.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements ITxst.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 

@@ -3222,123 +3222,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements IArmo.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements IArmo.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements IArmo.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements IArmo.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements IArmo.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements IArmo.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements IArmo.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements IArmo.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements IArmo.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements IArmo.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements IArmo.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements IArmo.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements IArmo.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements IArmo.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements IArmo.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements IArmo.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements IArmo.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements IArmo.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements IArmo.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements IArmo.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements IArmo.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements IArmo.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements IArmo.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements IArmo.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -5148,20 +5148,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class ArmoFO4_Scripts
         Inherits CanonView
-        Implements IArmo_Scripts, IBloque_Scripts2
+        Implements IArmo_Scripts, IBloque_Scripts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Scripts.Node, IBloque_Scripts2.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IArmo_Scripts.Node, IBloque_Scripts.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptNamePresente As Boolean Implements IArmo_Scripts.ScriptNamePresente, IBloque_Scripts2.ScriptNamePresente
+        Public Property ScriptNamePresente As Boolean Implements IArmo_Scripts.ScriptNamePresente, IBloque_Scripts.ScriptNamePresente
             Get
                 Return Presente("Script\ScriptName")
             End Get
@@ -5171,7 +5171,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptName As String Implements IArmo_Scripts.ScriptName, IBloque_Scripts2.ScriptName
+        Public Property ScriptName As String Implements IArmo_Scripts.ScriptName, IBloque_Scripts.ScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -5181,7 +5181,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Script\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptFlagsPresente As Boolean Implements IArmo_Scripts.ScriptFlagsPresente, IBloque_Scripts2.ScriptFlagsPresente
+        Public Property ScriptFlagsPresente As Boolean Implements IArmo_Scripts.ScriptFlagsPresente, IBloque_Scripts.ScriptFlagsPresente
             Get
                 Return Presente("Script\Flags")
             End Get
@@ -5191,7 +5191,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte Implements IArmo_Scripts.ScriptFlags, IBloque_Scripts2.ScriptFlags
+        Public Property ScriptFlags As Byte Implements IArmo_Scripts.ScriptFlags, IBloque_Scripts.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -5201,7 +5201,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String Implements IArmo_Scripts.ScriptFlagsNombre, IBloque_Scripts2.ScriptFlagsNombre
+        Public ReadOnly Property ScriptFlagsNombre As String Implements IArmo_Scripts.ScriptFlagsNombre, IBloque_Scripts.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
@@ -5252,7 +5252,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties, como lista de la forma.</summary>
-        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties3) Implements IBloque_Scripts2.Properties
+        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties2) Implements IBloque_Scripts.Properties
             Get
                 Return Properties
             End Get
@@ -5263,20 +5263,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class ArmoFO4_Properties
         Inherits CanonView
-        Implements IBloque_Properties3
+        Implements IBloque_Properties2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -5286,7 +5286,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -5296,7 +5296,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -5306,7 +5306,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -5315,15 +5315,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Property\Type.</summary>
-        Public ReadOnly Property PropertyTypeNombre As String Implements IBloque_Properties3.PropertyTypeNombre
-            Get
-                Return NombreDeValor("Property\Type")
-            End Get
-        End Property
-
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -5333,7 +5326,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -5343,14 +5336,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -5360,7 +5353,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -5370,7 +5363,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -5380,7 +5373,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -5390,7 +5383,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -5400,7 +5393,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -5410,7 +5403,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -5420,7 +5413,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -5430,7 +5423,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -5440,7 +5433,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties3.ValueString
+        Public Property ValueString As String Implements IBloque_Properties2.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -5450,7 +5443,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -5460,7 +5453,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -5470,7 +5463,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -5480,7 +5473,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -5490,7 +5483,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -5500,7 +5493,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -5510,7 +5503,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Array of Variable\Element Count. Distinto de que el campo valga cero.</summary>
-        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties3.ArrayOfVariableElementCountPresente
+        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties2.ArrayOfVariableElementCountPresente
             Get
                 Return Presente("Property\Value\Array of Variable\Element Count")
             End Get
@@ -5520,7 +5513,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Array of Variable\Element Count</summary>
-        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties3.ArrayOfVariableElementCount
+        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties2.ArrayOfVariableElementCount
             Get
                 Return CUInt(Entero("Property\Value\Array of Variable\Element Count"))
             End Get
@@ -5574,7 +5567,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct
+        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct
             Get
                 Return Struct
             End Get
@@ -5625,7 +5618,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
             Get
                 Return ArrayOfObject2
             End Get
@@ -5676,7 +5669,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
             Get
                 Return ArrayOfString2
             End Get
@@ -5727,7 +5720,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
             Get
                 Return ArrayOfInt322
             End Get
@@ -5778,7 +5771,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
             Get
                 Return ArrayOfFloat2
             End Get
@@ -5829,7 +5822,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
             Get
                 Return ArrayOfBool2
             End Get
@@ -5880,7 +5873,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Struct\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct2
+        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct2
             Get
                 Return Struct2
             End Get
@@ -5941,13 +5934,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -6957,13 +6943,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -13251,7 +13230,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -14314,7 +14293,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -15862,23 +15841,23 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>El record trae Part\NAM1\FileName. Distinto de que el campo valga cero.</summary>
-        Public Property PartFileNamePresente As Boolean Implements IHdpt_Parts.PartFileNamePresente
+        ''' <summary>El record trae Part\NAM1\Filename. Distinto de que el campo valga cero.</summary>
+        Public Property PartFilenamePresente As Boolean Implements IHdpt_Parts.PartFilenamePresente
             Get
-                Return Presente("Part\NAM1\FileName")
+                Return Presente("Part\NAM1\Filename")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Part\NAM1\FileName", value)
+                PonerPresencia("Part\NAM1\Filename", value)
             End Set
         End Property
 
-        ''' <summary>Part\NAM1\FileName</summary>
-        Public Property PartFileName As String Implements IHdpt_Parts.PartFileName
+        ''' <summary>Part\NAM1\Filename</summary>
+        Public Property PartFilename As String Implements IHdpt_Parts.PartFilename
             Get
-                Return Txt("Part\NAM1\FileName")
+                Return Txt("Part\NAM1\Filename")
             End Get
             Set(value As String)
-                Escribir("Part\NAM1\FileName", value)
+                Escribir("Part\NAM1\Filename", value)
             End Set
         End Property
 
@@ -16832,7 +16811,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -17895,7 +17874,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -18442,8 +18421,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Bit 0 de DATA\Flags: Parent</summary>
-        Public Property FlagsParent As Boolean
+        ''' <summary>Bit 0 de DATA\Flags: Loose</summary>
+        Public Property FlagsLoose As Boolean
             Get
                 Return Bit("DATA\Flags", 0)
             End Get
@@ -19536,7 +19515,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IIdle_Conditions.Parameter1Owner, IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -20599,7 +20578,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IIdle_Conditions.Parameter2Owner, IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -21006,123 +20985,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements ILvli.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements ILvli.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements ILvli.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements ILvli.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements ILvli.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements ILvli.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements ILvli.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements ILvli.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements ILvli.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements ILvli.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements ILvli.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements ILvli.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements ILvli.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements ILvli.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements ILvli.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements ILvli.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements ILvli.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements ILvli.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements ILvli.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements ILvli.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements ILvli.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements ILvli.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements ILvli.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements ILvli.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -21661,123 +21640,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements ILvln.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements ILvln.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements ILvln.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements ILvln.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements ILvln.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements ILvln.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements ILvln.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements ILvln.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements ILvln.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements ILvln.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements ILvln.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements ILvln.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements ILvln.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements ILvln.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements ILvln.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements ILvln.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements ILvln.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements ILvln.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements ILvln.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements ILvln.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements ILvln.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements ILvln.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements ILvln.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements ILvln.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -23074,123 +23053,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements INpc.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements INpc.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements INpc.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements INpc.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements INpc.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements INpc.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements INpc.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements INpc.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements INpc.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements INpc.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements INpc.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements INpc.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements INpc.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements INpc.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements INpc.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements INpc.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements INpc.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements INpc.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements INpc.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements INpc.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements INpc.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements INpc.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements INpc.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements INpc.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 
@@ -23334,6 +23313,16 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Bit 8 de ACBS\Configuration\Flags: Has Base Sound Data</summary>
+        Public Property ConfigurationFlagsHasBaseSoundData As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 8)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 8, value)
+            End Set
+        End Property
+
         ''' <summary>Bit 9 de ACBS\Configuration\Flags: Calc For Each Template</summary>
         Public Property ConfigurationFlagsCalcForEachTemplate As Boolean
             Get
@@ -23341,6 +23330,16 @@ Namespace Canon
             End Get
             Set(value As Boolean)
                 PonerBit("ACBS\Configuration\Flags", 9, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 10 de ACBS\Configuration\Flags: Use Attack Percentage</summary>
+        Public Property ConfigurationFlagsUseAttackPercentage As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 10)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 10, value)
             End Set
         End Property
 
@@ -23354,6 +23353,26 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Bit 12 de ACBS\Configuration\Flags: No Loot</summary>
+        Public Property ConfigurationFlagsNoLoot As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 12)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 12, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 13 de ACBS\Configuration\Flags: No Rumors</summary>
+        Public Property ConfigurationFlagsNoRumors As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 13)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 13, value)
+            End Set
+        End Property
+
         ''' <summary>Bit 14 de ACBS\Configuration\Flags: Summonable</summary>
         Public Property ConfigurationFlagsSummonable As Boolean Implements INpc.ConfigurationFlagsSummonable
             Get
@@ -23361,6 +23380,16 @@ Namespace Canon
             End Get
             Set(value As Boolean)
                 PonerBit("ACBS\Configuration\Flags", 14, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 15 de ACBS\Configuration\Flags: Disable Non-Combat Regen</summary>
+        Public Property ConfigurationFlagsDisableNonCombatRegen As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 15)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 15, value)
             End Set
         End Property
 
@@ -23374,8 +23403,18 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Bit 18 de ACBS\Configuration\Flags: Bleedout Override</summary>
-        Public Property ConfigurationFlagsBleedoutOverride As Boolean Implements INpc.ConfigurationFlagsBleedoutOverride
+        ''' <summary>Bit 17 de ACBS\Configuration\Flags: Very Simple Actor</summary>
+        Public Property ConfigurationFlagsVerySimpleActor As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 17)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 17, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 18 de ACBS\Configuration\Flags: Has Bleedout Override</summary>
+        Public Property ConfigurationFlagsHasBleedoutOverride As Boolean
             Get
                 Return Bit("ACBS\Configuration\Flags", 18)
             End Get
@@ -23384,8 +23423,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Bit 19 de ACBS\Configuration\Flags: Opposite Gender Anims</summary>
-        Public Property ConfigurationFlagsOppositeGenderAnims As Boolean Implements INpc.ConfigurationFlagsOppositeGenderAnims
+        ''' <summary>Bit 19 de ACBS\Configuration\Flags: Swap Gender Anims</summary>
+        Public Property ConfigurationFlagsSwapGenderAnims As Boolean
             Get
                 Return Bit("ACBS\Configuration\Flags", 19)
             End Get
@@ -23401,6 +23440,26 @@ Namespace Canon
             End Get
             Set(value As Boolean)
                 PonerBit("ACBS\Configuration\Flags", 20, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 21 de ACBS\Configuration\Flags: Unused 21</summary>
+        Public Property ConfigurationFlagsUnused21 As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 21)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 21, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 22 de ACBS\Configuration\Flags: Unused 22</summary>
+        Public Property ConfigurationFlagsUnused22 As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 22)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 22, value)
             End Set
         End Property
 
@@ -23424,6 +23483,46 @@ Namespace Canon
             End Set
         End Property
 
+        ''' <summary>Bit 25 de ACBS\Configuration\Flags: Disable Combat</summary>
+        Public Property ConfigurationFlagsDisableCombat As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 25)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 25, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 26 de ACBS\Configuration\Flags: Spawns Dead</summary>
+        Public Property ConfigurationFlagsSpawnsDead As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 26)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 26, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 27 de ACBS\Configuration\Flags: Player Protected</summary>
+        Public Property ConfigurationFlagsPlayerProtected As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 27)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 27, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 28 de ACBS\Configuration\Flags: Do Not Use Load Doors</summary>
+        Public Property ConfigurationFlagsDoNotUseLoadDoors As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 28)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 28, value)
+            End Set
+        End Property
+
         ''' <summary>Bit 29 de ACBS\Configuration\Flags: Is Ghost</summary>
         Public Property ConfigurationFlagsIsGhost As Boolean Implements INpc.ConfigurationFlagsIsGhost
             Get
@@ -23431,6 +23530,16 @@ Namespace Canon
             End Get
             Set(value As Boolean)
                 PonerBit("ACBS\Configuration\Flags", 29, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 30 de ACBS\Configuration\Flags: No Bleedout Recovery</summary>
+        Public Property ConfigurationFlagsNoBleedoutRecovery As Boolean
+            Get
+                Return Bit("ACBS\Configuration\Flags", 30)
+            End Get
+            Set(value As Boolean)
+                PonerBit("ACBS\Configuration\Flags", 30, value)
             End Set
         End Property
 
@@ -23691,26 +23800,6 @@ Namespace Canon
             End Get
             Set(value As UShort)
                 Escribir("ACBS\Configuration\Bleedout Override", CLng(value))
-            End Set
-        End Property
-
-        ''' <summary>El record trae ACBS\Configuration\Unknown. Distinto de que el campo valga cero.</summary>
-        Public Property ConfigurationUnknownPresente As Boolean
-            Get
-                Return Presente("ACBS\Configuration\Unknown")
-            End Get
-            Set(value As Boolean)
-                PonerPresencia("ACBS\Configuration\Unknown", value)
-            End Set
-        End Property
-
-        ''' <summary>ACBS\Configuration\Unknown</summary>
-        Public Property ConfigurationUnknown As Byte()
-            Get
-                Return Bytes("ACBS\Configuration\Unknown")
-            End Get
-            Set(value As Byte())
-                Escribir("ACBS\Configuration\Unknown", value)
             End Set
         End Property
 
@@ -26447,20 +26536,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class NpcFO4_Scripts
         Inherits CanonView
-        Implements INpc_Scripts, IBloque_Scripts2
+        Implements INpc_Scripts, IBloque_Scripts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Scripts.Node, IBloque_Scripts2.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements INpc_Scripts.Node, IBloque_Scripts.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptNamePresente As Boolean Implements INpc_Scripts.ScriptNamePresente, IBloque_Scripts2.ScriptNamePresente
+        Public Property ScriptNamePresente As Boolean Implements INpc_Scripts.ScriptNamePresente, IBloque_Scripts.ScriptNamePresente
             Get
                 Return Presente("Script\ScriptName")
             End Get
@@ -26470,7 +26559,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptName As String Implements INpc_Scripts.ScriptName, IBloque_Scripts2.ScriptName
+        Public Property ScriptName As String Implements INpc_Scripts.ScriptName, IBloque_Scripts.ScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -26480,7 +26569,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Script\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptFlagsPresente As Boolean Implements INpc_Scripts.ScriptFlagsPresente, IBloque_Scripts2.ScriptFlagsPresente
+        Public Property ScriptFlagsPresente As Boolean Implements INpc_Scripts.ScriptFlagsPresente, IBloque_Scripts.ScriptFlagsPresente
             Get
                 Return Presente("Script\Flags")
             End Get
@@ -26490,7 +26579,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte Implements INpc_Scripts.ScriptFlags, IBloque_Scripts2.ScriptFlags
+        Public Property ScriptFlags As Byte Implements INpc_Scripts.ScriptFlags, IBloque_Scripts.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -26500,7 +26589,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String Implements INpc_Scripts.ScriptFlagsNombre, IBloque_Scripts2.ScriptFlagsNombre
+        Public ReadOnly Property ScriptFlagsNombre As String Implements INpc_Scripts.ScriptFlagsNombre, IBloque_Scripts.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
@@ -26551,7 +26640,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties, como lista de la forma.</summary>
-        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties3) Implements IBloque_Scripts2.Properties
+        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties2) Implements IBloque_Scripts.Properties
             Get
                 Return Properties
             End Get
@@ -26562,20 +26651,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class NpcFO4_Properties
         Inherits CanonView
-        Implements IBloque_Properties3
+        Implements IBloque_Properties2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -26585,7 +26674,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -26595,7 +26684,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -26605,7 +26694,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -26614,15 +26703,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Property\Type.</summary>
-        Public ReadOnly Property PropertyTypeNombre As String Implements IBloque_Properties3.PropertyTypeNombre
-            Get
-                Return NombreDeValor("Property\Type")
-            End Get
-        End Property
-
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -26632,7 +26714,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -26642,14 +26724,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -26659,7 +26741,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -26669,7 +26751,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -26679,7 +26761,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -26689,7 +26771,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -26699,7 +26781,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -26709,7 +26791,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -26719,7 +26801,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -26729,7 +26811,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -26739,7 +26821,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties3.ValueString
+        Public Property ValueString As String Implements IBloque_Properties2.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -26749,7 +26831,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -26759,7 +26841,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -26769,7 +26851,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -26779,7 +26861,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -26789,7 +26871,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -26799,7 +26881,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -26809,7 +26891,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Array of Variable\Element Count. Distinto de que el campo valga cero.</summary>
-        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties3.ArrayOfVariableElementCountPresente
+        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties2.ArrayOfVariableElementCountPresente
             Get
                 Return Presente("Property\Value\Array of Variable\Element Count")
             End Get
@@ -26819,7 +26901,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Array of Variable\Element Count</summary>
-        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties3.ArrayOfVariableElementCount
+        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties2.ArrayOfVariableElementCount
             Get
                 Return CUInt(Entero("Property\Value\Array of Variable\Element Count"))
             End Get
@@ -26873,7 +26955,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct
+        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct
             Get
                 Return Struct
             End Get
@@ -26924,7 +27006,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
             Get
                 Return ArrayOfObject2
             End Get
@@ -26975,7 +27057,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
             Get
                 Return ArrayOfString2
             End Get
@@ -27026,7 +27108,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
             Get
                 Return ArrayOfInt322
             End Get
@@ -27077,7 +27159,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
             Get
                 Return ArrayOfFloat2
             End Get
@@ -27128,7 +27210,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
             Get
                 Return ArrayOfBool2
             End Get
@@ -27179,7 +27261,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Struct\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct2
+        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct2
             Get
                 Return Struct2
             End Get
@@ -27240,13 +27322,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -28256,13 +28331,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -34935,20 +35003,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts.</summary>
     Public NotInheritable Class QustFO4_Scripts
         Inherits CanonView
-        Implements IQust_Scripts, IBloque_Scripts2
+        Implements IQust_Scripts, IBloque_Scripts
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IQust_Scripts.Node, IBloque_Scripts2.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IQust_Scripts.Node, IBloque_Scripts.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Script\ScriptName. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptNamePresente As Boolean Implements IQust_Scripts.ScriptNamePresente, IBloque_Scripts2.ScriptNamePresente
+        Public Property ScriptNamePresente As Boolean Implements IQust_Scripts.ScriptNamePresente, IBloque_Scripts.ScriptNamePresente
             Get
                 Return Presente("Script\ScriptName")
             End Get
@@ -34958,7 +35026,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\ScriptName</summary>
-        Public Property ScriptName As String Implements IQust_Scripts.ScriptName, IBloque_Scripts2.ScriptName
+        Public Property ScriptName As String Implements IQust_Scripts.ScriptName, IBloque_Scripts.ScriptName
             Get
                 Return Txt("Script\ScriptName")
             End Get
@@ -34968,7 +35036,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Script\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property ScriptFlagsPresente As Boolean Implements IQust_Scripts.ScriptFlagsPresente, IBloque_Scripts2.ScriptFlagsPresente
+        Public Property ScriptFlagsPresente As Boolean Implements IQust_Scripts.ScriptFlagsPresente, IBloque_Scripts.ScriptFlagsPresente
             Get
                 Return Presente("Script\Flags")
             End Get
@@ -34978,7 +35046,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Script\Flags</summary>
-        Public Property ScriptFlags As Byte Implements IQust_Scripts.ScriptFlags, IBloque_Scripts2.ScriptFlags
+        Public Property ScriptFlags As Byte Implements IQust_Scripts.ScriptFlags, IBloque_Scripts.ScriptFlags
             Get
                 Return CByte(Entero("Script\Flags"))
             End Get
@@ -34988,7 +35056,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Script\Flags.</summary>
-        Public ReadOnly Property ScriptFlagsNombre As String Implements IQust_Scripts.ScriptFlagsNombre, IBloque_Scripts2.ScriptFlagsNombre
+        Public ReadOnly Property ScriptFlagsNombre As String Implements IQust_Scripts.ScriptFlagsNombre, IBloque_Scripts.ScriptFlagsNombre
             Get
                 Return NombreDeValor("Script\Flags")
             End Get
@@ -35039,7 +35107,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties, como lista de la forma.</summary>
-        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties3) Implements IBloque_Scripts2.Properties
+        Private ReadOnly Property PropertiesDeLaForma As IReadOnlyList(Of IBloque_Properties2) Implements IBloque_Scripts.Properties
             Get
                 Return Properties
             End Get
@@ -35050,20 +35118,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Scripts\Script\Properties.</summary>
     Public NotInheritable Class QustFO4_Properties
         Inherits CanonView
-        Implements IBloque_Properties3
+        Implements IBloque_Properties2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -35073,7 +35141,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -35083,7 +35151,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -35093,7 +35161,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -35102,15 +35170,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Property\Type.</summary>
-        Public ReadOnly Property PropertyTypeNombre As String Implements IBloque_Properties3.PropertyTypeNombre
-            Get
-                Return NombreDeValor("Property\Type")
-            End Get
-        End Property
-
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -35120,7 +35181,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -35130,14 +35191,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -35147,7 +35208,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -35157,7 +35218,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -35167,7 +35228,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -35177,7 +35238,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -35187,7 +35248,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -35197,7 +35258,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -35207,7 +35268,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -35217,7 +35278,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -35227,7 +35288,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties3.ValueString
+        Public Property ValueString As String Implements IBloque_Properties2.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -35237,7 +35298,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -35247,7 +35308,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -35257,7 +35318,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -35267,7 +35328,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -35277,7 +35338,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -35287,7 +35348,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -35297,7 +35358,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Array of Variable\Element Count. Distinto de que el campo valga cero.</summary>
-        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties3.ArrayOfVariableElementCountPresente
+        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties2.ArrayOfVariableElementCountPresente
             Get
                 Return Presente("Property\Value\Array of Variable\Element Count")
             End Get
@@ -35307,7 +35368,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Array of Variable\Element Count</summary>
-        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties3.ArrayOfVariableElementCount
+        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties2.ArrayOfVariableElementCount
             Get
                 Return CUInt(Entero("Property\Value\Array of Variable\Element Count"))
             End Get
@@ -35361,7 +35422,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct
+        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct
             Get
                 Return Struct
             End Get
@@ -35412,7 +35473,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
             Get
                 Return ArrayOfObject2
             End Get
@@ -35463,7 +35524,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
             Get
                 Return ArrayOfString2
             End Get
@@ -35514,7 +35575,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
             Get
                 Return ArrayOfInt322
             End Get
@@ -35565,7 +35626,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
             Get
                 Return ArrayOfFloat2
             End Get
@@ -35616,7 +35677,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
             Get
                 Return ArrayOfBool2
             End Get
@@ -35667,7 +35728,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Scripts\Script\Properties\Property\Value\Array of Struct\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct2
+        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct2
             Get
                 Return Struct2
             End Get
@@ -35728,13 +35789,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -36746,13 +36800,6 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
-        End Property
-
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
         Public Property MemberFlagsPresente As Boolean Implements IBloque_Struct.MemberFlagsPresente
             Get
@@ -37465,20 +37512,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties.</summary>
     Public NotInheritable Class QustFO4_Properties2
         Inherits CanonView
-        Implements IBloque_Properties3
+        Implements IBloque_Properties2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -37488,7 +37535,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -37498,7 +37545,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -37508,7 +37555,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -37517,15 +37564,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Property\Type.</summary>
-        Public ReadOnly Property PropertyTypeNombre As String Implements IBloque_Properties3.PropertyTypeNombre
-            Get
-                Return NombreDeValor("Property\Type")
-            End Get
-        End Property
-
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -37535,7 +37575,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -37545,14 +37585,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -37562,7 +37602,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -37572,7 +37612,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -37582,7 +37622,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -37592,7 +37632,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -37602,7 +37642,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -37612,7 +37652,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -37622,7 +37662,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -37632,7 +37672,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -37642,7 +37682,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties3.ValueString
+        Public Property ValueString As String Implements IBloque_Properties2.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -37652,7 +37692,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -37662,7 +37702,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -37672,7 +37712,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -37682,7 +37722,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -37692,7 +37732,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -37702,7 +37742,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -37712,7 +37752,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Array of Variable\Element Count. Distinto de que el campo valga cero.</summary>
-        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties3.ArrayOfVariableElementCountPresente
+        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties2.ArrayOfVariableElementCountPresente
             Get
                 Return Presente("Property\Value\Array of Variable\Element Count")
             End Get
@@ -37722,7 +37762,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Array of Variable\Element Count</summary>
-        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties3.ArrayOfVariableElementCount
+        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties2.ArrayOfVariableElementCount
             Get
                 Return CUInt(Entero("Property\Value\Array of Variable\Element Count"))
             End Get
@@ -37776,7 +37816,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties\Property\Value\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct
+        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct
             Get
                 Return Struct3
             End Get
@@ -37827,7 +37867,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
             Get
                 Return ArrayOfObject5
             End Get
@@ -37878,7 +37918,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
             Get
                 Return ArrayOfString5
             End Get
@@ -37929,7 +37969,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
             Get
                 Return ArrayOfInt325
             End Get
@@ -37980,7 +38020,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
             Get
                 Return ArrayOfFloat5
             End Get
@@ -38031,7 +38071,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
             Get
                 Return ArrayOfBool5
             End Get
@@ -38082,7 +38122,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Script Fragments\Script\Script Data\Properties\Property\Value\Array of Struct\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct2
+        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct2
             Get
                 Return Struct4
             End Get
@@ -38143,13 +38183,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -39161,13 +39194,6 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
-        End Property
-
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
         Public Property MemberFlagsPresente As Boolean Implements IBloque_Struct.MemberFlagsPresente
             Get
@@ -39903,12 +39929,32 @@ Namespace Canon
         End Property
 
         ''' <summary>Fragment\Quest Stage</summary>
-        Public Property FragmentQuestStage As UShort Implements IQust_Fragments.FragmentQuestStage
+        Public Property FragmentQuestStage As UInteger Implements IQust_Fragments.FragmentQuestStage
             Get
-                Return CUShort(Entero("Fragment\Quest Stage"))
+                Return CUInt(Entero("Fragment\Quest Stage"))
             End Get
-            Set(value As UShort)
+            Set(value As UInteger)
                 Escribir("Fragment\Quest Stage", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Fragment\Quest Stage Index. Distinto de que el campo valga cero.</summary>
+        Public Property FragmentQuestStageIndexPresente As Boolean
+            Get
+                Return Presente("Fragment\Quest Stage Index")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Fragment\Quest Stage Index", value)
+            End Set
+        End Property
+
+        ''' <summary>Fragment\Quest Stage Index</summary>
+        Public Property FragmentQuestStageIndex As UInteger
+            Get
+                Return CUInt(Entero("Fragment\Quest Stage Index"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Fragment\Quest Stage Index", CLng(value))
             End Set
         End Property
 
@@ -39923,32 +39969,12 @@ Namespace Canon
         End Property
 
         ''' <summary>Fragment\Unknown</summary>
-        Public Property FragmentUnknown As Short Implements IQust_Fragments.FragmentUnknown
+        Public Property FragmentUnknown As Byte() Implements IQust_Fragments.FragmentUnknown
             Get
-                Return CShort(Entero("Fragment\Unknown"))
+                Return Bytes("Fragment\Unknown")
             End Get
-            Set(value As Short)
-                Escribir("Fragment\Unknown", CLng(value))
-            End Set
-        End Property
-
-        ''' <summary>El record trae Fragment\Quest Stage Index. Distinto de que el campo valga cero.</summary>
-        Public Property FragmentQuestStageIndexPresente As Boolean Implements IQust_Fragments.FragmentQuestStageIndexPresente
-            Get
-                Return Presente("Fragment\Quest Stage Index")
-            End Get
-            Set(value As Boolean)
-                PonerPresencia("Fragment\Quest Stage Index", value)
-            End Set
-        End Property
-
-        ''' <summary>Fragment\Quest Stage Index</summary>
-        Public Property FragmentQuestStageIndex As Integer Implements IQust_Fragments.FragmentQuestStageIndex
-            Get
-                Return CInt(Entero("Fragment\Quest Stage Index"))
-            End Get
-            Set(value As Integer)
-                Escribir("Fragment\Quest Stage Index", CLng(value))
+            Set(value As Byte())
+                Escribir("Fragment\Unknown", value)
             End Set
         End Property
 
@@ -40279,20 +40305,20 @@ Namespace Canon
     ''' <summary>Un elemento de VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties.</summary>
     Public NotInheritable Class QustFO4_Properties3
         Inherits CanonView
-        Implements IBloque_Properties3
+        Implements IBloque_Properties2
 
         Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
             MyBase.New(node, ctx, resolver)
         End Sub
 
-        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties3.Node
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Properties2.Node
             Get
                 Return Node
             End Get
         End Property
 
         ''' <summary>El record trae Property\propertyName. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties3.PropertyNamePresente
+        Public Property PropertyNamePresente As Boolean Implements IBloque_Properties2.PropertyNamePresente
             Get
                 Return Presente("Property\propertyName")
             End Get
@@ -40302,7 +40328,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\propertyName</summary>
-        Public Property PropertyName As String Implements IBloque_Properties3.PropertyName
+        Public Property PropertyName As String Implements IBloque_Properties2.PropertyName
             Get
                 Return Txt("Property\propertyName")
             End Get
@@ -40312,7 +40338,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Type. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties3.PropertyTypePresente
+        Public Property PropertyTypePresente As Boolean Implements IBloque_Properties2.PropertyTypePresente
             Get
                 Return Presente("Property\Type")
             End Get
@@ -40322,7 +40348,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Type</summary>
-        Public Property PropertyType As Byte Implements IBloque_Properties3.PropertyType
+        Public Property PropertyType As Byte Implements IBloque_Properties2.PropertyType
             Get
                 Return CByte(Entero("Property\Type"))
             End Get
@@ -40331,15 +40357,8 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Property\Type.</summary>
-        Public ReadOnly Property PropertyTypeNombre As String Implements IBloque_Properties3.PropertyTypeNombre
-            Get
-                Return NombreDeValor("Property\Type")
-            End Get
-        End Property
-
         ''' <summary>El record trae Property\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties3.PropertyFlagsPresente
+        Public Property PropertyFlagsPresente As Boolean Implements IBloque_Properties2.PropertyFlagsPresente
             Get
                 Return Presente("Property\Flags")
             End Get
@@ -40349,7 +40368,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Flags</summary>
-        Public Property PropertyFlags As Byte Implements IBloque_Properties3.PropertyFlags
+        Public Property PropertyFlags As Byte Implements IBloque_Properties2.PropertyFlags
             Get
                 Return CByte(Entero("Property\Flags"))
             End Get
@@ -40359,14 +40378,14 @@ Namespace Canon
         End Property
 
         ''' <summary>Nombre del valor de Property\Flags.</summary>
-        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties3.PropertyFlagsNombre
+        Public ReadOnly Property PropertyFlagsNombre As String Implements IBloque_Properties2.PropertyFlagsNombre
             Get
                 Return NombreDeValor("Property\Flags")
             End Get
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties3.ObjectV2AliasPresente
+        Public Property ObjectV2AliasPresente As Boolean Implements IBloque_Properties2.ObjectV2AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\Alias")
             End Get
@@ -40376,7 +40395,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\Alias</summary>
-        Public Property ObjectV2Alias As Short Implements IBloque_Properties3.ObjectV2Alias
+        Public Property ObjectV2Alias As Short Implements IBloque_Properties2.ObjectV2Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v2\Alias"))
             End Get
@@ -40386,7 +40405,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v2\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV2FormIDPresente
+        Public Property ObjectV2FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV2FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -40396,7 +40415,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v2\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties3.ObjectV2FormID
+        Public Property ObjectV2FormID As UInteger Implements IBloque_Properties2.ObjectV2FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v2\FormID")
             End Get
@@ -40406,7 +40425,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\FormID. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties3.ObjectV1FormIDPresente
+        Public Property ObjectV1FormIDPresente As Boolean Implements IBloque_Properties2.ObjectV1FormIDPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -40416,7 +40435,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\FormID. Referencia en el espacio del orden de carga.</summary>
-        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties3.ObjectV1FormID
+        Public Property ObjectV1FormID As UInteger Implements IBloque_Properties2.ObjectV1FormID
             Get
                 Return Referencia("Property\Value\Object Union\Object v1\FormID")
             End Get
@@ -40426,7 +40445,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Object Union\Object v1\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties3.ObjectV1AliasPresente
+        Public Property ObjectV1AliasPresente As Boolean Implements IBloque_Properties2.ObjectV1AliasPresente
             Get
                 Return Presente("Property\Value\Object Union\Object v1\Alias")
             End Get
@@ -40436,7 +40455,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Object Union\Object v1\Alias</summary>
-        Public Property ObjectV1Alias As Short Implements IBloque_Properties3.ObjectV1Alias
+        Public Property ObjectV1Alias As Short Implements IBloque_Properties2.ObjectV1Alias
             Get
                 Return CShort(Entero("Property\Value\Object Union\Object v1\Alias"))
             End Get
@@ -40446,7 +40465,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\String. Distinto de que el campo valga cero.</summary>
-        Public Property ValueStringPresente As Boolean Implements IBloque_Properties3.ValueStringPresente
+        Public Property ValueStringPresente As Boolean Implements IBloque_Properties2.ValueStringPresente
             Get
                 Return Presente("Property\Value\String")
             End Get
@@ -40456,7 +40475,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\String</summary>
-        Public Property ValueString As String Implements IBloque_Properties3.ValueString
+        Public Property ValueString As String Implements IBloque_Properties2.ValueString
             Get
                 Return Txt("Property\Value\String")
             End Get
@@ -40466,7 +40485,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Int32. Distinto de que el campo valga cero.</summary>
-        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties3.ValueInt32Presente
+        Public Property ValueInt32Presente As Boolean Implements IBloque_Properties2.ValueInt32Presente
             Get
                 Return Presente("Property\Value\Int32")
             End Get
@@ -40476,7 +40495,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Int32</summary>
-        Public Property ValueInt32 As Integer Implements IBloque_Properties3.ValueInt32
+        Public Property ValueInt32 As Integer Implements IBloque_Properties2.ValueInt32
             Get
                 Return CInt(Entero("Property\Value\Int32"))
             End Get
@@ -40486,7 +40505,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Float. Distinto de que el campo valga cero.</summary>
-        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties3.ValueFloatPresente
+        Public Property ValueFloatPresente As Boolean Implements IBloque_Properties2.ValueFloatPresente
             Get
                 Return Presente("Property\Value\Float")
             End Get
@@ -40496,7 +40515,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Float</summary>
-        Public Property ValueFloat As Single Implements IBloque_Properties3.ValueFloat
+        Public Property ValueFloat As Single Implements IBloque_Properties2.ValueFloat
             Get
                 Return Flt("Property\Value\Float")
             End Get
@@ -40506,7 +40525,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Bool. Distinto de que el campo valga cero.</summary>
-        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties3.ValueBoolPresente
+        Public Property ValueBoolPresente As Boolean Implements IBloque_Properties2.ValueBoolPresente
             Get
                 Return Presente("Property\Value\Bool")
             End Get
@@ -40516,7 +40535,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Bool. Ponerlo en verdadero conserva el valor previo si no era cero.</summary>
-        Public Property ValueBool As Boolean Implements IBloque_Properties3.ValueBool
+        Public Property ValueBool As Boolean Implements IBloque_Properties2.ValueBool
             Get
                 Return Entero("Property\Value\Bool") <> 0L
             End Get
@@ -40526,7 +40545,7 @@ Namespace Canon
         End Property
 
         ''' <summary>El record trae Property\Value\Array of Variable\Element Count. Distinto de que el campo valga cero.</summary>
-        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties3.ArrayOfVariableElementCountPresente
+        Public Property ArrayOfVariableElementCountPresente As Boolean Implements IBloque_Properties2.ArrayOfVariableElementCountPresente
             Get
                 Return Presente("Property\Value\Array of Variable\Element Count")
             End Get
@@ -40536,7 +40555,7 @@ Namespace Canon
         End Property
 
         ''' <summary>Property\Value\Array of Variable\Element Count</summary>
-        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties3.ArrayOfVariableElementCount
+        Public Property ArrayOfVariableElementCount As UInteger Implements IBloque_Properties2.ArrayOfVariableElementCount
             Get
                 Return CUInt(Entero("Property\Value\Array of Variable\Element Count"))
             End Get
@@ -40590,7 +40609,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct
+        Private ReadOnly Property StructDeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct
             Get
                 Return Struct5
             End Get
@@ -40641,7 +40660,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Object, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties3.ArrayOfObject
+        Private ReadOnly Property ArrayOfObjectDeLaForma As IReadOnlyList(Of IBloque_ArrayOfObject) Implements IBloque_Properties2.ArrayOfObject
             Get
                 Return ArrayOfObject8
             End Get
@@ -40692,7 +40711,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of String, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties3.ArrayOfString
+        Private ReadOnly Property ArrayOfStringDeLaForma As IReadOnlyList(Of IBloque_ArrayOfString) Implements IBloque_Properties2.ArrayOfString
             Get
                 Return ArrayOfString8
             End Get
@@ -40743,7 +40762,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Int32, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties3.ArrayOfInt32
+        Private ReadOnly Property ArrayOfInt32DeLaForma As IReadOnlyList(Of IBloque_ArrayOfInt32) Implements IBloque_Properties2.ArrayOfInt32
             Get
                 Return ArrayOfInt328
             End Get
@@ -40794,7 +40813,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Float, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties3.ArrayOfFloat
+        Private ReadOnly Property ArrayOfFloatDeLaForma As IReadOnlyList(Of IBloque_ArrayOfFloat) Implements IBloque_Properties2.ArrayOfFloat
             Get
                 Return ArrayOfFloat8
             End Get
@@ -40845,7 +40864,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Bool, como lista de la forma.</summary>
-        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties3.ArrayOfBool
+        Private ReadOnly Property ArrayOfBoolDeLaForma As IReadOnlyList(Of IBloque_ArrayOfBool) Implements IBloque_Properties2.ArrayOfBool
             Get
                 Return ArrayOfBool8
             End Get
@@ -40896,7 +40915,7 @@ Namespace Canon
         End Function
 
         ''' <summary>VMAD\Virtual Machine Adapter\Aliases\Alias\Alias Scripts\Script\Properties\Property\Value\Array of Struct\Struct, como lista de la forma.</summary>
-        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties3.Struct2
+        Private ReadOnly Property Struct2DeLaForma As IReadOnlyList(Of IBloque_Struct) Implements IBloque_Properties2.Struct2
             Get
                 Return Struct6
             End Get
@@ -40957,13 +40976,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -41973,13 +41985,6 @@ Namespace Canon
             Set(value As Byte)
                 Escribir("Member\Type", CLng(value))
             End Set
-        End Property
-
-        ''' <summary>Nombre del valor de Member\Type.</summary>
-        Public ReadOnly Property MemberTypeNombre As String Implements IBloque_Struct.MemberTypeNombre
-            Get
-                Return NombreDeValor("Member\Type")
-            End Get
         End Property
 
         ''' <summary>El record trae Member\Flags. Distinto de que el campo valga cero.</summary>
@@ -43676,7 +43681,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IQust_Conditions.Parameter1Owner, IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -44739,7 +44744,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IQust_Conditions.Parameter2Owner, IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -46053,7 +46058,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IQust_Conditions2.Parameter1Owner, IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -47116,7 +47121,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IQust_Conditions2.Parameter2Owner, IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -48735,7 +48740,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -49798,7 +49803,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -51397,7 +51402,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -52460,7 +52465,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -52841,1111 +52846,1431 @@ Namespace Canon
             End Get
         End Property
 
-        ''' <summary>El record trae Alias\ALST\Reference Alias ID. Distinto de que el campo valga cero.</summary>
-        Public Property AliasReferenceAliasIDPresente As Boolean
+        ''' <summary>El record trae Reference Alias\ALST\Alias ID. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasAliasIDPresente As Boolean Implements IQust_Aliases2.ReferenceAliasAliasIDPresente
             Get
-                Return Presente("Alias\ALST\Reference Alias ID")
+                Return Presente("Reference Alias\ALST\Alias ID")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALST\Reference Alias ID", value)
+                PonerPresencia("Reference Alias\ALST\Alias ID", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALST\Reference Alias ID</summary>
-        Public Property AliasReferenceAliasID As UInteger
+        ''' <summary>Reference Alias\ALST\Alias ID</summary>
+        Public Property ReferenceAliasAliasID As UInteger Implements IQust_Aliases2.ReferenceAliasAliasID
             Get
-                Return CUInt(Entero("Alias\ALST\Reference Alias ID"))
+                Return CUInt(Entero("Reference Alias\ALST\Alias ID"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\ALST\Reference Alias ID", CLng(value))
+                Escribir("Reference Alias\ALST\Alias ID", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALID\Alias Name. Distinto de que el campo valga cero.</summary>
-        Public Property AliasNamePresente As Boolean
+        ''' <summary>El record trae Reference Alias\ALID\Alias Name. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasAliasNamePresente As Boolean Implements IQust_Aliases2.ReferenceAliasAliasNamePresente
             Get
-                Return Presente("Alias\ALID\Alias Name")
+                Return Presente("Reference Alias\ALID\Alias Name")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALID\Alias Name", value)
+                PonerPresencia("Reference Alias\ALID\Alias Name", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALID\Alias Name</summary>
-        Public Property AliasName As String
+        ''' <summary>Reference Alias\ALID\Alias Name</summary>
+        Public Property ReferenceAliasAliasName As String Implements IQust_Aliases2.ReferenceAliasAliasName
             Get
-                Return Txt("Alias\ALID\Alias Name")
+                Return Txt("Reference Alias\ALID\Alias Name")
             End Get
             Set(value As String)
-                Escribir("Alias\ALID\Alias Name", value)
+                Escribir("Reference Alias\ALID\Alias Name", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\FNAM\Flags. Distinto de que el campo valga cero.</summary>
-        Public Property AliasFlagsPresente As Boolean
+        ''' <summary>El record trae Reference Alias\FNAM\Flags. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasFlagsPresente As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsPresente
             Get
-                Return Presente("Alias\FNAM\Flags")
+                Return Presente("Reference Alias\FNAM\Flags")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\FNAM\Flags", value)
+                PonerPresencia("Reference Alias\FNAM\Flags", value)
             End Set
         End Property
 
-        ''' <summary>Alias\FNAM\Flags</summary>
-        Public Property AliasFlags As UInteger
+        ''' <summary>Reference Alias\FNAM\Flags</summary>
+        Public Property ReferenceAliasFlags As UInteger Implements IQust_Aliases2.ReferenceAliasFlags
             Get
-                Return CUInt(Entero("Alias\FNAM\Flags"))
+                Return CUInt(Entero("Reference Alias\FNAM\Flags"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\FNAM\Flags", CLng(value))
+                Escribir("Reference Alias\FNAM\Flags", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Bit 0 de Alias\FNAM\Flags: Reserves Location/Reference</summary>
-        Public Property AliasFlagsReservesLocationReference As Boolean
+        ''' <summary>Bit 0 de Reference Alias\FNAM\Flags: Reserves Location/Reference</summary>
+        Public Property ReferenceAliasFlagsReservesLocationReference As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 0)
+                Return Bit("Reference Alias\FNAM\Flags", 0)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 0, value)
+                PonerBit("Reference Alias\FNAM\Flags", 0, value)
             End Set
         End Property
 
-        ''' <summary>Bit 1 de Alias\FNAM\Flags: Optional</summary>
-        Public Property AliasFlagsOptional As Boolean
+        ''' <summary>Bit 1 de Reference Alias\FNAM\Flags: Optional</summary>
+        Public Property ReferenceAliasFlagsOptional As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsOptional
             Get
-                Return Bit("Alias\FNAM\Flags", 1)
+                Return Bit("Reference Alias\FNAM\Flags", 1)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 1, value)
+                PonerBit("Reference Alias\FNAM\Flags", 1, value)
             End Set
         End Property
 
-        ''' <summary>Bit 2 de Alias\FNAM\Flags: Quest Object</summary>
-        Public Property AliasFlagsQuestObject As Boolean
+        ''' <summary>Bit 2 de Reference Alias\FNAM\Flags: Quest Object</summary>
+        Public Property ReferenceAliasFlagsQuestObject As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsQuestObject
             Get
-                Return Bit("Alias\FNAM\Flags", 2)
+                Return Bit("Reference Alias\FNAM\Flags", 2)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 2, value)
+                PonerBit("Reference Alias\FNAM\Flags", 2, value)
             End Set
         End Property
 
-        ''' <summary>Bit 3 de Alias\FNAM\Flags: Allow Reuse in Quest</summary>
-        Public Property AliasFlagsAllowReuseInQuest As Boolean
+        ''' <summary>Bit 3 de Reference Alias\FNAM\Flags: Allow Reuse in Quest</summary>
+        Public Property ReferenceAliasFlagsAllowReuseInQuest As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowReuseInQuest
             Get
-                Return Bit("Alias\FNAM\Flags", 3)
+                Return Bit("Reference Alias\FNAM\Flags", 3)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 3, value)
+                PonerBit("Reference Alias\FNAM\Flags", 3, value)
             End Set
         End Property
 
-        ''' <summary>Bit 4 de Alias\FNAM\Flags: Allow Dead</summary>
-        Public Property AliasFlagsAllowDead As Boolean
+        ''' <summary>Bit 4 de Reference Alias\FNAM\Flags: Allow Dead</summary>
+        Public Property ReferenceAliasFlagsAllowDead As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowDead
             Get
-                Return Bit("Alias\FNAM\Flags", 4)
+                Return Bit("Reference Alias\FNAM\Flags", 4)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 4, value)
+                PonerBit("Reference Alias\FNAM\Flags", 4, value)
             End Set
         End Property
 
-        ''' <summary>Bit 5 de Alias\FNAM\Flags: Matching Ref - In Loaded Area</summary>
-        Public Property AliasFlagsMatchingRefInLoadedArea As Boolean
+        ''' <summary>Bit 5 de Reference Alias\FNAM\Flags: Matching Ref - In Loaded Area</summary>
+        Public Property ReferenceAliasFlagsMatchingRefInLoadedArea As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsMatchingRefInLoadedArea
             Get
-                Return Bit("Alias\FNAM\Flags", 5)
+                Return Bit("Reference Alias\FNAM\Flags", 5)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 5, value)
+                PonerBit("Reference Alias\FNAM\Flags", 5, value)
             End Set
         End Property
 
-        ''' <summary>Bit 6 de Alias\FNAM\Flags: Essential</summary>
-        Public Property AliasFlagsEssential As Boolean
+        ''' <summary>Bit 6 de Reference Alias\FNAM\Flags: Essential</summary>
+        Public Property ReferenceAliasFlagsEssential As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsEssential
             Get
-                Return Bit("Alias\FNAM\Flags", 6)
+                Return Bit("Reference Alias\FNAM\Flags", 6)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 6, value)
+                PonerBit("Reference Alias\FNAM\Flags", 6, value)
             End Set
         End Property
 
-        ''' <summary>Bit 7 de Alias\FNAM\Flags: Allow Disabled</summary>
-        Public Property AliasFlagsAllowDisabled As Boolean
+        ''' <summary>Bit 7 de Reference Alias\FNAM\Flags: Allow Disabled</summary>
+        Public Property ReferenceAliasFlagsAllowDisabled As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowDisabled
             Get
-                Return Bit("Alias\FNAM\Flags", 7)
+                Return Bit("Reference Alias\FNAM\Flags", 7)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 7, value)
+                PonerBit("Reference Alias\FNAM\Flags", 7, value)
             End Set
         End Property
 
-        ''' <summary>Bit 8 de Alias\FNAM\Flags: Stores Text</summary>
-        Public Property AliasFlagsStoresText As Boolean
+        ''' <summary>Bit 8 de Reference Alias\FNAM\Flags: Stores Text</summary>
+        Public Property ReferenceAliasFlagsStoresText As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsStoresText
             Get
-                Return Bit("Alias\FNAM\Flags", 8)
+                Return Bit("Reference Alias\FNAM\Flags", 8)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 8, value)
+                PonerBit("Reference Alias\FNAM\Flags", 8, value)
             End Set
         End Property
 
-        ''' <summary>Bit 9 de Alias\FNAM\Flags: Allow Reserved</summary>
-        Public Property AliasFlagsAllowReserved As Boolean
+        ''' <summary>Bit 9 de Reference Alias\FNAM\Flags: Allow Reserved</summary>
+        Public Property ReferenceAliasFlagsAllowReserved As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowReserved
             Get
-                Return Bit("Alias\FNAM\Flags", 9)
+                Return Bit("Reference Alias\FNAM\Flags", 9)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 9, value)
+                PonerBit("Reference Alias\FNAM\Flags", 9, value)
             End Set
         End Property
 
-        ''' <summary>Bit 10 de Alias\FNAM\Flags: Protected</summary>
-        Public Property AliasFlagsProtected As Boolean
+        ''' <summary>Bit 10 de Reference Alias\FNAM\Flags: Protected</summary>
+        Public Property ReferenceAliasFlagsProtected As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsProtected
             Get
-                Return Bit("Alias\FNAM\Flags", 10)
+                Return Bit("Reference Alias\FNAM\Flags", 10)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 10, value)
+                PonerBit("Reference Alias\FNAM\Flags", 10, value)
             End Set
         End Property
 
-        ''' <summary>Bit 11 de Alias\FNAM\Flags: Forced by Aliases</summary>
-        Public Property AliasFlagsForcedByAliases As Boolean
+        ''' <summary>Bit 11 de Reference Alias\FNAM\Flags: Forced by Aliases</summary>
+        Public Property ReferenceAliasFlagsForcedByAliases As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsForcedByAliases
             Get
-                Return Bit("Alias\FNAM\Flags", 11)
+                Return Bit("Reference Alias\FNAM\Flags", 11)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 11, value)
+                PonerBit("Reference Alias\FNAM\Flags", 11, value)
             End Set
         End Property
 
-        ''' <summary>Bit 12 de Alias\FNAM\Flags: Allow Destroyed</summary>
-        Public Property AliasFlagsAllowDestroyed As Boolean
+        ''' <summary>Bit 12 de Reference Alias\FNAM\Flags: Allow Destroyed</summary>
+        Public Property ReferenceAliasFlagsAllowDestroyed As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsAllowDestroyed
             Get
-                Return Bit("Alias\FNAM\Flags", 12)
+                Return Bit("Reference Alias\FNAM\Flags", 12)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 12, value)
+                PonerBit("Reference Alias\FNAM\Flags", 12, value)
             End Set
         End Property
 
-        ''' <summary>Bit 13 de Alias\FNAM\Flags: Matching Ref - Closest</summary>
-        Public Property AliasFlagsMatchingRefClosest As Boolean
+        ''' <summary>Bit 13 de Reference Alias\FNAM\Flags: Matching Ref - Closest</summary>
+        Public Property ReferenceAliasFlagsMatchingRefClosest As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsMatchingRefClosest
             Get
-                Return Bit("Alias\FNAM\Flags", 13)
+                Return Bit("Reference Alias\FNAM\Flags", 13)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 13, value)
+                PonerBit("Reference Alias\FNAM\Flags", 13, value)
             End Set
         End Property
 
-        ''' <summary>Bit 14 de Alias\FNAM\Flags: Uses Stored Text</summary>
-        Public Property AliasFlagsUsesStoredText As Boolean
+        ''' <summary>Bit 14 de Reference Alias\FNAM\Flags: Uses Stored Text</summary>
+        Public Property ReferenceAliasFlagsUsesStoredText As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsUsesStoredText
             Get
-                Return Bit("Alias\FNAM\Flags", 14)
+                Return Bit("Reference Alias\FNAM\Flags", 14)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 14, value)
+                PonerBit("Reference Alias\FNAM\Flags", 14, value)
             End Set
         End Property
 
-        ''' <summary>Bit 15 de Alias\FNAM\Flags: Initially Disabled</summary>
-        Public Property AliasFlagsInitiallyDisabled As Boolean
+        ''' <summary>Bit 15 de Reference Alias\FNAM\Flags: Initially Disabled</summary>
+        Public Property ReferenceAliasFlagsInitiallyDisabled As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsInitiallyDisabled
             Get
-                Return Bit("Alias\FNAM\Flags", 15)
+                Return Bit("Reference Alias\FNAM\Flags", 15)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 15, value)
+                PonerBit("Reference Alias\FNAM\Flags", 15, value)
             End Set
         End Property
 
-        ''' <summary>Bit 16 de Alias\FNAM\Flags: Allow Cleared</summary>
-        Public Property AliasFlagsAllowCleared As Boolean
+        ''' <summary>Bit 16 de Reference Alias\FNAM\Flags: Allow Cleared</summary>
+        Public Property ReferenceAliasFlagsAllowCleared As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 16)
+                Return Bit("Reference Alias\FNAM\Flags", 16)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 16, value)
+                PonerBit("Reference Alias\FNAM\Flags", 16, value)
             End Set
         End Property
 
-        ''' <summary>Bit 17 de Alias\FNAM\Flags: Clear Names When Removed</summary>
-        Public Property AliasFlagsClearNamesWhenRemoved As Boolean
+        ''' <summary>Bit 17 de Reference Alias\FNAM\Flags: Clear Names When Removed</summary>
+        Public Property ReferenceAliasFlagsClearNamesWhenRemoved As Boolean Implements IQust_Aliases2.ReferenceAliasFlagsClearNamesWhenRemoved
             Get
-                Return Bit("Alias\FNAM\Flags", 17)
+                Return Bit("Reference Alias\FNAM\Flags", 17)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 17, value)
+                PonerBit("Reference Alias\FNAM\Flags", 17, value)
             End Set
         End Property
 
-        ''' <summary>Bit 18 de Alias\FNAM\Flags: Matching Ref - Actors Only</summary>
-        Public Property AliasFlagsMatchingRefActorsOnly As Boolean
+        ''' <summary>Bit 18 de Reference Alias\FNAM\Flags: Matching Ref - Actors Only</summary>
+        Public Property ReferenceAliasFlagsMatchingRefActorsOnly As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 18)
+                Return Bit("Reference Alias\FNAM\Flags", 18)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 18, value)
+                PonerBit("Reference Alias\FNAM\Flags", 18, value)
             End Set
         End Property
 
-        ''' <summary>Bit 19 de Alias\FNAM\Flags: Create Ref - Temp</summary>
-        Public Property AliasFlagsCreateRefTemp As Boolean
+        ''' <summary>Bit 19 de Reference Alias\FNAM\Flags: Create Ref - Temp</summary>
+        Public Property ReferenceAliasFlagsCreateRefTemp As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 19)
+                Return Bit("Reference Alias\FNAM\Flags", 19)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 19, value)
+                PonerBit("Reference Alias\FNAM\Flags", 19, value)
             End Set
         End Property
 
-        ''' <summary>Bit 20 de Alias\FNAM\Flags: External Alias - Linked</summary>
-        Public Property AliasFlagsExternalAliasLinked As Boolean
+        ''' <summary>Bit 20 de Reference Alias\FNAM\Flags: External Alias - Linked</summary>
+        Public Property ReferenceAliasFlagsExternalAliasLinked As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 20)
+                Return Bit("Reference Alias\FNAM\Flags", 20)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 20, value)
+                PonerBit("Reference Alias\FNAM\Flags", 20, value)
             End Set
         End Property
 
-        ''' <summary>Bit 21 de Alias\FNAM\Flags: No Pickpocket</summary>
-        Public Property AliasFlagsNoPickpocket As Boolean
+        ''' <summary>Bit 21 de Reference Alias\FNAM\Flags: No Pickpocket</summary>
+        Public Property ReferenceAliasFlagsNoPickpocket As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 21)
+                Return Bit("Reference Alias\FNAM\Flags", 21)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 21, value)
+                PonerBit("Reference Alias\FNAM\Flags", 21, value)
             End Set
         End Property
 
-        ''' <summary>Bit 22 de Alias\FNAM\Flags: Can Apply Data To Non-Aliased Refs</summary>
-        Public Property AliasFlagsCanApplyDataToNonAliasedRefs As Boolean
+        ''' <summary>Bit 22 de Reference Alias\FNAM\Flags: Can Apply Data To Non-Aliased Refs</summary>
+        Public Property ReferenceAliasFlagsCanApplyDataToNonAliasedRefs As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 22)
+                Return Bit("Reference Alias\FNAM\Flags", 22)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 22, value)
+                PonerBit("Reference Alias\FNAM\Flags", 22, value)
             End Set
         End Property
 
-        ''' <summary>Bit 23 de Alias\FNAM\Flags: Is Companion</summary>
-        Public Property AliasFlagsIsCompanion As Boolean
+        ''' <summary>Bit 23 de Reference Alias\FNAM\Flags: Is Companion</summary>
+        Public Property ReferenceAliasFlagsIsCompanion As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 23)
+                Return Bit("Reference Alias\FNAM\Flags", 23)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 23, value)
+                PonerBit("Reference Alias\FNAM\Flags", 23, value)
             End Set
         End Property
 
-        ''' <summary>Bit 24 de Alias\FNAM\Flags: Optional All Scenes</summary>
-        Public Property AliasFlagsOptionalAllScenes As Boolean
+        ''' <summary>Bit 24 de Reference Alias\FNAM\Flags: Optional All Scenes</summary>
+        Public Property ReferenceAliasFlagsOptionalAllScenes As Boolean
             Get
-                Return Bit("Alias\FNAM\Flags", 24)
+                Return Bit("Reference Alias\FNAM\Flags", 24)
             End Get
             Set(value As Boolean)
-                PonerBit("Alias\FNAM\Flags", 24, value)
+                PonerBit("Reference Alias\FNAM\Flags", 24, value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALFI\Force Into Alias When Filled. Distinto de que el campo valga cero.</summary>
-        Public Property AliasForceIntoAliasWhenFilledPresente As Boolean
+        ''' <summary>El record trae Reference Alias\ALFI\Force Into Alias When Filled. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasForceIntoAliasWhenFilledPresente As Boolean Implements IQust_Aliases2.ReferenceAliasForceIntoAliasWhenFilledPresente
             Get
-                Return Presente("Alias\ALFI\Force Into Alias When Filled")
+                Return Presente("Reference Alias\ALFI\Force Into Alias When Filled")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALFI\Force Into Alias When Filled", value)
+                PonerPresencia("Reference Alias\ALFI\Force Into Alias When Filled", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALFI\Force Into Alias When Filled</summary>
-        Public Property AliasForceIntoAliasWhenFilled As Integer
+        ''' <summary>Reference Alias\ALFI\Force Into Alias When Filled</summary>
+        Public Property ReferenceAliasForceIntoAliasWhenFilled As Integer Implements IQust_Aliases2.ReferenceAliasForceIntoAliasWhenFilled
             Get
-                Return CInt(Entero("Alias\ALFI\Force Into Alias When Filled"))
+                Return CInt(Entero("Reference Alias\ALFI\Force Into Alias When Filled"))
             End Get
             Set(value As Integer)
-                Escribir("Alias\ALFI\Force Into Alias When Filled", CLng(value))
+                Escribir("Reference Alias\ALFI\Force Into Alias When Filled", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALFR\Forced Reference. Distinto de que el campo valga cero.</summary>
-        Public Property AliasForcedReferencePresente As Boolean
+        ''' <summary>El record trae Reference Alias\Specific Reference\ALFR\Reference. Distinto de que el campo valga cero.</summary>
+        Public Property SpecificReferenceReferencePresente As Boolean Implements IQust_Aliases2.SpecificReferenceReferencePresente
             Get
-                Return Presente("Alias\ALFR\Forced Reference")
+                Return Presente("Reference Alias\Specific Reference\ALFR\Reference")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALFR\Forced Reference", value)
+                PonerPresencia("Reference Alias\Specific Reference\ALFR\Reference", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALFR\Forced Reference. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasForcedReference As UInteger
+        ''' <summary>Reference Alias\Specific Reference\ALFR\Reference  -&gt;  ACHR / PARW / PBAR / PBAR / PCON / PFLA / PGRE / PHZD / PLYR / PMIS / REFR. Referencia en el espacio del orden de carga.</summary>
+        Public Property SpecificReferenceReference As UInteger Implements IQust_Aliases2.SpecificReferenceReference
             Get
-                Return Referencia("Alias\ALFR\Forced Reference")
+                Return Referencia("Reference Alias\Specific Reference\ALFR\Reference")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\ALFR\Forced Reference", value)
+                PonerReferencia("Reference Alias\Specific Reference\ALFR\Reference", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALUA\Unique Actor. Distinto de que el campo valga cero.</summary>
-        Public Property AliasUniqueActorPresente As Boolean
+        ''' <summary>El record trae Reference Alias\Unique Actor\ALUA\Actor. Distinto de que el campo valga cero.</summary>
+        Public Property UniqueActorActorPresente As Boolean Implements IQust_Aliases2.UniqueActorActorPresente
             Get
-                Return Presente("Alias\ALUA\Unique Actor")
+                Return Presente("Reference Alias\Unique Actor\ALUA\Actor")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALUA\Unique Actor", value)
+                PonerPresencia("Reference Alias\Unique Actor\ALUA\Actor", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALUA\Unique Actor  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasUniqueActor As UInteger
+        ''' <summary>Reference Alias\Unique Actor\ALUA\Actor  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
+        Public Property UniqueActorActor As UInteger Implements IQust_Aliases2.UniqueActorActor
             Get
-                Return Referencia("Alias\ALUA\Unique Actor")
+                Return Referencia("Reference Alias\Unique Actor\ALUA\Actor")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\ALUA\Unique Actor", value)
+                PonerReferencia("Reference Alias\Unique Actor\ALUA\Actor", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Location Alias Reference\ALFA\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Location Alias Reference\ALFA\Alias. Distinto de que el campo valga cero.</summary>
         Public Property LocationAliasReferenceAliasPresente As Boolean Implements IQust_Aliases2.LocationAliasReferenceAliasPresente
             Get
-                Return Presente("Alias\Location Alias Reference\ALFA\Alias")
+                Return Presente("Reference Alias\Location Alias Reference\ALFA\Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Location Alias Reference\ALFA\Alias", value)
+                PonerPresencia("Reference Alias\Location Alias Reference\ALFA\Alias", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Location Alias Reference\ALFA\Alias</summary>
+        ''' <summary>Reference Alias\Location Alias Reference\ALFA\Alias</summary>
         Public Property LocationAliasReferenceAlias As Integer Implements IQust_Aliases2.LocationAliasReferenceAlias
             Get
-                Return CInt(Entero("Alias\Location Alias Reference\ALFA\Alias"))
+                Return CInt(Entero("Reference Alias\Location Alias Reference\ALFA\Alias"))
             End Get
             Set(value As Integer)
-                Escribir("Alias\Location Alias Reference\ALFA\Alias", CLng(value))
+                Escribir("Reference Alias\Location Alias Reference\ALFA\Alias", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Location Alias Reference\KNAM\Keyword. Distinto de que el campo valga cero.</summary>
-        Public Property LocationAliasReferenceKeywordPresente As Boolean Implements IQust_Aliases2.LocationAliasReferenceKeywordPresente
-            Get
-                Return Presente("Alias\Location Alias Reference\KNAM\Keyword")
-            End Get
-            Set(value As Boolean)
-                PonerPresencia("Alias\Location Alias Reference\KNAM\Keyword", value)
-            End Set
-        End Property
-
-        ''' <summary>Alias\Location Alias Reference\KNAM\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
-        Public Property LocationAliasReferenceKeyword As UInteger Implements IQust_Aliases2.LocationAliasReferenceKeyword
-            Get
-                Return Referencia("Alias\Location Alias Reference\KNAM\Keyword")
-            End Get
-            Set(value As UInteger)
-                PonerReferencia("Alias\Location Alias Reference\KNAM\Keyword", value)
-            End Set
-        End Property
-
-        ''' <summary>El record trae Alias\Location Alias Reference\ALRT\Ref Type. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Location Alias Reference\ALRT\Ref Type. Distinto de que el campo valga cero.</summary>
         Public Property LocationAliasReferenceRefTypePresente As Boolean Implements IQust_Aliases2.LocationAliasReferenceRefTypePresente
             Get
-                Return Presente("Alias\Location Alias Reference\ALRT\Ref Type")
+                Return Presente("Reference Alias\Location Alias Reference\ALRT\Ref Type")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Location Alias Reference\ALRT\Ref Type", value)
+                PonerPresencia("Reference Alias\Location Alias Reference\ALRT\Ref Type", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Location Alias Reference\ALRT\Ref Type  -&gt;  LCRT. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Reference Alias\Location Alias Reference\ALRT\Ref Type  -&gt;  LCRT. Referencia en el espacio del orden de carga.</summary>
         Public Property LocationAliasReferenceRefType As UInteger Implements IQust_Aliases2.LocationAliasReferenceRefType
             Get
-                Return Referencia("Alias\Location Alias Reference\ALRT\Ref Type")
+                Return Referencia("Reference Alias\Location Alias Reference\ALRT\Ref Type")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\Location Alias Reference\ALRT\Ref Type", value)
+                PonerReferencia("Reference Alias\Location Alias Reference\ALRT\Ref Type", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\External Alias Reference\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\External Alias Reference\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
         Public Property ExternalAliasReferenceQuestPresente As Boolean Implements IQust_Aliases2.ExternalAliasReferenceQuestPresente
             Get
-                Return Presente("Alias\External Alias Reference\ALEQ\Quest")
+                Return Presente("Reference Alias\External Alias Reference\ALEQ\Quest")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\External Alias Reference\ALEQ\Quest", value)
+                PonerPresencia("Reference Alias\External Alias Reference\ALEQ\Quest", value)
             End Set
         End Property
 
-        ''' <summary>Alias\External Alias Reference\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Reference Alias\External Alias Reference\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
         Public Property ExternalAliasReferenceQuest As UInteger Implements IQust_Aliases2.ExternalAliasReferenceQuest
             Get
-                Return Referencia("Alias\External Alias Reference\ALEQ\Quest")
+                Return Referencia("Reference Alias\External Alias Reference\ALEQ\Quest")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\External Alias Reference\ALEQ\Quest", value)
+                PonerReferencia("Reference Alias\External Alias Reference\ALEQ\Quest", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\External Alias Reference\ALEA\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property ExternalAliasReferenceAliasPresente As Boolean Implements IQust_Aliases2.ExternalAliasReferenceAliasPresente
+        ''' <summary>El record trae Reference Alias\External Alias Reference\ALEA\Ref Type. Distinto de que el campo valga cero.</summary>
+        Public Property ExternalAliasReferenceRefTypePresente As Boolean
             Get
-                Return Presente("Alias\External Alias Reference\ALEA\Alias")
+                Return Presente("Reference Alias\External Alias Reference\ALEA\Ref Type")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\External Alias Reference\ALEA\Alias", value)
+                PonerPresencia("Reference Alias\External Alias Reference\ALEA\Ref Type", value)
             End Set
         End Property
 
-        ''' <summary>Alias\External Alias Reference\ALEA\Alias</summary>
-        Public Property ExternalAliasReferenceAlias As Integer Implements IQust_Aliases2.ExternalAliasReferenceAlias
+        ''' <summary>Reference Alias\External Alias Reference\ALEA\Ref Type</summary>
+        Public Property ExternalAliasReferenceRefType As Integer
             Get
-                Return CInt(Entero("Alias\External Alias Reference\ALEA\Alias"))
+                Return CInt(Entero("Reference Alias\External Alias Reference\ALEA\Ref Type"))
             End Get
             Set(value As Integer)
-                Escribir("Alias\External Alias Reference\ALEA\Alias", CLng(value))
+                Escribir("Reference Alias\External Alias Reference\ALEA\Ref Type", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCO\Object. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCO\Object. Distinto de que el campo valga cero.</summary>
         Public Property CreateReferenceToObjectObjectPresente As Boolean Implements IQust_Aliases2.CreateReferenceToObjectObjectPresente
             Get
-                Return Presente("Alias\Create Reference to Object\ALCO\Object")
+                Return Presente("Reference Alias\Create Reference to Object\ALCO\Object")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Create Reference to Object\ALCO\Object", value)
+                PonerPresencia("Reference Alias\Create Reference to Object\ALCO\Object", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Create Reference to Object\ALCO\Object. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCO\Object. Referencia en el espacio del orden de carga.</summary>
         Public Property CreateReferenceToObjectObject As UInteger Implements IQust_Aliases2.CreateReferenceToObjectObject
             Get
-                Return Referencia("Alias\Create Reference to Object\ALCO\Object")
+                Return Referencia("Reference Alias\Create Reference to Object\ALCO\Object")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\Create Reference to Object\ALCO\Object", value)
+                PonerReferencia("Reference Alias\Create Reference to Object\ALCO\Object", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCA\Alias\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCA\Alias\Alias. Distinto de que el campo valga cero.</summary>
         Public Property CreateReferenceToObjectAliasPresente As Boolean Implements IQust_Aliases2.CreateReferenceToObjectAliasPresente
             Get
-                Return Presente("Alias\Create Reference to Object\ALCA\Alias\Alias")
+                Return Presente("Reference Alias\Create Reference to Object\ALCA\Alias\Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Create Reference to Object\ALCA\Alias\Alias", value)
+                PonerPresencia("Reference Alias\Create Reference to Object\ALCA\Alias\Alias", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Create Reference to Object\ALCA\Alias\Alias</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCA\Alias\Alias</summary>
         Public Property CreateReferenceToObjectAlias As Short Implements IQust_Aliases2.CreateReferenceToObjectAlias
             Get
-                Return CShort(Entero("Alias\Create Reference to Object\ALCA\Alias\Alias"))
+                Return CShort(Entero("Reference Alias\Create Reference to Object\ALCA\Alias\Alias"))
             End Get
             Set(value As Short)
-                Escribir("Alias\Create Reference to Object\ALCA\Alias\Alias", CLng(value))
+                Escribir("Reference Alias\Create Reference to Object\ALCA\Alias\Alias", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCA\Alias\Create. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCA\Alias\Create. Distinto de que el campo valga cero.</summary>
         Public Property AliasCreatePresente As Boolean Implements IQust_Aliases2.AliasCreatePresente
             Get
-                Return Presente("Alias\Create Reference to Object\ALCA\Alias\Create")
+                Return Presente("Reference Alias\Create Reference to Object\ALCA\Alias\Create")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Create Reference to Object\ALCA\Alias\Create", value)
+                PonerPresencia("Reference Alias\Create Reference to Object\ALCA\Alias\Create", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Create Reference to Object\ALCA\Alias\Create</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCA\Alias\Create</summary>
         Public Property AliasCreate As UShort Implements IQust_Aliases2.AliasCreate
             Get
-                Return CUShort(Entero("Alias\Create Reference to Object\ALCA\Alias\Create"))
+                Return CUShort(Entero("Reference Alias\Create Reference to Object\ALCA\Alias\Create"))
             End Get
             Set(value As UShort)
-                Escribir("Alias\Create Reference to Object\ALCA\Alias\Create", CLng(value))
+                Escribir("Reference Alias\Create Reference to Object\ALCA\Alias\Create", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Alias\Create Reference to Object\ALCA\Alias\Create.</summary>
+        ''' <summary>Nombre del valor de Reference Alias\Create Reference to Object\ALCA\Alias\Create.</summary>
         Public ReadOnly Property AliasCreateNombre As String Implements IQust_Aliases2.AliasCreateNombre
             Get
-                Return NombreDeValor("Alias\Create Reference to Object\ALCA\Alias\Create")
+                Return NombreDeValor("Reference Alias\Create Reference to Object\ALCA\Alias\Create")
             End Get
         End Property
 
-        ''' <summary>El record trae Alias\Create Reference to Object\ALCL\Level. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Create Reference to Object\ALCL\Level. Distinto de que el campo valga cero.</summary>
         Public Property CreateReferenceToObjectLevelPresente As Boolean Implements IQust_Aliases2.CreateReferenceToObjectLevelPresente
             Get
-                Return Presente("Alias\Create Reference to Object\ALCL\Level")
+                Return Presente("Reference Alias\Create Reference to Object\ALCL\Level")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Create Reference to Object\ALCL\Level", value)
+                PonerPresencia("Reference Alias\Create Reference to Object\ALCL\Level", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Create Reference to Object\ALCL\Level</summary>
+        ''' <summary>Reference Alias\Create Reference to Object\ALCL\Level</summary>
         Public Property CreateReferenceToObjectLevel As UInteger Implements IQust_Aliases2.CreateReferenceToObjectLevel
             Get
-                Return CUInt(Entero("Alias\Create Reference to Object\ALCL\Level"))
+                Return CUInt(Entero("Reference Alias\Create Reference to Object\ALCL\Level"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\Create Reference to Object\ALCL\Level", CLng(value))
+                Escribir("Reference Alias\Create Reference to Object\ALCL\Level", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Alias\Create Reference to Object\ALCL\Level.</summary>
+        ''' <summary>Nombre del valor de Reference Alias\Create Reference to Object\ALCL\Level.</summary>
         Public ReadOnly Property CreateReferenceToObjectLevelNombre As String Implements IQust_Aliases2.CreateReferenceToObjectLevelNombre
             Get
-                Return NombreDeValor("Alias\Create Reference to Object\ALCL\Level")
+                Return NombreDeValor("Reference Alias\Create Reference to Object\ALCL\Level")
             End Get
         End Property
 
-        ''' <summary>El record trae Alias\Find Matching Reference Near Alias\ALNA\Alias. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceNearAliasAliasPresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceNearAliasAliasPresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias. Distinto de que el campo valga cero.</summary>
+        Public Property NearAliasAliasPresente As Boolean Implements IQust_Aliases2.NearAliasAliasPresente
             Get
-                Return Presente("Alias\Find Matching Reference Near Alias\ALNA\Alias")
+                Return Presente("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Find Matching Reference Near Alias\ALNA\Alias", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Find Matching Reference Near Alias\ALNA\Alias</summary>
-        Public Property FindMatchingReferenceNearAliasAlias As Integer Implements IQust_Aliases2.FindMatchingReferenceNearAliasAlias
+        ''' <summary>Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias</summary>
+        Public Property NearAliasAlias As Integer Implements IQust_Aliases2.NearAliasAlias
             Get
-                Return CInt(Entero("Alias\Find Matching Reference Near Alias\ALNA\Alias"))
+                Return CInt(Entero("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias"))
             End Get
             Set(value As Integer)
-                Escribir("Alias\Find Matching Reference Near Alias\ALNA\Alias", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\Near Alias\ALNA\Alias", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Find Matching Reference Near Alias\ALNT\Type. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceNearAliasTypePresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceNearAliasTypePresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\Near Alias\ALNT\Type. Distinto de que el campo valga cero.</summary>
+        Public Property NearAliasTypePresente As Boolean
             Get
-                Return Presente("Alias\Find Matching Reference Near Alias\ALNT\Type")
+                Return Presente("Reference Alias\Find Matching Reference\Near Alias\ALNT\Type")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Find Matching Reference Near Alias\ALNT\Type", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\Near Alias\ALNT\Type", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Find Matching Reference Near Alias\ALNT\Type</summary>
-        Public Property FindMatchingReferenceNearAliasType As UInteger Implements IQust_Aliases2.FindMatchingReferenceNearAliasType
+        ''' <summary>Reference Alias\Find Matching Reference\Near Alias\ALNT\Type</summary>
+        Public Property NearAliasType As UInteger
             Get
-                Return CUInt(Entero("Alias\Find Matching Reference Near Alias\ALNT\Type"))
+                Return CUInt(Entero("Reference Alias\Find Matching Reference\Near Alias\ALNT\Type"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\Find Matching Reference Near Alias\ALNT\Type", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\Near Alias\ALNT\Type", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Alias\Find Matching Reference Near Alias\ALNT\Type.</summary>
-        Public ReadOnly Property FindMatchingReferenceNearAliasTypeNombre As String Implements IQust_Aliases2.FindMatchingReferenceNearAliasTypeNombre
+        ''' <summary>Nombre del valor de Reference Alias\Find Matching Reference\Near Alias\ALNT\Type.</summary>
+        Public ReadOnly Property NearAliasTypeNombre As String
             Get
-                Return NombreDeValor("Alias\Find Matching Reference Near Alias\ALNT\Type")
+                Return NombreDeValor("Reference Alias\Find Matching Reference\Near Alias\ALNT\Type")
             End Get
         End Property
 
-        ''' <summary>El record trae Alias\Find Matching Reference From Event\ALFE\From Event. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceFromEventFromEventPresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceFromEventFromEventPresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\From Event\ALFE\Event. Distinto de que el campo valga cero.</summary>
+        Public Property FromEventEventPresente As Boolean Implements IQust_Aliases2.FromEventEventPresente
             Get
-                Return Presente("Alias\Find Matching Reference From Event\ALFE\From Event")
+                Return Presente("Reference Alias\Find Matching Reference\From Event\ALFE\Event")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Find Matching Reference From Event\ALFE\From Event", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\From Event\ALFE\Event", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Find Matching Reference From Event\ALFE\From Event</summary>
-        Public Property FindMatchingReferenceFromEventFromEvent As UInteger Implements IQust_Aliases2.FindMatchingReferenceFromEventFromEvent
+        ''' <summary>Reference Alias\Find Matching Reference\From Event\ALFE\Event</summary>
+        Public Property FromEventEvent As UInteger Implements IQust_Aliases2.FromEventEvent
             Get
-                Return CUInt(Entero("Alias\Find Matching Reference From Event\ALFE\From Event"))
+                Return CUInt(Entero("Reference Alias\Find Matching Reference\From Event\ALFE\Event"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\Find Matching Reference From Event\ALFE\From Event", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\From Event\ALFE\Event", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Find Matching Reference From Event\ALFD\Event Data. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingReferenceFromEventEventDataPresente As Boolean Implements IQust_Aliases2.FindMatchingReferenceFromEventEventDataPresente
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\From Event\ALFD\Data. Distinto de que el campo valga cero.</summary>
+        Public Property FromEventDataPresente As Boolean Implements IQust_Aliases2.FromEventDataPresente
             Get
-                Return Presente("Alias\Find Matching Reference From Event\ALFD\Event Data")
+                Return Presente("Reference Alias\Find Matching Reference\From Event\ALFD\Data")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Find Matching Reference From Event\ALFD\Event Data", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\From Event\ALFD\Data", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Find Matching Reference From Event\ALFD\Event Data</summary>
-        Public Property FindMatchingReferenceFromEventEventData As UInteger Implements IQust_Aliases2.FindMatchingReferenceFromEventEventData
+        ''' <summary>Reference Alias\Find Matching Reference\From Event\ALFD\Data</summary>
+        Public Property FromEventData As UInteger Implements IQust_Aliases2.FromEventData
             Get
-                Return CUInt(Entero("Alias\Find Matching Reference From Event\ALFD\Event Data"))
+                Return CUInt(Entero("Reference Alias\Find Matching Reference\From Event\ALFD\Data"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\Find Matching Reference From Event\ALFD\Event Data", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\From Event\ALFD\Data", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Alias\Find Matching Reference From Event\ALFD\Event Data.</summary>
-        Public ReadOnly Property FindMatchingReferenceFromEventEventDataNombre As String Implements IQust_Aliases2.FindMatchingReferenceFromEventEventDataNombre
+        ''' <summary>Nombre del valor de Reference Alias\Find Matching Reference\From Event\ALFD\Data.</summary>
+        Public ReadOnly Property FromEventDataNombre As String Implements IQust_Aliases2.FromEventDataNombre
             Get
-                Return NombreDeValor("Alias\Find Matching Reference From Event\ALFD\Event Data")
+                Return NombreDeValor("Reference Alias\Find Matching Reference\From Event\ALFD\Data")
             End Get
         End Property
 
-        ''' <summary>El record trae Alias\ALCC\Closest To Alias. Distinto de que el campo valga cero.</summary>
-        Public Property AliasClosestToAliasPresente As Boolean
+        ''' <summary>El record trae Reference Alias\Find Matching Reference\Closest To\ALCC\Alias. Distinto de que el campo valga cero.</summary>
+        Public Property ClosestToAliasPresente As Boolean
             Get
-                Return Presente("Alias\ALCC\Closest To Alias")
+                Return Presente("Reference Alias\Find Matching Reference\Closest To\ALCC\Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALCC\Closest To Alias", value)
+                PonerPresencia("Reference Alias\Find Matching Reference\Closest To\ALCC\Alias", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALCC\Closest To Alias</summary>
-        Public Property AliasClosestToAlias As Integer
+        ''' <summary>Reference Alias\Find Matching Reference\Closest To\ALCC\Alias</summary>
+        Public Property ClosestToAlias As Integer
             Get
-                Return CInt(Entero("Alias\ALCC\Closest To Alias"))
+                Return CInt(Entero("Reference Alias\Find Matching Reference\Closest To\ALCC\Alias"))
             End Get
             Set(value As Integer)
-                Escribir("Alias\ALCC\Closest To Alias", CLng(value))
+                Escribir("Reference Alias\Find Matching Reference\Closest To\ALCC\Alias", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Keywords\KSIZ\Keyword Count. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Reference Alias\Keywords\KSIZ\Keyword Count. Distinto de que el campo valga cero.</summary>
         Public Property KeywordsKeywordCountPresente As Boolean Implements IQust_Aliases2.KeywordsKeywordCountPresente
             Get
-                Return Presente("Alias\Keywords\KSIZ\Keyword Count")
+                Return Presente("Reference Alias\Keywords\KSIZ\Keyword Count")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Keywords\KSIZ\Keyword Count", value)
+                PonerPresencia("Reference Alias\Keywords\KSIZ\Keyword Count", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Keywords\KSIZ\Keyword Count</summary>
+        ''' <summary>Reference Alias\Keywords\KSIZ\Keyword Count</summary>
         Public Property KeywordsKeywordCount As UInteger Implements IQust_Aliases2.KeywordsKeywordCount
             Get
-                Return CUInt(Entero("Alias\Keywords\KSIZ\Keyword Count"))
+                Return CUInt(Entero("Reference Alias\Keywords\KSIZ\Keyword Count"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\Keywords\KSIZ\Keyword Count", CLng(value))
+                Escribir("Reference Alias\Keywords\KSIZ\Keyword Count", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\COCT\Count. Distinto de que el campo valga cero.</summary>
-        Public Property AliasCountPresente As Boolean
+        ''' <summary>El record trae Reference Alias\COCT\Count. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasCountPresente As Boolean Implements IQust_Aliases2.ReferenceAliasCountPresente
             Get
-                Return Presente("Alias\COCT\Count")
+                Return Presente("Reference Alias\COCT\Count")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\COCT\Count", value)
+                PonerPresencia("Reference Alias\COCT\Count", value)
             End Set
         End Property
 
-        ''' <summary>Alias\COCT\Count</summary>
-        Public Property AliasCount As UInteger
+        ''' <summary>Reference Alias\COCT\Count</summary>
+        Public Property ReferenceAliasCount As UInteger Implements IQust_Aliases2.ReferenceAliasCount
             Get
-                Return CUInt(Entero("Alias\COCT\Count"))
+                Return CUInt(Entero("Reference Alias\COCT\Count"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\COCT\Count", CLng(value))
+                Escribir("Reference Alias\COCT\Count", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\SPOR\Spectator override package list. Distinto de que el campo valga cero.</summary>
-        Public Property AliasSpectatorOverridePackageListPresente As Boolean
+        ''' <summary>El record trae Reference Alias\SPOR\Spectator override package list. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasSpectatorOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasSpectatorOverridePackageListPresente
             Get
-                Return Presente("Alias\SPOR\Spectator override package list")
+                Return Presente("Reference Alias\SPOR\Spectator override package list")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\SPOR\Spectator override package list", value)
+                PonerPresencia("Reference Alias\SPOR\Spectator override package list", value)
             End Set
         End Property
 
-        ''' <summary>Alias\SPOR\Spectator override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasSpectatorOverridePackageList As UInteger
+        ''' <summary>Reference Alias\SPOR\Spectator override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasSpectatorOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasSpectatorOverridePackageList
             Get
-                Return Referencia("Alias\SPOR\Spectator override package list")
+                Return Referencia("Reference Alias\SPOR\Spectator override package list")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\SPOR\Spectator override package list", value)
+                PonerReferencia("Reference Alias\SPOR\Spectator override package list", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\OCOR\Observe dead body override package list. Distinto de que el campo valga cero.</summary>
-        Public Property AliasObserveDeadBodyOverridePackageListPresente As Boolean
+        ''' <summary>El record trae Reference Alias\OCOR\Observe dead body override package list. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasObserveDeadBodyOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasObserveDeadBodyOverridePackageListPresente
             Get
-                Return Presente("Alias\OCOR\Observe dead body override package list")
+                Return Presente("Reference Alias\OCOR\Observe dead body override package list")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\OCOR\Observe dead body override package list", value)
+                PonerPresencia("Reference Alias\OCOR\Observe dead body override package list", value)
             End Set
         End Property
 
-        ''' <summary>Alias\OCOR\Observe dead body override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasObserveDeadBodyOverridePackageList As UInteger
+        ''' <summary>Reference Alias\OCOR\Observe dead body override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasObserveDeadBodyOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasObserveDeadBodyOverridePackageList
             Get
-                Return Referencia("Alias\OCOR\Observe dead body override package list")
+                Return Referencia("Reference Alias\OCOR\Observe dead body override package list")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\OCOR\Observe dead body override package list", value)
+                PonerReferencia("Reference Alias\OCOR\Observe dead body override package list", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\GWOR\Guard warn override package list. Distinto de que el campo valga cero.</summary>
-        Public Property AliasGuardWarnOverridePackageListPresente As Boolean
+        ''' <summary>El record trae Reference Alias\GWOR\Guard warn override package list. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasGuardWarnOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasGuardWarnOverridePackageListPresente
             Get
-                Return Presente("Alias\GWOR\Guard warn override package list")
+                Return Presente("Reference Alias\GWOR\Guard warn override package list")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\GWOR\Guard warn override package list", value)
+                PonerPresencia("Reference Alias\GWOR\Guard warn override package list", value)
             End Set
         End Property
 
-        ''' <summary>Alias\GWOR\Guard warn override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasGuardWarnOverridePackageList As UInteger
+        ''' <summary>Reference Alias\GWOR\Guard warn override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasGuardWarnOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasGuardWarnOverridePackageList
             Get
-                Return Referencia("Alias\GWOR\Guard warn override package list")
+                Return Referencia("Reference Alias\GWOR\Guard warn override package list")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\GWOR\Guard warn override package list", value)
+                PonerReferencia("Reference Alias\GWOR\Guard warn override package list", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ECOR\Combat override package list. Distinto de que el campo valga cero.</summary>
-        Public Property AliasCombatOverridePackageListPresente As Boolean
+        ''' <summary>El record trae Reference Alias\ECOR\Combat override package list. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasCombatOverridePackageListPresente As Boolean Implements IQust_Aliases2.ReferenceAliasCombatOverridePackageListPresente
             Get
-                Return Presente("Alias\ECOR\Combat override package list")
+                Return Presente("Reference Alias\ECOR\Combat override package list")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ECOR\Combat override package list", value)
+                PonerPresencia("Reference Alias\ECOR\Combat override package list", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ECOR\Combat override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasCombatOverridePackageList As UInteger
+        ''' <summary>Reference Alias\ECOR\Combat override package list  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasCombatOverridePackageList As UInteger Implements IQust_Aliases2.ReferenceAliasCombatOverridePackageList
             Get
-                Return Referencia("Alias\ECOR\Combat override package list")
+                Return Referencia("Reference Alias\ECOR\Combat override package list")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\ECOR\Combat override package list", value)
+                PonerReferencia("Reference Alias\ECOR\Combat override package list", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALDN\Display Name. Distinto de que el campo valga cero.</summary>
-        Public Property AliasDisplayNamePresente As Boolean
+        ''' <summary>El record trae Reference Alias\ALDN\Display Name. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasDisplayNamePresente As Boolean Implements IQust_Aliases2.ReferenceAliasDisplayNamePresente
             Get
-                Return Presente("Alias\ALDN\Display Name")
+                Return Presente("Reference Alias\ALDN\Display Name")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALDN\Display Name", value)
+                PonerPresencia("Reference Alias\ALDN\Display Name", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALDN\Display Name  -&gt;  MESG. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasDisplayName As UInteger
+        ''' <summary>Reference Alias\ALDN\Display Name  -&gt;  MESG. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasDisplayName As UInteger Implements IQust_Aliases2.ReferenceAliasDisplayName
             Get
-                Return Referencia("Alias\ALDN\Display Name")
+                Return Referencia("Reference Alias\ALDN\Display Name")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\ALDN\Display Name", value)
+                PonerReferencia("Reference Alias\ALDN\Display Name", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALFV\Forced Voice. Distinto de que el campo valga cero.</summary>
-        Public Property AliasForcedVoicePresente As Boolean
+        ''' <summary>El record trae Reference Alias\ALFV\Forced Voice. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasForcedVoicePresente As Boolean
             Get
-                Return Presente("Alias\ALFV\Forced Voice")
+                Return Presente("Reference Alias\ALFV\Forced Voice")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALFV\Forced Voice", value)
+                PonerPresencia("Reference Alias\ALFV\Forced Voice", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALFV\Forced Voice  -&gt;  VTYP. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasForcedVoice As UInteger
+        ''' <summary>Reference Alias\ALFV\Forced Voice  -&gt;  VTYP. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasForcedVoice As UInteger
             Get
-                Return Referencia("Alias\ALFV\Forced Voice")
+                Return Referencia("Reference Alias\ALFV\Forced Voice")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\ALFV\Forced Voice", value)
+                PonerReferencia("Reference Alias\ALFV\Forced Voice", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALDI\Death Item. Distinto de que el campo valga cero.</summary>
-        Public Property AliasDeathItemPresente As Boolean
+        ''' <summary>El record trae Reference Alias\ALDI\Death Item. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasDeathItemPresente As Boolean
             Get
-                Return Presente("Alias\ALDI\Death Item")
+                Return Presente("Reference Alias\ALDI\Death Item")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALDI\Death Item", value)
+                PonerPresencia("Reference Alias\ALDI\Death Item", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALDI\Death Item  -&gt;  LVLI. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasDeathItem As UInteger
+        ''' <summary>Reference Alias\ALDI\Death Item  -&gt;  LVLI. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasDeathItem As UInteger
             Get
-                Return Referencia("Alias\ALDI\Death Item")
+                Return Referencia("Reference Alias\ALDI\Death Item")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\ALDI\Death Item", value)
+                PonerReferencia("Reference Alias\ALDI\Death Item", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\VTCK\Voice Types. Distinto de que el campo valga cero.</summary>
-        Public Property AliasVoiceTypesPresente As Boolean
+        ''' <summary>El record trae Reference Alias\VTCK\Voice Types. Distinto de que el campo valga cero.</summary>
+        Public Property ReferenceAliasVoiceTypesPresente As Boolean Implements IQust_Aliases2.ReferenceAliasVoiceTypesPresente
             Get
-                Return Presente("Alias\VTCK\Voice Types")
+                Return Presente("Reference Alias\VTCK\Voice Types")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\VTCK\Voice Types", value)
+                PonerPresencia("Reference Alias\VTCK\Voice Types", value)
             End Set
         End Property
 
-        ''' <summary>Alias\VTCK\Voice Types  -&gt;  NPC_ / FACT / FLST / VTYP / NULL. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasVoiceTypes As UInteger
+        ''' <summary>Reference Alias\VTCK\Voice Types  -&gt;  NPC_ / FACT / FLST / VTYP / NULL. Referencia en el espacio del orden de carga.</summary>
+        Public Property ReferenceAliasVoiceTypes As UInteger Implements IQust_Aliases2.ReferenceAliasVoiceTypes
             Get
-                Return Referencia("Alias\VTCK\Voice Types")
+                Return Referencia("Reference Alias\VTCK\Voice Types")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\VTCK\Voice Types", value)
+                PonerReferencia("Reference Alias\VTCK\Voice Types", value)
             End Set
         End Property
 
-        ''' <summary>El record trae el marcador Alias\ALED\Alias End. No lleva valor: el dato es que esté, así que ponerlo en verdadero lo crea y en falso lo saca.</summary>
-        Public Property AliasEnd As Boolean
+        ''' <summary>El record trae el marcador Reference Alias\ALED\Alias End. No lleva valor: el dato es que esté, así que ponerlo en verdadero lo crea y en falso lo saca.</summary>
+        Public Property ReferenceAliasAliasEnd As Boolean Implements IQust_Aliases2.ReferenceAliasAliasEnd
             Get
-                Return Presente("Alias\ALED\Alias End")
+                Return Presente("Reference Alias\ALED\Alias End")
             End Get
             Set(value As Boolean)
-                PonerMarcador("Alias\ALED\Alias End", value)
+                PonerMarcador("Reference Alias\ALED\Alias End", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALLS\Location Alias ID. Distinto de que el campo valga cero.</summary>
-        Public Property AliasLocationAliasIDPresente As Boolean
+        ''' <summary>El record trae Location Alias\ALLS\Alias ID. Distinto de que el campo valga cero.</summary>
+        Public Property LocationAliasAliasIDPresente As Boolean Implements IQust_Aliases2.LocationAliasAliasIDPresente
             Get
-                Return Presente("Alias\ALLS\Location Alias ID")
+                Return Presente("Location Alias\ALLS\Alias ID")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALLS\Location Alias ID", value)
+                PonerPresencia("Location Alias\ALLS\Alias ID", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALLS\Location Alias ID</summary>
-        Public Property AliasLocationAliasID As UInteger
+        ''' <summary>Location Alias\ALLS\Alias ID</summary>
+        Public Property LocationAliasAliasID As UInteger Implements IQust_Aliases2.LocationAliasAliasID
             Get
-                Return CUInt(Entero("Alias\ALLS\Location Alias ID"))
+                Return CUInt(Entero("Location Alias\ALLS\Alias ID"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\ALLS\Location Alias ID", CLng(value))
+                Escribir("Location Alias\ALLS\Alias ID", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALFL\Specific Location. Distinto de que el campo valga cero.</summary>
-        Public Property AliasSpecificLocationPresente As Boolean
+        ''' <summary>El record trae Location Alias\ALID\Alias Name. Distinto de que el campo valga cero.</summary>
+        Public Property LocationAliasAliasNamePresente As Boolean Implements IQust_Aliases2.LocationAliasAliasNamePresente
             Get
-                Return Presente("Alias\ALFL\Specific Location")
+                Return Presente("Location Alias\ALID\Alias Name")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALFL\Specific Location", value)
+                PonerPresencia("Location Alias\ALID\Alias Name", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALFL\Specific Location  -&gt;  LCTN. Referencia en el espacio del orden de carga.</summary>
-        Public Property AliasSpecificLocation As UInteger
+        ''' <summary>Location Alias\ALID\Alias Name</summary>
+        Public Property LocationAliasAliasName As String Implements IQust_Aliases2.LocationAliasAliasName
             Get
-                Return Referencia("Alias\ALFL\Specific Location")
+                Return Txt("Location Alias\ALID\Alias Name")
+            End Get
+            Set(value As String)
+                Escribir("Location Alias\ALID\Alias Name", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Location Alias\FNAM\Flags. Distinto de que el campo valga cero.</summary>
+        Public Property LocationAliasFlagsPresente As Boolean Implements IQust_Aliases2.LocationAliasFlagsPresente
+            Get
+                Return Presente("Location Alias\FNAM\Flags")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Location Alias\FNAM\Flags", value)
+            End Set
+        End Property
+
+        ''' <summary>Location Alias\FNAM\Flags</summary>
+        Public Property LocationAliasFlags As UInteger Implements IQust_Aliases2.LocationAliasFlags
+            Get
+                Return CUInt(Entero("Location Alias\FNAM\Flags"))
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\ALFL\Specific Location", value)
+                Escribir("Location Alias\FNAM\Flags", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Reference Alias Location\ALFA\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>Bit 0 de Location Alias\FNAM\Flags: Reserves Location/Reference</summary>
+        Public Property LocationAliasFlagsReservesLocationReference As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 0)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 0, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 1 de Location Alias\FNAM\Flags: Optional</summary>
+        Public Property LocationAliasFlagsOptional As Boolean Implements IQust_Aliases2.LocationAliasFlagsOptional
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 1)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 1, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 2 de Location Alias\FNAM\Flags: Quest Object</summary>
+        Public Property LocationAliasFlagsQuestObject As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 2)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 2, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 3 de Location Alias\FNAM\Flags: Allow Reuse in Quest</summary>
+        Public Property LocationAliasFlagsAllowReuseInQuest As Boolean Implements IQust_Aliases2.LocationAliasFlagsAllowReuseInQuest
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 3)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 3, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 4 de Location Alias\FNAM\Flags: Allow Dead</summary>
+        Public Property LocationAliasFlagsAllowDead As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 4)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 4, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 5 de Location Alias\FNAM\Flags: Matching Ref - In Loaded Area</summary>
+        Public Property LocationAliasFlagsMatchingRefInLoadedArea As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 5)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 5, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 6 de Location Alias\FNAM\Flags: Essential</summary>
+        Public Property LocationAliasFlagsEssential As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 6)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 6, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 7 de Location Alias\FNAM\Flags: Allow Disabled</summary>
+        Public Property LocationAliasFlagsAllowDisabled As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 7)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 7, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 8 de Location Alias\FNAM\Flags: Stores Text</summary>
+        Public Property LocationAliasFlagsStoresText As Boolean Implements IQust_Aliases2.LocationAliasFlagsStoresText
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 8)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 8, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 9 de Location Alias\FNAM\Flags: Allow Reserved</summary>
+        Public Property LocationAliasFlagsAllowReserved As Boolean Implements IQust_Aliases2.LocationAliasFlagsAllowReserved
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 9)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 9, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 10 de Location Alias\FNAM\Flags: Protected</summary>
+        Public Property LocationAliasFlagsProtected As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 10)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 10, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 11 de Location Alias\FNAM\Flags: Forced by Aliases</summary>
+        Public Property LocationAliasFlagsForcedByAliases As Boolean Implements IQust_Aliases2.LocationAliasFlagsForcedByAliases
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 11)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 11, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 12 de Location Alias\FNAM\Flags: Allow Destroyed</summary>
+        Public Property LocationAliasFlagsAllowDestroyed As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 12)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 12, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 13 de Location Alias\FNAM\Flags: Matching Ref - Closest</summary>
+        Public Property LocationAliasFlagsMatchingRefClosest As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 13)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 13, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 14 de Location Alias\FNAM\Flags: Uses Stored Text</summary>
+        Public Property LocationAliasFlagsUsesStoredText As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 14)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 14, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 15 de Location Alias\FNAM\Flags: Initially Disabled</summary>
+        Public Property LocationAliasFlagsInitiallyDisabled As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 15)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 15, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 16 de Location Alias\FNAM\Flags: Allow Cleared</summary>
+        Public Property LocationAliasFlagsAllowCleared As Boolean Implements IQust_Aliases2.LocationAliasFlagsAllowCleared
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 16)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 16, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 17 de Location Alias\FNAM\Flags: Clear Names When Removed</summary>
+        Public Property LocationAliasFlagsClearNamesWhenRemoved As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 17)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 17, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 18 de Location Alias\FNAM\Flags: Matching Ref - Actors Only</summary>
+        Public Property LocationAliasFlagsMatchingRefActorsOnly As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 18)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 18, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 19 de Location Alias\FNAM\Flags: Create Ref - Temp</summary>
+        Public Property LocationAliasFlagsCreateRefTemp As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 19)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 19, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 20 de Location Alias\FNAM\Flags: External Alias - Linked</summary>
+        Public Property LocationAliasFlagsExternalAliasLinked As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 20)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 20, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 21 de Location Alias\FNAM\Flags: No Pickpocket</summary>
+        Public Property LocationAliasFlagsNoPickpocket As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 21)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 21, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 22 de Location Alias\FNAM\Flags: Can Apply Data To Non-Aliased Refs</summary>
+        Public Property LocationAliasFlagsCanApplyDataToNonAliasedRefs As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 22)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 22, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 23 de Location Alias\FNAM\Flags: Is Companion</summary>
+        Public Property LocationAliasFlagsIsCompanion As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 23)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 23, value)
+            End Set
+        End Property
+
+        ''' <summary>Bit 24 de Location Alias\FNAM\Flags: Optional All Scenes</summary>
+        Public Property LocationAliasFlagsOptionalAllScenes As Boolean
+            Get
+                Return Bit("Location Alias\FNAM\Flags", 24)
+            End Get
+            Set(value As Boolean)
+                PonerBit("Location Alias\FNAM\Flags", 24, value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Location Alias\ALFI\Force Into Alias When Filled. Distinto de que el campo valga cero.</summary>
+        Public Property LocationAliasForceIntoAliasWhenFilledPresente As Boolean Implements IQust_Aliases2.LocationAliasForceIntoAliasWhenFilledPresente
+            Get
+                Return Presente("Location Alias\ALFI\Force Into Alias When Filled")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Location Alias\ALFI\Force Into Alias When Filled", value)
+            End Set
+        End Property
+
+        ''' <summary>Location Alias\ALFI\Force Into Alias When Filled</summary>
+        Public Property LocationAliasForceIntoAliasWhenFilled As Integer Implements IQust_Aliases2.LocationAliasForceIntoAliasWhenFilled
+            Get
+                Return CInt(Entero("Location Alias\ALFI\Force Into Alias When Filled"))
+            End Get
+            Set(value As Integer)
+                Escribir("Location Alias\ALFI\Force Into Alias When Filled", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Location Alias\Specific Location\ALFL\Location. Distinto de que el campo valga cero.</summary>
+        Public Property SpecificLocationLocationPresente As Boolean Implements IQust_Aliases2.SpecificLocationLocationPresente
+            Get
+                Return Presente("Location Alias\Specific Location\ALFL\Location")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Location Alias\Specific Location\ALFL\Location", value)
+            End Set
+        End Property
+
+        ''' <summary>Location Alias\Specific Location\ALFL\Location  -&gt;  LCTN. Referencia en el espacio del orden de carga.</summary>
+        Public Property SpecificLocationLocation As UInteger Implements IQust_Aliases2.SpecificLocationLocation
+            Get
+                Return Referencia("Location Alias\Specific Location\ALFL\Location")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Location Alias\Specific Location\ALFL\Location", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Location Alias\Reference Alias Location\ALFA\Alias. Distinto de que el campo valga cero.</summary>
         Public Property ReferenceAliasLocationAliasPresente As Boolean Implements IQust_Aliases2.ReferenceAliasLocationAliasPresente
             Get
-                Return Presente("Alias\Reference Alias Location\ALFA\Alias")
+                Return Presente("Location Alias\Reference Alias Location\ALFA\Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Reference Alias Location\ALFA\Alias", value)
+                PonerPresencia("Location Alias\Reference Alias Location\ALFA\Alias", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Reference Alias Location\ALFA\Alias</summary>
+        ''' <summary>Location Alias\Reference Alias Location\ALFA\Alias</summary>
         Public Property ReferenceAliasLocationAlias As Integer Implements IQust_Aliases2.ReferenceAliasLocationAlias
             Get
-                Return CInt(Entero("Alias\Reference Alias Location\ALFA\Alias"))
+                Return CInt(Entero("Location Alias\Reference Alias Location\ALFA\Alias"))
             End Get
             Set(value As Integer)
-                Escribir("Alias\Reference Alias Location\ALFA\Alias", CLng(value))
+                Escribir("Location Alias\Reference Alias Location\ALFA\Alias", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Reference Alias Location\KNAM\Keyword. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Location Alias\Reference Alias Location\KNAM\Keyword. Distinto de que el campo valga cero.</summary>
         Public Property ReferenceAliasLocationKeywordPresente As Boolean Implements IQust_Aliases2.ReferenceAliasLocationKeywordPresente
             Get
-                Return Presente("Alias\Reference Alias Location\KNAM\Keyword")
+                Return Presente("Location Alias\Reference Alias Location\KNAM\Keyword")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Reference Alias Location\KNAM\Keyword", value)
+                PonerPresencia("Location Alias\Reference Alias Location\KNAM\Keyword", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Reference Alias Location\KNAM\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Location Alias\Reference Alias Location\KNAM\Keyword  -&gt;  KYWD. Referencia en el espacio del orden de carga.</summary>
         Public Property ReferenceAliasLocationKeyword As UInteger Implements IQust_Aliases2.ReferenceAliasLocationKeyword
             Get
-                Return Referencia("Alias\Reference Alias Location\KNAM\Keyword")
+                Return Referencia("Location Alias\Reference Alias Location\KNAM\Keyword")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\Reference Alias Location\KNAM\Keyword", value)
+                PonerReferencia("Location Alias\Reference Alias Location\KNAM\Keyword", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\External Alias Location\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Location Alias\External Alias Location\ALEQ\Quest. Distinto de que el campo valga cero.</summary>
         Public Property ExternalAliasLocationQuestPresente As Boolean Implements IQust_Aliases2.ExternalAliasLocationQuestPresente
             Get
-                Return Presente("Alias\External Alias Location\ALEQ\Quest")
+                Return Presente("Location Alias\External Alias Location\ALEQ\Quest")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\External Alias Location\ALEQ\Quest", value)
+                PonerPresencia("Location Alias\External Alias Location\ALEQ\Quest", value)
             End Set
         End Property
 
-        ''' <summary>Alias\External Alias Location\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Location Alias\External Alias Location\ALEQ\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
         Public Property ExternalAliasLocationQuest As UInteger Implements IQust_Aliases2.ExternalAliasLocationQuest
             Get
-                Return Referencia("Alias\External Alias Location\ALEQ\Quest")
+                Return Referencia("Location Alias\External Alias Location\ALEQ\Quest")
             End Get
             Set(value As UInteger)
-                PonerReferencia("Alias\External Alias Location\ALEQ\Quest", value)
+                PonerReferencia("Location Alias\External Alias Location\ALEQ\Quest", value)
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\External Alias Location\ALEA\Alias. Distinto de que el campo valga cero.</summary>
+        ''' <summary>El record trae Location Alias\External Alias Location\ALEA\Alias. Distinto de que el campo valga cero.</summary>
         Public Property ExternalAliasLocationAliasPresente As Boolean Implements IQust_Aliases2.ExternalAliasLocationAliasPresente
             Get
-                Return Presente("Alias\External Alias Location\ALEA\Alias")
+                Return Presente("Location Alias\External Alias Location\ALEA\Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\External Alias Location\ALEA\Alias", value)
+                PonerPresencia("Location Alias\External Alias Location\ALEA\Alias", value)
             End Set
         End Property
 
-        ''' <summary>Alias\External Alias Location\ALEA\Alias</summary>
+        ''' <summary>Location Alias\External Alias Location\ALEA\Alias</summary>
         Public Property ExternalAliasLocationAlias As Integer Implements IQust_Aliases2.ExternalAliasLocationAlias
             Get
-                Return CInt(Entero("Alias\External Alias Location\ALEA\Alias"))
+                Return CInt(Entero("Location Alias\External Alias Location\ALEA\Alias"))
             End Get
             Set(value As Integer)
-                Escribir("Alias\External Alias Location\ALEA\Alias", CLng(value))
+                Escribir("Location Alias\External Alias Location\ALEA\Alias", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Find Matching Location From Event\ALFE\From Event. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingLocationFromEventFromEventPresente As Boolean
+        ''' <summary>El record trae Location Alias\Find Matching Location\ALFE\Event. Distinto de que el campo valga cero.</summary>
+        Public Property FindMatchingLocationEventPresente As Boolean
             Get
-                Return Presente("Alias\Find Matching Location From Event\ALFE\From Event")
+                Return Presente("Location Alias\Find Matching Location\ALFE\Event")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Find Matching Location From Event\ALFE\From Event", value)
+                PonerPresencia("Location Alias\Find Matching Location\ALFE\Event", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Find Matching Location From Event\ALFE\From Event</summary>
-        Public Property FindMatchingLocationFromEventFromEvent As UInteger
+        ''' <summary>Location Alias\Find Matching Location\ALFE\Event</summary>
+        Public Property FindMatchingLocationEvent As UInteger
             Get
-                Return CUInt(Entero("Alias\Find Matching Location From Event\ALFE\From Event"))
+                Return CUInt(Entero("Location Alias\Find Matching Location\ALFE\Event"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\Find Matching Location From Event\ALFE\From Event", CLng(value))
+                Escribir("Location Alias\Find Matching Location\ALFE\Event", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\Find Matching Location From Event\ALFD\Event Data. Distinto de que el campo valga cero.</summary>
-        Public Property FindMatchingLocationFromEventEventDataPresente As Boolean
+        ''' <summary>El record trae Location Alias\Find Matching Location\ALFD\Data. Distinto de que el campo valga cero.</summary>
+        Public Property FindMatchingLocationDataPresente As Boolean
             Get
-                Return Presente("Alias\Find Matching Location From Event\ALFD\Event Data")
+                Return Presente("Location Alias\Find Matching Location\ALFD\Data")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\Find Matching Location From Event\ALFD\Event Data", value)
+                PonerPresencia("Location Alias\Find Matching Location\ALFD\Data", value)
             End Set
         End Property
 
-        ''' <summary>Alias\Find Matching Location From Event\ALFD\Event Data</summary>
-        Public Property FindMatchingLocationFromEventEventData As UInteger
+        ''' <summary>Location Alias\Find Matching Location\ALFD\Data</summary>
+        Public Property FindMatchingLocationData As UInteger
             Get
-                Return CUInt(Entero("Alias\Find Matching Location From Event\ALFD\Event Data"))
+                Return CUInt(Entero("Location Alias\Find Matching Location\ALFD\Data"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\Find Matching Location From Event\ALFD\Event Data", CLng(value))
+                Escribir("Location Alias\Find Matching Location\ALFD\Data", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Nombre del valor de Alias\Find Matching Location From Event\ALFD\Event Data.</summary>
-        Public ReadOnly Property FindMatchingLocationFromEventEventDataNombre As String
+        ''' <summary>Nombre del valor de Location Alias\Find Matching Location\ALFD\Data.</summary>
+        Public ReadOnly Property FindMatchingLocationDataNombre As String
             Get
-                Return NombreDeValor("Alias\Find Matching Location From Event\ALFD\Event Data")
+                Return NombreDeValor("Location Alias\Find Matching Location\ALFD\Data")
             End Get
         End Property
 
-        ''' <summary>El record trae Alias\ALCS\Collection Alias ID. Distinto de que el campo valga cero.</summary>
-        Public Property AliasCollectionAliasIDPresente As Boolean
+        ''' <summary>El record trae Location Alias\ALCC\Closest To Alias. Distinto de que el campo valga cero.</summary>
+        Public Property LocationAliasClosestToAliasPresente As Boolean
             Get
-                Return Presente("Alias\ALCS\Collection Alias ID")
+                Return Presente("Location Alias\ALCC\Closest To Alias")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALCS\Collection Alias ID", value)
+                PonerPresencia("Location Alias\ALCC\Closest To Alias", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALCS\Collection Alias ID</summary>
-        Public Property AliasCollectionAliasID As UInteger
+        ''' <summary>Location Alias\ALCC\Closest To Alias</summary>
+        Public Property LocationAliasClosestToAlias As Integer
             Get
-                Return CUInt(Entero("Alias\ALCS\Collection Alias ID"))
+                Return CInt(Entero("Location Alias\ALCC\Closest To Alias"))
+            End Get
+            Set(value As Integer)
+                Escribir("Location Alias\ALCC\Closest To Alias", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae el marcador Location Alias\ALED\Alias End. No lleva valor: el dato es que esté, así que ponerlo en verdadero lo crea y en falso lo saca.</summary>
+        Public Property LocationAliasAliasEnd As Boolean Implements IQust_Aliases2.LocationAliasAliasEnd
+            Get
+                Return Presente("Location Alias\ALED\Alias End")
+            End Get
+            Set(value As Boolean)
+                PonerMarcador("Location Alias\ALED\Alias End", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Ref Collection Alias\ALCS\Alias ID. Distinto de que el campo valga cero.</summary>
+        Public Property RefCollectionAliasAliasIDPresente As Boolean
+            Get
+                Return Presente("Ref Collection Alias\ALCS\Alias ID")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Ref Collection Alias\ALCS\Alias ID", value)
+            End Set
+        End Property
+
+        ''' <summary>Ref Collection Alias\ALCS\Alias ID</summary>
+        Public Property RefCollectionAliasAliasID As UInteger
+            Get
+                Return CUInt(Entero("Ref Collection Alias\ALCS\Alias ID"))
             End Get
             Set(value As UInteger)
-                Escribir("Alias\ALCS\Collection Alias ID", CLng(value))
+                Escribir("Ref Collection Alias\ALCS\Alias ID", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae Alias\ALMI\Max Initial Fill Count. Distinto de que el campo valga cero.</summary>
-        Public Property AliasMaxInitialFillCountPresente As Boolean
+        ''' <summary>El record trae Ref Collection Alias\ALMI\Max Initial Fill Count. Distinto de que el campo valga cero.</summary>
+        Public Property RefCollectionAliasMaxInitialFillCountPresente As Boolean
             Get
-                Return Presente("Alias\ALMI\Max Initial Fill Count")
+                Return Presente("Ref Collection Alias\ALMI\Max Initial Fill Count")
             End Get
             Set(value As Boolean)
-                PonerPresencia("Alias\ALMI\Max Initial Fill Count", value)
+                PonerPresencia("Ref Collection Alias\ALMI\Max Initial Fill Count", value)
             End Set
         End Property
 
-        ''' <summary>Alias\ALMI\Max Initial Fill Count</summary>
-        Public Property AliasMaxInitialFillCount As Byte
+        ''' <summary>Ref Collection Alias\ALMI\Max Initial Fill Count</summary>
+        Public Property RefCollectionAliasMaxInitialFillCount As Byte
             Get
-                Return CByte(Entero("Alias\ALMI\Max Initial Fill Count"))
+                Return CByte(Entero("Ref Collection Alias\ALMI\Max Initial Fill Count"))
             End Get
             Set(value As Byte)
-                Escribir("Alias\ALMI\Max Initial Fill Count", CLng(value))
+                Escribir("Ref Collection Alias\ALMI\Max Initial Fill Count", CLng(value))
             End Set
         End Property
 
-        ''' <summary>Aliases\Alias\Conditions</summary>
+        ''' <summary>Aliases\Reference Alias\Match Conditions\Conditions</summary>
         Public ReadOnly Property Conditions5 As IReadOnlyList(Of QustFO4_Conditions5)
             Get
-                Return Elementos(Of QustFO4_Conditions5)("Alias\Conditions", Function(n) New QustFO4_Conditions5(n, Context, Resolver))
+                Return Elementos(Of QustFO4_Conditions5)("Reference Alias\Match Conditions\Conditions", Function(n) New QustFO4_Conditions5(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarConditions5() As QustFO4_Conditions5
-            Dim cont = Asegurar("Alias\Conditions")
+            Dim cont = Asegurar("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -53954,7 +54279,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarConditions5(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -53964,7 +54289,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarConditions5(elemento As QustFO4_Conditions5) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -53975,21 +54300,21 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarConditions5(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Conditions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
-        ''' <summary>Aliases\Alias\Keywords\KWDA\Keywords</summary>
+        ''' <summary>Aliases\Reference Alias\Keywords\KWDA\Keywords</summary>
         Public ReadOnly Property Keywords As IReadOnlyList(Of QustFO4_Keywords)
             Get
-                Return Elementos(Of QustFO4_Keywords)("Alias\Keywords\KWDA\Keywords", Function(n) New QustFO4_Keywords(n, Context, Resolver))
+                Return Elementos(Of QustFO4_Keywords)("Reference Alias\Keywords\KWDA\Keywords", Function(n) New QustFO4_Keywords(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarKeywords() As QustFO4_Keywords
-            Dim cont = Asegurar("Alias\Keywords\KWDA\Keywords")
+            Dim cont = Asegurar("Reference Alias\Keywords\KWDA\Keywords")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -53998,7 +54323,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarKeywords(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Keywords\KWDA\Keywords")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Keywords\KWDA\Keywords")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -54008,7 +54333,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarKeywords(elemento As QustFO4_Keywords) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Alias\Keywords\KWDA\Keywords")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Keywords\KWDA\Keywords")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -54019,21 +54344,21 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarKeywords(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Keywords\KWDA\Keywords")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Keywords\KWDA\Keywords")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
-        ''' <summary>Aliases\Alias\Items</summary>
+        ''' <summary>Aliases\Reference Alias\Items</summary>
         Public ReadOnly Property Items As IReadOnlyList(Of QustFO4_Items)
             Get
-                Return Elementos(Of QustFO4_Items)("Alias\Items", Function(n) New QustFO4_Items(n, Context, Resolver))
+                Return Elementos(Of QustFO4_Items)("Reference Alias\Items", Function(n) New QustFO4_Items(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarItems() As QustFO4_Items
-            Dim cont = Asegurar("Alias\Items")
+            Dim cont = Asegurar("Reference Alias\Items")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -54042,7 +54367,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarItems(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Items")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Items")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -54052,7 +54377,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarItems(elemento As QustFO4_Items) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Alias\Items")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Items")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -54063,21 +54388,21 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarItems(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Items")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Items")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
-        ''' <summary>Aliases\Alias\ALLA\Linked Aliases</summary>
+        ''' <summary>Aliases\Reference Alias\ALLA\Linked Aliases</summary>
         Public ReadOnly Property LinkedAliases As IReadOnlyList(Of QustFO4_LinkedAliases)
             Get
-                Return Elementos(Of QustFO4_LinkedAliases)("Alias\ALLA\Linked Aliases", Function(n) New QustFO4_LinkedAliases(n, Context, Resolver))
+                Return Elementos(Of QustFO4_LinkedAliases)("Reference Alias\ALLA\Linked Aliases", Function(n) New QustFO4_LinkedAliases(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarLinkedAliases() As QustFO4_LinkedAliases
-            Dim cont = Asegurar("Alias\ALLA\Linked Aliases")
+            Dim cont = Asegurar("Reference Alias\ALLA\Linked Aliases")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -54086,7 +54411,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarLinkedAliases(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\ALLA\Linked Aliases")
+            Dim cont = Node?.ByFieldPath("Reference Alias\ALLA\Linked Aliases")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -54096,7 +54421,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarLinkedAliases(elemento As QustFO4_LinkedAliases) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Alias\ALLA\Linked Aliases")
+            Dim cont = Node?.ByFieldPath("Reference Alias\ALLA\Linked Aliases")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -54107,21 +54432,21 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarLinkedAliases(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\ALLA\Linked Aliases")
+            Dim cont = Node?.ByFieldPath("Reference Alias\ALLA\Linked Aliases")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
-        ''' <summary>Aliases\Alias\Alias Spells</summary>
+        ''' <summary>Aliases\Reference Alias\Alias Spells</summary>
         Public ReadOnly Property AliasSpells As IReadOnlyList(Of QustFO4_AliasSpells)
             Get
-                Return Elementos(Of QustFO4_AliasSpells)("Alias\Alias Spells", Function(n) New QustFO4_AliasSpells(n, Context, Resolver))
+                Return Elementos(Of QustFO4_AliasSpells)("Reference Alias\Alias Spells", Function(n) New QustFO4_AliasSpells(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarAliasSpells() As QustFO4_AliasSpells
-            Dim cont = Asegurar("Alias\Alias Spells")
+            Dim cont = Asegurar("Reference Alias\Alias Spells")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -54130,7 +54455,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarAliasSpells(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Alias Spells")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Spells")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -54140,7 +54465,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarAliasSpells(elemento As QustFO4_AliasSpells) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Alias\Alias Spells")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Spells")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -54151,21 +54476,21 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAliasSpells(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Alias Spells")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Spells")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
-        ''' <summary>Aliases\Alias\Alias Factions</summary>
+        ''' <summary>Aliases\Reference Alias\Alias Factions</summary>
         Public ReadOnly Property AliasFactions As IReadOnlyList(Of QustFO4_AliasFactions)
             Get
-                Return Elementos(Of QustFO4_AliasFactions)("Alias\Alias Factions", Function(n) New QustFO4_AliasFactions(n, Context, Resolver))
+                Return Elementos(Of QustFO4_AliasFactions)("Reference Alias\Alias Factions", Function(n) New QustFO4_AliasFactions(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarAliasFactions() As QustFO4_AliasFactions
-            Dim cont = Asegurar("Alias\Alias Factions")
+            Dim cont = Asegurar("Reference Alias\Alias Factions")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -54174,7 +54499,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarAliasFactions(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Alias Factions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Factions")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -54184,7 +54509,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarAliasFactions(elemento As QustFO4_AliasFactions) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Alias\Alias Factions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Factions")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -54195,21 +54520,21 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAliasFactions(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Alias Factions")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Factions")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
-        ''' <summary>Aliases\Alias\Alias Package Data</summary>
+        ''' <summary>Aliases\Reference Alias\Alias Package Data</summary>
         Public ReadOnly Property AliasPackageData As IReadOnlyList(Of QustFO4_AliasPackageData)
             Get
-                Return Elementos(Of QustFO4_AliasPackageData)("Alias\Alias Package Data", Function(n) New QustFO4_AliasPackageData(n, Context, Resolver))
+                Return Elementos(Of QustFO4_AliasPackageData)("Reference Alias\Alias Package Data", Function(n) New QustFO4_AliasPackageData(n, Context, Resolver))
             End Get
         End Property
 
         ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
         Public Function AgregarAliasPackageData() As QustFO4_AliasPackageData
-            Dim cont = Asegurar("Alias\Alias Package Data")
+            Dim cont = Asegurar("Reference Alias\Alias Package Data")
             If cont Is Nothing Then Return Nothing
             Dim nuevo = WbEdit.AgregarElemento(cont, Context)
             If nuevo Is Nothing Then Return Nothing
@@ -54218,7 +54543,7 @@ Namespace Canon
 
         ''' <summary>Saca el elemento que está en esa posición.</summary>
         Public Function QuitarAliasPackageData(indice As Integer) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Alias Package Data")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Package Data")
             If cont Is Nothing Then Return False
             Return WbEdit.QuitarElemento(cont, indice)
         End Function
@@ -54228,7 +54553,7 @@ Namespace Canon
         ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
         Public Function QuitarAliasPackageData(elemento As QustFO4_AliasPackageData) As Boolean
             If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
-            Dim cont = Node?.ByFieldPath("Alias\Alias Package Data")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Package Data")
             If cont Is Nothing Then Return False
             For i = 0 To cont.Children.Count - 1
                 If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
@@ -54239,14 +54564,58 @@ Namespace Canon
         ''' <summary>Reordena los elementos segun una permutacion COMPLETA
         ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
         Public Function ReordenarAliasPackageData(permutacion As IList(Of Integer)) As Boolean
-            Dim cont = Node?.ByFieldPath("Alias\Alias Package Data")
+            Dim cont = Node?.ByFieldPath("Reference Alias\Alias Package Data")
+            If cont Is Nothing Then Return False
+            Return WbEdit.ReordenarElementos(cont, permutacion)
+        End Function
+
+        ''' <summary>Aliases\Location Alias\Match Conditions\Conditions</summary>
+        Public ReadOnly Property Conditions6 As IReadOnlyList(Of QustFO4_Conditions6)
+            Get
+                Return Elementos(Of QustFO4_Conditions6)("Location Alias\Match Conditions\Conditions", Function(n) New QustFO4_Conditions6(n, Context, Resolver))
+            End Get
+        End Property
+
+        ''' <summary>Agrega un elemento vacío al final y lo devuelve.</summary>
+        Public Function AgregarConditions6() As QustFO4_Conditions6
+            Dim cont = Asegurar("Location Alias\Match Conditions\Conditions")
+            If cont Is Nothing Then Return Nothing
+            Dim nuevo = WbEdit.AgregarElemento(cont, Context)
+            If nuevo Is Nothing Then Return Nothing
+            Return New QustFO4_Conditions6(nuevo, Context, Resolver)
+        End Function
+
+        ''' <summary>Saca el elemento que está en esa posición.</summary>
+        Public Function QuitarConditions6(indice As Integer) As Boolean
+            Dim cont = Node?.ByFieldPath("Location Alias\Match Conditions\Conditions")
+            If cont Is Nothing Then Return False
+            Return WbEdit.QuitarElemento(cont, indice)
+        End Function
+
+        ''' <summary>Saca ese elemento, buscandolo por identidad. Existe porque quien
+        ''' tiene el elemento en la mano no tiene por que saber en que posicion quedo, y
+        ''' escribir la busqueda en cada consumidor es repetir la misma ley.</summary>
+        Public Function QuitarConditions6(elemento As QustFO4_Conditions6) As Boolean
+            If elemento Is Nothing OrElse elemento.Node Is Nothing Then Return False
+            Dim cont = Node?.ByFieldPath("Location Alias\Match Conditions\Conditions")
+            If cont Is Nothing Then Return False
+            For i = 0 To cont.Children.Count - 1
+                If cont.Children(i) Is elemento.Node Then Return WbEdit.QuitarElemento(cont, i)
+            Next
+            Return False
+        End Function
+
+        ''' <summary>Reordena los elementos segun una permutacion COMPLETA
+        ''' de sus posiciones. Devuelve False y no toca nada si no lo es.</summary>
+        Public Function ReordenarConditions6(permutacion As IList(Of Integer)) As Boolean
+            Dim cont = Node?.ByFieldPath("Location Alias\Match Conditions\Conditions")
             If cont Is Nothing Then Return False
             Return WbEdit.ReordenarElementos(cont, permutacion)
         End Function
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Alias\Conditions.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\Match Conditions\Conditions.</summary>
     Public NotInheritable Class QustFO4_Conditions5
         Inherits CanonView
         Implements IBloque_Conditions2
@@ -55194,7 +55563,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -56257,7 +56626,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -56623,7 +56992,7 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Alias\Keywords\KWDA\Keywords.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\Keywords\KWDA\Keywords.</summary>
     Public NotInheritable Class QustFO4_Keywords
         Inherits CanonView
         Implements IBloque_Keywords
@@ -56660,7 +57029,7 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Alias\Items.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\Items.</summary>
     Public NotInheritable Class QustFO4_Items
         Inherits CanonView
         Implements IBloque_Items
@@ -56797,7 +57166,7 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Alias\ALLA\Linked Aliases.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\ALLA\Linked Aliases.</summary>
     Public NotInheritable Class QustFO4_LinkedAliases
         Inherits CanonView
 
@@ -56847,7 +57216,7 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Alias\Alias Spells.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\Alias Spells.</summary>
     Public NotInheritable Class QustFO4_AliasSpells
         Inherits CanonView
         Implements IBloque_AliasSpells
@@ -56884,7 +57253,7 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Alias\Alias Factions.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\Alias Factions.</summary>
     Public NotInheritable Class QustFO4_AliasFactions
         Inherits CanonView
         Implements IBloque_AliasFactions
@@ -56921,7 +57290,7 @@ Namespace Canon
 
     End Class
 
-    ''' <summary>Un elemento de Aliases\Alias\Alias Package Data.</summary>
+    ''' <summary>Un elemento de Aliases\Reference Alias\Alias Package Data.</summary>
     Public NotInheritable Class QustFO4_AliasPackageData
         Inherits CanonView
         Implements IBloque_AliasPackageData
@@ -56953,6 +57322,2383 @@ Namespace Canon
             End Get
             Set(value As UInteger)
                 PonerReferencia("ALPC\Package", value)
+            End Set
+        End Property
+
+    End Class
+
+    ''' <summary>Un elemento de Aliases\Location Alias\Match Conditions\Conditions.</summary>
+    Public NotInheritable Class QustFO4_Conditions6
+        Inherits CanonView
+        Implements IBloque_Conditions2
+
+        Public Sub New(node As WbNode, ctx As WbContext, resolver As CanonResolver)
+            MyBase.New(node, ctx, resolver)
+        End Sub
+
+        Private ReadOnly Property NodoDeLaInterfaz As WbNode Implements IBloque_Conditions2.Node
+            Get
+                Return Node
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Type. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionTypePresente As Boolean Implements IBloque_Conditions2.ConditionTypePresente
+            Get
+                Return Presente("Condition\CTDA\Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Type</summary>
+        Public Property ConditionType As Byte Implements IBloque_Conditions2.ConditionType
+            Get
+                Return CByte(Entero("Condition\CTDA\Type"))
+            End Get
+            Set(value As Byte)
+                Escribir("Condition\CTDA\Type", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Comparison Value\Comparison Value - Float. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionComparisonValueFloatPresente As Boolean Implements IBloque_Conditions2.ConditionComparisonValueFloatPresente
+            Get
+                Return Presente("Condition\CTDA\Comparison Value\Comparison Value - Float")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Comparison Value\Comparison Value - Float", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Comparison Value\Comparison Value - Float</summary>
+        Public Property ConditionComparisonValueFloat As Single Implements IBloque_Conditions2.ConditionComparisonValueFloat
+            Get
+                Return Flt("Condition\CTDA\Comparison Value\Comparison Value - Float")
+            End Get
+            Set(value As Single)
+                Escribir("Condition\CTDA\Comparison Value\Comparison Value - Float", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Comparison Value\Comparison Value - Global. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionComparisonValueGlobalPresente As Boolean Implements IBloque_Conditions2.ConditionComparisonValueGlobalPresente
+            Get
+                Return Presente("Condition\CTDA\Comparison Value\Comparison Value - Global")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Comparison Value\Comparison Value - Global", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Comparison Value\Comparison Value - Global  -&gt;  GLOB. Referencia en el espacio del orden de carga.</summary>
+        Public Property ConditionComparisonValueGlobal As UInteger Implements IBloque_Conditions2.ConditionComparisonValueGlobal
+            Get
+                Return Referencia("Condition\CTDA\Comparison Value\Comparison Value - Global")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Comparison Value\Comparison Value - Global", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Function. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionFunctionPresente As Boolean Implements IBloque_Conditions2.ConditionFunctionPresente
+            Get
+                Return Presente("Condition\CTDA\Function")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Function", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Function</summary>
+        Public Property ConditionFunction As UShort Implements IBloque_Conditions2.ConditionFunction
+            Get
+                Return CUShort(Entero("Condition\CTDA\Function"))
+            End Get
+            Set(value As UShort)
+                Escribir("Condition\CTDA\Function", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Unknown. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1UnknownPresente As Boolean Implements IBloque_Conditions2.Parameter1UnknownPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Unknown")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Unknown", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Unknown</summary>
+        Public Property Parameter1Unknown As Byte() Implements IBloque_Conditions2.Parameter1Unknown
+            Get
+                Return Bytes("Condition\CTDA\Parameter #1\Unknown")
+            End Get
+            Set(value As Byte())
+                Escribir("Condition\CTDA\Parameter #1\Unknown", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\None. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1NonePresente As Boolean Implements IBloque_Conditions2.Parameter1NonePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\None")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\None", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\None</summary>
+        Public Property Parameter1None As Byte() Implements IBloque_Conditions2.Parameter1None
+            Get
+                Return Bytes("Condition\CTDA\Parameter #1\None")
+            End Get
+            Set(value As Byte())
+                Escribir("Condition\CTDA\Parameter #1\None", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Float. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1FloatPresente As Boolean Implements IBloque_Conditions2.Parameter1FloatPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Float")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Float", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Float</summary>
+        Public Property Parameter1Float As Single Implements IBloque_Conditions2.Parameter1Float
+            Get
+                Return Flt("Condition\CTDA\Parameter #1\Float")
+            End Get
+            Set(value As Single)
+                Escribir("Condition\CTDA\Parameter #1\Float", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Integer. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1IntegerPresente As Boolean Implements IBloque_Conditions2.Parameter1IntegerPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Integer")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Integer", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Integer</summary>
+        Public Property Parameter1Integer As Integer Implements IBloque_Conditions2.Parameter1Integer
+            Get
+                Return CInt(Entero("Condition\CTDA\Parameter #1\Integer"))
+            End Get
+            Set(value As Integer)
+                Escribir("Condition\CTDA\Parameter #1\Integer", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\String. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1StringPresente As Boolean Implements IBloque_Conditions2.Parameter1StringPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\String")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\String", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\String</summary>
+        Public Property Parameter1String As UInteger Implements IBloque_Conditions2.Parameter1String
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\String"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\String", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Alias. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1AliasPresente As Boolean Implements IBloque_Conditions2.Parameter1AliasPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Alias")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Alias", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Alias</summary>
+        Public Property Parameter1Alias As Integer Implements IBloque_Conditions2.Parameter1Alias
+            Get
+                Return CInt(Entero("Condition\CTDA\Parameter #1\Alias"))
+            End Get
+            Set(value As Integer)
+                Escribir("Condition\CTDA\Parameter #1\Alias", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Event. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1EventPresente As Boolean Implements IBloque_Conditions2.Parameter1EventPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Event")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Event", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Event</summary>
+        Public Property Parameter1Event As UInteger Implements IBloque_Conditions2.Parameter1Event
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Event"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Event", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Packdata ID. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1PackdataIDPresente As Boolean Implements IBloque_Conditions2.Parameter1PackdataIDPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Packdata ID")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Packdata ID", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Packdata ID</summary>
+        Public Property Parameter1PackdataID As UInteger Implements IBloque_Conditions2.Parameter1PackdataID
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Packdata ID"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Packdata ID", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Quest Stage. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1QuestStagePresente As Boolean Implements IBloque_Conditions2.Parameter1QuestStagePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Quest Stage")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Quest Stage", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Quest Stage</summary>
+        Public Property Parameter1QuestStage As UInteger Implements IBloque_Conditions2.Parameter1QuestStage
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Quest Stage"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Quest Stage", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Alignment. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1AlignmentPresente As Boolean Implements IBloque_Conditions2.Parameter1AlignmentPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Alignment")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Alignment", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Alignment</summary>
+        Public Property Parameter1Alignment As UInteger Implements IBloque_Conditions2.Parameter1Alignment
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Alignment"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Alignment", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Alignment.</summary>
+        Public ReadOnly Property Parameter1AlignmentNombre As String Implements IBloque_Conditions2.Parameter1AlignmentNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Alignment")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Axis. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1AxisPresente As Boolean Implements IBloque_Conditions2.Parameter1AxisPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Axis")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Axis", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Axis</summary>
+        Public Property Parameter1Axis As UInteger Implements IBloque_Conditions2.Parameter1Axis
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Axis"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Axis", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Axis.</summary>
+        Public ReadOnly Property Parameter1AxisNombre As String Implements IBloque_Conditions2.Parameter1AxisNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Axis")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Casting Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1CastingTypePresente As Boolean Implements IBloque_Conditions2.Parameter1CastingTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Casting Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Casting Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Casting Type</summary>
+        Public Property Parameter1CastingType As UInteger Implements IBloque_Conditions2.Parameter1CastingType
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Casting Type"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Casting Type", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Casting Type.</summary>
+        Public ReadOnly Property Parameter1CastingTypeNombre As String Implements IBloque_Conditions2.Parameter1CastingTypeNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Casting Type")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Crime Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1CrimeTypePresente As Boolean Implements IBloque_Conditions2.Parameter1CrimeTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Crime Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Crime Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Crime Type</summary>
+        Public Property Parameter1CrimeType As UInteger Implements IBloque_Conditions2.Parameter1CrimeType
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Crime Type"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Crime Type", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Crime Type.</summary>
+        Public ReadOnly Property Parameter1CrimeTypeNombre As String Implements IBloque_Conditions2.Parameter1CrimeTypeNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Crime Type")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Critical Stage. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1CriticalStagePresente As Boolean Implements IBloque_Conditions2.Parameter1CriticalStagePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Critical Stage")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Critical Stage", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Critical Stage</summary>
+        Public Property Parameter1CriticalStage As UInteger Implements IBloque_Conditions2.Parameter1CriticalStage
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Critical Stage"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Critical Stage", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Critical Stage.</summary>
+        Public ReadOnly Property Parameter1CriticalStageNombre As String Implements IBloque_Conditions2.Parameter1CriticalStageNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Critical Stage")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Form Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1FormTypePresente As Boolean Implements IBloque_Conditions2.Parameter1FormTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Form Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Form Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Form Type</summary>
+        Public Property Parameter1FormType As UInteger Implements IBloque_Conditions2.Parameter1FormType
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Form Type"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Form Type", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Form Type.</summary>
+        Public ReadOnly Property Parameter1FormTypeNombre As String Implements IBloque_Conditions2.Parameter1FormTypeNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Form Type")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Misc Stat. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1MiscStatPresente As Boolean Implements IBloque_Conditions2.Parameter1MiscStatPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Misc Stat")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Misc Stat", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Misc Stat</summary>
+        Public Property Parameter1MiscStat As UInteger Implements IBloque_Conditions2.Parameter1MiscStat
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Misc Stat"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Misc Stat", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Misc Stat.</summary>
+        Public ReadOnly Property Parameter1MiscStatNombre As String Implements IBloque_Conditions2.Parameter1MiscStatNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Misc Stat")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Sex. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1SexPresente As Boolean Implements IBloque_Conditions2.Parameter1SexPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Sex")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Sex", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Sex</summary>
+        Public Property Parameter1Sex As UInteger Implements IBloque_Conditions2.Parameter1Sex
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Sex"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Sex", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Sex.</summary>
+        Public ReadOnly Property Parameter1SexNombre As String Implements IBloque_Conditions2.Parameter1SexNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Sex")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Ward State. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1WardStatePresente As Boolean Implements IBloque_Conditions2.Parameter1WardStatePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Ward State")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Ward State", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Ward State</summary>
+        Public Property Parameter1WardState As UInteger Implements IBloque_Conditions2.Parameter1WardState
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #1\Ward State"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #1\Ward State", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #1\Ward State.</summary>
+        Public ReadOnly Property Parameter1WardStateNombre As String Implements IBloque_Conditions2.Parameter1WardStateNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #1\Ward State")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Actor. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1ActorPresente As Boolean Implements IBloque_Conditions2.Parameter1ActorPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Actor")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Actor", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Actor  -&gt;  ACHR / PLYR / REFR / TRGT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Actor As UInteger Implements IBloque_Conditions2.Parameter1Actor
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Actor")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Actor", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Actor Base. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1ActorBasePresente As Boolean Implements IBloque_Conditions2.Parameter1ActorBasePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Actor Base")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Actor Base", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Actor Base  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1ActorBase As UInteger Implements IBloque_Conditions2.Parameter1ActorBase
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Actor Base")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Actor Base", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Actor Value. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1ActorValuePresente As Boolean Implements IBloque_Conditions2.Parameter1ActorValuePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Actor Value")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Actor Value", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Actor Value  -&gt;  AVIF. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1ActorValue As UInteger Implements IBloque_Conditions2.Parameter1ActorValue
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Actor Value")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Actor Value", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Association Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1AssociationTypePresente As Boolean Implements IBloque_Conditions2.Parameter1AssociationTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Association Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Association Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Association Type  -&gt;  ASTP. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1AssociationType As UInteger Implements IBloque_Conditions2.Parameter1AssociationType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Association Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Association Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Base Effect. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1BaseEffectPresente As Boolean Implements IBloque_Conditions2.Parameter1BaseEffectPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Base Effect")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Base Effect", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Base Effect  -&gt;  MGEF. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1BaseEffect As UInteger Implements IBloque_Conditions2.Parameter1BaseEffect
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Base Effect")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Base Effect", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Base Object. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1BaseObjectPresente As Boolean Implements IBloque_Conditions2.Parameter1BaseObjectPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Base Object")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Base Object", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Base Object. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1BaseObject As UInteger Implements IBloque_Conditions2.Parameter1BaseObject
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Base Object")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Base Object", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Cell. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1CellPresente As Boolean Implements IBloque_Conditions2.Parameter1CellPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Cell")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Cell", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Cell  -&gt;  CELL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Cell As UInteger Implements IBloque_Conditions2.Parameter1Cell
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Cell")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Cell", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Class. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1ClassPresente As Boolean Implements IBloque_Conditions2.Parameter1ClassPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Class")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Class", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Class  -&gt;  CLAS. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Class As UInteger Implements IBloque_Conditions2.Parameter1Class
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Class")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Class", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Damage Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1DamageTypePresente As Boolean Implements IBloque_Conditions2.Parameter1DamageTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Damage Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Damage Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Damage Type  -&gt;  DMGT / FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1DamageType As UInteger Implements IBloque_Conditions2.Parameter1DamageType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Damage Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Damage Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Effect Item. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1EffectItemPresente As Boolean Implements IBloque_Conditions2.Parameter1EffectItemPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Effect Item")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Effect Item", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Effect Item  -&gt;  ALCH / ENCH / INGR / SCRL / SPEL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1EffectItem As UInteger Implements IBloque_Conditions2.Parameter1EffectItem
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Effect Item")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Effect Item", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Encounter Zone. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1EncounterZonePresente As Boolean Implements IBloque_Conditions2.Parameter1EncounterZonePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Encounter Zone")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Encounter Zone", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Encounter Zone  -&gt;  ECZN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1EncounterZone As UInteger Implements IBloque_Conditions2.Parameter1EncounterZone
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Encounter Zone")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Encounter Zone", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Equip Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1EquipTypePresente As Boolean Implements IBloque_Conditions2.Parameter1EquipTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Equip Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Equip Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Equip Type  -&gt;  EQUP. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1EquipType As UInteger Implements IBloque_Conditions2.Parameter1EquipType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Equip Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Equip Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Event Data. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1EventDataPresente As Boolean Implements IBloque_Conditions2.Parameter1EventDataPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Event Data")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Event Data", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Event Data  -&gt;  FLST / KYWD / LCTN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1EventData As UInteger Implements IBloque_Conditions2.Parameter1EventData
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Event Data")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Event Data", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Faction. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1FactionPresente As Boolean Implements IBloque_Conditions2.Parameter1FactionPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Faction")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Faction", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Faction  -&gt;  FACT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Faction As UInteger Implements IBloque_Conditions2.Parameter1Faction
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Faction")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Faction", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Form List. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1FormListPresente As Boolean Implements IBloque_Conditions2.Parameter1FormListPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Form List")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Form List", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Form List  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1FormList As UInteger Implements IBloque_Conditions2.Parameter1FormList
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Form List")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Form List", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Furniture. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1FurniturePresente As Boolean Implements IBloque_Conditions2.Parameter1FurniturePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Furniture")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Furniture", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Furniture  -&gt;  FLST / FURN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Furniture As UInteger Implements IBloque_Conditions2.Parameter1Furniture
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Furniture")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Furniture", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Global. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1GlobalPresente As Boolean Implements IBloque_Conditions2.Parameter1GlobalPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Global")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Global", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Global  -&gt;  GLOB. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Global As UInteger Implements IBloque_Conditions2.Parameter1Global
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Global")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Global", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Idle. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1IdlePresente As Boolean Implements IBloque_Conditions2.Parameter1IdlePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Idle")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Idle", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Idle  -&gt;  IDLE. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Idle As UInteger Implements IBloque_Conditions2.Parameter1Idle
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Idle")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Idle", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Keyword. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1KeywordPresente As Boolean Implements IBloque_Conditions2.Parameter1KeywordPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Keyword")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Keyword", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Keyword  -&gt;  FLST / KYWD / NULL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Keyword As UInteger Implements IBloque_Conditions2.Parameter1Keyword
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Keyword")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Keyword", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Location. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1LocationPresente As Boolean Implements IBloque_Conditions2.Parameter1LocationPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Location")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Location", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Location  -&gt;  LCTN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Location As UInteger Implements IBloque_Conditions2.Parameter1Location
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Location")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Location", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Location Ref Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1LocationRefTypePresente As Boolean Implements IBloque_Conditions2.Parameter1LocationRefTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Location Ref Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Location Ref Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Location Ref Type  -&gt;  LCRT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1LocationRefType As UInteger Implements IBloque_Conditions2.Parameter1LocationRefType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Location Ref Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Location Ref Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Owner. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1OwnerPresente As Boolean Implements IBloque_Conditions2.Parameter1OwnerPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Owner")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Owner", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Owner")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Owner", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Package. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1PackagePresente As Boolean Implements IBloque_Conditions2.Parameter1PackagePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Package")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Package", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Package  -&gt;  PACK. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Package As UInteger Implements IBloque_Conditions2.Parameter1Package
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Package")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Package", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Perk. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1PerkPresente As Boolean Implements IBloque_Conditions2.Parameter1PerkPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Perk")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Perk", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Perk  -&gt;  PERK. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Perk As UInteger Implements IBloque_Conditions2.Parameter1Perk
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Perk")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Perk", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Quest. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1QuestPresente As Boolean Implements IBloque_Conditions2.Parameter1QuestPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Quest")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Quest", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Quest As UInteger Implements IBloque_Conditions2.Parameter1Quest
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Quest")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Quest", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Race. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1RacePresente As Boolean Implements IBloque_Conditions2.Parameter1RacePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Race")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Race", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Race As UInteger Implements IBloque_Conditions2.Parameter1Race
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Race")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Race", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Reference. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1ReferencePresente As Boolean Implements IBloque_Conditions2.Parameter1ReferencePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Reference")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Reference", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Reference  -&gt;  ACHR / PARW / PBAR / PBEA / PCON / PFLA / PGRE / PHZD / PLYR / PMIS / REFR / TRGT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Reference As UInteger Implements IBloque_Conditions2.Parameter1Reference
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Reference")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Reference", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Region. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1RegionPresente As Boolean Implements IBloque_Conditions2.Parameter1RegionPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Region")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Region", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Region  -&gt;  REGN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Region As UInteger Implements IBloque_Conditions2.Parameter1Region
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Region")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Region", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Scene. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1ScenePresente As Boolean Implements IBloque_Conditions2.Parameter1ScenePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Scene")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Scene", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Scene  -&gt;  SCEN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Scene As UInteger Implements IBloque_Conditions2.Parameter1Scene
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Scene")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Scene", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Voice Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1VoiceTypePresente As Boolean Implements IBloque_Conditions2.Parameter1VoiceTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Voice Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Voice Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Voice Type  -&gt;  VTYP / FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1VoiceType As UInteger Implements IBloque_Conditions2.Parameter1VoiceType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Voice Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Voice Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Weather. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1WeatherPresente As Boolean Implements IBloque_Conditions2.Parameter1WeatherPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Weather")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Weather", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Weather  -&gt;  WTHR. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Weather As UInteger Implements IBloque_Conditions2.Parameter1Weather
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Weather")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Weather", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #1\Worldspace. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter1WorldspacePresente As Boolean Implements IBloque_Conditions2.Parameter1WorldspacePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #1\Worldspace")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #1\Worldspace", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #1\Worldspace  -&gt;  WRLD / FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter1Worldspace As UInteger Implements IBloque_Conditions2.Parameter1Worldspace
+            Get
+                Return Referencia("Condition\CTDA\Parameter #1\Worldspace")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #1\Worldspace", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Unknown. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2UnknownPresente As Boolean Implements IBloque_Conditions2.Parameter2UnknownPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Unknown")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Unknown", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Unknown</summary>
+        Public Property Parameter2Unknown As Byte() Implements IBloque_Conditions2.Parameter2Unknown
+            Get
+                Return Bytes("Condition\CTDA\Parameter #2\Unknown")
+            End Get
+            Set(value As Byte())
+                Escribir("Condition\CTDA\Parameter #2\Unknown", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\None. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2NonePresente As Boolean Implements IBloque_Conditions2.Parameter2NonePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\None")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\None", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\None</summary>
+        Public Property Parameter2None As Byte() Implements IBloque_Conditions2.Parameter2None
+            Get
+                Return Bytes("Condition\CTDA\Parameter #2\None")
+            End Get
+            Set(value As Byte())
+                Escribir("Condition\CTDA\Parameter #2\None", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Float. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2FloatPresente As Boolean Implements IBloque_Conditions2.Parameter2FloatPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Float")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Float", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Float</summary>
+        Public Property Parameter2Float As Single Implements IBloque_Conditions2.Parameter2Float
+            Get
+                Return Flt("Condition\CTDA\Parameter #2\Float")
+            End Get
+            Set(value As Single)
+                Escribir("Condition\CTDA\Parameter #2\Float", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Integer. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2IntegerPresente As Boolean Implements IBloque_Conditions2.Parameter2IntegerPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Integer")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Integer", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Integer</summary>
+        Public Property Parameter2Integer As Integer Implements IBloque_Conditions2.Parameter2Integer
+            Get
+                Return CInt(Entero("Condition\CTDA\Parameter #2\Integer"))
+            End Get
+            Set(value As Integer)
+                Escribir("Condition\CTDA\Parameter #2\Integer", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\String. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2StringPresente As Boolean Implements IBloque_Conditions2.Parameter2StringPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\String")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\String", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\String</summary>
+        Public Property Parameter2String As UInteger Implements IBloque_Conditions2.Parameter2String
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\String"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\String", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Alias. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2AliasPresente As Boolean Implements IBloque_Conditions2.Parameter2AliasPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Alias")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Alias", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Alias</summary>
+        Public Property Parameter2Alias As Integer Implements IBloque_Conditions2.Parameter2Alias
+            Get
+                Return CInt(Entero("Condition\CTDA\Parameter #2\Alias"))
+            End Get
+            Set(value As Integer)
+                Escribir("Condition\CTDA\Parameter #2\Alias", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Event. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2EventPresente As Boolean Implements IBloque_Conditions2.Parameter2EventPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Event")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Event", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Event</summary>
+        Public Property Parameter2Event As UInteger Implements IBloque_Conditions2.Parameter2Event
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Event"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Event", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Packdata ID. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2PackdataIDPresente As Boolean Implements IBloque_Conditions2.Parameter2PackdataIDPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Packdata ID")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Packdata ID", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Packdata ID</summary>
+        Public Property Parameter2PackdataID As UInteger Implements IBloque_Conditions2.Parameter2PackdataID
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Packdata ID"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Packdata ID", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Quest Stage. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2QuestStagePresente As Boolean Implements IBloque_Conditions2.Parameter2QuestStagePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Quest Stage")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Quest Stage", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Quest Stage</summary>
+        Public Property Parameter2QuestStage As UInteger Implements IBloque_Conditions2.Parameter2QuestStage
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Quest Stage"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Quest Stage", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Alignment. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2AlignmentPresente As Boolean Implements IBloque_Conditions2.Parameter2AlignmentPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Alignment")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Alignment", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Alignment</summary>
+        Public Property Parameter2Alignment As UInteger Implements IBloque_Conditions2.Parameter2Alignment
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Alignment"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Alignment", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Alignment.</summary>
+        Public ReadOnly Property Parameter2AlignmentNombre As String Implements IBloque_Conditions2.Parameter2AlignmentNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Alignment")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Axis. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2AxisPresente As Boolean Implements IBloque_Conditions2.Parameter2AxisPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Axis")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Axis", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Axis</summary>
+        Public Property Parameter2Axis As UInteger Implements IBloque_Conditions2.Parameter2Axis
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Axis"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Axis", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Axis.</summary>
+        Public ReadOnly Property Parameter2AxisNombre As String Implements IBloque_Conditions2.Parameter2AxisNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Axis")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Casting Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2CastingTypePresente As Boolean Implements IBloque_Conditions2.Parameter2CastingTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Casting Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Casting Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Casting Type</summary>
+        Public Property Parameter2CastingType As UInteger Implements IBloque_Conditions2.Parameter2CastingType
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Casting Type"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Casting Type", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Casting Type.</summary>
+        Public ReadOnly Property Parameter2CastingTypeNombre As String Implements IBloque_Conditions2.Parameter2CastingTypeNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Casting Type")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Crime Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2CrimeTypePresente As Boolean Implements IBloque_Conditions2.Parameter2CrimeTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Crime Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Crime Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Crime Type</summary>
+        Public Property Parameter2CrimeType As UInteger Implements IBloque_Conditions2.Parameter2CrimeType
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Crime Type"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Crime Type", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Crime Type.</summary>
+        Public ReadOnly Property Parameter2CrimeTypeNombre As String Implements IBloque_Conditions2.Parameter2CrimeTypeNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Crime Type")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Critical Stage. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2CriticalStagePresente As Boolean Implements IBloque_Conditions2.Parameter2CriticalStagePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Critical Stage")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Critical Stage", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Critical Stage</summary>
+        Public Property Parameter2CriticalStage As UInteger Implements IBloque_Conditions2.Parameter2CriticalStage
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Critical Stage"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Critical Stage", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Critical Stage.</summary>
+        Public ReadOnly Property Parameter2CriticalStageNombre As String Implements IBloque_Conditions2.Parameter2CriticalStageNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Critical Stage")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Form Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2FormTypePresente As Boolean Implements IBloque_Conditions2.Parameter2FormTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Form Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Form Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Form Type</summary>
+        Public Property Parameter2FormType As UInteger Implements IBloque_Conditions2.Parameter2FormType
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Form Type"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Form Type", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Form Type.</summary>
+        Public ReadOnly Property Parameter2FormTypeNombre As String Implements IBloque_Conditions2.Parameter2FormTypeNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Form Type")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Misc Stat. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2MiscStatPresente As Boolean Implements IBloque_Conditions2.Parameter2MiscStatPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Misc Stat")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Misc Stat", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Misc Stat</summary>
+        Public Property Parameter2MiscStat As UInteger Implements IBloque_Conditions2.Parameter2MiscStat
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Misc Stat"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Misc Stat", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Misc Stat.</summary>
+        Public ReadOnly Property Parameter2MiscStatNombre As String Implements IBloque_Conditions2.Parameter2MiscStatNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Misc Stat")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Sex. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2SexPresente As Boolean Implements IBloque_Conditions2.Parameter2SexPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Sex")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Sex", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Sex</summary>
+        Public Property Parameter2Sex As UInteger Implements IBloque_Conditions2.Parameter2Sex
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Sex"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Sex", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Sex.</summary>
+        Public ReadOnly Property Parameter2SexNombre As String Implements IBloque_Conditions2.Parameter2SexNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Sex")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Ward State. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2WardStatePresente As Boolean Implements IBloque_Conditions2.Parameter2WardStatePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Ward State")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Ward State", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Ward State</summary>
+        Public Property Parameter2WardState As UInteger Implements IBloque_Conditions2.Parameter2WardState
+            Get
+                Return CUInt(Entero("Condition\CTDA\Parameter #2\Ward State"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Parameter #2\Ward State", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #2\Ward State.</summary>
+        Public ReadOnly Property Parameter2WardStateNombre As String Implements IBloque_Conditions2.Parameter2WardStateNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #2\Ward State")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Actor. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2ActorPresente As Boolean Implements IBloque_Conditions2.Parameter2ActorPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Actor")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Actor", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Actor  -&gt;  ACHR / PLYR / REFR / TRGT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Actor As UInteger Implements IBloque_Conditions2.Parameter2Actor
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Actor")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Actor", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Actor Base. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2ActorBasePresente As Boolean Implements IBloque_Conditions2.Parameter2ActorBasePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Actor Base")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Actor Base", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Actor Base  -&gt;  NPC_. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2ActorBase As UInteger Implements IBloque_Conditions2.Parameter2ActorBase
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Actor Base")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Actor Base", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Actor Value. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2ActorValuePresente As Boolean Implements IBloque_Conditions2.Parameter2ActorValuePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Actor Value")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Actor Value", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Actor Value  -&gt;  AVIF. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2ActorValue As UInteger Implements IBloque_Conditions2.Parameter2ActorValue
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Actor Value")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Actor Value", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Association Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2AssociationTypePresente As Boolean Implements IBloque_Conditions2.Parameter2AssociationTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Association Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Association Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Association Type  -&gt;  ASTP. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2AssociationType As UInteger Implements IBloque_Conditions2.Parameter2AssociationType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Association Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Association Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Base Effect. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2BaseEffectPresente As Boolean Implements IBloque_Conditions2.Parameter2BaseEffectPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Base Effect")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Base Effect", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Base Effect  -&gt;  MGEF. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2BaseEffect As UInteger Implements IBloque_Conditions2.Parameter2BaseEffect
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Base Effect")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Base Effect", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Base Object. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2BaseObjectPresente As Boolean Implements IBloque_Conditions2.Parameter2BaseObjectPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Base Object")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Base Object", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Base Object. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2BaseObject As UInteger Implements IBloque_Conditions2.Parameter2BaseObject
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Base Object")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Base Object", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Cell. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2CellPresente As Boolean Implements IBloque_Conditions2.Parameter2CellPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Cell")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Cell", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Cell  -&gt;  CELL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Cell As UInteger Implements IBloque_Conditions2.Parameter2Cell
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Cell")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Cell", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Class. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2ClassPresente As Boolean Implements IBloque_Conditions2.Parameter2ClassPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Class")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Class", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Class  -&gt;  CLAS. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Class As UInteger Implements IBloque_Conditions2.Parameter2Class
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Class")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Class", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Damage Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2DamageTypePresente As Boolean Implements IBloque_Conditions2.Parameter2DamageTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Damage Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Damage Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Damage Type  -&gt;  DMGT / FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2DamageType As UInteger Implements IBloque_Conditions2.Parameter2DamageType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Damage Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Damage Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Effect Item. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2EffectItemPresente As Boolean Implements IBloque_Conditions2.Parameter2EffectItemPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Effect Item")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Effect Item", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Effect Item  -&gt;  ALCH / ENCH / INGR / SCRL / SPEL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2EffectItem As UInteger Implements IBloque_Conditions2.Parameter2EffectItem
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Effect Item")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Effect Item", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Encounter Zone. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2EncounterZonePresente As Boolean Implements IBloque_Conditions2.Parameter2EncounterZonePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Encounter Zone")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Encounter Zone", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Encounter Zone  -&gt;  ECZN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2EncounterZone As UInteger Implements IBloque_Conditions2.Parameter2EncounterZone
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Encounter Zone")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Encounter Zone", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Equip Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2EquipTypePresente As Boolean Implements IBloque_Conditions2.Parameter2EquipTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Equip Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Equip Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Equip Type  -&gt;  EQUP. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2EquipType As UInteger Implements IBloque_Conditions2.Parameter2EquipType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Equip Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Equip Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Event Data. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2EventDataPresente As Boolean Implements IBloque_Conditions2.Parameter2EventDataPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Event Data")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Event Data", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Event Data  -&gt;  FLST / KYWD / LCTN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2EventData As UInteger Implements IBloque_Conditions2.Parameter2EventData
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Event Data")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Event Data", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Faction. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2FactionPresente As Boolean Implements IBloque_Conditions2.Parameter2FactionPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Faction")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Faction", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Faction  -&gt;  FACT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Faction As UInteger Implements IBloque_Conditions2.Parameter2Faction
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Faction")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Faction", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Form List. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2FormListPresente As Boolean Implements IBloque_Conditions2.Parameter2FormListPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Form List")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Form List", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Form List  -&gt;  FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2FormList As UInteger Implements IBloque_Conditions2.Parameter2FormList
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Form List")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Form List", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Furniture. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2FurniturePresente As Boolean Implements IBloque_Conditions2.Parameter2FurniturePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Furniture")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Furniture", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Furniture  -&gt;  FLST / FURN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Furniture As UInteger Implements IBloque_Conditions2.Parameter2Furniture
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Furniture")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Furniture", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Global. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2GlobalPresente As Boolean Implements IBloque_Conditions2.Parameter2GlobalPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Global")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Global", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Global  -&gt;  GLOB. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Global As UInteger Implements IBloque_Conditions2.Parameter2Global
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Global")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Global", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Idle. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2IdlePresente As Boolean Implements IBloque_Conditions2.Parameter2IdlePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Idle")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Idle", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Idle  -&gt;  IDLE. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Idle As UInteger Implements IBloque_Conditions2.Parameter2Idle
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Idle")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Idle", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Keyword. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2KeywordPresente As Boolean Implements IBloque_Conditions2.Parameter2KeywordPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Keyword")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Keyword", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Keyword  -&gt;  FLST / KYWD / NULL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Keyword As UInteger Implements IBloque_Conditions2.Parameter2Keyword
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Keyword")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Keyword", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Location. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2LocationPresente As Boolean Implements IBloque_Conditions2.Parameter2LocationPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Location")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Location", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Location  -&gt;  LCTN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Location As UInteger Implements IBloque_Conditions2.Parameter2Location
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Location")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Location", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Location Ref Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2LocationRefTypePresente As Boolean Implements IBloque_Conditions2.Parameter2LocationRefTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Location Ref Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Location Ref Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Location Ref Type  -&gt;  LCRT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2LocationRefType As UInteger Implements IBloque_Conditions2.Parameter2LocationRefType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Location Ref Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Location Ref Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Owner. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2OwnerPresente As Boolean Implements IBloque_Conditions2.Parameter2OwnerPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Owner")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Owner", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Owner")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Owner", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Package. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2PackagePresente As Boolean Implements IBloque_Conditions2.Parameter2PackagePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Package")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Package", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Package  -&gt;  PACK. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Package As UInteger Implements IBloque_Conditions2.Parameter2Package
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Package")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Package", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Perk. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2PerkPresente As Boolean Implements IBloque_Conditions2.Parameter2PerkPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Perk")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Perk", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Perk  -&gt;  PERK. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Perk As UInteger Implements IBloque_Conditions2.Parameter2Perk
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Perk")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Perk", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Quest. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2QuestPresente As Boolean Implements IBloque_Conditions2.Parameter2QuestPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Quest")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Quest", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Quest  -&gt;  QUST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Quest As UInteger Implements IBloque_Conditions2.Parameter2Quest
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Quest")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Quest", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Race. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2RacePresente As Boolean Implements IBloque_Conditions2.Parameter2RacePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Race")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Race", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Race  -&gt;  RACE. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Race As UInteger Implements IBloque_Conditions2.Parameter2Race
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Race")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Race", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Reference. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2ReferencePresente As Boolean Implements IBloque_Conditions2.Parameter2ReferencePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Reference")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Reference", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Reference  -&gt;  ACHR / PARW / PBAR / PBEA / PCON / PFLA / PGRE / PHZD / PLYR / PMIS / REFR / TRGT. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Reference As UInteger Implements IBloque_Conditions2.Parameter2Reference
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Reference")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Reference", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Region. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2RegionPresente As Boolean Implements IBloque_Conditions2.Parameter2RegionPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Region")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Region", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Region  -&gt;  REGN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Region As UInteger Implements IBloque_Conditions2.Parameter2Region
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Region")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Region", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Scene. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2ScenePresente As Boolean Implements IBloque_Conditions2.Parameter2ScenePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Scene")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Scene", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Scene  -&gt;  SCEN. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Scene As UInteger Implements IBloque_Conditions2.Parameter2Scene
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Scene")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Scene", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Voice Type. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2VoiceTypePresente As Boolean Implements IBloque_Conditions2.Parameter2VoiceTypePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Voice Type")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Voice Type", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Voice Type  -&gt;  VTYP / FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2VoiceType As UInteger Implements IBloque_Conditions2.Parameter2VoiceType
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Voice Type")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Voice Type", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Weather. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2WeatherPresente As Boolean Implements IBloque_Conditions2.Parameter2WeatherPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Weather")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Weather", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Weather  -&gt;  WTHR. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Weather As UInteger Implements IBloque_Conditions2.Parameter2Weather
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Weather")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Weather", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #2\Worldspace. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter2WorldspacePresente As Boolean Implements IBloque_Conditions2.Parameter2WorldspacePresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #2\Worldspace")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #2\Worldspace", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #2\Worldspace  -&gt;  WRLD / FLST. Referencia en el espacio del orden de carga.</summary>
+        Public Property Parameter2Worldspace As UInteger Implements IBloque_Conditions2.Parameter2Worldspace
+            Get
+                Return Referencia("Condition\CTDA\Parameter #2\Worldspace")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Parameter #2\Worldspace", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Run On. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionRunOnPresente As Boolean Implements IBloque_Conditions2.ConditionRunOnPresente
+            Get
+                Return Presente("Condition\CTDA\Run On")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Run On", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Run On</summary>
+        Public Property ConditionRunOn As UInteger Implements IBloque_Conditions2.ConditionRunOn
+            Get
+                Return CUInt(Entero("Condition\CTDA\Run On"))
+            End Get
+            Set(value As UInteger)
+                Escribir("Condition\CTDA\Run On", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Run On.</summary>
+        Public ReadOnly Property ConditionRunOnNombre As String Implements IBloque_Conditions2.ConditionRunOnNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Run On")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Reference\Reference. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionReferencePresente As Boolean Implements IBloque_Conditions2.ConditionReferencePresente
+            Get
+                Return Presente("Condition\CTDA\Reference\Reference")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Reference\Reference", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Reference\Reference. Referencia en el espacio del orden de carga.</summary>
+        Public Property ConditionReference As UInteger Implements IBloque_Conditions2.ConditionReference
+            Get
+                Return Referencia("Condition\CTDA\Reference\Reference")
+            End Get
+            Set(value As UInteger)
+                PonerReferencia("Condition\CTDA\Reference\Reference", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #3\Parameter #3. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionParameter3Presente As Boolean Implements IBloque_Conditions2.ConditionParameter3Presente
+            Get
+                Return Presente("Condition\CTDA\Parameter #3\Parameter #3")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #3\Parameter #3", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #3\Parameter #3</summary>
+        Public Property ConditionParameter3 As Integer Implements IBloque_Conditions2.ConditionParameter3
+            Get
+                Return CInt(Entero("Condition\CTDA\Parameter #3\Parameter #3"))
+            End Get
+            Set(value As Integer)
+                Escribir("Condition\CTDA\Parameter #3\Parameter #3", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #3\Quest Alias. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter3QuestAliasPresente As Boolean Implements IBloque_Conditions2.Parameter3QuestAliasPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #3\Quest Alias")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #3\Quest Alias", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #3\Quest Alias</summary>
+        Public Property Parameter3QuestAlias As Integer Implements IBloque_Conditions2.Parameter3QuestAlias
+            Get
+                Return CInt(Entero("Condition\CTDA\Parameter #3\Quest Alias"))
+            End Get
+            Set(value As Integer)
+                Escribir("Condition\CTDA\Parameter #3\Quest Alias", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CTDA\Parameter #3\Event Data. Distinto de que el campo valga cero.</summary>
+        Public Property Parameter3EventDataPresente As Boolean Implements IBloque_Conditions2.Parameter3EventDataPresente
+            Get
+                Return Presente("Condition\CTDA\Parameter #3\Event Data")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CTDA\Parameter #3\Event Data", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CTDA\Parameter #3\Event Data</summary>
+        Public Property Parameter3EventData As Integer Implements IBloque_Conditions2.Parameter3EventData
+            Get
+                Return CInt(Entero("Condition\CTDA\Parameter #3\Event Data"))
+            End Get
+            Set(value As Integer)
+                Escribir("Condition\CTDA\Parameter #3\Event Data", CLng(value))
+            End Set
+        End Property
+
+        ''' <summary>Nombre del valor de Condition\CTDA\Parameter #3\Event Data.</summary>
+        Public ReadOnly Property Parameter3EventDataNombre As String Implements IBloque_Conditions2.Parameter3EventDataNombre
+            Get
+                Return NombreDeValor("Condition\CTDA\Parameter #3\Event Data")
+            End Get
+        End Property
+
+        ''' <summary>El record trae Condition\CIS1\Parameter #1. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionParameter1Presente As Boolean Implements IBloque_Conditions2.ConditionParameter1Presente
+            Get
+                Return Presente("Condition\CIS1\Parameter #1")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CIS1\Parameter #1", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CIS1\Parameter #1</summary>
+        Public Property ConditionParameter1 As String Implements IBloque_Conditions2.ConditionParameter1
+            Get
+                Return Txt("Condition\CIS1\Parameter #1")
+            End Get
+            Set(value As String)
+                Escribir("Condition\CIS1\Parameter #1", value)
+            End Set
+        End Property
+
+        ''' <summary>El record trae Condition\CIS2\Parameter #2. Distinto de que el campo valga cero.</summary>
+        Public Property ConditionParameter2Presente As Boolean Implements IBloque_Conditions2.ConditionParameter2Presente
+            Get
+                Return Presente("Condition\CIS2\Parameter #2")
+            End Get
+            Set(value As Boolean)
+                PonerPresencia("Condition\CIS2\Parameter #2", value)
+            End Set
+        End Property
+
+        ''' <summary>Condition\CIS2\Parameter #2</summary>
+        Public Property ConditionParameter2 As String Implements IBloque_Conditions2.ConditionParameter2
+            Get
+                Return Txt("Condition\CIS2\Parameter #2")
+            End Get
+            Set(value As String)
+                Escribir("Condition\CIS2\Parameter #2", value)
             End Set
         End Property
 
@@ -81825,7 +84571,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -82888,7 +85634,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -85299,7 +88045,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #1\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter1Owner As UInteger Implements IBloque_Conditions2.Parameter1Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #1\Owner")
@@ -86362,7 +89108,7 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_. Referencia en el espacio del orden de carga.</summary>
+        ''' <summary>Condition\CTDA\Parameter #2\Owner  -&gt;  FACT / NPC_ / NULL. Referencia en el espacio del orden de carga.</summary>
         Public Property Parameter2Owner As UInteger Implements IBloque_Conditions2.Parameter2Owner
             Get
                 Return Referencia("Condition\CTDA\Parameter #2\Owner")
@@ -88148,123 +90894,123 @@ Namespace Canon
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX1Presente As Boolean Implements ITxst.ObjectBoundsX1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\X. Distinto de que el campo valga cero.</summary>
+        Public Property MinXPresente As Boolean Implements ITxst.MinXPresente
             Get
-                Return Presente("OBND\Object Bounds\X1")
+                Return Presente("OBND\Object Bounds\Min\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X1", value)
+                PonerPresencia("OBND\Object Bounds\Min\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X1</summary>
-        Public Property ObjectBoundsX1 As Short Implements ITxst.ObjectBoundsX1
+        ''' <summary>OBND\Object Bounds\Min\X</summary>
+        Public Property MinX As Short Implements ITxst.MinX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY1Presente As Boolean Implements ITxst.ObjectBoundsY1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MinYPresente As Boolean Implements ITxst.MinYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y1")
+                Return Presente("OBND\Object Bounds\Min\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y1</summary>
-        Public Property ObjectBoundsY1 As Short Implements ITxst.ObjectBoundsY1
+        ''' <summary>OBND\Object Bounds\Min\Y</summary>
+        Public Property MinY As Short Implements ITxst.MinY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z1. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ1Presente As Boolean Implements ITxst.ObjectBoundsZ1Presente
+        ''' <summary>El record trae OBND\Object Bounds\Min\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MinZPresente As Boolean Implements ITxst.MinZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z1")
+                Return Presente("OBND\Object Bounds\Min\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z1", value)
+                PonerPresencia("OBND\Object Bounds\Min\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z1</summary>
-        Public Property ObjectBoundsZ1 As Short Implements ITxst.ObjectBoundsZ1
+        ''' <summary>OBND\Object Bounds\Min\Z</summary>
+        Public Property MinZ As Short Implements ITxst.MinZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z1"))
+                Return CShort(Entero("OBND\Object Bounds\Min\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z1", CLng(value))
+                Escribir("OBND\Object Bounds\Min\Z", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\X2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsX2Presente As Boolean Implements ITxst.ObjectBoundsX2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\X. Distinto de que el campo valga cero.</summary>
+        Public Property MaxXPresente As Boolean Implements ITxst.MaxXPresente
             Get
-                Return Presente("OBND\Object Bounds\X2")
+                Return Presente("OBND\Object Bounds\Max\X")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\X2", value)
+                PonerPresencia("OBND\Object Bounds\Max\X", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\X2</summary>
-        Public Property ObjectBoundsX2 As Short Implements ITxst.ObjectBoundsX2
+        ''' <summary>OBND\Object Bounds\Max\X</summary>
+        Public Property MaxX As Short Implements ITxst.MaxX
             Get
-                Return CShort(Entero("OBND\Object Bounds\X2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\X"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\X2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\X", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Y2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsY2Presente As Boolean Implements ITxst.ObjectBoundsY2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Y. Distinto de que el campo valga cero.</summary>
+        Public Property MaxYPresente As Boolean Implements ITxst.MaxYPresente
             Get
-                Return Presente("OBND\Object Bounds\Y2")
+                Return Presente("OBND\Object Bounds\Max\Y")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Y2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Y", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Y2</summary>
-        Public Property ObjectBoundsY2 As Short Implements ITxst.ObjectBoundsY2
+        ''' <summary>OBND\Object Bounds\Max\Y</summary>
+        Public Property MaxY As Short Implements ITxst.MaxY
             Get
-                Return CShort(Entero("OBND\Object Bounds\Y2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Y"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Y2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Y", CLng(value))
             End Set
         End Property
 
-        ''' <summary>El record trae OBND\Object Bounds\Z2. Distinto de que el campo valga cero.</summary>
-        Public Property ObjectBoundsZ2Presente As Boolean Implements ITxst.ObjectBoundsZ2Presente
+        ''' <summary>El record trae OBND\Object Bounds\Max\Z. Distinto de que el campo valga cero.</summary>
+        Public Property MaxZPresente As Boolean Implements ITxst.MaxZPresente
             Get
-                Return Presente("OBND\Object Bounds\Z2")
+                Return Presente("OBND\Object Bounds\Max\Z")
             End Get
             Set(value As Boolean)
-                PonerPresencia("OBND\Object Bounds\Z2", value)
+                PonerPresencia("OBND\Object Bounds\Max\Z", value)
             End Set
         End Property
 
-        ''' <summary>OBND\Object Bounds\Z2</summary>
-        Public Property ObjectBoundsZ2 As Short Implements ITxst.ObjectBoundsZ2
+        ''' <summary>OBND\Object Bounds\Max\Z</summary>
+        Public Property MaxZ As Short Implements ITxst.MaxZ
             Get
-                Return CShort(Entero("OBND\Object Bounds\Z2"))
+                Return CShort(Entero("OBND\Object Bounds\Max\Z"))
             End Get
             Set(value As Short)
-                Escribir("OBND\Object Bounds\Z2", CLng(value))
+                Escribir("OBND\Object Bounds\Max\Z", CLng(value))
             End Set
         End Property
 

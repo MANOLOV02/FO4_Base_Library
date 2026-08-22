@@ -1306,9 +1306,15 @@ Public Class PluginManager
         If Not IsVrBuild() Then Return False
         If String.IsNullOrEmpty(dataPath) Then Return False
         Dim isFO4 As Boolean = (Config_App.Current.Game = Config_App.Game_Enum.Fallout4)
-        Dim dll = If(isFO4, Path.Combine(dataPath, "F4SE", "Plugins", "falloutvresl.dll"),
-                            Path.Combine(dataPath, "SKSE", "Plugins", "skyrimvresl.dll"))
-        Return File.Exists(dll)
+        ' Cada juego lo detecta por la presencia del plugin del cargador de scripts que agrega el
+        ' soporte. Fallout 4 VR tiene DOS implementaciones y alcanza con cualquiera de las dos;
+        ' Skyrim VR tiene una sola. Buscar sólo la primera de Fallout 4 deja al rig que usa la otra
+        ' con el piso de FormID equivocado.
+        Dim dlls As String() = If(isFO4,
+            {Path.Combine(dataPath, "F4SE", "Plugins", "falloutvresl.dll"),
+             Path.Combine(dataPath, "F4SE", "Plugins", "Daytripper4.dll")},
+            {Path.Combine(dataPath, "SKSE", "Plugins", "skyrimvresl.dll")})
+        Return dlls.Any(AddressOf File.Exists)
     End Function
 
     ''' <summary>Ley de soporte de plugins light: los juegos planos (FO4, SSE) lo soportan siempre;
@@ -1603,9 +1609,15 @@ Public Class PluginManager
         ' Data, one level up from wherever the game data path points).
         ' Each non-empty non-comment line is a plugin name the engine force-loads after the DLCs.
         ' Skyrim has its own Skyrim.ccc; same shape. Only attempted if FO4ExePath resolved.
+        '
+        ' A VR build has NO Creation Club list at all: the format declares the .ccc name only in the
+        ' non-VR branch, for both games (wbDefinitionsFO4.pas: the assignment is the `else` of
+        ' `if wbGameMode = gmFO4VR`; wbDefinitionsTES5.pas mirrors it for gmTES5VR). Reading a .ccc
+        ' that a VR session never force-loads would insert plugins the engine does not, and every
+        ' index after them would sit one off the engine's.
         Dim ccEntries As New List(Of String)
         Dim exePath = Config_App.Current.FO4ExePath
-        If Not String.IsNullOrEmpty(exePath) AndAlso File.Exists(exePath) Then
+        If Not IsVrBuild() AndAlso Not String.IsNullOrEmpty(exePath) AndAlso File.Exists(exePath) Then
             Dim cccName = If(isFO4, "Fallout4.ccc", "Skyrim.ccc")
             Dim cccPath = Path.Combine(Path.GetDirectoryName(exePath), cccName)
             If File.Exists(cccPath) Then

@@ -1,4 +1,4 @@
-# Lector y escritor de records, por campo y por juego
+﻿# Lector y escritor de records, por campo y por juego
 
 Este directorio contiene un motor que lee y escribe los records de un plugin (`.esp`, `.esm`,
 `.esl`) campo por campo, con una única declaración por cada par *(tipo de record, juego)* de la que
@@ -141,22 +141,28 @@ dando 100 %. **El criterio de aceptación son los dos juntos.**
 ## 6. Estado medido
 
 Sobre los plugins reales instalados: 71 de Fallout 4, 102 de Skyrim SE. Todos los records de cada
-uno.
+uno. Se reproduce con `Tools/CanonLayoutProbe --edit`.
+
+⚠️ El corpus es la carpeta `Data\` viva del usuario, así que **los totales absolutos se mueven
+cuando cambia un mod**. Lo que no se mueve es el criterio: 100 % de ida y vuelta y cada aviso
+explicado. Medición del 2026-08-22 20:00 (dos corridas seguidas, idénticas):
 
 | | Records | Ida y vuelta byte a byte | Avisos de cobertura |
 |---|---:|---|---:|
-| Fallout 4 | 420.732 | **420.732 / 420.732** | 42 |
-| Skyrim SE | 331.303 | **331.303 / 331.303** | 422 |
-| **Total** | **752.035** | **752.035 / 752.035** | **464** |
+| Fallout 4 | 420.728 | **420.728 / 420.728** | 7 |
+| Skyrim SE | 331.401 | **331.401 / 331.401** | 421 |
+| **Total** | **752.129** | **752.129 / 752.129** | **428** |
 
 - **137 de 137** tipos de record de Fallout 4 y **124 de 124** de Skyrim, **todos con todos sus
-  campos traducidos**. Ninguno queda marcado como incompleto.
+  campos traducidos**. Ninguno queda marcado como incompleto. De esos, el corpus instalado ejercita
+  132 y 115 respectivamente; el resto no aparece en ningún plugin y por lo tanto su declaración
+  está traducida pero no verificada contra datos reales.
 - **Cero** subrecords copiados sin interpretar.
 - **Cero** textos que no vuelvan a los mismos bytes.
-- **74 verificaciones de edición**, todas en verde: borrar un campo, agregarlo en su posición
+- **86 verificaciones de edición**, todas en verde: borrar un campo, agregarlo en su posición
   correcta, modificarlo, y que los contadores se ajusten solos.
 
-### Los 464 avisos, uno por uno
+### Los 428 avisos, uno por uno
 
 Ninguno queda sin explicar:
 
@@ -164,13 +170,22 @@ Ninguno queda sin explicar:
 |---|---:|---|
 | `CELL` — indicadores | 331 | El campo se declara de 2 bytes a propósito aunque a veces el archivo trae 1. Es una decisión deliberada del formato para que el mismo campo sirva en varios contextos. |
 | `RACE` — nombres de tipo de movimiento | 90 | El campo se declara como texto de 4 caracteres **sin terminador**, así que consume 4. El quinto byte que trae el archivo no lo describe ningún campo. |
-| `INNR` | 38 | Un plugin de terceros trae una lista de palabras clave sin su contador delante. El grupo que las contiene sólo puede engancharse por su primer campo, que es justamente el contador, así que ahí se corta. |
+| `COBJ` | 3 | `NAM1`, `NAM2` y `NAM3` se declaran **vacíos** —`wbUnused(FIRMA)` es literalmente `wbEmpty`— y el archivo trae 4 bytes en cada uno. El formato los marca además como «no reportar»; nuestro criterio de cobertura es más estricto a propósito y los cuenta. |
 | `MATO` | 2 | El record declara versión de formato 25 y 26, pero trae los bytes de un campo que sólo existe desde la 31. |
 | `DLVW` | 2 | Dos campos se declaran vacíos: consumen 0 bytes por definición, y el archivo trae 1 y 4. |
-| `LGTM` | 1 | Un relleno declarado de 32 bytes del que un record concreto sólo trae 24. |
 
-En resumen: **los 464 son archivos que se apartan de la definición del formato**, no errores del
+En resumen: **los 428 son archivos que se apartan de la definición del formato**, no errores del
 lector. Están reportados con su firma y su campo, no tapados.
+
+Hasta el 2026-08-22 a las 19:43 había además 38 avisos de `INNR`: un plugin generado por un
+ordenador de inventario escribía la lista de palabras clave **sin su contador delante**, y el grupo
+que las contiene sólo puede engancharse por su primer campo, que es justamente el contador.
+Desaparecieron cuando ese plugin se regeneró. Es el ejemplo de por qué los totales absolutos son
+del corpus y no del motor.
+
+El aviso de `LGTM` que hubo hasta la versión 4.1.6 de diciembre de 2025 —un relleno declarado de 32
+bytes del que un record concreto traía 24— **desapareció**: el formato pasó a describir esos 32
+bytes campo por campo en vez de dejarlos como relleno.
 
 ---
 
